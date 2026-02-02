@@ -5,6 +5,7 @@
 import { loadEnvFile } from "../utils.js";
 import path from "path";
 import type { LLMConfig } from "./adapters.js";
+import { llmConfig, storageConfig } from "../env.js";
 
 // ============================================================================
 // Types
@@ -24,26 +25,25 @@ export interface ResolvedConfig {
  * Resolve LLM provider from environment
  */
 const resolveProvider = (): "deepseek" | "mock" => {
-  const configured = process.env.LLM_PROVIDER?.trim().toLowerCase();
+  const configured = llmConfig.provider.trim().toLowerCase();
   if (configured === "deepseek") return "deepseek";
   if (configured === "mock") return "mock";
-  if (process.env.DEEPSEEK_API_TOKEN) return "deepseek";
-  return "mock";
+  try {
+    const _ = llmConfig.apiToken; // 检查是否设置了 token
+    return "deepseek";
+  } catch {
+    return "mock";
+  }
 };
 
 /**
  * Create DeepSeek config from environment
  */
 const createDeepSeekConfig = (): LLMConfig => {
-  const apiKey = process.env.DEEPSEEK_API_TOKEN;
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_TOKEN is not set");
-  }
-
   return {
-    apiKey,
-    baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1",
-    model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+    apiKey: llmConfig.apiToken,
+    baseUrl: llmConfig.baseUrl,
+    model: llmConfig.model,
     temperature: 0,
   };
 };
@@ -63,6 +63,6 @@ export const loadRuntimeConfig = async (
   return {
     provider,
     llmConfig: provider === "deepseek" ? createDeepSeekConfig() : undefined,
-    storageDir: process.env.AGENTER_STORAGE_DIR,
+    storageDir: storageConfig.dir,
   };
 };

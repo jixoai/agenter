@@ -3,6 +3,7 @@
  * 每个工具是一个配置了特定系统提示的 AI 实例
  */
 import { DeepSeekAdapter, getAdapter, createChatStream } from "./index.js";
+import { llmConfig, hippocampusConfig, prefrontalConfig, amygdalaConfig, comparatorConfig, orchestratorConfig } from "../env.js";
 
 // 工具配置接口
 export interface ToolConfig {
@@ -12,13 +13,32 @@ export interface ToolConfig {
   systemPrompt: string;
 }
 
-// 从环境变量读取配置
+// 工具配置映射
+const toolConfigMap: Record<string, { model: string; temperature: number; topP: number; systemPrompt: string }> = {
+  HIPPOCAMPUS: hippocampusConfig,
+  PREFRONTAL: prefrontalConfig,
+  AMYGDALA: amygdalaConfig,
+  COMPARATOR: comparatorConfig,
+  ORCHESTRATOR: orchestratorConfig,
+};
+
+// 从环境配置读取工具配置
 function loadToolConfig(prefix: string): ToolConfig {
+  const config = toolConfigMap[prefix];
+  if (config) {
+    return {
+      model: config.model,
+      temperature: config.temperature,
+      top_p: config.topP,
+      systemPrompt: config.systemPrompt,
+    };
+  }
+  // 兜底默认配置
   return {
-    model: process.env[`${prefix}_MODEL`] || "deepseek-chat",
-    temperature: parseFloat(process.env[`${prefix}_TEMPERATURE`] || "0.7"),
-    top_p: parseFloat(process.env[`${prefix}_TOP_P`] || "0.9"),
-    systemPrompt: process.env[`${prefix}_SYSTEM_PROMPT`] || "",
+    model: llmConfig.model,
+    temperature: 0.7,
+    top_p: 0.9,
+    systemPrompt: "",
   };
 }
 
@@ -29,8 +49,8 @@ async function structuredOutput<T>(
   schema: object
 ): Promise<T> {
   const adapter = new DeepSeekAdapter(config.model, {
-    apiKey: process.env.DEEPSEEK_API_TOKEN!,
-    baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
+    apiKey: llmConfig.apiToken,
+    baseUrl: llmConfig.baseUrl,
     model: config.model,
     temperature: config.temperature,
   });

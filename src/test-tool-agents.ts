@@ -105,7 +105,7 @@ async function runTests() {
   log(`Model: ${TEST_CONFIG.model}`, "reset");
 
   if (!process.env.DEEPSEEK_API_TOKEN) {
-    log("ERROR: DEEPSEEK_API_TOKEN not set", "red");
+    log("ERROR: DEEPSEEK_API_TOKEN not set in .env file", "red");
     process.exit(1);
   }
 

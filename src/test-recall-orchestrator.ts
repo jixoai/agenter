@@ -67,7 +67,7 @@ async function runTests() {
   log("Recall Orchestrator Tests", "green");
 
   if (!process.env.DEEPSEEK_API_TOKEN) {
-    log("ERROR: DEEPSEEK_API_TOKEN not set", "red");
+    log("ERROR: DEEPSEEK_API_TOKEN not set in .env file", "red");
     process.exit(1);
   }
 

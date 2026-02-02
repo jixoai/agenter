@@ -1,7 +1,8 @@
-﻿import os from "os";
+import os from "os";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 import { ensureDir, fileExists } from "./utils";
+import { chromaConfig } from "./env.js";
 
 let chromaProcess: ChildProcess | null = null;
 let chromaUrl: string | null = null;
@@ -9,7 +10,7 @@ let chromaUrl: string | null = null;
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getBinaryPath = async (): Promise<string> => {
-  if (process.env.CHROMA_BIN) return process.env.CHROMA_BIN;
+  if (chromaConfig.bin) return chromaConfig.bin;
   const binName = process.platform === "win32" ? "chroma.cmd" : "chroma";
   const localPath = path.join(process.cwd(), "node_modules", ".bin", binName);
   if (await fileExists(localPath)) return localPath;
@@ -31,13 +32,13 @@ const waitForReady = async (url: string, retries = 20, intervalMs = 250): Promis
 };
 
 export const ensureChromaServer = async (): Promise<string | null> => {
-  if (process.env.CHROMA_URL) return process.env.CHROMA_URL;
-  if (process.env.CHROMA_AUTO_START === "0") return null;
+  if (chromaConfig.url) return chromaConfig.url;
+  if (!chromaConfig.autoStart) return null;
   if (chromaUrl) return chromaUrl;
 
-  const host = process.env.CHROMA_HOST ?? "127.0.0.1";
-  const port = Number(process.env.CHROMA_PORT ?? "8000");
-  const dataDir = process.env.CHROMA_DATA_DIR ?? path.join(os.homedir(), ".agenter-demo", "chroma-data");
+  const host = chromaConfig.host;
+  const port = chromaConfig.port;
+  const dataDir = chromaConfig.dataDir ?? path.join(os.homedir(), ".agenter-demo", "chroma-data");
   await ensureDir(dataDir);
 
   const binPath = await getBinaryPath();

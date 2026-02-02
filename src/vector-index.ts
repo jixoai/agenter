@@ -1,7 +1,8 @@
-﻿import { ChromaClient, Collection, Metadata } from "chromadb";
+import { ChromaClient, Collection, Metadata } from "chromadb";
 import { ObjectiveFact } from "./types";
 import { normalizeText } from "./utils";
 import { ensureChromaServer } from "./chroma-server";
+import { chromaConfig } from "./env.js";
 
 interface VectorIndexConfig {
   url: string;
@@ -57,10 +58,10 @@ export class VectorIndex {
   }
 
   static async fromEnv(): Promise<VectorIndex | null> {
-    const url = process.env.CHROMA_URL ?? (await ensureChromaServer()) ?? "";
+    const url = chromaConfig.url ?? (await ensureChromaServer()) ?? "";
     if (!url) return null;
-    const collectionName = process.env.CHROMA_COLLECTION ?? "agenter-memory";
-    const embeddingDim = Number(process.env.AGENTER_EMBEDDING_DIM ?? "48");
+    const collectionName = chromaConfig.collection;
+    const embeddingDim = chromaConfig.embeddingDim;
     const config = parseChromaUrl(url);
     const client = new ChromaClient({ host: config.host, port: config.port, ssl: config.ssl });
 

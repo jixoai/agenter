@@ -18,6 +18,7 @@ import {
 } from "./llm/index.js";
 import type { Message } from "./llm/chat.js";
 import path from "path";
+import { wsConfig } from "./env.js";
 
 // ============================================================================
 // Types
@@ -488,7 +489,7 @@ async function main() {
   const adapter = getAdapter(runtimeConfig.provider, runtimeConfig.llmConfig);
   state.chat = createChat(adapter);
 
-  const port = process.env.AGENTER_WS_PORT ? parseInt(process.env.AGENTER_WS_PORT) : 3457;
+  const port = wsConfig.port;
 
   const server = Bun.serve({
     port,
