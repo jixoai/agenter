@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { Committer } from "./committer";
+import { TerminalGitLogger } from "./git-log";
 import { InputInbox } from "./input-inbox";
 import { runMixedInput } from "./input-parser";
 import { HtmlPaginationStore } from "./pagination";
@@ -35,6 +36,7 @@ const resolveProfile = (profile: TerminalProfile | undefined) => {
     resumePid: next.resumePid,
     cwd: next.cwd,
     debugCursor: next.debugCursor ?? false,
+    gitLog: next.gitLog ?? false,
   };
 };
 
@@ -71,6 +73,7 @@ export class AgenticTerminal {
   private readonly renderListeners: Array<(render: ReturnType<typeof renderSemanticBuffer>) => void> = [];
   private renderSerial = 0;
   private debugLogPath = "";
+  private gitLogger: TerminalGitLogger | null = null;
   private lastRender: RenderResult = {
     lines: [],
     plainLines: [],
@@ -115,10 +118,18 @@ export class AgenticTerminal {
         cols: this.profile.cols,
         color: this.profile.color,
         logStyle: this.profile.logStyle,
+        gitLog: this.profile.gitLog,
         outputRoot: this.profile.outputRoot,
         cwd: this.profile.cwd,
       },
     });
+    if (this.profile.gitLog) {
+      this.gitLogger = new TerminalGitLogger(this.workspace, this.profile.gitLog);
+      this.gitLogger.init();
+      this.debug("git-log.enabled", { mode: this.profile.gitLog });
+    } else {
+      this.gitLogger = null;
+    }
 
     this.xterm = new XtermBridge(this.profile.cols, this.profile.rows);
     const initialRender = renderSemanticBuffer(this.xterm);
@@ -153,9 +164,8 @@ export class AgenticTerminal {
         listener(chunk);
       }
       const xterm = this.xterm;
-      const pager = this.pager;
       const committer = this.committer;
-      if (!xterm || !pager || !committer) {
+      if (!xterm || !this.pager || !committer) {
         return;
       }
 
@@ -170,14 +180,7 @@ export class AgenticTerminal {
         committer.schedule({
           plainText: compact.plainLines.join("\n"),
           commit: async () => {
-            pager.write(
-              this.toPersistenceRender(compact),
-              this.status,
-              xterm.baseY,
-              xterm.rows,
-              xterm.cols,
-              this.profile.logStyle,
-            );
+            this.persistRenderToPager(compact, xterm.baseY, xterm.rows, xterm.cols, "write");
           },
         });
       });
@@ -256,7 +259,7 @@ export class AgenticTerminal {
   public async forceCommit(): Promise<void> {
     this.ensureStarted();
     await this.renderQueue;
-    await this.commitSnapshotNow();
+    await this.commitSnapshotNow("force");
   }
 
   /** Resize PTY and xterm buffer; split epoch and snapshot viewport to avoid reflow noise. */
@@ -308,6 +311,19 @@ export class AgenticTerminal {
           cols: xterm.cols,
         });
         this.debug("resize.sealed", { sealedFile });
+        if (sealedFile) {
+          this.commitGitLog({
+            event: "resize-seal",
+            file: sealedFile,
+            status: this.status,
+            rows: xterm.rows,
+            cols: xterm.cols,
+            cursorRow: beforeResize.cursorAbsRow + 1,
+            cursorCol: beforeResize.cursorCol + 1,
+            preFile: pager.getLastArchiveName(),
+            nextFile: "latest.log.html",
+          });
+        }
 
         pty.resize(cols, rows);
         xterm.resize(cols, rows);
@@ -336,6 +352,17 @@ export class AgenticTerminal {
           sealedFile,
           this.profile.logStyle,
         );
+        this.commitGitLog({
+          event: "resize-snapshot",
+          file: "latest.log.html",
+          status: this.status,
+          rows,
+          cols,
+          cursorRow: snapshot.cursorAbsRow + 1,
+          cursorCol: snapshot.cursorCol + 1,
+          preFile: sealedFile ?? pager.getLastArchiveName(),
+          nextFile: null,
+        });
         this.debug("resize.done", { cols, rows, sealedFile });
       } finally {
         this.resizing = false;
@@ -344,7 +371,7 @@ export class AgenticTerminal {
     return this.resizeQueue;
   }
 
-  private async commitSnapshotNow(): Promise<void> {
+  private async commitSnapshotNow(reason: "force" | "status-idle"): Promise<void> {
     this.ensureStarted();
     const xterm = this.xterm;
     const pager = this.pager;
@@ -358,14 +385,7 @@ export class AgenticTerminal {
     committer.schedule({
       plainText: compact.plainLines.join("\n"),
       commit: async () => {
-        pager.write(
-          this.toPersistenceRender(compact),
-          this.status,
-          xterm.baseY,
-          xterm.rows,
-          xterm.cols,
-          this.profile.logStyle,
-        );
+        this.persistRenderToPager(compact, xterm.baseY, xterm.rows, xterm.cols, reason);
       },
     });
     await committer.forceCommit();
@@ -396,6 +416,14 @@ export class AgenticTerminal {
       this.committer.stop();
     }
     this.committer = null;
+    if (this.gitLogger) {
+      try {
+        await this.gitLogger.flush();
+      } catch {
+        // ignore git flush errors during teardown
+      }
+    }
+    this.gitLogger = null;
 
     this.xterm?.dispose();
     this.xterm = null;
@@ -456,7 +484,7 @@ export class AgenticTerminal {
           return;
         }
         try {
-          await this.commitSnapshotNow();
+          await this.commitSnapshotNow("status-idle");
         } catch {
           // ignore status-only commit failures
         }
@@ -488,6 +516,83 @@ export class AgenticTerminal {
       ...compact,
       lines: serializeRenderLinesForLog(compact, this.profile.logStyle),
     };
+  }
+
+  private persistRenderToPager(
+    compact: RenderResult,
+    viewportBase: number,
+    rows: number,
+    cols: number,
+    reason: "write" | "force" | "status-idle",
+  ): void {
+    const pager = this.pager;
+    if (!pager) {
+      return;
+    }
+    const beforeArchive = pager.getLastArchiveName();
+    const persisted = this.toPersistenceRender(compact);
+    pager.write(persisted, this.status, viewportBase, rows, cols, this.profile.logStyle);
+    const afterArchive = pager.getLastArchiveName();
+
+    if (this.profile.gitLog === "verbose") {
+      this.commitGitLog({
+        event: beforeArchive !== afterArchive && afterArchive ? "archive" : reason === "status-idle" ? "status-idle" : "write",
+        file: beforeArchive !== afterArchive && afterArchive ? afterArchive : "latest.log.html",
+        status: this.status,
+        rows,
+        cols,
+        cursorRow: persisted.cursorAbsRow + 1,
+        cursorCol: persisted.cursorCol + 1,
+        preFile: afterArchive,
+        nextFile: beforeArchive !== afterArchive && afterArchive ? "latest.log.html" : null,
+      });
+      return;
+    }
+    if (this.profile.gitLog === "normal") {
+      if (beforeArchive !== afterArchive && afterArchive) {
+        this.commitGitLog({
+          event: "archive",
+          file: afterArchive,
+          status: this.status,
+          rows,
+          cols,
+          cursorRow: persisted.cursorAbsRow + 1,
+          cursorCol: persisted.cursorCol + 1,
+          preFile: afterArchive,
+          nextFile: "latest.log.html",
+        });
+      }
+      if (reason === "status-idle") {
+        this.commitGitLog({
+          event: "status-idle",
+          file: "latest.log.html",
+          status: this.status,
+          rows,
+          cols,
+          cursorRow: persisted.cursorAbsRow + 1,
+          cursorCol: persisted.cursorCol + 1,
+          preFile: afterArchive,
+          nextFile: null,
+        });
+      }
+    }
+  }
+
+  private commitGitLog(input: {
+    event: "write" | "archive" | "resize-seal" | "resize-snapshot" | "status-idle";
+    file: string;
+    status: TerminalStatus;
+    rows: number;
+    cols: number;
+    cursorRow: number;
+    cursorCol: number;
+    preFile: string | null;
+    nextFile?: string | null;
+  }): void {
+    if (!this.gitLogger || this.profile.gitLog === false) {
+      return;
+    }
+    this.gitLogger.commit(input);
   }
 
   private emitRender(render: ReturnType<typeof renderSemanticBuffer>): void {

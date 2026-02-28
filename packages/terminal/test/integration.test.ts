@@ -15,6 +15,15 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 1500): Promise<vo
   }
 };
 
+const hasGit = (): boolean => {
+  const result = Bun.spawnSync({
+    cmd: ["git", "--version"],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return result.exitCode === 0;
+};
+
 test("AgenticTerminal writes semantic html files in workspace", async () => {
   const terminal = new AgenticTerminal("sh", ["-lc", "printf 'hello\\n'"], {
     debounceMs: 20,
@@ -114,5 +123,39 @@ test("AgenticTerminal keeps <cursor/> in plain logStyle", async () => {
   expect(latest).toContain("<cursor/>");
 
   await terminal.destroy(true);
+  rmSync(workspace, { recursive: true, force: true });
+});
+
+test("AgenticTerminal git-log normal creates workspace git history", async () => {
+  if (!hasGit()) {
+    return;
+  }
+  const terminal = new AgenticTerminal("sh", ["-lc", "printf 'git-log\\n'"], {
+    debounceMs: 20,
+    throttleMs: 120,
+    cols: 80,
+    rows: 10,
+    gitLog: "normal",
+  });
+
+  terminal.start();
+  await Bun.sleep(300);
+  await terminal.forceCommit();
+  await Bun.sleep(2200);
+  await terminal.destroy(true);
+
+  const workspace = terminal.workspace;
+  expect(existsSync(join(workspace, ".git"))).toBe(true);
+  expect(existsSync(join(workspace, "debug", "git-log.ndjson"))).toBe(true);
+
+  const history = Bun.spawnSync({
+    cmd: ["git", "-C", workspace, "log", "--pretty=%s", "-n", "8"],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(history.exitCode).toBe(0);
+  const subject = new TextDecoder().decode(history.stdout);
+  expect(subject).toContain("ati(log):");
+
   rmSync(workspace, { recursive: true, force: true });
 });

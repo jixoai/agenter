@@ -67,3 +67,19 @@ test("cli run without target program returns non-zero", async () => {
   expect(result.code).not.toBe(0);
   expect(result.stderr.toLowerCase()).toContain("not enough");
 });
+
+test("cli --git-log bare flag does not consume target command", async () => {
+  const cwd = process.cwd();
+  const root = mkdtempSync(join(tmpdir(), "ati-cli-gitlog-"));
+  const result = await runCli(["run", "--git-log", "-o", root, "sh", "-lc", "printf 'ok-git-log'"], cwd);
+
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("git-log=normal");
+  expect(result.stdout).toContain("ok-git-log");
+
+  const workspace = findLatestWorkspace(root);
+  expect(workspace).not.toBeNull();
+  expect(existsSync(join(workspace as string, ".git"))).toBe(true);
+
+  rmSync(root, { recursive: true, force: true });
+});

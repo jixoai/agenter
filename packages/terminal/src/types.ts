@@ -16,6 +16,8 @@ export interface TerminalProfile {
   cwd?: string;
   /** Enable persistent cursor diagnostics log for experiments. */
   debugCursor?: boolean;
+  /** Enable workspace git history logs (`normal` keyframes, `verbose` every write). */
+  gitLog?: false | TerminalGitLogMode;
 }
 
 export type TerminalStatus = "IDLE" | "BUSY";
@@ -24,6 +26,8 @@ export type TerminalColorMode = "none" | "16" | "256" | "truecolor";
 export type TerminalColorOption = TerminalColorMode | "auto";
 export type TerminalLogStyle = "rich" | "plain";
 export type TerminalLogStyleOption = TerminalLogStyle | "auto";
+export type TerminalGitLogMode = "normal" | "verbose";
+export type TerminalGitLogOption = TerminalGitLogMode | "off";
 
 export interface RichSpan {
   text: string;

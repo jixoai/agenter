@@ -44,6 +44,7 @@
 - `input/failed/*.failed`
 - `debug/ati-cli.ndjson`
 - `debug/terminal.ndjson`
+- `debug/git-log.ndjson`
 
 约束：
 
@@ -198,6 +199,12 @@ ati [options] [command] [args]
 - `--debug-cursor`
   - 默认 `false`
   - 开启后会写 `output/cursor-debug.ndjson`，用于实验 cursor 位置问题
+- `--git-log[=<mode>]`
+  - 默认关闭
+  - `--git-log` 等价 `--git-log=normal`
+  - `mode`: `normal | verbose`
+  - `normal`：只在关键帧提交（archive / resize-seal / resize-snapshot / status-idle）
+  - `verbose`：每次落盘都提交
 
 启动输出约束：
 
@@ -222,6 +229,15 @@ resize 约束：
 
 - `ati` 进程收到终端 resize 事件后，必须调用内部 `AgenticTerminal.resize(cols, rows)`
 - 对于 `--size` 的固定轴保持不变；`auto` 轴按最新外层尺寸重算
+
+git-log 约束：
+
+- 开启 `--git-log` 后，workspace 若无 `.git` 必须自动 `git init`
+- git 提交失败不得中断终端主流程（fail-open），但必须记录到 `debug/git-log.ndjson`
+- commit message 必须结构化，标题格式：
+  - `ati(log): <event> <mode>`
+- commit 正文至少包含：
+  - `workspace`、`event`、`mode`、`file`、`status`、`size`、`cursor`、`pre`、`next`、`ts`
 
 ## 7. 环境变量与颜色能力策略
 

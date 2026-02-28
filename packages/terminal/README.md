@@ -45,6 +45,11 @@ ati [options] [command] [args]
   - `--no-keep-style` => `plain`
   - 若同时传 `--log-style`，以 `--log-style` 为准
 - `--debug-cursor`：开启 cursor 实验日志（写入 `output/cursor-debug.ndjson`）
+- `--git-log[=<mode>]`：为 workspace 启用 git 历史记录
+  - `--git-log` 等价 `--git-log=normal`
+  - `mode` 支持：`normal` / `verbose`
+  - `normal`：关键帧提交（archive / resize split / resize snapshot / status idle）
+  - `verbose`：每次落盘都提交
 
 ## 启动行为
 
@@ -92,6 +97,7 @@ ati [options] [command] [args]
 - `input/failed/*.failed`
 - `debug/ati-cli.ndjson`（CLI 关键事件）
 - `debug/terminal.ndjson`（内核关键事件）
+- `debug/git-log.ndjson`（git 初始化/提交事件）
 
 每个日志文件（`latest.log.html` 和所有归档）顶部都包含一个统一 YAML 注释块，根节点包含 `meta` 与 `ati-source`：
 
@@ -122,6 +128,7 @@ ati [options] [command] [args]
 - 增强颜色语义映射：支持 16 色、256 色、RGB 三类输入映射
 - 分页日志统一写入 `output/` 子目录，`latest.log.html` 不再放 workspace 根目录
 - 修复交互启动首帧尺寸不一致导致的“启动即 resize”噪声分片
+- 新增 `--git-log`：可为日志目录自动初始化 git，并按模式产生结构化 commit 历史
 
 ## 开发命令
 

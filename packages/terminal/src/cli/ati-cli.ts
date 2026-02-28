@@ -6,7 +6,7 @@ import { hideBin } from "yargs/helpers";
 import type { ArgumentsCamelCase, Argv } from "yargs";
 
 import { AgenticTerminal } from "../agentic-terminal";
-import type { TerminalColorMode, TerminalColorOption, TerminalLogStyle } from "../types";
+import type { TerminalColorMode, TerminalColorOption, TerminalGitLogMode, TerminalLogStyle } from "../types";
 import { resolveOutputRoot } from "../workspace";
 import { startAtiTui } from "./ati-tui";
 import { normalizeAtiRunLayout } from "./normalize-command";
@@ -14,6 +14,7 @@ import {
   parseColorOption,
   parseLogStyleOption,
   parseSizeOption,
+  parseGitLogOption,
   resolveColorOption,
   resolveSizeOption,
   resolveSizeWithFallback,
@@ -29,6 +30,7 @@ interface RunArgs {
   logStyle?: string;
   keepStyle?: boolean;
   debugCursor?: boolean;
+  gitLog?: string;
 }
 
 interface ResolvedRunArgs {
@@ -40,6 +42,7 @@ interface ResolvedRunArgs {
   color: TerminalColorMode;
   logStyle: TerminalLogStyle;
   debugCursor: boolean;
+  gitLog: false | TerminalGitLogMode;
 }
 
 interface CommandArgsShape {
@@ -49,12 +52,37 @@ interface CommandArgsShape {
   logStyle?: string;
   keepStyle?: boolean;
   debugCursor?: boolean;
+  gitLog?: string;
   program: string;
   args?: string[];
 }
 
 const STARTUP_VIEWPORT_SETTLE_MS = 120;
 const STARTUP_VIEWPORT_MAX_WAIT_MS = 1500;
+const GIT_LOG_VALUE_TOKENS = new Set(["normal", "verbose", "off", "true", "false", "on", "yes", "no", "none"]);
+
+const normalizeGitLogArgs = (argv: string[]): string[] => {
+  const out: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]!;
+    if (token === "--") {
+      out.push(...argv.slice(index));
+      break;
+    }
+    if (token === "--git-log") {
+      const next = argv[index + 1];
+      if (next && !next.startsWith("-") && GIT_LOG_VALUE_TOKENS.has(next.trim().toLowerCase())) {
+        out.push(`--git-log=${next}`);
+        index += 1;
+      } else {
+        out.push("--git-log=");
+      }
+      continue;
+    }
+    out.push(token);
+  }
+  return out;
+};
 
 const toStringArray = (input: unknown): string[] => {
   if (!Array.isArray(input)) {
@@ -75,6 +103,7 @@ const resolveRunArgs = (input: RunArgs): ResolvedRunArgs => {
   const requestedColor = parseColorOption(input.color);
   const color = resolveColorOption(requestedColor);
   const logStyle = parseLogStyleOption(input.logStyle, input.keepStyle);
+  const gitLog = parseGitLogOption(input.gitLog);
   return {
     program: input.program,
     args: input.args,
@@ -84,13 +113,15 @@ const resolveRunArgs = (input: RunArgs): ResolvedRunArgs => {
     color,
     logStyle,
     debugCursor: Boolean(input.debugCursor),
+    gitLog,
   };
 };
 
 const printSessionMeta = (resolved: ResolvedRunArgs): string => {
   const requestedSize = resolved.size.requested.normalized;
   const effectiveSize = `${resolved.size.rows}:${resolved.size.cols}`;
-  return `[ati-meta] size=${requestedSize} (effective ${effectiveSize}) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} output-dir=${resolved.outputRoot}`;
+  const gitLog = resolved.gitLog ? resolved.gitLog : "off";
+  return `[ati-meta] size=${requestedSize} (effective ${effectiveSize}) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${gitLog} output-dir=${resolved.outputRoot}`;
 };
 
 const runTerminalSession = async (input: RunArgs): Promise<number> => {
@@ -194,8 +225,9 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
     lastResizeSize = next;
     await terminal.resize(next.cols, next.rows);
     logDebug("resize.applied", { next });
+    const gitLog = runResolved.gitLog ? runResolved.gitLog : "off";
     tui?.updateMeta(
-      `[ati-meta] size=${runResolved.size.requested.normalized} (effective ${next.rows}:${next.cols}) color=${runResolved.requestedColor} (effective ${runResolved.color}) output-dir=${runResolved.outputRoot}`,
+      `[ati-meta] size=${runResolved.size.requested.normalized} (effective ${next.rows}:${next.cols}) color=${runResolved.requestedColor} (effective ${runResolved.color}) log-style=${runResolved.logStyle} git-log=${gitLog} output-dir=${runResolved.outputRoot}`,
     );
   };
 
@@ -322,12 +354,14 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
       requestedColor: resolved.requestedColor,
       resolvedColor: resolved.color,
       logStyle: resolved.logStyle,
+      gitLog: resolved.gitLog ? resolved.gitLog : "off",
       outputRoot: resolved.outputRoot,
       program: resolved.program,
       args: resolved.args,
     });
     if (useTui) {
-      let metaLine = `[ati-meta] size=${resolved.size.requested.normalized} (pending box) color=${resolved.requestedColor} (effective ${resolved.color}) output-dir=${resolved.outputRoot}`;
+      const startupGitLog = resolved.gitLog ? resolved.gitLog : "off";
+      let metaLine = `[ati-meta] size=${resolved.size.requested.normalized} (pending box) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${startupGitLog} output-dir=${resolved.outputRoot}`;
       tui = await startAtiTui({
         metaLine,
         onInput: (data) => {
@@ -378,6 +412,7 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
         logStyle: runResolved.logStyle,
         cwd: process.cwd(),
         debugCursor: runResolved.debugCursor,
+        gitLog: runResolved.gitLog,
       });
       lastResizeSize = {
         rows: runResolved.size.rows,
@@ -414,6 +449,7 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
         logStyle: runResolved.logStyle,
         cwd: process.cwd(),
         debugCursor: runResolved.debugCursor,
+        gitLog: runResolved.gitLog,
       });
       lastResizeSize = {
         rows: runResolved.size.rows,
@@ -450,7 +486,7 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
 };
 
 export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
-  const args = normalizeAtiRunLayout(argvInput ?? hideBin(process.argv));
+  const args = normalizeGitLogArgs(normalizeAtiRunLayout(argvInput ?? hideBin(process.argv)));
   let exitCode = 0;
 
   await yargs(args)
@@ -476,7 +512,7 @@ export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
     })
     .option("log-style", {
       type: "string",
-      describe: "Log file style mode (rich|plain). rich keeps style tags; plain writes text-only lines.",
+      describe: "Log file style mode (rich|plain). rich keeps style tags; plain writes minimal html with <cursor/>.",
     })
     .option("keep-style", {
       type: "boolean",
@@ -486,6 +522,10 @@ export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
       type: "boolean",
       default: false,
       describe: "Write raw cursor diagnostics to output/cursor-debug.ndjson",
+    })
+    .option("git-log", {
+      type: "string",
+      describe: "Enable workspace git history logging (normal|verbose). Bare flag defaults to normal.",
     })
     .command(
       "run <program> [args..]",
@@ -503,6 +543,7 @@ export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
         const logStyle = typeof argv.logStyle === "string" ? argv.logStyle : undefined;
         const keepStyle = typeof argv.keepStyle === "boolean" ? argv.keepStyle : undefined;
         const debugCursor = Boolean(argv.debugCursor);
+        const gitLog = typeof argv.gitLog === "string" ? argv.gitLog : undefined;
         exitCode = await runTerminalSession({
           program,
           args: argsList,
@@ -512,6 +553,7 @@ export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
           logStyle,
           keepStyle,
           debugCursor,
+          gitLog,
         });
       },
     )

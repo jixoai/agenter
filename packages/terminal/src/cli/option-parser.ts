@@ -1,4 +1,4 @@
-import type { TerminalColorMode, TerminalColorOption, TerminalLogStyle } from "../types";
+import type { TerminalColorMode, TerminalColorOption, TerminalGitLogMode, TerminalLogStyle } from "../types";
 import { DEFAULTS } from "../types";
 
 type SizeValue = number | "auto";
@@ -183,4 +183,21 @@ export const parseLogStyleOption = (rawInput: string | undefined, keepStyle: boo
     return "rich";
   }
   return keepStyle ? "rich" : "plain";
+};
+
+export const parseGitLogOption = (rawInput: string | undefined): false | TerminalGitLogMode => {
+  if (rawInput === undefined) {
+    return false;
+  }
+  const normalized = rawInput.trim().toLowerCase();
+  if (normalized.length === 0 || normalized === "true" || normalized === "on" || normalized === "yes") {
+    return "normal";
+  }
+  if (normalized === "off" || normalized === "false" || normalized === "none" || normalized === "no") {
+    return false;
+  }
+  if (normalized === "normal" || normalized === "verbose") {
+    return normalized;
+  }
+  throw new Error(`Unsupported --git-log value: "${rawInput}"`);
 };

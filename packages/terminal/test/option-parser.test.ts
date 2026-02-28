@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { parseColorOption, parseLogStyleOption, parseSizeOption, resolveSizeWithFallback } from "../src/cli/option-parser";
+import { parseColorOption, parseGitLogOption, parseLogStyleOption, parseSizeOption, resolveSizeWithFallback } from "../src/cli/option-parser";
 
 test("parse --size supports short forms", () => {
   expect(parseSizeOption(undefined)).toEqual({
@@ -61,4 +61,17 @@ test("parse --log-style supports explicit mode and keep-style alias", () => {
 
 test("parse --log-style rejects unsupported values", () => {
   expect(() => parseLogStyleOption("fancy", undefined)).toThrow();
+});
+
+test("parse --git-log supports bool-like and mode values", () => {
+  expect(parseGitLogOption(undefined)).toBe(false);
+  expect(parseGitLogOption("")).toBe("normal");
+  expect(parseGitLogOption("true")).toBe("normal");
+  expect(parseGitLogOption("normal")).toBe("normal");
+  expect(parseGitLogOption("verbose")).toBe("verbose");
+  expect(parseGitLogOption("off")).toBe(false);
+});
+
+test("parse --git-log rejects unsupported values", () => {
+  expect(() => parseGitLogOption("trace")).toThrow();
 });
