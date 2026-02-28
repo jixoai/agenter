@@ -1,0 +1,35 @@
+{
+  "name": "@agenter/terminal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ati": "./src/bin/ati.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "ati": "bun run src/bin/ati.ts",
+    "demo-cli": "bun run src/bin/demo-cli.ts",
+    "test:ati": "bun run src/bin/ati.ts --help",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "latest",
+    "@opentui/react": "latest",
+    "@xterm/headless": "^6.1.0-beta.167",
+    "react": "^19.0.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/yargs": "^17.0.35",
+    "typescript": "latest"
+  },
+  "patchedDependencies": {
+    "@xterm/headless@6.1.0-beta.167": "patches/@xterm%2Fheadless@6.1.0-beta.167.patch"
+  }
+}
