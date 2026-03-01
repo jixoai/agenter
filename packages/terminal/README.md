@@ -1,7 +1,7 @@
 # @agenter/terminal
 
 ATI (Agentic Terminal Interface): 用 PTY + `@xterm/headless` 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
-内核采用 ANSI-first：先生成语义模型，再序列化为 `log.html`。
+内核采用 ANSI-first：先生成结构化语义快照，再序列化为 `log.html`。
 
 ## 安装与运行
 
@@ -115,6 +115,27 @@ ati [options] [command] [args]
 - 归档文件额外包含 `ati-source.next-file`
 - `ati-source.updated-at`（最后更新时间）
 - 内核在内存里维护文件链（`archive -> ... -> latest`），保证链路关系更新时不会生成多余归档文件
+- 当 `meta.viewport-base = 0`（全屏 TUI 原地重绘）时，不做按行归档，避免把可变行提前 seal 到历史文件
+
+## 读取 output 链（供 demo/工具）
+
+`@agenter/terminal` 提供两种读取接口（同语义）：
+
+- `readTerminalOutput(options): Promise<string>`
+- `streamTerminalOutput(options): ReadableStream<string>`
+
+参数：
+
+- `outputDir`：指向 workspace 下的 `output` 目录
+- `offset`：尾部反向偏移，默认 `0`（从 latest 尾部开始）
+- `limit`：返回行数限制，默认 `-1`（不限制）
+
+语义：
+
+- 内部按 `latest.log.html -> pre-file -> ...` 追溯文件链
+- 结果按时间正序返回（旧 -> 新）
+- 仅返回正文行（不包含 YAML 头注释）
+- 正文保持 HTML 原样（会保留 `<cursor/>`）
 
 ## 近期关键修复
 

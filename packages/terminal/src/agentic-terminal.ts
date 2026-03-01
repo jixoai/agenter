@@ -7,8 +7,14 @@ import { InputInbox } from "./input-inbox";
 import { runMixedInput } from "./input-parser";
 import { HtmlPaginationStore } from "./pagination";
 import { Pty } from "./pty";
-import { compactRenderForPersistence, renderSemanticBuffer, serializeRenderLinesForLog } from "./renderer";
-import type { RenderResult, TerminalProfile, TerminalStatus } from "./types";
+import {
+  compactRenderForPersistence,
+  renderSemanticBuffer,
+  renderStructuredBuffer,
+  serializeRenderLinesForLog,
+  serializeStructuredLinesForLog,
+} from "./renderer";
+import type { RenderResult, TerminalProfile, TerminalStatus, TerminalStructuredSnapshot } from "./types";
 import { DEFAULTS } from "./types";
 import { createWorkspace, destroyWorkspace } from "./workspace";
 import { XtermBridge } from "./xterm-bridge";
@@ -71,12 +77,26 @@ export class AgenticTerminal {
   private readonly outputListeners: Array<(chunk: string) => void> = [];
   private readonly exitListeners: Array<(code: number | null) => void> = [];
   private readonly renderListeners: Array<(render: ReturnType<typeof renderSemanticBuffer>) => void> = [];
+  private readonly structuredListeners: Array<(snapshot: TerminalStructuredSnapshot) => void> = [];
+  private readonly outputDecoder = new TextDecoder();
   private renderSerial = 0;
+  private structuredSerial = 0;
   private debugLogPath = "";
   private gitLogger: TerminalGitLogger | null = null;
   private lastRender: RenderResult = {
     lines: [],
     plainLines: [],
+    richLines: [],
+    cursorAbsRow: 0,
+    cursorCol: 0,
+    cursorVisible: true,
+  };
+  private lastStructured: TerminalStructuredSnapshot = {
+    seq: 0,
+    timestamp: Date.now(),
+    status: "IDLE",
+    rows: 0,
+    cols: 0,
     richLines: [],
     cursorAbsRow: 0,
     cursorCol: 0,
@@ -132,7 +152,7 @@ export class AgenticTerminal {
     }
 
     this.xterm = new XtermBridge(this.profile.cols, this.profile.rows);
-    const initialRender = renderSemanticBuffer(this.xterm);
+    const initialRender = this.buildRenderFromXterm(this.xterm);
     this.emitRender(initialRender);
     this.pager = new HtmlPaginationStore(this.workspace, this.profile.maxLinesPerFile);
     this.committer = new Committer({
@@ -160,8 +180,9 @@ export class AgenticTerminal {
 
     this.pty.setOnData((chunk) => {
       this.markBusy();
+      const textChunk = this.outputDecoder.decode(chunk, { stream: true });
       for (const listener of this.outputListeners) {
-        listener(chunk);
+        listener(textChunk);
       }
       const xterm = this.xterm;
       const committer = this.committer;
@@ -174,7 +195,7 @@ export class AgenticTerminal {
         if (this.resizing) {
           return;
         }
-        const render = renderSemanticBuffer(xterm);
+        const render = this.buildRenderFromXterm(xterm);
         const compact = compactRenderForPersistence(render);
         this.emitRender(render);
         committer.schedule({
@@ -251,8 +272,22 @@ export class AgenticTerminal {
     };
   }
 
+  public onStructured(listener: (snapshot: TerminalStructuredSnapshot) => void): () => void {
+    this.structuredListeners.push(listener);
+    return () => {
+      const index = this.structuredListeners.indexOf(listener);
+      if (index >= 0) {
+        this.structuredListeners.splice(index, 1);
+      }
+    };
+  }
+
   public getLatestRender(): RenderResult {
     return this.lastRender;
+  }
+
+  public getLatestStructured(): TerminalStructuredSnapshot {
+    return this.lastStructured;
   }
 
   /** Force a filesystem commit regardless of debounce state. */
@@ -294,7 +329,7 @@ export class AgenticTerminal {
       });
       try {
         await this.forceCommit();
-        const beforeResize = renderSemanticBuffer(xterm);
+        const beforeResize = this.buildRenderFromXterm(xterm);
         this.debug("resize.before-seal", {
           lines: beforeResize.lines.length,
           cursor: { row: beforeResize.cursorAbsRow, col: beforeResize.cursorCol },
@@ -333,7 +368,7 @@ export class AgenticTerminal {
         await Bun.sleep(500);
         await this.renderQueue;
 
-        const snapshot = renderSemanticBuffer(xterm);
+        const snapshot = this.buildRenderFromXterm(xterm);
         const compact = compactRenderForPersistence(snapshot);
         this.debug("resize.snapshot", {
           lines: snapshot.lines.length,
@@ -380,7 +415,7 @@ export class AgenticTerminal {
       return;
     }
 
-    const render = renderSemanticBuffer(xterm);
+    const render = this.buildRenderFromXterm(xterm);
     const compact = compactRenderForPersistence(render);
     committer.schedule({
       plainText: compact.plainLines.join("\n"),
@@ -431,6 +466,7 @@ export class AgenticTerminal {
     this.outputListeners.length = 0;
     this.exitListeners.length = 0;
     this.renderListeners.length = 0;
+    this.structuredListeners.length = 0;
     this.appliedSize = null;
     this.started = false;
     this.status = "IDLE";
@@ -518,6 +554,26 @@ export class AgenticTerminal {
     };
   }
 
+  private buildRenderFromXterm(xterm: XtermBridge): RenderResult {
+    const structured = renderStructuredBuffer(xterm);
+    this.lastStructured = {
+      ...structured,
+      seq: this.structuredSerial + 1,
+      timestamp: Date.now(),
+      status: this.status,
+    };
+    this.structuredSerial += 1;
+    const plainLines = structured.richLines.map((line) => line.spans.map((span) => span.text).join(""));
+    return {
+      lines: serializeStructuredLinesForLog(structured, "rich"),
+      plainLines,
+      richLines: structured.richLines,
+      cursorAbsRow: structured.cursorAbsRow,
+      cursorCol: structured.cursorCol,
+      cursorVisible: structured.cursorVisible,
+    };
+  }
+
   private persistRenderToPager(
     compact: RenderResult,
     viewportBase: number,
@@ -597,6 +653,9 @@ export class AgenticTerminal {
 
   private emitRender(render: ReturnType<typeof renderSemanticBuffer>): void {
     this.lastRender = render;
+    for (const listener of this.structuredListeners) {
+      listener(this.lastStructured);
+    }
     this.appendCursorDebug(render);
     for (const listener of this.renderListeners) {
       listener(render);

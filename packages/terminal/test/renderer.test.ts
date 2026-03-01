@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { compactRenderForPersistence, renderSemanticBuffer, serializeRenderLinesForLog, stripHtmlTags } from "../src/renderer";
+import { compactRenderForPersistence, renderSemanticBuffer, renderStructuredBuffer, serializeRenderLinesForLog, stripHtmlTags } from "../src/renderer";
 import type { RenderResult } from "../src/types";
 import { XtermBridge } from "../src/xterm-bridge";
 
@@ -10,6 +10,16 @@ test("renderer maps strong semantic colors", async () => {
   const rendered = renderSemanticBuffer(bridge);
   const hasRed = rendered.lines.some((line) => line.includes("<red>ERR</red>"));
   expect(hasRed).toBe(true);
+  bridge.dispose();
+});
+
+test("structured renderer is the single source for style spans", async () => {
+  const bridge = new XtermBridge(24, 6);
+  await bridge.write("\u001b[31mERR\u001b[0m\r\n");
+  const structured = renderStructuredBuffer(bridge);
+  expect(structured.richLines.some((line) => line.spans.some((span) => span.text.includes("ERR")))).toBe(true);
+  expect(structured.rows).toBe(6);
+  expect(structured.cols).toBe(24);
   bridge.dispose();
 });
 

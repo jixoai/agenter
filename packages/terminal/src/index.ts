@@ -9,9 +9,12 @@ export type {
   TerminalGitLogMode,
   TerminalGitLogOption,
   RenderResult,
+  StructuredRenderResult,
+  TerminalStructuredSnapshot,
   PageMeta,
   RichLine,
   RichSpan,
 } from "./types";
 export { parseMixedInput, runMixedInput, keyToSequence } from "./input-parser";
-export { compactRenderForPersistence, renderSemanticBuffer, stripHtmlTags } from "./renderer";
+export { compactRenderForPersistence, renderSemanticBuffer, renderStructuredBuffer, serializeStructuredLinesForLog, stripHtmlTags } from "./renderer";
+export { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "./output-reader";

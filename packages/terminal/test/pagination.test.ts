@@ -112,3 +112,17 @@ test("resize split seals latest and starts a viewport snapshot epoch", () => {
   expect(latest).toContain("line-13");
   expect(latest).toContain("line-15");
 });
+
+test("pagination keeps latest mutable when viewport base is zero", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "ati-pagination-tui-"));
+  const store = new HtmlPaginationStore(workspace, 20);
+
+  store.write(makeRender(63), "BUSY", 0, 63, 105, "rich");
+  const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
+
+  expect(existsSync(join(workspace, "output", "1~20.log.html"))).toBe(false);
+  expect(existsSync(join(workspace, "output", "1~40.log.html"))).toBe(false);
+  expect(latest).toContain("line-1");
+  expect(latest).toContain("line-63");
+  expect(latest).toContain("pre-file: \"none\"");
+});

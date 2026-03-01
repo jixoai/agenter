@@ -50,6 +50,40 @@ test("AgenticTerminal writes semantic html files in workspace", async () => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
+test("AgenticTerminal exposes structured snapshots", async () => {
+  const terminal = new AgenticTerminal("sh", ["-lc", "printf 'structured\\n'"], {
+    debounceMs: 20,
+    throttleMs: 120,
+    cols: 80,
+    rows: 10,
+  });
+
+  let seen = 0;
+  let latestText = "";
+  const stopStructured = terminal.onStructured((snapshot) => {
+    seen += 1;
+    const line = snapshot.richLines.find((item) => item.spans.length > 0);
+    latestText = line?.spans.map((span) => span.text).join("") ?? latestText;
+  });
+
+  terminal.start();
+  await Bun.sleep(180);
+  await terminal.forceCommit();
+
+  const latest = terminal.getLatestStructured();
+  expect(seen).toBeGreaterThan(0);
+  expect(latest.seq).toBeGreaterThan(0);
+  expect(latest.status === "BUSY" || latest.status === "IDLE").toBe(true);
+  expect(latest.rows).toBe(10);
+  expect(latest.cols).toBe(80);
+  expect(latestText.toLowerCase()).toContain("structured");
+
+  stopStructured();
+  const workspace = terminal.workspace;
+  await terminal.destroy(true);
+  rmSync(workspace, { recursive: true, force: true });
+});
+
 test("AgenticTerminal consumes mixed input files from input/pending", async () => {
   const terminal = new AgenticTerminal("cat", [], {
     debounceMs: 20,

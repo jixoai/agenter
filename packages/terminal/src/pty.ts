@@ -40,8 +40,7 @@ const createEnv = (color: TerminalColorMode): Record<string, string> => {
 
 export class Pty {
   private proc: Bun.Subprocess | null = null;
-  private readonly decoder = new TextDecoder();
-  private onData: ((chunk: string) => void) | null = null;
+  private onData: ((chunk: Uint8Array) => void) | null = null;
   private onExit: ((code: number | null) => void) | null = null;
 
   constructor(
@@ -53,7 +52,7 @@ export class Pty {
     private readonly cwd?: string,
   ) {}
 
-  setOnData(cb: (chunk: string) => void): void {
+  setOnData(cb: (chunk: Uint8Array) => void): void {
     this.onData = cb;
   }
 
@@ -72,8 +71,7 @@ export class Pty {
         rows: this.rows,
         name: process.env.TERM ?? "xterm-256color",
         data: (_term, data) => {
-          const chunk = this.decoder.decode(data, { stream: true });
-          this.onData?.(chunk);
+          this.onData?.(data);
         },
         exit: (_term, _code, _signal) => {
           // stream closed

@@ -14,7 +14,7 @@ export class XtermBridge {
   }
 
   /** Write data to xterm and wait for it to be parsed. */
-  write(data: string): Promise<void> {
+  write(data: string | Uint8Array): Promise<void> {
     return new Promise<void>((resolve) => {
       this.terminal.write(data, () => resolve());
     });

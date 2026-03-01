@@ -21,6 +21,7 @@
 - `Pty`：封装 Bun PTY 进程（启动、写入、退出、resize）
 - `XtermBridge`：封装 `@xterm/headless`（写入流、读取 buffer）
 - `renderer`：把 buffer 转成 ANSI/Cell 语义模型（`richLines`），再序列化成 `log.html`
+- `output-reader`：按 `latest + pre-file` 文件链读取 `output/*.log.html` 正文行
 - `Committer`：debounce + throttle + plain text 去噪提交
 - `HtmlPaginationStore`：分页写盘，维护 `latest.log.html` 与归档
 - `AgenticTerminal`：编排 PTY/xterm/committer/inbox 生命周期
@@ -50,6 +51,7 @@
 
 - `latest.log.html` 只保留活跃窗口
 - 超过分页阈值后封存为 `{start}~{end}.log.html`
+- 当 `viewportBase===0`（典型全屏 TUI 原地重绘）时，禁止按行号分页封存；必须持续重写 `latest.log.html`
 - 每个日志文件（`latest` + 所有归档）顶部都必须包含一个统一的 YAML 注释块
 - YAML 注释块必须同时包含 `meta` 与 `ati-source`
 - `meta.size` 必须存在（未知场景写 `unknown`）
@@ -119,9 +121,10 @@ Debug 约束（用于定位 resize 问题）：
 ## 4. 渲染与语义约束
 
 - 落盘链路必须是 **ANSI-first**：
-  - 先从 xterm buffer 生成 `richLines`（语义模型）
+  - 先从 xterm buffer 生成结构化快照（`richLines` + cursor + rows/cols）
   - 再按 `log-style` 序列化到 `log.html`
   - 禁止通过“先 rich-html 再正则剥离标签”得到 plain
+- 结构化快照是内核唯一信源；`rich/plain` 都是转录视图
 - 必须基于绝对 scrollback 渲染（非仅 viewport）
 - 渲染阶段输出面向 UI 观察：不得提前裁剪可见样式空白（例如 trailing inverse）
 - 插入 `<cursor/>` 表示输入焦点（仅当 xterm `showCursor=true`）
@@ -265,6 +268,10 @@ git-log 约束：
   - `debounceMs`, `throttleMs`, `maxLinesPerFile`
 - `TerminalColorMode = "none" | "16" | "256" | "truecolor"`
 - `TerminalLogStyle = "rich" | "plain"`
+- `StructuredRenderResult`
+  - `richLines`, `cursorAbsRow`, `cursorCol`, `cursorVisible`, `rows`, `cols`
+- `TerminalStructuredSnapshot`
+  - `StructuredRenderResult` + `seq` + `timestamp` + `status`
 
 核心类：
 
@@ -276,6 +283,21 @@ git-log 约束：
   - `destroy()`
   - `onOutput()`
   - `onExit()`
+  - `onStructured()`
+  - `getLatestStructured()`
+
+文件链读取 API（面向 demo/工具）：
+
+- `readTerminalOutput(options): Promise<string>`
+- `streamTerminalOutput(options): ReadableStream<string>`
+- `options`
+  - `outputDir: string`（workspace 下 `output` 目录）
+  - `offset?: number`（默认 `0`，尾部反向计数）
+  - `limit?: number`（默认 `-1`，不限制）
+- 语义约束：
+  - 读取顺序：`latest.log.html -> pre-file -> ...`，返回顺序固定为时间正序（旧到新）
+  - 只返回正文行（不返回 YAML 注释头）
+  - 返回内容保持 HTML 正文原样（保留 `<cursor/>` 等标签）
 
 ## 9. 测试基线
 

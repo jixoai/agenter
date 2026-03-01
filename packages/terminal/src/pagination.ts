@@ -261,6 +261,11 @@ export class HtmlPaginationStore {
     logStyle: PageMeta["logStyle"],
   ): void {
     const total = render.lines.length;
+    const canArchiveByScrollback = viewportBase > 0;
+    if (!canArchiveByScrollback) {
+      // Full-screen TUI often redraws in-place with baseY=0; keep latest mutable and avoid sealing stale rows.
+      this.latestStartLine = 1;
+    }
     if (total < this.latestStartLine) {
       this.latestStartLine = Math.max(1, total - this.maxLinesPerFile + 1);
     }
@@ -274,7 +279,7 @@ export class HtmlPaginationStore {
     };
 
     const pendingArchives: Array<{ name: string; path: string; lines: string[] }> = [];
-    while (total - this.latestStartLine + 1 > this.maxLinesPerFile) {
+    while (canArchiveByScrollback && total - this.latestStartLine + 1 > this.maxLinesPerFile) {
       const start = this.latestStartLine;
       const end = start + this.maxLinesPerFile - 1;
       const archiveName = `${start}~${end}.log.html`;

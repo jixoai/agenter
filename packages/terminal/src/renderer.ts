@@ -1,6 +1,6 @@
 import type { IBufferCell, IBufferLine } from "@xterm/headless";
 
-import type { RenderResult, RichLine, RichSpan, TerminalLogStyle } from "./types";
+import type { RenderResult, RichLine, RichSpan, StructuredRenderResult, TerminalLogStyle } from "./types";
 import type { XtermBridge } from "./xterm-bridge";
 
 type ColorTag = string | undefined;
@@ -208,25 +208,14 @@ const readCell = (line: IBufferLine, index: number): StyledChar => {
   return { text, style: toStyle(cell) };
 };
 
-const renderLine = (
-  chars: StyledChar[],
-  rowIndex: number,
-  cursorRow: number,
-  cursorCol: number,
-  cursorVisible: boolean,
-): { html: string; plain: string; rich: RichSpan[] } => {
+const renderLine = (chars: StyledChar[]): { rich: RichSpan[] } => {
   const end = chars.length - 1;
-  const hasCursor = cursorVisible && rowIndex === cursorRow;
   if (end < 0) {
     return {
-      html: hasCursor ? "<cursor/>" : "",
-      plain: "",
       rich: [],
     };
   }
 
-  let htmlOut = "";
-  let plainOut = "";
   const richOut: RichSpan[] = [];
   let currentStyle = emptyStyle;
   let currentText = "";
@@ -235,8 +224,6 @@ const renderLine = (
     if (currentText.length === 0) {
       return;
     }
-    htmlOut += wrapByStyle(currentText, currentStyle);
-    plainOut += currentText;
     richOut.push({
       text: currentText,
       fg: currentStyle.fgColor,
@@ -249,10 +236,6 @@ const renderLine = (
   };
 
   for (let index = 0; index <= end; index += 1) {
-    if (hasCursor && index === cursorCol) {
-      flush();
-      htmlOut += "<cursor/>";
-    }
     const item = chars[index] ?? { text: " ", style: emptyStyle };
     if (item.text.length === 0) {
       continue;
@@ -265,10 +248,7 @@ const renderLine = (
   }
 
   flush();
-  if (hasCursor && cursorCol > end) {
-    htmlOut += "<cursor/>";
-  }
-  return { html: htmlOut, plain: plainOut, rich: richOut };
+  return { rich: richOut };
 };
 
 export const stripHtmlTags = (text: string): string => text.replace(/<[^>]+>/g, "");
@@ -377,14 +357,20 @@ const richLineToPlainHtml = (line: RichLine, cursorCol: number | null): string =
   return `${escapeHtml(left)}<cursor/>${escapeHtml(right)}`;
 };
 
-const cursorColForRow = (render: RenderResult, row: number): number | null => {
+const cursorColForRow = (
+  render: Pick<StructuredRenderResult, "cursorVisible" | "cursorAbsRow" | "cursorCol">,
+  row: number,
+): number | null => {
   if (!render.cursorVisible || render.cursorAbsRow !== row) {
     return null;
   }
   return render.cursorCol;
 };
 
-export const serializeRenderLinesForLog = (render: RenderResult, logStyle: TerminalLogStyle): string[] => {
+export const serializeStructuredLinesForLog = (
+  render: Pick<StructuredRenderResult, "richLines" | "cursorVisible" | "cursorAbsRow" | "cursorCol">,
+  logStyle: TerminalLogStyle,
+): string[] => {
   const lines: string[] = [];
   for (let row = 0; row < render.richLines.length; row += 1) {
     const line = render.richLines[row] ?? { spans: [] };
@@ -393,6 +379,9 @@ export const serializeRenderLinesForLog = (render: RenderResult, logStyle: Termi
   }
   return lines;
 };
+
+export const serializeRenderLinesForLog = (render: RenderResult, logStyle: TerminalLogStyle): string[] =>
+  serializeStructuredLinesForLog(render, logStyle);
 
 const richLineToPlain = (line: RichLine): string => line.spans.map((span) => span.text).join("");
 
@@ -403,7 +392,7 @@ const richLineToPlain = (line: RichLine): string => line.spans.map((span) => spa
  */
 export const compactRenderForPersistence = (render: RenderResult): RenderResult => {
   const richLines = render.richLines.map((line) => trimRichLineTrailingWhitespace(line));
-  const lines = serializeRenderLinesForLog(
+  const lines = serializeStructuredLinesForLog(
     {
       ...render,
       richLines,
@@ -419,20 +408,16 @@ export const compactRenderForPersistence = (render: RenderResult): RenderResult 
   };
 };
 
-export const renderSemanticBuffer = (bridge: XtermBridge): RenderResult => {
+export const renderStructuredBuffer = (bridge: XtermBridge): StructuredRenderResult => {
   const buffer = bridge.buffer;
   const cursorAbsRow = buffer.baseY + buffer.cursorY;
   const cursorCol = buffer.cursorX;
   const cursorVisible = bridge.cursorVisible;
 
-  const lines: string[] = [];
-  const plainLines: string[] = [];
   const richLines: Array<{ spans: RichSpan[] }> = [];
   for (let row = 0; row < buffer.length; row += 1) {
     const line = buffer.getLine(row);
     if (!line) {
-      lines.push("");
-      plainLines.push("");
       richLines.push({ spans: [] });
       continue;
     }
@@ -441,13 +426,32 @@ export const renderSemanticBuffer = (bridge: XtermBridge): RenderResult => {
     for (let col = 0; col < bridge.cols; col += 1) {
       cells[col] = readCell(line, col);
     }
-    const rendered = renderLine(cells, row, cursorAbsRow, cursorCol, cursorVisible);
-    lines.push(rendered.html);
-    plainLines.push(rendered.plain);
+    const rendered = renderLine(cells);
     richLines.push({ spans: rendered.rich });
   }
 
-  return { lines, plainLines, richLines, cursorAbsRow, cursorCol, cursorVisible };
+  return {
+    richLines,
+    cursorAbsRow,
+    cursorCol,
+    cursorVisible,
+    rows: bridge.rows,
+    cols: bridge.cols,
+  };
+};
+
+export const renderSemanticBuffer = (bridge: XtermBridge): RenderResult => {
+  const structured = renderStructuredBuffer(bridge);
+  const lines = serializeStructuredLinesForLog(structured, "rich");
+  const plainLines = structured.richLines.map((line) => richLineToPlain(line));
+  return {
+    lines,
+    plainLines,
+    richLines: structured.richLines,
+    cursorAbsRow: structured.cursorAbsRow,
+    cursorCol: structured.cursorCol,
+    cursorVisible: structured.cursorVisible,
+  };
 };
 
 const paletteIndexToRgb = (index: number): [number, number, number] => {

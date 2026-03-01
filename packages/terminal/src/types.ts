@@ -42,6 +42,21 @@ export interface RichLine {
   spans: RichSpan[];
 }
 
+export interface StructuredRenderResult {
+  /** Styled lines rendered from xterm cells (absolute scrollback) */
+  richLines: RichLine[];
+  /** Absolute row of cursor in scrollback */
+  cursorAbsRow: number;
+  /** Column of cursor */
+  cursorCol: number;
+  /** Whether hardware cursor should be shown */
+  cursorVisible: boolean;
+  /** Current terminal rows */
+  rows: number;
+  /** Current terminal cols */
+  cols: number;
+}
+
 export interface RenderResult {
   /** Semantic HTML lines (absolute scrollback, trimEnd applied) */
   lines: string[];
@@ -55,6 +70,15 @@ export interface RenderResult {
   cursorCol: number;
   /** Whether hardware cursor should be shown */
   cursorVisible: boolean;
+}
+
+export interface TerminalStructuredSnapshot extends StructuredRenderResult {
+  /** Monotonic render sequence */
+  seq: number;
+  /** Unix epoch milliseconds */
+  timestamp: number;
+  /** Runtime terminal status */
+  status: TerminalStatus;
 }
 
 export interface PageMeta {
