@@ -200,9 +200,10 @@ ati [options] [command] [args]
   - 默认 `false`
   - 开启后会写 `output/cursor-debug.ndjson`，用于实验 cursor 位置问题
 - `--git-log[=<mode>]`
-  - 默认关闭
+  - 默认 `none`
   - `--git-log` 等价 `--git-log=normal`
-  - `mode`: `normal | verbose`
+  - `mode`: `none | normal | verbose`
+  - `none`：关闭 git 历史提交
   - `normal`：只在关键帧提交（archive / resize-seal / resize-snapshot / status-idle）
   - `verbose`：每次落盘都提交
 

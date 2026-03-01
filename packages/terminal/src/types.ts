@@ -26,8 +26,8 @@ export type TerminalColorMode = "none" | "16" | "256" | "truecolor";
 export type TerminalColorOption = TerminalColorMode | "auto";
 export type TerminalLogStyle = "rich" | "plain";
 export type TerminalLogStyleOption = TerminalLogStyle | "auto";
-export type TerminalGitLogMode = "normal" | "verbose";
-export type TerminalGitLogOption = TerminalGitLogMode | "off";
+export type TerminalGitLogMode = "none" | "normal" | "verbose";
+export type TerminalGitLogOption = TerminalGitLogMode;
 
 export interface RichSpan {
   text: string;

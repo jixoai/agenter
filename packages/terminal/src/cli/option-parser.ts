@@ -185,18 +185,18 @@ export const parseLogStyleOption = (rawInput: string | undefined, keepStyle: boo
   return keepStyle ? "rich" : "plain";
 };
 
-export const parseGitLogOption = (rawInput: string | undefined): false | TerminalGitLogMode => {
+export const parseGitLogOption = (rawInput: string | undefined): TerminalGitLogMode => {
   if (rawInput === undefined) {
-    return false;
+    return "none";
   }
   const normalized = rawInput.trim().toLowerCase();
   if (normalized.length === 0 || normalized === "true" || normalized === "on" || normalized === "yes") {
     return "normal";
   }
   if (normalized === "off" || normalized === "false" || normalized === "none" || normalized === "no") {
-    return false;
+    return "none";
   }
-  if (normalized === "normal" || normalized === "verbose") {
+  if (normalized === "normal" || normalized === "verbose" || normalized === "none") {
     return normalized;
   }
   throw new Error(`Unsupported --git-log value: "${rawInput}"`);

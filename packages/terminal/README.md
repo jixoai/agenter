@@ -47,7 +47,8 @@ ati [options] [command] [args]
 - `--debug-cursor`：开启 cursor 实验日志（写入 `output/cursor-debug.ndjson`）
 - `--git-log[=<mode>]`：为 workspace 启用 git 历史记录
   - `--git-log` 等价 `--git-log=normal`
-  - `mode` 支持：`normal` / `verbose`
+  - `mode` 支持：`none` / `normal` / `verbose`
+  - `none`：关闭 git 历史提交（默认）
   - `normal`：关键帧提交（archive / resize split / resize snapshot / status idle）
   - `verbose`：每次落盘都提交
 

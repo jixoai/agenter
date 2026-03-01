@@ -39,7 +39,7 @@ export class TerminalGitLogger {
 
   constructor(
     private readonly workspace: string,
-    private readonly mode: TerminalGitLogMode,
+    private readonly mode: Exclude<TerminalGitLogMode, "none">,
   ) {
     const debugDir = join(workspace, "debug");
     mkdirSync(debugDir, { recursive: true });
@@ -53,7 +53,7 @@ export class TerminalGitLogger {
     };
   }
 
-  getMode(): TerminalGitLogMode {
+  getMode(): Exclude<TerminalGitLogMode, "none"> {
     return this.mode;
   }
 

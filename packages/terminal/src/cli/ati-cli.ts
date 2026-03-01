@@ -42,7 +42,7 @@ interface ResolvedRunArgs {
   color: TerminalColorMode;
   logStyle: TerminalLogStyle;
   debugCursor: boolean;
-  gitLog: false | TerminalGitLogMode;
+  gitLog: TerminalGitLogMode;
 }
 
 interface CommandArgsShape {
@@ -120,8 +120,7 @@ const resolveRunArgs = (input: RunArgs): ResolvedRunArgs => {
 const printSessionMeta = (resolved: ResolvedRunArgs): string => {
   const requestedSize = resolved.size.requested.normalized;
   const effectiveSize = `${resolved.size.rows}:${resolved.size.cols}`;
-  const gitLog = resolved.gitLog ? resolved.gitLog : "off";
-  return `[ati-meta] size=${requestedSize} (effective ${effectiveSize}) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${gitLog} output-dir=${resolved.outputRoot}`;
+  return `[ati-meta] size=${requestedSize} (effective ${effectiveSize}) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${resolved.gitLog} output-dir=${resolved.outputRoot}`;
 };
 
 const runTerminalSession = async (input: RunArgs): Promise<number> => {
@@ -225,9 +224,8 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
     lastResizeSize = next;
     await terminal.resize(next.cols, next.rows);
     logDebug("resize.applied", { next });
-    const gitLog = runResolved.gitLog ? runResolved.gitLog : "off";
     tui?.updateMeta(
-      `[ati-meta] size=${runResolved.size.requested.normalized} (effective ${next.rows}:${next.cols}) color=${runResolved.requestedColor} (effective ${runResolved.color}) log-style=${runResolved.logStyle} git-log=${gitLog} output-dir=${runResolved.outputRoot}`,
+      `[ati-meta] size=${runResolved.size.requested.normalized} (effective ${next.rows}:${next.cols}) color=${runResolved.requestedColor} (effective ${runResolved.color}) log-style=${runResolved.logStyle} git-log=${runResolved.gitLog} output-dir=${runResolved.outputRoot}`,
     );
   };
 
@@ -354,14 +352,13 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
       requestedColor: resolved.requestedColor,
       resolvedColor: resolved.color,
       logStyle: resolved.logStyle,
-      gitLog: resolved.gitLog ? resolved.gitLog : "off",
+      gitLog: resolved.gitLog,
       outputRoot: resolved.outputRoot,
       program: resolved.program,
       args: resolved.args,
     });
     if (useTui) {
-      const startupGitLog = resolved.gitLog ? resolved.gitLog : "off";
-      let metaLine = `[ati-meta] size=${resolved.size.requested.normalized} (pending box) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${startupGitLog} output-dir=${resolved.outputRoot}`;
+      let metaLine = `[ati-meta] size=${resolved.size.requested.normalized} (pending box) color=${resolved.requestedColor} (effective ${resolved.color}) log-style=${resolved.logStyle} git-log=${resolved.gitLog} output-dir=${resolved.outputRoot}`;
       tui = await startAtiTui({
         metaLine,
         onInput: (data) => {
@@ -525,7 +522,7 @@ export const runAtiCli = async (argvInput?: string[]): Promise<number> => {
     })
     .option("git-log", {
       type: "string",
-      describe: "Enable workspace git history logging (normal|verbose). Bare flag defaults to normal.",
+      describe: "Enable workspace git history logging (none|normal|verbose). Bare flag defaults to normal.",
     })
     .command(
       "run <program> [args..]",

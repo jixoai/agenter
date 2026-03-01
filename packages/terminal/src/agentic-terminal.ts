@@ -36,7 +36,7 @@ const resolveProfile = (profile: TerminalProfile | undefined) => {
     resumePid: next.resumePid,
     cwd: next.cwd,
     debugCursor: next.debugCursor ?? false,
-    gitLog: next.gitLog ?? false,
+    gitLog: next.gitLog ?? "none",
   };
 };
 
@@ -123,7 +123,7 @@ export class AgenticTerminal {
         cwd: this.profile.cwd,
       },
     });
-    if (this.profile.gitLog) {
+    if (this.profile.gitLog !== "none" && this.profile.gitLog !== false) {
       this.gitLogger = new TerminalGitLogger(this.workspace, this.profile.gitLog);
       this.gitLogger.init();
       this.debug("git-log.enabled", { mode: this.profile.gitLog });
@@ -589,7 +589,7 @@ export class AgenticTerminal {
     preFile: string | null;
     nextFile?: string | null;
   }): void {
-    if (!this.gitLogger || this.profile.gitLog === false) {
+    if (!this.gitLogger || this.profile.gitLog === false || this.profile.gitLog === "none") {
       return;
     }
     this.gitLogger.commit(input);

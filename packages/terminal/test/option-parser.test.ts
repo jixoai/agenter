@@ -64,12 +64,13 @@ test("parse --log-style rejects unsupported values", () => {
 });
 
 test("parse --git-log supports bool-like and mode values", () => {
-  expect(parseGitLogOption(undefined)).toBe(false);
+  expect(parseGitLogOption(undefined)).toBe("none");
   expect(parseGitLogOption("")).toBe("normal");
   expect(parseGitLogOption("true")).toBe("normal");
   expect(parseGitLogOption("normal")).toBe("normal");
   expect(parseGitLogOption("verbose")).toBe("verbose");
-  expect(parseGitLogOption("off")).toBe(false);
+  expect(parseGitLogOption("off")).toBe("none");
+  expect(parseGitLogOption("none")).toBe("none");
 });
 
 test("parse --git-log rejects unsupported values", () => {
