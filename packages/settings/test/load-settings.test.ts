@@ -1,0 +1,99 @@
+import { describe, expect, test } from "bun:test";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+
+import { loadSettings } from "../src/load-settings";
+import { ResourceLoader } from "../src/resource-loader";
+import { settingsSource } from "../src/source";
+
+const writeJson = async (path: string, value: unknown): Promise<void> => {
+  await mkdir(resolve(path, ".."), { recursive: true });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+};
+
+describe("@agenter/settings", () => {
+  test("loadSettings merges layered sources and normalizes file paths", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(homeDir, ".agenter", "settings.json"), {
+      lang: "zh-Hans",
+      prompt: {
+        agenterPath: "~/.agenter/AGENTER.mdx",
+      },
+      terminal: {
+        helpSources: {
+          iflow: "~/.agenter/man/iflow.md",
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      terminal: {
+        presets: {
+          iflow: {
+            command: ["iflow"],
+            cwd: "./tmp-workspace",
+            helpSource: "./.agenter/man/iflow.md",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "settings.local.json"), {
+      ai: {
+        model: "deepseek-reasoner",
+      },
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+      homeDir,
+    });
+
+    expect(loaded.settings.lang).toBe("zh-Hans");
+    expect(loaded.settings.ai?.model).toBe("deepseek-reasoner");
+    expect(loaded.settings.prompt?.agenterPath).toBe(join(homeDir, ".agenter", "AGENTER.mdx"));
+    expect(loaded.settings.terminal?.helpSources?.iflow).toBe(join(homeDir, ".agenter", "man", "iflow.md"));
+    expect(loaded.settings.terminal?.presets?.iflow?.cwd).toBe(resolve(projectRoot, "./tmp-workspace"));
+    expect(loaded.settings.terminal?.presets?.iflow?.helpSource).toBe(resolve(projectRoot, "./.agenter/man/iflow.md"));
+
+    expect(loaded.meta.sources).toHaveLength(3);
+    expect(loaded.meta.sources.every((entry) => entry.exists)).toBeTrue();
+  });
+
+  test("resource loader resolves builtins, paths and custom protocol", async () => {
+    const loader = new ResourceLoader({
+      context: {
+        projectRoot: "/repo/project",
+        cwd: "/repo/project/demo",
+        homeDir: "/home/tester",
+      },
+    });
+
+    loader.registerAlias("remote", () => "mem://remote/settings.json");
+    loader.registerProtocol("mem", {
+      readText: async () => '{"lang":"en"}',
+    });
+
+    const descriptors = settingsSource(["user", "project", "local", "./config", "remote"], {
+      projectRoot: "/repo/project",
+      cwd: "/repo/project/demo",
+      homeDir: "/home/tester",
+      loader,
+    });
+    const byId = Object.fromEntries(descriptors.map((entry) => [entry.id, entry]));
+
+    expect(byId.user.path).toBe("/home/tester/.agenter/settings.json");
+    expect(byId.project.path).toBe("/repo/project/.agenter/settings.json");
+    expect(byId.local.path).toBe("/repo/project/.agenter/settings.local.json");
+    expect(byId["./config"].path).toBe("/repo/project/demo/config/settings.json");
+    expect(byId.remote.uri).toBe("mem://remote/settings.json");
+
+    const text = await loader.readText("remote");
+    expect(text).toBe('{"lang":"en"}');
+  });
+});
