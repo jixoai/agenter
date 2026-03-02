@@ -1,0 +1,24 @@
+{
+  "name": "@agenter/app-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agenter/i18n-core": "workspace:*",
+    "@agenter/i18n-en": "workspace:*",
+    "@agenter/mdx2md": "workspace:*",
+    "@agenter/settings": "workspace:*",
+    "@tanstack/ai": "^0.6.1",
+    "zod": "^4.0.0"
+  },
+  "peerDependencies": {
+    "@agenter/i18n-en": "workspace:*",
+    "@agenter/i18n-zh-hans": "workspace:*"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "agenter-workspace",
+  "private": true,
+  "workspaces": [
+    "demo",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:i18n": "bun run --filter '@agenter/i18n-*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter '*' test"
+  }
+}
