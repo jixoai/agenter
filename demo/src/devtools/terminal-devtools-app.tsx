@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 
-import { readTerminalOutput } from "../../../packages/terminal/src";
+import { readTerminalOutput } from "@agenter/terminal";
 import type { RuntimeConfig } from "../app/runtime-config";
 import { createEmptySnapshot, type DebugLogLine, type TerminalSnapshot } from "../core/protocol";
 import { TerminalAdapter } from "../core/terminal-adapter";
@@ -26,55 +26,6 @@ const formatMeta = (line: DebugLogLine): string => {
 const formatLogLine = (line: DebugLogLine): string => {
   const time = new Date(line.timestamp).toISOString().slice(11, 23);
   return `${time} [${line.channel}/${line.level}] ${line.message}${formatMeta(line)}`;
-};
-
-const decoder = new TextDecoder();
-
-const runGitCommand = (cwd: string, args: string[]): { ok: boolean; code: number; stdout: string; stderr: string } => {
-  const result = Bun.spawnSync({
-    cmd: ["git", ...args],
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    ok: result.exitCode === 0,
-    code: result.exitCode,
-    stdout: decoder.decode(result.stdout).trimEnd(),
-    stderr: decoder.decode(result.stderr).trimEnd(),
-  };
-};
-
-const ensureGitHead = (cwd: string): { ok: true; hash: string } | { ok: false; error: string } => {
-  const head = runGitCommand(cwd, ["rev-parse", "HEAD"]);
-  if (head.ok && head.stdout) {
-    return { ok: true, hash: head.stdout };
-  }
-
-  const add = runGitCommand(cwd, ["add", "-A"]);
-  if (!add.ok) {
-    return {
-      ok: false,
-      error: `git add failed: ${add.stderr || add.stdout || `code=${add.code}`}`,
-    };
-  }
-
-  const commit = runGitCommand(cwd, ["commit", "--allow-empty", "-m", "devtools(mark): baseline"]);
-  if (!commit.ok) {
-    return {
-      ok: false,
-      error: `git commit failed: ${commit.stderr || commit.stdout || `code=${commit.code}`}`,
-    };
-  }
-
-  const nextHead = runGitCommand(cwd, ["rev-parse", "HEAD"]);
-  if (!nextHead.ok || !nextHead.stdout) {
-    return {
-      ok: false,
-      error: `git rev-parse failed after baseline commit: ${nextHead.stderr || nextHead.stdout || `code=${nextHead.code}`}`,
-    };
-  }
-  return { ok: true, hash: nextHead.stdout };
 };
 
 interface TerminalDevtoolsAppProps {
@@ -119,7 +70,6 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
   const terminalContentRef = useRef<TextRenderable | null>(null);
   const logsContentRef = useRef<TextRenderable | null>(null);
   const historyRef = useRef<TerminalSnapshot[]>([]);
-  const markCommitRef = useRef<{ hash: string; timestamp: number } | null>(null);
 
   useEffect(() => {
     const stopLogs = logger.subscribe((line) => {
@@ -218,36 +168,28 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
       });
       return;
     }
-    const workspace = adapter.getWorkspace();
-    if (!workspace) {
-      logger.log({ channel: "error", level: "error", message: "devtools.action.markDirty failed: workspace not ready" });
-      return;
-    }
-
-    await adapter.forceCommit();
-    const head = ensureGitHead(workspace);
-    if (!head.ok) {
+    const marked = await adapter.markDirty();
+    if (!marked.ok || !marked.hash) {
       logger.log({
         channel: "error",
         level: "error",
-        message: "devtools.action.markDirty failed: git HEAD unavailable",
-        meta: { error: head.error },
+        message: "devtools.action.markDirty failed",
+        meta: { error: marked.reason ?? "unknown" },
       });
       return;
     }
 
-    markCommitRef.current = { hash: head.hash, timestamp: Date.now() };
-    setDirtyState((prev) => ({
+    setDirtyState({
       active: true,
-      markHash: head.hash,
-      releaseHash: prev.releaseHash,
-      diffBytes: prev.diffBytes,
-    }));
+      markHash: marked.hash,
+      releaseHash: "none",
+      diffBytes: 0,
+    });
     logger.log({
       channel: "ui",
       level: "info",
       message: "devtools.action.markDirty",
-      meta: { markHash: head.hash },
+      meta: { markHash: marked.hash },
     });
   };
 
@@ -260,84 +202,63 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
       });
       return;
     }
-    const mark = markCommitRef.current;
-    if (!mark) {
+    if (!dirtyState.active || dirtyState.markHash === "none") {
       logger.log({ channel: "ui", level: "warn", message: "devtools.action.releaseDirty skipped: mark missing" });
       return;
     }
-
-    const workspace = adapter.getWorkspace();
-    if (!workspace) {
-      logger.log({ channel: "error", level: "error", message: "devtools.action.releaseDirty failed: workspace not ready" });
-      return;
-    }
-
-    await adapter.forceCommit();
-    const head = ensureGitHead(workspace);
-    if (!head.ok) {
+    const sliced = await adapter.sliceDirty();
+    if (!sliced.ok) {
       logger.log({
         channel: "error",
         level: "error",
-        message: "devtools.action.releaseDirty failed: git HEAD unavailable",
-        meta: { error: head.error },
+        message: "devtools.action.releaseDirty failed",
+        meta: { error: sliced.reason ?? "unknown" },
+      });
+      return;
+    }
+    if (!sliced.changed) {
+      logger.log({
+        channel: "ui",
+        level: "warn",
+        message: "devtools.action.releaseDirty no diff",
+        meta: { markHash: sliced.fromHash ?? "none", releaseHash: sliced.toHash ?? "none" },
       });
       return;
     }
 
-    const diff = runGitCommand(workspace, ["diff", "--no-color", "--patience", mark.hash, "--", "output"]);
-    if (!diff.ok) {
-      logger.log({
-        channel: "error",
-        level: "error",
-        message: "devtools.action.releaseDirty failed: git diff error",
-        meta: { code: diff.code, stderr: diff.stderr || "empty" },
-      });
-      return;
-    }
-
-    if (diff.stdout.length === 0) {
-      logger.log({
-        channel: "error",
-        level: "error",
-        message: "devtools.action.releaseDirty failed: diff is empty since mark",
-        meta: { markHash: mark.hash, releaseHash: head.hash },
-      });
-      return;
-    }
-
-    const patchPath = artifacts.saveText("dirty-release", diff.stdout, "patch");
+    const patchPath = artifacts.saveText("dirty-release", sliced.diff, "patch");
     const metaPath = artifacts.save("dirty-release-meta", {
-      markHash: mark.hash,
-      releaseHash: head.hash,
-      markTimestamp: mark.timestamp,
+      markHash: sliced.fromHash,
+      releaseHash: sliced.toHash,
       releaseTimestamp: Date.now(),
       patchPath,
       strategy: "git-diff-patience",
     });
 
-    markCommitRef.current = null;
+    const nextMark = sliced.toHash ?? "none";
     setDirtyState({
-      active: false,
-      markHash: mark.hash,
-      releaseHash: head.hash,
-      diffBytes: diff.stdout.length,
+      active: true,
+      markHash: nextMark,
+      releaseHash: sliced.toHash ?? "none",
+      diffBytes: sliced.bytes,
     });
     logger.log({
       channel: "ui",
       level: "info",
-      message: "devtools.action.releaseDirty",
+      message: "devtools.action.sliceDirty",
       meta: {
         patchPath,
         metaPath,
-        markHash: mark.hash,
-        releaseHash: head.hash,
-        bytes: diff.stdout.length,
+        markHash: sliced.fromHash ?? "none",
+        releaseHash: sliced.toHash ?? "none",
+        nextMark,
+        bytes: sliced.bytes,
       },
     });
   };
 
   const releaseDirtyWithGuard = (): void => {
-    if (!markCommitRef.current) {
+    if (!dirtyState.active || dirtyState.markHash === "none") {
       logger.log({ channel: "ui", level: "warn", message: "devtools.action.releaseDirty blocked: mark first (Ctrl+1)" });
       return;
     }
@@ -523,13 +444,13 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
               </box>
               <box
                 border
-                borderColor={markCommitRef.current ? "gray" : "yellow"}
+                borderColor={dirtyState.active ? "gray" : "yellow"}
                 padding={1}
                 minWidth={24}
                 marginLeft={1}
                 onMouseDown={releaseDirtyWithGuard}
               >
-                <text>[Ctrl+2] releaseDirty</text>
+                <text>[Ctrl+2] sliceDirty</text>
               </box>
             </box>
             <box flexDirection="row" marginTop={1}>
@@ -552,7 +473,7 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
           <text marginTop={1}>
             dirty={dirtyState.active ? "true" : "false"} mark={dirtyState.markHash} release={dirtyState.releaseHash} bytes={dirtyState.diffBytes}
           </text>
-          <text>{markCommitRef.current ? "release ready" : "release blocked: mark first"}</text>
+          <text>{dirtyState.active ? "slice ready" : "slice blocked: mark first"}</text>
           <text>viewSeq={displaySeq ?? snapshot.seq} | Tab 切焦点 | Ctrl+C(terminal)=interrupt | Ctrl+Q=quit</text>
           <scrollbox border borderColor="gray" padding={1} marginTop={1} flexGrow={1}>
             <text ref={logsContentRef} selectable>

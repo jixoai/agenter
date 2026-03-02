@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { AgenticTerminal, type RenderResult, type TerminalGitLogMode, type TerminalStatus } from "../../../packages/terminal/src";
+import { AgenticTerminal, type RenderResult, type TerminalGitLogMode, type TerminalStatus } from "@agenter/terminal";
 
 import type { DebugLogger } from "../infra/logger";
 import { createEmptySnapshot, type TerminalRichLine, type TerminalSnapshot } from "./protocol";
@@ -24,6 +24,30 @@ export interface TerminalAdapterConfig {
   outputRoot?: string;
   gitLog?: false | TerminalGitLogMode;
   logStyle?: "rich" | "plain";
+}
+
+export interface TerminalDirtySlice {
+  ok: boolean;
+  changed: boolean;
+  fromHash: string | null;
+  toHash: string | null;
+  diff: string;
+  bytes: number;
+  reason?: string;
+}
+
+export interface SliceDirtyOptions {
+  remark?: boolean;
+  wait?: boolean;
+  timeoutMs?: number;
+  pollMs?: number;
+}
+
+export interface PendingInputOptions {
+  extension?: "xml" | "txt";
+  wait?: boolean;
+  timeoutMs?: number;
+  pollMs?: number;
 }
 
 export class TerminalAdapter {
@@ -175,11 +199,91 @@ export class TerminalAdapter {
     this.terminal.writeRaw(input);
   }
 
+  async writeMixed(input: string, options: PendingInputOptions = {}): Promise<{ ok: boolean; reason?: string }> {
+    if (!this.terminal) {
+      return { ok: false, reason: "terminal-not-started" };
+    }
+    const result = await this.terminal.enqueuePendingInput(input, options);
+    if (!result.ok) {
+      this.logger.log({
+        channel: "error",
+        level: "error",
+        message: "terminal.writeMixed failed",
+        meta: {
+          reason: result.reason ?? "unknown",
+          file: result.file,
+        },
+      });
+      return { ok: false, reason: result.reason ?? "unknown" };
+    }
+    this.logger.log({
+      channel: "agent",
+      level: "debug",
+      message: "terminal.writeMixed",
+      meta: {
+        file: result.file,
+        doneFile: result.doneFile ?? "none",
+      },
+    });
+    return { ok: true };
+  }
+
   async forceCommit(): Promise<void> {
     if (!this.terminal) {
       return;
     }
     await this.terminal.forceCommit();
+  }
+
+  async markDirty(): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    if (!this.terminal) {
+      return { ok: false, hash: null, reason: "terminal-not-started" };
+    }
+    const result = await this.terminal.markDirty();
+    if (!result.ok) {
+      this.logger.log({
+        channel: "error",
+        level: "error",
+        message: "terminal.markDirty failed",
+        meta: { reason: result.reason ?? "unknown" },
+      });
+      return result;
+    }
+    this.logger.log({
+      channel: "agent",
+      level: "debug",
+      message: "terminal.markDirty",
+      meta: { hash: result.hash ?? "none" },
+    });
+    return result;
+  }
+
+  async sliceDirty(options: SliceDirtyOptions = {}): Promise<TerminalDirtySlice> {
+    if (!this.terminal) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+        reason: "terminal-not-started",
+      };
+    }
+    const result = await this.terminal.sliceDirty(options);
+    this.logger.log({
+      channel: "agent",
+      level: "debug",
+      message: "terminal.sliceDirty",
+      meta: {
+        fromHash: result.fromHash ?? "none",
+        toHash: result.toHash ?? "none",
+        bytes: result.bytes,
+        changed: result.changed,
+        remark: options.remark ?? true,
+      },
+    });
+    return result;
   }
 
   interrupt(): void {

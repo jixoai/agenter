@@ -1,7 +1,26 @@
 node_modules/
+**/node_modules/
 tmp/
 dist/
 bundle/
 build/
-demo/
+coverage/
+.DS_Store
+
+# demo runtime artifacts
+demo/logs/
+demo/tmp/
+demo/.tmp-prompts/
+demo/demo/
+demo/.env
+
+# terminal runtime artifacts
+packages/terminal/tmp/
+
+# i18n build artifacts
+packages/i18n-en/prompts.json
+packages/i18n-zh-Hans/prompts.json
+
+# local notes
+CHAT.md
 easy-spec/

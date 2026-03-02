@@ -16,8 +16,12 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
+    "@agenter/app-server": "workspace:*",
+    "@agenter/settings": "workspace:*",
+    "@agenter/terminal": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",
+    "@tanstack/ai": "^0.6.1",
     "@xterm/headless": "latest",
     "react": "^19.0.0",
     "zod": "^4.0.0"

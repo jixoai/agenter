@@ -17,6 +17,12 @@ bun install
 bun run start
 ```
 
+默认会加载 `demo/.agenter/settings.json`，并据此决定：
+- 终端预设与自启动（`terminal.presets` + `features.terminal.bootTerminals`）
+- AI 配置（`ai.*`，例如 DeepSeek）
+- 提示词根目录（默认从 settings source 目录推导）
+- 语言包（`lang`，默认 `en`，无效值自动回退到 `en`）
+
 ### Terminal Devtools 入口（人工调试模式）
 
 ```bash
@@ -24,7 +30,7 @@ bun run start:terminal-devtools
 # watch
 bun run dev:terminal-devtools
 
-# iflow 快速入口（默认 --cmd=iflow 且 --git-log=normal）
+# iflow 快速入口
 bun run start:iflow-devtools
 bun run dev:iflow-devtools
 ```
@@ -66,21 +72,88 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 - `logs/terminal-devtools/analysis/report-*.json`
 - `logs/terminal-devtools/analysis/raw/*.log`
 
-## 可选环境变量
+## AI 配置（推荐通过 settings）
 
-- `DEEPSEEK_API_KEY`
-- `DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com/v1`）
-- `DEEPSEEK_MODEL`（默认 `deepseek-chat`）
+- `demo/.agenter/settings.json` 的 `ai` 字段是主配置
+- 常用字段：`provider/baseUrl/model/temperature/maxRetries/apiKey/apiKeyEnv`
+- 若未配置 `apiKey`，会读取 `apiKeyEnv`（默认可用 `DEEPSEEK_API_KEY`）
 
 未配置 `DEEPSEEK_API_KEY` 时会使用本地回退策略（不阻塞 Demo）。
 
+## Terminal 焦点策略（LoopBus / Tool 协同）
+
+`settings.json` 使用 `features.terminal`：
+
+- `bootTerminals`: `Array<string | { id, focus?, autoRun? }>`
+  - `focus=true` 的 terminal 会成为初始焦点（exclusive 模式仅一个焦点）
+  - `autoRun=false` 的 terminal 不会在启动时自动运行
+- `focusMode`: 当前固定 `"exclusive"`
+- `unfocusedSignal`: 当前固定 `"summary"`
+
+运行时语义：
+- focused terminal：LoopBus 自动注入 diff（默认 `remark=true`）
+- unfocused terminal：LoopBus 只注入 dirty summary
+- AI 如需 unfocused terminal 的细节，可主动调用 `terminal_sliceDirty`
+- 对 focused terminal 调 `terminal_sliceDirty` 会得到 `ignored=true`
+
+## 统一资源加载器
+
+`@agenter/settings` 现在使用统一 ResourceLoader 解析并读取资源，支持：
+- `user` / `project` / `local` 内置 source
+- 路径：`./`、`../`、`/`、`~/`
+- 协议：`file:`、`http:`、`https:`
+- 自定义扩展：可注册 alias（如 `git:`、`npm:`、`jsr:` 的前置映射）和 protocol handler
+
+因此提示词路径可以直接使用远程 URL，例如：
+
+```json
+{
+  "terminal": {
+    "presets": {
+      "iflow": {
+        "command": ["iflow"],
+        "helpSource": "https://developers.openai.com/codex/cli/slash-commands.md"
+      }
+    }
+  }
+}
+```
+
 ## 提示词文件
 
-- `prompts/agenter-system.md`
-- `prompts/iflow-workflow.md`
-- `prompts/iflow-help.md`
+- `demo/.agenter/AGENTER.mdx`
+- `demo/.agenter/man/iflow.md`
+
+说明：
+- `AGENTER.mdx` 是用户自由覆盖层，可以为空。
+- 核心工作方式与系统模板由 i18n 包内置（`packages/i18n-*/prompts/*.mdx`）。
+- 终端 help 通过 `terminal.presets.<id>.helpSource` + `terminal_run` 的 `<CliHelp command="..."/>` 注入。
 
 运行中可在 chat 输入 `/reload` 热加载提示词。
+
+## 多语言提示词包
+
+- 语言包目录：
+  - `packages/i18n-en/prompts/*.mdx`
+  - `packages/i18n-zh-Hans/prompts/*.mdx`
+- `settings.lang` 控制当前语言（如 `en` / `zh-Hans`）。
+- 默认语言是 `en`，找不到或写错语言时自动回退到 `en`。
+
+`@agenter/app-server` 的语言包解析模式：
+
+- `dev` 模式：读取 `@agenter/app-server` 的 `peerDependencies`。
+  - 版本为 `workspace:*` 时，直接读取工作区 `packages/i18n-*/prompts/` 源文件。
+- `prod` 模式：当 `peerDependencies` 版本是固定 semver（如 `0.0.1`）时：
+  - 自动下载 npm 语言包并缓存到 `~/.agenter/i18n/<lang>@<version>/prompts.json`。
+
+说明：
+- `@agenter/i18n-en` 同时是 `@agenter/app-server` 的 `dependencies` 与 `peerDependencies`，保证默认包可用且版本联动可见。
+
+构建语言包（从 `prompts/*.mdx|*.md` 生成 `prompts.json`）：
+
+```bash
+bun run build:i18n
+```
 
 ## 日志目录
 
