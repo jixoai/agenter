@@ -1,0 +1,14 @@
+{
+  "name": "@agenter/i18n-zh-hans",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "bun run src/build.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agenter/i18n-core": "workspace:*"
+  }
+}
