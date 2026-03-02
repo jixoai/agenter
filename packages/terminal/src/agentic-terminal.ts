@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { Committer } from "./committer";
@@ -14,7 +14,17 @@ import {
   serializeRenderLinesForLog,
   serializeStructuredLinesForLog,
 } from "./renderer";
-import type { RenderResult, TerminalProfile, TerminalStatus, TerminalStructuredSnapshot } from "./types";
+import type {
+  RenderResult,
+  TerminalDirtyMarkResult,
+  TerminalDirtySliceOptions,
+  TerminalDirtySliceResult,
+  TerminalPendingInputOptions,
+  TerminalPendingInputResult,
+  TerminalProfile,
+  TerminalStatus,
+  TerminalStructuredSnapshot,
+} from "./types";
 import { DEFAULTS } from "./types";
 import { createWorkspace, destroyWorkspace } from "./workspace";
 import { XtermBridge } from "./xterm-bridge";
@@ -79,10 +89,12 @@ export class AgenticTerminal {
   private readonly renderListeners: Array<(render: ReturnType<typeof renderSemanticBuffer>) => void> = [];
   private readonly structuredListeners: Array<(snapshot: TerminalStructuredSnapshot) => void> = [];
   private readonly outputDecoder = new TextDecoder();
+  private readonly gitDecoder = new TextDecoder();
   private renderSerial = 0;
   private structuredSerial = 0;
   private debugLogPath = "";
   private gitLogger: TerminalGitLogger | null = null;
+  private dirtyMarkHash: string | null = null;
   private lastRender: RenderResult = {
     lines: [],
     plainLines: [],
@@ -221,6 +233,7 @@ export class AgenticTerminal {
     this.pty.start();
     this.inbox.start();
     this.started = true;
+    this.dirtyMarkHash = null;
     this.markBusy();
     this.markIdle();
   }
@@ -232,6 +245,53 @@ export class AgenticTerminal {
   public async writeMixed(mixedInput: string): Promise<void> {
     this.ensureStarted();
     await this.enqueueMixedInput(mixedInput, "api");
+  }
+
+  /**
+   * Enqueue mixed input through `input/pending`, then wait for `done/failed`.
+   * This keeps one consistent input path for automation and manual workflows.
+   */
+  public async enqueuePendingInput(
+    mixedInput: string,
+    options: TerminalPendingInputOptions = {},
+  ): Promise<TerminalPendingInputResult> {
+    this.ensureStarted();
+    const extension = options.extension ?? "txt";
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const file = `${id}.${extension}`;
+    const pendingPath = join(this.workspace, "input", "pending", file);
+    const doneFile = `${file}.done`;
+    const failedFile = `${file}.failed`;
+    const donePath = join(this.workspace, "input", "done", doneFile);
+    const failedPath = join(this.workspace, "input", "failed", failedFile);
+
+    writeFileSync(pendingPath, mixedInput, "utf8");
+    this.appendInputLog(mixedInput, `queue:${file}`);
+    this.debug("input.enqueue", { id, file, extension });
+    this.inbox?.poke();
+
+    const wait = options.wait ?? true;
+    if (!wait) {
+      return { ok: true, id, file };
+    }
+
+    const timeoutMs = Math.max(0, options.timeoutMs ?? 30_000);
+    const pollMs = Math.max(20, options.pollMs ?? 100);
+    const startAt = Date.now();
+    while (Date.now() - startAt <= timeoutMs) {
+      if (await Bun.file(donePath).exists()) {
+        this.debug("input.done", { id, file, doneFile });
+        return { ok: true, id, file, doneFile };
+      }
+      if (await Bun.file(failedPath).exists()) {
+        this.debug("input.failed", { id, file, failedFile });
+        return { ok: false, id, file, failedFile, reason: "input-processing-failed" };
+      }
+      await Bun.sleep(pollMs);
+    }
+
+    this.debug("input.timeout", { id, file, timeoutMs });
+    return { ok: false, id, file, reason: "input-timeout" };
   }
 
   /**
@@ -295,6 +355,48 @@ export class AgenticTerminal {
     this.ensureStarted();
     await this.renderQueue;
     await this.commitSnapshotNow("force");
+  }
+
+  public async markDirty(): Promise<TerminalDirtyMarkResult> {
+    this.ensureStarted();
+    if (!this.isGitLogEnabled()) {
+      return { ok: false, hash: null, reason: "git-log-disabled" };
+    }
+    await this.forceCommit();
+    const head = this.ensureGitHead();
+    if (!head.ok) {
+      return { ok: false, hash: null, reason: head.error };
+    }
+    this.dirtyMarkHash = head.hash;
+    this.debug("dirty.mark", { hash: head.hash });
+    return { ok: true, hash: head.hash };
+  }
+
+  public async releaseDirty(): Promise<TerminalDirtyMarkResult> {
+    return this.markDirty();
+  }
+
+  public async sliceDirty(options: TerminalDirtySliceOptions = {}): Promise<TerminalDirtySliceResult> {
+    this.ensureStarted();
+    const wait = options.wait ?? false;
+    const timeoutMs = Math.max(0, options.timeoutMs ?? 30_000);
+    const pollMs = Math.max(50, options.pollMs ?? 250);
+    const startedAt = Date.now();
+    let latest = await this.sliceDirtyOnce(options);
+
+    while (wait && latest.ok && !latest.changed && Date.now() - startedAt < timeoutMs) {
+      await Bun.sleep(pollMs);
+      latest = await this.sliceDirtyOnce(options);
+    }
+
+    if (wait && latest.ok && !latest.changed && Date.now() - startedAt >= timeoutMs) {
+      return {
+        ...latest,
+        reason: latest.reason ?? "timeout",
+      };
+    }
+
+    return latest;
   }
 
   /** Resize PTY and xterm buffer; split epoch and snapshot viewport to avoid reflow noise. */
@@ -468,6 +570,7 @@ export class AgenticTerminal {
     this.renderListeners.length = 0;
     this.structuredListeners.length = 0;
     this.appliedSize = null;
+    this.dirtyMarkHash = null;
     this.started = false;
     this.status = "IDLE";
 
@@ -503,6 +606,143 @@ export class AgenticTerminal {
     this.idleTimer = setTimeout(() => {
       this.markIdle();
     }, DEFAULTS.idleTimeoutMs);
+  }
+
+  private async sliceDirtyOnce(options: TerminalDirtySliceOptions): Promise<TerminalDirtySliceResult> {
+    const remark = options.remark ?? true;
+    if (!this.isGitLogEnabled()) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+        reason: "git-log-disabled",
+      };
+    }
+
+    await this.forceCommit();
+    const baseHead = this.ensureGitHead();
+    if (!baseHead.ok) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash: this.dirtyMarkHash,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+        reason: baseHead.error,
+      };
+    }
+
+    if (!this.dirtyMarkHash) {
+      this.dirtyMarkHash = baseHead.hash;
+      return {
+        ok: true,
+        changed: false,
+        fromHash: null,
+        toHash: baseHead.hash,
+        diff: "",
+        bytes: 0,
+      };
+    }
+
+    const fromHash = this.dirtyMarkHash;
+    let toHash = baseHead.hash;
+    const dirtyStatus = this.runGitCommand(["status", "--porcelain", "--", "output"]);
+    if (!dirtyStatus.ok) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash,
+        toHash,
+        diff: "",
+        bytes: 0,
+        reason: dirtyStatus.stderr || dirtyStatus.stdout || `git-status-exit-${dirtyStatus.code}`,
+      };
+    }
+
+    if (dirtyStatus.stdout.trim().length > 0) {
+      const add = this.runGitCommand(["add", "-A", "--", "output"]);
+      if (!add.ok) {
+        return {
+          ok: false,
+          changed: false,
+          fromHash,
+          toHash,
+          diff: "",
+          bytes: 0,
+          reason: add.stderr || add.stdout || `git-add-exit-${add.code}`,
+        };
+      }
+      const commit = this.runGitCommand(["commit", "--allow-empty", "-m", "ati(slice): output update"]);
+      if (!commit.ok) {
+        return {
+          ok: false,
+          changed: false,
+          fromHash,
+          toHash,
+          diff: "",
+          bytes: 0,
+          reason: commit.stderr || commit.stdout || `git-commit-exit-${commit.code}`,
+        };
+      }
+      const nextHead = this.runGitCommand(["rev-parse", "HEAD"]);
+      if (!nextHead.ok || !nextHead.stdout) {
+        return {
+          ok: false,
+          changed: false,
+          fromHash,
+          toHash: null,
+          diff: "",
+          bytes: 0,
+          reason: nextHead.stderr || nextHead.stdout || `git-rev-parse-exit-${nextHead.code}`,
+        };
+      }
+      toHash = nextHead.stdout;
+    }
+
+    if (fromHash === toHash) {
+      if (remark) {
+        this.dirtyMarkHash = toHash;
+      }
+      return {
+        ok: true,
+        changed: false,
+        fromHash,
+        toHash,
+        diff: "",
+        bytes: 0,
+      };
+    }
+
+    const diffResult = this.runGitCommand(["diff", "--no-color", "--patience", `${fromHash}..${toHash}`, "--", "output"]);
+    if (!diffResult.ok) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash,
+        toHash,
+        diff: "",
+        bytes: 0,
+        reason: diffResult.stderr || diffResult.stdout || `git-diff-exit-${diffResult.code}`,
+      };
+    }
+    if (remark) {
+      this.dirtyMarkHash = toHash;
+    }
+    const diff = diffResult.stdout;
+    const changed = diff.length > 0;
+    this.debug("dirty.slice", { fromHash, toHash, bytes: diff.length, changed, remark });
+    return {
+      ok: true,
+      changed,
+      fromHash,
+      toHash,
+      diff,
+      bytes: diff.length,
+    };
   }
 
   private markIdle(): void {
@@ -710,5 +950,53 @@ export class AgenticTerminal {
     };
     this.renderSerial += 1;
     appendFileSync(logPath, `${JSON.stringify(record)}\n`, "utf8");
+  }
+
+  private isGitLogEnabled(): boolean {
+    return Boolean(this.profile.gitLog && this.profile.gitLog !== "none");
+  }
+
+  private runGitCommand(args: string[]): { ok: boolean; code: number; stdout: string; stderr: string } {
+    const result = Bun.spawnSync({
+      cmd: ["git", ...args],
+      cwd: this.workspace,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return {
+      ok: result.exitCode === 0,
+      code: result.exitCode,
+      stdout: this.gitDecoder.decode(result.stdout).trimEnd(),
+      stderr: this.gitDecoder.decode(result.stderr).trimEnd(),
+    };
+  }
+
+  private ensureGitHead(): { ok: true; hash: string } | { ok: false; error: string } {
+    const head = this.runGitCommand(["rev-parse", "HEAD"]);
+    if (head.ok && head.stdout) {
+      return { ok: true, hash: head.stdout };
+    }
+    const add = this.runGitCommand(["add", "-A"]);
+    if (!add.ok) {
+      return {
+        ok: false,
+        error: `git add failed: ${add.stderr || add.stdout || `code=${add.code}`}`,
+      };
+    }
+    const commit = this.runGitCommand(["commit", "--allow-empty", "-m", "ati(mark): baseline"]);
+    if (!commit.ok) {
+      return {
+        ok: false,
+        error: `git commit failed: ${commit.stderr || commit.stdout || `code=${commit.code}`}`,
+      };
+    }
+    const nextHead = this.runGitCommand(["rev-parse", "HEAD"]);
+    if (!nextHead.ok || !nextHead.stdout) {
+      return {
+        ok: false,
+        error: `git rev-parse failed: ${nextHead.stderr || nextHead.stdout || `code=${nextHead.code}`}`,
+      };
+    }
+    return { ok: true, hash: nextHead.stdout };
   }
 }

@@ -42,6 +42,10 @@ export class InputInbox {
     this.scan();
   }
 
+  poke(): void {
+    this.scan();
+  }
+
   stop(): void {
     this.running = false;
     if (this.timer !== null) {

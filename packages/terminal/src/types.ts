@@ -81,6 +81,45 @@ export interface TerminalStructuredSnapshot extends StructuredRenderResult {
   status: TerminalStatus;
 }
 
+export interface TerminalDirtyMarkResult {
+  ok: boolean;
+  hash: string | null;
+  reason?: string;
+}
+
+export interface TerminalDirtySliceResult {
+  ok: boolean;
+  changed: boolean;
+  fromHash: string | null;
+  toHash: string | null;
+  diff: string;
+  bytes: number;
+  reason?: string;
+}
+
+export interface TerminalDirtySliceOptions {
+  remark?: boolean;
+  wait?: boolean;
+  timeoutMs?: number;
+  pollMs?: number;
+}
+
+export interface TerminalPendingInputOptions {
+  extension?: "xml" | "txt";
+  wait?: boolean;
+  timeoutMs?: number;
+  pollMs?: number;
+}
+
+export interface TerminalPendingInputResult {
+  ok: boolean;
+  id: string;
+  file: string;
+  doneFile?: string;
+  failedFile?: string;
+  reason?: string;
+}
+
 export interface PageMeta {
   status: TerminalStatus;
   cursorRow: number;
