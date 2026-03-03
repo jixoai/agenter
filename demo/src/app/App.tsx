@@ -29,6 +29,9 @@ const clamp = (value: number, min: number): number => Math.max(min, value);
 const HELP_MAX_CHARS = 8_192;
 const STATUS_BAR_HEIGHT = 6;
 const DEBUG_PANEL_HEIGHT = 14;
+const LOOP_IDLE_COLLECT_INTERVAL_MS = 1_500;
+const IDLE_HEARTBEAT_INTERVAL_MS = 12_000;
+const LARGE_DIFF_BYTES = 16_000;
 const resolveChatAiStatus = (
   stage: TaskStage,
   loopPhase: LoopBusPhase,
@@ -39,6 +42,9 @@ const resolveChatAiStatus = (
   }
   if (loopPhase === "waiting_processor_response") {
     return "等待服务返回";
+  }
+  if (loopPhase === "waiting_messages") {
+    return processState === "running" ? "等待终端输出" : "等待新消息";
   }
   if (loopPhase === "processing_messages") {
     return "思考中";
@@ -109,6 +115,23 @@ const buildTerminalSnapshotPayload = (terminalId: string, snapshot: TerminalSnap
   rows: snapshot.rows,
   cursor: snapshot.cursor,
   tail: snapshot.lines.slice(-20),
+});
+
+const buildTerminalHeartbeatPayload = (
+  terminalId: string,
+  snapshot: TerminalSnapshot,
+  status: "IDLE" | "BUSY",
+  reason: "idle-poll" | "large-diff",
+) => ({
+  kind: "terminal-heartbeat",
+  terminalId,
+  status,
+  seq: snapshot.seq,
+  cols: snapshot.cols,
+  rows: snapshot.rows,
+  cursor: snapshot.cursor,
+  reason,
+  tail: snapshot.lines.slice(-12),
 });
 
 const buildTerminalHelpPayload = (
@@ -229,6 +252,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const terminalLatestSeqRef = useRef<Record<string, number>>({});
   const bootInjectedRef = useRef(new Set<string>());
   const bootInProgressRef = useRef(false);
+  const stageRef = useRef<TaskStage>("idle");
+  const processStateRef = useRef<"stopped" | "running">("stopped");
+  const lastIdleHeartbeatAtRef = useRef(0);
 
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
@@ -240,6 +266,14 @@ export const App = ({ runtimeConfig }: AppProps) => {
   useEffect(() => {
     focusedTerminalIdRef.current = focusedTerminalId;
   }, [focusedTerminalId]);
+
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
+
+  useEffect(() => {
+    processStateRef.current = processState;
+  }, [processState]);
 
   useEffect(() => {
     setFocusedTerminalId(runtimeConfig.focusedTerminalId);
@@ -585,15 +619,49 @@ export const App = ({ runtimeConfig }: AppProps) => {
     const loopBus = new AgentRuntime({
       processor: agent,
       logger,
+      idleCollectIntervalMs: LOOP_IDLE_COLLECT_INTERVAL_MS,
       onLoopStateChange: (state) => {
         setLoopPhase(state.phase);
       },
       collectInputs: async () => {
         const pendingIds = Array.from(terminalDirtyQueuedRef.current.values());
-        if (pendingIds.length === 0) {
-          return;
+        if (pendingIds.length > 0) {
+          terminalDirtyQueuedRef.current.clear();
+        } else {
+          const focusedTerminalId = focusedTerminalIdRef.current;
+          const adapter = getAdapter(focusedTerminalId);
+          const hasActiveTask = !["idle", "done", "error"].includes(stageRef.current);
+          if (!adapter || !adapter.isRunning() || !hasActiveTask || processStateRef.current !== "running") {
+            return;
+          }
+          const now = Date.now();
+          if (now - lastIdleHeartbeatAtRef.current < IDLE_HEARTBEAT_INTERVAL_MS) {
+            return;
+          }
+          lastIdleHeartbeatAtRef.current = now;
+          const snapshot = terminalSnapshotsRef.current[focusedTerminalId] ?? adapter.getSnapshot();
+          const status = adapter.getStatus();
+          logger.log({
+            channel: "agent",
+            level: "debug",
+            message: "terminal.heartbeat",
+            meta: { terminalId: focusedTerminalId, reason: "idle-poll", seq: snapshot.seq, status },
+          });
+          return {
+            name: `Terminal-${focusedTerminalId}`,
+            role: "user",
+            type: "text",
+            source: "terminal",
+            text: JSON.stringify(buildTerminalHeartbeatPayload(focusedTerminalId, snapshot, status, "idle-poll")),
+            meta: {
+              terminalId: focusedTerminalId,
+              heartbeat: true,
+              reason: "idle-poll",
+              seq: snapshot.seq,
+              status,
+            },
+          };
         }
-        terminalDirtyQueuedRef.current.clear();
 
         const outputs: LoopBusInput[] = [];
         for (const terminalId of pendingIds) {
@@ -690,6 +758,24 @@ export const App = ({ runtimeConfig }: AppProps) => {
               toHash: slice.toHash ?? "none",
             },
           });
+
+          if (slice.bytes >= LARGE_DIFF_BYTES) {
+            const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
+            outputs.push({
+              name: `Terminal-${terminalId}`,
+              role: "user",
+              type: "text",
+              source: "terminal",
+              text: JSON.stringify(buildTerminalHeartbeatPayload(terminalId, snapshot, status, "large-diff")),
+              meta: {
+                terminalId,
+                heartbeat: true,
+                reason: "large-diff",
+                seq: snapshot.seq,
+                status,
+              },
+            });
+          }
         }
         if (outputs.length === 0) {
           return;

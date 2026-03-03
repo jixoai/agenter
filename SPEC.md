@@ -135,6 +135,7 @@ agenter/
 关键约束：
 
 - LoopBus 是持续循环，不依赖用户每轮手动触发。
+- LoopBus 使用显式 phase 状态机并校验合法迁移；在 `waiting_messages` 时支持 idle 轮询 `collectInputs`，防止循环静默卡住。
 - terminal 变化默认视为 user-source context（不是 assistant 自述）。
 - 消息结构必须紧凑，便于模型持续消费与回放。
 
