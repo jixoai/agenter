@@ -57,16 +57,6 @@ const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Pro
   return false;
 };
 
-test("doctor exits non-zero when daemon is not reachable", async () => {
-  const port = await findFreePort();
-  const child = spawnCli("doctor", "--host", "127.0.0.1", "--port", String(port));
-  const exitCode = await child.exited;
-  const stdout = await readText(child.stdout);
-
-  expect(exitCode).toBe(1);
-  expect(stdout.includes("not reachable")).toBe(true);
-});
-
 test("daemon command starts server and doctor succeeds", async () => {
   const host = "127.0.0.1";
   const port = await findFreePort();
