@@ -1,0 +1,19 @@
+{
+  "name": "@agenter/client-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@agenter/app-server": "workspace:*",
+    "@trpc/client": "^11.7.1",
+    "@trpc/server": "^11.7.1",
+    "superjson": "^2.2.2"
+  },
+  "devDependencies": {}
+}
