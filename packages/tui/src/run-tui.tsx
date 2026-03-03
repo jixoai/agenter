@@ -1,197 +1,94 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createCliRenderer } from "@opentui/core";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import type { TextareaRenderable } from "@opentui/core";
-import { createRoot } from "@opentui/react";
-import { parseServerMessage, type TuiChatMessage, type TuiInstanceMeta } from "./ws-protocol";
+import { createCliRenderer, type TextareaRenderable } from "@opentui/core";
+import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
+import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
+
+import { ChatPanel } from "./panels/ChatPanel";
+import { InstancesPanel } from "./panels/InstancesPanel";
+import { StatusBar } from "./panels/StatusBar";
+import { buildViewModel } from "./types";
 
 export interface TuiClientOptions {
   host?: string;
   port?: number;
 }
 
-const buildWsUrl = (host: string, port: number): string => `ws://${host}:${port}/ws`;
-
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const wsUrl = (host: string, port: number): string => `ws://${host}:${port}/trpc`;
 
 const App = ({ host, port }: { host: string; port: number }) => {
   const renderer = useRenderer();
-  const { width, height } = useTerminalDimensions();
-
-  const [instances, setInstances] = useState<TuiInstanceMeta[]>([]);
-  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
-  const [chatByInstance, setChatByInstance] = useState<Record<string, TuiChatMessage[]>>({});
-  const [statusText, setStatusText] = useState("connecting");
-  const [input, setInput] = useState("");
-
   const inputRef = useRef<TextareaRenderable | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reqMapRef = useRef(
-    new Map<
-      string,
-      {
-        resolve: (value: unknown) => void;
-        reject: (error: Error) => void;
-      }
-    >(),
+
+  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [localInput, setLocalInput] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [state, setState] = useState(() => ({
+    connected: false,
+    lastEventId: 0,
+    instances: [],
+    runtimes: {},
+    chatsByInstance: {},
+  }));
+
+  const client = useMemo(
+    () =>
+      createAgenterClient({
+        wsUrl: wsUrl(host, port),
+        onOpen: () => setConnected(true),
+        onClose: () => setConnected(false),
+      }),
+    [host, port],
   );
-
-  const activeMessages = useMemo(() => {
-    if (!activeInstanceId) {
-      return [];
-    }
-    return chatByInstance[activeInstanceId] ?? [];
-  }, [activeInstanceId, chatByInstance]);
-
-  const sendRaw = (payload: Record<string, unknown>) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    ws.send(JSON.stringify(payload));
-  };
-
-  const request = (type: string, payload?: Record<string, unknown>): Promise<unknown> => {
-    const requestId = createId();
-    return new Promise((resolve, reject) => {
-      reqMapRef.current.set(requestId, { resolve, reject });
-      sendRaw({ type, requestId, payload });
-      setTimeout(() => {
-        const pending = reqMapRef.current.get(requestId);
-        if (!pending) {
-          return;
-        }
-        reqMapRef.current.delete(requestId);
-        reject(new Error(`${type} timeout`));
-      }, 10_000);
-    });
-  };
+  const store = useMemo(() => createRuntimeStore(client), [client]);
 
   useEffect(() => {
-    const ws = new WebSocket(buildWsUrl(host, port));
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatusText("connected");
-      void request("instance.list").catch((error) => {
-        setStatusText(error instanceof Error ? error.message : String(error));
+    const unsubscribe = store.subscribe((next) => {
+      setState({ ...next });
+      setActiveInstanceId((prev) => {
+        if (prev && next.instances.some((item) => item.id === prev)) {
+          return prev;
+        }
+        return next.instances[0]?.id ?? null;
       });
-    };
+    });
 
-    ws.onclose = () => {
-      setStatusText("disconnected");
-    };
-
-    ws.onerror = () => {
-      setStatusText("socket-error");
-    };
-
-    ws.onmessage = (event) => {
-      let decoded: unknown;
-      try {
-        decoded = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      const message = parseServerMessage(decoded);
-      if (!message) {
-        return;
-      }
-      if (message.type === "ack") {
-        const requestId = message.requestId;
-        const pending = requestId ? reqMapRef.current.get(requestId) : null;
-        if (!pending) {
-          return;
-        }
-        reqMapRef.current.delete(requestId);
-        if (message.ok) {
-          pending.resolve(message.data);
-        } else {
-          pending.reject(new Error(message.errorMessage ?? "request failed"));
-        }
-        return;
-      }
-
-      if (message.type === "instance.snapshot") {
-        setInstances(message.instances);
-        setActiveInstanceId((prev) => prev ?? message.instances[0]?.id ?? null);
-        return;
-      }
-
-      if (message.type === "instance.updated") {
-        const instance = message.instance;
-        setInstances((prev) => {
-          const index = prev.findIndex((item) => item.id === instance.id);
-          if (index < 0) {
-            return [...prev, instance];
-          }
-          const next = [...prev];
-          next[index] = instance;
-          return next;
-        });
-        setActiveInstanceId((prev) => prev ?? instance.id);
-        return;
-      }
-
-      if (message.type === "instance.deleted") {
-        const instanceId = message.instanceId;
-        setInstances((prev) => prev.filter((item) => item.id !== instanceId));
-        setActiveInstanceId((prev) => {
-          if (prev !== instanceId) {
-            return prev;
-          }
-          const remain = instances.filter((item) => item.id !== instanceId);
-          return remain[0]?.id ?? null;
-        });
-        return;
-      }
-
-      if (message.type === "chat.message") {
-        const instanceId = message.instanceId;
-        setChatByInstance((prev) => {
-          const next = { ...prev };
-          const current = next[instanceId] ?? [];
-          next[instanceId] = [...current, message.message].slice(-120);
-          return next;
-        });
-      }
-    };
+    void store.connect();
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      unsubscribe();
+      store.disconnect();
     };
-  }, [host, port]);
+  }, [store]);
+
+  const view = useMemo(() => buildViewModel(state, activeInstanceId), [activeInstanceId, state]);
 
   const submit = () => {
-    const value = (inputRef.current?.plainText ?? input).trim();
+    const value = (inputRef.current?.plainText ?? localInput).trim();
     if (!value || !activeInstanceId) {
       return;
     }
-    setInput("");
     inputRef.current?.clear();
-    void request("chat.send", {
-      instanceId: activeInstanceId,
-      text: value,
-    }).catch((error) => {
-      setStatusText(error instanceof Error ? error.message : String(error));
+    setLocalInput("");
+    void store.sendChat(activeInstanceId, value);
+  };
+
+  const createInstance = () => {
+    void store.createInstance({
+      cwd: process.cwd(),
+      name: `workspace-${createId().slice(-4)}`,
+      autoStart: true,
     });
   };
 
   const focusNextInstance = () => {
-    if (instances.length === 0) {
+    if (view.instances.length === 0) {
       return;
     }
-    const index = instances.findIndex((item) => item.id === activeInstanceId);
-    const next = instances[(index + 1 + instances.length) % instances.length];
+    const index = view.instances.findIndex((item) => item.id === activeInstanceId);
+    const next = view.instances[(index + 1 + view.instances.length) % view.instances.length];
     setActiveInstanceId(next.id);
-  };
-
-  const createInstance = () => {
-    const cwd = process.cwd();
-    void request("instance.create", { cwd, autoStart: true }).catch((error) => {
-      setStatusText(error instanceof Error ? error.message : String(error));
-    });
   };
 
   useKeyboard((key) => {
@@ -215,43 +112,26 @@ const App = ({ host, port }: { host: string; port: number }) => {
   });
 
   return (
-    <box width="100%" height="100%" flexDirection="column" padding={1}>
-      <box border borderColor="gray" padding={1} justifyContent="space-between">
-        <text>agenter-tui · {host}:{port}</text>
-        <text>{statusText} · instances={instances.length}</text>
-      </box>
-
-      <box flexGrow={1} flexDirection="row">
-        <box width={Math.max(24, Math.floor(width * 0.32))} border borderColor="gray" marginTop={1} flexDirection="column">
-          <text>instances (Ctrl+N new, Ctrl+Tab switch)</text>
-          <box flexDirection="column" flexGrow={1} overflow="scroll">
-            {instances.map((instance) => (
-              <text key={instance.id} color={instance.id === activeInstanceId ? "cyan" : "white"}>
-                {instance.id === activeInstanceId ? "●" : "○"} {instance.name} [{instance.status}]
-              </text>
-            ))}
-          </box>
-        </box>
-
-        <box flexGrow={1} border borderColor="gray" marginTop={1} marginLeft={1} flexDirection="column">
-          <text>chat · active={activeInstanceId ?? "none"}</text>
-          <box flexGrow={1} overflow="scroll" flexDirection="column">
-            {activeMessages.length === 0 ? <text color="gray">(no messages)</text> : null}
-            {activeMessages.map((message) => (
-              <text key={message.id} color={message.role === "user" ? "yellow" : "green"}>
-                {message.role === "user" ? "U" : "A"}: {message.content}
-              </text>
-            ))}
-          </box>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(nextValue) => setInput(nextValue)}
-            border
-            borderColor="gray"
-            placeholder={activeInstanceId ? "Type and press Enter" : "Create/select an instance first"}
-            height={4}
+    <box width="100%" height="100%" padding={1} flexDirection="column">
+      <StatusBar
+        host={host}
+        port={port}
+        connected={connected && view.connected}
+        instanceCount={view.instances.length}
+        phaseText={view.phaseText}
+      />
+      <box marginTop={1} flexGrow={1} flexDirection="row">
+        <InstancesPanel instances={view.instances} activeInstanceId={view.activeInstanceId} />
+        <box marginLeft={1} flexGrow={1}>
+          <ChatPanel
+            activeInstanceId={view.activeInstanceId}
+            messages={view.messages}
+            inputRef={inputRef}
             focused
+            onInputChange={() => {
+              setLocalInput(inputRef.current?.plainText ?? "");
+            }}
+            onSubmit={submit}
           />
         </box>
       </box>
@@ -262,6 +142,7 @@ const App = ({ host, port }: { host: string; port: number }) => {
 export const runTuiClient = async (options: TuiClientOptions = {}): Promise<void> => {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 4580;
+
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: true,

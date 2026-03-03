@@ -10,6 +10,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@agenter/client-sdk": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",
     "react": "^19.0.0"
