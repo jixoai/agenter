@@ -5,9 +5,15 @@
     "demo",
     "packages/*"
   ],
+  "devDependencies": {
+    "@changesets/cli": "^2.29.6"
+  },
   "scripts": {
     "build:i18n": "bun run --filter '@agenter/i18n-*' build",
+    "changeset": "changeset",
+    "release-packages": "changeset publish",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun run --filter '*' test"
+    "test": "bun run --filter '*' test",
+    "version-packages": "changeset version"
   }
 }
