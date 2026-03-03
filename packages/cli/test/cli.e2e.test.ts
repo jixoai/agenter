@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 
@@ -41,6 +41,15 @@ const spawnCli = (...args: string[]) =>
     env: process.env,
   });
 
+const daemons: Subprocess[] = [];
+
+afterEach(async () => {
+  for (const daemon of daemons.splice(0)) {
+    daemon.kill();
+    await daemon.exited;
+  }
+});
+
 const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Promise<boolean> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -57,44 +66,40 @@ const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Pro
   return false;
 };
 
-test("daemon command starts server and doctor succeeds", async () => {
-  const host = "127.0.0.1";
-  const port = await findFreePort();
-  const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
+describe("Feature: cli daemon and web commands", () => {
+  test("Scenario: Given daemon command When doctor checks health Then exit code is 0", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
+    daemons.push(daemon);
 
-  const healthy = await waitForHealth(host, port);
-  if (!healthy) {
-    daemon.kill();
-    const stderr = await readText(daemon.stderr);
-    throw new Error(`daemon failed to become healthy: ${stderr}`);
-  }
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
 
-  const doctor = spawnCli("doctor", "--host", host, "--port", String(port));
-  const doctorCode = await doctor.exited;
-  const doctorStdout = await readText(doctor.stdout);
+    const doctor = spawnCli("doctor", "--host", host, "--port", String(port));
+    const doctorCode = await doctor.exited;
+    const doctorStdout = await readText(doctor.stdout);
 
-  expect(doctorCode).toBe(0);
-  expect(doctorStdout.includes("healthy")).toBe(true);
+    expect(doctorCode).toBe(0);
+    expect(doctorStdout.includes("healthy")).toBe(true);
+  });
 
-  daemon.kill();
-  await daemon.exited;
-});
+  test("Scenario: Given web command When reading root html Then include web ui shell content", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const daemon = spawnCli("web", "--host", host, "--port", String(port));
+    daemons.push(daemon);
 
-test("web command serves webui html", async () => {
-  const host = "127.0.0.1";
-  const port = await findFreePort();
-  const daemon = spawnCli("web", "--host", host, "--port", String(port));
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`web daemon failed to become healthy: ${stderr}`);
+    }
 
-  const healthy = await waitForHealth(host, port);
-  if (!healthy) {
-    daemon.kill();
-    const stderr = await readText(daemon.stderr);
-    throw new Error(`web daemon failed to become healthy: ${stderr}`);
-  }
-
-  const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
-  expect(html.includes("Agenter WebUI")).toBe(true);
-
-  daemon.kill();
-  await daemon.exited;
+    const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
+    expect(html.includes("Agenter WebUI")).toBe(true);
+  });
 });

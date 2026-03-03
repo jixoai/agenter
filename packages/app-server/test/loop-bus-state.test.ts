@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { LoopBus, type LoopBusPhase } from "../src/loop-bus";
 
-describe("LoopBus state", () => {
-  test("emits waiting_processor_response when processor call is in-flight", async () => {
+describe("Feature: loop bus state transitions", () => {
+  test("Scenario: Given queued message When processor is in-flight Then phase includes waiting_processor_response", async () => {
     const phases: LoopBusPhase[] = [];
     const bus = new LoopBus({
       processor: {
@@ -46,7 +46,7 @@ describe("LoopBus state", () => {
     expect(silentIndex).toBeGreaterThan(waitIndex);
   });
 
-  test("stays in waiting_messages when queue is silent", async () => {
+  test("Scenario: Given silent queue When loop ticks Then phase remains waiting_messages", async () => {
     const phases: LoopBusPhase[] = [];
     const bus = new LoopBus({
       processor: {

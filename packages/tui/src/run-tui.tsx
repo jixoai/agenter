@@ -3,24 +3,11 @@ import { createCliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import { parseServerMessage, type TuiChatMessage, type TuiInstanceMeta } from "./ws-protocol";
 
 export interface TuiClientOptions {
   host?: string;
   port?: number;
-}
-
-interface InstanceMeta {
-  id: string;
-  name: string;
-  cwd: string;
-  status: string;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
 }
 
 const buildWsUrl = (host: string, port: number): string => `ws://${host}:${port}/ws`;
@@ -31,9 +18,9 @@ const App = ({ host, port }: { host: string; port: number }) => {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
 
-  const [instances, setInstances] = useState<InstanceMeta[]>([]);
+  const [instances, setInstances] = useState<TuiInstanceMeta[]>([]);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
-  const [chatByInstance, setChatByInstance] = useState<Record<string, ChatMessage[]>>({});
+  const [chatByInstance, setChatByInstance] = useState<Record<string, TuiChatMessage[]>>({});
   const [statusText, setStatusText] = useState("connecting");
   const [input, setInput] = useState("");
 
@@ -100,87 +87,39 @@ const App = ({ host, port }: { host: string; port: number }) => {
     };
 
     ws.onmessage = (event) => {
-      let message: unknown;
+      let decoded: unknown;
       try {
-        message = JSON.parse(String(event.data));
+        decoded = JSON.parse(String(event.data));
       } catch {
         return;
       }
-      if (!message || typeof message !== "object") {
+      const message = parseServerMessage(decoded);
+      if (!message) {
         return;
       }
-      const record = message as Record<string, unknown>;
-
-      if (record.type === "ack") {
-        const requestId = typeof record.requestId === "string" ? record.requestId : undefined;
+      if (message.type === "ack") {
+        const requestId = message.requestId;
         const pending = requestId ? reqMapRef.current.get(requestId) : null;
         if (!pending) {
           return;
         }
         reqMapRef.current.delete(requestId);
-        if (record.ok === true) {
-          pending.resolve(record.data);
+        if (message.ok) {
+          pending.resolve(message.data);
         } else {
-          const errorRecord =
-            record.error && typeof record.error === "object" ? (record.error as Record<string, unknown>) : undefined;
-          pending.reject(new Error(typeof errorRecord?.message === "string" ? errorRecord.message : "request failed"));
+          pending.reject(new Error(message.errorMessage ?? "request failed"));
         }
         return;
       }
 
-      if (record.type === "instance.snapshot") {
-        const payload =
-          record.payload && typeof record.payload === "object" ? (record.payload as Record<string, unknown>) : undefined;
-        const instancesRaw = Array.isArray(payload?.instances) ? payload.instances : [];
-        const next: InstanceMeta[] = instancesRaw
-          .map((item) => {
-            if (!item || typeof item !== "object") {
-              return null;
-            }
-            const row = item as Record<string, unknown>;
-            if (
-              typeof row.id !== "string" ||
-              typeof row.name !== "string" ||
-              typeof row.cwd !== "string" ||
-              typeof row.status !== "string"
-            ) {
-              return null;
-            }
-            return {
-              id: row.id,
-              name: row.name,
-              cwd: row.cwd,
-              status: row.status,
-            } satisfies InstanceMeta;
-          })
-          .filter((item): item is InstanceMeta => item !== null);
-        setInstances(next);
-        setActiveInstanceId((prev) => prev ?? next[0]?.id ?? null);
+      if (message.type === "instance.snapshot") {
+        setInstances(message.instances);
+        setActiveInstanceId((prev) => prev ?? message.instances[0]?.id ?? null);
         return;
       }
 
-      if (record.type === "instance.updated") {
-        const payload =
-          record.payload && typeof record.payload === "object" ? (record.payload as Record<string, unknown>) : undefined;
-        const raw = payload?.instance;
-        if (!raw || typeof raw !== "object") {
-          return;
-        }
-        const row = raw as Record<string, unknown>;
-        if (
-          typeof row.id !== "string" ||
-          typeof row.name !== "string" ||
-          typeof row.cwd !== "string" ||
-          typeof row.status !== "string"
-        ) {
-          return;
-        }
-        const instance: InstanceMeta = {
-          id: row.id,
-          name: row.name,
-          cwd: row.cwd,
-          status: row.status,
-        };
+      if (message.type === "instance.updated") {
+        const instance = message.instance;
         setInstances((prev) => {
           const index = prev.findIndex((item) => item.id === instance.id);
           if (index < 0) {
@@ -194,10 +133,8 @@ const App = ({ host, port }: { host: string; port: number }) => {
         return;
       }
 
-      if (record.type === "instance.deleted") {
-        const payload =
-          record.payload && typeof record.payload === "object" ? (record.payload as Record<string, unknown>) : undefined;
-        const instanceId = typeof payload?.instanceId === "string" ? payload.instanceId : "";
+      if (message.type === "instance.deleted") {
+        const instanceId = message.instanceId;
         setInstances((prev) => prev.filter((item) => item.id !== instanceId));
         setActiveInstanceId((prev) => {
           if (prev !== instanceId) {
@@ -209,33 +146,12 @@ const App = ({ host, port }: { host: string; port: number }) => {
         return;
       }
 
-      if (record.type === "chat.message") {
-        const payload =
-          record.payload && typeof record.payload === "object" ? (record.payload as Record<string, unknown>) : undefined;
-        const instanceId = typeof payload?.instanceId === "string" ? payload.instanceId : "";
-        const rawMessage = payload?.message;
-        if (!instanceId || !rawMessage || typeof rawMessage !== "object") {
-          return;
-        }
-        const chatRecord = rawMessage as Record<string, unknown>;
-        if (
-          typeof chatRecord.id !== "string" ||
-          (chatRecord.role !== "user" && chatRecord.role !== "assistant") ||
-          typeof chatRecord.content !== "string" ||
-          typeof chatRecord.timestamp !== "number"
-        ) {
-          return;
-        }
-        const chat: ChatMessage = {
-          id: chatRecord.id,
-          role: chatRecord.role,
-          content: chatRecord.content,
-          timestamp: chatRecord.timestamp,
-        };
+      if (message.type === "chat.message") {
+        const instanceId = message.instanceId;
         setChatByInstance((prev) => {
           const next = { ...prev };
           const current = next[instanceId] ?? [];
-          next[instanceId] = [...current, chat].slice(-120);
+          next[instanceId] = [...current, message.message].slice(-120);
           return next;
         });
       }
