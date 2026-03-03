@@ -30,6 +30,7 @@ export class AppKernel {
   private readonly runtimes = new Map<string, InstanceRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
+  private readonly eventLog: AnyRuntimeEvent[] = [];
   private eventSeq = 0;
 
   constructor(private readonly options: AppKernelOptions = {}) {
@@ -72,6 +73,13 @@ export class AppKernel {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  getEventsAfter(afterEventId: number): AnyRuntimeEvent[] {
+    if (afterEventId >= this.eventSeq || this.eventLog.length === 0) {
+      return [];
+    }
+    return this.eventLog.filter((event) => event.eventId > afterEventId);
   }
 
   listInstances(): InstanceMeta[] {
@@ -261,6 +269,10 @@ export class AppKernel {
       instanceId,
       payload,
     };
+    this.eventLog.push(event);
+    if (this.eventLog.length > 2048) {
+      this.eventLog.splice(0, this.eventLog.length - 2048);
+    }
     for (const listener of this.listeners) {
       listener(event);
     }

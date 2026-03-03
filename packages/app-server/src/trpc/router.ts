@@ -108,13 +108,19 @@ export const appRouter = t.router({
       )
       .subscription(({ ctx, input }) => {
         return observable<AnyRuntimeEvent>((emit) => {
-          const unsubscribe = ctx.kernel.onEvent((event) => {
-            const afterEventId = input?.afterEventId;
-            if (typeof afterEventId === "number" && event.eventId <= afterEventId) {
+          let cursor = input?.afterEventId ?? 0;
+          const pushEvent = (event: AnyRuntimeEvent): void => {
+            if (event.eventId <= cursor) {
               return;
             }
+            cursor = event.eventId;
             emit.next(event);
-          });
+          };
+
+          const unsubscribe = ctx.kernel.onEvent(pushEvent);
+          for (const event of ctx.kernel.getEventsAfter(cursor)) {
+            pushEvent(event);
+          }
           return unsubscribe;
         });
       }),
