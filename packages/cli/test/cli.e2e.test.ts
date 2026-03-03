@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 
+import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
+
 const CLI_ENTRY = resolve(import.meta.dir, "../src/bin/agenter.ts");
 const BUN_BIN = Bun.which("bun") ?? process.execPath;
 
@@ -84,6 +86,17 @@ const waitForWsOpen = async (url: string, timeoutMs = 8_000): Promise<void> => {
   socket.close();
 };
 
+const waitFor = async (predicate: () => boolean, timeoutMs = 8_000): Promise<void> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("timeout waiting for condition");
+};
+
 describe("Feature: cli daemon and web commands", () => {
   test("Scenario: Given daemon command When doctor checks health Then exit code is 0", async () => {
     const host = "127.0.0.1";
@@ -120,5 +133,35 @@ describe("Feature: cli daemon and web commands", () => {
     const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
     expect(html.includes("Agenter WebUI")).toBe(true);
     await waitForWsOpen(`ws://${host}:${port}/trpc`);
+  });
+
+  test("Scenario: Given daemon and runtime store When creating instance Then subscription syncs state", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
+    daemons.push(daemon);
+
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const client = createAgenterClient({
+      wsUrl: `ws://${host}:${port}/trpc`,
+    });
+    const store = createRuntimeStore(client);
+    try {
+      await store.connect();
+      await store.createInstance({
+        cwd: process.cwd(),
+        name: "e2e-subscription",
+        autoStart: false,
+      });
+      await waitFor(() => store.getState().instances.some((item) => item.name === "e2e-subscription"));
+      expect(store.getState().instances.some((item) => item.name === "e2e-subscription")).toBe(true);
+    } finally {
+      store.disconnect();
+    }
   });
 });

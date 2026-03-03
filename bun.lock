@@ -42,10 +42,6 @@
         "superjson": "^2.2.2",
         "zod": "^4.0.0",
       },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "latest",
-      },
       "peerDependencies": {
         "@agenter/i18n-en": "workspace:*",
         "@agenter/i18n-zh-hans": "workspace:*",
@@ -65,9 +61,8 @@
         "yargs": "^17.7.2",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@agenter/client-sdk": "workspace:*",
         "@types/yargs": "^17.0.35",
-        "typescript": "latest",
       },
     },
     "packages/client-sdk": {
@@ -76,11 +71,8 @@
       "dependencies": {
         "@agenter/app-server": "workspace:*",
         "@trpc/client": "^11.7.1",
+        "@trpc/server": "^11.7.1",
         "superjson": "^2.2.2",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "latest",
       },
     },
     "packages/i18n-core": {
@@ -154,11 +146,6 @@
         "@opentui/core": "latest",
         "@opentui/react": "latest",
         "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "typescript": "latest",
       },
     },
     "packages/webui": {

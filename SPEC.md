@@ -83,6 +83,7 @@ agenter/
 
 - 负责 UI 侧统一通信与状态模型（tRPC wsLink + Snapshot/Event 流）。
 - 封装 runtime store，供 `@agenter/tui` 与 `@agenter/webui` 复用。
+- 连接断开时自动重连（指数退避），恢复后重新拉取 snapshot 并续订 events。
 
 ### 2.7 `demo`
 
@@ -176,6 +177,7 @@ agenter/
 - 默认策略：
   - 单守护进程
   - UI 与 daemon 使用 tRPC + wsLink 同步（全双工）
+  - runtime events 支持 backlog replay（基于 `afterEventId` 续传）
   - Web 默认绑定 `127.0.0.1`
 
 ---
