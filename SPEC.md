@@ -216,14 +216,22 @@ agenter/
 
 ## 7. 测试策略（当前）
 
-统一使用 Bun 单元测试：
+测试方法论统一为 **BDD-first**（行为驱动优先），TDD（红-绿-重构）作为场景落地手段：
 
-- `@agenter/terminal`：CLI 解析、渲染、分页链、dirty slice、git-log、integration。
-- `@agenter/mdx2md`：策略安全、tag transform。
-- `@agenter/demo`：runtime config、loop bus、prompt store、dispatcher。
-- `@agenter/app-server`：AI 消息组装、tool trace、terminal-help 渲染。
+- 先定义 Feature/Scenario，再写实现。
+- 测试命名使用 Given/When/Then，确保“测试即验收文档”。
+- 仅保留高价值用例：跨边界链路、稳定契约、关键行为。
+
+统一使用 Bun 测试体系，按价值分层：
+
+- `@agenter/terminal`：核心协议与终端行为（CLI 解析、渲染、分页链、dirty slice、git-log、integration）。
+- `@agenter/mdx2md`：安全策略与 transform 契约。
+- `@agenter/demo`：组合层行为（runtime config、loop bus、prompt store、dispatcher）。
+- `@agenter/app-server`：runtime/协议行为 + e2e（daemon health/ws/lifecycle/web root）。
+- `@agenter/cli`：黑盒 e2e（`daemon/web/doctor` 主链路）。
+- `@agenter/tui`：高价值可观察逻辑（ws 协议解析），避免低信号 UI smoke。
+- `@agenter/webui`：shell 输出契约（viewport/ws bootstrap 标记）。
 - `@agenter/settings`：source 合并、路径归一化、ResourceLoader 协议/alias。
-- `@agenter/app-server` e2e：daemon `health + websocket + instance lifecycle` 与 web 根路由联调验证。
 
 基线命令：
 
