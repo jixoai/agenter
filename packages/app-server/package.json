@@ -14,6 +14,7 @@
     "@agenter/i18n-en": "workspace:*",
     "@agenter/mdx2md": "workspace:*",
     "@agenter/settings": "workspace:*",
+    "@agenter/terminal": "workspace:*",
     "@tanstack/ai": "^0.6.1",
     "zod": "^4.0.0"
   },

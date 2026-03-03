@@ -4,6 +4,11 @@ export { DeepseekClient, DeepseekDecisionError, type TextOnlyModelMessage } from
 export { SessionStore, type SessionCallRecord } from "./session-store";
 export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
+export { DaemonServer, createDaemonServer, type DaemonServerOptions } from "./daemon-server";
+export { InstanceRegistry, type InstanceMeta, type InstanceStatus } from "./instance-registry";
+export { InstanceRuntime, type InstanceRuntimeSnapshot, type RuntimeEvent, type RuntimeEventMap } from "./instance-runtime";
+export { resolveInstanceConfig, type InstanceTerminalConfig, type ResolvedInstanceConfig } from "./instance-config";
+export { SettingsEditor, type EditableKind } from "./settings-editor";
 export {
   DEFAULT_PROMPT_DOCS,
   PROMPT_DOC_KEYS,
