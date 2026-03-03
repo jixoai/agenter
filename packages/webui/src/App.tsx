@@ -158,13 +158,15 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   };
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <h1>Agenter WebUI</h1>
-        <span className="status">{runtimeState.connected ? "WS connected" : "WS connecting"}</span>
+    <main className="min-h-dvh bg-[radial-gradient(circle_at_top,_#dbeafe,_#f8fafc_42%)] text-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:px-6">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3">
+          <h1 className="text-base font-semibold tracking-tight">Agenter WebUI</h1>
+          <span className="text-xs text-slate-600">{runtimeState.connected ? "WS connected" : "WS connecting"}</span>
+        </div>
       </header>
 
-      <div className="layout">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 p-4 lg:grid-cols-[300px_1fr_1fr] lg:grid-rows-[1fr_auto]">
         <InstancesPanel
           instances={runtimeState.instances}
           activeInstanceId={activeInstanceId}

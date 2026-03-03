@@ -106,6 +106,7 @@ agenter/
 ### 2.10 `@agenter/webui`
 
 - 正式 Web 客户端（React + Vite，移动端优先）
+- UI 基于 `shadcn/ui` + Tailwind CSS v4 组件体系
 - 通过 `@agenter/client-sdk` 同步 chat/runtime/terminal 事件
 - 提供 settings/prompts 读写与冲突提示（mtime 乐观并发）
 
