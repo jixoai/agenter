@@ -1,8 +1,8 @@
-import { createDaemonServer, type DaemonServer } from "@agenter/app-server";
 import { runTuiClient } from "@agenter/tui";
-import { createWebUiHtml } from "@agenter/webui";
+import { join } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { assertStaticDir, startTrpcServer, type TrpcServerHandle } from "./trpc-server";
 
 interface CommonArgs {
   host: string;
@@ -26,14 +26,16 @@ const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => {
   }
 };
 
-const startDaemon = async (args: CommonArgs & { web: boolean }): Promise<DaemonServer> => {
-  const daemon = createDaemonServer({
+const startDaemon = async (args: CommonArgs & { web: boolean }): Promise<TrpcServerHandle> => {
+  const staticDir = args.web ? join(import.meta.dir, "../assets/webui") : undefined;
+  if (staticDir) {
+    assertStaticDir(staticDir);
+  }
+  return await startTrpcServer({
     host: args.host,
     port: args.port,
-    webUiHtml: args.web ? () => createWebUiHtml() : undefined,
+    staticDir,
   });
-  await daemon.start();
-  return daemon;
 };
 
 export const runCli = async (argvInput = process.argv): Promise<void> => {
@@ -59,8 +61,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           port: Number(args.port),
           web: false,
         });
-        const address = daemon.getAddress();
-        console.log(`agenter daemon listening on ${address?.host}:${address?.port}`);
+        console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
         await waitForever();
       },
     )
@@ -74,8 +75,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           port: Number(args.port),
           web: true,
         });
-        const address = daemon.getAddress();
-        console.log(`agenter web listening on http://${address?.host}:${address?.port}`);
+        console.log(`agenter web listening on http://${daemon.host}:${daemon.port}`);
         await waitForever();
       },
     )
@@ -89,7 +89,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           port: Number(args.port),
         };
 
-        let localDaemon: DaemonServer | null = null;
+        let localDaemon: TrpcServerHandle | null = null;
         if (!(await isDaemonAlive(common))) {
           localDaemon = await startDaemon({ ...common, web: false });
         }

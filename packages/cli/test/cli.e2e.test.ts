@@ -66,6 +66,24 @@ const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Pro
   return false;
 };
 
+const waitForWsOpen = async (url: string, timeoutMs = 8_000): Promise<void> => {
+  const socket = new WebSocket(url);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`websocket timeout: ${url}`));
+    }, timeoutMs);
+    socket.addEventListener("open", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error(`websocket connect error: ${url}`));
+    });
+  });
+  socket.close();
+};
+
 describe("Feature: cli daemon and web commands", () => {
   test("Scenario: Given daemon command When doctor checks health Then exit code is 0", async () => {
     const host = "127.0.0.1";
@@ -101,5 +119,6 @@ describe("Feature: cli daemon and web commands", () => {
 
     const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
     expect(html.includes("Agenter WebUI")).toBe(true);
+    await waitForWsOpen(`ws://${host}:${port}/trpc`);
   });
 });
