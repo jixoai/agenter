@@ -15,7 +15,9 @@
     "@agenter/mdx2md": "workspace:*",
     "@agenter/settings": "workspace:*",
     "@agenter/terminal": "workspace:*",
+    "@trpc/server": "^11.7.1",
     "@tanstack/ai": "^0.6.1",
+    "superjson": "^2.2.2",
     "zod": "^4.0.0"
   },
   "peerDependencies": {
