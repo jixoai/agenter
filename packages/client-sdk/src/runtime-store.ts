@@ -20,6 +20,10 @@ export class RuntimeStore {
   private state: RuntimeClientState = createInitialState();
   private readonly listeners = new Set<Listener>();
   private eventSub: SubscriptionHandle | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private connecting = false;
+  private shouldReconnect = false;
 
   constructor(private readonly client: AgenterClient) {}
 
@@ -35,34 +39,17 @@ export class RuntimeStore {
   }
 
   async connect(): Promise<void> {
-    const snapshot = await this.client.trpc.runtime.snapshot.query();
-    this.state = {
-      ...this.state,
-      connected: true,
-      instances: sortInstances(snapshot.instances),
-      runtimes: snapshot.runtimes,
-      lastEventId: snapshot.lastEventId,
-    };
-    this.emit();
-
-    this.eventSub?.unsubscribe();
-    this.eventSub = this.client.trpc.runtime.events.subscribe(
-      { afterEventId: snapshot.lastEventId },
-      {
-        onData: (event) => {
-          this.applyEvent(event);
-          this.state = { ...this.state, connected: true };
-          this.emit();
-        },
-        onError: () => {
-          this.state = { ...this.state, connected: false };
-          this.emit();
-        },
-      },
-    );
+    this.shouldReconnect = true;
+    await this.connectOnce();
   }
 
   disconnect(): void {
+    this.shouldReconnect = false;
+    this.reconnectAttempt = 0;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.eventSub?.unsubscribe();
     this.eventSub = null;
     this.state = {
@@ -71,6 +58,66 @@ export class RuntimeStore {
     };
     this.emit();
     this.client.close();
+  }
+
+  private async connectOnce(): Promise<void> {
+    if (this.connecting) {
+      return;
+    }
+    this.connecting = true;
+
+    try {
+      const snapshot = await this.client.trpc.runtime.snapshot.query();
+      this.state = {
+        ...this.state,
+        connected: true,
+        instances: sortInstances(snapshot.instances),
+        runtimes: snapshot.runtimes,
+        lastEventId: snapshot.lastEventId,
+      };
+      this.emit();
+
+      this.reconnectAttempt = 0;
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+
+      this.eventSub?.unsubscribe();
+      this.eventSub = this.client.trpc.runtime.events.subscribe(
+        { afterEventId: snapshot.lastEventId },
+        {
+          onData: (event) => {
+            this.applyEvent(event);
+            this.state = { ...this.state, connected: true };
+            this.emit();
+          },
+          onError: () => {
+            this.handleConnectionLoss();
+          },
+        },
+      );
+    } catch {
+      this.handleConnectionLoss();
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private handleConnectionLoss(): void {
+    this.state = { ...this.state, connected: false };
+    this.emit();
+
+    if (!this.shouldReconnect || this.reconnectTimer) {
+      return;
+    }
+
+    const delayMs = Math.min(250 * 2 ** this.reconnectAttempt, 4_000);
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connectOnce();
+    }, delayMs);
   }
 
   async createInstance(input: { cwd: string; name?: string; autoStart?: boolean }): Promise<void> {
