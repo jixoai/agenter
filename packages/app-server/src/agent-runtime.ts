@@ -18,6 +18,7 @@ export interface AgentRuntimeConfig<TChatMessage extends LoopChatMessage = LoopC
   processor: AgentRuntimeProcessor<TChatMessage, TStage>;
   logger: LoopBusLogger;
   collectInputs?: () => Promise<LoopBusInput[] | LoopBusInput | void>;
+  idleCollectIntervalMs?: number;
   onUserMessage?: (message: TChatMessage) => Promise<void> | void;
   onTerminalDispatch?: (command: LoopTerminalCommand) => Promise<void> | void;
   onToolCall?: (calls: LoopToolCall[]) => Promise<LoopBusInput[] | LoopBusInput | void>;
@@ -36,6 +37,7 @@ export class AgentRuntime<TChatMessage extends LoopChatMessage = LoopChatMessage
       processor: config.processor,
       logger: config.logger,
       collectInputs: config.collectInputs,
+      idleCollectIntervalMs: config.idleCollectIntervalMs,
       onUserMessage: config.onUserMessage,
       onTerminalDispatch: config.onTerminalDispatch,
       onToolCall: config.onToolCall,

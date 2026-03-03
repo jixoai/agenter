@@ -88,12 +88,26 @@ interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TS
     send: (messages: LoopBusMessage[]) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
   };
   collectInputs?: () => Promise<LoopBusInput[] | LoopBusInput | void>;
+  idleCollectIntervalMs?: number;
   onUserMessage?: (message: TChatMessage) => Promise<void> | void;
   onTerminalDispatch?: (command: LoopTerminalCommand) => Promise<void> | void;
   onToolCall?: (calls: LoopToolCall[]) => Promise<LoopBusInput[] | LoopBusInput | void>;
   onStateChange?: (state: LoopBusState) => Promise<void> | void;
   logger: LoopBusLogger;
 }
+
+const LOOP_TRANSITIONS: Record<LoopBusPhase, ReadonlySet<LoopBusPhase>> = {
+  waiting_messages: new Set(["collecting_inputs", "stopped"]),
+  collecting_inputs: new Set(["processing_messages", "waiting_messages", "stopped"]),
+  processing_messages: new Set(["waiting_processor_response", "waiting_messages", "stopped"]),
+  waiting_processor_response: new Set(["dispatching_tools", "dispatching_user", "dispatching_terminal", "waiting_messages", "stopped"]),
+  dispatching_tools: new Set(["dispatching_user", "dispatching_terminal", "waiting_messages", "stopped"]),
+  dispatching_user: new Set(["dispatching_terminal", "waiting_messages", "stopped"]),
+  dispatching_terminal: new Set(["waiting_messages", "stopped"]),
+  stopped: new Set(),
+};
+
+const DEFAULT_IDLE_COLLECT_INTERVAL_MS = 1_500;
 
 const normalizeInputs = (input: LoopBusInput[] | LoopBusInput | void): LoopBusInput[] => {
   if (!input) {
@@ -118,8 +132,11 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   private waiters: Array<(messages: LoopBusMessage[]) => void> = [];
   private running = false;
   private lastPhase: LoopBusPhase | null = null;
+  private readonly idleCollectIntervalMs: number;
 
-  constructor(private readonly deps: LoopBusDeps<TChatMessage, TStage>) {}
+  constructor(private readonly deps: LoopBusDeps<TChatMessage, TStage>) {
+    this.idleCollectIntervalMs = Math.max(200, deps.idleCollectIntervalMs ?? DEFAULT_IDLE_COLLECT_INTERVAL_MS);
+  }
 
   start(): void {
     if (this.running) {
@@ -239,8 +256,15 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   private async run(): Promise<void> {
     while (this.running) {
       await this.emitPhase("waiting_messages");
-      let messages = await this.popQueueMessages();
-      if (!this.running || messages.length === 0) {
+      let messages: LoopBusMessage[] = [];
+      if (this.queue.length > 0) {
+        messages = this.drainQueue();
+      } else if (this.deps.collectInputs) {
+        messages = await this.popQueueMessages(this.idleCollectIntervalMs);
+      } else {
+        messages = await this.popQueueMessages();
+      }
+      if (!this.running) {
         continue;
       }
 
@@ -250,7 +274,13 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         for (const input of collected) {
           this.pushMessage(input);
         }
+      }
+
+      if (this.queue.length > 0) {
         messages = [...messages, ...this.drainQueue()].sort((a, b) => a.timestamp - b.timestamp);
+      }
+      if (messages.length === 0) {
+        continue;
       }
 
       const visibleMessages = messages.filter((message) => !(message.source === "terminal" && message.meta?.signal === true));
@@ -362,12 +392,33 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
     }
   }
 
-  private popQueueMessages(): Promise<LoopBusMessage[]> {
+  private popQueueMessages(timeoutMs?: number): Promise<LoopBusMessage[]> {
     if (this.queue.length > 0) {
       return Promise.resolve(this.drainQueue());
     }
+    if (timeoutMs === undefined) {
+      return new Promise((resolve) => {
+        this.waiters.push(resolve);
+      });
+    }
     return new Promise((resolve) => {
-      this.waiters.push(resolve);
+      let settled = false;
+      const waiter = (messages: LoopBusMessage[]) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        resolve(messages);
+      };
+      const timeout = setTimeout(() => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) {
+          this.waiters.splice(index, 1);
+        }
+        waiter([]);
+      }, timeoutMs);
+      this.waiters.push(waiter);
     });
   }
 
@@ -388,6 +439,20 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   private async emitPhase(phase: LoopBusPhase): Promise<void> {
     if (this.lastPhase === phase) {
       return;
+    }
+    if (this.lastPhase !== null) {
+      const allowed = LOOP_TRANSITIONS[this.lastPhase];
+      if (!allowed.has(phase)) {
+        this.deps.logger.log({
+          channel: "agent",
+          level: "warn",
+          message: "loopbus.phase.transition.invalid",
+          meta: {
+            from: this.lastPhase,
+            to: phase,
+          },
+        });
+      }
     }
     this.lastPhase = phase;
     await this.deps.onStateChange?.({

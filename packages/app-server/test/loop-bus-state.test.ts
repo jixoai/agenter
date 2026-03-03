@@ -67,4 +67,46 @@ describe("Feature: loop bus state transitions", () => {
     expect(phases.includes("waiting_messages")).toBeTrue();
     expect(phases.includes("waiting_processor_response")).toBeFalse();
   });
+
+  test("Scenario: Given collectInputs polling When queue is silent Then loop still processes injected input", async () => {
+    const phases: LoopBusPhase[] = [];
+    let polled = 0;
+    const bus = new LoopBus({
+      processor: {
+        send: async () => ({
+          outputs: {
+            toUser: [],
+            toTerminal: [],
+            toTools: [],
+          },
+        }),
+      },
+      logger: { log: () => {} },
+      idleCollectIntervalMs: 120,
+      collectInputs: async () => {
+        polled += 1;
+        if (polled !== 2) {
+          return;
+        }
+        return {
+          name: "Terminal-iflow",
+          role: "user",
+          type: "text",
+          source: "terminal",
+          text: "{\"kind\":\"terminal-heartbeat\"}",
+        };
+      },
+      onStateChange: (state) => {
+        phases.push(state.phase);
+      },
+    });
+
+    bus.start();
+    await Bun.sleep(420);
+    bus.stop();
+
+    expect(polled).toBeGreaterThanOrEqual(2);
+    expect(phases.includes("collecting_inputs")).toBeTrue();
+    expect(phases.includes("waiting_processor_response")).toBeTrue();
+  });
 });
