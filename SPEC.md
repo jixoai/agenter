@@ -39,6 +39,7 @@ agenter/
     settings/       # @agenter/settings
     mdx2md/         # @agenter/mdx2md
     app-server/     # @agenter/app-server
+    client-sdk/     # @agenter/client-sdk
     cli/            # @agenter/cli
     tui/            # @agenter/tui
     webui/          # @agenter/webui
@@ -76,29 +77,35 @@ agenter/
 - 输入源：chat message + terminal diff/snapshot/help。
 - 输出分流：`to_user` / `self_talk` / `tool_call` / `tool_result`。
 - 与模型交互通过 `@tanstack/ai` 工具体系组织。
+- 对外通过 tRPC router 暴露 session/chat/settings/runtime 能力（传输层为 ws）。
 
-### 2.6 `demo`
+### 2.6 `@agenter/client-sdk`
+
+- 负责 UI 侧统一通信与状态模型（tRPC wsLink + Snapshot/Event 流）。
+- 封装 runtime store，供 `@agenter/tui` 与 `@agenter/webui` 复用。
+
+### 2.7 `demo`
 
 - 可运行实验与联调入口（OpenTUI）。
 - 消费 `@agenter/*` 包，不应复制核心逻辑。
 - 重点用于验证循环行为、提示词、终端交互、日志可观测性。
 
-### 2.7 `@agenter/cli`
+### 2.8 `@agenter/cli`
 
 - 统一用户入口命令：`agenter daemon|tui|web|doctor`
-- 负责拉起守护进程、连接 TUI 客户端、暴露 WebUI 入口
-- `tui`/`web` 共享同一个 app-server 守护进程
+- `web` 模式负责托管 `assets/webui` 静态资源并提供同域 `/trpc` 实时接口
+- `daemon` 模式仅启动内核服务（无前端托管）
 
-### 2.8 `@agenter/tui`
+### 2.9 `@agenter/tui`
 
 - 基于 OpenTUI 的正式客户端
-- 通过 WebSocket 连接 app-server
+- 通过 `@agenter/client-sdk` 连接 app-server（tRPC wsLink）
 - 支持多实例列表、实例切换、chat 同步与状态展示
 
-### 2.9 `@agenter/webui`
+### 2.10 `@agenter/webui`
 
-- 正式 Web 客户端（移动端优先）
-- 通过 WebSocket 连接 app-server，同步 chat/runtime/terminal 事件
+- 正式 Web 客户端（React + Vite，移动端优先）
+- 通过 `@agenter/client-sdk` 同步 chat/runtime/terminal 事件
 - 提供 settings/prompts 读写与冲突提示（mtime 乐观并发）
 
 ---
@@ -168,7 +175,7 @@ agenter/
 - 实例元数据持久化路径：`~/.agenter/instances.json`
 - 默认策略：
   - 单守护进程
-  - UI 与 daemon 使用 WebSocket 同步
+  - UI 与 daemon 使用 tRPC + wsLink 同步（全双工）
   - Web 默认绑定 `127.0.0.1`
 
 ---
@@ -227,10 +234,11 @@ agenter/
 - `@agenter/terminal`：核心协议与终端行为（CLI 解析、渲染、分页链、dirty slice、git-log、integration）。
 - `@agenter/mdx2md`：安全策略与 transform 契约。
 - `@agenter/demo`：组合层行为（runtime config、loop bus、prompt store、dispatcher）。
-- `@agenter/app-server`：runtime/协议行为 + e2e（daemon health/ws/lifecycle/web root）。
+- `@agenter/app-server`：runtime/tRPC 协议行为 + e2e（daemon health/lifecycle/web root）。
+- `@agenter/client-sdk`：通信封装与状态层回归测试。
 - `@agenter/cli`：黑盒 e2e（`daemon/web/doctor` 主链路）。
-- `@agenter/tui`：高价值可观察逻辑（ws 协议解析），避免低信号 UI smoke。
-- `@agenter/webui`：shell 输出契约（viewport/ws bootstrap 标记）。
+- `@agenter/tui`：高价值可观察逻辑（view-model 映射与状态展示）。
+- `@agenter/webui`：Vitest 组件测试 + Playwright e2e 入口。
 - `@agenter/settings`：source 合并、路径归一化、ResourceLoader 协议/alias。
 
 基线命令：
@@ -251,9 +259,9 @@ bun run test
 ### M2（已落地基础版本，持续迭代）
 
 - 已引入 `@agenter/cli`、`@agenter/tui`、`@agenter/webui` 正式包。
-- `@agenter/app-server` 已提供 daemon + 多实例聚合 + WebSocket 事件同步。
+- `@agenter/app-server` 已提供 daemon + 多实例聚合 + tRPC/ws 实时同步。
 - TUI/WebUI 已共享同一后端并支持实例列表与 chat 同步。
-- WebUI 已支持 settings/prompts 的读取与保存（含 mtime 冲突返回）。
+- WebUI 已升级为 Vite 工程并支持 settings/prompts 读取与保存（含 mtime 冲突返回）。
 - 后续重点：收敛 demo 逻辑并进一步提升 TUI/WebUI 交互质量。
 
 ### M3（后续）
