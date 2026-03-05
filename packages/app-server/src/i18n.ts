@@ -121,7 +121,11 @@ const runSync = (cmd: string[], cwd: string): string => {
   return textDecoder.decode(result.stdout).trim();
 };
 
-const fetchPromptsFromNpm = async (config: LanguagePackageConfig, version: string, cacheDir: string): Promise<PromptDocRecord> => {
+const fetchPromptsFromNpm = async (
+  config: LanguagePackageConfig,
+  version: string,
+  cacheDir: string,
+): Promise<PromptDocRecord> => {
   const cached = await readCachedPrompts(cacheDir);
   if (cached) {
     return cached;

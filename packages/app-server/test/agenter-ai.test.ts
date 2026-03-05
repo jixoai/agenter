@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import { ChatEngine } from "@agenter/chat-system";
 import type { TaskImportItem } from "@agenter/task-system";
+import { describe, expect, test } from "bun:test";
 
 import { AgenterAI } from "../src/agenter-ai";
 import { type LoopBusMessage } from "../src/loop-bus";
@@ -27,7 +27,9 @@ const createLogger = (): AppServerLogger => ({
 
 type ModelRespondInput = Parameters<ModelClient["respondWithMeta"]>[0];
 
-const createModelClient = (handler: (input: ModelRespondInput) => ReturnType<ModelClient["respondWithMeta"]>): ModelClient => {
+const createModelClient = (
+  handler: (input: ModelRespondInput) => ReturnType<ModelClient["respondWithMeta"]>,
+): ModelClient => {
   const client = {
     getMeta() {
       return {
@@ -72,7 +74,8 @@ const createTaskGateway = () => ({
 });
 
 const createTerminalGateway = () => {
-  const writeCalls: Array<{ terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" }> = [];
+  const writeCalls: Array<{ terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" }> =
+    [];
   return {
     writeCalls,
     gateway: {
@@ -80,7 +83,12 @@ const createTerminalGateway = () => {
       run: async () => ({ ok: true, message: "started" }),
       kill: async () => ({ ok: true, message: "stopped" }),
       focus: async () => ({ ok: true, message: "focused", focusedTerminalId: "iflow" }),
-      write: async (input: { terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" }) => {
+      write: async (input: {
+        terminalId: string;
+        text: string;
+        submit?: boolean;
+        submitKey?: "enter" | "linefeed";
+      }) => {
         writeCalls.push(input);
         return { ok: true, message: "written" };
       },
@@ -98,7 +106,8 @@ const createChatGateway = () => {
       list: () => engine.list(),
       add: async (input: { content: string; from: string; score?: number; remark?: string }) => engine.add(input),
       remark: async (input: { id: number; score?: number; remark?: string }) => engine.remark(input),
-      query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) => engine.query(input),
+      query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
+        engine.query(input),
       reply: async (input: {
         replyContent: string;
         from?: string;
@@ -164,7 +173,8 @@ describe("Feature: AgenterAI behavior", () => {
       },
     ]);
 
-    const joinedHistory = capturedMessages?.map((item) => item.content.map((part) => part.content).join("\n")).join("\n\n") ?? "";
+    const joinedHistory =
+      capturedMessages?.map((item) => item.content.map((part) => part.content).join("\n")).join("\n\n") ?? "";
     expect(joinedHistory).toContain("IFLOW HELP CONTENT");
     expect(joinedHistory).not.toContain("<CliHelp");
   });

@@ -1,5 +1,5 @@
-export { mdxToMd } from "./transform";
 export { ResourceAccess } from "./security";
+export { mdxToMd } from "./transform";
 export type {
   ConvertWarning,
   ExpressionPolicyMode,

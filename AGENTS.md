@@ -59,6 +59,7 @@
 ## 7) Browser 走查标准（agent-browser）
 
 ### 7.1 固定流程
+
 1. `agent-browser open <url>`
 2. `agent-browser wait --load networkidle`
 3. `agent-browser snapshot -i`
@@ -66,11 +67,13 @@
 5. `get text body` + `screenshot --full` 记录证据
 
 ### 7.2 默认回归用例（WebUI）
+
 - **Case A / 启动可用性**：页面加载成功，关键入口可见（New session / Select workspace / Chat 输入框）。
 - **Case B / 会话创建**：可创建 session，主聊天区进入可输入状态。
 - **Case C / 对话链路**：发送消息后，能看到可观察的状态推进与最终 assistant 回复。
 - **Case D / 错误可见性**：当终端/模型失败时，界面出现明确错误信息，且可继续操作。
 
 ### 7.3 结果判定
+
 - 每个用例都要记录：`预期`、`实际`、`证据路径`、`是否通过`。
 - 不通过时必须附带最小复现步骤与日志位置。

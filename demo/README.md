@@ -18,6 +18,7 @@ bun run start
 ```
 
 默认会加载 `demo/.agenter/settings.json`，并据此决定：
+
 - 终端预设与自启动（`terminal.presets` + `features.terminal.bootTerminals`）
 - AI 配置（`ai.*`，例如 DeepSeek）
 - 提示词根目录（默认从 settings source 目录推导）
@@ -36,6 +37,7 @@ bun run dev:iflow-devtools
 ```
 
 这个入口会启动：
+
 - 左侧：可直接键盘输入的 Terminal（人工替代 agenter-ai）
 - 右侧：Devtools（上方调试按钮，下方日志）
 - Devtools 动作统一围绕 terminal output-dir：
@@ -68,6 +70,7 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 ```
 
 输出会保存到：
+
 - `logs/terminal-devtools/analysis/report-*.md`
 - `logs/terminal-devtools/analysis/report-*.json`
 - `logs/terminal-devtools/analysis/raw/*.log`
@@ -91,6 +94,7 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 - `unfocusedSignal`: 当前固定 `"summary"`
 
 运行时语义：
+
 - focused terminal：LoopBus 自动注入 diff（默认 `remark=true`）
 - unfocused terminal：LoopBus 只注入 dirty summary
 - AI 如需 unfocused terminal 的细节，可主动调用 `terminal_sliceDirty`
@@ -99,6 +103,7 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 ## 统一资源加载器
 
 `@agenter/settings` 现在使用统一 ResourceLoader 解析并读取资源，支持：
+
 - `user` / `project` / `local` 内置 source
 - 路径：`./`、`../`、`/`、`~/`
 - 协议：`file:`、`http:`、`https:`
@@ -125,6 +130,7 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 - `demo/.agenter/man/iflow.md`
 
 说明：
+
 - `AGENTER.mdx` 是用户自由覆盖层，可以为空。
 - 核心工作方式与系统模板由 i18n 包内置（`packages/i18n-*/prompts/*.mdx`）。
 - 终端 help 通过 `terminal.presets.<id>.helpSource` + `terminal_run` 的 `<CliHelp command="..."/>` 注入。
@@ -147,6 +153,7 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
   - 自动下载 npm 语言包并缓存到 `~/.agenter/i18n/<lang>@<version>/prompts.json`。
 
 说明：
+
 - `@agenter/i18n-en` 同时是 `@agenter/app-server` 的 `dependencies` 与 `peerDependencies`，保证默认包可用且版本联动可见。
 
 构建语言包（从 `prompts/*.mdx|*.md` 生成 `prompts.json`）：

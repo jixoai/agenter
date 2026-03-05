@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createAgenterClient,
+  createRuntimeStore,
+  type RuntimeClientState,
+  type SessionEntry,
+} from "@agenter/client-sdk";
 import {
   Activity,
   ArrowLeft,
@@ -15,12 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  createAgenterClient,
-  createRuntimeStore,
-  type RuntimeClientState,
-  type SessionEntry,
-} from "@agenter/client-sdk";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -28,8 +28,8 @@ import { Tabs, type TabItem } from "./components/ui/tabs";
 import { Textarea } from "./components/ui/textarea";
 import { ChatPanel } from "./features/chat/ChatPanel";
 import { ProcessPanel } from "./features/process/ProcessPanel";
-import { SessionsPanel } from "./features/sessions/SessionsPanel";
 import { CreateSessionDialog } from "./features/sessions/CreateSessionDialog";
+import { SessionsPanel } from "./features/sessions/SessionsPanel";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
 import { SettingsPanel, type SettingsLayerItem } from "./features/settings/SettingsPanel";
 import { TasksPanel } from "./features/tasks/TasksPanel";
@@ -193,8 +193,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     return showAllSessions ? ordered : ordered.slice(0, 8);
   }, [runtimeState.sessions, showAllSessions]);
 
-  const messages = activeSessionId ? runtimeState.chatsBySession[activeSessionId] ?? [] : [];
-  const tasks = activeSessionId ? runtimeState.tasksBySession[activeSessionId] ?? [] : [];
+  const messages = activeSessionId ? (runtimeState.chatsBySession[activeSessionId] ?? []) : [];
+  const tasks = activeSessionId ? (runtimeState.tasksBySession[activeSessionId] ?? []) : [];
   const activeRuntime = activeSessionId ? runtimeState.runtimes[activeSessionId] : undefined;
   const terminalSnapshots = activeSessionId ? runtimeState.terminalSnapshotsBySession[activeSessionId] : undefined;
   const aiStatus = phaseToStatus(activeSession, activeRuntime);
@@ -202,7 +202,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     activeSessionId && activeRuntime && activeRuntime.terminals.length === 0
       ? "No terminal is configured or running for this session. Configure boot terminals in settings or start one manually."
       : null;
-  const activeSessionLabel = activeSession?.name ?? (activeSessionId ? `Session · ${activeSessionId.slice(0, 8)}` : null);
+  const activeSessionLabel =
+    activeSession?.name ?? (activeSessionId ? `Session · ${activeSessionId.slice(0, 8)}` : null);
 
   const setError = (error: unknown) => {
     setNotice(error instanceof Error ? error.message : String(error));
@@ -428,7 +429,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         <section className="flex h-full min-h-0 flex-col rounded-2xl bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold text-slate-900">Recent Workspaces</h2>
           <div className="min-h-0 space-y-2 overflow-auto">
-            {runtimeState.recentWorkspaces.length === 0 ? <p className="text-xs text-slate-500">No workspace history yet.</p> : null}
+            {runtimeState.recentWorkspaces.length === 0 ? (
+              <p className="text-xs text-slate-500">No workspace history yet.</p>
+            ) : null}
             {runtimeState.recentWorkspaces.slice(-30).map((workspace) => (
               <button
                 key={workspace}
@@ -505,10 +508,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
               >
                 Workspace
               </Button>
-              <Button variant="outline" onClick={() => void handleEnterWorkspace()} title="Create session without first message">
+              <Button
+                variant="outline"
+                onClick={() => void handleEnterWorkspace()}
+                title="Create session without first message"
+              >
                 Enter Workspace
               </Button>
-              <Button onClick={() => void handleQuickstart()} disabled={quickstartInput.trim().length === 0} title="Create session and send first message">
+              <Button
+                onClick={() => void handleQuickstart()}
+                disabled={quickstartInput.trim().length === 0}
+                title="Create session and send first message"
+              >
                 Start
               </Button>
             </div>
@@ -542,17 +553,35 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     <main className="min-h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
         <div className="mx-auto flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileSidebarOpen((prev) => !prev)} aria-label="Open navigation">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setMobileSidebarOpen((prev) => !prev)}
+            aria-label="Open navigation"
+          >
             <PanelLeftOpen className="h-4 w-4" />
           </Button>
           <h1 className="text-sm font-semibold tracking-tight">Agenter</h1>
           <div className="ml-auto flex items-center gap-1">
             {mainView === "chat" && activeSession ? (
-              <Button size="icon" variant="secondary" onClick={() => setMobileDetailsOpen(true)} title="Open tools" aria-label="Open tools">
+              <Button
+                size="icon"
+                variant="secondary"
+                onClick={() => setMobileDetailsOpen(true)}
+                title="Open tools"
+                aria-label="Open tools"
+              >
                 <Activity className="h-4 w-4" />
               </Button>
             ) : null}
-            <Button size="icon" variant="secondary" onClick={() => setCreateDialogOpen(true)} title="New session" aria-label="New session">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => setCreateDialogOpen(true)}
+              title="New session"
+              aria-label="New session"
+            >
               <Plus className="h-4 w-4" />
             </Button>
             <Button
@@ -567,13 +596,34 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
             >
               <FolderOpen className="h-4 w-4" />
             </Button>
-            <Button size="icon" variant="secondary" onClick={() => void handleStart()} disabled={!activeSessionId} title="Start session" aria-label="Start session">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => void handleStart()}
+              disabled={!activeSessionId}
+              title="Start session"
+              aria-label="Start session"
+            >
               <Play className="h-4 w-4" />
             </Button>
-            <Button size="icon" variant="secondary" onClick={() => void handleStop()} disabled={!activeSessionId} title="Stop session" aria-label="Stop session">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => void handleStop()}
+              disabled={!activeSessionId}
+              title="Stop session"
+              aria-label="Stop session"
+            >
               <Square className="h-4 w-4" />
             </Button>
-            <Button size="icon" variant="destructive" onClick={() => void handleDelete()} disabled={!activeSessionId} title="Delete session" aria-label="Delete session">
+            <Button
+              size="icon"
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={!activeSessionId}
+              title="Delete session"
+              aria-label="Delete session"
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
@@ -584,8 +634,14 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         <div className="mx-auto flex items-center gap-2">
           {notice ? <Badge variant="destructive">{notice}</Badge> : null}
           <Badge variant="secondary">{runtimeState.connected ? "Connected" : "Reconnecting"}</Badge>
-          <Badge variant={aiStatus === "error" ? "destructive" : aiStatus === "idle" ? "secondary" : "warning"}>AI: {aiStatus}</Badge>
-          {activeSessionLabel ? <Badge variant="secondary">{activeSessionLabel}</Badge> : <Badge variant="warning">No session</Badge>}
+          <Badge variant={aiStatus === "error" ? "destructive" : aiStatus === "idle" ? "secondary" : "warning"}>
+            AI: {aiStatus}
+          </Badge>
+          {activeSessionLabel ? (
+            <Badge variant="secondary">{activeSessionLabel}</Badge>
+          ) : (
+            <Badge variant="warning">No session</Badge>
+          )}
         </div>
       </div>
 
@@ -610,17 +666,29 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
 
         <section className="h-[calc(100dvh-92px)] min-h-0 p-3 md:p-4">
           {mainView === "chat" && activeSessionId ? (
-            <div className={`grid h-full min-h-0 grid-cols-1 gap-3 ${desktopDetailsOpen ? "xl:grid-cols-[1fr_380px]" : "xl:grid-cols-1"}`}>
+            <div
+              className={`grid h-full min-h-0 grid-cols-1 gap-3 ${desktopDetailsOpen ? "xl:grid-cols-[1fr_380px]" : "xl:grid-cols-1"}`}
+            >
               {renderMainView()}
               {desktopDetailsOpen ? (
                 <aside className="hidden min-h-0 rounded-2xl bg-white p-3 shadow-sm xl:flex xl:flex-col xl:gap-3">
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="text-sm font-semibold text-slate-900">Tools</h2>
-                    <Button size="icon" variant="ghost" onClick={() => setDesktopDetailsOpen(false)} title="Hide tools" aria-label="Hide tools">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setDesktopDetailsOpen(false)}
+                      title="Hide tools"
+                      aria-label="Hide tools"
+                    >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <Tabs items={DETAIL_TABS} value={detailsTab} onValueChange={(value) => setDetailsTab(value as DetailsTab)} />
+                  <Tabs
+                    items={DETAIL_TABS}
+                    value={detailsTab}
+                    onValueChange={(value) => setDetailsTab(value as DetailsTab)}
+                  />
                   <div className="min-h-0 flex-1 overflow-hidden">{renderChatDetails()}</div>
                 </aside>
               ) : null}
@@ -632,7 +700,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       </div>
 
       {mainView === "chat" && activeSessionId && !desktopDetailsOpen ? (
-        <div className="fixed bottom-4 right-4 hidden xl:block">
+        <div className="fixed right-4 bottom-4 hidden xl:block">
           <Button size="icon" onClick={() => setDesktopDetailsOpen(true)} title="Show tools" aria-label="Show tools">
             <TerminalSquare className="h-4 w-4" />
           </Button>
@@ -644,7 +712,12 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           <aside className="h-full w-[88vw] max-w-[320px] bg-white p-3" onClick={(event) => event.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold">Navigation</p>
-              <Button size="icon" variant="ghost" onClick={() => setMobileSidebarOpen(false)} aria-label="Close navigation">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setMobileSidebarOpen(false)}
+                aria-label="Close navigation"
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -675,13 +748,24 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         <div className="fixed inset-0 z-40 bg-white xl:hidden">
           <div className="flex h-full flex-col">
             <header className="flex items-center gap-2 border-b border-slate-200 p-3">
-              <Button size="icon" variant="ghost" onClick={() => setMobileDetailsOpen(false)} aria-label="Back to chat" title="Back to chat">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setMobileDetailsOpen(false)}
+                aria-label="Back to chat"
+                title="Back to chat"
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <h2 className="text-sm font-semibold text-slate-900">Tools</h2>
             </header>
             <div className="border-b border-slate-200 p-3">
-              <Tabs items={DETAIL_TABS} value={detailsTab} onValueChange={(value) => setDetailsTab(value as DetailsTab)} className="w-full" />
+              <Tabs
+                items={DETAIL_TABS}
+                value={detailsTab}
+                onValueChange={(value) => setDetailsTab(value as DetailsTab)}
+                className="w-full"
+              />
             </div>
             <div className="min-h-0 flex-1 overflow-hidden p-3">{renderChatDetails()}</div>
           </div>

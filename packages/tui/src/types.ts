@@ -15,8 +15,8 @@ export const buildViewModel = (state: RuntimeClientState, activeSessionId: strin
     connected: state.connected,
     activeSessionId,
     sessions: state.sessions,
-    messages: activeSessionId ? state.chatsBySession[activeSessionId] ?? [] : [],
-    tasks: activeSessionId ? state.tasksBySession[activeSessionId] ?? [] : [],
+    messages: activeSessionId ? (state.chatsBySession[activeSessionId] ?? []) : [],
+    tasks: activeSessionId ? (state.tasksBySession[activeSessionId] ?? []) : [],
     phaseText: activeRuntime ? `${activeRuntime.loopPhase} / ${activeRuntime.stage}` : "idle",
   };
 };

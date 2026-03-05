@@ -45,7 +45,9 @@ export class TerminalGitLogger {
     mkdirSync(debugDir, { recursive: true });
     this.debugPath = join(debugDir, "git-log.ndjson");
     this.env = {
-      ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+      ...Object.fromEntries(
+        Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      ),
       GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME ?? "ati",
       GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL ?? "ati@local",
       GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME ?? "ati",

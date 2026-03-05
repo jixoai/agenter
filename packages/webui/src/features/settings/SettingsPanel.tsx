@@ -62,7 +62,10 @@ export const SettingsPanel = ({
   onSaveLayer,
 }: SettingsPanelProps) => {
   const [activeTab, setActiveTab] = useState<"effective" | "layers">("effective");
-  const selectedLayer = useMemo(() => layers.find((item) => item.layerId === selectedLayerId) ?? null, [layers, selectedLayerId]);
+  const selectedLayer = useMemo(
+    () => layers.find((item) => item.layerId === selectedLayerId) ?? null,
+    [layers, selectedLayerId],
+  );
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-3 rounded-xl bg-white p-4 shadow-sm">
@@ -98,11 +101,7 @@ export const SettingsPanel = ({
 
       {activeTab === "effective" ? (
         <div className="min-h-0 flex-1">
-          <Textarea
-            value={effectiveContent}
-            readOnly
-            className="min-h-[55dvh] resize-none font-mono text-xs"
-          />
+          <Textarea value={effectiveContent} readOnly className="min-h-[55dvh] resize-none font-mono text-xs" />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[320px_1fr]">
@@ -129,10 +128,16 @@ export const SettingsPanel = ({
                 >
                   <div className="mb-1 flex items-center gap-1">
                     <Badge variant="secondary">{layerTypeLabel(layer.sourceId)}</Badge>
-                    {layer.editable ? <Badge variant="success">editable</Badge> : <Badge variant="warning">readonly</Badge>}
+                    {layer.editable ? (
+                      <Badge variant="success">editable</Badge>
+                    ) : (
+                      <Badge variant="warning">readonly</Badge>
+                    )}
                   </div>
-                  <p className="line-clamp-2 break-all text-[11px] text-slate-700">{layer.path}</p>
-                  {!layer.editable && layer.readonlyReason ? <p className="mt-1 text-[11px] text-amber-700">{layer.readonlyReason}</p> : null}
+                  <p className="line-clamp-2 text-[11px] break-all text-slate-700">{layer.path}</p>
+                  {!layer.editable && layer.readonlyReason ? (
+                    <p className="mt-1 text-[11px] text-amber-700">{layer.readonlyReason}</p>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -142,7 +147,9 @@ export const SettingsPanel = ({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-medium text-slate-700">Layer editor</p>
-                <p className="max-w-[60ch] truncate text-[11px] text-slate-500">{selectedLayer?.path ?? "Select a source layer"}</p>
+                <p className="max-w-[60ch] truncate text-[11px] text-slate-500">
+                  {selectedLayer?.path ?? "Select a source layer"}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="secondary" onClick={onLoadLayer} disabled={disabled || !selectedLayerId}>

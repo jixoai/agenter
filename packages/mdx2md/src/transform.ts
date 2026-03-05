@@ -1,8 +1,8 @@
 import type { Content, Root, Text } from "mdast";
-import { unified } from "unified";
 import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
+import { unified } from "unified";
 
 import { ResourceAccess } from "./security";
 import type {
@@ -150,7 +150,11 @@ const resolveTransformResult = (result: TagTransformResult): string | null => {
   return result.markdown;
 };
 
-const transformNode = async (node: MdNode, context: TransformContext, parentKind: "flow" | "text"): Promise<MdNode[]> => {
+const transformNode = async (
+  node: MdNode,
+  context: TransformContext,
+  parentKind: "flow" | "text",
+): Promise<MdNode[]> => {
   if (node.type === "mdxjsEsm") {
     warning(context, { code: "TAG_REMOVED", message: "Removed mdxjsEsm node", tagName: "mdxjsEsm" });
     return [];

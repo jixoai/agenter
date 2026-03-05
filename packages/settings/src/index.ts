@@ -1,17 +1,17 @@
-export { settingsSource } from "./source";
 export { loadSettings } from "./load-settings";
-export { settingsSchema, type SettingsSchema } from "./schema";
 export {
   ResourceLoader,
+  type ResolvedResource,
   type ResourceAliasResolver,
   type ResourceLoaderContext,
   type ResourceLoaderOptions,
   type ResourceProtocolHandler,
-  type ResolvedResource,
 } from "./resource-loader";
+export { settingsSchema, type SettingsSchema } from "./schema";
+export { settingsSource } from "./source";
 export type {
-  AgenterSettings,
   AgentSettings,
+  AgenterSettings,
   AiProviderKind,
   AiProviderSettings,
   AiSettings,

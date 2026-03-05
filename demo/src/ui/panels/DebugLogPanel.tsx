@@ -1,5 +1,5 @@
-import type { RefObject } from "react";
 import type { TextRenderable } from "@opentui/core";
+import type { RefObject } from "react";
 
 import type { DebugLogLine } from "../../core/protocol";
 
@@ -14,9 +14,7 @@ const formatMeta = (line: DebugLogLine): string => {
   if (!line.meta) {
     return "";
   }
-  const parts = Object.entries(line.meta).map(
-    ([key, value]) => `${key}=${String(value)}`,
-  );
+  const parts = Object.entries(line.meta).map(([key, value]) => `${key}=${String(value)}`);
   return parts.length > 0 ? ` | ${parts.join(" ")}` : "";
 };
 
@@ -25,12 +23,7 @@ const formatLine = (line: DebugLogLine): string => {
   return `${time} [${line.channel}/${line.level}] ${line.message}${formatMeta(line)}`;
 };
 
-export const DebugLogPanel = ({
-  logs,
-  focused,
-  scrollOffset,
-  contentRef,
-}: DebugLogPanelProps) => {
+export const DebugLogPanel = ({ logs, focused, scrollOffset, contentRef }: DebugLogPanelProps) => {
   const title = focused ? "debug-log *" : "debug-log";
   const loopKeywords = new Set([
     "loopbus.push",
@@ -69,46 +62,24 @@ export const DebugLogPanel = ({
     return lines.slice(start, end);
   };
 
-  const loopLines = windowed(
-    logs.filter((line) => loopKeywords.has(line.message)),
-  );
-  const terminalLines = windowed(
-    logs.filter((line) => terminalKeywords.has(line.message)),
-  );
+  const loopLines = windowed(logs.filter((line) => loopKeywords.has(line.message)));
+  const terminalLines = windowed(logs.filter((line) => terminalKeywords.has(line.message)));
   const systemLines = windowed(
     logs.filter(
       (line) =>
-        systemChannels.has(line.channel) ||
-        (!loopKeywords.has(line.message) &&
-          !terminalKeywords.has(line.message)),
+        systemChannels.has(line.channel) || (!loopKeywords.has(line.message) && !terminalKeywords.has(line.message)),
     ),
   );
 
   const toBlock = (lines: DebugLogLine[]): string => {
-    const body =
-      lines.length === 0
-        ? "(no logs)"
-        : lines.map((line) => formatLine(line)).join("\n");
+    const body = lines.length === 0 ? "(no logs)" : lines.map((line) => formatLine(line)).join("\n");
     return body;
   };
 
   return (
-    <box
-      border
-      borderColor={focused ? "cyan" : "gray"}
-      padding={1}
-      flexDirection="column"
-      height={14}
-      title={title}
-    >
+    <box border borderColor={focused ? "cyan" : "gray"} padding={1} flexDirection="column" height={14} title={title}>
       <box flexDirection="row" flexGrow={1}>
-        <scrollbox
-          flexGrow={1}
-          border
-          borderColor={focused ? "cyan" : "gray"}
-          padding={1}
-          title="loopbus/ai"
-        >
+        <scrollbox flexGrow={1} border borderColor={focused ? "cyan" : "gray"} padding={1} title="loopbus/ai">
           <text ref={contentRef} selectable>
             {toBlock(loopLines)}
           </text>

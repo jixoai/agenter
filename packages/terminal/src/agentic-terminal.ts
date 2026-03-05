@@ -57,11 +57,7 @@ const resolveProfile = (profile: TerminalProfile | undefined) => {
 };
 
 const xmlEscape = (text: string): string =>
-  text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
 /**
  * AgenticTerminal orchestrates PTY + xterm/headless + semantic HTML filesystem sync.
@@ -749,7 +745,14 @@ export class AgenticTerminal {
       };
     }
 
-    const diffResult = this.runGitCommand(["diff", "--no-color", "--patience", `${fromHash}..${toHash}`, "--", "output"]);
+    const diffResult = this.runGitCommand([
+      "diff",
+      "--no-color",
+      "--patience",
+      `${fromHash}..${toHash}`,
+      "--",
+      "output",
+    ]);
     if (!diffResult.ok) {
       return {
         ok: false,
@@ -816,7 +819,11 @@ export class AgenticTerminal {
   private appendInputLog(mixedInput: string, source: string): void {
     const logPath = join(this.workspace, "input", "ai-input.log");
     const stamp = new Date().toISOString();
-    appendFileSync(logPath, `<ai-input timestamp="${stamp}" source="${xmlEscape(source)}">${xmlEscape(mixedInput)}</ai-input>\n`, "utf8");
+    appendFileSync(
+      logPath,
+      `<ai-input timestamp="${stamp}" source="${xmlEscape(source)}">${xmlEscape(mixedInput)}</ai-input>\n`,
+      "utf8",
+    );
   }
 
   private toPersistenceRender(compact: RenderResult): RenderResult {
@@ -864,7 +871,12 @@ export class AgenticTerminal {
 
     if (this.profile.gitLog === "verbose") {
       this.commitGitLog({
-        event: beforeArchive !== afterArchive && afterArchive ? "archive" : reason === "status-idle" ? "status-idle" : "write",
+        event:
+          beforeArchive !== afterArchive && afterArchive
+            ? "archive"
+            : reason === "status-idle"
+              ? "status-idle"
+              : "write",
         file: beforeArchive !== afterArchive && afterArchive ? afterArchive : "latest.log.html",
         status: this.status,
         rows,

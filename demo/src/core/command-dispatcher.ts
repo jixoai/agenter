@@ -12,9 +12,7 @@ export interface TerminalCommandWriter {
   writeMixed: (input: string) => Promise<void>;
 }
 
-export const resolveSubmitSequence = (
-  submitKey: "enter" | "linefeed" = "enter",
-): "enter" | "linefeed" => {
+export const resolveSubmitSequence = (submitKey: "enter" | "linefeed" = "enter"): "enter" | "linefeed" => {
   if (submitKey === "linefeed") {
     return "linefeed";
   }
@@ -85,7 +83,12 @@ export class CommandDispatcher {
       channel: "agent",
       level: "debug",
       message: "command.write",
-      meta: { taskId: input.taskId, chars: payload.length, submitGapMs: mixed.submitGapMs, via: "terminal.pending-input" },
+      meta: {
+        taskId: input.taskId,
+        chars: payload.length,
+        submitGapMs: mixed.submitGapMs,
+        via: "terminal.pending-input",
+      },
     });
     if (input.submit) {
       this.logger.log({

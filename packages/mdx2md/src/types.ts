@@ -23,13 +23,7 @@ export interface MdxAttributeMap {
 }
 
 export interface ConvertWarning {
-  code:
-    | "TAG_REMOVED"
-    | "TAG_TO_TEXT"
-    | "TAG_UNWRAP"
-    | "EXPRESSION_REMOVED"
-    | "EXPRESSION_TO_TEXT"
-    | "UNSUPPORTED_NODE";
+  code: "TAG_REMOVED" | "TAG_TO_TEXT" | "TAG_UNWRAP" | "EXPRESSION_REMOVED" | "EXPRESSION_TO_TEXT" | "UNSUPPORTED_NODE";
   message: string;
   tagName?: string;
 }

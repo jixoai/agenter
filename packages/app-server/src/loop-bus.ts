@@ -36,7 +36,10 @@ export interface LoopChatMessage {
   timestamp: number;
 }
 
-export interface LoopBusResponse<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
+export interface LoopBusResponse<
+  TChatMessage extends LoopChatMessage = LoopChatMessage,
+  TStage extends string = string,
+> {
   taskId?: string;
   stage?: TStage;
   summary?: string;
@@ -100,7 +103,13 @@ const LOOP_TRANSITIONS: Record<LoopBusPhase, ReadonlySet<LoopBusPhase>> = {
   waiting_messages: new Set(["collecting_inputs", "stopped"]),
   collecting_inputs: new Set(["processing_messages", "waiting_messages", "stopped"]),
   processing_messages: new Set(["waiting_processor_response", "waiting_messages", "stopped"]),
-  waiting_processor_response: new Set(["dispatching_tools", "dispatching_user", "dispatching_terminal", "waiting_messages", "stopped"]),
+  waiting_processor_response: new Set([
+    "dispatching_tools",
+    "dispatching_user",
+    "dispatching_terminal",
+    "waiting_messages",
+    "stopped",
+  ]),
   dispatching_tools: new Set(["dispatching_user", "dispatching_terminal", "waiting_messages", "stopped"]),
   dispatching_user: new Set(["dispatching_terminal", "waiting_messages", "stopped"]),
   dispatching_terminal: new Set(["waiting_messages", "stopped"]),
@@ -283,7 +292,9 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         continue;
       }
 
-      const visibleMessages = messages.filter((message) => !(message.source === "terminal" && Boolean(message.meta?.signal)));
+      const visibleMessages = messages.filter(
+        (message) => !(message.source === "terminal" && Boolean(message.meta?.signal)),
+      );
       if (visibleMessages.length === 0) {
         this.deps.logger.log({
           channel: "agent",

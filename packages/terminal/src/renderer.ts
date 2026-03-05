@@ -81,10 +81,7 @@ const styleEquals = (a: CellStyle, b: CellStyle): boolean =>
   a.inverse === b.inverse;
 
 const escapeHtml = (text: string): string =>
-  text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 const wrapByStyle = (text: string, style: CellStyle): string => {
   let output = escapeHtml(text);

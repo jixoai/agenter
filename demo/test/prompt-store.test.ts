@@ -20,8 +20,12 @@ test("prompt store loads AGENTER + internal files", async () => {
 
   writeFileSync(agenterPath, "user-overlay-v1", "utf8");
   writeFileSync(systemPath, "system-v1", "utf8");
-  writeFileSync(templatePath, "<Slot name=\"AGENTER_SYSTEM\" />\n---\n<Slot name=\"AGENTER\" />\n---\n<Slot name=\"RESPONSE_CONTRACT\" />", "utf8");
-  writeFileSync(contractPath, "line-a\n<Policy mode=\"value\" key=\"allowToolWait\" />\nline-b", "utf8");
+  writeFileSync(
+    templatePath,
+    '<Slot name="AGENTER_SYSTEM" />\n---\n<Slot name="AGENTER" />\n---\n<Slot name="RESPONSE_CONTRACT" />',
+    "utf8",
+  );
+  writeFileSync(contractPath, 'line-a\n<Policy mode="value" key="allowToolWait" />\nline-b', "utf8");
 
   const store = new FilePromptStore({
     rootDir: dir,
@@ -30,7 +34,7 @@ test("prompt store loads AGENTER + internal files", async () => {
   expect(first.docs.AGENTER.content).toBe("user-overlay-v1");
   expect(first.docs.AGENTER_SYSTEM.content).toBe("system-v1");
   expect(first.docs.SYSTEM_TEMPLATE.syntax).toBe("mdx");
-  expect(first.docs.SYSTEM_TEMPLATE.content).toContain("<Slot name=\"AGENTER_SYSTEM\" />");
+  expect(first.docs.SYSTEM_TEMPLATE.content).toContain('<Slot name="AGENTER_SYSTEM" />');
   expect(first.docs.RESPONSE_CONTRACT.syntax).toBe("mdx");
   expect(first.docs.RESPONSE_CONTRACT.content).toContain("allowToolWait");
   expect(store.getDoc("AGENTER").content).toBe("user-overlay-v1");

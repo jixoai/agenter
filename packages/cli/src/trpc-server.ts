@@ -1,10 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 
+import { AppKernel, appRouter, createTrpcContext } from "@agenter/app-server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
-import { AppKernel, appRouter, createTrpcContext } from "@agenter/app-server";
 import { WebSocketServer } from "ws";
 
 const MIME_BY_EXT: Record<string, string> = {

@@ -1,4 +1,11 @@
-import { chat, summarize, type AnySummarizeAdapter, type AnyTextAdapter, type StreamChunk, type Tool } from "@tanstack/ai";
+import {
+  chat,
+  summarize,
+  type AnySummarizeAdapter,
+  type AnyTextAdapter,
+  type StreamChunk,
+  type Tool,
+} from "@tanstack/ai";
 import { createAnthropicChat, createAnthropicSummarize } from "@tanstack/ai-anthropic";
 import { createGeminiChat, createGeminiSummarize } from "@tanstack/ai-gemini";
 import { createOllamaChat, createOllamaSummarize } from "@tanstack/ai-ollama";
@@ -37,7 +44,15 @@ export interface TextOnlyModelMessage {
 
 export interface ModelProviderConfig {
   providerId: string;
-  kind: "deepseek" | "openai" | "anthropic" | "gemini" | "grok" | "ollama" | "openai-compatible" | "anthropic-compatible";
+  kind:
+    | "deepseek"
+    | "openai"
+    | "anthropic"
+    | "gemini"
+    | "grok"
+    | "ollama"
+    | "openai-compatible"
+    | "anthropic-compatible";
   model: string;
   lang?: string;
   apiKey?: string;
@@ -69,17 +84,14 @@ const appendChunk = (current: string, chunk: string | undefined): string => {
   return current + chunk;
 };
 
-const isRunFinishedChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "RUN_FINISHED" }> => chunk.type === "RUN_FINISHED";
+const isRunFinishedChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "RUN_FINISHED" }> =>
+  chunk.type === "RUN_FINISHED";
 
-const isTextChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "TEXT_MESSAGE_CONTENT" }> => chunk.type === "TEXT_MESSAGE_CONTENT";
+const isTextChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TEXT_MESSAGE_CONTENT" }> =>
+  chunk.type === "TEXT_MESSAGE_CONTENT";
 
-const isThinkingChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> => chunk.type === "STEP_FINISHED";
+const isThinkingChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> =>
+  chunk.type === "STEP_FINISHED";
 
 export class ModelClient {
   private readonly textAdapter: AnyTextAdapter;
@@ -203,7 +215,10 @@ export class ModelClient {
   }
 
   private resolveApiEnvHint(): string {
-    if (this.config.kind === "deepseek" || (this.config.kind === "openai-compatible" && isDeepseekBaseUrl(this.config.baseUrl))) {
+    if (
+      this.config.kind === "deepseek" ||
+      (this.config.kind === "openai-compatible" && isDeepseekBaseUrl(this.config.baseUrl))
+    ) {
       return "DEEPSEEK_API_KEY";
     }
     if (this.config.kind === "anthropic" || this.config.kind === "anthropic-compatible") {

@@ -1,25 +1,31 @@
 export { AgenticTerminal } from "./agentic-terminal";
+export { keyToSequence, parseMixedInput, runMixedInput } from "./input-parser";
+export { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "./output-reader";
+export {
+  compactRenderForPersistence,
+  renderSemanticBuffer,
+  renderStructuredBuffer,
+  serializeStructuredLinesForLog,
+  stripHtmlTags,
+} from "./renderer";
 export type {
-  TerminalProfile,
-  TerminalStatus,
-  TerminalColorMode,
-  TerminalColorOption,
-  TerminalLogStyle,
-  TerminalLogStyleOption,
-  TerminalGitLogMode,
-  TerminalGitLogOption,
-  RenderResult,
-  StructuredRenderResult,
-  TerminalStructuredSnapshot,
-  TerminalDirtyMarkResult,
-  TerminalDirtySliceResult,
-  TerminalDirtySliceOptions,
-  TerminalPendingInputResult,
-  TerminalPendingInputOptions,
   PageMeta,
+  RenderResult,
   RichLine,
   RichSpan,
+  StructuredRenderResult,
+  TerminalColorMode,
+  TerminalColorOption,
+  TerminalDirtyMarkResult,
+  TerminalDirtySliceOptions,
+  TerminalDirtySliceResult,
+  TerminalGitLogMode,
+  TerminalGitLogOption,
+  TerminalLogStyle,
+  TerminalLogStyleOption,
+  TerminalPendingInputOptions,
+  TerminalPendingInputResult,
+  TerminalProfile,
+  TerminalStatus,
+  TerminalStructuredSnapshot,
 } from "./types";
-export { parseMixedInput, runMixedInput, keyToSequence } from "./input-parser";
-export { compactRenderForPersistence, renderSemanticBuffer, renderStructuredBuffer, serializeStructuredLinesForLog, stripHtmlTags } from "./renderer";
-export { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "./output-reader";

@@ -1,20 +1,25 @@
-export { TaskEngine, toTaskKey, toTaskRef } from "./task-engine";
-export { serializeTaskMarkdown, toTaskCreateInputFromMarkdown, pickProjectsFromMarkdown, parseTaskMarkdownRecord } from "./task-markdown";
 export { resolveTaskSources } from "./task-addressing";
+export type { TaskAddressingConfig, TaskSourceInput, TaskSourceResolved } from "./task-addressing";
+export { TaskEngine, toTaskKey, toTaskRef } from "./task-engine";
+export {
+  parseTaskMarkdownRecord,
+  pickProjectsFromMarkdown,
+  serializeTaskMarkdown,
+  toTaskCreateInputFromMarkdown,
+} from "./task-markdown";
 export type {
   Task,
-  TaskStatus,
-  TaskSourceName,
-  TaskTrigger,
-  TaskView,
   TaskCreateInput,
-  TaskPatchInput,
-  TaskUpdateInput,
   TaskDoneResult,
+  TaskEventInput,
   TaskImportItem,
   TaskImportResult,
-  TaskEventInput,
+  TaskPatchInput,
   TaskSourceInfo,
+  TaskSourceName,
+  TaskStatus,
+  TaskTrigger,
   TaskTriggerResult,
+  TaskUpdateInput,
+  TaskView,
 } from "./task-types";
-export type { TaskAddressingConfig, TaskSourceInput, TaskSourceResolved } from "./task-addressing";

@@ -1,7 +1,12 @@
-import { toolDefinition, type Tool } from "@tanstack/ai";
-import { z } from "zod";
+import type {
+  ChatAddInput,
+  ChatQueryInput,
+  ChatRecord,
+  ChatRemarkInput,
+  ChatReplyInput,
+  ChatReplyResult,
+} from "@agenter/chat-system";
 import { mdxToMd } from "@agenter/mdx2md";
-import type { ChatAddInput, ChatQueryInput, ChatRecord, ChatRemarkInput, ChatReplyInput, ChatReplyResult } from "@agenter/chat-system";
 import type {
   TaskCreateInput,
   TaskDoneResult,
@@ -12,6 +17,8 @@ import type {
   TaskUpdateInput,
   TaskView,
 } from "@agenter/task-system";
+import { toolDefinition, type Tool } from "@tanstack/ai";
+import { z } from "zod";
 
 import type { LoopBusMessage, LoopBusResponse } from "./loop-bus";
 import type { ModelClient, TextOnlyModelMessage } from "./model-client";
@@ -47,7 +54,10 @@ interface TerminalGateway {
   list: () => TerminalDescriptor[];
   run: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
   kill: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
-  focus: (input: { terminalId: string; focus?: boolean }) => Promise<{ ok: boolean; message: string; focusedTerminalId?: string }>;
+  focus: (input: {
+    terminalId: string;
+    focus?: boolean;
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalId?: string }>;
   write: (input: TerminalWriteInput) => Promise<{ ok: boolean; message: string }>;
   read: (input: TerminalReadInput) => Promise<unknown>;
   sliceDirty: (input: { terminalId: string; remark?: boolean; wait?: boolean; timeoutMs?: number }) => Promise<unknown>;
@@ -62,7 +72,11 @@ interface TaskGateway {
   addDependency: (input: { source: TaskSourceName; id: string; target: string }) => TaskView;
   removeDependency: (input: { source: TaskSourceName; id: string; target: string }) => TaskView;
   triggerManual: (input: { source: TaskSourceName; id: string }) => TaskView | undefined;
-  emitEvent: (input: TaskEventInput) => { topic: string; source: "api" | "file" | "scheduler" | "tool"; affected: TaskView[] };
+  emitEvent: (input: TaskEventInput) => {
+    topic: string;
+    source: "api" | "file" | "scheduler" | "tool";
+    affected: TaskView[];
+  };
   import: (items: TaskImportItem[]) => TaskImportResult;
 }
 
@@ -203,7 +217,11 @@ const inferStageFromToolTrace = (trace: ToolTraceEntry[]): TaskStage => {
   if (trace.some((entry) => entry.tool === "terminal_write")) {
     return "act";
   }
-  if (trace.some((entry) => ["terminal_sliceDirty", "terminal_read", "terminal_run", "terminal_list"].includes(entry.tool))) {
+  if (
+    trace.some((entry) =>
+      ["terminal_sliceDirty", "terminal_read", "terminal_run", "terminal_list"].includes(entry.tool),
+    )
+  ) {
     return "observe";
   }
   if (trace.length > 0) {
@@ -655,9 +673,15 @@ export class AgenterAI {
         content: item.content ?? "",
       }));
     const markdown = items
-      .map((item) => `- [#${item.id}] (${item.from}) score=${item.score} remark=${JSON.stringify(item.remark)}\n  ${String(item.content)}`)
+      .map(
+        (item) =>
+          `- [#${item.id}] (${item.from}) score=${item.score} remark=${JSON.stringify(item.remark)}\n  ${String(item.content)}`,
+      )
       .join("\n");
-    return [mdFence("yaml", toYaml({ kind: "chat-system-list", count: items.length })), mdFence("markdown", markdown)].join("\n\n");
+    return [
+      mdFence("yaml", toYaml({ kind: "chat-system-list", count: items.length })),
+      mdFence("markdown", markdown),
+    ].join("\n\n");
   }
 
   private async formatTerminalMessage(text: string): Promise<string> {
@@ -704,7 +728,9 @@ export class AgenterAI {
     }
 
     if (kind === "terminal-snapshot") {
-      const tail = Array.isArray(payload.tail) ? payload.tail.filter((item): item is string => typeof item === "string") : [];
+      const tail = Array.isArray(payload.tail)
+        ? payload.tail.filter((item): item is string => typeof item === "string")
+        : [];
       const compactTail = compactSnapshotTail(tail);
       const metaYaml = toYaml({
         kind,
@@ -952,25 +978,27 @@ export class AgenterAI {
     const chatReplyTool = toolDefinition({
       name: "chat_reply",
       description: this.runtimeText.t("tool.chat_reply.description"),
-      inputSchema: z.object({
-        replyContent: z.string().min(1).optional(),
-        text: z.string().min(1).optional(),
-        from: z.string().optional(),
-        score: z.number().int().min(0).max(100).optional(),
-        relationships: z
-          .array(
-            z.object({
-              id: z.number().int(),
-              score: z.number().int().min(0).max(100).optional(),
-              remark: z.string().optional(),
-            }),
-          )
-          .optional(),
-        done: z.boolean().optional(),
-        stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
-      }).refine((value) => Boolean(value.replyContent || value.text), {
-        message: "replyContent is required",
-      }),
+      inputSchema: z
+        .object({
+          replyContent: z.string().min(1).optional(),
+          text: z.string().min(1).optional(),
+          from: z.string().optional(),
+          score: z.number().int().min(0).max(100).optional(),
+          relationships: z
+            .array(
+              z.object({
+                id: z.number().int(),
+                score: z.number().int().min(0).max(100).optional(),
+                remark: z.string().optional(),
+              }),
+            )
+            .optional(),
+          done: z.boolean().optional(),
+          stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+        })
+        .refine((value) => Boolean(value.replyContent || value.text), {
+          message: "replyContent is required",
+        }),
       outputSchema: z.object({ ok: z.boolean(), id: z.number().int() }),
     }).server(async (rawInput) => {
       const input = z
@@ -990,7 +1018,8 @@ export class AgenterAI {
             .optional(),
           done: z.boolean().optional(),
           stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
-        }).refine((value) => Boolean(value.replyContent || value.text), {
+        })
+        .refine((value) => Boolean(value.replyContent || value.text), {
           message: "replyContent is required",
         })
         .parse(rawInput);
@@ -1149,7 +1178,14 @@ export class AgenterAI {
       id: taskIdSchema,
     });
     const taskRefLikeSchema = z.union([z.string().min(1), taskRefSchema]);
-    const taskRelationshipTypeSchema = z.enum(["blocks", "blocked_by", "relates_to", "parent_of", "child_of", "duplicates"]);
+    const taskRelationshipTypeSchema = z.enum([
+      "blocks",
+      "blocked_by",
+      "relates_to",
+      "parent_of",
+      "child_of",
+      "duplicates",
+    ]);
     const taskRelationshipSchema = z.object({
       type: taskRelationshipTypeSchema,
       target: taskRefLikeSchema,
@@ -1290,7 +1326,9 @@ export class AgenterAI {
       }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
-      const input = z.object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) }).parse(rawInput);
+      const input = z
+        .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
+        .parse(rawInput);
       return traceTool("task_add_dependency", input, async () =>
         this.deps.taskGateway.addDependency({
           source: input.source,
@@ -1310,7 +1348,9 @@ export class AgenterAI {
       }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
-      const input = z.object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) }).parse(rawInput);
+      const input = z
+        .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
+        .parse(rawInput);
       return traceTool("task_remove_dependency", input, async () =>
         this.deps.taskGateway.removeDependency({
           source: input.source,
@@ -1330,7 +1370,9 @@ export class AgenterAI {
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
       const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
-      return traceTool("task_trigger_manual", input, async () => ({ task: this.deps.taskGateway.triggerManual(input) ?? null }));
+      return traceTool("task_trigger_manual", input, async () => ({
+        task: this.deps.taskGateway.triggerManual(input) ?? null,
+      }));
     });
 
     const taskEmitEventTool = toolDefinition({

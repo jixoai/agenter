@@ -3,9 +3,9 @@ import { extname, join } from "node:path";
 import { PROMPTS as EN_PROMPTS } from "@agenter/i18n-en";
 import { ResourceLoader } from "@agenter/settings";
 
-import { type PromptDocKey, type PromptDocRecord, type PromptDocument, type PromptSyntax } from "./prompt-docs";
 import { loadPromptDocsByLang } from "./i18n";
 import { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
+import { type PromptDocKey, type PromptDocRecord, type PromptDocument, type PromptSyntax } from "./prompt-docs";
 
 export interface PromptSnapshot {
   docs: PromptDocRecord;
@@ -46,7 +46,9 @@ const joinRef = (base: string, target: string): string => {
 const isMissingResourceError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
-  return normalized.includes("enoent") || normalized.includes("not found") || normalized.includes("request failed (404)");
+  return (
+    normalized.includes("enoent") || normalized.includes("not found") || normalized.includes("request failed (404)")
+  );
 };
 
 const detectSyntax = (pathLike: string | undefined, fallback: PromptSyntax): PromptSyntax => {
@@ -123,9 +125,12 @@ export class FilePromptStore implements PromptStore {
     const rootDir = this.paths.rootDir;
     const sources: Record<PromptDocKey, string | undefined> = {
       AGENTER: this.paths.agenterPath ?? (rootDir ? joinRef(rootDir, "AGENTER.mdx") : undefined),
-      AGENTER_SYSTEM: this.paths.agenterSystemPath ?? (rootDir ? joinRef(rootDir, "internal/AGENTER_SYSTEM.mdx") : undefined),
-      SYSTEM_TEMPLATE: this.paths.systemTemplatePath ?? (rootDir ? joinRef(rootDir, "internal/SYSTEM_TEMPLATE.mdx") : undefined),
-      RESPONSE_CONTRACT: this.paths.responseContractPath ?? (rootDir ? joinRef(rootDir, "internal/RESPONSE_CONTRACT.mdx") : undefined),
+      AGENTER_SYSTEM:
+        this.paths.agenterSystemPath ?? (rootDir ? joinRef(rootDir, "internal/AGENTER_SYSTEM.mdx") : undefined),
+      SYSTEM_TEMPLATE:
+        this.paths.systemTemplatePath ?? (rootDir ? joinRef(rootDir, "internal/SYSTEM_TEMPLATE.mdx") : undefined),
+      RESPONSE_CONTRACT:
+        this.paths.responseContractPath ?? (rootDir ? joinRef(rootDir, "internal/RESPONSE_CONTRACT.mdx") : undefined),
     };
 
     const docs = await this.loadDefaultDocs();

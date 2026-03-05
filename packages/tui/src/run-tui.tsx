@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 import { createCliRenderer, type TextareaRenderable } from "@opentui/core";
 import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
-import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatPanel } from "./panels/ChatPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";

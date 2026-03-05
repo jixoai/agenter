@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Sparkles, Wrench } from "lucide-react";
+import { useMemo, useState } from "react";
 
 interface ChatMessage {
   id: string;
@@ -38,9 +38,7 @@ export const ProcessPanel = ({ messages }: ProcessPanelProps) => {
     () =>
       messages.filter(
         (message) =>
-          message.channel === "self_talk" ||
-          message.channel === "tool_call" ||
-          message.channel === "tool_result",
+          message.channel === "self_talk" || message.channel === "tool_call" || message.channel === "tool_result",
       ),
     [messages],
   );
@@ -58,7 +56,12 @@ export const ProcessPanel = ({ messages }: ProcessPanelProps) => {
               : trace.channel === "tool_call"
                 ? `Tool call · ${pickToolName(trace)}`
                 : `Tool result · ${pickToolName(trace)}`;
-          const icon = trace.channel === "self_talk" ? <Sparkles className="h-3.5 w-3.5 text-teal-700" /> : <Wrench className="h-3.5 w-3.5 text-slate-700" />;
+          const icon =
+            trace.channel === "self_talk" ? (
+              <Sparkles className="h-3.5 w-3.5 text-teal-700" />
+            ) : (
+              <Wrench className="h-3.5 w-3.5 text-slate-700" />
+            );
           const compact = stripInternalHtml(trace.content);
           return (
             <article key={trace.id} className="rounded-lg bg-slate-100 px-2 py-1.5 text-xs text-slate-700">
@@ -70,13 +73,15 @@ export const ProcessPanel = ({ messages }: ProcessPanelProps) => {
                 {icon}
                 <span className="font-medium text-slate-900">{title}</span>
                 {trace.channel === "tool_result" ? (
-                  <span className="ml-auto text-[11px] uppercase tracking-wide text-slate-500">
+                  <span className="ml-auto text-[11px] tracking-wide text-slate-500 uppercase">
                     {trace.tool?.ok === false ? "failed" : "done"}
                   </span>
                 ) : null}
                 {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
-              {isOpen ? <pre className="mt-1 overflow-auto rounded bg-white p-2 text-[11px] leading-4">{compact}</pre> : null}
+              {isOpen ? (
+                <pre className="mt-1 overflow-auto rounded bg-white p-2 text-[11px] leading-4">{compact}</pre>
+              ) : null}
             </article>
           );
         })}

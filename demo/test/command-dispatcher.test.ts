@@ -32,5 +32,5 @@ test("dispatcher uses pending mixed input and inserts ! delay", async () => {
   });
 
   expect(writes.length).toBe(1);
-  expect(writes[0]).toBe("!<wait ms=\"200\"/>date<wait ms=\"120\"/><key data=\"enter\"/>");
+  expect(writes[0]).toBe('!<wait ms="200"/>date<wait ms="120"/><key data="enter"/>');
 });

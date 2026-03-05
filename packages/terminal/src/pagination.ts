@@ -1,4 +1,13 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import type { PageMeta, RenderResult } from "./types";
@@ -64,8 +73,7 @@ const latestArchive = (dir: string): ArchiveRange | null => {
   return items[items.length - 1];
 };
 
-const stripSourceComments = (raw: string): string =>
-  raw.replace(/<!--\s*ati-source:(head|tail)[\s\S]*?-->\n?/g, "");
+const stripSourceComments = (raw: string): string => raw.replace(/<!--\s*ati-source:(head|tail)[\s\S]*?-->\n?/g, "");
 
 const stripResizeFooterComments = (raw: string): string =>
   raw.replace(/<!--[\s\S]*?-->\n?/g, (block) => {
@@ -167,10 +175,7 @@ const toRefName = (value: string | null | undefined): string => {
 };
 
 const buildSourceYaml = (meta: SourceMeta, includeNextFile: boolean): string => {
-  const lines = [
-    `  file: ${JSON.stringify(meta.fileName)}`,
-    `  pre-file: ${JSON.stringify(toRefName(meta.preFile))}`,
-  ];
+  const lines = [`  file: ${JSON.stringify(meta.fileName)}`, `  pre-file: ${JSON.stringify(toRefName(meta.preFile))}`];
   if (includeNextFile) {
     lines.push(`  next-file: ${JSON.stringify(toRefName(meta.nextFile))}`);
   }
@@ -186,12 +191,7 @@ const buildArchiveContent = (meta: PageMeta, source: SourceMeta, lines: string[]
   return `${head}\n${body}`;
 };
 
-const buildLatestContent = (
-  meta: PageMeta,
-  source: SourceMeta,
-  lines: string[],
-  eventTag?: string | null,
-): string => {
+const buildLatestContent = (meta: PageMeta, source: SourceMeta, lines: string[], eventTag?: string | null): string => {
   const head = `${buildMetaHeader(meta, eventTag)}\n${buildSourceYaml(source, false)}`;
   return `${head}\n${joinHtmlLines(lines)}`;
 };

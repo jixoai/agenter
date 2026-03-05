@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { SessionRuntimeSnapshot } from "./session-runtime";
 import type { SessionMeta } from "./session-catalog";
+import type { SessionRuntimeSnapshot } from "./session-runtime";
 
 export const APP_PROTOCOL_VERSION = 1 as const;
 

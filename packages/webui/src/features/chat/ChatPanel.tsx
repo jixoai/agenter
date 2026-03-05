@@ -1,5 +1,5 @@
+import { SendHorizontal, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, SendHorizontal } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -60,30 +60,27 @@ export const ChatPanel = ({
     node.scrollTop = node.scrollHeight;
   }, [messages, stickToBottom]);
 
-  const visibleMessages = useMemo(
-    () => {
-      const normalized = messages
-        .filter((message) => isUserFacingMessage(message) && message.content.trim().length > 0)
-        .map((message) => ({ ...message, content: message.content.trim() }));
+  const visibleMessages = useMemo(() => {
+    const normalized = messages
+      .filter((message) => isUserFacingMessage(message) && message.content.trim().length > 0)
+      .map((message) => ({ ...message, content: message.content.trim() }));
 
-      const deduped: typeof normalized = [];
-      for (const message of normalized) {
-        const previous = deduped[deduped.length - 1];
-        if (
-          previous &&
-          previous.role === "assistant" &&
-          message.role === "assistant" &&
-          previous.channel === message.channel &&
-          previous.content === message.content
-        ) {
-          continue;
-        }
-        deduped.push(message);
+    const deduped: typeof normalized = [];
+    for (const message of normalized) {
+      const previous = deduped[deduped.length - 1];
+      if (
+        previous &&
+        previous.role === "assistant" &&
+        message.role === "assistant" &&
+        previous.channel === message.channel &&
+        previous.content === message.content
+      ) {
+        continue;
       }
-      return deduped;
-    },
-    [messages],
-  );
+      deduped.push(message);
+    }
+    return deduped;
+  }, [messages]);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white p-4 shadow-sm">
@@ -91,11 +88,15 @@ export const ChatPanel = ({
         <h2 className="truncate text-sm font-semibold text-slate-900">
           {activeSessionName ? `Chat · ${activeSessionName}` : "Chat"}
         </h2>
-        <Badge variant={aiStatus === "error" ? "destructive" : aiStatus === "idle" ? "secondary" : "warning"}>{aiStatus}</Badge>
+        <Badge variant={aiStatus === "error" ? "destructive" : aiStatus === "idle" ? "secondary" : "warning"}>
+          {aiStatus}
+        </Badge>
       </div>
 
       {noTerminalHint ? (
-        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{noTerminalHint}</div>
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {noTerminalHint}
+        </div>
       ) : null}
 
       <div
@@ -107,7 +108,9 @@ export const ChatPanel = ({
           setStickToBottom(isBottom);
         }}
       >
-        {visibleMessages.length === 0 ? <p className="px-2 py-1 text-xs text-slate-500">Start by asking Agenter a task.</p> : null}
+        {visibleMessages.length === 0 ? (
+          <p className="px-2 py-1 text-xs text-slate-500">Start by asking Agenter a task.</p>
+        ) : null}
         {visibleMessages.map((message) => (
           <article
             key={message.id}
@@ -117,14 +120,16 @@ export const ChatPanel = ({
             )}
           >
             {message.role === "assistant" ? (
-              <div className="space-y-2 break-words text-sm leading-6 text-slate-900">
+              <div className="space-y-2 text-sm leading-6 break-words text-slate-900">
                 <Markdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    p: (props) => <p className="whitespace-pre-wrap break-words" {...props} />,
+                    p: (props) => <p className="break-words whitespace-pre-wrap" {...props} />,
                     ul: (props) => <ul className="list-disc pl-5" {...props} />,
                     ol: (props) => <ol className="list-decimal pl-5" {...props} />,
-                    pre: (props) => <pre className="overflow-auto rounded-md bg-slate-100 p-2 text-xs leading-5" {...props} />,
+                    pre: (props) => (
+                      <pre className="overflow-auto rounded-md bg-slate-100 p-2 text-xs leading-5" {...props} />
+                    ),
                     code: (props) => <code className="rounded bg-slate-100 px-1 py-0.5 text-xs" {...props} />,
                   }}
                 >
@@ -132,7 +137,7 @@ export const ChatPanel = ({
                 </Markdown>
               </div>
             ) : (
-              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+              <p className="break-words whitespace-pre-wrap">{message.content}</p>
             )}
           </article>
         ))}
@@ -158,7 +163,12 @@ export const ChatPanel = ({
             }
           }}
         />
-        <Button onClick={onSend} disabled={disabled || input.trim().length === 0} className="h-auto self-end px-3" title="Send message">
+        <Button
+          onClick={onSend}
+          disabled={disabled || input.trim().length === 0}
+          className="h-auto self-end px-3"
+          title="Send message"
+        >
           <SendHorizontal className="h-4 w-4" />
         </Button>
       </div>

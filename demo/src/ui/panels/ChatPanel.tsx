@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
 import type { TextareaRenderable } from "@opentui/core";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 
 import type { ChatMessage } from "../../core/protocol";
 import { AssistantMarkdown } from "../components/AssistantMarkdown";
@@ -81,14 +81,7 @@ const buildDisplayItems = (messages: ChatMessage[]): DisplayItem[] => {
   return items;
 };
 
-export const ChatPanel = ({
-  messages,
-  aiStatus,
-  inputRef,
-  onInputChange,
-  onSubmit,
-  focused,
-}: ChatPanelProps) => {
+export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmit, focused }: ChatPanelProps) => {
   const title = focused ? "chat *" : "chat";
   const recent = messages.slice(-120).filter((item) => item.content.trim().length > 0);
   const displayItems = useMemo(() => buildDisplayItems(recent), [recent]);
@@ -173,7 +166,11 @@ export const ChatPanel = ({
               if (item.kind === "tool_pair") {
                 const expanded = expandedToolIds[item.id] === true;
                 const statusIcon =
-                  item.ok === true ? "✅" : item.ok === false ? "❌" : SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length];
+                  item.ok === true
+                    ? "✅"
+                    : item.ok === false
+                      ? "❌"
+                      : SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length];
                 const statusText = item.ok === true ? "ok" : item.ok === false ? "failed" : "running";
                 const statusFg = item.ok === true ? "green" : item.ok === false ? "red" : "yellow";
                 return (
@@ -193,16 +190,12 @@ export const ChatPanel = ({
                       backgroundColor="black"
                     >
                       <text fg="cyan">🛠️ {item.toolName}</text>
-                      <text fg={statusFg}>{statusIcon} {statusText}</text>
+                      <text fg={statusFg}>
+                        {statusIcon} {statusText}
+                      </text>
                     </box>
                     {expanded ? (
-                      <box
-                        flexDirection="column"
-                        maxWidth="78%"
-                        alignSelf="flex-start"
-                        padding={0}
-                        marginTop={1}
-                      >
+                      <box flexDirection="column" maxWidth="78%" alignSelf="flex-start" padding={0} marginTop={1}>
                         {item.callMessage ? <AssistantMarkdown message={item.callMessage} /> : null}
                         {item.resultMessage ? <AssistantMarkdown message={item.resultMessage} /> : null}
                       </box>
@@ -213,12 +206,7 @@ export const ChatPanel = ({
 
               const message = item.message;
               return (
-                <box
-                  key={message.id}
-                  marginTop={1}
-                  width="100%"
-                  flexDirection="column"
-                >
+                <box key={message.id} marginTop={1} width="100%" flexDirection="column">
                   <box
                     flexDirection="column"
                     maxWidth="78%"
@@ -244,19 +232,8 @@ export const ChatPanel = ({
           <text fg="yellow">AI: {aiStatus}</text>
         </box>
       ) : null}
-      <box
-        flexGrow={0}
-        flexBasis={6}
-        flexDirection="row"
-        marginTop={1}
-        alignItems="stretch"
-      >
-        <box
-          border
-          borderColor={focused ? "cyan" : "gray"}
-          width="86%"
-          minHeight={5}
-        >
+      <box flexGrow={0} flexBasis={6} flexDirection="row" marginTop={1} alignItems="stretch">
+        <box border borderColor={focused ? "cyan" : "gray"} width="86%" minHeight={5}>
           <textarea
             ref={inputRef}
             onContentChange={onInputChange}

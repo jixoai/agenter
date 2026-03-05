@@ -1,7 +1,16 @@
 import { z } from "zod";
 
 const aiProviderSchema = z.object({
-  kind: z.enum(["deepseek", "openai", "anthropic", "gemini", "grok", "ollama", "openai-compatible", "anthropic-compatible"]),
+  kind: z.enum([
+    "deepseek",
+    "openai",
+    "anthropic",
+    "gemini",
+    "grok",
+    "ollama",
+    "openai-compatible",
+    "anthropic-compatible",
+  ]),
   model: z.string().min(1),
   apiKey: z.string().min(1).optional(),
   apiKeyEnv: z.string().min(1).optional(),

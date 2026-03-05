@@ -1,4 +1,4 @@
-import { chat, type Tool, type StreamChunk } from "@tanstack/ai";
+import { chat, type StreamChunk, type Tool } from "@tanstack/ai";
 
 import { DeepseekTextAdapter } from "./deepseek-adapter";
 import { createRuntimeText } from "./runtime-text";
@@ -61,17 +61,14 @@ const appendChunk = (current: string, chunk: string | undefined): string => {
   return current + chunk;
 };
 
-const isRunFinishedChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "RUN_FINISHED" }> => chunk.type === "RUN_FINISHED";
+const isRunFinishedChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "RUN_FINISHED" }> =>
+  chunk.type === "RUN_FINISHED";
 
-const isTextChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "TEXT_MESSAGE_CONTENT" }> => chunk.type === "TEXT_MESSAGE_CONTENT";
+const isTextChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TEXT_MESSAGE_CONTENT" }> =>
+  chunk.type === "TEXT_MESSAGE_CONTENT";
 
-const isThinkingChunk = (
-  chunk: StreamChunk,
-): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> => chunk.type === "STEP_FINISHED";
+const isThinkingChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> =>
+  chunk.type === "STEP_FINISHED";
 
 export class DeepseekClient {
   private readonly adapter: DeepseekTextAdapter<string>;

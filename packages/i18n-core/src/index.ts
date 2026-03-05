@@ -45,7 +45,10 @@ const readTrimmed = async (path: string): Promise<string> => {
   return content.trim();
 };
 
-const resolvePromptPath = async (promptsDir: string, key: PromptDocKey): Promise<{ path: string; syntax: PromptSyntax } | null> => {
+const resolvePromptPath = async (
+  promptsDir: string,
+  key: PromptDocKey,
+): Promise<{ path: string; syntax: PromptSyntax } | null> => {
   const mdxPath = join(promptsDir, `${key}.mdx`);
   if (await exists(mdxPath)) {
     return { path: mdxPath, syntax: "mdx" };

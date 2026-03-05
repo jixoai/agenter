@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
 import { ChatEngine } from "@agenter/chat-system";
 import type { TaskImportItem } from "@agenter/task-system";
+import { describe, expect, test } from "bun:test";
 
 import { AgentRuntime } from "../src/agent-runtime";
 import { AgenterAI } from "../src/agenter-ai";
-import type { LoopBusInput, LoopBusMessage } from "../src/loop-bus";
-import type { ModelClient, TextOnlyModelMessage } from "../src/model-client";
+import type { LoopBusMessage } from "../src/loop-bus";
+import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
 import type { AppServerLogger, ChatMessage } from "../src/types";
@@ -104,18 +104,22 @@ describe("Feature: runtime loop with chat-system facts", () => {
       },
       async respondWithMeta(input: ModelRespondInput) {
         modelCalls += 1;
-        seenInputBatches.push(input.messages.flatMap((item) => {
-          const content = item.content.map((part) => part.content).join("\n");
-          return [{
-            id: createId(),
-            timestamp: Date.now(),
-            name: item.role,
-            role: "user" as const,
-            type: "text" as const,
-            source: "chat" as const,
-            text: content,
-          }];
-        }));
+        seenInputBatches.push(
+          input.messages.flatMap((item) => {
+            const content = item.content.map((part) => part.content).join("\n");
+            return [
+              {
+                id: createId(),
+                timestamp: Date.now(),
+                name: item.role,
+                role: "user" as const,
+                type: "text" as const,
+                source: "chat" as const,
+                text: content,
+              },
+            ];
+          }),
+        );
 
         if (modelCalls === 1) {
           return {
@@ -129,7 +133,12 @@ describe("Feature: runtime loop with chat-system facts", () => {
         const replyTool = input.tools.find((tool) => tool.name === "chat_reply");
         expect(listTool).toBeDefined();
         expect(replyTool).toBeDefined();
-        if (!listTool || !replyTool || typeof listTool.execute !== "function" || typeof replyTool.execute !== "function") {
+        if (
+          !listTool ||
+          !replyTool ||
+          typeof listTool.execute !== "function" ||
+          typeof replyTool.execute !== "function"
+        ) {
           throw new Error("chat tools unavailable");
         }
 

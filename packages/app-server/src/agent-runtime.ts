@@ -3,18 +3,24 @@ import type {
   LoopBusLogger,
   LoopBusMessage,
   LoopBusResponse,
-  LoopChatMessage,
   LoopBusState,
+  LoopChatMessage,
   LoopTerminalCommand,
   LoopToolCall,
 } from "./loop-bus";
 import { LoopBus } from "./loop-bus";
 
-export interface AgentRuntimeProcessor<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
+export interface AgentRuntimeProcessor<
+  TChatMessage extends LoopChatMessage = LoopChatMessage,
+  TStage extends string = string,
+> {
   send: (messages: LoopBusMessage[]) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
 }
 
-export interface AgentRuntimeConfig<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
+export interface AgentRuntimeConfig<
+  TChatMessage extends LoopChatMessage = LoopChatMessage,
+  TStage extends string = string,
+> {
   processor: AgentRuntimeProcessor<TChatMessage, TStage>;
   logger: LoopBusLogger;
   collectInputs?: () => Promise<LoopBusInput[] | LoopBusInput | void>;

@@ -1,1 +1,1 @@
-export { TerminalDevtoolsApp, IfowDevtoolsApp } from "./terminal-devtools-app";
+export { IfowDevtoolsApp, TerminalDevtoolsApp } from "./terminal-devtools-app";

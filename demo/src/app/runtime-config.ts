@@ -1,4 +1,3 @@
-import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_LANGUAGE, resolveLanguage } from "@agenter/app-server";
 import {
   loadSettings,
@@ -7,6 +6,7 @@ import {
   type TerminalBootEntry,
   type TerminalPresetSettings,
 } from "@agenter/settings";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 export interface TerminalRuntimeConfig {
   terminalId: string;
@@ -141,12 +141,17 @@ const parseCommandValue = (value: string): string[] => {
 };
 
 const sanitizeId = (value: string): string => {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   return normalized.length > 0 ? normalized : "terminal";
 };
 
 const deriveCliName = (command: string): string => {
-  const name = basename(command).toLowerCase().replace(/(\.cmd|\.exe|\.bat|\.ps1)$/i, "");
+  const name = basename(command)
+    .toLowerCase()
+    .replace(/(\.cmd|\.exe|\.bat|\.ps1)$/i, "");
   const normalized = name.replace(/[^a-z0-9_-]+/g, "");
   return normalized.length > 0 ? normalized : "agent";
 };
@@ -435,7 +440,8 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
         submitGapMs: preset.submitGapMs,
         outputRoot: overrides.outputRoot ?? terminalSettings.outputRoot,
         gitLog: overrides.gitLog ?? terminalSettings.gitLog,
-        helpSource: preset.helpSource ?? terminalSettings.helpSources?.[terminalId] ?? terminalSettings.helpSources?.[cliName],
+        helpSource:
+          preset.helpSource ?? terminalSettings.helpSources?.[terminalId] ?? terminalSettings.helpSources?.[cliName],
       };
       return [terminalId, runtime];
     }),
@@ -476,7 +482,8 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
       prompt.internalSystemPath ??
       (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/AGENTER_SYSTEM.mdx` : undefined),
     systemTemplatePath:
-      prompt.systemTemplatePath ?? (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/SYSTEM_TEMPLATE.mdx` : undefined),
+      prompt.systemTemplatePath ??
+      (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/SYSTEM_TEMPLATE.mdx` : undefined),
     responseContractPath:
       prompt.responseContractPath ??
       (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/RESPONSE_CONTRACT.mdx` : undefined),

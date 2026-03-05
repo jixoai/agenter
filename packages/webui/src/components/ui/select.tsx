@@ -1,5 +1,5 @@
-import * as React from "react";
 import { ChevronDown } from "lucide-react";
+import * as React from "react";
 
 import { cn } from "../../lib/utils";
 
@@ -18,7 +18,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(({ classN
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-slate-500" />
+      <ChevronDown className="pointer-events-none absolute top-2.5 right-2.5 h-4 w-4 text-slate-500" />
     </div>
   );
 });

@@ -21,12 +21,16 @@ export interface EditableSaveResult {
   file: EditableFileResult;
 }
 
-const pathByKind = (cwd: string, kind: EditableKind, prompt: {
-  agenterPath?: string;
-  agenterSystemPath?: string;
-  systemTemplatePath?: string;
-  responseContractPath?: string;
-}): string => {
+const pathByKind = (
+  cwd: string,
+  kind: EditableKind,
+  prompt: {
+    agenterPath?: string;
+    agenterSystemPath?: string;
+    systemTemplatePath?: string;
+    responseContractPath?: string;
+  },
+): string => {
   if (kind === "settings") {
     return resolve(cwd, ".agenter", "settings.json");
   }
@@ -79,7 +83,11 @@ export class SettingsEditor {
     return readMaybe(path);
   }
 
-  async save(kind: EditableKind, content: string, baseMtimeMs: number): Promise<EditableSaveResult | EditableConflictResult> {
+  async save(
+    kind: EditableKind,
+    content: string,
+    baseMtimeMs: number,
+  ): Promise<EditableSaveResult | EditableConflictResult> {
     const path = this.resolvePath(kind);
     const current = await readMaybe(path);
     if (Math.abs(current.mtimeMs - baseMtimeMs) > 0.5) {

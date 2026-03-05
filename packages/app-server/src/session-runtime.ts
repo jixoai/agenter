@@ -1,5 +1,5 @@
-import { ResourceLoader, loadSettings } from "@agenter/settings";
 import { ChatEngine, ChatStore, type ChatRecord } from "@agenter/chat-system";
+import { ResourceLoader, loadSettings } from "@agenter/settings";
 import {
   TaskEngine,
   resolveTaskSources,
@@ -8,21 +8,21 @@ import {
   type TaskSourceResolved,
   type TaskView,
 } from "@agenter/task-system";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AgentRuntime } from "./agent-runtime";
 import { AgenterAI, type AgentRuntimeStats } from "./agenter-ai";
-import { ModelClient } from "./model-client";
 import type { LoopBusInput, LoopBusPhase } from "./loop-bus";
-import { FilePromptStore } from "./prompt-store";
-import { SessionStore } from "./session-store";
-import type { ChatMessage, TaskStage } from "./types";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
-import { resolveSessionConfig, type SessionTerminalConfig, type ResolvedSessionConfig } from "./session-config";
+import { ModelClient } from "./model-client";
+import { FilePromptStore } from "./prompt-store";
+import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
+import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
+import type { ChatMessage, TaskStage } from "./types";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -102,7 +102,13 @@ export interface RuntimeEventMap {
   taskUpdated: { task: TaskView };
   taskDeleted: { key: string };
   taskTriggered: { topic: string; source: "api" | "file" | "scheduler" | "tool"; affected: TaskView[] };
-  taskSourceChanged: { sourceName: string; sourcePath: string; file: string; source: "boot" | "watch"; markdown: string };
+  taskSourceChanged: {
+    sourceName: string;
+    sourcePath: string;
+    file: string;
+    source: "boot" | "watch";
+    markdown: string;
+  };
   error: { message: string };
 }
 
@@ -331,7 +337,11 @@ export class SessionRuntime {
             return { ok: false, message: `unknown terminal: ${terminalId}`, focusedTerminalId: this.focusedTerminalId };
           }
           if (!focus) {
-            return { ok: true, message: "focus=false ignored in exclusive mode", focusedTerminalId: this.focusedTerminalId };
+            return {
+              ok: true,
+              message: "focus=false ignored in exclusive mode",
+              focusedTerminalId: this.focusedTerminalId,
+            };
           }
           this.focusedTerminalId = terminalId;
           this.emit("focusedTerminal", { terminalId });
@@ -609,7 +619,9 @@ export class SessionRuntime {
     };
   }
 
-  async readSettingsLayer(layerId: string): Promise<{ layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number }> {
+  async readSettingsLayer(
+    layerId: string,
+  ): Promise<{ layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number }> {
     const layer = this.settingsLayers.find((item) => item.layerId === layerId);
     if (!layer) {
       throw new Error(`settings layer not found: ${layerId}`);
@@ -642,8 +654,16 @@ export class SessionRuntime {
   }
 
   async saveSettingsLayer(input: { layerId: string; content: string; baseMtimeMs: number }): Promise<
-    | { ok: true; file: { layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number }; effective: { content: string } }
-    | { ok: false; reason: "conflict"; latest: { layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number } }
+    | {
+        ok: true;
+        file: { layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number };
+        effective: { content: string };
+      }
+    | {
+        ok: false;
+        reason: "conflict";
+        latest: { layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number };
+      }
     | { ok: false; reason: "readonly"; message: string }
   > {
     const layer = this.settingsLayers.find((item) => item.layerId === input.layerId);
@@ -713,7 +733,11 @@ export class SessionRuntime {
     return this.settingsEditor.read(kind);
   }
 
-  async saveEditable(kind: EditableKind, content: string, baseMtimeMs: number): Promise<
+  async saveEditable(
+    kind: EditableKind,
+    content: string,
+    baseMtimeMs: number,
+  ): Promise<
     | { ok: true; file: { path: string; content: string; mtimeMs: number } }
     | { ok: false; reason: "conflict"; latest: { path: string; content: string; mtimeMs: number } }
   > {
@@ -912,9 +936,7 @@ export class SessionRuntime {
 
   private collectTaskHeartbeatInput(): LoopBusInput | undefined {
     const now = Date.now();
-    const active = this.taskEngine
-      .list()
-      .filter((task) => task.status !== "done" && task.status !== "canceled");
+    const active = this.taskEngine.list().filter((task) => task.status !== "done" && task.status !== "canceled");
     if (active.length === 0) {
       this.lastTaskHeartbeatDigest = "";
       return undefined;
@@ -1008,25 +1030,25 @@ export class SessionRuntime {
         continue;
       }
       outputs.push({
-          name: `Terminal-${terminalId}`,
-          role: "user",
-          type: "text",
-          source: "terminal",
-          text: serializeTerminalDiff(terminalId, {
-            fromHash: slice.fromHash,
-            toHash: slice.toHash,
-            diff: slice.diff,
-            bytes: slice.bytes,
-            status,
-          }),
-          meta: {
-            terminalId,
-            focused: true,
-            fromHash: slice.fromHash ?? "none",
-            toHash: slice.toHash ?? "none",
-            bytes: slice.bytes,
-          },
-        });
+        name: `Terminal-${terminalId}`,
+        role: "user",
+        type: "text",
+        source: "terminal",
+        text: serializeTerminalDiff(terminalId, {
+          fromHash: slice.fromHash,
+          toHash: slice.toHash,
+          diff: slice.diff,
+          bytes: slice.bytes,
+          status,
+        }),
+        meta: {
+          terminalId,
+          focused: true,
+          fromHash: slice.fromHash ?? "none",
+          toHash: slice.toHash ?? "none",
+          bytes: slice.bytes,
+        },
+      });
     }
 
     return outputs.length > 0 ? outputs : undefined;
@@ -1113,7 +1135,7 @@ export class SessionRuntime {
           await mkdir(join(root, "events", "failed"), { recursive: true });
           await writeFile(
             join(root, "events", "failed", `${name}.error.txt`),
-            error instanceof Error ? error.stack ?? error.message : String(error),
+            error instanceof Error ? (error.stack ?? error.message) : String(error),
             "utf8",
           );
           await rename(file, join(root, "events", "failed", name));

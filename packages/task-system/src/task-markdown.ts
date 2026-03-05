@@ -1,7 +1,7 @@
 import { parse, stringify } from "yaml";
 
-import type { Task, TaskCreateInput, TaskRef, TaskRelationshipType, TaskSourceName, TaskTrigger } from "./task-types";
 import { toTaskRef } from "./task-engine";
+import type { Task, TaskCreateInput, TaskRef, TaskRelationshipType, TaskSourceName, TaskTrigger } from "./task-types";
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
 
@@ -11,7 +11,10 @@ const normalizeStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 };
 
 const normalizeTriggers = (value: unknown): TaskTrigger[] => {

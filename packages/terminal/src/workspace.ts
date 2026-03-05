@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 
 const BASE_DIR = join(tmpdir(), "agentic-terminal");
 

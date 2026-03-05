@@ -5,7 +5,10 @@ import { join, resolve } from "node:path";
 import type { AgenterAvatarInit, AvatarPromptPaths, AvatarSource, ResolveAvatarInput, ResolvedAvatar } from "./types";
 
 const sanitizeNickname = (value: string): string => {
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-");
   return normalized.length > 0 ? normalized : "agenter-bot";
 };
 

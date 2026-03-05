@@ -2,13 +2,7 @@ export type TaskSourceName = string;
 
 export type TaskStatus = "backlog" | "pending" | "ready" | "running" | "done" | "failed" | "canceled";
 
-export type TaskRelationshipType =
-  | "blocks"
-  | "blocked_by"
-  | "relates_to"
-  | "parent_of"
-  | "child_of"
-  | "duplicates";
+export type TaskRelationshipType = "blocks" | "blocked_by" | "relates_to" | "parent_of" | "child_of" | "duplicates";
 
 export interface TaskRef {
   source: TaskSourceName;

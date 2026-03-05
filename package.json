@@ -6,7 +6,10 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@changesets/cli": "^2.29.6"
+    "@changesets/cli": "^2.29.6",
+    "prettier": "^3.8.1",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "prettier-plugin-tailwindcss": "^0.7.2"
   },
   "scripts": {
     "agenter": "bun run packages/cli/src/bin/agenter.ts",
@@ -14,6 +17,8 @@
     "build:webui": "bun run --filter '@agenter/webui' build",
     "build:ui": "bun run build:webui && bun run --filter '@agenter/cli' build:assets",
     "changeset": "changeset",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "release-packages": "changeset publish",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",

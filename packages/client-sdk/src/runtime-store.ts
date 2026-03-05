@@ -1,5 +1,5 @@
-import type { RuntimeClientState, RuntimeEvent, SessionEntry } from "./types";
 import type { AgenterClient } from "./trpc-client";
+import type { RuntimeClientState, RuntimeEvent, SessionEntry } from "./types";
 
 const createInitialState = (): RuntimeClientState => ({
   connected: false,
@@ -81,16 +81,10 @@ export class RuntimeStore {
         lastEventId: snapshot.lastEventId,
         recentWorkspaces: recentWorkspaces.items,
         activityBySession: Object.fromEntries(
-          Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
-            sessionId,
-            runtime.activityState ?? "idle",
-          ]),
+          Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [sessionId, runtime.activityState ?? "idle"]),
         ),
         terminalSnapshotsBySession: Object.fromEntries(
-          Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
-            sessionId,
-            runtime.terminalSnapshots ?? {},
-          ]),
+          Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [sessionId, runtime.terminalSnapshots ?? {}]),
         ),
         chatsBySession: Object.fromEntries(
           Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [sessionId, runtime.chatMessages ?? []]),
@@ -144,7 +138,12 @@ export class RuntimeStore {
     }, delayMs);
   }
 
-  async createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry> {
+  async createSession(input: {
+    cwd: string;
+    name?: string;
+    avatar?: string;
+    autoStart?: boolean;
+  }): Promise<SessionEntry> {
     const result = await this.client.trpc.session.create.mutate(input);
     this.upsertSession(result.session);
     await this.hydrateRuntime(result.session.id);
@@ -202,12 +201,7 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.read.query({ sessionId, layerId });
   }
 
-  async saveSettingsLayer(input: {
-    sessionId: string;
-    layerId: string;
-    content: string;
-    baseMtimeMs: number;
-  }) {
+  async saveSettingsLayer(input: { sessionId: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await this.client.trpc.settings.layers.save.mutate(input);
   }
 
@@ -230,7 +224,10 @@ export class RuntimeStore {
     return output.items;
   }
 
-  async listDirectories(input?: { path?: string; includeHidden?: boolean }): Promise<Array<{ name: string; path: string }>> {
+  async listDirectories(input?: {
+    path?: string;
+    includeHidden?: boolean;
+  }): Promise<Array<{ name: string; path: string }>> {
     const output = await this.client.trpc.fs.listDirectories.query(input);
     return output.items;
   }

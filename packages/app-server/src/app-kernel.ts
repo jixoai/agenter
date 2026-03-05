@@ -8,11 +8,11 @@ import {
   type RuntimeEventType,
   type RuntimeSnapshotPayload,
 } from "./realtime-types";
-import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
-import { resolveSessionConfig } from "./session-config";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
-import { WorkspacesStore } from "./workspaces-store";
+import { resolveSessionConfig } from "./session-config";
+import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import type { ChatMessage } from "./types";
+import { WorkspacesStore } from "./workspaces-store";
 
 const now = (): number => Date.now();
 
@@ -62,7 +62,9 @@ export class AppKernel {
   }
 
   getSnapshot(): RuntimeSnapshotPayload {
-    const runtimes = Object.fromEntries([...this.runtimes.entries()].map(([sessionId, runtime]) => [sessionId, runtime.snapshot()]));
+    const runtimes = Object.fromEntries(
+      [...this.runtimes.entries()].map(([sessionId, runtime]) => [sessionId, runtime.snapshot()]),
+    );
 
     return {
       version: 1,
@@ -101,10 +103,7 @@ export class AppKernel {
     return list.slice(-safeLimit);
   }
 
-  listDirectories(input: {
-    path?: string;
-    includeHidden?: boolean;
-  }): Array<{ name: string; path: string }> {
+  listDirectories(input: { path?: string; includeHidden?: boolean }): Array<{ name: string; path: string }> {
     const root = resolve(input.path ?? "/");
     const includeHidden = input.includeHidden ?? false;
     try {
@@ -282,7 +281,10 @@ export class AppKernel {
     return runtime.triggerTaskManual(input);
   }
 
-  emitTaskEvent(sessionId: string, input: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" }): { ok: boolean } {
+  emitTaskEvent(
+    sessionId: string,
+    input: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" },
+  ): { ok: boolean } {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
       return { ok: false };
@@ -290,7 +292,10 @@ export class AppKernel {
     return runtime.emitTaskEvent(input);
   }
 
-  async readSettings(input: { sessionId: string; kind: unknown }): Promise<{ path: string; content: string; mtimeMs: number }> {
+  async readSettings(input: {
+    sessionId: string;
+    kind: unknown;
+  }): Promise<{ path: string; content: string; mtimeMs: number }> {
     const runtime = await this.ensureRuntime(input.sessionId);
     const kind = settingsKindSchema.parse(input.kind);
     return runtime.readEditable(kind);
@@ -304,8 +309,7 @@ export class AppKernel {
   async readSettingsLayer(input: {
     sessionId: string;
     layerId: string;
-  }): Promise<Awaited<ReturnType<SessionRuntime["readSettingsLayer"]>>>
-  {
+  }): Promise<Awaited<ReturnType<SessionRuntime["readSettingsLayer"]>>> {
     const runtime = await this.ensureRuntime(input.sessionId);
     return runtime.readSettingsLayer(input.layerId);
   }
@@ -315,8 +319,7 @@ export class AppKernel {
     layerId: string;
     content: string;
     baseMtimeMs: number;
-  }): Promise<Awaited<ReturnType<SessionRuntime["saveSettingsLayer"]>>>
-  {
+  }): Promise<Awaited<ReturnType<SessionRuntime["saveSettingsLayer"]>>> {
     const runtime = await this.ensureRuntime(input.sessionId);
     return runtime.saveSettingsLayer({
       layerId: input.layerId,

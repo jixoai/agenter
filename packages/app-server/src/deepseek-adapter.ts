@@ -1,11 +1,5 @@
+import type { DefaultMessageMetadataByModality, ModelMessage, StreamChunk, TextOptions, Tool } from "@tanstack/ai";
 import { BaseTextAdapter, type StructuredOutputOptions, type StructuredOutputResult } from "@tanstack/ai/adapters";
-import type {
-  DefaultMessageMetadataByModality,
-  ModelMessage,
-  StreamChunk,
-  TextOptions,
-  Tool,
-} from "@tanstack/ai";
 
 type DeepseekProviderOptions = Record<string, unknown>;
 

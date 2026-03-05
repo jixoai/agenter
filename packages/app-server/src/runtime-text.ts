@@ -1,6 +1,6 @@
+import type { RuntimeTextCatalog, RuntimeTextId } from "@agenter/i18n-core";
 import { RUNTIME_TEXTS as EN_RUNTIME_TEXTS } from "@agenter/i18n-en";
 import { RUNTIME_TEXTS as ZH_HANS_RUNTIME_TEXTS } from "@agenter/i18n-zh-hans";
-import type { RuntimeTextCatalog, RuntimeTextId } from "@agenter/i18n-core";
 
 export type RuntimeLocale = "en" | "zh-Hans";
 export type TaskSummaryState = "has_user_reply" | "has_clean_text" | "thinking_only" | "done" | "stage_fallback";

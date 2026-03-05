@@ -93,7 +93,7 @@ describe("Feature: loop bus state transitions", () => {
           role: "user",
           type: "text",
           source: "terminal",
-          text: "{\"kind\":\"terminal-heartbeat\"}",
+          text: '{"kind":"terminal-heartbeat"}',
         };
       },
       onStateChange: (state) => {
@@ -134,7 +134,7 @@ describe("Feature: loop bus state transitions", () => {
       role: "user",
       type: "text",
       source: "terminal",
-      text: "{\"kind\":\"terminal-dirty-summary\"}",
+      text: '{"kind":"terminal-dirty-summary"}',
       meta: {
         signal: "summary",
       },

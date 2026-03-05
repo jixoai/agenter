@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { compactRenderForPersistence, renderSemanticBuffer, renderStructuredBuffer, serializeRenderLinesForLog, stripHtmlTags } from "../src/renderer";
+import {
+  compactRenderForPersistence,
+  renderSemanticBuffer,
+  renderStructuredBuffer,
+  serializeRenderLinesForLog,
+  stripHtmlTags,
+} from "../src/renderer";
 import type { RenderResult } from "../src/types";
 import { XtermBridge } from "../src/xterm-bridge";
 
@@ -57,7 +63,9 @@ test("renderer maps rgb colors to semantic tags", async () => {
   const bridge = new XtermBridge(24, 6);
   await bridge.write("\u001b[38;2;250;80;80mRGB\u001b[0m\r\n");
   const rendered = renderSemanticBuffer(bridge);
-  const hasSemanticColor = rendered.lines.some((line) => line.includes("<red>RGB</red>") || line.includes("<bright-red>RGB</bright-red>"));
+  const hasSemanticColor = rendered.lines.some(
+    (line) => line.includes("<red>RGB</red>") || line.includes("<bright-red>RGB</bright-red>"),
+  );
   expect(hasSemanticColor).toBe(true);
   bridge.dispose();
 });

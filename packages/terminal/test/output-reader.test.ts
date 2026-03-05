@@ -1,12 +1,18 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
 import { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "../src/output-reader";
 
-const writeLog = (outputDir: string, fileName: string, preFile: string | null, lines: string[], includeStatus = false): void => {
+const writeLog = (
+  outputDir: string,
+  fileName: string,
+  preFile: string | null,
+  lines: string[],
+  includeStatus = false,
+): void => {
   const statusLine = includeStatus ? `\n  status: \"BUSY\"` : "";
   const content = [
     "<!--",
@@ -16,7 +22,7 @@ const writeLog = (outputDir: string, fileName: string, preFile: string | null, l
     "ati-source:",
     `  file: ${JSON.stringify(fileName)}`,
     `  pre-file: ${JSON.stringify(preFile ?? "none")}`,
-    "  updated-at: \"2026-03-01T00:00:00.000Z\"",
+    '  updated-at: "2026-03-01T00:00:00.000Z"',
     "-->",
     ...lines,
     "",

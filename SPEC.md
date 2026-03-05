@@ -359,7 +359,7 @@ bun run test
 - `@agenter/app-server` 已提供 daemon + 多会话聚合 + tRPC/ws 实时同步。
 - TUI/WebUI 已共享同一后端并支持实例列表与 chat 同步。
 - WebUI 已升级为 Vite 工程并支持 settings/prompts 读取与保存（含 mtime 冲突返回）。
-- app-server 已接入任务引擎基础能力（task DAG、manual/event/time 触发、Markdown 导入导出、task_* 工具）。
+- app-server 已接入任务引擎基础能力（task DAG、manual/event/time 触发、Markdown 导入导出、task\_\* 工具）。
 - 后续重点：收敛 demo 逻辑并进一步提升 TUI/WebUI 交互质量。
 
 ### M3（后续）

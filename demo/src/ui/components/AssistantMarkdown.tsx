@@ -25,11 +25,7 @@ const parseToolFence = (content: string): ParsedToolFence | null => {
   }
   const lang = match[1].trim().toLowerCase();
   const body = match[2].trim();
-  const kind = lang.endsWith("+tool_call")
-    ? "tool_call"
-    : lang.endsWith("+tool_result")
-      ? "tool_result"
-      : null;
+  const kind = lang.endsWith("+tool_call") ? "tool_call" : lang.endsWith("+tool_result") ? "tool_result" : null;
   if (!kind) {
     return null;
   }
@@ -38,7 +34,8 @@ const parseToolFence = (content: string): ParsedToolFence | null => {
   const toolName = toolNameMatch?.[1]?.trim() || "unknown";
   const statusMatch = /^ok:\s*(.+)$/m.exec(body);
   const okText = statusMatch?.[1]?.trim();
-  const statusText = kind === "tool_result" ? ` ${okText === "true" ? "ok" : okText === "false" ? "failed" : "result"}` : "";
+  const statusText =
+    kind === "tool_result" ? ` ${okText === "true" ? "ok" : okText === "false" ? "failed" : "result"}` : "";
   return {
     kind,
     lang,
@@ -62,7 +59,9 @@ export const AssistantMarkdown = ({ message }: AssistantMarkdownProps) => {
     return (
       <box flexDirection="column">
         <box onMouseDown={() => setExpanded((prev) => !prev)}>
-          <text fg={headerColor}>{expanded ? "▼" : "▶"} {parsed.summary}</text>
+          <text fg={headerColor}>
+            {expanded ? "▼" : "▶"} {parsed.summary}
+          </text>
         </box>
         {expanded ? (
           <box marginTop={1}>

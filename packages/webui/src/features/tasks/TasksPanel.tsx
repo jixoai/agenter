@@ -46,7 +46,10 @@ export const TasksPanel = ({ tasks, compact = false }: TasksPanelProps) => {
         <div className={cn("space-y-2 overflow-auto pr-1", compact ? "max-h-full" : "max-h-[36dvh]")}>
           {tasks.length === 0 ? <p className="text-xs text-slate-500">No tasks loaded.</p> : null}
           {tasks.map((task) => (
-            <article key={task.key} className={cn("rounded-lg border border-slate-200 bg-white", compact ? "p-2.5" : "p-3")}>
+            <article
+              key={task.key}
+              className={cn("rounded-lg border border-slate-200 bg-white", compact ? "p-2.5" : "p-3")}
+            >
               <div className="mb-1 flex items-center gap-2">
                 <strong className="truncate text-sm text-slate-900">{task.title}</strong>
                 <Badge variant={statusVariant(task.status)}>{task.status}</Badge>
@@ -56,7 +59,12 @@ export const TasksPanel = ({ tasks, compact = false }: TasksPanelProps) => {
                 {task.id} · {task.source.name}
               </p>
               <div className="mt-2 flex gap-2 text-[11px]">
-                <span className={cn("rounded px-1.5 py-0.5", task.blockedBy.length > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")}>
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5",
+                    task.blockedBy.length > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+                  )}
+                >
                   blockedBy: {task.blockedBy.length}
                 </span>
                 <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800">blocks: {task.blocks.length}</span>

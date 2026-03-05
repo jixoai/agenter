@@ -1,5 +1,5 @@
-import type { RefObject } from "react";
 import type { TextareaRenderable } from "@opentui/core";
+import type { RefObject } from "react";
 
 interface ChatPanelProps {
   activeSessionId: string | null;
@@ -17,7 +17,14 @@ const KEY_BINDINGS = [
   { name: "linefeed", shift: true, action: "newline" as const },
 ];
 
-export const ChatPanel = ({ activeSessionId, messages, inputRef, focused, onInputChange, onSubmit }: ChatPanelProps) => {
+export const ChatPanel = ({
+  activeSessionId,
+  messages,
+  inputRef,
+  focused,
+  onInputChange,
+  onSubmit,
+}: ChatPanelProps) => {
   return (
     <box border borderColor={focused ? "cyan" : "gray"} padding={1} flexGrow={1} flexDirection="column" title="chat">
       <text fg="gray">active: {activeSessionId ?? "none"}</text>
@@ -25,14 +32,21 @@ export const ChatPanel = ({ activeSessionId, messages, inputRef, focused, onInpu
         <box flexDirection="column">
           {messages.length === 0 ? <text fg="gray">(no messages)</text> : null}
           {messages.map((message) => (
-            <box key={message.id} marginTop={1} alignSelf={message.role === "user" ? "flex-end" : "flex-start"} maxWidth="85%">
+            <box
+              key={message.id}
+              marginTop={1}
+              alignSelf={message.role === "user" ? "flex-end" : "flex-start"}
+              maxWidth="85%"
+            >
               <box
                 padding={1}
                 backgroundColor={message.role === "user" ? "blue" : "black"}
                 border
                 borderColor={message.role === "user" ? "blue" : "gray"}
               >
-                <text fg="white">{message.role === "user" ? "you" : "assistant"}: {message.content}</text>
+                <text fg="white">
+                  {message.role === "user" ? "you" : "assistant"}: {message.content}
+                </text>
               </box>
             </box>
           ))}
@@ -53,7 +67,13 @@ export const ChatPanel = ({ activeSessionId, messages, inputRef, focused, onInpu
             focused={focused}
           />
         </box>
-        <box marginLeft={1} padding={1} backgroundColor={focused ? "cyan" : "gray"} onMouseDown={onSubmit} justifyContent="center">
+        <box
+          marginLeft={1}
+          padding={1}
+          backgroundColor={focused ? "cyan" : "gray"}
+          onMouseDown={onSubmit}
+          justifyContent="center"
+        >
           <text fg="black">Send</text>
         </box>
       </box>

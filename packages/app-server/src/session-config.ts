@@ -1,8 +1,13 @@
-import { basename, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar";
-import { loadSettings, type AiProviderKind, type TerminalBootEntry, type TerminalPresetSettings } from "@agenter/settings";
+import {
+  loadSettings,
+  type AiProviderKind,
+  type TerminalBootEntry,
+  type TerminalPresetSettings,
+} from "@agenter/settings";
 
 import { DEFAULT_LANGUAGE, resolveLanguage } from "./i18n";
 
@@ -63,7 +68,9 @@ const toAbsolute = (value: string, baseDir: string): string => {
 };
 
 const deriveCliName = (command: string): string => {
-  const name = basename(command).toLowerCase().replace(/(\.cmd|\.exe|\.bat|\.ps1)$/i, "");
+  const name = basename(command)
+    .toLowerCase()
+    .replace(/(\.cmd|\.exe|\.bat|\.ps1)$/i, "");
   const normalized = name.replace(/[^a-z0-9_-]+/g, "");
   return normalized.length > 0 ? normalized : "agent";
 };
@@ -139,7 +146,9 @@ export const resolveSessionConfig = async (
   if (terminalSettings.presets && Object.keys(terminalSettings.presets).length > 0) {
     presets = { ...terminalSettings.presets };
   } else {
-    const command = terminalSettings.command?.length ? [...terminalSettings.command] : [process.env.SHELL ?? "bash", "-i"];
+    const command = terminalSettings.command?.length
+      ? [...terminalSettings.command]
+      : [process.env.SHELL ?? "bash", "-i"];
     const terminalId = terminalSettings.terminalId ?? `${deriveCliName(command[0] ?? "terminal")}-main`;
     presets = buildPresetFromLegacy(terminalId, command, terminalSettings);
   }
@@ -164,7 +173,8 @@ export const resolveSessionConfig = async (
         submitGapMs: preset.submitGapMs,
         outputRoot: terminalSettings.outputRoot,
         gitLog: terminalSettings.gitLog,
-        helpSource: preset.helpSource ?? terminalSettings.helpSources?.[terminalId] ?? terminalSettings.helpSources?.[cliName],
+        helpSource:
+          preset.helpSource ?? terminalSettings.helpSources?.[terminalId] ?? terminalSettings.helpSources?.[cliName],
       };
       return [terminalId, terminal];
     }),

@@ -29,7 +29,8 @@ const isPathLike = (token: string): boolean =>
   token === "~" || token.startsWith("~/") || token.startsWith("/") || token.startsWith("./") || token.startsWith("../");
 
 const toFilePath = (input: string, context: ResourceLoaderContext): string => {
-  const expanded = input === "~" ? context.homeDir : input.startsWith("~/") ? join(context.homeDir, input.slice(2)) : input;
+  const expanded =
+    input === "~" ? context.homeDir : input.startsWith("~/") ? join(context.homeDir, input.slice(2)) : input;
   if (isAbsolute(expanded)) {
     return normalize(expanded);
   }
@@ -151,4 +152,3 @@ export class ResourceLoader {
     this.registerAlias("local", (ctx) => join(ctx.projectRoot, ".agenter", "settings.local.json"));
   }
 }
-

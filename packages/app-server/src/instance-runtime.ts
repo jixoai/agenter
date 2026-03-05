@@ -1,5 +1,5 @@
-import { SessionRuntime } from "./session-runtime";
 import type { RuntimeEvent, RuntimeEventMap, SessionRuntimeOptions, SessionRuntimeSnapshot } from "./session-runtime";
+import { SessionRuntime } from "./session-runtime";
 
 export type InstanceRuntimeSnapshot = SessionRuntimeSnapshot;
 export type InstanceRuntimeOptions = SessionRuntimeOptions;

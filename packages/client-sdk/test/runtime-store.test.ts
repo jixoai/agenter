@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import type { RuntimeSnapshot } from "../src/types";
 import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient } from "../src/trpc-client";
+import type { RuntimeSnapshot } from "../src/types";
 
 const createSnapshot = (eventId: number): RuntimeSnapshot => ({
   version: 1,
@@ -81,9 +81,7 @@ const createMockClient = (input: {
       session: {
         create: {
           mutate: async () => ({
-            session:
-              input.createSessionResult ??
-              createSnapshot(0).sessions[0],
+            session: input.createSessionResult ?? createSnapshot(0).sessions[0],
           }),
         },
         start: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },

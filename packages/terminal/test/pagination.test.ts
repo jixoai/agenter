@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
@@ -34,18 +34,18 @@ test("pagination archives old lines and updates latest metadata", () => {
   expect(archivedB).toContain("line-6");
   expect(archivedA).toContain("meta:");
   expect(archivedA).toContain('log-style: "rich"');
-  expect(archivedA).toContain("size: \"24x80\"");
+  expect(archivedA).toContain('size: "24x80"');
   expect(archivedA).not.toContain("\n  status:");
   expect(archivedA).toContain("ati-source:");
-  expect(archivedA).toContain("file: \"1~3.log.html\"");
-  expect(archivedA).toContain("next-file: \"4~6.log.html\"");
-  expect(archivedB).toContain("next-file: \"latest.log.html\"");
+  expect(archivedA).toContain('file: "1~3.log.html"');
+  expect(archivedA).toContain('next-file: "4~6.log.html"');
+  expect(archivedB).toContain('next-file: "latest.log.html"');
   expect(archivedB).toContain("updated-at:");
-  expect(latest).toContain("pre-file: \"4~6.log.html\"");
+  expect(latest).toContain('pre-file: "4~6.log.html"');
   expect(latest).toContain('log-style: "rich"');
-  expect(latest).toContain("size: \"24x80\"");
-  expect(latest).toContain("status: \"BUSY\"");
-  expect(latest).toContain("file: \"latest.log.html\"");
+  expect(latest).toContain('size: "24x80"');
+  expect(latest).toContain('status: "BUSY"');
+  expect(latest).toContain('file: "latest.log.html"');
   expect(latest).toContain("updated-at:");
   expect(latest).not.toContain("next-file:");
   expect(latest).toContain("line-7");
@@ -73,10 +73,10 @@ test("pagination chain is idempotent and does not create duplicate archive files
   const archivedB = readFileSync(join(workspace, "output", "4~6.log.html"), "utf8");
   const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
 
-  expect(archivedA).toContain("next-file: \"4~6.log.html\"");
-  expect(archivedB).toContain("pre-file: \"1~3.log.html\"");
-  expect(archivedB).toContain("next-file: \"latest.log.html\"");
-  expect(latest).toContain("pre-file: \"4~6.log.html\"");
+  expect(archivedA).toContain('next-file: "4~6.log.html"');
+  expect(archivedB).toContain('pre-file: "1~3.log.html"');
+  expect(archivedB).toContain('next-file: "latest.log.html"');
+  expect(latest).toContain('pre-file: "4~6.log.html"');
 });
 
 test("resize split seals latest and starts a viewport snapshot epoch", () => {
@@ -97,17 +97,17 @@ test("resize split seals latest and starts a viewport snapshot epoch", () => {
   expect(existsSync(join(workspace, "output", "latest.log.html"))).toBe(false);
 
   const sealedContent = readFileSync(join(workspace, "output", "1~10.log.html"), "utf8");
-  expect(sealedContent).toContain("size: \"25x90\"");
+  expect(sealedContent).toContain('size: "25x90"');
   expect(sealedContent).not.toContain("\n  status:");
   expect(sealedContent).toContain("split-reason: TERMINAL_RESIZED");
-  expect(sealedContent).toContain("next-file: \"latest.log.html\"");
+  expect(sealedContent).toContain('next-file: "latest.log.html"');
 
   const after = makeRender(16);
   store.writeResizeSnapshot(after, "BUSY", 12, 80, 3, sealed, "rich");
   const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
-  expect(latest).toContain("size: \"3x80\"");
-  expect(latest).toContain("pre-file: \"1~10.log.html\"");
-  expect(latest).toContain("event: \"RESIZED_TO_80x3\"");
+  expect(latest).toContain('size: "3x80"');
+  expect(latest).toContain('pre-file: "1~10.log.html"');
+  expect(latest).toContain('event: "RESIZED_TO_80x3"');
   expect(latest).toContain("<system-msg>=== Terminal Resized to 80x3.");
   expect(latest).toContain("line-13");
   expect(latest).toContain("line-15");
@@ -124,5 +124,5 @@ test("pagination keeps latest mutable when viewport base is zero", () => {
   expect(existsSync(join(workspace, "output", "1~40.log.html"))).toBe(false);
   expect(latest).toContain("line-1");
   expect(latest).toContain("line-63");
-  expect(latest).toContain("pre-file: \"none\"");
+  expect(latest).toContain('pre-file: "none"');
 });

@@ -1,5 +1,5 @@
-import type { BuiltinSettingsSource, SettingsSourceDescriptor, SettingsSourceInput } from "./types";
 import { ResourceLoader } from "./resource-loader";
+import type { BuiltinSettingsSource, SettingsSourceDescriptor, SettingsSourceInput } from "./types";
 
 const DEFAULT_SOURCES: BuiltinSettingsSource[] = ["user", "project", "local"];
 

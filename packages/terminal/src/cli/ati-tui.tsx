@@ -9,10 +9,7 @@ import type { RenderResult, RichLine, RichSpan, TerminalStatus } from "../types"
 export const ATI_TUI_VIEWPORT_COLS_RESERVED = 2;
 export const ATI_TUI_VIEWPORT_ROWS_RESERVED = 4;
 
-export const resolveAtiTuiViewportSize = (
-  width: number,
-  height: number,
-): { cols: number; rows: number } => ({
+export const resolveAtiTuiViewportSize = (width: number, height: number): { cols: number; rows: number } => ({
   cols: Math.max(1, width - ATI_TUI_VIEWPORT_COLS_RESERVED),
   rows: Math.max(1, height - ATI_TUI_VIEWPORT_ROWS_RESERVED),
 });
@@ -290,8 +287,8 @@ const AtiTerminalApp = ({ store, onInput, onQuit, onResize }: AtiTerminalAppProp
     <box width="100%" height="100%" flexDirection="column">
       <text>{state.metaLine}</text>
       <text>
-        status={state.status} cursor=({state.cursorRow},{state.cursorCol}) source={state.cursorSource} raw=({state.rawCursorRow},{state.rawCursorCol})
-        visible={state.cursorVisible ? "yes" : "no"} ctrl+q=quit
+        status={state.status} cursor=({state.cursorRow},{state.cursorCol}) source={state.cursorSource} raw=(
+        {state.rawCursorRow},{state.rawCursorCol}) visible={state.cursorVisible ? "yes" : "no"} ctrl+q=quit
       </text>
       <box flexGrow={1} border borderColor="cyan">
         <text selectable>
@@ -301,11 +298,7 @@ const AtiTerminalApp = ({ store, onInput, onQuit, onResize }: AtiTerminalAppProp
                 const resolvedFg = span.inverse ? (span.bg ?? "#111111") : span.fg;
                 const resolvedBg = span.inverse ? (span.fg ?? "#f3f6fb") : span.bg;
                 let content: ReactNode = (
-                  <span
-                    key={`text-${lineIndex}-${spanIndex}`}
-                    fg={resolvedFg}
-                    bg={resolvedBg}
-                  >
+                  <span key={`text-${lineIndex}-${spanIndex}`} fg={resolvedFg} bg={resolvedBg}>
                     {span.text}
                   </span>
                 );

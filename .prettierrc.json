@@ -1,0 +1,6 @@
+{
+  "printWidth": 120,
+  "semi": true,
+  "trailingComma": "all",
+  "plugins": ["prettier-plugin-organize-imports", "prettier-plugin-tailwindcss"]
+}

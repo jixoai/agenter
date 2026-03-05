@@ -15,13 +15,7 @@ test("fallback unknown command to run", () => {
 });
 
 test("fallback with global options before command", () => {
-  expect(normalizeAtiArgv(["-o", "./logs", "codex", "--foo"])).toEqual([
-    "-o",
-    "./logs",
-    "run",
-    "codex",
-    "--foo",
-  ]);
+  expect(normalizeAtiArgv(["-o", "./logs", "codex", "--foo"])).toEqual(["-o", "./logs", "run", "codex", "--foo"]);
 });
 
 test("no positional token keeps args unchanged", () => {

@@ -3,9 +3,9 @@ import { join, resolve } from "node:path";
 
 import { defaultAvatarNickname, resolveAvatarLayerSettingsPath } from "@agenter/avatar";
 
-import { settingsSchema } from "./schema";
 import { deepMerge } from "./merge";
 import { ResourceLoader } from "./resource-loader";
+import { settingsSchema } from "./schema";
 import { settingsSource } from "./source";
 import type { AgenterSettings, LoadSettingsOptions, LoadedSettings, SettingsSourceInput } from "./types";
 
@@ -85,7 +85,10 @@ const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, 
 
   const normalizedHelpSources = terminal?.helpSources
     ? Object.fromEntries(
-        Object.entries(terminal.helpSources).map(([key, value]) => [key, toAbsMaybeUri(value, projectRoot, homeDir) ?? value]),
+        Object.entries(terminal.helpSources).map(([key, value]) => [
+          key,
+          toAbsMaybeUri(value, projectRoot, homeDir) ?? value,
+        ]),
       )
     : undefined;
 
@@ -124,7 +127,7 @@ const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, 
       : undefined,
     tasks: tasks
       ? {
-        ...tasks,
+          ...tasks,
           sources: tasks.sources?.map((source) => ({
             ...source,
             path: toAbsMaybeUri(source.path, projectRoot, homeDir) ?? source.path,
@@ -136,7 +139,9 @@ const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, 
 
 const classifyMissingResource = (errorMessage: string): boolean => {
   const normalized = errorMessage.toLowerCase();
-  return normalized.includes("enoent") || normalized.includes("not found") || normalized.includes("request failed (404)");
+  return (
+    normalized.includes("enoent") || normalized.includes("not found") || normalized.includes("request failed (404)")
+  );
 };
 
 const isLocalPath = (value: string): boolean => value.startsWith("/") || value.startsWith("~");
@@ -157,7 +162,8 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     settings.avatar = options.avatar.trim();
   }
 
-  const inputSources: SettingsSourceInput[] = options.sources ?? settings.settingsSource ?? ["user", "project", "local"];
+  const inputSources: SettingsSourceInput[] = options.sources ??
+    settings.settingsSource ?? ["user", "project", "local"];
   const descriptors = settingsSource(inputSources, {
     projectRoot: options.projectRoot,
     cwd: options.cwd,

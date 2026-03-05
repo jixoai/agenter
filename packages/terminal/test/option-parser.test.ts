@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { parseColorOption, parseGitLogOption, parseLogStyleOption, parseSizeOption, resolveSizeWithFallback } from "../src/cli/option-parser";
+import {
+  parseColorOption,
+  parseGitLogOption,
+  parseLogStyleOption,
+  parseSizeOption,
+  resolveSizeWithFallback,
+} from "../src/cli/option-parser";
 
 test("parse --size supports short forms", () => {
   expect(parseSizeOption(undefined)).toEqual({

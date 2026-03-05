@@ -24,7 +24,7 @@ export interface AppServerLogger {
   log: (input: {
     channel: "agent" | "error";
     level: "debug" | "info" | "warn" | "error";
-      message: string;
-      meta?: Record<string, string | number | boolean | null>;
+    message: string;
+    meta?: Record<string, string | number | boolean | null>;
   }) => void;
 }

@@ -1,9 +1,9 @@
-import process from "node:process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
+import type { ArgumentsCamelCase, Argv } from "yargs";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import type { ArgumentsCamelCase, Argv } from "yargs";
 
 import { AgenticTerminal } from "../agentic-terminal";
 import type { TerminalColorMode, TerminalColorOption, TerminalGitLogMode, TerminalLogStyle } from "../types";
@@ -12,9 +12,9 @@ import { startAtiTui } from "./ati-tui";
 import { normalizeAtiRunLayout } from "./normalize-command";
 import {
   parseColorOption,
+  parseGitLogOption,
   parseLogStyleOption,
   parseSizeOption,
-  parseGitLogOption,
   resolveColorOption,
   resolveSizeOption,
   resolveSizeWithFallback,

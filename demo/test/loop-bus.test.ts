@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import type { ChatMessage } from "../src/core/protocol";
 import { LoopBus, type LoopBusMessage } from "@agenter/app-server";
+import type { ChatMessage } from "../src/core/protocol";
 import { DebugLogger } from "../src/infra/logger";
 
 const waitUntil = async (predicate: () => boolean, timeoutMs = 1200): Promise<void> => {
@@ -197,7 +197,7 @@ test("loop bus ignores terminal signal message and uses collected diff payload",
       role: "user",
       source: "terminal",
       type: "text",
-      text: "{\"kind\":\"terminal-diff\"}",
+      text: '{"kind":"terminal-diff"}',
       meta: {
         terminalId: "terminal-main",
       },

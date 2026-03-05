@@ -7,13 +7,7 @@ const CLEAR_SCREEN = `${ESC}[2J${ESC}[H`;
 const HIDE_CURSOR = `${ESC}[?25l`;
 const SHOW_CURSOR = `${ESC}[?25h`;
 
-const SELECT_OPTIONS = [
-  "Snake",
-  "Breakout",
-  "Memory Match",
-  "Typing Racer",
-  "Tower Defense Lite",
-];
+const SELECT_OPTIONS = ["Snake", "Breakout", "Memory Match", "Typing Racer", "Tower Defense Lite"];
 
 let mode: Mode = "idle";
 let selectIndex = 0;

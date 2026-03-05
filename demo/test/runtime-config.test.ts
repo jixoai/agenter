@@ -24,7 +24,10 @@ test("parseRuntimeConfig falls back to baseDir", async () => {
 });
 
 test("parseRuntimeConfig parses --cmd with args", async () => {
-  const config = await parseRuntimeConfig([...isolateSources, "--cmd=codex --dangerously-skip-permissions"], "/tmp/demo");
+  const config = await parseRuntimeConfig(
+    [...isolateSources, "--cmd=codex --dangerously-skip-permissions"],
+    "/tmp/demo",
+  );
   expect(config.terminal.command).toEqual(["codex", "--dangerously-skip-permissions"]);
   expect(config.terminal.terminalId).toBe("codex-main");
 });
@@ -99,7 +102,10 @@ test("parseRuntimeConfig supports terminal presets + feature bootTerminals", asy
       },
       features: {
         terminal: {
-          bootTerminals: [{ id: "iflow", focus: true, autoRun: true }, { id: "codex", autoRun: false }],
+          bootTerminals: [
+            { id: "iflow", focus: true, autoRun: true },
+            { id: "codex", autoRun: false },
+          ],
         },
       },
     }),

@@ -15,7 +15,8 @@ export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
     return <p className="text-xs text-slate-500">No terminal in this session.</p>;
   }
 
-  const focused = runtime.terminals.find((item) => item.terminalId === runtime.focusedTerminalId) ?? runtime.terminals[0];
+  const focused =
+    runtime.terminals.find((item) => item.terminalId === runtime.focusedTerminalId) ?? runtime.terminals[0];
   const snapshot = snapshots?.[focused.terminalId];
 
   return (
@@ -31,9 +32,7 @@ export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
             key={terminal.terminalId}
             className={cn(
               "rounded-md px-2 py-1 text-[11px]",
-              terminal.terminalId === focused.terminalId
-                ? "bg-teal-100 text-teal-900"
-                : "bg-slate-100 text-slate-700",
+              terminal.terminalId === focused.terminalId ? "bg-teal-100 text-teal-900" : "bg-slate-100 text-slate-700",
             )}
           >
             {terminal.terminalId}
@@ -42,7 +41,7 @@ export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
       </div>
 
       <div className="rounded-xl bg-slate-950 p-2">
-        <pre className="max-h-[45dvh] overflow-auto whitespace-pre text-[12px] leading-[1.25rem] text-slate-200">
+        <pre className="max-h-[45dvh] overflow-auto text-[12px] leading-[1.25rem] whitespace-pre text-slate-200">
           {(snapshot?.lines ?? []).join("\n")}
         </pre>
       </div>

@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+dist
+build
+bundle
+coverage
+tmp
+logs
+packages/terminal/tmp
+packages/cli/assets/webui
+demo/logs
+demo/tmp
+demo/.tmp-prompts
+demo/demo
+packages/webui/test-results

@@ -57,12 +57,7 @@ export class SessionCatalog {
     return this.byId.get(sessionId);
   }
 
-  create(input: {
-    name?: string;
-    cwd: string;
-    avatar: string;
-    storeTarget: "global" | "workspace";
-  }): SessionMeta {
+  create(input: { name?: string; cwd: string; avatar: string; storeTarget: "global" | "workspace" }): SessionMeta {
     const id = createId();
     const now = isoNow();
     const cwd = resolve(input.cwd);
@@ -88,11 +83,14 @@ export class SessionCatalog {
     return session;
   }
 
-  update(sessionId: string, patch: {
-    name?: string;
-    status?: SessionStatus;
-    lastError?: string;
-  }): SessionMeta {
+  update(
+    sessionId: string,
+    patch: {
+      name?: string;
+      status?: SessionStatus;
+      lastError?: string;
+    },
+  ): SessionMeta {
     const current = this.byId.get(sessionId);
     if (!current) {
       throw new Error(`session not found: ${sessionId}`);

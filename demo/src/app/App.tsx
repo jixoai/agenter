@@ -1,25 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChatEngine } from "@agenter/chat-system";
+import { ResourceLoader } from "@agenter/settings";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { ResourceLoader } from "@agenter/settings";
-import { ChatEngine } from "@agenter/chat-system";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AgentRuntime,
   AgenterAI,
-  ModelClient,
   FilePromptStore,
+  ModelClient,
   SessionStore,
   TaskEngine,
-  type TaskCreateInput,
-  type TaskImportItem,
-  type TaskUpdateInput,
   type AgentRuntimeStats,
   type LoopBusInput,
   type LoopBusPhase,
+  type TaskCreateInput,
+  type TaskImportItem,
+  type TaskUpdateInput,
 } from "@agenter/app-server";
 import { CommandDispatcher } from "../core/command-dispatcher";
-import { createEmptySnapshot, type AppStatus, type ChatMessage, type TaskStage, type TerminalSnapshot } from "../core/protocol";
+import {
+  createEmptySnapshot,
+  type AppStatus,
+  type ChatMessage,
+  type TaskStage,
+  type TerminalSnapshot,
+} from "../core/protocol";
 import { TerminalAdapter } from "../core/terminal-adapter";
 import { DebugLogger } from "../infra/logger";
 import { StatusBar } from "../ui/components/StatusBar";
@@ -81,7 +87,11 @@ const resolveChatAiStatus = (
 
 const toCommandKey = (command: string): string => {
   const normalized = command.trim().toLowerCase();
-  const tail = normalized.split(/[\\/]/g).filter((part) => part.length > 0).at(-1) ?? normalized;
+  const tail =
+    normalized
+      .split(/[\\/]/g)
+      .filter((part) => part.length > 0)
+      .at(-1) ?? normalized;
   return tail.replace(/[^a-z0-9_-]+/g, "");
 };
 
@@ -299,7 +309,10 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
   const debugContentRef = useRef<TextRenderable | null>(null);
-  const chatAiStatus = useMemo(() => resolveChatAiStatus(stage, loopPhase, processState), [loopPhase, processState, stage]);
+  const chatAiStatus = useMemo(
+    () => resolveChatAiStatus(stage, loopPhase, processState),
+    [loopPhase, processState, stage],
+  );
 
   const getAdapter = (terminalId: string): TerminalAdapter | null => terminalAdapters.get(terminalId) ?? null;
 
@@ -370,17 +383,14 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const readHelp = async (
     commandKey: string,
     helpSource: string | undefined,
-  ): Promise<
-    | {
-        command: string;
-        source: string;
-        doc: { syntax: "mdx"; content: string };
-        manuals?: Record<string, string>;
-        truncated?: boolean;
-        error?: string;
-      }
-    | null
-  > => {
+  ): Promise<{
+    command: string;
+    source: string;
+    doc: { syntax: "mdx"; content: string };
+    manuals?: Record<string, string>;
+    truncated?: boolean;
+    error?: string;
+  } | null> => {
     if (!helpSource) {
       return null;
     }
@@ -453,7 +463,11 @@ export const App = ({ runtimeConfig }: AppProps) => {
       },
       focus: async ({ terminalId, focus = true }: { terminalId: string; focus?: boolean }) => {
         if (!runtimeConfig.terminals[terminalId]) {
-          return { ok: false, message: `unknown terminal: ${terminalId}`, focusedTerminalId: focusedTerminalIdRef.current };
+          return {
+            ok: false,
+            message: `unknown terminal: ${terminalId}`,
+            focusedTerminalId: focusedTerminalIdRef.current,
+          };
         }
         if (!focus) {
           return {
@@ -545,7 +559,15 @@ export const App = ({ runtimeConfig }: AppProps) => {
       }) => {
         const adapter = getAdapter(terminalId);
         if (!adapter) {
-          return { ok: false, changed: false, fromHash: null, toHash: null, diff: "", bytes: 0, reason: `unknown terminal: ${terminalId}` };
+          return {
+            ok: false,
+            changed: false,
+            fromHash: null,
+            toHash: null,
+            diff: "",
+            bytes: 0,
+            reason: `unknown terminal: ${terminalId}`,
+          };
         }
         if (focusedTerminalIdRef.current === terminalId) {
           return {
@@ -591,7 +613,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
         taskEngineRef.current.addDependency(source, id, target),
       removeDependency: ({ source, id, target }: { source: string; id: string; target: string }) =>
         taskEngineRef.current.removeDependency(source, id, target),
-      triggerManual: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.triggerManual(source, id),
+      triggerManual: ({ source, id }: { source: string; id: string }) =>
+        taskEngineRef.current.triggerManual(source, id),
       emitEvent: ({ topic, payload, source }: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" }) =>
         taskEngineRef.current.emitEvent({ topic, payload, source }),
       import: (items: TaskImportItem[]) => taskEngineRef.current.import(items),
@@ -602,7 +625,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const chatGateway = useMemo(
     () => ({
       list: () => chatEngineRef.current.list(),
-      add: async (input: { content: string; from: string; score?: number; remark?: string }) => chatEngineRef.current.add(input),
+      add: async (input: { content: string; from: string; score?: number; remark?: string }) =>
+        chatEngineRef.current.add(input),
       remark: async (input: { id: number; score?: number; remark?: string }) => chatEngineRef.current.remark(input),
       query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
         chatEngineRef.current.query(input),
@@ -924,15 +948,21 @@ export const App = ({ runtimeConfig }: AppProps) => {
         void adapter.stop();
       }
     };
-  }, [chatGateway, logger, modelClient, promptStore, runtimeConfig, sessionStore, taskGateway, terminalAdapters, terminalGateway]);
+  }, [
+    chatGateway,
+    logger,
+    modelClient,
+    promptStore,
+    runtimeConfig,
+    sessionStore,
+    taskGateway,
+    terminalAdapters,
+    terminalGateway,
+  ]);
 
   useEffect(() => {
     const nextSize = measureTerminalContentSize(termWidth, termHeight);
-    setTerminalSize((prev) =>
-      prev.cols === nextSize.cols && prev.rows === nextSize.rows
-        ? prev
-        : nextSize,
-    );
+    setTerminalSize((prev) => (prev.cols === nextSize.cols && prev.rows === nextSize.rows ? prev : nextSize));
     if (termWidth > 0 && termHeight > 0) {
       setLayoutReady(true);
     }
@@ -972,16 +1002,14 @@ export const App = ({ runtimeConfig }: AppProps) => {
             | {
                 ok: true;
                 terminalId: string;
-                help?:
-                  | {
-                      command: string;
-                      source: string;
-                      doc: { syntax: "mdx"; content: string };
-                      manuals?: Record<string, string>;
-                      truncated?: boolean;
-                      error?: string;
-                    }
-                  | null;
+                help?: {
+                  command: string;
+                  source: string;
+                  doc: { syntax: "mdx"; content: string };
+                  manuals?: Record<string, string>;
+                  truncated?: boolean;
+                  error?: string;
+                } | null;
                 snapshot?: ReturnType<typeof buildTerminalSnapshotPayload>;
               }
             | { ok: false; message: string };
@@ -1129,7 +1157,11 @@ export const App = ({ runtimeConfig }: AppProps) => {
 
   const copySelection = () => {
     const orderedPanels: FocusPanel[] =
-      focus === "chat" ? ["chat", "terminal", "debug"] : focus === "terminal" ? ["terminal", "chat", "debug"] : ["debug", "chat", "terminal"];
+      focus === "chat"
+        ? ["chat", "terminal", "debug"]
+        : focus === "terminal"
+          ? ["terminal", "chat", "debug"]
+          : ["debug", "chat", "terminal"];
     const refs: Record<FocusPanel, TextRenderable | null> = {
       terminal: terminalContentRef.current,
       chat: null,
@@ -1189,7 +1221,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
     process: processState,
     renderSource: "snapshot",
     cwd: runtimeConfig.agentCwd,
-    terminal: runtimeConfig.terminals[focusedTerminalIdRef.current]?.commandLabel ?? runtimeConfig.terminal.commandLabel,
+    terminal:
+      runtimeConfig.terminals[focusedTerminalIdRef.current]?.commandLabel ?? runtimeConfig.terminal.commandLabel,
     focusedTerminalId: focusedTerminalIdRef.current,
     dirtyTerminalCount,
     terminalSeq: snapshotView.seq,
@@ -1207,7 +1240,12 @@ export const App = ({ runtimeConfig }: AppProps) => {
     <box flexDirection="column" width="100%" height="100%" padding={1}>
       <StatusBar status={status} logsFile={logger.getFilePath()} sessionFile={sessionStore.getFilePath()} />
       <box flexDirection="row" flexGrow={1}>
-        <TerminalPanel snapshot={snapshotView} focused={focus === "terminal"} contentRef={terminalContentRef} title={focusedTerminalId} />
+        <TerminalPanel
+          snapshot={snapshotView}
+          focused={focus === "terminal"}
+          contentRef={terminalContentRef}
+          title={focusedTerminalId}
+        />
         <ChatPanel
           messages={messages}
           aiStatus={chatAiStatus}

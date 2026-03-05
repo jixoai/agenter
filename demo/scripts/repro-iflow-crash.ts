@@ -1,7 +1,7 @@
+import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { argv, cwd as getCwd, kill as killProcess } from "node:process";
-import { spawn, spawnSync } from "node:child_process";
 
 interface ReproConfig {
   runs: number;
@@ -65,26 +65,26 @@ const nowTag = (): string => new Date().toISOString().replace(/[:.]/g, "-");
 const makeCases = (agentCwd: string): ReproCase[] => {
   const makeToken = (id: string): string => `--repro-token=${id}-${Date.now()}`;
   return [
-  {
-    id: "start_with_cwd",
-    token: makeToken("start_with_cwd"),
-    command: ["bun", "run", "src/index.terminal-devtools.tsx", `--cwd=${agentCwd}`],
-  },
-  {
-    id: "start_without_cwd",
-    token: makeToken("start_without_cwd"),
-    command: ["bun", "run", "src/index.terminal-devtools.tsx"],
-  },
-  {
-    id: "watch_with_cwd",
-    token: makeToken("watch_with_cwd"),
-    command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--", `--cwd=${agentCwd}`],
-  },
-  {
-    id: "watch_without_cwd",
-    token: makeToken("watch_without_cwd"),
-    command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--"],
-  },
+    {
+      id: "start_with_cwd",
+      token: makeToken("start_with_cwd"),
+      command: ["bun", "run", "src/index.terminal-devtools.tsx", `--cwd=${agentCwd}`],
+    },
+    {
+      id: "start_without_cwd",
+      token: makeToken("start_without_cwd"),
+      command: ["bun", "run", "src/index.terminal-devtools.tsx"],
+    },
+    {
+      id: "watch_with_cwd",
+      token: makeToken("watch_with_cwd"),
+      command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--", `--cwd=${agentCwd}`],
+    },
+    {
+      id: "watch_without_cwd",
+      token: makeToken("watch_without_cwd"),
+      command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--"],
+    },
   ].map((item) => ({
     ...item,
     command: item.command.concat(item.token),
@@ -93,12 +93,7 @@ const makeCases = (agentCwd: string): ReproCase[] => {
 
 const hasMarker = (content: string): string[] => MARKERS.filter((marker) => content.includes(marker));
 
-const runOne = async (
-  item: ReproCase,
-  run: number,
-  durationMs: number,
-  rawLogDir: string,
-): Promise<ReproResult> => {
+const runOne = async (item: ReproCase, run: number, durationMs: number, rawLogDir: string): Promise<ReproResult> => {
   const logFile = resolve(rawLogDir, `${item.id}.run-${run}.log`);
   const child = spawn("script", ["-q", logFile, ...item.command], {
     cwd: getCwd(),

@@ -1,58 +1,52 @@
-export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
-export { AgenterAI, type AgentRuntimeStats } from "./agenter-ai";
-export { DeepseekClient, DeepseekDecisionError, type TextOnlyModelMessage } from "./deepseek-client";
-export { ModelClient, ModelDecisionError, type ModelProviderConfig } from "./model-client";
-export { SessionStore, type SessionCallRecord } from "./session-store";
-export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
-export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
-export { AppKernel, type AppKernelOptions } from "./app-kernel";
-export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
-export { WorkspacesStore } from "./workspaces-store";
-export { SessionRuntime, type SessionRuntimeSnapshot, type RuntimeEvent, type RuntimeEventMap } from "./session-runtime";
-export { resolveSessionConfig, type SessionTerminalConfig, type ResolvedSessionConfig } from "./session-config";
-export { InstanceRuntime, type InstanceRuntimeSnapshot } from "./instance-runtime";
-export { resolveInstanceConfig, type InstanceTerminalConfig, type ResolvedInstanceConfig } from "./instance-config";
 export {
   TaskEngine,
-  toTaskKey,
-  toTaskRef,
+  parseTaskMarkdownRecord,
+  pickProjectsFromMarkdown,
+  resolveTaskSources,
   serializeTaskMarkdown,
   toTaskCreateInputFromMarkdown,
-  pickProjectsFromMarkdown,
-  parseTaskMarkdownRecord,
-  resolveTaskSources,
+  toTaskKey,
+  toTaskRef,
 } from "@agenter/task-system";
 export type {
   Task,
-  TaskStatus,
-  TaskSourceName,
-  TaskTrigger,
-  TaskView,
+  TaskAddressingConfig,
   TaskCreateInput,
-  TaskPatchInput,
-  TaskUpdateInput,
   TaskDoneResult,
   TaskImportItem,
   TaskImportResult,
-  TaskAddressingConfig,
+  TaskPatchInput,
   TaskSourceInput,
+  TaskSourceName,
   TaskSourceResolved,
+  TaskStatus,
+  TaskTrigger,
+  TaskUpdateInput,
+  TaskView,
 } from "@agenter/task-system";
-export { SettingsEditor, type EditableKind } from "./settings-editor";
+export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
+export { AgenterAI, type AgentRuntimeStats } from "./agenter-ai";
+export { AppKernel, type AppKernelOptions } from "./app-kernel";
+export { DeepseekClient, DeepseekDecisionError, type TextOnlyModelMessage } from "./deepseek-client";
+export { DEFAULT_LANGUAGE, loadPromptDocsByLang, resolveLanguage } from "./i18n";
+export { resolveInstanceConfig, type InstanceTerminalConfig, type ResolvedInstanceConfig } from "./instance-config";
+export { InstanceRuntime, type InstanceRuntimeSnapshot } from "./instance-runtime";
 export {
-  appRouter,
-  type AppRouter,
-} from "./trpc/router";
-export { createTrpcContext, type TrpcContext } from "./trpc/context";
-export {
-  APP_PROTOCOL_VERSION,
-  settingsKindSchema,
-  type SettingsKind,
-  type RuntimeSnapshotPayload,
-  type RuntimeEventEnvelope,
-  type RuntimeEventType,
-  type AnyRuntimeEvent,
-} from "./realtime-types";
+  LoopBus,
+  type LoopBusInput,
+  type LoopBusLogger,
+  type LoopBusMessage,
+  type LoopBusMeta,
+  type LoopBusOutputs,
+  type LoopBusPhase,
+  type LoopBusResponse,
+  type LoopBusState,
+  type LoopChatMessage,
+  type LoopTerminalCommand,
+  type LoopToolCall,
+} from "./loop-bus";
+export { ModelClient, ModelDecisionError, type ModelProviderConfig } from "./model-client";
+export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 export {
   PROMPT_DOC_KEYS,
   md,
@@ -62,19 +56,27 @@ export {
   type PromptDocument,
   type PromptSyntax,
 } from "./prompt-docs";
-export { DEFAULT_LANGUAGE, loadPromptDocsByLang, resolveLanguage } from "./i18n";
+export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
 export {
-  LoopBus,
-  type LoopBusInput,
-  type LoopBusLogger,
-  type LoopBusMessage,
-  type LoopBusMeta,
-  type LoopBusOutputs,
-  type LoopBusResponse,
-  type LoopBusState,
-  type LoopBusPhase,
-  type LoopChatMessage,
-  type LoopTerminalCommand,
-  type LoopToolCall,
-} from "./loop-bus";
+  APP_PROTOCOL_VERSION,
+  settingsKindSchema,
+  type AnyRuntimeEvent,
+  type RuntimeEventEnvelope,
+  type RuntimeEventType,
+  type RuntimeSnapshotPayload,
+  type SettingsKind,
+} from "./realtime-types";
+export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
+export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
+export {
+  SessionRuntime,
+  type RuntimeEvent,
+  type RuntimeEventMap,
+  type SessionRuntimeSnapshot,
+} from "./session-runtime";
+export { SessionStore, type SessionCallRecord } from "./session-store";
+export { SettingsEditor, type EditableKind } from "./settings-editor";
+export { createTrpcContext, type TrpcContext } from "./trpc/context";
+export { appRouter, type AppRouter } from "./trpc/router";
 export type { AppServerLogger, ChatMessage, TaskEvent, TaskStage } from "./types";
+export { WorkspacesStore } from "./workspaces-store";

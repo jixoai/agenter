@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
-import type { RefObject } from "react";
 import type { TextRenderable } from "@opentui/core";
+import type { ReactNode, RefObject } from "react";
 
 import type { TerminalSnapshot } from "../../core/protocol";
 
@@ -14,7 +13,14 @@ interface TerminalPanelProps {
 export const TerminalPanel = ({ snapshot, focused, contentRef, title = "terminal" }: TerminalPanelProps) => {
   const panelTitle = focused ? `${title} *` : title;
   return (
-    <box border borderColor={focused ? "cyan" : "gray"} title={panelTitle} flexDirection="column" width="60%" height="100%">
+    <box
+      border
+      borderColor={focused ? "cyan" : "gray"}
+      title={panelTitle}
+      flexDirection="column"
+      width="60%"
+      height="100%"
+    >
       <scrollbox flexGrow={1} padding={1}>
         <text ref={contentRef} selectable>
           {snapshot.richLines.map((line, lineIndex) => (

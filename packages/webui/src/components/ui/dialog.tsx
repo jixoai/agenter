@@ -16,12 +16,16 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
-        <DialogPrimitive.Content className="fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out md:inset-auto md:left-1/2 md:top-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
+        <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out fixed inset-0 z-50 bg-slate-900/45" />
+        <DialogPrimitive.Content className="data-[state=open]:animate-in data-[state=closed]:animate-out fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
           <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
             <div className="space-y-1">
               <DialogPrimitive.Title className="text-sm font-semibold text-slate-900">{title}</DialogPrimitive.Title>
-              {description ? <DialogPrimitive.Description className="text-xs text-slate-600">{description}</DialogPrimitive.Description> : null}
+              {description ? (
+                <DialogPrimitive.Description className="text-xs text-slate-600">
+                  {description}
+                </DialogPrimitive.Description>
+              ) : null}
             </div>
             <DialogPrimitive.Close
               className={cn(
@@ -33,7 +37,9 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
             </DialogPrimitive.Close>
           </header>
           <div className="max-h-[70dvh] overflow-auto p-4">{children}</div>
-          {footer ? <footer className="flex items-center justify-end gap-2 border-t border-slate-200 p-4">{footer}</footer> : null}
+          {footer ? (
+            <footer className="flex items-center justify-end gap-2 border-t border-slate-200 p-4">{footer}</footer>
+          ) : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

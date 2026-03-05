@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { readTerminalOutput } from "@agenter/terminal";
 import type { RuntimeConfig } from "../app/runtime-config";
@@ -259,7 +259,11 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
 
   const releaseDirtyWithGuard = (): void => {
     if (!dirtyState.active || dirtyState.markHash === "none") {
-      logger.log({ channel: "ui", level: "warn", message: "devtools.action.releaseDirty blocked: mark first (Ctrl+1)" });
+      logger.log({
+        channel: "ui",
+        level: "warn",
+        message: "devtools.action.releaseDirty blocked: mark first (Ctrl+1)",
+      });
       return;
     }
     void releaseDirty();
@@ -268,7 +272,11 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
   const saveSnapshot = async (): Promise<void> => {
     const outputDir = adapter.getOutputDir();
     if (!outputDir) {
-      logger.log({ channel: "error", level: "error", message: "devtools.action.snapshot failed: output dir not ready" });
+      logger.log({
+        channel: "error",
+        level: "error",
+        message: "devtools.action.snapshot failed: output dir not ready",
+      });
       return;
     }
 
@@ -428,14 +436,22 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
     <box flexDirection="column" width="100%" height="100%" padding={1}>
       <box border borderColor="gray" padding={1} flexDirection="row" justifyContent="space-between">
         <text>
-          mode=<strong>terminal-devtools</strong> focus=<strong>{focusText}</strong> process=<strong>{processState}</strong> cwd=
+          mode=<strong>terminal-devtools</strong> focus=<strong>{focusText}</strong> process=
+          <strong>{processState}</strong> cwd=
           <strong>{runtimeConfig.agentCwd}</strong> terminal=<strong>{runtimeConfig.terminal.commandLabel}</strong>
         </text>
         <text>{logger.getFilePath()}</text>
       </box>
       <box flexDirection="row" flexGrow={1}>
         <TerminalPanel snapshot={renderSnapshot} focused={focus === "terminal"} contentRef={terminalContentRef} />
-        <box border borderColor={focus === "devtools" ? "cyan" : "gray"} flexDirection="column" padding={1} width="40%" height="100%">
+        <box
+          border
+          borderColor={focus === "devtools" ? "cyan" : "gray"}
+          flexDirection="column"
+          padding={1}
+          width="40%"
+          height="100%"
+        >
           <text>{focus === "devtools" ? "devtools *" : "devtools"}</text>
           <box border borderColor="gray" padding={1} flexDirection="column" marginTop={1}>
             <box flexDirection="row">
@@ -471,7 +487,8 @@ export const TerminalDevtoolsApp = ({ runtimeConfig }: TerminalDevtoolsAppProps)
             </box>
           </box>
           <text marginTop={1}>
-            dirty={dirtyState.active ? "true" : "false"} mark={dirtyState.markHash} release={dirtyState.releaseHash} bytes={dirtyState.diffBytes}
+            dirty={dirtyState.active ? "true" : "false"} mark={dirtyState.markHash} release={dirtyState.releaseHash}{" "}
+            bytes={dirtyState.diffBytes}
           </text>
           <text>{dirtyState.active ? "slice ready" : "slice blocked: mark first"}</text>
           <text>viewSeq={displaySeq ?? snapshot.seq} | Tab 切焦点 | Ctrl+C(terminal)=interrupt | Ctrl+Q=quit</text>

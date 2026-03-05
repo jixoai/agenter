@@ -54,9 +54,7 @@ export class TaskEngine {
 
   list(): TaskView[] {
     const all = [...this.tasks.values()];
-    return all
-      .map((task) => this.withDerived(task))
-      .sort((a, b) => a.meta.updatedAt.localeCompare(b.meta.updatedAt));
+    return all.map((task) => this.withDerived(task)).sort((a, b) => a.meta.updatedAt.localeCompare(b.meta.updatedAt));
   }
 
   get(source: TaskSourceName, id: string): TaskView | undefined {
