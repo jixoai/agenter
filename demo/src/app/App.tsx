@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { ResourceLoader } from "@agenter/settings";
+import { ChatEngine } from "@agenter/chat-system";
 
 import {
   AgentRuntime,
   AgenterAI,
-  DeepseekClient,
+  ModelClient,
   FilePromptStore,
   SessionStore,
+  TaskEngine,
+  type TaskCreateInput,
+  type TaskImportItem,
+  type TaskUpdateInput,
   type AgentRuntimeStats,
   type LoopBusInput,
   type LoopBusPhase,
@@ -44,6 +49,9 @@ const resolveChatAiStatus = (
     return "等待服务返回";
   }
   if (loopPhase === "waiting_messages") {
+    if (stage === "done" || stage === "idle" || stage === "error") {
+      return "等待用户输入";
+    }
     return processState === "running" ? "等待终端输出" : "等待新消息";
   }
   if (loopPhase === "processing_messages") {
@@ -167,7 +175,20 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
   const logger = useMemo(() => new DebugLogger("logs", 1200), []);
-  const sessionStore = useMemo(() => new SessionStore("logs"), []);
+  const sessionStore = useMemo(
+    () =>
+      new SessionStore({
+        sessionRoot: "logs",
+        session: {
+          id: `demo-${createId()}`,
+          name: "demo",
+          cwd: runtimeConfig.agentCwd,
+          avatar: "demo",
+          storeTarget: "workspace",
+        },
+      }),
+    [runtimeConfig.agentCwd],
+  );
   const resourceLoader = useMemo(
     () =>
       new ResourceLoader({
@@ -197,13 +218,30 @@ export const App = ({ runtimeConfig }: AppProps) => {
       runtimeConfig.prompt.responseContractPath,
     ],
   );
-  const deepseek = useMemo(
+  const modelClient = useMemo(
     () =>
-      new DeepseekClient(runtimeConfig.ai.apiKey, runtimeConfig.ai.model, runtimeConfig.ai.baseUrl, {
+      new ModelClient({
+        providerId: runtimeConfig.ai.providerId,
+        kind: runtimeConfig.ai.kind,
+        apiKey: runtimeConfig.ai.apiKey,
+        model: runtimeConfig.ai.model,
+        baseUrl: runtimeConfig.ai.baseUrl,
         temperature: runtimeConfig.ai.temperature,
         maxRetries: runtimeConfig.ai.maxRetries,
+        maxToken: runtimeConfig.ai.maxToken,
+        compactThreshold: runtimeConfig.ai.compactThreshold,
       }),
-    [runtimeConfig.ai.apiKey, runtimeConfig.ai.baseUrl, runtimeConfig.ai.maxRetries, runtimeConfig.ai.model, runtimeConfig.ai.temperature],
+    [
+      runtimeConfig.ai.providerId,
+      runtimeConfig.ai.kind,
+      runtimeConfig.ai.apiKey,
+      runtimeConfig.ai.model,
+      runtimeConfig.ai.baseUrl,
+      runtimeConfig.ai.temperature,
+      runtimeConfig.ai.maxRetries,
+      runtimeConfig.ai.maxToken,
+      runtimeConfig.ai.compactThreshold,
+    ],
   );
   const terminalAdapters = useMemo(() => {
     const entries = Object.entries(runtimeConfig.terminals).map(([terminalId, terminal]) => {
@@ -255,6 +293,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const stageRef = useRef<TaskStage>("idle");
   const processStateRef = useRef<"stopped" | "running">("stopped");
   const lastIdleHeartbeatAtRef = useRef(0);
+  const taskEngineRef = useRef(new TaskEngine());
+  const chatEngineRef = useRef(new ChatEngine());
 
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
@@ -540,6 +580,42 @@ export const App = ({ runtimeConfig }: AppProps) => {
     [runtimeConfig.terminals, terminalAdapters],
   );
 
+  const taskGateway = useMemo(
+    () => ({
+      list: () => taskEngineRef.current.list(),
+      get: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.get(source, id),
+      create: (input: TaskCreateInput) => taskEngineRef.current.create(input),
+      update: (input: TaskUpdateInput) => taskEngineRef.current.update(input),
+      done: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.done(source, id),
+      addDependency: ({ source, id, target }: { source: string; id: string; target: string }) =>
+        taskEngineRef.current.addDependency(source, id, target),
+      removeDependency: ({ source, id, target }: { source: string; id: string; target: string }) =>
+        taskEngineRef.current.removeDependency(source, id, target),
+      triggerManual: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.triggerManual(source, id),
+      emitEvent: ({ topic, payload, source }: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" }) =>
+        taskEngineRef.current.emitEvent({ topic, payload, source }),
+      import: (items: TaskImportItem[]) => taskEngineRef.current.import(items),
+    }),
+    [],
+  );
+
+  const chatGateway = useMemo(
+    () => ({
+      list: () => chatEngineRef.current.list(),
+      add: async (input: { content: string; from: string; score?: number; remark?: string }) => chatEngineRef.current.add(input),
+      remark: async (input: { id: number; score?: number; remark?: string }) => chatEngineRef.current.remark(input),
+      query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
+        chatEngineRef.current.query(input),
+      reply: async (input: {
+        replyContent: string;
+        from?: string;
+        score?: number;
+        relationships?: Array<{ id: number; score?: number; remark?: string }>;
+      }) => chatEngineRef.current.reply(input),
+    }),
+    [],
+  );
+
   useEffect(() => {
     const stopLog = logger.subscribe((line) => {
       setLogs((prev) => [...prev.slice(-799), line]);
@@ -599,10 +675,12 @@ export const App = ({ runtimeConfig }: AppProps) => {
     }
 
     const agent = new AgenterAI({
-      deepseek,
+      modelClient,
       logger,
       promptStore,
       terminalGateway,
+      taskGateway,
+      chatGateway,
       sessionStore,
     });
     const stopTask = agent.onTaskEvent((event) => {
@@ -630,8 +708,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         } else {
           const focusedTerminalId = focusedTerminalIdRef.current;
           const adapter = getAdapter(focusedTerminalId);
-          const hasActiveTask = !["idle", "done", "error"].includes(stageRef.current);
-          if (!adapter || !adapter.isRunning() || !hasActiveTask || processStateRef.current !== "running") {
+          if (!adapter || !adapter.isRunning() || processStateRef.current !== "running") {
             return;
           }
           const now = Date.now();
@@ -847,7 +924,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         void adapter.stop();
       }
     };
-  }, [deepseek, logger, promptStore, runtimeConfig, sessionStore, terminalAdapters, terminalGateway]);
+  }, [chatGateway, logger, modelClient, promptStore, runtimeConfig, sessionStore, taskGateway, terminalAdapters, terminalGateway]);
 
   useEffect(() => {
     const nextSize = measureTerminalContentSize(termWidth, termHeight);
@@ -978,6 +1055,13 @@ export const App = ({ runtimeConfig }: AppProps) => {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     chatInputRef.current?.clear();
+    if (value !== "/compact") {
+      chatEngineRef.current.add({
+        content: value,
+        from: "user",
+        score: 100,
+      });
+    }
 
     if (value === "/reload") {
       void promptStore

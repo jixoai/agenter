@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { TextareaRenderable } from "@opentui/core";
 
 interface ChatPanelProps {
-  activeInstanceId: string | null;
+  activeSessionId: string | null;
   messages: Array<{ id: string; role: "user" | "assistant"; content: string }>;
   inputRef: RefObject<TextareaRenderable | null>;
   focused: boolean;
@@ -17,10 +17,10 @@ const KEY_BINDINGS = [
   { name: "linefeed", shift: true, action: "newline" as const },
 ];
 
-export const ChatPanel = ({ activeInstanceId, messages, inputRef, focused, onInputChange, onSubmit }: ChatPanelProps) => {
+export const ChatPanel = ({ activeSessionId, messages, inputRef, focused, onInputChange, onSubmit }: ChatPanelProps) => {
   return (
     <box border borderColor={focused ? "cyan" : "gray"} padding={1} flexGrow={1} flexDirection="column" title="chat">
-      <text fg="gray">active: {activeInstanceId ?? "none"}</text>
+      <text fg="gray">active: {activeSessionId ?? "none"}</text>
       <scrollbox flexGrow={1} stickyScroll stickyStart="bottom">
         <box flexDirection="column">
           {messages.length === 0 ? <text fg="gray">(no messages)</text> : null}

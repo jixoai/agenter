@@ -3,33 +3,36 @@ import { describe, expect, test } from "bun:test";
 import { buildViewModel } from "../src/types";
 
 describe("Feature: tui view-model mapping", () => {
-  test("Scenario: Given active instance runtime When building view Then expose phase text and messages", () => {
+  test("Scenario: Given active session runtime When building view Then expose phase text and messages", () => {
     const state = {
       connected: true,
       lastEventId: 3,
-      instances: [
+      sessions: [
         {
           id: "i-1",
           name: "demo",
           cwd: "/tmp/demo",
+          avatar: "tester-bot",
           createdAt: new Date(0).toISOString(),
           updatedAt: new Date(0).toISOString(),
-          autoStart: true,
           status: "running" as const,
+          sessionRoot: "/tmp/sessions/i-1",
+          storeTarget: "global" as const,
         },
       ],
       runtimes: {
         "i-1": {
-          instanceId: "i-1",
+          sessionId: "i-1",
           started: true,
           loopPhase: "processing_messages" as const,
           stage: "observe" as const,
           focusedTerminalId: "iflow-main",
           chatMessages: [],
           terminals: [],
+          tasks: [],
         },
       },
-      chatsByInstance: {
+      chatsBySession: {
         "i-1": [
           {
             id: "m-1",
@@ -38,6 +41,9 @@ describe("Feature: tui view-model mapping", () => {
             timestamp: Date.now(),
           },
         ],
+      },
+      tasksBySession: {
+        "i-1": [],
       },
     };
 

@@ -4,8 +4,9 @@ import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
 import { ChatPanel } from "./panels/ChatPanel";
-import { InstancesPanel } from "./panels/InstancesPanel";
+import { SessionsPanel } from "./panels/SessionsPanel";
 import { StatusBar } from "./panels/StatusBar";
+import { TasksPanel } from "./panels/TasksPanel";
 import { buildViewModel } from "./types";
 
 export interface TuiClientOptions {
@@ -20,16 +21,18 @@ const wsUrl = (host: string, port: number): string => `ws://${host}:${port}/trpc
 const App = ({ host, port }: { host: string; port: number }) => {
   const renderer = useRenderer();
   const inputRef = useRef<TextareaRenderable | null>(null);
+  const pendingActiveSessionIdRef = useRef<string | null>(null);
 
-  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [localInput, setLocalInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState(() => ({
     connected: false,
     lastEventId: 0,
-    instances: [],
+    sessions: [],
     runtimes: {},
-    chatsByInstance: {},
+    chatsBySession: {},
+    tasksBySession: {},
   }));
 
   const client = useMemo(
@@ -46,11 +49,18 @@ const App = ({ host, port }: { host: string; port: number }) => {
   useEffect(() => {
     const unsubscribe = store.subscribe((next) => {
       setState({ ...next });
-      setActiveInstanceId((prev) => {
-        if (prev && next.instances.some((item) => item.id === prev)) {
+      setActiveSessionId((prev) => {
+        if (prev && pendingActiveSessionIdRef.current === prev) {
+          if (next.sessions.some((item) => item.id === prev)) {
+            pendingActiveSessionIdRef.current = null;
+            return prev;
+          }
           return prev;
         }
-        return next.instances[0]?.id ?? null;
+        if (prev && next.sessions.some((item) => item.id === prev)) {
+          return prev;
+        }
+        return next.sessions[0]?.id ?? null;
       });
     });
 
@@ -62,33 +72,38 @@ const App = ({ host, port }: { host: string; port: number }) => {
     };
   }, [store]);
 
-  const view = useMemo(() => buildViewModel(state, activeInstanceId), [activeInstanceId, state]);
+  const view = useMemo(() => buildViewModel(state, activeSessionId), [activeSessionId, state]);
 
   const submit = () => {
     const value = (inputRef.current?.plainText ?? localInput).trim();
-    if (!value || !activeInstanceId) {
+    if (!value || !activeSessionId) {
       return;
     }
     inputRef.current?.clear();
     setLocalInput("");
-    void store.sendChat(activeInstanceId, value);
+    void store.sendChat(activeSessionId, value);
   };
 
-  const createInstance = () => {
-    void store.createInstance({
-      cwd: process.cwd(),
-      name: `workspace-${createId().slice(-4)}`,
-      autoStart: true,
-    });
+  const createSession = () => {
+    void store
+      .createSession({
+        cwd: process.cwd(),
+        name: `workspace-${createId().slice(-4)}`,
+        autoStart: true,
+      })
+      .then((session) => {
+        pendingActiveSessionIdRef.current = session.id;
+        setActiveSessionId(session.id);
+      });
   };
 
-  const focusNextInstance = () => {
-    if (view.instances.length === 0) {
+  const focusNextSession = () => {
+    if (view.sessions.length === 0) {
       return;
     }
-    const index = view.instances.findIndex((item) => item.id === activeInstanceId);
-    const next = view.instances[(index + 1 + view.instances.length) % view.instances.length];
-    setActiveInstanceId(next.id);
+    const index = view.sessions.findIndex((item) => item.id === activeSessionId);
+    const next = view.sessions[(index + 1 + view.sessions.length) % view.sessions.length];
+    setActiveSessionId(next.id);
   };
 
   useKeyboard((key) => {
@@ -97,11 +112,11 @@ const App = ({ host, port }: { host: string; port: number }) => {
       return true;
     }
     if (key.ctrl && key.name === "n") {
-      createInstance();
+      createSession();
       return true;
     }
     if (key.ctrl && key.name === "tab") {
-      focusNextInstance();
+      focusNextSession();
       return true;
     }
     if (key.ctrl && key.name === "c") {
@@ -117,14 +132,14 @@ const App = ({ host, port }: { host: string; port: number }) => {
         host={host}
         port={port}
         connected={connected && view.connected}
-        instanceCount={view.instances.length}
+        sessionCount={view.sessions.length}
         phaseText={view.phaseText}
       />
       <box marginTop={1} flexGrow={1} flexDirection="row">
-        <InstancesPanel instances={view.instances} activeInstanceId={view.activeInstanceId} />
-        <box marginLeft={1} flexGrow={1}>
+        <SessionsPanel sessions={view.sessions} activeSessionId={view.activeSessionId} />
+        <box marginLeft={1} flexGrow={1} flexDirection="column">
           <ChatPanel
-            activeInstanceId={view.activeInstanceId}
+            activeSessionId={view.activeSessionId}
             messages={view.messages}
             inputRef={inputRef}
             focused
@@ -133,6 +148,9 @@ const App = ({ host, port }: { host: string; port: number }) => {
             }}
             onSubmit={submit}
           />
+          <box marginTop={1} flexGrow={1}>
+            <TasksPanel tasks={view.tasks} />
+          </box>
         </box>
       </box>
     </box>

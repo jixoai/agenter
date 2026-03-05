@@ -135,7 +135,7 @@ describe("Feature: cli daemon and web commands", () => {
     await waitForWsOpen(`ws://${host}:${port}/trpc`);
   });
 
-  test("Scenario: Given daemon and runtime store When creating instance Then subscription syncs state", async () => {
+  test("Scenario: Given daemon and runtime store When creating session Then subscription syncs state", async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
@@ -153,13 +153,13 @@ describe("Feature: cli daemon and web commands", () => {
     const store = createRuntimeStore(client);
     try {
       await store.connect();
-      await store.createInstance({
+      await store.createSession({
         cwd: process.cwd(),
         name: "e2e-subscription",
         autoStart: false,
       });
-      await waitFor(() => store.getState().instances.some((item) => item.name === "e2e-subscription"));
-      expect(store.getState().instances.some((item) => item.name === "e2e-subscription")).toBe(true);
+      await waitFor(() => store.getState().sessions.some((item) => item.name === "e2e-subscription"));
+      expect(store.getState().sessions.some((item) => item.name === "e2e-subscription")).toBe(true);
     } finally {
       store.disconnect();
     }

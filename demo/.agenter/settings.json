@@ -3,7 +3,7 @@
   "terminal": {
     "presets": {
       "iflow": {
-        "command": ["iflow"],
+        "command": ["npx", "iflow"],
         "submitGapMs": 120,
         "helpSource": "./.agenter/man/iflow.md"
       }
@@ -22,11 +22,16 @@
     "agenterPath": "./.agenter/AGENTER.mdx"
   },
   "ai": {
-    "provider": "deepseek",
-    "apiKeyEnv": "DEEPSEEK_API_KEY",
-    "model": "deepseek-chat",
-    "baseUrl": "https://api.deepseek.com/v1",
-    "temperature": 0.2,
-    "maxRetries": 2
+    "activeProvider": "default",
+    "providers": {
+      "default": {
+        "kind": "deepseek",
+        "apiKeyEnv": "DEEPSEEK_API_KEY",
+        "model": "deepseek-chat",
+        "baseUrl": "https://api.deepseek.com/v1",
+        "temperature": 0.2,
+        "maxRetries": 2
+      }
+    }
   }
 }

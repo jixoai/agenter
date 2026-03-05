@@ -23,7 +23,9 @@ const MIME_BY_EXT: Record<string, string> = {
 export interface TrpcServerOptions {
   host: string;
   port: number;
-  registryPath?: string;
+  globalSessionRoot?: string;
+  workspacesPath?: string;
+  workspaceCwd?: string;
   staticDir?: string;
 }
 
@@ -69,7 +71,9 @@ const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: strin
 
 export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcServerHandle> => {
   const kernel = new AppKernel({
-    registryPath: options.registryPath,
+    globalSessionRoot: options.globalSessionRoot,
+    workspacesPath: options.workspacesPath,
+    initialWorkspace: options.workspaceCwd,
   });
   await kernel.start();
 
