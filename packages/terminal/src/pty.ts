@@ -1,7 +1,22 @@
+import { mkdirSync } from "node:fs";
+
 import type { TerminalColorMode } from "./types";
+
+export class PtyStartError extends Error {
+  constructor(
+    readonly command: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PtyStartError";
+  }
+}
 
 const createEnv = (color: TerminalColorMode): Record<string, string> => {
   const env: Record<string, string | undefined> = { ...process.env };
+  if (!env.PATH || env.PATH.trim().length === 0) {
+    env.PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+  }
   switch (color) {
     case "none":
       env.TERM = "dumb";
@@ -38,6 +53,24 @@ const createEnv = (color: TerminalColorMode): Record<string, string> => {
   return normalized;
 };
 
+const resolveCommand = (command: string, env: Record<string, string>): string => {
+  if (command.includes("/")) {
+    return command;
+  }
+  const path = env.PATH ?? process.env.PATH;
+  const resolved = Bun.which(command, path ? { PATH: path } : undefined);
+  if (resolved) {
+    return resolved;
+  }
+  if (command === "npx") {
+    const bunx = Bun.which("bunx", path ? { PATH: path } : undefined);
+    if (bunx) {
+      return bunx;
+    }
+  }
+  return command;
+};
+
 export class Pty {
   private proc: Bun.Subprocess | null = null;
   private onData: ((chunk: Uint8Array) => void) | null = null;
@@ -63,25 +96,35 @@ export class Pty {
   start(): void {
     if (this.proc) return;
 
-    this.proc = Bun.spawn([this.command, ...this.args], {
-      cwd: this.cwd,
-      env: createEnv(this.color),
-      terminal: {
-        cols: this.cols,
-        rows: this.rows,
-        name: process.env.TERM ?? "xterm-256color",
-        data: (_term, data) => {
-          this.onData?.(data);
+    try {
+      const env = createEnv(this.color);
+      const command = resolveCommand(this.command, env);
+      if (this.cwd && this.cwd.length > 0) {
+        mkdirSync(this.cwd, { recursive: true });
+      }
+      this.proc = Bun.spawn([command, ...this.args], {
+        cwd: this.cwd,
+        env,
+        terminal: {
+          cols: this.cols,
+          rows: this.rows,
+          name: process.env.TERM ?? "xterm-256color",
+          data: (_term, data) => {
+            this.onData?.(data);
+          },
+          exit: (_term, _code, _signal) => {
+            // stream closed
+          },
         },
-        exit: (_term, _code, _signal) => {
-          // stream closed
+        onExit: (_subprocess, code, _signal, _error) => {
+          this.proc = null;
+          this.onExit?.(code);
         },
-      },
-      onExit: (_subprocess, code, _signal, _error) => {
-        this.proc = null;
-        this.onExit?.(code);
-      },
-    });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new PtyStartError(this.command, `failed to spawn "${this.command}": ${message}`);
+    }
   }
 
   write(input: string): void {

@@ -1,8 +1,9 @@
 import { extname, join } from "node:path";
 
+import { PROMPTS as EN_PROMPTS } from "@agenter/i18n-en";
 import { ResourceLoader } from "@agenter/settings";
 
-import { DEFAULT_PROMPT_DOCS, type PromptDocKey, type PromptDocRecord, type PromptDocument, type PromptSyntax } from "./prompt-docs";
+import { type PromptDocKey, type PromptDocRecord, type PromptDocument, type PromptSyntax } from "./prompt-docs";
 import { loadPromptDocsByLang } from "./i18n";
 import { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 
@@ -62,12 +63,12 @@ const detectSyntax = (pathLike: string | undefined, fallback: PromptSyntax): Pro
   return fallback;
 };
 
-const cloneDefaultDocs = (): PromptDocRecord => ({
-  AGENTER: { ...DEFAULT_PROMPT_DOCS.AGENTER },
-  AGENTER_SYSTEM: { ...DEFAULT_PROMPT_DOCS.AGENTER_SYSTEM },
-  SYSTEM_TEMPLATE: { ...DEFAULT_PROMPT_DOCS.SYSTEM_TEMPLATE },
-  RESPONSE_CONTRACT: { ...DEFAULT_PROMPT_DOCS.RESPONSE_CONTRACT },
-});
+const DEFAULT_BOOTSTRAP_DOCS: PromptDocRecord = {
+  AGENTER: { ...EN_PROMPTS.AGENTER },
+  AGENTER_SYSTEM: { ...EN_PROMPTS.AGENTER_SYSTEM },
+  SYSTEM_TEMPLATE: { ...EN_PROMPTS.SYSTEM_TEMPLATE },
+  RESPONSE_CONTRACT: { ...EN_PROMPTS.RESPONSE_CONTRACT },
+};
 
 const cloneDocs = (docs: PromptDocRecord): PromptDocRecord => ({
   AGENTER: { ...docs.AGENTER },
@@ -78,7 +79,7 @@ const cloneDocs = (docs: PromptDocRecord): PromptDocRecord => ({
 
 export class FilePromptStore implements PromptStore {
   private snapshot: PromptSnapshot = {
-    docs: cloneDefaultDocs(),
+    docs: cloneDocs(DEFAULT_BOOTSTRAP_DOCS),
     loadedAt: Date.now(),
     source: "file",
   };

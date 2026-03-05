@@ -12,6 +12,8 @@ export {
 export type {
   AgenterSettings,
   AgentSettings,
+  AiProviderKind,
+  AiProviderSettings,
   AiSettings,
   BuiltinSettingsSource,
   FeatureSettings,
@@ -21,6 +23,7 @@ export type {
   PromptSettings,
   SettingsSourceDescriptor,
   SettingsSourceInput,
+  TaskSettings,
   TerminalBootEntry,
   TerminalBootEntryObject,
   TerminalFeatureSettings,

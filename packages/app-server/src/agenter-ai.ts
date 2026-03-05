@@ -1,11 +1,23 @@
 import { toolDefinition, type Tool } from "@tanstack/ai";
 import { z } from "zod";
 import { mdxToMd } from "@agenter/mdx2md";
+import type { ChatAddInput, ChatQueryInput, ChatRecord, ChatRemarkInput, ChatReplyInput, ChatReplyResult } from "@agenter/chat-system";
+import type {
+  TaskCreateInput,
+  TaskDoneResult,
+  TaskEventInput,
+  TaskImportItem,
+  TaskImportResult,
+  TaskSourceName,
+  TaskUpdateInput,
+  TaskView,
+} from "@agenter/task-system";
 
 import type { LoopBusMessage, LoopBusResponse } from "./loop-bus";
-import type { DeepseekClient, TextOnlyModelMessage } from "./deepseek-client";
-import { DeepseekDecisionError } from "./deepseek-client";
+import type { ModelClient, TextOnlyModelMessage } from "./model-client";
+import { ModelDecisionError } from "./model-client";
 import type { PromptStore } from "./prompt-store";
+import { createRuntimeText } from "./runtime-text";
 import type { SessionStore } from "./session-store";
 import type { AppServerLogger, ChatMessage, TaskEvent, TaskStage } from "./types";
 
@@ -41,11 +53,35 @@ interface TerminalGateway {
   sliceDirty: (input: { terminalId: string; remark?: boolean; wait?: boolean; timeoutMs?: number }) => Promise<unknown>;
 }
 
+interface TaskGateway {
+  list: () => TaskView[];
+  get: (input: { source: TaskSourceName; id: string }) => TaskView | undefined;
+  create: (input: TaskCreateInput) => TaskView;
+  update: (input: TaskUpdateInput) => TaskView;
+  done: (input: { source: TaskSourceName; id: string }) => TaskDoneResult;
+  addDependency: (input: { source: TaskSourceName; id: string; target: string }) => TaskView;
+  removeDependency: (input: { source: TaskSourceName; id: string; target: string }) => TaskView;
+  triggerManual: (input: { source: TaskSourceName; id: string }) => TaskView | undefined;
+  emitEvent: (input: TaskEventInput) => { topic: string; source: "api" | "file" | "scheduler" | "tool"; affected: TaskView[] };
+  import: (items: TaskImportItem[]) => TaskImportResult;
+}
+
+interface ChatGateway {
+  list: () => ChatRecord[];
+  add: (input: ChatAddInput) => Promise<ChatRecord> | ChatRecord;
+  remark: (input: ChatRemarkInput) => Promise<ChatRecord | undefined> | ChatRecord | undefined;
+  query: (input: ChatQueryInput) => Promise<ChatRecord[]> | ChatRecord[];
+  reply: (input: ChatReplyInput) => Promise<ChatReplyResult> | ChatReplyResult;
+}
+
 interface AgentDeps {
-  deepseek: DeepseekClient;
+  modelClient: ModelClient;
   logger: AppServerLogger;
   promptStore: PromptStore;
+  locale?: string;
   terminalGateway: TerminalGateway;
+  taskGateway: TaskGateway;
+  chatGateway: ChatGateway;
   sessionStore?: SessionStore;
 }
 
@@ -63,9 +99,14 @@ interface ToolTraceEntry {
 }
 
 interface ChatReplyCall {
+  id: number;
   text: string;
+  from: string;
+  score: number;
+  remark: string;
   done: boolean;
   stage?: TaskStage;
+  relationships?: Array<{ id: number; score?: number; remark?: string }>;
 }
 
 interface TerminalHelpDocument {
@@ -84,8 +125,6 @@ export interface AgentRuntimeStats {
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const MAX_HISTORY_MESSAGES = 80;
-const MAX_STEPS_PER_TASK = 24;
-const MAX_PRELUDE_MESSAGES = 24;
 const MAX_TERMINAL_DIFF_CHARS = 6_000;
 const MAX_TERMINAL_SNAPSHOT_LINES = 16;
 const ENABLE_AGENT_TOOLS = true;
@@ -151,33 +190,6 @@ const mdFence = (lang: string, content: string): string => {
   return `\`\`\`${lang}\n${normalized}\n\`\`\``;
 };
 
-const INTERNAL_MARKER_LINE = /^\[(to_user|self_talk|assistant_text|tool_trace|tool_trace_count|tool_trace_tools)\]\s*$/i;
-const INTERNAL_KEY_LINE = /^(to_user_count|assistant_text|self_talk|tool_trace_count|tool_trace_tools)\s*:/i;
-const INTERNAL_TOOL_TRACE_ITEM = /^-\s*tool=/i;
-
-const normalizeAssistantVisibleText = (input: string): string => {
-  const lines = input
-    .trim()
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => !INTERNAL_MARKER_LINE.test(line))
-    .filter((line) => !INTERNAL_KEY_LINE.test(line))
-    .filter((line) => !INTERNAL_TOOL_TRACE_ITEM.test(line));
-
-  const compacted: string[] = [];
-  for (const line of lines) {
-    if (line.trim().length === 0) {
-      if (compacted.length === 0 || compacted[compacted.length - 1] === "") {
-        continue;
-      }
-      compacted.push("");
-      continue;
-    }
-    compacted.push(line);
-  }
-  return compacted.join("\n").trim();
-};
-
 const compactSnapshotTail = (lines: string[]): string[] => {
   const trimmed = lines.map((line) => line.replace(/\s+$/g, ""));
   const compacted = trimmed.filter((line) => line.length > 0);
@@ -205,15 +217,32 @@ export class AgenterAI {
   private statsListeners: Array<(stats: AgentRuntimeStats) => void> = [];
   private activeTask: ActiveTask | null = null;
   private history: TextOnlyModelMessage[] = [];
-  private preludeMessages: LoopBusMessage[] = [];
+  private compactPending = false;
+  private compactForced = false;
   private stats: AgentRuntimeStats = {
     loops: 0,
     apiCalls: 0,
     lastContextChars: 0,
     totalContextChars: 0,
   };
+  private readonly runtimeText: ReturnType<typeof createRuntimeText>;
 
-  constructor(private readonly deps: AgentDeps) {}
+  constructor(private readonly deps: AgentDeps) {
+    this.runtimeText = createRuntimeText(this.deps.locale);
+  }
+
+  requestCompact(reason = "manual"): void {
+    this.compactPending = true;
+    this.compactForced = true;
+    this.deps.logger.log({
+      channel: "agent",
+      level: "info",
+      message: "history.compact.requested",
+      meta: {
+        reason,
+      },
+    });
+  }
 
   onTaskEvent(listener: (event: TaskEvent) => void): () => void {
     this.eventListeners.push(listener);
@@ -230,54 +259,21 @@ export class AgenterAI {
     };
   }
 
-  async send(messages: LoopBusMessage[]): Promise<LoopBusResponse | void> {
-    let orderedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  async send(messages: LoopBusMessage[]): Promise<LoopBusResponse<ChatMessage, TaskStage> | void> {
+    const orderedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
     if (orderedMessages.length === 0) {
       return;
     }
     this.stats.loops += 1;
 
-    const hasFreshUserInput = orderedMessages.some((item) => item.source === "chat" && item.role === "user");
-    if (hasFreshUserInput && this.activeTask === null) {
+    if (this.activeTask === null) {
       this.activeTask = { id: createId(), steps: 0 };
-      this.emitTask(this.activeTask.id, "plan", "接收用户输入并开始处理");
-    }
-
-    if (!this.activeTask) {
-      this.preludeMessages.push(...orderedMessages);
-      if (this.preludeMessages.length > MAX_PRELUDE_MESSAGES) {
-        this.preludeMessages = this.preludeMessages.slice(this.preludeMessages.length - MAX_PRELUDE_MESSAGES);
-      }
-      this.deps.logger.log({
-        channel: "agent",
-        level: "debug",
-        message: "ai.skip",
-        meta: { reason: "no-active-task", messageCount: orderedMessages.length, preludeCount: this.preludeMessages.length },
-      });
-      return;
-    }
-
-    if (this.activeTask.steps >= MAX_STEPS_PER_TASK) {
-      const user = this.createAssistantMessage("达到自动循环上限，请提供下一步指令。");
-      this.activeTask = null;
-      return {
-        stage: "done",
-        done: true,
-        summary: user.content,
-        outputs: {
-          toUser: [user],
-          toTerminal: [],
-          toTools: [],
-        },
-      };
+      this.emitTask(this.activeTask.id, "plan", this.runtimeText.t("task.plan.start"));
     }
 
     const taskId = this.activeTask.id;
-    if (hasFreshUserInput && this.preludeMessages.length > 0) {
-      orderedMessages = [...this.preludeMessages, ...orderedMessages].sort((a, b) => a.timestamp - b.timestamp);
-      this.preludeMessages = [];
-    }
     await this.pushIncomingBatchToHistory(orderedMessages);
+    await this.maybeCompactHistory(taskId);
 
     const promptSnapshot = this.deps.promptStore.getSnapshot();
     const promptDocs = promptSnapshot.docs;
@@ -309,7 +305,7 @@ export class AgenterAI {
     this.emitStats();
 
     try {
-      const response = await this.deps.deepseek.respondWithMeta({
+      const response = await this.deps.modelClient.respondWithMeta({
         systemPrompt,
         messages: historySnapshot,
         tools,
@@ -319,14 +315,22 @@ export class AgenterAI {
       if (response.usage?.promptTokens !== undefined) {
         this.stats.lastPromptTokens = response.usage.promptTokens;
         this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
+        const compactConfig = this.deps.modelClient.getCompactConfig();
+        if (
+          compactConfig.maxToken &&
+          compactConfig.compactThreshold &&
+          response.usage.promptTokens >= Math.floor(compactConfig.maxToken * compactConfig.compactThreshold)
+        ) {
+          this.compactPending = true;
+        }
       }
       this.emitStats();
 
       this.deps.sessionStore?.appendCall({
         id: callId,
         timestamp: new Date().toISOString(),
-        provider: this.deps.deepseek.getMeta().provider,
-        model: this.deps.deepseek.getMeta().model,
+        provider: this.deps.modelClient.getMeta().provider,
+        model: this.deps.modelClient.getMeta().model,
         request: {
           systemPrompt,
           messages: historySnapshot,
@@ -353,17 +357,11 @@ export class AgenterAI {
         },
       });
 
-      this.pushAssistantTurnToHistory({
-        thinking: response.thinking,
-        text: response.text,
-        toolTrace,
-        chatReplies,
-      });
+      this.pushAssistantTurnToHistory({ thinking: response.thinking, text: response.text, toolTrace, chatReplies });
 
-      this.activeTask.steps += 1;
       const stage = chatReplies[chatReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
       const done = chatReplies.some((item) => item.done) || stage === "done";
-      const toUserMessages = this.composeAssistantMessages(chatReplies, response.thinking, response.text, toolTrace);
+      const toUserMessages = this.composeAssistantMessages(chatReplies, response.thinking, toolTrace);
       const summary = this.resolveTaskSummary({
         stage,
         done,
@@ -392,12 +390,12 @@ export class AgenterAI {
       const message = error instanceof Error ? error.message : String(error);
       const name = error instanceof Error ? error.name : "Error";
       const stack = error instanceof Error ? error.stack : undefined;
-      const details = error instanceof DeepseekDecisionError ? { attempts: error.attempts } : undefined;
+      const details = error instanceof ModelDecisionError ? { retried: true } : undefined;
       this.deps.sessionStore?.appendCall({
         id: callId,
         timestamp: new Date().toISOString(),
-        provider: this.deps.deepseek.getMeta().provider,
-        model: this.deps.deepseek.getMeta().model,
+        provider: this.deps.modelClient.getMeta().provider,
+        model: this.deps.modelClient.getMeta().model,
         request: {
           systemPrompt,
           messages: historySnapshot,
@@ -419,7 +417,7 @@ export class AgenterAI {
         level: "error",
         message: `agenter-ai failed: ${message}`,
       });
-      const user = this.createAssistantMessage(`agenter-ai 调用失败：${message}`);
+      const user = this.createAssistantMessage(this.runtimeText.t("ai.call_failed", { message }));
       return {
         taskId,
         stage: "error",
@@ -433,25 +431,12 @@ export class AgenterAI {
   private composeAssistantMessages(
     chatReplies: ChatReplyCall[],
     thinking: string,
-    text: string,
     toolTrace: ToolTraceEntry[],
   ): ChatMessage[] {
     const result: ChatMessage[] = [];
-    const normalizedText = normalizeAssistantVisibleText(text);
-    const normalizedThinking = normalizeAssistantVisibleText(thinking);
-    const hasDuplicateUserReply = chatReplies.some((reply) => reply.text.trim() === normalizedText);
-
-    if (normalizedThinking.length > 0) {
+    if (thinking.trim().length > 0) {
       result.push(
-        this.createAssistantMessage(normalizedThinking, {
-          channel: "self_talk",
-          format: "markdown",
-        }),
-      );
-    }
-    if (normalizedText.length > 0 && !hasDuplicateUserReply) {
-      result.push(
-        this.createAssistantMessage(normalizedText, {
+        this.createAssistantMessage(thinking.trim(), {
           channel: "self_talk",
           format: "markdown",
         }),
@@ -500,9 +485,10 @@ export class AgenterAI {
       }
     }
 
-    for (const reply of chatReplies) {
+    const replies = chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
+    for (const reply of replies) {
       result.push(
-        this.createAssistantMessage(reply.text, {
+        this.createAssistantMessage(reply, {
           channel: "to_user",
           format: "markdown",
         }),
@@ -529,16 +515,14 @@ export class AgenterAI {
   private pushAssistantTurnToHistory(input: {
     thinking: string;
     text: string;
-    toolTrace: ToolTraceEntry[];
     chatReplies: ChatReplyCall[];
+    toolTrace: ToolTraceEntry[];
   }): void {
+    const toUserReplies = input.chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
     const parts: string[] = [];
-    if (input.chatReplies.length > 0) {
-      const replies = input.chatReplies.map((reply) => reply.text.trim()).filter((line) => line.length > 0);
-      parts.push(`to_user_count: ${input.chatReplies.length}`);
-      if (replies.length > 0) {
-        parts.push(`to_user_last: ${replies[replies.length - 1]}`);
-      }
+    if (toUserReplies.length > 0) {
+      parts.push(`to_user_count: ${toUserReplies.length}`);
+      parts.push(`to_user_last: ${toUserReplies[toUserReplies.length - 1]}`);
     }
     if (input.thinking.trim().length > 0) {
       parts.push(`self_talk: ${input.thinking.trim()}`);
@@ -564,6 +548,71 @@ export class AgenterAI {
     this.trimHistory();
   }
 
+  private async maybeCompactHistory(taskId: string): Promise<void> {
+    const minimumHistory = this.compactForced ? 2 : 8;
+    if (!this.compactPending || this.history.length < minimumHistory) {
+      return;
+    }
+    const chatFacts = this.deps.chatGateway.list();
+    const historyText = this.history
+      .map((item, index) => {
+        const content = item.content.map((part) => part.content).join("\n");
+        return `# ${index + 1} ${item.role}\n${content}`;
+      })
+      .join("\n\n");
+    const compactInput =
+      chatFacts.length === 0
+        ? historyText
+        : `${historyText}\n\n# chat_attention\n${JSON.stringify(
+            chatFacts.map((item) => ({
+              id: item.id,
+              from: item.from,
+              score: item.score,
+              remark: item.remark,
+              content: item.content,
+            })),
+          )}`;
+    const compact = await this.deps.modelClient.summarizeText(compactInput);
+    if (!compact.summary || compact.summary.trim().length === 0) {
+      this.deps.logger.log({
+        channel: "agent",
+        level: "warn",
+        message: "history.compact.skipped",
+        meta: {
+          reason: compact.skipped ?? "empty-summary",
+          taskId,
+        },
+      });
+      this.compactPending = false;
+      this.compactForced = false;
+      return;
+    }
+    this.history = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            content: `history_summary:\n${compact.summary.trim()}`,
+          },
+        ],
+      },
+      ...this.history.slice(-12),
+    ];
+    this.trimHistory();
+    this.compactPending = false;
+    this.compactForced = false;
+    this.deps.logger.log({
+      channel: "agent",
+      level: "info",
+      message: "history.compact.done",
+      meta: {
+        taskId,
+        chars: compact.summary.length,
+      },
+    });
+  }
+
   private async formatUserMessage(message: LoopBusMessage): Promise<string> {
     const header = `### ${message.name}`;
     if (message.source === "chat") {
@@ -572,6 +621,12 @@ export class AgenterAI {
     if (message.source === "terminal") {
       return [header, await this.formatTerminalMessage(message.text)].join("\n\n");
     }
+    if (message.source === "task") {
+      return [header, mdFence("yaml", message.text)].join("\n\n");
+    }
+    if (message.source === "chat-system") {
+      return [header, await this.formatChatSystemMessage(message.text)].join("\n\n");
+    }
 
     const metaYaml = toYaml({
       source: message.source,
@@ -579,6 +634,30 @@ export class AgenterAI {
       ...(message.meta ?? {}),
     });
     return [header, mdFence("yaml", metaYaml), mdFence("text", message.text)].join("\n\n");
+  }
+
+  private async formatChatSystemMessage(text: string): Promise<string> {
+    const parsed = safeJsonParse(text);
+    if (!parsed || typeof parsed !== "object") {
+      return mdFence("text", text);
+    }
+    const payload = parsed as Record<string, unknown>;
+    if (payload.kind !== "chat-system-list" || !Array.isArray(payload.items)) {
+      return mdFence("yaml", toYaml(payload));
+    }
+    const items = payload.items
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item) => ({
+        id: item.id ?? null,
+        from: item.from ?? "unknown",
+        score: item.score ?? 0,
+        remark: item.remark ?? "",
+        content: item.content ?? "",
+      }));
+    const markdown = items
+      .map((item) => `- [#${item.id}] (${item.from}) score=${item.score} remark=${JSON.stringify(item.remark)}\n  ${String(item.content)}`)
+      .join("\n");
+    return [mdFence("yaml", toYaml({ kind: "chat-system-list", count: items.length })), mdFence("markdown", markdown)].join("\n\n");
   }
 
   private async formatTerminalMessage(text: string): Promise<string> {
@@ -748,36 +827,198 @@ export class AgenterAI {
       }
     };
 
-    const chatReplyTool = toolDefinition({
-      name: "chat_reply",
-      description: "向用户发送回复。你与用户沟通时必须调用这个工具。",
-      inputSchema: z.object({
-        text: z.string().min(1),
-        done: z.boolean().optional(),
-        stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+    const chatListTool = toolDefinition({
+      name: "chat_list",
+      description: this.runtimeText.t("tool.chat_list.description"),
+      outputSchema: z.object({
+        items: z.array(
+          z.object({
+            id: z.number().int(),
+            content: z.string(),
+            from: z.string(),
+            score: z.number().int(),
+            remark: z.string(),
+            updatedAt: z.string(),
+          }),
+        ),
       }),
-      outputSchema: z.object({ ok: z.boolean() }),
+    }).server(async () =>
+      traceTool("chat_list", {}, async () => ({
+        items: this.deps.chatGateway.list(),
+      })),
+    );
+
+    const chatAddTool = toolDefinition({
+      name: "chat_add",
+      description: this.runtimeText.t("tool.chat_add.description"),
+      inputSchema: z.object({
+        content: z.string().min(1),
+        from: z.string().min(1),
+        score: z.number().int().min(0).max(100).optional(),
+        remark: z.string().optional(),
+      }),
+      outputSchema: z.object({
+        id: z.number().int(),
+      }),
     }).server(async (rawInput) => {
       const input = z
         .object({
-          text: z.string().min(1),
-          done: z.boolean().optional(),
-          stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+          content: z.string().min(1),
+          from: z.string().min(1),
+          score: z.number().int().min(0).max(100).optional(),
+          remark: z.string().optional(),
         })
         .parse(rawInput);
+      return traceTool("chat_add", input, async () => {
+        const record = await this.deps.chatGateway.add(input);
+        return { id: record.id };
+      });
+    });
+
+    const chatRemarkTool = toolDefinition({
+      name: "chat_remark",
+      description: this.runtimeText.t("tool.chat_remark.description"),
+      inputSchema: z.object({
+        id: z.number().int(),
+        score: z.number().int().min(0).max(100).optional(),
+        remark: z.string().optional(),
+      }),
+      outputSchema: z.object({
+        ok: z.boolean(),
+        updated: z
+          .object({
+            id: z.number().int(),
+            score: z.number().int(),
+            remark: z.string(),
+          })
+          .nullable(),
+      }),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          id: z.number().int(),
+          score: z.number().int().min(0).max(100).optional(),
+          remark: z.string().optional(),
+        })
+        .parse(rawInput);
+      return traceTool("chat_remark", input, async () => {
+        const updated = await this.deps.chatGateway.remark(input);
+        return {
+          ok: Boolean(updated),
+          updated: updated
+            ? {
+                id: updated.id,
+                score: updated.score,
+                remark: updated.remark,
+              }
+            : null,
+        };
+      });
+    });
+
+    const chatQueryTool = toolDefinition({
+      name: "chat_query",
+      description: this.runtimeText.t("tool.chat_query.description"),
+      inputSchema: z.object({
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+        query: z.string().optional(),
+      }),
+      outputSchema: z.object({
+        items: z.array(
+          z.object({
+            id: z.number().int(),
+            content: z.string(),
+            from: z.string(),
+            score: z.number().int(),
+            remark: z.string(),
+            updatedAt: z.string(),
+          }),
+        ),
+      }),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          offset: z.number().int().min(0).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+          query: z.string().optional(),
+        })
+        .parse(rawInput);
+      return traceTool("chat_query", input, async () => ({
+        items: await this.deps.chatGateway.query(input),
+      }));
+    });
+
+    const chatReplyTool = toolDefinition({
+      name: "chat_reply",
+      description: this.runtimeText.t("tool.chat_reply.description"),
+      inputSchema: z.object({
+        replyContent: z.string().min(1).optional(),
+        text: z.string().min(1).optional(),
+        from: z.string().optional(),
+        score: z.number().int().min(0).max(100).optional(),
+        relationships: z
+          .array(
+            z.object({
+              id: z.number().int(),
+              score: z.number().int().min(0).max(100).optional(),
+              remark: z.string().optional(),
+            }),
+          )
+          .optional(),
+        done: z.boolean().optional(),
+        stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+      }).refine((value) => Boolean(value.replyContent || value.text), {
+        message: "replyContent is required",
+      }),
+      outputSchema: z.object({ ok: z.boolean(), id: z.number().int() }),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          replyContent: z.string().min(1).optional(),
+          text: z.string().min(1).optional(),
+          from: z.string().optional(),
+          score: z.number().int().min(0).max(100).optional(),
+          relationships: z
+            .array(
+              z.object({
+                id: z.number().int(),
+                score: z.number().int().min(0).max(100).optional(),
+                remark: z.string().optional(),
+              }),
+            )
+            .optional(),
+          done: z.boolean().optional(),
+          stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+        }).refine((value) => Boolean(value.replyContent || value.text), {
+          message: "replyContent is required",
+        })
+        .parse(rawInput);
+      const replyContent = input.replyContent ?? input.text ?? "";
       return traceTool("chat_reply", input, async () => {
+        const result = await this.deps.chatGateway.reply({
+          replyContent,
+          from: input.from,
+          score: input.score,
+          relationships: input.relationships,
+        });
         hooks.onChatReply({
-          text: input.text,
+          id: result.reply.id,
+          text: result.reply.content,
+          from: result.reply.from,
+          score: result.reply.score,
+          remark: result.reply.remark,
           done: input.done ?? false,
           stage: input.stage,
+          relationships: input.relationships,
         });
-        return { ok: true };
+        return { ok: true, id: result.reply.id };
       });
     });
 
     const listTool = toolDefinition({
       name: "terminal_list",
-      description: "列出当前可用的终端实例。",
+      description: this.runtimeText.t("tool.terminal_list.description"),
       outputSchema: z.object({
         terminals: z.array(
           z.object({
@@ -800,7 +1041,7 @@ export class AgenterAI {
 
     const runTool = toolDefinition({
       name: "terminal_run",
-      description: "启动指定终端实例，并返回 help 与 snapshot 等初始化信息。",
+      description: this.runtimeText.t("tool.terminal_run.description"),
       inputSchema: z.object({ terminalId: z.string() }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
@@ -810,7 +1051,7 @@ export class AgenterAI {
 
     const focusTool = toolDefinition({
       name: "terminal_focus",
-      description: "设置当前聚焦终端。focus=false 时不会清除当前聚焦，只返回当前状态。",
+      description: this.runtimeText.t("tool.terminal_focus.description"),
       inputSchema: z.object({
         terminalId: z.string(),
         focus: z.boolean().optional(),
@@ -832,7 +1073,7 @@ export class AgenterAI {
 
     const killTool = toolDefinition({
       name: "terminal_kill",
-      description: "停止指定终端实例。",
+      description: this.runtimeText.t("tool.terminal_kill.description"),
       inputSchema: z.object({ terminalId: z.string() }),
       outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
     }).server(async (rawInput) => {
@@ -842,7 +1083,7 @@ export class AgenterAI {
 
     const sliceTool = toolDefinition({
       name: "terminal_sliceDirty",
-      description: "采集脏区差异。支持 wait=true 阻塞等待新的终端变化。",
+      description: this.runtimeText.t("tool.terminal_slice_dirty.description"),
       inputSchema: z.object({
         terminalId: z.string(),
         remark: z.boolean().optional(),
@@ -871,7 +1112,7 @@ export class AgenterAI {
 
     const writeTool = toolDefinition({
       name: "terminal_write",
-      description: "向终端写入文本并可选提交。",
+      description: this.runtimeText.t("tool.terminal_write.description"),
       inputSchema: z.object({
         terminalId: z.string(),
         text: z.string(),
@@ -893,7 +1134,7 @@ export class AgenterAI {
 
     const readTool = toolDefinition({
       name: "terminal_read",
-      description: "读取终端快照信息。",
+      description: this.runtimeText.t("tool.terminal_read.description"),
       inputSchema: z.object({ terminalId: z.string() }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
@@ -901,7 +1142,240 @@ export class AgenterAI {
       return traceTool("terminal_read", input, async () => this.deps.terminalGateway.read(input));
     });
 
-    const tools: Tool[] = [chatReplyTool, listTool, runTool, focusTool, killTool, sliceTool, writeTool, readTool];
+    const taskSourceSchema = z.string().min(1);
+    const taskIdSchema = z.string().min(1);
+    const taskRefSchema = z.object({
+      source: taskSourceSchema,
+      id: taskIdSchema,
+    });
+    const taskRefLikeSchema = z.union([z.string().min(1), taskRefSchema]);
+    const taskRelationshipTypeSchema = z.enum(["blocks", "blocked_by", "relates_to", "parent_of", "child_of", "duplicates"]);
+    const taskRelationshipSchema = z.object({
+      type: taskRelationshipTypeSchema,
+      target: taskRefLikeSchema,
+    });
+    const taskTriggerSchema = z.union([
+      z.object({ type: z.literal("manual") }),
+      z.object({ type: z.literal("event"), topic: z.string().min(1) }),
+      z.object({ type: z.literal("at"), at: z.string().min(1) }),
+      z.object({ type: z.literal("cron"), expr: z.string().min(1) }),
+    ]);
+    const taskStatusSchema = z.enum(["backlog", "pending", "ready", "running", "done", "failed", "canceled"]);
+    const taskCreateSchema = z.object({
+      source: taskSourceSchema,
+      id: taskIdSchema.optional(),
+      title: z.string().min(1),
+      body: z.string().optional(),
+      status: taskStatusSchema.optional(),
+      type: z.string().optional(),
+      assignees: z.array(z.string()).optional(),
+      labels: z.array(z.string()).optional(),
+      milestone: z.string().optional(),
+      projects: z.array(z.string()).optional(),
+      dependsOn: z.array(taskRefLikeSchema).optional(),
+      relationships: z.array(taskRelationshipSchema).optional(),
+      triggers: z.array(taskTriggerSchema).optional(),
+      sourceFile: z.string().optional(),
+    });
+    const taskPatchSchema = z.object({
+      title: z.string().optional(),
+      body: z.string().optional(),
+      status: taskStatusSchema.optional(),
+      type: z.string().optional(),
+      assignees: z.array(z.string()).optional(),
+      labels: z.array(z.string()).optional(),
+      milestone: z.string().optional(),
+      projects: z.array(z.string()).optional(),
+      dependsOn: z.array(taskRefLikeSchema).optional(),
+      relationships: z.array(taskRelationshipSchema).optional(),
+      triggers: z.array(taskTriggerSchema).optional(),
+    });
+    const taskUpdateSchema = z.object({
+      source: taskSourceSchema,
+      id: taskIdSchema,
+      patch: taskPatchSchema,
+    });
+    const taskImportTaskSchema = z.object({
+      id: taskIdSchema.optional(),
+      title: z.string().min(1),
+      body: z.string().optional(),
+      status: taskStatusSchema.optional(),
+      type: z.string().optional(),
+      assignees: z.array(z.string()).optional(),
+      labels: z.array(z.string()).optional(),
+      milestone: z.string().optional(),
+      projects: z.array(z.string()).optional(),
+      dependsOn: z.array(taskRefLikeSchema).optional(),
+      relationships: z.array(taskRelationshipSchema).optional(),
+      triggers: z.array(taskTriggerSchema).optional(),
+    });
+    const taskImportItemSchema = z.object({
+      source: taskSourceSchema,
+      file: z.string().min(1),
+      task: taskImportTaskSchema,
+    });
+
+    const taskListTool = toolDefinition({
+      name: "task_list",
+      description: this.runtimeText.t("tool.task_list.description"),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async () => traceTool("task_list", {}, async () => ({ tasks: this.deps.taskGateway.list() })));
+
+    const taskGetTool = toolDefinition({
+      name: "task_get",
+      description: this.runtimeText.t("tool.task_get.description"),
+      inputSchema: z.object({
+        source: taskSourceSchema,
+        id: z.string().min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+      return traceTool("task_get", input, async () => ({ task: this.deps.taskGateway.get(input) ?? null }));
+    });
+
+    const taskImportTool = toolDefinition({
+      name: "task_import_markdown_batch",
+      description: this.runtimeText.t("tool.task_import.description"),
+      inputSchema: z.object({
+        items: z.array(taskImportItemSchema).min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ items: z.array(taskImportItemSchema).min(1) }).parse(rawInput);
+      const items: TaskImportItem[] = input.items;
+      return traceTool("task_import_markdown_batch", input, async () => this.deps.taskGateway.import(items));
+    });
+
+    const taskCreateTool = toolDefinition({
+      name: "task_create",
+      description: this.runtimeText.t("tool.task_create.description"),
+      inputSchema: taskCreateSchema,
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input: TaskCreateInput = taskCreateSchema.parse(rawInput);
+      return traceTool("task_create", input, async () => this.deps.taskGateway.create(input));
+    });
+
+    const taskUpdateTool = toolDefinition({
+      name: "task_update",
+      description: this.runtimeText.t("tool.task_update.description"),
+      inputSchema: taskUpdateSchema,
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input: TaskUpdateInput = taskUpdateSchema.parse(rawInput);
+      return traceTool("task_update", input, async () => this.deps.taskGateway.update(input));
+    });
+
+    const taskDoneTool = toolDefinition({
+      name: "task_done",
+      description: this.runtimeText.t("tool.task_done.description"),
+      inputSchema: z.object({
+        source: taskSourceSchema,
+        id: z.string().min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+      return traceTool("task_done", input, async () => this.deps.taskGateway.done(input));
+    });
+
+    const taskAddDependencyTool = toolDefinition({
+      name: "task_add_dependency",
+      description: this.runtimeText.t("tool.task_add_dependency.description"),
+      inputSchema: z.object({
+        source: taskSourceSchema,
+        id: z.string().min(1),
+        target: z.string().min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) }).parse(rawInput);
+      return traceTool("task_add_dependency", input, async () =>
+        this.deps.taskGateway.addDependency({
+          source: input.source,
+          id: input.id,
+          target: input.target,
+        }),
+      );
+    });
+
+    const taskRemoveDependencyTool = toolDefinition({
+      name: "task_remove_dependency",
+      description: this.runtimeText.t("tool.task_remove_dependency.description"),
+      inputSchema: z.object({
+        source: taskSourceSchema,
+        id: z.string().min(1),
+        target: z.string().min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) }).parse(rawInput);
+      return traceTool("task_remove_dependency", input, async () =>
+        this.deps.taskGateway.removeDependency({
+          source: input.source,
+          id: input.id,
+          target: input.target,
+        }),
+      );
+    });
+
+    const taskTriggerManualTool = toolDefinition({
+      name: "task_trigger_manual",
+      description: this.runtimeText.t("tool.task_trigger_manual.description"),
+      inputSchema: z.object({
+        source: taskSourceSchema,
+        id: z.string().min(1),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+      return traceTool("task_trigger_manual", input, async () => ({ task: this.deps.taskGateway.triggerManual(input) ?? null }));
+    });
+
+    const taskEmitEventTool = toolDefinition({
+      name: "task_emit_event",
+      description: this.runtimeText.t("tool.task_emit_event.description"),
+      inputSchema: z.object({
+        topic: z.string().min(1),
+        payload: z.unknown().optional(),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z.object({ topic: z.string().min(1), payload: z.unknown().optional() }).parse(rawInput);
+      return traceTool("task_emit_event", input, async () =>
+        this.deps.taskGateway.emitEvent({
+          topic: input.topic,
+          payload: input.payload,
+          source: "tool",
+        }),
+      );
+    });
+
+    const tools: Tool[] = [
+      chatListTool,
+      chatAddTool,
+      chatRemarkTool,
+      chatQueryTool,
+      chatReplyTool,
+      listTool,
+      runTool,
+      focusTool,
+      killTool,
+      sliceTool,
+      writeTool,
+      readTool,
+      taskListTool,
+      taskGetTool,
+      taskImportTool,
+      taskCreateTool,
+      taskUpdateTool,
+      taskDoneTool,
+      taskAddDependencyTool,
+      taskRemoveDependencyTool,
+      taskTriggerManualTool,
+      taskEmitEventTool,
+    ];
 
     this.deps.logger.log({
       channel: "agent",
@@ -920,17 +1394,21 @@ export class AgenterAI {
     text: string;
     thinking: string;
   }): string {
-    const lastReply = input.chatReplies[input.chatReplies.length - 1];
-    if (lastReply && lastReply.text.trim().length > 0) {
-      return lastReply.text;
+    const explicitReplies = input.chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
+    const lastReply = explicitReplies[explicitReplies.length - 1];
+    if (lastReply && lastReply.trim().length > 0) {
+      return lastReply;
     }
     if (input.text.trim().length > 0) {
       return input.text.trim();
     }
     if (input.thinking.trim().length > 0) {
-      return "模型输出了思考内容，等待下一步。";
+      return this.runtimeText.t("task.summary.thinking_only");
     }
-    return input.done ? "任务完成" : `进入 ${input.stage} 阶段`;
+    if (input.done) {
+      return this.runtimeText.t("task.summary.done");
+    }
+    return this.runtimeText.t("task.summary.stage", { stage: input.stage });
   }
 
   private emitTask(taskId: string, stage: TaskStage, summary: string): void {

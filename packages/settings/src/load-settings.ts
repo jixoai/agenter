@@ -1,18 +1,19 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { defaultAvatarNickname, resolveAvatarLayerSettingsPath } from "@agenter/avatar";
+
 import { settingsSchema } from "./schema";
 import { deepMerge } from "./merge";
 import { ResourceLoader } from "./resource-loader";
 import { settingsSource } from "./source";
 import type { AgenterSettings, LoadSettingsOptions, LoadedSettings, SettingsSourceInput } from "./types";
 
-const defaultSettings = (homeDir: string, projectRoot: string): AgenterSettings => ({
+const defaultSettings = (): AgenterSettings => ({
   settingsSource: ["user", "project", "local"],
+  avatar: defaultAvatarNickname(),
+  sessionStoreTarget: "global",
   lang: "en",
-  agent: {
-    maxStepsPerTask: 24,
-  },
   loop: {
     sliceDirty: {
       wait: false,
@@ -21,18 +22,31 @@ const defaultSettings = (homeDir: string, projectRoot: string): AgenterSettings 
     },
   },
   ai: {
-    provider: "deepseek",
-    apiKeyEnv: "DEEPSEEK_API_KEY",
-    model: "deepseek-chat",
-    baseUrl: "https://api.deepseek.com/v1",
-    temperature: 0.2,
-    maxRetries: 2,
+    activeProvider: "default",
+    providers: {
+      default: {
+        kind: "deepseek",
+        model: "deepseek-chat",
+        apiKeyEnv: "DEEPSEEK_API_KEY",
+        baseUrl: "https://api.deepseek.com/v1",
+        temperature: 0.2,
+        maxRetries: 2,
+        maxToken: 64_000,
+        compactThreshold: 0.75,
+      },
+    },
   },
   features: {
     terminal: {
       focusMode: "exclusive",
       unfocusedSignal: "summary",
     },
+  },
+  tasks: {
+    sources: [
+      { name: "user", path: "~/.agenter/tasks" },
+      { name: "workspace", path: ".agenter/tasks" },
+    ],
   },
 });
 
@@ -67,6 +81,7 @@ const toAbsMaybeUri = (value: string | undefined, projectRoot: string, homeDir: 
 const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, homeDir: string): AgenterSettings => {
   const prompt = settings.prompt;
   const terminal = settings.terminal;
+  const tasks = settings.tasks;
 
   const normalizedHelpSources = terminal?.helpSources
     ? Object.fromEntries(
@@ -107,6 +122,15 @@ const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, 
           helpSources: normalizedHelpSources as Record<string, string> | undefined,
         }
       : undefined,
+    tasks: tasks
+      ? {
+        ...tasks,
+          sources: tasks.sources?.map((source) => ({
+            ...source,
+            path: toAbsMaybeUri(source.path, projectRoot, homeDir) ?? source.path,
+          })),
+        }
+      : undefined,
   };
 };
 
@@ -114,6 +138,8 @@ const classifyMissingResource = (errorMessage: string): boolean => {
   const normalized = errorMessage.toLowerCase();
   return normalized.includes("enoent") || normalized.includes("not found") || normalized.includes("request failed (404)");
 };
+
+const isLocalPath = (value: string): boolean => value.startsWith("/") || value.startsWith("~");
 
 export const loadSettings = async (options: LoadSettingsOptions): Promise<LoadedSettings> => {
   const homeDir = options.homeDir ?? homedir();
@@ -126,7 +152,11 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
         homeDir,
       },
     });
-  let settings = defaultSettings(homeDir, options.projectRoot);
+  let settings = defaultSettings();
+  if (options.avatar?.trim()) {
+    settings.avatar = options.avatar.trim();
+  }
+
   const inputSources: SettingsSourceInput[] = options.sources ?? settings.settingsSource ?? ["user", "project", "local"];
   const descriptors = settingsSource(inputSources, {
     projectRoot: options.projectRoot,
@@ -139,11 +169,32 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     sources: [],
   };
 
+  let activeAvatar = options.avatar?.trim() || settings.avatar || defaultAvatarNickname();
+  const appliedAvatarLayers = new Set<string>();
+
   for (const source of descriptors) {
+    if (source.kind === "builtin" || isLocalPath(source.path)) {
+      const avatarLayerPath = resolveAvatarLayerSettingsPath(source.path, activeAvatar);
+      if (!appliedAvatarLayers.has(avatarLayerPath)) {
+        try {
+          const avatarText = await loader.readText(avatarLayerPath);
+          const avatarLayer = parseJsonText(avatarText);
+          settings = deepMerge(settings, avatarLayer);
+        } catch {
+          // Avatar layer is optional for each source.
+        }
+        appliedAvatarLayers.add(avatarLayerPath);
+      }
+    }
+
     try {
       const text = await loader.readText(source.uri, { forSettings: true });
       const layer = parseJsonText(text);
       settings = deepMerge(settings, layer);
+      if (!options.avatar && settings.avatar?.trim()) {
+        activeAvatar = settings.avatar.trim();
+      }
+      settings.avatar = options.avatar?.trim() || activeAvatar;
       meta.sources.push({
         id: source.id,
         path: source.path,
@@ -160,6 +211,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     }
   }
 
+  settings.avatar = options.avatar?.trim() || activeAvatar;
   settings = normalizeSettingsPaths(settings, options.projectRoot, homeDir);
   settings = settingsSchema.parse(settings) as AgenterSettings;
   return {

@@ -1,5 +1,3 @@
-import { PROMPTS as EN_PROMPTS } from "@agenter/i18n-en";
-
 export type PromptSyntax = "md" | "mdx";
 
 export interface PromptDocument {
@@ -32,10 +30,3 @@ export const mdx = (strings: TemplateStringsArray, ...values: unknown[]): Prompt
   syntax: "mdx",
   content: joinTemplate(strings, values),
 });
-
-export const DEFAULT_PROMPT_DOCS: PromptDocRecord = {
-  AGENTER: { ...EN_PROMPTS.AGENTER },
-  AGENTER_SYSTEM: { ...EN_PROMPTS.AGENTER_SYSTEM },
-  SYSTEM_TEMPLATE: { ...EN_PROMPTS.SYSTEM_TEMPLATE },
-  RESPONSE_CONTRACT: { ...EN_PROMPTS.RESPONSE_CONTRACT },
-};

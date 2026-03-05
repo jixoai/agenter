@@ -1,6 +1,12 @@
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_LANGUAGE, resolveLanguage } from "@agenter/app-server";
-import { loadSettings, type SettingsSourceInput, type TerminalBootEntry, type TerminalPresetSettings } from "@agenter/settings";
+import {
+  loadSettings,
+  type AiProviderKind,
+  type SettingsSourceInput,
+  type TerminalBootEntry,
+  type TerminalPresetSettings,
+} from "@agenter/settings";
 
 export interface TerminalRuntimeConfig {
   terminalId: string;
@@ -33,12 +39,15 @@ export interface RuntimeConfig {
     responseContractPath?: string;
   };
   ai: {
-    provider: "deepseek";
+    providerId: string;
+    kind: AiProviderKind;
     apiKey?: string;
     model: string;
-    baseUrl: string;
+    baseUrl?: string;
     temperature: number;
     maxRetries: number;
+    maxToken?: number;
+    compactThreshold?: number;
   };
   features: {
     terminal: {
@@ -445,9 +454,20 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
       : undefined;
 
   const ai = settings.ai ?? {};
+  const providers = ai.providers ?? {};
+  const providerId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
+  const provider = providers[providerId] ?? {
+    kind: "openai-compatible" as const,
+    model: "deepseek-chat",
+    baseUrl: "https://api.deepseek.com/v1",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    temperature: 0.2,
+    maxRetries: 2,
+    maxToken: 64_000,
+    compactThreshold: 0.75,
+  };
   const terminalFeatures = settings.features?.terminal ?? {};
-  const apiKey =
-    ai.apiKey ?? (ai.apiKeyEnv ? process.env[ai.apiKeyEnv] : undefined) ?? process.env.DEEPSEEK_API_KEY;
+  const apiKey = provider.apiKey ?? (provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined);
 
   const promptConfig = {
     rootDir: promptRoot,
@@ -472,12 +492,15 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     terminal: terminals[primaryTerminalId],
     prompt: promptConfig,
     ai: {
-      provider: ai.provider ?? "deepseek",
+      providerId,
+      kind: provider.kind,
       apiKey,
-      model: ai.model ?? "deepseek-chat",
-      baseUrl: ai.baseUrl ?? "https://api.deepseek.com/v1",
-      temperature: ai.temperature ?? 0.2,
-      maxRetries: ai.maxRetries ?? 2,
+      model: provider.model,
+      baseUrl: provider.baseUrl,
+      temperature: provider.temperature ?? 0.2,
+      maxRetries: provider.maxRetries ?? 2,
+      maxToken: provider.maxToken,
+      compactThreshold: provider.compactThreshold,
     },
     features: {
       terminal: {

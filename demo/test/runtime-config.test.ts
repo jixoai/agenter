@@ -56,9 +56,10 @@ test("parseRuntimeConfig parses --git-log mode and bare flag", async () => {
   expect(bare.terminal.gitLog).toBe("normal");
 });
 
-test("parseRuntimeConfig exposes deepseek defaults", async () => {
+test("parseRuntimeConfig exposes default provider config", async () => {
   const config = await parseRuntimeConfig(isolateSources, "/tmp/demo");
-  expect(config.ai.provider).toBe("deepseek");
+  expect(config.ai.providerId).toBe("default");
+  expect(config.ai.kind).toBe("openai-compatible");
   expect(config.ai.model).toBe("deepseek-chat");
   expect(config.ai.baseUrl).toBe("https://api.deepseek.com/v1");
 });

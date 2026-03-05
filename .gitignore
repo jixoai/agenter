@@ -5,6 +5,7 @@ dist/
 bundle/
 build/
 coverage/
+logs/
 .DS_Store
 
 # demo runtime artifacts
@@ -24,3 +25,10 @@ packages/i18n-zh-Hans/prompts.json
 # local notes
 CHAT.md
 easy-spec/
+.agenter
+
+# generated webui bundle from cli package
+packages/cli/assets/webui/
+
+# playwright artifacts
+packages/webui/test-results/

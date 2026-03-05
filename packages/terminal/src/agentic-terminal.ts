@@ -230,12 +230,19 @@ export class AgenticTerminal {
       });
     });
 
-    this.pty.start();
-    this.inbox.start();
-    this.started = true;
-    this.dirtyMarkHash = null;
-    this.markBusy();
-    this.markIdle();
+    try {
+      this.pty.start();
+      this.inbox.start();
+      this.started = true;
+      this.dirtyMarkHash = null;
+      this.markBusy();
+      this.markIdle();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.debug("start.failed", { message });
+      this.rollbackStartState();
+      throw new Error(`failed to start terminal "${this.command}": ${message}`);
+    }
   }
 
   /**
@@ -587,6 +594,31 @@ export class AgenticTerminal {
 
   public getStatus(): TerminalStatus {
     return this.status;
+  }
+
+  private rollbackStartState(): void {
+    this.inbox?.stop();
+    this.inbox = null;
+
+    this.pty?.kill();
+    this.pty = null;
+
+    this.committer?.stop();
+    this.committer = null;
+
+    this.xterm?.dispose();
+    this.xterm = null;
+    this.pager = null;
+    this.gitLogger = null;
+
+    this.started = false;
+    this.status = "IDLE";
+    this.appliedSize = null;
+    this.dirtyMarkHash = null;
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   private ensureStarted(): void {

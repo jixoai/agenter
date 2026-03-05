@@ -1,6 +1,12 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+export {
+  RUNTIME_TEXT_KEYS,
+  runtimeTextCatalogSchema,
+  type RuntimeTextCatalog,
+  type RuntimeTextId,
+} from "./runtime-text";
 
 export type PromptSyntax = "md" | "mdx";
 

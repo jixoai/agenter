@@ -1,12 +1,17 @@
+import { accessSync, constants as fsConstants, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
+
 import {
   settingsKindSchema,
-  type RuntimeSnapshotPayload,
   type AnyRuntimeEvent,
   type RuntimeEventEnvelope,
   type RuntimeEventType,
+  type RuntimeSnapshotPayload,
 } from "./realtime-types";
-import { InstanceRegistry, type InstanceMeta } from "./instance-registry";
-import { InstanceRuntime, type RuntimeEvent } from "./instance-runtime";
+import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
+import { resolveSessionConfig } from "./session-config";
+import { SessionCatalog, type SessionMeta } from "./session-catalog";
+import { WorkspacesStore } from "./workspaces-store";
 import type { ChatMessage } from "./types";
 
 const now = (): number => Date.now();
@@ -14,7 +19,9 @@ const now = (): number => Date.now();
 type KernelListener = (event: AnyRuntimeEvent) => void;
 
 export interface AppKernelOptions {
-  registryPath?: string;
+  globalSessionRoot?: string;
+  workspacesPath?: string;
+  initialWorkspace?: string;
   logger?: {
     log: (line: {
       channel: "agent" | "error";
@@ -26,24 +33,24 @@ export interface AppKernelOptions {
 }
 
 export class AppKernel {
-  private readonly registry: InstanceRegistry;
-  private readonly runtimes = new Map<string, InstanceRuntime>();
+  private readonly sessions: SessionCatalog;
+  private readonly workspaces: WorkspacesStore;
+  private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
   private readonly eventLog: AnyRuntimeEvent[] = [];
   private eventSeq = 0;
 
   constructor(private readonly options: AppKernelOptions = {}) {
-    this.registry = new InstanceRegistry({ filePath: options.registryPath });
+    this.sessions = new SessionCatalog({ globalRoot: options.globalSessionRoot });
+    this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
   }
 
   async start(): Promise<void> {
-    for (const meta of this.registry.list()) {
-      if (!meta.autoStart) {
-        continue;
-      }
-      await this.startInstance(meta.id);
+    if (this.options.initialWorkspace) {
+      this.workspaces.add(this.options.initialWorkspace);
     }
+    this.sessions.refresh(this.workspaces.list());
   }
 
   async stop(): Promise<void> {
@@ -55,15 +62,13 @@ export class AppKernel {
   }
 
   getSnapshot(): RuntimeSnapshotPayload {
-    const runtimes = Object.fromEntries(
-      [...this.runtimes.entries()].map(([instanceId, runtime]) => [instanceId, runtime.snapshot()]),
-    );
+    const runtimes = Object.fromEntries([...this.runtimes.entries()].map(([sessionId, runtime]) => [sessionId, runtime.snapshot()]));
 
     return {
       version: 1,
       timestamp: now(),
       lastEventId: this.eventSeq,
-      instances: this.registry.list(),
+      sessions: this.sessions.list(),
       runtimes,
     };
   }
@@ -82,93 +87,167 @@ export class AppKernel {
     return this.eventLog.filter((event) => event.eventId > afterEventId);
   }
 
-  listInstances(): InstanceMeta[] {
-    return this.registry.list();
+  listSessions(): SessionMeta[] {
+    this.sessions.refresh(this.workspaces.list());
+    return this.sessions.list();
   }
 
-  getInstance(instanceId: string): InstanceMeta | undefined {
-    return this.registry.get(instanceId);
+  listRecentWorkspaces(limit = 8): string[] {
+    const safeLimit = Math.max(1, Math.min(Math.floor(limit), 128));
+    const list = this.workspaces.list();
+    if (list.length <= safeLimit) {
+      return list;
+    }
+    return list.slice(-safeLimit);
   }
 
-  createInstance(input: { name?: string; cwd: string; autoStart?: boolean }): InstanceMeta {
-    const instance = this.registry.create(input);
-    this.emit("instance.updated", { instance }, instance.id);
-    return instance;
+  listDirectories(input: {
+    path?: string;
+    includeHidden?: boolean;
+  }): Array<{ name: string; path: string }> {
+    const root = resolve(input.path ?? "/");
+    const includeHidden = input.includeHidden ?? false;
+    try {
+      accessSync(root, fsConstants.R_OK);
+      const entries = readdirSync(root, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => includeHidden || !entry.name.startsWith("."))
+        .map((entry) => ({
+          name: entry.name,
+          path: join(root, entry.name),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return [];
+    }
   }
 
-  updateInstance(instanceId: string, patch: { name?: string; autoStart?: boolean }): InstanceMeta {
-    const instance = this.registry.update(instanceId, patch);
-    this.emit("instance.updated", { instance }, instance.id);
-    return instance;
+  validateDirectory(path: string): { ok: boolean; path: string } {
+    try {
+      const stat = statSync(path);
+      if (!stat.isDirectory()) {
+        return { ok: false, path };
+      }
+      accessSync(path, fsConstants.R_OK);
+      return { ok: true, path };
+    } catch {
+      return { ok: false, path };
+    }
   }
 
-  async deleteInstance(instanceId: string): Promise<{ removed: boolean }> {
-    const runtime = this.runtimes.get(instanceId);
+  getSession(sessionId: string): SessionMeta | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  async createSession(input: {
+    name?: string;
+    cwd: string;
+    avatar?: string;
+    autoStart?: boolean;
+  }): Promise<SessionMeta> {
+    const resolved = await resolveSessionConfig(input.cwd, { avatar: input.avatar });
+    this.workspaces.add(input.cwd);
+
+    const session = this.sessions.create({
+      name: input.name,
+      cwd: input.cwd,
+      avatar: resolved.avatar.nickname,
+      storeTarget: resolved.sessionStoreTarget,
+    });
+    this.emit("session.updated", { session }, session.id);
+
+    if (input.autoStart === false) {
+      return session;
+    }
+
+    return await this.startSession(session.id);
+  }
+
+  updateSession(sessionId: string, patch: { name?: string }): SessionMeta {
+    const session = this.sessions.update(sessionId, {
+      name: patch.name,
+    });
+    this.emit("session.updated", { session }, session.id);
+    return session;
+  }
+
+  async deleteSession(sessionId: string): Promise<{ removed: boolean }> {
+    const runtime = this.runtimes.get(sessionId);
     if (runtime) {
       await runtime.stop();
-      this.detachRuntime(instanceId);
+      this.detachRuntime(sessionId);
     }
-    const removed = this.registry.remove(instanceId);
+    const removed = this.sessions.remove(sessionId);
     if (removed) {
-      this.emit("instance.deleted", { instanceId, removed }, instanceId);
+      this.emit("session.deleted", { sessionId, removed }, sessionId);
     }
     return { removed };
   }
 
-  async startInstance(instanceId: string): Promise<InstanceMeta> {
-    const meta = this.registry.get(instanceId);
+  async startSession(sessionId: string): Promise<SessionMeta> {
+    const meta = this.sessions.get(sessionId);
     if (!meta) {
-      throw new Error(`instance not found: ${instanceId}`);
+      throw new Error(`session not found: ${sessionId}`);
     }
 
-    const existing = this.runtimes.get(instanceId);
+    this.workspaces.add(meta.cwd);
+
+    const existing = this.runtimes.get(sessionId);
     if (existing?.isStarted()) {
-      const running = this.registry.update(instanceId, { status: "running", lastError: undefined });
-      this.emit("instance.updated", { instance: running }, instanceId);
+      const running = this.sessions.update(sessionId, { status: "running", lastError: undefined });
+      this.emit("session.updated", { session: running }, sessionId);
       return running;
     }
 
-    this.registry.update(instanceId, { status: "starting", lastError: undefined });
-    const runtime = new InstanceRuntime({
-      instanceId: meta.id,
+    this.sessions.update(sessionId, { status: "starting", lastError: undefined });
+    const runtime = new SessionRuntime({
+      sessionId: meta.id,
       cwd: meta.cwd,
+      avatar: meta.avatar,
+      sessionRoot: meta.sessionRoot,
+      sessionName: meta.name,
+      storeTarget: meta.storeTarget,
       logger: this.options.logger,
     });
+    runtime.setSessionStatus("starting");
 
     const unsubscribe = runtime.onEvent((event) => {
       this.forwardRuntimeEvent(meta.id, event);
     });
 
-    this.runtimes.set(instanceId, runtime);
-    this.runtimeStopListeners.set(instanceId, unsubscribe);
+    this.runtimes.set(sessionId, runtime);
+    this.runtimeStopListeners.set(sessionId, unsubscribe);
 
     try {
       await runtime.start();
-      const updated = this.registry.update(instanceId, { status: "running", lastError: undefined });
-      this.emit("instance.updated", { instance: updated }, instanceId);
+      const updated = this.sessions.update(sessionId, { status: "running", lastError: undefined });
+      runtime.setSessionStatus("running");
+      this.emit("session.updated", { session: updated }, sessionId);
       return updated;
     } catch (error) {
-      this.detachRuntime(instanceId);
       const message = error instanceof Error ? error.message : String(error);
-      const failed = this.registry.update(instanceId, { status: "error", lastError: message });
-      this.emit("instance.updated", { instance: failed }, instanceId);
+      runtime.setSessionStatus("error", message);
+      this.detachRuntime(sessionId);
+      const failed = this.sessions.update(sessionId, { status: "error", lastError: message });
+      this.emit("session.updated", { session: failed }, sessionId);
       throw error;
     }
   }
 
-  async stopInstance(instanceId: string): Promise<InstanceMeta> {
-    const runtime = this.runtimes.get(instanceId);
+  async stopSession(sessionId: string): Promise<SessionMeta> {
+    const runtime = this.runtimes.get(sessionId);
     if (runtime) {
       await runtime.stop();
-      this.detachRuntime(instanceId);
+      this.detachRuntime(sessionId);
     }
-    const stopped = this.registry.update(instanceId, { status: "stopped", lastError: undefined });
-    this.emit("instance.updated", { instance: stopped }, instanceId);
+    const stopped = this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
+    this.emit("session.updated", { session: stopped }, sessionId);
     return stopped;
   }
 
-  focusTerminal(instanceId: string, terminalId: string): { ok: boolean } {
-    const runtime = this.runtimes.get(instanceId);
+  focusTerminal(sessionId: string, terminalId: string): { ok: boolean } {
+    const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
       return { ok: false };
     }
@@ -176,23 +255,78 @@ export class AppKernel {
     return { ok };
   }
 
-  sendChat(instanceId: string, text: string): { ok: boolean } {
-    const runtime = this.runtimes.get(instanceId);
+  async sendChat(sessionId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      const runtime = await this.ensureRuntime(sessionId);
+      runtime.pushUserChat(text);
+      return { ok: true };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return { ok: false, reason };
+    }
+  }
+
+  listTasks(sessionId: string): { ok: boolean; tasks: ReturnType<SessionRuntime["snapshot"]>["tasks"] } {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return { ok: false, tasks: [] };
+    }
+    return { ok: true, tasks: runtime.snapshot().tasks };
+  }
+
+  triggerTaskManual(sessionId: string, input: { source: string; id: string }): { ok: boolean } {
+    const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
       return { ok: false };
     }
-    runtime.pushUserChat(text);
-    return { ok: true };
+    return runtime.triggerTaskManual(input);
   }
 
-  async readSettings(input: { instanceId: string; kind: unknown }): Promise<{ path: string; content: string; mtimeMs: number }> {
-    const runtime = await this.ensureRuntime(input.instanceId);
+  emitTaskEvent(sessionId: string, input: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" }): { ok: boolean } {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return { ok: false };
+    }
+    return runtime.emitTaskEvent(input);
+  }
+
+  async readSettings(input: { sessionId: string; kind: unknown }): Promise<{ path: string; content: string; mtimeMs: number }> {
+    const runtime = await this.ensureRuntime(input.sessionId);
     const kind = settingsKindSchema.parse(input.kind);
     return runtime.readEditable(kind);
   }
 
+  async listSettingsLayers(sessionId: string): Promise<ReturnType<SessionRuntime["getSettingsLayers"]>> {
+    const runtime = await this.ensureRuntime(sessionId);
+    return runtime.getSettingsLayers();
+  }
+
+  async readSettingsLayer(input: {
+    sessionId: string;
+    layerId: string;
+  }): Promise<Awaited<ReturnType<SessionRuntime["readSettingsLayer"]>>>
+  {
+    const runtime = await this.ensureRuntime(input.sessionId);
+    return runtime.readSettingsLayer(input.layerId);
+  }
+
+  async saveSettingsLayer(input: {
+    sessionId: string;
+    layerId: string;
+    content: string;
+    baseMtimeMs: number;
+  }): Promise<Awaited<ReturnType<SessionRuntime["saveSettingsLayer"]>>>
+  {
+    const runtime = await this.ensureRuntime(input.sessionId);
+    return runtime.saveSettingsLayer({
+      layerId: input.layerId,
+      content: input.content,
+      baseMtimeMs: input.baseMtimeMs,
+    });
+  }
+
   async saveSettings(input: {
-    instanceId: string;
+    sessionId: string;
     kind: unknown;
     content: string;
     baseMtimeMs: number;
@@ -200,57 +334,69 @@ export class AppKernel {
     | { ok: true; file: { path: string; content: string; mtimeMs: number } }
     | { ok: false; reason: "conflict"; latest: { path: string; content: string; mtimeMs: number } }
   > {
-    const runtime = await this.ensureRuntime(input.instanceId);
+    const runtime = await this.ensureRuntime(input.sessionId);
     const kind = settingsKindSchema.parse(input.kind);
     return runtime.saveEditable(kind, input.content, input.baseMtimeMs);
   }
 
-  private async ensureRuntime(instanceId: string): Promise<InstanceRuntime> {
-    if (this.runtimes.has(instanceId)) {
-      return this.runtimes.get(instanceId)!;
+  private async ensureRuntime(sessionId: string): Promise<SessionRuntime> {
+    if (this.runtimes.has(sessionId)) {
+      return this.runtimes.get(sessionId)!;
     }
-    await this.startInstance(instanceId);
-    const runtime = this.runtimes.get(instanceId);
+    await this.startSession(sessionId);
+    const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
-      throw new Error(`runtime not found for instance ${instanceId}`);
+      throw new Error(`runtime not found for session ${sessionId}`);
     }
     return runtime;
   }
 
-  private detachRuntime(instanceId: string): void {
-    this.runtimes.delete(instanceId);
-    const unsubscribe = this.runtimeStopListeners.get(instanceId);
+  private detachRuntime(sessionId: string): void {
+    this.runtimes.delete(sessionId);
+    const unsubscribe = this.runtimeStopListeners.get(sessionId);
     if (unsubscribe) {
       unsubscribe();
-      this.runtimeStopListeners.delete(instanceId);
+      this.runtimeStopListeners.delete(sessionId);
     }
   }
 
-  private forwardRuntimeEvent(instanceId: string, event: RuntimeEvent): void {
+  private forwardRuntimeEvent(sessionId: string, event: RuntimeEvent): void {
     switch (event.type) {
       case "chat":
-        this.emit("chat.message", { message: event.payload as ChatMessage }, instanceId, event.timestamp);
+        this.emit("chat.message", { message: event.payload as ChatMessage }, sessionId, event.timestamp);
         return;
       case "phase":
-        this.emit("runtime.phase", { phase: event.payload.phase }, instanceId, event.timestamp);
+        this.emit("runtime.phase", { phase: event.payload.phase }, sessionId, event.timestamp);
         return;
       case "stage":
-        this.emit("runtime.stage", { stage: event.payload.stage }, instanceId, event.timestamp);
+        this.emit("runtime.stage", { stage: event.payload.stage }, sessionId, event.timestamp);
         return;
       case "stats":
-        this.emit("runtime.stats", event.payload, instanceId, event.timestamp);
+        this.emit("runtime.stats", event.payload, sessionId, event.timestamp);
         return;
       case "focusedTerminal":
-        this.emit("runtime.focusedTerminal", { terminalId: event.payload.terminalId }, instanceId, event.timestamp);
+        this.emit("runtime.focusedTerminal", { terminalId: event.payload.terminalId }, sessionId, event.timestamp);
         return;
       case "terminalSnapshot":
-        this.emit("terminal.snapshot", event.payload, instanceId, event.timestamp);
+        this.emit("terminal.snapshot", event.payload, sessionId, event.timestamp);
         return;
       case "terminalStatus":
-        this.emit("terminal.status", event.payload, instanceId, event.timestamp);
+        this.emit("terminal.status", event.payload, sessionId, event.timestamp);
+        return;
+      case "taskUpdated":
+        this.emit("task.updated", event.payload, sessionId, event.timestamp);
+        return;
+      case "taskDeleted":
+        this.emit("task.deleted", event.payload, sessionId, event.timestamp);
+        return;
+      case "taskTriggered":
+        this.emit("task.triggered", event.payload, sessionId, event.timestamp);
+        return;
+      case "taskSourceChanged":
+        this.emit("task.source.changed", event.payload, sessionId, event.timestamp);
         return;
       case "error":
-        this.emit("runtime.error", event.payload, instanceId, event.timestamp);
+        this.emit("runtime.error", event.payload, sessionId, event.timestamp);
         return;
     }
   }
@@ -258,7 +404,7 @@ export class AppKernel {
   private emit<TType extends RuntimeEventType>(
     type: TType,
     payload: unknown,
-    instanceId?: string,
+    sessionId?: string,
     timestamp = now(),
   ): RuntimeEventEnvelope<TType, unknown> {
     const event: RuntimeEventEnvelope<TType, unknown> = {
@@ -266,7 +412,7 @@ export class AppKernel {
       eventId: ++this.eventSeq,
       timestamp,
       type,
-      instanceId,
+      sessionId,
       payload,
     };
     this.eventLog.push(event);

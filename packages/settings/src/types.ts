@@ -18,6 +18,13 @@ export interface PromptSettings {
   responseContractPath?: string;
 }
 
+export interface TaskSettings {
+  sources?: Array<{
+    name: string;
+    path: string;
+  }>;
+}
+
 export interface TerminalPresetSettings {
   command: string[];
   cwd?: string;
@@ -34,7 +41,7 @@ export interface TerminalBootEntryObject {
 export type TerminalBootEntry = string | TerminalBootEntryObject;
 
 export interface AgentSettings {
-  maxStepsPerTask?: number;
+  defaultAssignee?: string;
 }
 
 export interface TerminalSettings {
@@ -57,14 +64,31 @@ export interface FeatureSettings {
   terminal?: TerminalFeatureSettings;
 }
 
-export interface AiSettings {
-  provider?: "deepseek";
+export type AiProviderKind =
+  | "deepseek"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "grok"
+  | "ollama"
+  | "openai-compatible"
+  | "anthropic-compatible";
+
+export interface AiProviderSettings {
+  kind: AiProviderKind;
+  model: string;
   apiKey?: string;
   apiKeyEnv?: string;
-  model?: string;
   baseUrl?: string;
   temperature?: number;
   maxRetries?: number;
+  maxToken?: number;
+  compactThreshold?: number;
+}
+
+export interface AiSettings {
+  activeProvider?: string;
+  providers?: Record<string, AiProviderSettings>;
 }
 
 export interface LoopSettings {
@@ -77,6 +101,8 @@ export interface LoopSettings {
 
 export interface AgenterSettings {
   settingsSource?: SettingsSourceInput[];
+  avatar?: string;
+  sessionStoreTarget?: "global" | "workspace";
   lang?: string;
   agentCwd?: string;
   agent?: AgentSettings;
@@ -85,6 +111,7 @@ export interface AgenterSettings {
   ai?: AiSettings;
   loop?: LoopSettings;
   prompt?: PromptSettings;
+  tasks?: TaskSettings;
 }
 
 export interface LoadedSettings {
@@ -101,6 +128,7 @@ export interface LoadedSettings {
 
 export interface LoadSettingsOptions {
   sources?: SettingsSourceInput[];
+  avatar?: string;
   projectRoot: string;
   cwd?: string;
   homeDir?: string;

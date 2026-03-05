@@ -13,6 +13,72 @@ const writeJson = async (path: string, value: unknown): Promise<void> => {
 };
 
 describe("@agenter/settings", () => {
+  test("loadSettings applies avatar(settingsAlias) before each settings layer", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-avatar-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(homeDir, ".agenter", "avatar", "alice", "settings.json"), {
+      ai: {
+        providers: {
+          default: {
+            kind: "openai-compatible",
+            model: "user-avatar-model",
+            baseUrl: "https://example.com/user",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(homeDir, ".agenter", "settings.json"), {
+      avatar: "alice",
+      ai: {
+        providers: {
+          default: {
+            kind: "openai-compatible",
+            model: "user-settings-model",
+            baseUrl: "https://example.com/user-settings",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "avatar", "alice", "settings.json"), {
+      ai: {
+        providers: {
+          default: {
+            kind: "openai-compatible",
+            model: "project-avatar-model",
+            baseUrl: "https://example.com/project-avatar",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      ai: {
+        providers: {
+          default: {
+            kind: "openai-compatible",
+            model: "project-settings-model",
+            baseUrl: "https://example.com/project-settings",
+          },
+        },
+      },
+      sessionStoreTarget: "workspace",
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+      homeDir,
+    });
+
+    expect(loaded.settings.avatar).toBe("alice");
+    expect(loaded.settings.ai?.providers?.default?.model).toBe("project-settings-model");
+    expect(loaded.settings.sessionStoreTarget).toBe("workspace");
+  });
+
   test("loadSettings merges layered sources and normalizes file paths", async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-"));
     const homeDir = join(baseDir, "home");
@@ -43,8 +109,22 @@ describe("@agenter/settings", () => {
     });
 
     await writeJson(join(projectRoot, ".agenter", "settings.local.json"), {
+      tasks: {
+        sources: [
+          { name: "team", path: "~/.agenter/custom-tasks" },
+          { name: "repo", path: "./.agenter/project-tasks" },
+        ],
+      },
       ai: {
-        model: "deepseek-reasoner",
+        activeProvider: "proj",
+        providers: {
+          proj: {
+            kind: "openai-compatible",
+            model: "deepseek-reasoner",
+            apiKeyEnv: "DEEPSEEK_API_KEY",
+            baseUrl: "https://api.deepseek.com/v1",
+          },
+        },
       },
     });
 
@@ -55,11 +135,16 @@ describe("@agenter/settings", () => {
     });
 
     expect(loaded.settings.lang).toBe("zh-Hans");
-    expect(loaded.settings.ai?.model).toBe("deepseek-reasoner");
+    expect(loaded.settings.ai?.activeProvider).toBe("proj");
+    expect(loaded.settings.ai?.providers?.proj?.model).toBe("deepseek-reasoner");
     expect(loaded.settings.prompt?.agenterPath).toBe(join(homeDir, ".agenter", "AGENTER.mdx"));
     expect(loaded.settings.terminal?.helpSources?.iflow).toBe(join(homeDir, ".agenter", "man", "iflow.md"));
     expect(loaded.settings.terminal?.presets?.iflow?.cwd).toBe(resolve(projectRoot, "./tmp-workspace"));
     expect(loaded.settings.terminal?.presets?.iflow?.helpSource).toBe(resolve(projectRoot, "./.agenter/man/iflow.md"));
+    expect(loaded.settings.tasks?.sources).toEqual([
+      { name: "team", path: join(homeDir, ".agenter", "custom-tasks") },
+      { name: "repo", path: resolve(projectRoot, "./.agenter/project-tasks") },
+    ]);
 
     expect(loaded.meta.sources).toHaveLength(3);
     expect(loaded.meta.sources.every((entry) => entry.exists)).toBeTrue();

@@ -10,13 +10,21 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@agenter/avatar": "workspace:*",
+    "@agenter/chat-system": "workspace:*",
     "@agenter/i18n-core": "workspace:*",
     "@agenter/i18n-en": "workspace:*",
+    "@agenter/i18n-zh-hans": "workspace:*",
     "@agenter/mdx2md": "workspace:*",
     "@agenter/settings": "workspace:*",
+    "@agenter/task-system": "workspace:*",
     "@agenter/terminal": "workspace:*",
-    "@trpc/server": "^11.7.1",
     "@tanstack/ai": "^0.6.1",
+    "@tanstack/ai-anthropic": "^0.6.0",
+    "@tanstack/ai-gemini": "^0.7.0",
+    "@tanstack/ai-ollama": "^0.6.0",
+    "@tanstack/ai-openai": "^0.6.0",
+    "@trpc/server": "^11.7.1",
     "superjson": "^2.2.2",
     "zod": "^4.0.0"
   },

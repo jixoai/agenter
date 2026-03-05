@@ -1,6 +1,7 @@
 import { chat, type Tool, type StreamChunk } from "@tanstack/ai";
 
 import { DeepseekTextAdapter } from "./deepseek-adapter";
+import { createRuntimeText } from "./runtime-text";
 
 interface RetryTrace {
   attempt: number;
@@ -35,6 +36,7 @@ export interface AssistantTurn {
 export interface DeepseekClientOptions {
   temperature?: number;
   maxRetries?: number;
+  lang?: string;
 }
 
 interface RespondInput {
@@ -75,6 +77,7 @@ export class DeepseekClient {
   private readonly adapter: DeepseekTextAdapter<string>;
   private readonly maxRetries: number;
   private readonly temperature: number;
+  private readonly runtimeText: ReturnType<typeof createRuntimeText>;
 
   constructor(
     private readonly apiKey: string | undefined,
@@ -91,6 +94,7 @@ export class DeepseekClient {
       },
       model,
     );
+    this.runtimeText = createRuntimeText(options.lang);
   }
 
   getMeta(): { provider: "deepseek(openai-compatible)"; model: string; baseUrl: string } {
@@ -105,7 +109,7 @@ export class DeepseekClient {
     if (!this.apiKey) {
       return {
         thinking: "",
-        text: "未检测到 DEEPSEEK_API_KEY，当前仅能记录上下文，无法调用模型。",
+        text: this.runtimeText.t("model.missing_api_key", { env: "DEEPSEEK_API_KEY" }),
         finishReason: "stop",
       };
     }

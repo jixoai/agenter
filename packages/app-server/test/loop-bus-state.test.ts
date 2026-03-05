@@ -109,4 +109,40 @@ describe("Feature: loop bus state transitions", () => {
     expect(phases.includes("collecting_inputs")).toBeTrue();
     expect(phases.includes("waiting_processor_response")).toBeTrue();
   });
+
+  test("Scenario: Given terminal summary signal message When loop wakes Then processor is not called", async () => {
+    let called = 0;
+    const bus = new LoopBus({
+      processor: {
+        send: async () => {
+          called += 1;
+          return {
+            outputs: {
+              toUser: [],
+              toTerminal: [],
+              toTools: [],
+            },
+          };
+        },
+      },
+      logger: { log: () => {} },
+    });
+
+    bus.start();
+    bus.pushMessage({
+      name: "Terminal-iflow",
+      role: "user",
+      type: "text",
+      source: "terminal",
+      text: "{\"kind\":\"terminal-dirty-summary\"}",
+      meta: {
+        signal: "summary",
+      },
+    });
+
+    await Bun.sleep(80);
+    bus.stop();
+
+    expect(called).toBe(0);
+  });
 });

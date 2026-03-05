@@ -100,7 +100,18 @@ export class ManagedTerminal {
       this.emitStatus();
     });
 
-    this.terminal.start();
+    try {
+      this.terminal.start();
+    } catch (error) {
+      this.running = false;
+      void this.terminal.destroy(true).catch(() => {
+        // ignore teardown errors after failed start
+      });
+      this.terminal = null;
+      this.emitStatus();
+      throw error;
+    }
+
     this.running = true;
     this.snapshot = this.toSnapshot(this.terminal.getLatestRender());
     this.emitSnapshot();

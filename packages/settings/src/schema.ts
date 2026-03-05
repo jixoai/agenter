@@ -1,12 +1,26 @@
 import { z } from "zod";
 
+const aiProviderSchema = z.object({
+  kind: z.enum(["deepseek", "openai", "anthropic", "gemini", "grok", "ollama", "openai-compatible", "anthropic-compatible"]),
+  model: z.string().min(1),
+  apiKey: z.string().min(1).optional(),
+  apiKeyEnv: z.string().min(1).optional(),
+  baseUrl: z.string().min(1).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxRetries: z.number().int().nonnegative().optional(),
+  maxToken: z.number().int().positive().optional(),
+  compactThreshold: z.number().gt(0).lte(1).optional(),
+});
+
 export const settingsSchema = z.object({
   settingsSource: z.array(z.string()).optional(),
+  avatar: z.string().min(1).optional(),
+  sessionStoreTarget: z.enum(["global", "workspace"]).optional(),
   lang: z.string().min(1).optional(),
   agentCwd: z.string().min(1).optional(),
   agent: z
     .object({
-      maxStepsPerTask: z.number().int().positive().optional(),
+      defaultAssignee: z.string().min(1).optional(),
     })
     .optional(),
   terminal: z
@@ -54,13 +68,8 @@ export const settingsSchema = z.object({
     .optional(),
   ai: z
     .object({
-      provider: z.literal("deepseek").optional(),
-      apiKey: z.string().min(1).optional(),
-      apiKeyEnv: z.string().min(1).optional(),
-      model: z.string().min(1).optional(),
-      baseUrl: z.string().min(1).optional(),
-      temperature: z.number().min(0).max(2).optional(),
-      maxRetries: z.number().int().nonnegative().optional(),
+      activeProvider: z.string().min(1).optional(),
+      providers: z.record(z.string().min(1), aiProviderSchema).optional(),
     })
     .optional(),
   loop: z
@@ -81,6 +90,19 @@ export const settingsSchema = z.object({
       internalSystemPath: z.string().min(1).optional(),
       systemTemplatePath: z.string().min(1).optional(),
       responseContractPath: z.string().min(1).optional(),
+    })
+    .optional(),
+  tasks: z
+    .object({
+      sources: z
+        .array(
+          z.object({
+            name: z.string().min(1),
+            path: z.string().min(1),
+          }),
+        )
+        .min(1)
+        .optional(),
     })
     .optional(),
 });

@@ -9,6 +9,7 @@
     "@changesets/cli": "^2.29.6"
   },
   "scripts": {
+    "agenter": "bun run packages/cli/src/bin/agenter.ts",
     "build:i18n": "bun run --filter '@agenter/i18n-*' build",
     "build:webui": "bun run --filter '@agenter/webui' build",
     "build:ui": "bun run build:webui && bun run --filter '@agenter/cli' build:assets",

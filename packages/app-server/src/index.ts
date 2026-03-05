@@ -1,13 +1,43 @@
 export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
 export { AgenterAI, type AgentRuntimeStats } from "./agenter-ai";
 export { DeepseekClient, DeepseekDecisionError, type TextOnlyModelMessage } from "./deepseek-client";
+export { ModelClient, ModelDecisionError, type ModelProviderConfig } from "./model-client";
 export { SessionStore, type SessionCallRecord } from "./session-store";
 export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 export { AppKernel, type AppKernelOptions } from "./app-kernel";
-export { InstanceRegistry, type InstanceMeta, type InstanceStatus } from "./instance-registry";
-export { InstanceRuntime, type InstanceRuntimeSnapshot, type RuntimeEvent, type RuntimeEventMap } from "./instance-runtime";
+export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
+export { WorkspacesStore } from "./workspaces-store";
+export { SessionRuntime, type SessionRuntimeSnapshot, type RuntimeEvent, type RuntimeEventMap } from "./session-runtime";
+export { resolveSessionConfig, type SessionTerminalConfig, type ResolvedSessionConfig } from "./session-config";
+export { InstanceRuntime, type InstanceRuntimeSnapshot } from "./instance-runtime";
 export { resolveInstanceConfig, type InstanceTerminalConfig, type ResolvedInstanceConfig } from "./instance-config";
+export {
+  TaskEngine,
+  toTaskKey,
+  toTaskRef,
+  serializeTaskMarkdown,
+  toTaskCreateInputFromMarkdown,
+  pickProjectsFromMarkdown,
+  parseTaskMarkdownRecord,
+  resolveTaskSources,
+} from "@agenter/task-system";
+export type {
+  Task,
+  TaskStatus,
+  TaskSourceName,
+  TaskTrigger,
+  TaskView,
+  TaskCreateInput,
+  TaskPatchInput,
+  TaskUpdateInput,
+  TaskDoneResult,
+  TaskImportItem,
+  TaskImportResult,
+  TaskAddressingConfig,
+  TaskSourceInput,
+  TaskSourceResolved,
+} from "@agenter/task-system";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
 export {
   appRouter,
@@ -24,7 +54,6 @@ export {
   type AnyRuntimeEvent,
 } from "./realtime-types";
 export {
-  DEFAULT_PROMPT_DOCS,
   PROMPT_DOC_KEYS,
   md,
   mdx,

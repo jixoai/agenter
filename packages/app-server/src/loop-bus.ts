@@ -10,7 +10,7 @@ export interface LoopBusMessage {
   name: string;
   role: "user" | "tool";
   type: "text";
-  source: "chat" | "terminal" | "tool";
+  source: "chat" | "terminal" | "tool" | "task" | "chat-system";
   text: string;
   meta?: LoopBusMeta;
 }
@@ -283,7 +283,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         continue;
       }
 
-      const visibleMessages = messages.filter((message) => !(message.source === "terminal" && message.meta?.signal === true));
+      const visibleMessages = messages.filter((message) => !(message.source === "terminal" && Boolean(message.meta?.signal)));
       if (visibleMessages.length === 0) {
         this.deps.logger.log({
           channel: "agent",

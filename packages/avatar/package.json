@@ -1,0 +1,12 @@
+{
+  "name": "@agenter/avatar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

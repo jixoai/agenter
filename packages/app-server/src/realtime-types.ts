@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { InstanceMeta } from "./instance-registry";
-import type { InstanceRuntimeSnapshot } from "./instance-runtime";
+import type { SessionRuntimeSnapshot } from "./session-runtime";
+import type { SessionMeta } from "./session-catalog";
 
 export const APP_PROTOCOL_VERSION = 1 as const;
 
@@ -12,8 +12,8 @@ export interface RuntimeSnapshotPayload {
   version: typeof APP_PROTOCOL_VERSION;
   timestamp: number;
   lastEventId: number;
-  instances: InstanceMeta[];
-  runtimes: Record<string, InstanceRuntimeSnapshot>;
+  sessions: SessionMeta[];
+  runtimes: Record<string, SessionRuntimeSnapshot>;
 }
 
 export interface RuntimeEventEnvelope<TType extends string = string, TPayload = unknown> {
@@ -21,13 +21,13 @@ export interface RuntimeEventEnvelope<TType extends string = string, TPayload = 
   eventId: number;
   timestamp: number;
   type: TType;
-  instanceId?: string;
+  sessionId?: string;
   payload: TPayload;
 }
 
 export type RuntimeEventType =
-  | "instance.updated"
-  | "instance.deleted"
+  | "session.updated"
+  | "session.deleted"
   | "chat.message"
   | "runtime.phase"
   | "runtime.stage"
@@ -35,6 +35,10 @@ export type RuntimeEventType =
   | "runtime.focusedTerminal"
   | "terminal.snapshot"
   | "terminal.status"
+  | "task.updated"
+  | "task.deleted"
+  | "task.triggered"
+  | "task.source.changed"
   | "runtime.error";
 
 export type AnyRuntimeEvent = RuntimeEventEnvelope<RuntimeEventType, unknown>;

@@ -1,9 +1,18 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 interface SessionJson {
-  createdAt: string;
-  updatedAt: string;
+  session: {
+    id: string;
+    name: string;
+    cwd: string;
+    avatar: string;
+    storeTarget: "global" | "workspace";
+    status: "stopped" | "starting" | "running" | "error";
+    createdAt: string;
+    updatedAt: string;
+    lastError?: string;
+  };
   calls: SessionCallRecord[];
 }
 
@@ -46,18 +55,38 @@ export interface SessionCallRecord {
   };
 }
 
+export interface SessionStoreOptions {
+  sessionRoot: string;
+  session: {
+    id: string;
+    name: string;
+    cwd: string;
+    avatar: string;
+    storeTarget: "global" | "workspace";
+  };
+}
+
 export class SessionStore {
   private readonly filePath: string;
   private readonly doc: SessionJson;
 
-  constructor(logRoot: string) {
-    const stamp = new Date().toISOString().replaceAll(":", "-");
-    const dir = join(logRoot, "sessions", `session-${stamp}`);
-    mkdirSync(dir, { recursive: true });
-    this.filePath = join(dir, "session.json");
+  constructor(options: SessionStoreOptions) {
+    const now = new Date().toISOString();
+    const sessionRoot = resolve(options.sessionRoot);
+    mkdirSync(sessionRoot, { recursive: true });
+    mkdirSync(join(sessionRoot, "logs"), { recursive: true });
+    this.filePath = join(sessionRoot, "session.json");
     this.doc = {
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      session: {
+        id: options.session.id,
+        name: options.session.name,
+        cwd: options.session.cwd,
+        avatar: options.session.avatar,
+        storeTarget: options.session.storeTarget,
+        status: "starting",
+        createdAt: now,
+        updatedAt: now,
+      },
       calls: [],
     };
     this.flush();
@@ -69,7 +98,14 @@ export class SessionStore {
 
   appendCall(call: SessionCallRecord): void {
     this.doc.calls.push(call);
-    this.doc.updatedAt = new Date().toISOString();
+    this.doc.session.updatedAt = new Date().toISOString();
+    this.flush();
+  }
+
+  setLifecycle(patch: { status: "stopped" | "starting" | "running" | "error"; lastError?: string }): void {
+    this.doc.session.status = patch.status;
+    this.doc.session.lastError = patch.lastError;
+    this.doc.session.updatedAt = new Date().toISOString();
     this.flush();
   }
 

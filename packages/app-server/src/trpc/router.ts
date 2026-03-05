@@ -5,78 +5,72 @@ import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
 import { t } from "./init";
 
-const instanceIdInput = z.object({ instanceId: z.string().min(1) });
+const sessionIdInput = z.object({ sessionId: z.string().min(1) });
 
 export const appRouter = t.router({
   session: t.router({
-    list: t.procedure.query(({ ctx }) => ({ instances: ctx.kernel.listInstances() })),
+    list: t.procedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
     create: t.procedure
       .input(
         z.object({
           cwd: z.string().min(1),
           name: z.string().optional(),
+          avatar: z.string().optional(),
           autoStart: z.boolean().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const instance = ctx.kernel.createInstance(input);
-        if (instance.autoStart) {
-          await ctx.kernel.startInstance(instance.id);
-          const refreshed = ctx.kernel.getInstance(instance.id);
-          return { instance: refreshed ?? instance };
-        }
-        return { instance };
+        const session = await ctx.kernel.createSession(input);
+        return { session };
       }),
     update: t.procedure
       .input(
         z.object({
-          instanceId: z.string().min(1),
+          sessionId: z.string().min(1),
           name: z.string().optional(),
-          autoStart: z.boolean().optional(),
         }),
       )
       .mutation(({ ctx, input }) => {
-        const instance = ctx.kernel.updateInstance(input.instanceId, {
+        const session = ctx.kernel.updateSession(input.sessionId, {
           name: input.name,
-          autoStart: input.autoStart,
         });
-        return { instance };
+        return { session };
       }),
-    delete: t.procedure.input(instanceIdInput).mutation(async ({ ctx, input }) => {
-      return await ctx.kernel.deleteInstance(input.instanceId);
+    delete: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+      return await ctx.kernel.deleteSession(input.sessionId);
     }),
-    start: t.procedure.input(instanceIdInput).mutation(async ({ ctx, input }) => {
-      const instance = await ctx.kernel.startInstance(input.instanceId);
-      return { instance };
+    start: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+      const session = await ctx.kernel.startSession(input.sessionId);
+      return { session };
     }),
-    stop: t.procedure.input(instanceIdInput).mutation(async ({ ctx, input }) => {
-      const instance = await ctx.kernel.stopInstance(input.instanceId);
-      return { instance };
+    stop: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+      const session = await ctx.kernel.stopSession(input.sessionId);
+      return { session };
     }),
     focusTerminal: t.procedure
       .input(
         z.object({
-          instanceId: z.string().min(1),
+          sessionId: z.string().min(1),
           terminalId: z.string().min(1),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.focusTerminal(input.instanceId, input.terminalId)),
+      .mutation(({ ctx, input }) => ctx.kernel.focusTerminal(input.sessionId, input.terminalId)),
   }),
   chat: t.router({
     send: t.procedure
       .input(
         z.object({
-          instanceId: z.string().min(1),
+          sessionId: z.string().min(1),
           text: z.string().min(1),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.sendChat(input.instanceId, input.text)),
+      .mutation(({ ctx, input }) => ctx.kernel.sendChat(input.sessionId, input.text)),
   }),
   settings: t.router({
     read: t.procedure
       .input(
         z.object({
-          instanceId: z.string().min(1),
+          sessionId: z.string().min(1),
           kind: settingsKindSchema,
         }),
       )
@@ -86,7 +80,7 @@ export const appRouter = t.router({
     save: t.procedure
       .input(
         z.object({
-          instanceId: z.string().min(1),
+          sessionId: z.string().min(1),
           kind: settingsKindSchema,
           content: z.string(),
           baseMtimeMs: z.number().nonnegative(),
@@ -95,6 +89,71 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         return await ctx.kernel.saveSettings(input);
       }),
+    layers: t.router({
+      list: t.procedure
+        .input(
+          z.object({
+            sessionId: z.string().min(1),
+          }),
+        )
+        .query(async ({ ctx, input }) => ctx.kernel.listSettingsLayers(input.sessionId)),
+      read: t.procedure
+        .input(
+          z.object({
+            sessionId: z.string().min(1),
+            layerId: z.string().min(1),
+          }),
+        )
+        .query(async ({ ctx, input }) => ctx.kernel.readSettingsLayer(input)),
+      save: t.procedure
+        .input(
+          z.object({
+            sessionId: z.string().min(1),
+            layerId: z.string().min(1),
+            content: z.string(),
+            baseMtimeMs: z.number().nonnegative(),
+          }),
+        )
+        .mutation(async ({ ctx, input }) => ctx.kernel.saveSettingsLayer(input)),
+    }),
+  }),
+  task: t.router({
+    list: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ctx.kernel.listTasks(input.sessionId)),
+    triggerManual: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          source: z.string().min(1),
+          id: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.triggerTaskManual(input.sessionId, {
+          source: input.source,
+          id: input.id,
+        }),
+      ),
+    emitEvent: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          topic: z.string().min(1),
+          payload: z.unknown().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.emitTaskEvent(input.sessionId, {
+          topic: input.topic,
+          payload: input.payload,
+          source: "api",
+        }),
+      ),
   }),
   runtime: t.router({
     snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
@@ -124,6 +183,43 @@ export const appRouter = t.router({
           return unsubscribe;
         });
       }),
+  }),
+  workspace: t.router({
+    recent: t.procedure
+      .input(
+        z
+          .object({
+            limit: z.number().int().positive().max(128).optional(),
+          })
+          .optional(),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listRecentWorkspaces(input?.limit ?? 8),
+      })),
+  }),
+  fs: t.router({
+    listDirectories: t.procedure
+      .input(
+        z
+          .object({
+            path: z.string().min(1).optional(),
+            includeHidden: z.boolean().optional(),
+          })
+          .optional(),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listDirectories({
+          path: input?.path,
+          includeHidden: input?.includeHidden,
+        }),
+      })),
+    validateDirectory: t.procedure
+      .input(
+        z.object({
+          path: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ctx.kernel.validateDirectory(input.path)),
   }),
 });
 
