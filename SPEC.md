@@ -1,7 +1,7 @@
 # Agenter SPEC
 
 > 本文档是当前仓库的项目级唯一可信源（source of truth）。
-> 包级细节以对应包内文档为准（如 `packages/terminal/SPEC.md`）。
+> 包级细节以对应包内文档为准（如 `packages/terminal-system/SPEC.md`）。
 
 ## 0. 文档信息
 
@@ -35,11 +35,11 @@ agenter/
   SPEC.md
   demo/
   packages/
-    terminal/       # @agenter/terminal
+    terminal-system/ # @agenter/terminal-system
     avatar/         # @agenter/avatar
     settings/       # @agenter/settings
     mdx2md/         # @agenter/mdx2md
-    chat-system/    # @agenter/chat-system
+    attention-system/    # @agenter/attention-system
     task-system/    # @agenter/task-system
     app-server/     # @agenter/app-server
     client-sdk/     # @agenter/client-sdk
@@ -51,11 +51,11 @@ agenter/
     i18n-zh-Hans/   # @agenter/i18n-zh-hans
 ```
 
-### 2.1 `@agenter/terminal`
+### 2.1 `@agenter/terminal-system`
 
 - 负责 PTY 生命周期、`@xterm/headless` 渲染、日志文件链落盘、dirty slice、mixed input 队列。
 - 提供 `ati` CLI：`ati [options] [command] [args]`。
-- 详细规范以 `packages/terminal/SPEC.md` 为准。
+- 详细规范以 `packages/terminal-system/SPEC.md` 为准。
 
 ### 2.2 `@agenter/settings`
 
@@ -82,20 +82,21 @@ agenter/
 - `i18n-core`：通用语言包加载与构建能力。
 - 默认语言包：`en`（runtime 内置 fallback）。
 
-### 2.6 `@agenter/chat-system`
+### 2.6 `@agenter/attention-system`
 
 - 负责“对话辅助状态”的独立存储与查询，不与任务系统耦合。
 - 核心记录结构：`{ id, content, from, score, remark, createdAt, updatedAt }`。
 - `score` 为 0-100 整数；`score=0` 表示退出当前注意力列表。
-- 自动 `chat_add` 仅对用户输入触发；assistant/tool 不自动进入注意力列表。
+- 自动 `attention_add` 仅对用户输入触发；assistant/tool 不自动进入注意力列表。
 - 持久化独立于 `session.json`（会话调用日志），使用单目录存储。
+- 兼容迁移：若会话目录存在 legacy `chat-system/` 且不存在 `attention-system/`，runtime 启动时自动迁移目录。
 
 ### 2.7 `@agenter/app-server`
 
 - 负责 AgentRuntime + LoopBus + AgenterAI 编排。
 - 运行时基于 `Session`（可并发、可恢复），不再使用 `instances.json`。
-- 输入源：chat message + terminal diff/snapshot/help + chat-system facts。
-- 输出分流：`to_user(chat_reply)` / `self_talk(model text/thinking)` / `tool_call` / `tool_result`。
+- 输入源：chat message + terminal diff/snapshot/help + attention-system facts。
+- 输出分流：`to_user(attention_reply)` / `self_talk(model text/thinking)` / `tool_call` / `tool_result`。
 - 与模型交互通过 `@tanstack/ai` 工具体系组织。
 - 对外通过 tRPC router 暴露 session/chat/settings/runtime 能力（传输层为 ws）。
 
@@ -141,12 +142,12 @@ agenter/
 1. 收集输入队列（用户输入 + 终端变化消息 + task 变化）。
 2. 发送给 `AgenterAI.send(messages)`。
 3. AI 返回结构化 outputs：
-   - `toUser`：发给用户的正式回复（仅由 `chat_reply` 工具生成）
+   - `toUser`：发给用户的正式回复（仅由 `attention_reply` 工具生成）
    - `toTerminal`：终端写入动作
    - `toTools`：工具调用
 4. 工具调用结果重新入队，继续下一轮循环。
 5. terminal dirty 通过 `sliceDirty(remark=true)` 持续推进上下文。
-6. 若本轮无 task 输入、无 terminal diff，但 chat-system 仍有注意力记录，则注入 `chat-system` 事实输入触发 AI 继续决策。
+6. 若本轮无 task 输入、无 terminal diff，但 attention-system 仍有注意力记录，则注入 `attention-system` 事实输入触发 AI 继续决策。
 
 任务系统（Task System）并行接入 LoopBus：
 
@@ -157,34 +158,61 @@ agenter/
 
 终端焦点语义（当前默认）：
 
-- 仅一个 focused terminal（`focusMode=exclusive`）。
-- focused terminal 的变更由 LoopBus 自动注入（优先使用 `gitLog + sliceDirty` 差异）。
-- unfocused terminal 不再主动注入 summary 消息；仅标记 dirty，避免无效 AI 调用。
-- 对 focused terminal 调用 `terminal_sliceDirty` 返回 `ignored=true`，避免重复消费同一变更。
-- terminal BUSY 时仅累计 dirty，不触发注入；进入 IDLE 后再进行一次差异采集，降低高频抖动调用。
+- 支持多个 focused terminal；每个 focused terminal 都会独立作为一段 terminal input 注入 LoopBus。
+- focused terminal 的变更由 runtime 自动消费；内部使用 `sliceDirty({ remark: true })`，对外工具名统一为 `terminal_consumeDiff`。
+- unfocused terminal 只保留 dirty 状态，不主动注入 summary，避免无效 AI 调用。
+- terminal BUSY 时仅累计 dirty；进入 IDLE 后再进行一次差异采集。
 
 关键约束：
 
 - LoopBus 是持续循环，不依赖用户每轮手动触发。
-- LoopBus 使用显式 phase 状态机并校验合法迁移；在 `waiting_messages` 时支持 idle 轮询 `collectInputs`，防止循环静默卡住。
+- LoopBus 基于 `Promise.race(waitCommitted(...))` 等待输入；任一输入 resolved 后，必须再等待固定 `loopWaitMs=300ms` 再 collect，以吸收临近变更。
+- LoopBus phase 固定为：`waiting_commits -> settling_inputs -> collecting_inputs -> persisting_cycle -> calling_model -> applying_outputs`。
+- wait losers 必须 reject/cancel，避免 waiter 泄漏。
 - terminal 变化默认视为 user-source context（不是 assistant 自述）。
-- 没有 pending task、没有 terminal diff/chat-system facts/chat 输入时，不触发 AI API 调用，只在 LoopBus 空转等待下一次触发。
+- 没有 pending task、没有 terminal diff/attention-system facts/chat 输入时，不触发 AI API 调用，只在 LoopBus 空转等待下一次触发。
 - 消息结构必须紧凑，便于模型持续消费与回放。
-- 用户发送 `/compact` 时，runtime 会强制请求下一轮上下文压缩（不写入 chat-system 注意力列表）。
+- 用户发送 `/compact` 时，runtime 会强制请求下一轮上下文压缩（不写入 attention-system 注意力列表）。
 
-### 3.1 Chat-System 工具契约
+### 3.1 Attention-System 工具契约
 
-- `chat_list() -> Array<{id, content, from, score, remark, updatedAt}>`
+- `attention_list() -> Array<{id, content, from, score, remark, updatedAt}>`
   - 仅返回 `score>0` 的当前注意力列表。
-- `chat_add({content, from, score?}) -> {id}`
+- `attention_add({content, from, score?}) -> {id}`
   - 默认 `score=100`。
-- `chat_remark({id, remark, score?}) -> {ok}`
+- `attention_remark({id, remark, score?}) -> {ok}`
   - 可同时修改备注与注意力。
-- `chat_query({offset?, limit?, query?}) -> Array<{id, content, from, score, remark, updatedAt}>`
+- `attention_query({offset?, limit?, query?}) -> Array<{id, content, from, score, remark, updatedAt}>`
   - 支持关键词查询历史记录。
-- `chat_reply({replyContent, relationships?}) -> {ok, id}`
-  - 发送用户可见回复并写入 chat-system；
+- `attention_reply({replyContent, relationships?}) -> {ok, id}`
+  - 发送用户可见回复并写入 attention-system；
   - `relationships` 可批量调整关联记录注意力（0 表示移出注意力列表）。
+
+### 3.2 LoopBus Kernel 持久化（`session.db`）
+
+- 每个 session root 必须创建 `session.db`，只用于 **LoopBus 内核级事实持久化**，不接管 task/attention/terminal 各自的独立存储。
+- `session.db` 只存事实，不存可推导快照；projection 由 server 侧按需构建。
+- 核心表：
+  - `session_head`：当前 branch head。
+  - `session_cycle`：每轮循环 ledger（`prev_cycle_id`、`wake`、`collected_inputs`、`extends`、`result`）。
+  - `model_call`：一次语义模型调用。
+  - `session_block`：chat 面板块（`user_input` / `to_user` / `self_talk` / `tool_call` / `tool_result`）。
+  - `loopbus_trace`：LoopBus trace（按 cycle + seq 记录步骤）。
+  - `api_call`：按需开启的原始 HTTP request/response/error 录制。
+- `session_cycle.collected_inputs` 是“本轮到底收集了什么”的单一可信源；provider request body 仍然只放在 `model_call.request` / `api_call.request`。
+- `session_block.content` 必须保存原始消息内容（通常为 Markdown），不得写入 UI 派生标题、视觉标签或 HTML 投影。
+- `session_block.channel` 只表达语义通道；`self_talk` / `to_user` / `tool_*` 的视觉表现属于 projection 层，不回写事实层。
+- preview/raw 等展示模式属于前端 projection 契约，不进入 `session.db` 真源。
+- rollback 的 branch 通过 `session_head` + `session_cycle.prev_cycle_id` 表达；`CycleView` 属于 projection，不单独落库。
+
+### 3.3 API 调用录制开关（订阅引用计数）
+
+- API 调用录制默认关闭，避免大体积持久化。
+- 通过 `runtime.apiCalls` subscription 按 session 打开录制：
+  - 订阅建立：`refCount + 1`，启用录制；
+  - 订阅关闭：`refCount - 1`，`refCount=0` 时自动关闭；
+  - 支持多页面并发订阅（引用计数）。
+- 录制内容必须保留完整 request/response body 与错误对象，便于离线回放与问题排查。
 
 ---
 
@@ -241,9 +269,7 @@ agenter/
 - 废弃 `internal.*` 配置层，统一使用 `features.*`。
 - 首个落地域：`features.terminal`
   - `bootTerminals: Array<string | { id, focus?, autoRun? }>`
-  - `focusMode: "exclusive"`（当前实现）
-  - `unfocusedSignal: "summary"`（当前实现）
-- `terminal_list` 输出包含 `focused/dirty/latestSeq`，并支持 `terminal_focus` 切换焦点。
+- `terminal_list` 输出包含 `focused/dirty/latestSeq`，并支持 `terminal_focus` 增删当前 focus 集合。
 
 ### 4.4 语言包策略
 
@@ -261,7 +287,7 @@ agenter/
   - `sessionStoreTarget=global` -> `~/.agenter/sessions/<sessionId>`
   - `sessionStoreTarget=workspace` -> `<projectRoot>/.agenter/avatar/<nickname>/sessions/<sessionId>`
 - 每个会话目录包含 `session.json` 与 `logs/terminals/*`。
-- 每个会话目录还包含 `chat-system/*`（独立于 `session.json` 的对话注意力存储）。
+- 每个会话目录还包含 `attention-system/*`（独立于 `session.json` 的对话注意力存储）。
 - 默认策略：
   - 单守护进程
   - UI 与 daemon 使用 tRPC + wsLink 同步（全双工）
@@ -279,7 +305,7 @@ agenter/
 
 ## 5. Terminal 数据契约（项目级）
 
-项目统一依赖 `@agenter/terminal` 输出目录作为“单一信源”：
+项目统一依赖 `@agenter/terminal-system` 输出目录作为“单一信源”：
 
 - `output/latest.log.html` + `pre-file` 链。
 - `input/pending -> done/failed` mixed input 工作流。
@@ -328,7 +354,7 @@ agenter/
 
 统一使用 Bun 测试体系，按价值分层：
 
-- `@agenter/terminal`：核心协议与终端行为（CLI 解析、渲染、分页链、dirty slice、git-log、integration）。
+- `@agenter/terminal-system`：核心协议与终端行为（CLI 解析、渲染、分页链、dirty slice、git-log、integration）。
 - `@agenter/mdx2md`：安全策略与 transform 契约。
 - `@agenter/demo`：组合层行为（runtime config、loop bus、prompt store、dispatcher）。
 - `@agenter/app-server`：runtime/tRPC 协议行为 + e2e（daemon health/lifecycle/web root）。

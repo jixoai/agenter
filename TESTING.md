@@ -20,8 +20,9 @@
   - unit/integration：ws 消息解析契约（snapshot/updated/deleted/chat）。
   - 不做脆弱的渲染细节断言。
 - `@agenter/webui`
+  - DOM contract：Storybook v10 + Vitest 真实组件交互（输入、弹层、列表、消息渲染）。
   - contract：html shell 包含 viewport/ws/bootstrap 关键标记。
-- `@agenter/terminal`
+- `@agenter/terminal-system`
   - core/integration：日志链、dirty slice、输入解析、git-log、渲染行为。
 - `@agenter/settings`
   - contract：settings source merge、resource loader 协议与别名解析。
@@ -42,3 +43,14 @@
 bun run typecheck
 bun run test
 ```
+
+## Storybook DOM Baseline
+
+```bash
+bun run --filter "@agenter/webui" storybook
+bun run --filter "@agenter/webui" test:dom
+```
+
+- Storybook stories 是 WebUI 组件状态与交互夹具的单一真源。
+- Vitest 通过 `composeStories(...).run()` 执行 BDD 场景，避免重复造测试壳。
+- Playwright 继续保留给跨页面/跨进程链路，不替代 Storybook DOM 层。

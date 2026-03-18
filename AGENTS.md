@@ -20,6 +20,7 @@
 
 - **E2E**：跨进程/跨包关键链路（如 CLI -> daemon -> ws/http）。
 - **Integration**：模块协作与协议边界（runtime、registry、protocol）。
+- **DOM Contract**：WebUI 交互组件优先使用 **Storybook v10 + Vitest**，以 stories 作为组件状态真源，用真实 DOM 场景覆盖输入、弹层、列表、组合面板。
 - **Unit**：纯逻辑与算法规则（解析、映射、状态机）。
 
 约束：
@@ -27,6 +28,116 @@
 - 避免对实现细节做脆弱断言（私有字段、内部顺序等）。
 - 优先断言“可观察行为”和“稳定契约”。
 - 低信号高耗时用例应移除或下沉为更小范围测试。
+
+## 3.1) Storybook DOM 测试最佳实践
+
+- **官方组合**：`Storybook v10 + @storybook/react-vite + @storybook/addon-vitest + Vitest`。
+- **单一真源**：组件状态先写成 stories，再由 Vitest 通过 `composeStories(...).run()` 执行，避免 story 与 test 双份夹具漂移。
+- **真实交互优先**：输入、弹窗、手风琴、列表选择、快捷操作等 UI 行为，优先放到 Storybook DOM 测试而不是只用 mocked jsdom。
+- **BDD 落点**：story 命名表达稳定场景，Vitest 用 `Feature / Scenario` 命名行为断言。
+- **边界分工**：
+  - 纯算法/解析：继续走 unit/jsdom；
+  - 组件真实交互：走 Storybook DOM；
+  - 跨页面/跨进程链路：走 Playwright E2E。
+- **实现方式**：优先在 story 的 `play` 中描述用户行为与断言，再在 `test/storybook/*` 中以 `Story.run()` 复用。
+- **回归入口**：WebUI 至少维护 `bun run --filter '@agenter/webui' test:dom` 作为高价值 DOM 回归入口。
+- **串行执行纪律**：`Vitest browser`、`storybook dev`、`storybook:build` 不能并行运行；需要串行执行，避免浏览器会话与 Vite 端口资源冲突。
+
+## 3.2) Storybook DOM 技能手册（上下文清空后直接照做）
+
+### 3.2.1 目标
+
+- WebUI 组件的“真实交互”优先通过 Storybook stories 描述，再由 Vitest 在浏览器里执行。
+- stories 是组件交互状态的**单一真源**；不要再额外复制一份复杂测试夹具。
+- 这套方案主要解决 `CodeMirror`、弹窗、手风琴、虚拟列表、组合面板这类 jsdom 容易失真的问题。
+
+### 3.2.2 当前仓库约定
+
+- Storybook 配置目录：`packages/webui/.storybook/`
+- Storybook 主配置：`packages/webui/.storybook/main.ts`
+- Storybook 全局预览：`packages/webui/.storybook/preview.tsx`
+- Storybook + Vitest 初始化：`packages/webui/.storybook/vitest.setup.ts`
+- Vitest 配置：`packages/webui/vitest.config.ts`
+- stories 位置：优先与组件同目录，命名为 `*.stories.tsx`
+- Story 驱动的 DOM 测试位置：`packages/webui/test/storybook/*.test.tsx`
+
+### 3.2.3 命令
+
+```bash
+bun run --filter '@agenter/webui' storybook
+bun run --filter '@agenter/webui' storybook:build
+bun run --filter '@agenter/webui' test:unit
+bun run --filter '@agenter/webui' test:dom
+bun run --filter '@agenter/webui' test
+```
+
+- `test:unit`：保留 jsdom/unit 层，适合纯逻辑与轻交互。
+- `test:dom`：运行 Storybook + Vitest browser tests，适合真实 DOM 交互。
+- `test`：同时回归 unit + DOM contract。
+
+### 3.2.4 什么时候该写 Storybook DOM 测试
+
+满足任一条件就优先写 story-driven DOM test：
+
+- 组件依赖真实浏览器行为：`CodeMirror`、selection、focus、clipboard、drag/drop。
+- 组件含弹层：`Dialog`、`Sheet`、`Popover`、`Tooltip`。
+- 组件是复杂组合：Chat 行渲染、Workspace/Session 列表、Master-Detail 页面。
+- 组件行为需要“用户步骤”才能表达清楚。
+
+以下情况继续留在 unit/jsdom：
+
+- 纯解析函数
+- 纯状态映射
+- 无浏览器依赖的渲染分支
+
+### 3.2.5 标准写法
+
+1. 先给组件写 `*.stories.tsx`。
+2. story 的 `args` 提供最小稳定夹具。
+3. story 的 `play` 负责描述用户行为与断言。
+4. 在 `test/storybook/*.test.tsx` 中用 `composeStories(...).run()` 复用 story。
+5. test 名称必须继续使用 `Feature / Scenario / Given-When-Then`。
+
+推荐结构：
+
+```ts
+import { composeStories } from "@storybook/react-vite";
+import { describe, test } from "vitest";
+import * as stories from "../../src/features/chat/AIInput.stories";
+
+const { SubmitDraft } = composeStories(stories);
+
+describe("Feature: Storybook DOM contract for AI input", () => {
+  test("Scenario: Given a draft story When Enter is pressed Then submission clears the real CodeMirror surface", async () => {
+    await SubmitDraft.run();
+  });
+});
+```
+
+### 3.2.6 断言原则
+
+- 优先断言**用户可见结果**，不要断言内部实现。
+- 优先断言：
+  - 按钮是否可点/禁用
+  - 对话框是否打开
+  - 选择状态是否切换
+  - 文本/结构化内容是否真正显示
+- 避免断言：
+  - 私有 class 细枝末节
+  - 临时 DOM 顺序
+  - 内部状态对象
+
+### 3.2.7 当前已验证可行的组件类型
+
+- `AIInput`：Enter 提交、`@` 路径补全、图片预览
+- `ChatPanel`：tool_call/tool_result 合并后的展开行为
+- `WorkspaceSessionsPanel`：单击选中、再次单击取消、Resume 动作
+
+### 3.2.8 经验结论（重要）
+
+- mocked jsdom 通过，不代表真实 DOM 会通过；`CodeMirror` 就是典型例子。
+- Storybook DOM 测试应被视为 WebUI 的**BDD 主战场**，而不是装饰性文档。
+- 如果真实 DOM 测试失败，优先修组件真实行为，不要为了通过测试去改弱断言。
 
 ## 4) 命名规范
 
@@ -53,6 +164,11 @@
 - **配置优先于硬编码**：模型、终端入口、提示词路径、策略等一律走 settings/prompt sources。
 - **架构做减法，算法做加法**：先保证路径直觉、最小可用，再增强算法与可观测性。
 - **循环系统哲学**：LoopBus 持续空转；仅在有效输入（用户输入、终端变更、待办任务）到来时触发 AI 调用。
+- **LoopBus 等待模型**：统一使用 `waitCommitted(fromHash)` 等待各子系统输入；任一输入 resolved 后，固定再等 `loopWaitMs=300ms` 再 collect。
+- **Waiter 清理纪律**：`Promise.race` 的 losers 必须 reject/cancel，避免 listener / waiter 泄漏。
+- **Session DB 只存事实**：`session.db` 只落 `session_head/session_cycle/model_call/session_block/loopbus_trace/api_call` 这类事实，不落可推导 snapshot/state-log。
+- **多终端聚焦**：默认支持多 focused terminal；每个 focused terminal 都独立注入 terminal input，unfocused 仅保留 dirty 状态。
+- **Provider 请求纯度**：provider request body 只保留真实 HTTP/model 参数；`collectedInputs` 之类循环事实必须写入 `session_cycle`。
 - **功能层次化呈现**：主界面聚焦聊天与任务推进；进阶能力放入侧栏/工具面板，不堆叠在主视图。
 - **问题定位分层实验**：先隔离运行时（PTY/Terminal），再隔离渲染层（xterm/headless/web），逐层缩小问题面。
 
@@ -77,3 +193,73 @@
 
 - 每个用例都要记录：`预期`、`实际`、`证据路径`、`是否通过`。
 - 不通过时必须附带最小复现步骤与日志位置。
+
+## 8) WebUI 布局最佳实践（Flex）
+
+- **禁止使用 `min-h-0`**：在本项目 WebUI 中不再使用该 class 处理滚动/压缩。
+- **只用直觉化 Flex 约束**：优先 `h-full` + `flex-1` + `overflow-hidden/auto` 组合明确滚动容器。
+- **滚动容器单点定义**：每个面板只保留一个主滚动区，避免多层嵌套滚动导致内容挤压与重叠。
+
+## 9) 字体与排版最佳实践（WebUI）
+
+- **CJK 优先，不做中文特化**：字体方案按 CJK（zh/ja/ko）统一设计，不针对单一语言做硬编码分支。
+- **Google Fonts 统一入口**：在 `index.html` 注入字体；按语言选择 `.com` / `.googleapis.cn`，并配套 `preconnect`。
+- **字体 token 单一真源**：只通过 `styles.css` 的 `--font-sans/--font-mono/--font-serif/--font-nav` 管理字体，不在组件内写 `font-family`。
+- **语义排版类优先**：优先使用 `typo-title-*`、`typo-emphasis`、`typo-body`、`typo-caption`、`typo-code`，避免分散写临时字号/行高。
+- **职责分层固定**：
+  - 标题 + 强调块：`serif`
+  - 正文 + 控件：`sans`
+  - 代码/结构化内容（JSON/YAML/日志/终端片段）：`mono`
+- **密度优先原则**：在可读前提下保持紧凑（尤其移动端）；统一通过排版 token 调整，不做局部“魔法数字”。
+- **变更验收要求**：字体改动后至少走查 Chat、LoopBus、Settings 三块，确认中英日文/韩文混排无明显抖动或 fallback 断层。
+
+## 10) Icon 使用最佳实践（WebUI）
+
+- **统一来源**：所有可交互/状态型图标统一使用 `lucide-react`，禁止混用 Unicode 符号（如 `×/→/↓`）充当 UI 图标。
+- **语义优先**：图标用于表达动作或状态（关闭、方向、运行状态），不用于替代正文信息。
+- **背景图标规则**：当图标作为装饰层（例如流程卡片背景箭头）时，必须 `pointer-events-none` 且低对比度，避免干扰主文本。
+- **尺寸规范**：默认图标尺寸使用 `h-4 w-4`，紧凑信息区用 `h-3 w-3`；同一区域保持一致。
+- **文本并排规范**：纯内联片段才允许直接写 `inline-flex items-center gap-*`；只要元素同时承担“surface + 图标 + 文字”的职责，就必须走统一 affordance 组件，不允许在业务代码里手搓 `gap + px + py`。
+- **可访问性**：纯装饰图标不应影响可读内容；交互图标按钮必须有 `aria-label/title`。
+
+## 10.1) Icon + Text Surface 契约（WebUI）
+
+- **统一入口**：按钮使用 `ButtonLeadingVisual` / `ButtonLabel` / `ButtonTrailingVisual`；徽标使用 `BadgeLeadingVisual` / `BadgeLabel` / `BadgeTrailingVisual`；其余展示型 surface 使用 `InlineAffordance*`。
+- **显式 slot，不做猜测**：图标与文本的布局必须通过 slot 明确声明，不依赖 child 顺序推断业务语义。
+- **padding 规则**：图标所在侧的 `padding-inline` 必须收紧到与 `padding-block` 同级，文字侧再保留较大的水平留白；该规则只在 affordance primitive 内实现，不在 feature 代码重复书写。
+- **业务代码禁手搓**：feature 层禁止再写 `inline-flex items-center gap-* px-* py-*` 来拼装图标+文字的按钮、badge、摘要条、列表操作项；一律复用统一 primitive。
+- **回归测试要求**：新增或改动 icon+text surface 时，至少补一个 unit 或 Storybook DOM contract，断言 `data-inline-affordance-layout` 与关键 spacing class。
+
+## 11) shadcn/ui Skill 入口
+
+- **官方 LLM 入口**：`https://ui.shadcn.com/llms.txt`
+- **执行约束**：涉及 WebUI 组件设计/实现时，先以该入口文档作为 shadcn/ui 的首要技能参考源。
+
+## 12) shadcn/ui 组件实现约束
+
+- **优先 Base UI**：在本项目中，shadcn/ui 相关组件封装默认基于 `@base-ui-components/react`，不再新增 Radix 依赖。
+- **先封装再使用**：业务代码只使用 `src/components/ui/*`，避免在 feature 页面直接引入底层 primitives。
+- **风格统一**：交互状态统一用 data attributes（如 `data-[active]`、`data-[starting-style]`）驱动样式，减少运行时分支判断。
+
+## 13) Chat / Markdown 契约（WebUI）
+
+- **输入保真优先**：输入层只采集，不解释；用户输入什么，`session_block.content` 就落什么。`\n` 只有在用户真的输入反斜杠时才允许出现；renderer 禁止猜测性解码。
+- **消息原文单一真源**：`session_block.content` / chat message `content` 始终保存原始 Markdown 文本；preview 只是投影，不得覆盖或篡改原文。
+- **频道语义单一所有者**：`channel` 只表达消息语义（`to_user` / `self_talk` / `tool_call` / `tool_result`），UI 可以据此改变色彩与布局，但不得再自动注入 `Self-talk`、`Reply` 之类正文标题。
+- **Chat Row 结构先归一化**：先把 `messages + tool pairs + aiStatus` 归一化成统一 `ChatRow` 列表，再渲染 UI；不要在 JSX 分支里临时拼凑循环状态。
+- **对齐契约属于行容器**：左右对齐必须由 row wrapper 负责（如 `data-chat-align=start|end`），bubble 只负责视觉皮肤；避免把 `ml-auto/mr-auto` 这类布局副作用塞进配色 helper。
+- **Markdown 双视图契约**：`raw` 显示原始 Markdown；`preview` 显示可视化投影。复制 Markdown 时必须回到原始文本，而不是复制 HTML 文本。
+- **Code Fence 预览契约**：在 `preview` 中，fenced code 必须隐藏原始围栏语法（如 ``` 与原始 info string），只展示语言语义与代码内容；高亮 token 必须服从当前 surface 的可访问配色。
+- **Surface 驱动而非魔法样式**：聊天、检查器、文档等场景统一通过高语义 surface/usage 配置 Markdown 外观，避免在业务组件内散落 `padding/max-height/radius` 魔法值。
+- **Tool Fence 升级规则**：只有符合 `yaml+tool_call` / `yaml+tool_result` 契约且 schema 合法的 fenced block，才允许提升为结构化工具视图；否则一律按普通 code block 客观展示。
+- **Inspector 分工明确**：`MarkdownDocument` 只用于真正的自由文本字段（system prompt、message text 等）；对象/数组/HTTP body/tool schema 一律走结构化渲染器，避免把结构化数据伪装成文档正文。
+- **Inspector 分组优先于长列表**：Model / Devtools 这类面板，优先用 tabs 把 request/result/tools/context/calls 分开，而不是把异构信息堆在同一个长滚动列表里。
+
+## 14) AIInput / Workspace Path Search
+
+- **CodeMirror async autocomplete**: 对接远程/异步搜索时，不要给 completion result 设置会吞掉重查的 `validFor`；让每次 token 变化都能重新请求真实候选。
+- **`@` 路径补全触发规则**: 只要光标仍在 `@path` token 内且当前补全不在 `active/pending`，就应立即重新 `startCompletion`，不能只在 `@` 或 `/` 时触发一次。
+- **Workspace 索引真源**: Git 工作区优先使用 `git ls-files --cached --others --exclude-standard -z` 构建索引，确保 `.gitignore` 在索引阶段就被排除；`rg --files --hidden --no-require-git -0` 只作为非 Git fallback。
+- **索引排除优先于结果过滤**: 被 ignore 的文件不要先进内存索引再做展示层过滤；性能和正确性都要求在索引阶段直接排除。
+- **Ignored 路径的直接寻址例外**: `.gitignore` 只排除全量模糊索引，不排除基于当前已输入路径做的 on-demand startsWith 补全；像 `@node_`、`@node_modules/re` 这类逐步寻址必须仍然可达。
+- **Storybook DOM 依赖预热**: 新引入会在浏览器端动态加载的 UI 子包（尤其 `@base-ui-components/react/*`）时，要同步加入 `vitest.config.ts -> optimizeDeps.include`，避免测试中途触发 Vite re-optimize 导致 DOM 用例 flaky。
