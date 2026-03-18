@@ -1,9 +1,10 @@
-import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
+import { createAgenterClient, createRuntimeStore, type RuntimeClientState } from "@agenter/client-sdk";
 import { createCliRenderer, type TextareaRenderable } from "@opentui/core";
 import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatPanel } from "./panels/ChatPanel";
+import { LoopBusPanel } from "./panels/LoopBusPanel";
 import { SessionsPanel } from "./panels/SessionsPanel";
 import { StatusBar } from "./panels/StatusBar";
 import { TasksPanel } from "./panels/TasksPanel";
@@ -26,13 +27,22 @@ const App = ({ host, port }: { host: string; port: number }) => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [localInput, setLocalInput] = useState("");
   const [connected, setConnected] = useState(false);
-  const [state, setState] = useState(() => ({
+  const [state, setState] = useState<RuntimeClientState>(() => ({
     connected: false,
     lastEventId: 0,
     sessions: [],
     runtimes: {},
+    activityBySession: {},
+    terminalSnapshotsBySession: {},
     chatsBySession: {},
     tasksBySession: {},
+    recentWorkspaces: [],
+    workspaces: [],
+    loopbusStateLogsBySession: {},
+    loopbusTracesBySession: {},
+    apiCallsBySession: {},
+    modelCallsBySession: {},
+    apiCallRecordingBySession: {},
   }));
 
   const client = useMemo(
@@ -71,6 +81,14 @@ const App = ({ host, port }: { host: string; port: number }) => {
       store.disconnect();
     };
   }, [store]);
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    const release = store.retainApiCallStream(activeSessionId);
+    return () => release();
+  }, [activeSessionId, store]);
 
   const view = useMemo(() => buildViewModel(state, activeSessionId), [activeSessionId, state]);
 
@@ -149,7 +167,17 @@ const App = ({ host, port }: { host: string; port: number }) => {
             onSubmit={submit}
           />
           <box marginTop={1} flexGrow={1}>
-            <TasksPanel tasks={view.tasks} />
+            <box flexDirection="row" flexGrow={1}>
+              <TasksPanel tasks={view.tasks} />
+              <box marginLeft={1} flexGrow={1}>
+                <LoopBusPanel
+                  phaseText={view.phaseText}
+                  traces={view.loopbusTraces}
+                  modelCalls={view.modelCalls}
+                  apiRecording={view.apiRecording}
+                />
+              </box>
+            </box>
           </box>
         </box>
       </box>

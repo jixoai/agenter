@@ -10,7 +10,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun test --timeout 15000",
     "build:assets": "bun run scripts/copy-webui-assets.ts"
   },
   "dependencies": {

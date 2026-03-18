@@ -17,6 +17,7 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "running",
+      storageState: "active",
       sessionRoot: "/tmp/sessions/i-1",
       storeTarget: "global",
     },
@@ -26,9 +27,10 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
       sessionId: "i-1",
       started: true,
       activityState: "idle",
-      loopPhase: "waiting_messages",
+      loopPhase: "waiting_commits",
       stage: "idle",
       focusedTerminalId: "main",
+      focusedTerminalIds: ["main"],
       chatMessages: [],
       terminalSnapshots: {
         main: {
@@ -41,6 +43,17 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
         },
       },
       tasks: [],
+      loopKernelState: null,
+      loopInputSignals: {
+        user: { version: 0, timestamp: null },
+        terminal: { version: 0, timestamp: null },
+        task: { version: 0, timestamp: null },
+        attention: { version: 0, timestamp: null },
+      },
+      apiCallRecording: {
+        enabled: false,
+        refCount: 0,
+      },
       terminals: [
         {
           terminalId: "main",
@@ -50,15 +63,31 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
           cwd: process.cwd(),
         },
       ],
+      modelCapabilities: {
+        imageInput: false,
+      },
+      activeCycle: null,
     },
   },
 });
 
 const createMockClient = (input: {
   snapshotQuery: () => Promise<RuntimeSnapshot>;
-  onSubscribe?: (handlers: { onData: (event: unknown) => void; onError: () => void }) => void;
+  onSubscribe?: (handlers: { onData?: (event: unknown) => void; onError?: () => void }) => void;
   onClose?: () => void;
   createSessionResult?: RuntimeSnapshot["sessions"][number];
+  workspaceRecentQuery?: () => Promise<{ items: string[] }>;
+  workspaceListAllQuery?: () => Promise<{
+    items: Array<{
+      path: string;
+      favorite: boolean;
+      group: string;
+      missing: boolean;
+      counts: { all: number; running: number; stopped: number; archive: number };
+      lastSessionActivityAt?: string;
+    }>;
+  }>;
+  workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
 }): AgenterClient => {
   return {
     trpc: {
@@ -67,7 +96,7 @@ const createMockClient = (input: {
           query: input.snapshotQuery,
         },
         events: {
-          subscribe: (_payload, handlers) => {
+          subscribe: (_payload: unknown, handlers: { onData?: (event: unknown) => void; onError?: () => void }) => {
             input.onSubscribe?.({
               onData: handlers.onData,
               onError: handlers.onError,
@@ -76,6 +105,39 @@ const createMockClient = (input: {
               unsubscribe: () => {},
             };
           },
+        },
+        loopbusStateLogs: {
+          query: async () => ({ items: [] }),
+        },
+        loopbusStateLogsBefore: {
+          query: async () => ({ items: [] }),
+        },
+        loopbusTraces: {
+          query: async () => ({ items: [] }),
+        },
+        loopbusTracesBefore: {
+          query: async () => ({ items: [] }),
+        },
+        modelCallsPage: {
+          query: async () => ({ items: [] }),
+        },
+        modelDebug: {
+          query: async () => ({
+            config: null,
+            history: [],
+            stats: null,
+            latestModelCall: null,
+            recentModelCalls: [],
+            recentApiCalls: [],
+          }),
+        },
+        apiCallsPage: {
+          query: async () => ({ items: [] }),
+        },
+        apiCalls: {
+          subscribe: (_payload: unknown, _handlers: unknown) => ({
+            unsubscribe: () => {},
+          }),
         },
       },
       session: {
@@ -86,10 +148,25 @@ const createMockClient = (input: {
         },
         start: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         stop: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
+        archive: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
+        restore: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         delete: { mutate: async () => ({}) },
       },
       chat: {
         send: { mutate: async () => ({ ok: true }) },
+        list: { query: async () => ({ items: [] }) },
+        listBefore: { query: async () => ({ items: [] }) },
+        cycles: { query: async () => ({ items: [] }) },
+        cyclesBefore: { query: async () => ({ items: [] }) },
+      },
+      draft: {
+        resolve: {
+          query: async () => ({
+            cwd: process.cwd(),
+            provider: { providerId: "default", kind: "openai-compatible", model: "test" },
+            modelCapabilities: { imageInput: false },
+          }),
+        },
       },
       settings: {
         read: {
@@ -116,13 +193,31 @@ const createMockClient = (input: {
         emitEvent: { mutate: async () => ({ ok: true }) },
       },
       workspace: {
-        recent: { query: async () => ({ items: [process.cwd()] }) },
+        recent: {
+          query: async () => (input.workspaceRecentQuery ? input.workspaceRecentQuery() : { items: [process.cwd()] }),
+        },
+        listAll: { query: async () => (input.workspaceListAllQuery ? input.workspaceListAllQuery() : { items: [] }) },
+        listSessions: {
+          query: async () => ({ items: [], nextCursor: null, counts: { all: 0, running: 0, stopped: 0, archive: 0 } }),
+        },
+        searchPaths: {
+          query: async () => ({ items: [] }),
+        },
+        toggleFavorite: { mutate: async () => ({ item: null }) },
+        toggleSessionFavorite: { mutate: async () => ({ sessionId: "i-1", favorite: true }) },
+        delete: { mutate: async () => ({ removed: true }) },
+        cleanMissing: {
+          mutate: async () =>
+            input.workspaceCleanMissingMutate ? input.workspaceCleanMissingMutate() : { removed: [] },
+        },
       },
       fs: {
         listDirectories: { query: async () => ({ items: [] }) },
         validateDirectory: { query: async () => ({ ok: true, path: process.cwd() }) },
       },
-    } as AgenterClient["trpc"],
+    } as unknown as AgenterClient["trpc"],
+    wsUrl: "ws://127.0.0.1:3000/trpc",
+    httpUrl: "http://127.0.0.1:3000",
     close: () => {
       input.onClose?.();
     },
@@ -200,9 +295,9 @@ describe("Feature: runtime store synchronization", () => {
       timestamp: Date.now(),
       type: "runtime.phase",
       sessionId: "i-1",
-      payload: { phase: "waiting_processor_response" },
+      payload: { phase: "calling_model" },
     });
-    expect(store.getState().runtimes["i-1"]?.loopPhase).toBe("waiting_processor_response");
+    expect(store.getState().runtimes["i-1"]?.loopPhase).toBe("calling_model");
     expect(store.getState().activityBySession["i-1"]).toBe("active");
 
     onData?.({
@@ -231,7 +326,7 @@ describe("Feature: runtime store synchronization", () => {
       timestamp: Date.now(),
       type: "runtime.phase",
       sessionId: "i-1",
-      payload: { phase: "waiting_messages" },
+      payload: { phase: "waiting_commits" },
     });
     expect(store.getState().activityBySession["i-1"]).toBe("idle");
 
@@ -269,6 +364,7 @@ describe("Feature: runtime store synchronization", () => {
       createdAt: nowIso,
       updatedAt: nowIso,
       status: "running" as const,
+      storageState: "active" as const,
       sessionRoot: "/tmp/sessions/i-2",
       storeTarget: "global" as const,
     };
@@ -291,6 +387,205 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().runtimes["i-2"]).toBeDefined();
     expect(store.getState().chatsBySession["i-2"]).toEqual([]);
 
+    store.disconnect();
+  });
+
+  test("Scenario: Given high-volume loopbus traces When streaming updates Then memory keeps only LRU 100 items", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(40),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+    await store.connect();
+
+    for (let index = 0; index < 160; index += 1) {
+      const eventId = 41 + index;
+      onData?.({
+        version: 1,
+        eventId,
+        timestamp: Date.now(),
+        type: "runtime.loopbus.trace",
+        sessionId: "i-1",
+        payload: {
+          entry: {
+            id: eventId,
+            timestamp: Date.now(),
+            cycleId: index + 1,
+            seq: 1,
+            step: "call_model",
+            status: "ok",
+            startedAt: Date.now(),
+            endedAt: Date.now(),
+            detail: { inputs: 1 },
+          },
+        },
+      });
+    }
+
+    const traces = store.getState().loopbusTracesBySession["i-1"] ?? [];
+    expect(traces.length).toBe(100);
+    expect(traces[0]?.id).toBe(101);
+    expect(traces.at(-1)?.id).toBe(200);
+    store.disconnect();
+  });
+
+  test("Scenario: Given missing workspaces When cleaning them Then store refreshes workspace state", async () => {
+    let recentCalls = 0;
+    let listAllCalls = 0;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(500),
+      workspaceRecentQuery: async () => {
+        recentCalls += 1;
+        return { items: ["/repo/kept"] };
+      },
+      workspaceListAllQuery: async () => {
+        listAllCalls += 1;
+        return {
+          items: [
+            {
+              path: "/repo/kept",
+              favorite: false,
+              group: "Other",
+              missing: false,
+              counts: { all: 0, running: 0, stopped: 0, archive: 0 },
+            },
+          ],
+        };
+      },
+      workspaceCleanMissingMutate: async () => ({ removed: ["/repo/missing"] }),
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    const removed = await store.cleanMissingWorkspaces();
+
+    expect(removed).toEqual(["/repo/missing"]);
+    expect(store.getState().recentWorkspaces).toEqual(["/repo/kept"]);
+    expect(store.getState().workspaces[0]?.path).toBe("/repo/kept");
+    expect(recentCalls).toBe(2);
+    expect(listAllCalls).toBe(2);
+    store.disconnect();
+  });
+
+  test("Scenario: Given snapshot has session without runtime When runtime events arrive Then scaffold is created and loopbus state updates", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const snapshot = createSnapshot(300);
+    const client = createMockClient({
+      snapshotQuery: async () => ({
+        ...snapshot,
+        runtimes: {},
+      }),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 301,
+      timestamp: Date.now(),
+      type: "runtime.phase",
+      sessionId: "i-1",
+      payload: { phase: "collecting_inputs" },
+    });
+    onData?.({
+      version: 1,
+      eventId: 302,
+      timestamp: Date.now(),
+      type: "runtime.loopbus.trace",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 302,
+          cycleId: 1,
+          seq: 1,
+          step: "collect_inputs",
+          status: "ok",
+          startedAt: Date.now(),
+          endedAt: Date.now(),
+          detail: { inputs: 1 },
+        },
+      },
+    });
+
+    const runtime = store.getState().runtimes["i-1"];
+    expect(runtime).toBeDefined();
+    expect(runtime?.loopPhase).toBe("collecting_inputs");
+    expect(store.getState().loopbusTracesBySession["i-1"]?.length).toBe(1);
+    store.disconnect();
+  });
+
+  test("Scenario: Given optimistic chat send When a cycle update arrives Then the pending cycle is replaced by the persisted cycle", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(600),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+    await store.connect();
+
+    await store.sendChat("i-1", "hello cycle");
+    const pending = store.getState().chatCyclesBySession["i-1"] ?? [];
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.status).toBe("pending");
+
+    const clientMessageId = pending[0]?.clientMessageIds[0];
+    if (!clientMessageId) {
+      throw new Error("expected optimistic client message id");
+    }
+
+    onData?.({
+      version: 1,
+      eventId: 601,
+      timestamp: Date.now(),
+      type: "runtime.cycle.updated",
+      sessionId: "i-1",
+      payload: {
+        cycle: {
+          id: "cycle:9",
+          cycleId: 9,
+          seq: 9,
+          createdAt: Date.now(),
+          wakeSource: "user",
+          kind: "model",
+          status: "done",
+          clientMessageIds: [clientMessageId],
+          inputs: [
+            {
+              source: "message",
+              role: "user",
+              name: "User",
+              parts: [{ type: "text", text: "hello cycle" }],
+              meta: { clientMessageId },
+            },
+          ],
+          outputs: [
+            {
+              id: "reply-1",
+              role: "assistant",
+              content: "done",
+              timestamp: Date.now(),
+              channel: "to_user",
+            },
+          ],
+          liveMessages: [],
+          streaming: null,
+          modelCallId: 12,
+        },
+      },
+    });
+
+    const cycles = store.getState().chatCyclesBySession["i-1"] ?? [];
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]?.id).toBe("cycle:9");
+    expect(cycles[0]?.outputs[0]?.content).toBe("done");
     store.disconnect();
   });
 });

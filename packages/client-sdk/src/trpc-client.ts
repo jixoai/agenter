@@ -12,8 +12,19 @@ export interface AgenterClientOptions {
 
 export interface AgenterClient {
   trpc: ReturnType<typeof createTRPCProxyClient<AppRouter>>;
+  wsUrl: string;
+  httpUrl: string;
   close: () => void;
 }
+
+const toHttpUrl = (wsUrl: string): string => {
+  const url = new URL(wsUrl);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  if (url.pathname.endsWith("/trpc")) {
+    url.pathname = url.pathname.slice(0, -5) || "/";
+  }
+  return url.toString().replace(/\/$/, "");
+};
 
 export const createAgenterClient = (options: AgenterClientOptions): AgenterClient => {
   const wsClient = createWSClient({
@@ -40,6 +51,8 @@ export const createAgenterClient = (options: AgenterClientOptions): AgenterClien
 
   return {
     trpc,
+    wsUrl: options.wsUrl,
+    httpUrl: toHttpUrl(options.wsUrl),
     close: () => {
       wsClient.close();
     },

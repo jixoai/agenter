@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
+import { Readable } from "node:stream";
 
 import { AppKernel, appRouter, createTrpcContext } from "@agenter/app-server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
@@ -38,7 +39,47 @@ export interface TrpcServerHandle {
 const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, unknown>): void => {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
-  res.end(`${JSON.stringify(body)}\n`);
+  res.end(`${JSON.stringify(body)}
+`);
+};
+
+const setCors = (res: ServerResponse): void => {
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type");
+};
+
+type RequestInitWithDuplex = RequestInit & { duplex: "half" };
+
+const toWebRequest = (req: IncomingMessage, origin: string): Request => {
+  const url = new URL(req.url ?? "/", origin);
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        headers.append(key, item);
+      }
+      continue;
+    }
+    headers.set(key, value);
+  }
+  const init: RequestInitWithDuplex = {
+    method: req.method,
+    headers,
+    duplex: "half",
+  };
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    init.body = Readable.toWeb(req) as ReadableStream;
+  }
+  return new Request(url, init);
+};
+
+const decodePathMatch = (pathname: string, pattern: RegExp): string[] | null => {
+  const match = pathname.match(pattern);
+  return match ? match.slice(1).map((value) => decodeURIComponent(value)) : null;
 };
 
 const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: string): void => {
@@ -83,14 +124,75 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   });
 
   const server = createServer((req, res) => {
-    const url = req.url ? new URL(req.url, `http://${options.host}:${options.port}`) : null;
+    const origin = `http://${options.host}:${options.port}`;
+    const url = req.url ? new URL(req.url, origin) : null;
     const pathname = url?.pathname ?? "/";
+
+    if (req.method === "OPTIONS") {
+      setCors(res);
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
 
     if (pathname === "/health") {
       sendJson(res, 200, {
         ok: true,
         port: (server.address() as { port?: number } | null)?.port ?? options.port,
       });
+      return;
+    }
+
+    const uploadMatch = decodePathMatch(pathname, /^\/api\/sessions\/([^/]+)\/images$/);
+    if (req.method === "POST" && uploadMatch) {
+      setCors(res);
+      const [sessionId] = uploadMatch;
+      void (async () => {
+        try {
+          const request = toWebRequest(req, origin);
+          const form = await request.formData();
+          const files = [...form.values()].filter((value): value is File => value instanceof File);
+          if (files.length === 0) {
+            sendJson(res, 400, { ok: false, error: "image file is required" });
+            return;
+          }
+          const uploads: Array<{ name: string; mimeType: string; bytes: Uint8Array }> = [];
+          for (const file of files) {
+            if (!file.type.toLowerCase().startsWith("image/")) {
+              sendJson(res, 400, { ok: false, error: `unsupported media type: ${file.type || file.name}` });
+              return;
+            }
+            uploads.push({
+              name: file.name || "image",
+              mimeType: file.type,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+            });
+          }
+          const items = await kernel.uploadSessionImages(sessionId, uploads);
+          sendJson(res, 200, { ok: true, items });
+        } catch (error) {
+          sendJson(res, 500, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return;
+    }
+
+    const mediaMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/images\/([^/]+)$/);
+    if (req.method === "GET" && mediaMatch) {
+      setCors(res);
+      const [sessionId, assetId] = mediaMatch;
+      const media = kernel.getSessionImage(sessionId, assetId);
+      if (!media) {
+        sendJson(res, 404, { ok: false, error: "image not found" });
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader("content-type", media.mimeType);
+      res.setHeader("content-length", String(media.sizeBytes));
+      createReadStream(media.filePath).pipe(res);
       return;
     }
 
