@@ -1,39 +1,44 @@
 import {
   createAgenterClient,
   createRuntimeStore,
+  type DraftResolutionOutput,
+  type ModelDebugOutput,
   type RuntimeClientState,
   type SessionEntry,
+  type WorkspaceEntry,
+  type WorkspaceSessionCounts,
+  type WorkspaceSessionEntry,
+  type WorkspaceSessionTab,
 } from "@agenter/client-sdk";
-import {
-  Activity,
-  ArrowLeft,
-  FolderOpen,
-  FolderTree,
-  List,
-  MessageCircle,
-  PanelLeftOpen,
-  Play,
-  Plus,
-  Settings2,
-  Square,
-  TerminalSquare,
-  Trash2,
-  X,
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FolderTree, MessageSquare, Settings2, Sparkles, TerminalSquare } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
+import {
+  InlineAffordanceLabel,
+  InlineAffordanceLeadingVisual,
+  inlineAffordanceClassName,
+} from "./components/ui/inline-affordance";
+import { Sheet } from "./components/ui/sheet";
 import { Tabs, type TabItem } from "./components/ui/tabs";
-import { Textarea } from "./components/ui/textarea";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { ChatPanel } from "./features/chat/ChatPanel";
+import { LoopBusPanel } from "./features/loopbus/LoopBusPanel";
+import { ModelPanel } from "./features/model/ModelPanel";
 import { ProcessPanel } from "./features/process/ProcessPanel";
+import { QuickStartView } from "./features/quickstart/QuickStartView";
 import { CreateSessionDialog } from "./features/sessions/CreateSessionDialog";
-import { SessionsPanel } from "./features/sessions/SessionsPanel";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
 import { SettingsPanel, type SettingsLayerItem } from "./features/settings/SettingsPanel";
+import { MasterDetailPage } from "./features/shell/master-detail-page";
+import { SidebarNav, type NavItem } from "./features/shell/SidebarNav";
+import { StatusBar } from "./features/shell/StatusBar";
+import { TopToolbar } from "./features/shell/TopToolbar";
 import { TasksPanel } from "./features/tasks/TasksPanel";
 import { TerminalPanel } from "./features/terminal/TerminalPanel";
+import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
+import { WorkspaceSessionsPanel } from "./features/workspaces/WorkspaceSessionsPanel";
+import { WorkspacesPanel } from "./features/workspaces/WorkspacesPanel";
 import { defaultWsUrl } from "./shared/ws-url";
 
 const initialState: RuntimeClientState = {
@@ -44,27 +49,106 @@ const initialState: RuntimeClientState = {
   activityBySession: {},
   terminalSnapshotsBySession: {},
   chatsBySession: {},
+  chatCyclesBySession: {},
   tasksBySession: {},
   recentWorkspaces: [],
+  workspaces: [],
+  loopbusStateLogsBySession: {},
+  loopbusTracesBySession: {},
+  apiCallsBySession: {},
+  modelCallsBySession: {},
+  apiCallRecordingBySession: {},
 };
 
 interface AppProps {
   wsUrl?: string;
 }
 
-type MainView = "chat" | "sessions" | "workspaces" | "settings";
-type DetailsTab = "terminal" | "tasks" | "process";
+type MainView = "quickstart" | "chat" | "workspaces" | "settings";
+type DetailsTab = "terminal" | "tasks" | "process" | "loopbus" | "model";
 type PickerTarget = "create" | "quickstart";
+
+const EMPTY_WORKSPACE_SESSION_COUNTS: WorkspaceSessionCounts = {
+  all: 0,
+  running: 0,
+  stopped: 0,
+  archive: 0,
+};
 
 const DETAIL_TABS: TabItem[] = [
   { id: "terminal", label: "Terminal" },
   { id: "tasks", label: "Tasks" },
   { id: "process", label: "Process" },
+  { id: "loopbus", label: "LoopBus" },
+  { id: "model", label: "Model" },
 ];
+
+const CHAT_DEVTOOLS_SPLIT_STORAGE_KEY = "agenter:webui:chat-devtools-split-percent";
+const WORKSPACES_SESSIONS_SPLIT_STORAGE_KEY = "agenter:webui:workspaces-sessions-split-percent";
+
+const workspaceSessionCountsEqual = (left: WorkspaceSessionCounts, right: WorkspaceSessionCounts): boolean => {
+  return (
+    left.all === right.all &&
+    left.running === right.running &&
+    left.stopped === right.stopped &&
+    left.archive === right.archive
+  );
+};
+
+const workspaceSessionEntryEquals = (left: WorkspaceSessionEntry, right: WorkspaceSessionEntry): boolean => {
+  return (
+    left.sessionId === right.sessionId &&
+    left.name === right.name &&
+    left.status === right.status &&
+    left.storageState === right.storageState &&
+    left.favorite === right.favorite &&
+    left.createdAt === right.createdAt &&
+    left.updatedAt === right.updatedAt &&
+    left.archivedAt === right.archivedAt &&
+    workspaceSessionPreviewEquals(left.preview, right.preview)
+  );
+};
+
+const workspaceSessionListEquals = (left: WorkspaceSessionEntry[], right: WorkspaceSessionEntry[]): boolean => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) => workspaceSessionEntryEquals(entry, right[index]!));
+};
 
 const phaseToStatus = (session: SessionEntry | null, runtime?: RuntimeClientState["runtimes"][string]): string => {
   if (!session) {
     return "idle";
+  }
+  if (runtime?.started) {
+    if (runtime.loopPhase === "waiting_commits") {
+      return "idle";
+    }
+    if (runtime.loopPhase === "calling_model") {
+      return "waiting model";
+    }
+    if (runtime.loopPhase === "applying_outputs") {
+      return "applying outputs";
+    }
+    if (runtime.loopPhase === "collecting_inputs") {
+      return "syncing";
+    }
+    if (runtime.loopPhase === "persisting_cycle") {
+      return "recording cycle";
+    }
+    if (runtime.stage === "observe") {
+      return "waiting terminal";
+    }
+    if (runtime.stage === "plan" || runtime.stage === "decide") {
+      return "thinking";
+    }
+    if (runtime.stage === "act") {
+      return "executing";
+    }
+    if (runtime.stage === "done") {
+      return "done";
+    }
+    return "active";
   }
   if (session.status === "error") {
     return "error";
@@ -78,50 +162,52 @@ const phaseToStatus = (session: SessionEntry | null, runtime?: RuntimeClientStat
   if (!runtime) {
     return "syncing";
   }
-  if (runtime.loopPhase === "waiting_processor_response") {
-    return "waiting model";
-  }
-  if (runtime.loopPhase === "dispatching_tools") {
-    return "tool calling";
-  }
-  if (runtime.loopPhase === "dispatching_terminal") {
-    return "writing terminal";
-  }
-  if (runtime.loopPhase === "collecting_inputs" || runtime.loopPhase === "processing_messages") {
-    return "syncing";
-  }
-  if (runtime.stage === "observe") {
-    return "waiting terminal";
-  }
-  if (runtime.stage === "plan" || runtime.stage === "decide") {
-    return "thinking";
-  }
-  if (runtime.stage === "act") {
-    return "executing";
-  }
-  if (runtime.stage === "done") {
-    return "done";
-  }
   return "idle";
 };
 
+const sessionShortcutHue = (input: string): number => {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 33 + input.charCodeAt(index)) % 360;
+  }
+  return (hash + 360) % 360;
+};
+
+const sessionShortcutLabel = (path: string, fallback = "S"): string => {
+  const segments = path.split(/[\/]+/).filter((segment) => segment.length > 0);
+  return (segments.at(-1)?.slice(0, 1) ?? fallback).toUpperCase();
+};
+
+const compactViewportQuery = "(max-width: 1279px)";
 export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [runtimeState, setRuntimeState] = useState<RuntimeClientState>(initialState);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [mainView, setMainView] = useState<MainView>("chat");
+  const [mainView, setMainView] = useState<MainView>("quickstart");
   const [detailsTab, setDetailsTab] = useState<DetailsTab>("terminal");
   const [desktopDetailsOpen, setDesktopDetailsOpen] = useState(true);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
+  const [selectedWorkspaceSessionId, setSelectedWorkspaceSessionId] = useState<string | null>(null);
+  const [mobileWorkspaceDetailsOpen, setMobileWorkspaceDetailsOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspacePickerTarget, setWorkspacePickerTarget] = useState<PickerTarget>("create");
-  const [showAllSessions, setShowAllSessions] = useState(false);
   const [createWorkspacePath, setCreateWorkspacePath] = useState(".");
   const [quickstartWorkspacePath, setQuickstartWorkspacePath] = useState(".");
-  const [quickstartInput, setQuickstartInput] = useState("");
-  const [chatInput, setChatInput] = useState("");
+  const [quickstartDraft, setQuickstartDraft] = useState<DraftResolutionOutput | null>(null);
+  const [quickstartDraftLoading, setQuickstartDraftLoading] = useState(false);
+  const [quickstartRecentSessions, setQuickstartRecentSessions] = useState<WorkspaceSessionEntry[]>([]);
+  const [quickstartBusy, setQuickstartBusy] = useState(false);
+  const [openedSessionIds, setOpenedSessionIds] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  const [workspaceSessionsTab, setWorkspaceSessionsTab] = useState<WorkspaceSessionTab>("all");
+  const [workspaceSessions, setWorkspaceSessions] = useState<WorkspaceSessionEntry[]>([]);
+  const [workspaceSessionCounts, setWorkspaceSessionCounts] =
+    useState<WorkspaceSessionCounts>(EMPTY_WORKSPACE_SESSION_COUNTS);
+  const [workspaceSessionCursor, setWorkspaceSessionCursor] = useState<number | null>(null);
+  const [workspaceSessionsLoading, setWorkspaceSessionsLoading] = useState(false);
+  const [workspaceSessionsLoadingMore, setWorkspaceSessionsLoadingMore] = useState(false);
 
   const [settingsLayers, setSettingsLayers] = useState<SettingsLayerItem[]>([]);
   const [settingsEffective, setSettingsEffective] = useState("{}");
@@ -129,11 +215,41 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [layerDraft, setLayerDraft] = useState("");
   const [layerMtimeMs, setLayerMtimeMs] = useState(0);
   const [settingsStatus, setSettingsStatus] = useState("idle");
+  const [tracePaging, setTracePaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
+  const [modelPaging, setModelPaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
+  const [chatPaging, setChatPaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
+  const [modelDebug, setModelDebug] = useState<ModelDebugOutput | null>(null);
+  const [modelDebugLoading, setModelDebugLoading] = useState(false);
+  const [modelDebugError, setModelDebugError] = useState<string | null>(null);
 
   const pendingActiveSessionIdRef = useRef<string | null>(null);
+  const workspaceSessionsRequestRef = useRef(0);
+  const modelDebugRequestRef = useRef(0);
+  const workspaceSelectionRef = useRef<{ path: string | null; tab: WorkspaceSessionTab } | null>(null);
 
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
   const store = useMemo(() => createRuntimeStore(client), [client]);
+
+  const rememberOpenedSession = useCallback((sessionId: string) => {
+    setOpenedSessionIds((current) => [sessionId, ...current.filter((item) => item !== sessionId)].slice(0, 8));
+  }, []);
+
+  const loadQuickstartRecentSessions = useCallback(
+    async (workspacePath: string) => {
+      const output = await store.listWorkspaceSessions({
+        path: workspacePath,
+        tab: "all",
+        limit: 3,
+      });
+      setQuickstartRecentSessions(output.items.slice(0, 3));
+    },
+    [store],
+  );
+
+  const searchWorkspacePaths = useCallback(
+    async (input: { cwd: string; query: string; limit?: number }) => await store.searchWorkspacePaths(input),
+    [store],
+  );
 
   useEffect(() => {
     const unsubscribe = store.subscribe((state) => {
@@ -168,6 +284,71 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   }, [store]);
 
   useEffect(() => {
+    setOpenedSessionIds((current) =>
+      current.filter((sessionId) => runtimeState.sessions.some((session) => session.id === sessionId)),
+    );
+  }, [runtimeState.sessions]);
+
+  useEffect(() => {
+    if (!activeSessionId && mainView === "chat") {
+      setMainView("quickstart");
+    }
+  }, [activeSessionId, mainView]);
+
+  useEffect(() => {
+    if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
+      setQuickstartDraft(null);
+      setQuickstartRecentSessions([]);
+      return;
+    }
+
+    let cancelled = false;
+    setQuickstartDraftLoading(true);
+
+    void Promise.all([
+      store.resolveDraft({ cwd: quickstartWorkspacePath }).catch((error) => {
+        if (!cancelled) {
+          setQuickstartDraft(null);
+          setNotice(error instanceof Error ? error.message : String(error));
+        }
+        return null;
+      }),
+      store
+        .listWorkspaceSessions({
+          path: quickstartWorkspacePath,
+          tab: "all",
+          limit: 3,
+        })
+        .then((output) => output.items.slice(0, 3))
+        .catch(() => [] as WorkspaceSessionEntry[]),
+    ]).then(([draft, recent]) => {
+      if (cancelled) {
+        return;
+      }
+      setQuickstartDraft(draft);
+      setQuickstartRecentSessions(recent);
+      setQuickstartDraftLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [quickstartWorkspacePath, store]);
+
+  useEffect(() => {
+    if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
+      return;
+    }
+    const relevantChanged = runtimeState.sessions.some((session) => session.cwd === quickstartWorkspacePath);
+    if (!relevantChanged) {
+      return;
+    }
+    void loadQuickstartRecentSessions(quickstartWorkspacePath).catch(() => {
+      // quick start keeps stale session cards until the next successful refresh
+    });
+  }, [loadQuickstartRecentSessions, quickstartWorkspacePath, runtimeState.sessions]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) {
         return;
@@ -188,16 +369,39 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     return runtimeState.sessions.find((item) => item.id === activeSessionId) ?? null;
   }, [activeSessionId, runtimeState.sessions]);
 
-  const visibleSessions = useMemo(() => {
-    const ordered = [...runtimeState.sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return showAllSessions ? ordered : ordered.slice(0, 8);
-  }, [runtimeState.sessions, showAllSessions]);
+  const selectedWorkspace = useMemo<WorkspaceEntry | null>(() => {
+    if (!selectedWorkspacePath) {
+      return null;
+    }
+    return runtimeState.workspaces.find((item) => item.path === selectedWorkspacePath) ?? null;
+  }, [runtimeState.workspaces, selectedWorkspacePath]);
+
+  const selectedWorkspaceSessionSignature = useMemo(() => {
+    if (!selectedWorkspacePath) {
+      return "";
+    }
+    return runtimeState.sessions
+      .filter((item) => item.cwd === selectedWorkspacePath)
+      .map((item) => `${item.id}:${item.status}:${item.storageState}`)
+      .sort()
+      .join("|");
+  }, [runtimeState.sessions, selectedWorkspacePath]);
 
   const messages = activeSessionId ? (runtimeState.chatsBySession[activeSessionId] ?? []) : [];
+  const cycles = activeSessionId ? (runtimeState.chatCyclesBySession[activeSessionId] ?? []) : [];
   const tasks = activeSessionId ? (runtimeState.tasksBySession[activeSessionId] ?? []) : [];
   const activeRuntime = activeSessionId ? runtimeState.runtimes[activeSessionId] : undefined;
   const terminalSnapshots = activeSessionId ? runtimeState.terminalSnapshotsBySession[activeSessionId] : undefined;
   const aiStatus = phaseToStatus(activeSession, activeRuntime);
+  const loopbusStateLogs = activeSessionId ? (runtimeState.loopbusStateLogsBySession[activeSessionId] ?? []) : [];
+  const loopbusTraces = activeSessionId ? (runtimeState.loopbusTracesBySession[activeSessionId] ?? []) : [];
+  const modelCalls = activeSessionId ? (runtimeState.modelCallsBySession[activeSessionId] ?? []) : [];
+  const apiCalls = activeSessionId ? (runtimeState.apiCallsBySession[activeSessionId] ?? []) : [];
+  const latestModelCallId = modelCalls.at(-1)?.id ?? 0;
+  const latestApiCallId = apiCalls.at(-1)?.id ?? 0;
+  const apiCallRecording = activeSessionId
+    ? (runtimeState.apiCallRecordingBySession[activeSessionId] ?? { enabled: false, refCount: 0 })
+    : { enabled: false, refCount: 0 };
   const noTerminalHint =
     activeSessionId && activeRuntime && activeRuntime.terminals.length === 0
       ? "No terminal is configured or running for this session. Configure boot terminals in settings or start one manually."
@@ -275,13 +479,193 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     void refreshSettingsLayers();
   }, [mainView, activeSessionId]);
 
+  useEffect(() => {
+    if (!activeSessionId || (detailsTab !== "loopbus" && detailsTab !== "model")) {
+      return;
+    }
+    const release = store.retainApiCallStream(activeSessionId);
+    return () => release();
+  }, [activeSessionId, detailsTab, store]);
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      setModelDebug(null);
+      setModelDebugError(null);
+      setModelDebugLoading(false);
+      return;
+    }
+    void store.loadChatMessages(activeSessionId, 200);
+    void store.loadChatCycles(activeSessionId, 120);
+  }, [activeSessionId, store]);
+
+  useEffect(() => {
+    if (!activeSessionId || detailsTab !== "model") {
+      return;
+    }
+    void refreshModelDebug(activeSessionId);
+  }, [activeSessionId, detailsTab, latestApiCallId, latestModelCallId]);
+
+  const resetWorkspaceSessionsState = useCallback(() => {
+    setWorkspaceSessions([]);
+    setWorkspaceSessionCounts(EMPTY_WORKSPACE_SESSION_COUNTS);
+    setWorkspaceSessionCursor(null);
+  }, []);
+
+  const reloadWorkspaceSessions = useCallback(
+    async (input?: { cursor?: number; append?: boolean; path?: string; tab?: WorkspaceSessionTab }) => {
+      const path = input?.path ?? selectedWorkspacePath;
+      const tab = input?.tab ?? workspaceSessionsTab;
+      if (!path) {
+        resetWorkspaceSessionsState();
+        return;
+      }
+
+      const requestId = ++workspaceSessionsRequestRef.current;
+      const append = input?.append ?? false;
+      const cursor = input?.cursor ?? 0;
+
+      if (append) {
+        setWorkspaceSessionsLoadingMore(true);
+      } else {
+        setWorkspaceSessionsLoading(true);
+      }
+
+      try {
+        const output = await store.listWorkspaceSessions({ path, tab, cursor, limit: 50 });
+        if (requestId !== workspaceSessionsRequestRef.current) {
+          return;
+        }
+        setWorkspaceSessions((prev) => {
+          if (!append) {
+            return workspaceSessionListEquals(prev, output.items) ? prev : output.items;
+          }
+          const known = new Set(prev.map((item) => item.sessionId));
+          const next = [...prev, ...output.items.filter((item) => !known.has(item.sessionId))];
+          return workspaceSessionListEquals(prev, next) ? prev : next;
+        });
+        setWorkspaceSessionCounts((prev) => (workspaceSessionCountsEqual(prev, output.counts) ? prev : output.counts));
+        setWorkspaceSessionCursor((prev) => (prev === output.nextCursor ? prev : output.nextCursor));
+      } catch (error) {
+        if (requestId === workspaceSessionsRequestRef.current) {
+          setError(error);
+        }
+      } finally {
+        if (requestId === workspaceSessionsRequestRef.current) {
+          setWorkspaceSessionsLoading(false);
+          setWorkspaceSessionsLoadingMore(false);
+        }
+      }
+    },
+    [resetWorkspaceSessionsState, selectedWorkspacePath, store, workspaceSessionsTab],
+  );
+
+  useEffect(() => {
+    if (selectedWorkspacePath && !runtimeState.workspaces.some((item) => item.path === selectedWorkspacePath)) {
+      setSelectedWorkspacePath(null);
+      setSelectedWorkspaceSessionId(null);
+      setMobileWorkspaceDetailsOpen(false);
+      resetWorkspaceSessionsState();
+    }
+  }, [resetWorkspaceSessionsState, runtimeState.workspaces, selectedWorkspacePath]);
+
+  useEffect(() => {
+    const previous = workspaceSelectionRef.current;
+    const selectionChanged = previous?.path !== selectedWorkspacePath || previous?.tab !== workspaceSessionsTab;
+    workspaceSelectionRef.current = { path: selectedWorkspacePath, tab: workspaceSessionsTab };
+    if (selectionChanged) {
+      setSelectedWorkspaceSessionId(null);
+    }
+    if (!selectedWorkspacePath) {
+      resetWorkspaceSessionsState();
+      return;
+    }
+    void reloadWorkspaceSessions({ append: false, cursor: 0, path: selectedWorkspacePath, tab: workspaceSessionsTab });
+  }, [
+    reloadWorkspaceSessions,
+    resetWorkspaceSessionsState,
+    selectedWorkspacePath,
+    selectedWorkspaceSessionSignature,
+    workspaceSessionsTab,
+  ]);
+
+  useEffect(() => {
+    if (!selectedWorkspace) {
+      return;
+    }
+    setWorkspaceSessionCounts((prev) =>
+      workspaceSessionCountsEqual(prev, selectedWorkspace.counts) ? prev : selectedWorkspace.counts,
+    );
+  }, [selectedWorkspace]);
+
+  useEffect(() => {
+    if (workspaceSessions.length === 0) {
+      return;
+    }
+    setWorkspaceSessions((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const messages = runtimeState.chatsBySession[item.sessionId] ?? [];
+        if (messages.length === 0) {
+          return item;
+        }
+        const preview = deriveWorkspaceSessionPreview(messages);
+        if (workspaceSessionPreviewEquals(item.preview, preview)) {
+          return item;
+        }
+        changed = true;
+        return { ...item, preview };
+      });
+      return changed ? next : prev;
+    });
+  }, [runtimeState.lastEventId, runtimeState.chatsBySession, workspaceSessions.length]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceSessionId) {
+      if (activeSessionId && workspaceSessions.some((item) => item.sessionId === activeSessionId)) {
+        setSelectedWorkspaceSessionId(activeSessionId);
+      }
+      return;
+    }
+    if (!workspaceSessions.some((item) => item.sessionId === selectedWorkspaceSessionId)) {
+      setSelectedWorkspaceSessionId(null);
+    }
+  }, [activeSessionId, selectedWorkspaceSessionId, workspaceSessions]);
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    setChatPaging((prev) => {
+      if (prev[activeSessionId]) {
+        return prev;
+      }
+      return { ...prev, [activeSessionId]: { hasMore: true, loading: false } };
+    });
+    setTracePaging((prev) => {
+      if (prev[activeSessionId]) {
+        return prev;
+      }
+      return { ...prev, [activeSessionId]: { hasMore: true, loading: false } };
+    });
+    setModelPaging((prev) => {
+      if (prev[activeSessionId]) {
+        return prev;
+      }
+      return { ...prev, [activeSessionId]: { hasMore: true, loading: false } };
+    });
+  }, [activeSessionId]);
+
   const handleCreateSession = async (input: { cwd: string; name?: string }) => {
     try {
       const session = await store.createSession({ cwd: input.cwd, name: input.name, autoStart: true });
       pendingActiveSessionIdRef.current = session.id;
       setActiveSessionId(session.id);
+      setSelectedWorkspacePath(input.cwd);
+      setSelectedWorkspaceSessionId(session.id);
       setMainView("chat");
+      rememberOpenedSession(session.id);
       await store.listRecentWorkspaces(8);
+      await store.listAllWorkspaces();
       setNotice("");
     } catch (error) {
       setError(error);
@@ -318,32 +702,152 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }
     try {
       await store.deleteSession(activeSessionId);
+      await store.listAllWorkspaces();
       setNotice("");
     } catch (error) {
       setError(error);
     }
   };
 
-  const handleSend = async () => {
-    if (!activeSessionId || chatInput.trim().length === 0) {
+  const sendSessionChatPayload = async (
+    sessionId: string,
+    payload: { text: string; images: File[] },
+  ): Promise<void> => {
+    const uploaded = payload.images.length > 0 ? await store.uploadSessionImages(sessionId, payload.images) : [];
+    await store.sendChat(
+      sessionId,
+      payload.text,
+      uploaded.map((item) => item.assetId),
+      uploaded,
+    );
+    setNotice("");
+  };
+
+  const handleChatSubmit = async (payload: { text: string; images: File[] }) => {
+    if (!activeSessionId) {
       return;
     }
-    const text = chatInput.trim();
-    setChatInput("");
     try {
-      await store.sendChat(activeSessionId, text);
+      await sendSessionChatPayload(activeSessionId, payload);
+    } catch (error) {
+      setError(error);
+      throw error;
+    }
+  };
+
+  const handleLoadMoreTrace = async () => {
+    if (!activeSessionId) {
+      return;
+    }
+    const current = tracePaging[activeSessionId] ?? { hasMore: true, loading: false };
+    if (current.loading || !current.hasMore) {
+      return;
+    }
+    setTracePaging((prev) => ({
+      ...prev,
+      [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: true },
+    }));
+    try {
+      const output = await store.loadMoreLoopbusTimeline(activeSessionId, 120);
+      setTracePaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { hasMore: output.hasMore, loading: false },
+      }));
       setNotice("");
     } catch (error) {
-      setChatInput(text);
+      setTracePaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: false },
+      }));
       setError(error);
     }
   };
 
-  const handleQuickstart = async () => {
-    const text = quickstartInput.trim();
-    if (text.length === 0) {
+  const handleLoadMoreChatCycles = async () => {
+    if (!activeSessionId) {
       return;
     }
+    const current = chatPaging[activeSessionId] ?? { hasMore: true, loading: false };
+    if (current.loading || !current.hasMore) {
+      return;
+    }
+    setChatPaging((prev) => ({
+      ...prev,
+      [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: true },
+    }));
+    try {
+      const output = await store.loadMoreChatCyclesBefore(activeSessionId, 80);
+      setChatPaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { hasMore: output.hasMore, loading: false },
+      }));
+      setNotice("");
+    } catch (error) {
+      setChatPaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: false },
+      }));
+      setError(error);
+    }
+  };
+
+  const handleLoadMoreModel = async () => {
+    if (!activeSessionId) {
+      return;
+    }
+    const current = modelPaging[activeSessionId] ?? { hasMore: true, loading: false };
+    if (current.loading || !current.hasMore) {
+      return;
+    }
+    setModelPaging((prev) => ({
+      ...prev,
+      [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: true },
+    }));
+    try {
+      const output = await store.loadMoreModelCalls(activeSessionId, 120);
+      setModelPaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { hasMore: output.hasMore, loading: false },
+      }));
+      setNotice("");
+    } catch (error) {
+      setModelPaging((prev) => ({
+        ...prev,
+        [activeSessionId]: { ...(prev[activeSessionId] ?? { hasMore: true, loading: false }), loading: false },
+      }));
+      setError(error);
+    }
+  };
+
+  const refreshModelDebug = async (sessionId = activeSessionId) => {
+    if (!sessionId) {
+      setModelDebug(null);
+      setModelDebugError(null);
+      return;
+    }
+    const requestId = ++modelDebugRequestRef.current;
+    setModelDebugLoading(true);
+    setModelDebugError(null);
+    try {
+      const output = await store.inspectModelDebug(sessionId);
+      if (requestId !== modelDebugRequestRef.current) {
+        return;
+      }
+      setModelDebug(output);
+    } catch (error) {
+      if (requestId !== modelDebugRequestRef.current) {
+        return;
+      }
+      setModelDebugError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId === modelDebugRequestRef.current) {
+        setModelDebugLoading(false);
+      }
+    }
+  };
+
+  const handleQuickstartSubmit = async (payload: { text: string; images: File[] }) => {
+    setQuickstartBusy(true);
     try {
       const session = await store.createSession({
         cwd: quickstartWorkspacePath,
@@ -351,26 +855,40 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       });
       pendingActiveSessionIdRef.current = session.id;
       setActiveSessionId(session.id);
+      setSelectedWorkspacePath(quickstartWorkspacePath);
+      setSelectedWorkspaceSessionId(session.id);
       setMainView("chat");
-      await store.sendChat(session.id, text);
-      setQuickstartInput("");
+      rememberOpenedSession(session.id);
+      await sendSessionChatPayload(session.id, payload);
       await store.listRecentWorkspaces(8);
-      setNotice("");
+      await store.listAllWorkspaces();
+      await loadQuickstartRecentSessions(quickstartWorkspacePath);
     } catch (error) {
       setError(error);
+      throw error;
+    } finally {
+      setQuickstartBusy(false);
     }
   };
 
   const handleEnterWorkspace = async () => {
+    setQuickstartBusy(true);
     try {
       const session = await store.createSession({ cwd: quickstartWorkspacePath, autoStart: true });
       pendingActiveSessionIdRef.current = session.id;
       setActiveSessionId(session.id);
+      setSelectedWorkspacePath(quickstartWorkspacePath);
+      setSelectedWorkspaceSessionId(session.id);
       setMainView("chat");
+      rememberOpenedSession(session.id);
       await store.listRecentWorkspaces(8);
+      await store.listAllWorkspaces();
+      await loadQuickstartRecentSessions(quickstartWorkspacePath);
       setNotice("");
     } catch (error) {
       setError(error);
+    } finally {
+      setQuickstartBusy(false);
     }
   };
 
@@ -379,9 +897,172 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       const session = await store.createSession({ cwd: workspacePath, autoStart: true });
       pendingActiveSessionIdRef.current = session.id;
       setActiveSessionId(session.id);
+      setSelectedWorkspacePath(workspacePath);
+      setSelectedWorkspaceSessionId(session.id);
       setMainView("chat");
       setQuickstartWorkspacePath(workspacePath);
+      rememberOpenedSession(session.id);
       await store.listRecentWorkspaces(8);
+      await store.listAllWorkspaces();
+      await loadQuickstartRecentSessions(workspacePath);
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleResumeSession = async (sessionId: string, workspacePath?: string) => {
+    try {
+      await store.startSession(sessionId);
+      setActiveSessionId(sessionId);
+      setSelectedWorkspaceSessionId(sessionId);
+      if (workspacePath) {
+        setSelectedWorkspacePath(workspacePath);
+        setQuickstartWorkspacePath(workspacePath);
+      }
+      setMainView("chat");
+      setMobileWorkspaceDetailsOpen(false);
+      rememberOpenedSession(sessionId);
+      await store.loadChatMessages(sessionId, 200);
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleSelectWorkspace = (workspacePath: string | null) => {
+    const nextPath = workspacePath === selectedWorkspacePath ? null : workspacePath;
+    setSelectedWorkspacePath(nextPath);
+    if (!nextPath) {
+      setSelectedWorkspaceSessionId(null);
+      setMobileWorkspaceDetailsOpen(false);
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(compactViewportQuery).matches
+    ) {
+      setMobileWorkspaceDetailsOpen(true);
+    }
+  };
+
+  const handleActivateWorkspace = (workspacePath: string) => {
+    setSelectedWorkspacePath(workspacePath);
+    setQuickstartWorkspacePath(workspacePath);
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(compactViewportQuery).matches
+    ) {
+      setMobileWorkspaceDetailsOpen(true);
+    }
+  };
+
+  const handleToggleWorkspaceFavorite = async (workspacePath: string) => {
+    try {
+      await store.toggleWorkspaceFavorite(workspacePath);
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleDeleteWorkspace = async (workspacePath: string) => {
+    try {
+      await store.removeWorkspace(workspacePath);
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleCleanMissingWorkspaces = async () => {
+    try {
+      const removed = await store.cleanMissingWorkspaces();
+      if (removed.length === 0) {
+        setNotice("No missing workspaces found.");
+        return;
+      }
+      if (selectedWorkspacePath && removed.includes(selectedWorkspacePath)) {
+        setSelectedWorkspacePath(null);
+        setSelectedWorkspaceSessionId(null);
+        setMobileWorkspaceDetailsOpen(false);
+      }
+      setNotice(`Removed ${removed.length} missing workspace${removed.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleLoadMoreWorkspaceSessions = async () => {
+    if (
+      !selectedWorkspacePath ||
+      workspaceSessionsLoading ||
+      workspaceSessionsLoadingMore ||
+      workspaceSessionCursor === null
+    ) {
+      return;
+    }
+    await reloadWorkspaceSessions({ append: true, cursor: workspaceSessionCursor, path: selectedWorkspacePath });
+  };
+
+  const handleToggleSessionFavorite = async (sessionId: string) => {
+    try {
+      await store.toggleSessionFavorite(sessionId);
+      await reloadWorkspaceSessions({ append: false, cursor: 0 });
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleStopWorkspaceSession = async (sessionId: string) => {
+    try {
+      await store.stopSession(sessionId);
+      await reloadWorkspaceSessions({ append: false, cursor: 0 });
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleArchiveWorkspaceSession = async (sessionId: string) => {
+    try {
+      await store.archiveSession(sessionId);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+      }
+      if (selectedWorkspaceSessionId === sessionId) {
+        setSelectedWorkspaceSessionId(null);
+      }
+      await reloadWorkspaceSessions({ append: false, cursor: 0 });
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleRestoreWorkspaceSession = async (sessionId: string) => {
+    try {
+      await store.restoreSession(sessionId);
+      await reloadWorkspaceSessions({ append: false, cursor: 0 });
+      setNotice("");
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const handleDeleteWorkspaceSession = async (sessionId: string) => {
+    try {
+      await store.deleteSession(sessionId);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+      }
+      if (selectedWorkspaceSessionId === sessionId) {
+        setSelectedWorkspaceSessionId(null);
+      }
+      await reloadWorkspaceSessions({ append: false, cursor: 0 });
       setNotice("");
     } catch (error) {
       setError(error);
@@ -395,61 +1076,114 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     if (detailsTab === "tasks") {
       return <TasksPanel tasks={tasks} compact />;
     }
-    return <ProcessPanel messages={messages} />;
-  };
-
-  const renderMainView = () => {
-    if (mainView === "sessions") {
+    if (detailsTab === "process") {
+      return <ProcessPanel messages={messages} />;
+    }
+    if (detailsTab === "model") {
       return (
-        <SessionsPanel
-          sessions={visibleSessions}
-          activeSessionId={activeSessionId}
-          showAll={showAllSessions}
-          onToggleShowAll={() => setShowAllSessions((prev) => !prev)}
-          onSelect={(sessionId) => {
-            setActiveSessionId(sessionId);
-            setMainView("chat");
-          }}
-          onCreate={() => setCreateDialogOpen(true)}
-          onStart={() => {
-            void handleStart();
-          }}
-          onStop={() => {
-            void handleStop();
-          }}
-          onDelete={() => {
-            void handleDelete();
+        <ModelPanel
+          debug={modelDebug}
+          loading={modelDebugLoading}
+          error={modelDebugError}
+          onRefresh={() => {
+            void refreshModelDebug();
           }}
         />
       );
     }
+    return (
+      <LoopBusPanel
+        stage={activeRuntime?.stage ?? "idle"}
+        kernel={activeRuntime?.loopKernelState ?? null}
+        inputSignals={
+          activeRuntime?.loopInputSignals ?? {
+            user: { version: 0, timestamp: null },
+            terminal: { version: 0, timestamp: null },
+            task: { version: 0, timestamp: null },
+            attention: { version: 0, timestamp: null },
+          }
+        }
+        logs={loopbusStateLogs}
+        traces={loopbusTraces}
+        modelCalls={modelCalls}
+        apiCalls={apiCalls}
+        apiRecording={apiCallRecording}
+        hasMoreTrace={activeSessionId ? (tracePaging[activeSessionId]?.hasMore ?? true) : false}
+        loadingTrace={activeSessionId ? (tracePaging[activeSessionId]?.loading ?? false) : false}
+        onLoadMoreTrace={() => void handleLoadMoreTrace()}
+        hasMoreModel={activeSessionId ? (modelPaging[activeSessionId]?.hasMore ?? true) : false}
+        loadingModel={activeSessionId ? (modelPaging[activeSessionId]?.loading ?? false) : false}
+        onLoadMoreModel={() => void handleLoadMoreModel()}
+      />
+    );
+  };
 
-    if (mainView === "workspaces") {
-      return (
-        <section className="flex h-full min-h-0 flex-col rounded-2xl bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900">Recent Workspaces</h2>
-          <div className="min-h-0 space-y-2 overflow-auto">
-            {runtimeState.recentWorkspaces.length === 0 ? (
-              <p className="text-xs text-slate-500">No workspace history yet.</p>
-            ) : null}
-            {runtimeState.recentWorkspaces.slice(-30).map((workspace) => (
-              <button
-                key={workspace}
-                type="button"
-                onClick={() => {
-                  void openWorkspaceSession(workspace);
-                }}
-                className="w-full rounded-lg bg-slate-100 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-200"
-                title={workspace}
-              >
-                <span className="line-clamp-2">{workspace}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      );
-    }
+  const renderWorkspaceDetails = () => {
+    return (
+      <WorkspaceSessionsPanel
+        workspace={selectedWorkspace}
+        sessions={workspaceSessions}
+        counts={workspaceSessionCounts}
+        tab={workspaceSessionsTab}
+        selectedSessionId={selectedWorkspaceSessionId}
+        loading={workspaceSessionsLoading}
+        loadingMore={workspaceSessionsLoadingMore}
+        hasMore={workspaceSessionCursor !== null}
+        onChangeTab={setWorkspaceSessionsTab}
+        onSelectSession={(sessionId) => setSelectedWorkspaceSessionId(sessionId)}
+        onLoadMore={() => {
+          void handleLoadMoreWorkspaceSessions();
+        }}
+        onCreateSessionInWorkspace={(path) => {
+          void openWorkspaceSession(path);
+        }}
+        onOpenSession={(sessionId) => {
+          void handleResumeSession(sessionId, selectedWorkspace?.path);
+        }}
+        onStopSession={(sessionId) => {
+          void handleStopWorkspaceSession(sessionId);
+        }}
+        onToggleSessionFavorite={(sessionId) => {
+          void handleToggleSessionFavorite(sessionId);
+        }}
+        onArchiveSession={(sessionId) => {
+          void handleArchiveWorkspaceSession(sessionId);
+        }}
+        onRestoreSession={(sessionId) => {
+          void handleRestoreWorkspaceSession(sessionId);
+        }}
+        onDeleteSession={(sessionId) => {
+          void handleDeleteWorkspaceSession(sessionId);
+        }}
+      />
+    );
+  };
 
+  const renderWorkspacesView = () => {
+    return (
+      <WorkspacesPanel
+        recentPaths={runtimeState.recentWorkspaces}
+        workspaces={runtimeState.workspaces}
+        selectedPath={selectedWorkspacePath}
+        onSelectPath={handleSelectWorkspace}
+        onToggleFavorite={(path) => {
+          void handleToggleWorkspaceFavorite(path);
+        }}
+        onActivatePath={handleActivateWorkspace}
+        onDeleteWorkspace={(path) => {
+          void handleDeleteWorkspace(path);
+        }}
+        onCreateSessionInWorkspace={(path) => {
+          void openWorkspaceSession(path);
+        }}
+        onCleanMissing={() => {
+          void handleCleanMissingWorkspaces();
+        }}
+      />
+    );
+  };
+
+  const renderMainView = () => {
     if (mainView === "settings") {
       if (!activeSessionId) {
         return (
@@ -485,321 +1219,253 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       );
     }
 
-    if (!activeSessionId) {
+    if (mainView === "quickstart") {
       return (
-        <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center gap-4">
-          <section className="w-full rounded-2xl bg-white p-4 shadow-sm md:p-5">
-            <h2 className="mb-2 text-base font-semibold">Quick Start</h2>
-            <p className="mb-3 text-sm text-slate-600">Select a workspace and start a conversation.</p>
-            <Textarea
-              value={quickstartInput}
-              onChange={(event) => setQuickstartInput(event.target.value)}
-              className="min-h-[130px]"
-              placeholder="Describe your task..."
-            />
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setWorkspacePickerTarget("quickstart");
-                  setWorkspaceDialogOpen(true);
-                }}
-                title="Pick workspace"
-              >
-                Workspace
+        <QuickStartView
+          workspacePath={quickstartWorkspacePath}
+          draftResolution={quickstartDraft}
+          recentSessions={quickstartRecentSessions}
+          loadingDraft={quickstartDraftLoading}
+          starting={quickstartBusy}
+          onOpenWorkspacePicker={() => {
+            setWorkspacePickerTarget("quickstart");
+            setWorkspaceDialogOpen(true);
+          }}
+          onEnterWorkspace={() => {
+            void handleEnterWorkspace();
+          }}
+          onSubmit={handleQuickstartSubmit}
+          onSearchPaths={searchWorkspacePaths}
+          onResumeSession={(sessionId) => {
+            void handleResumeSession(sessionId, quickstartWorkspacePath);
+          }}
+        />
+      );
+    }
+
+    if (mainView === "chat" && !activeSessionId) {
+      return (
+        <section className="flex h-full items-center justify-center rounded-2xl bg-white p-6 shadow-sm">
+          <div className="space-y-3 text-center">
+            <h2 className="typo-title-3 text-slate-900">No active chat session</h2>
+            <p className="text-sm text-slate-600">
+              Open Quick Start to create a session, or resume one from Workspaces.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="secondary" onClick={() => setMainView("quickstart")}>
+                Quick Start
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => void handleEnterWorkspace()}
-                title="Create session without first message"
-              >
-                Enter Workspace
-              </Button>
-              <Button
-                onClick={() => void handleQuickstart()}
-                disabled={quickstartInput.trim().length === 0}
-                title="Create session and send first message"
-              >
-                Start
+              <Button variant="outline" onClick={() => setMainView("workspaces")}>
+                Workspaces
               </Button>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       );
     }
 
     return (
       <ChatPanel
         activeSessionName={activeSession?.name ?? activeSessionLabel}
-        messages={messages}
-        input={chatInput}
+        workspacePath={activeSession?.cwd ?? quickstartWorkspacePath}
+        cycles={cycles}
         aiStatus={aiStatus}
+        loopPhase={activeRuntime?.loopPhase ?? null}
         noTerminalHint={noTerminalHint}
         disabled={!activeSessionId}
-        onInputChange={setChatInput}
-        onSend={() => void handleSend()}
+        imageEnabled={activeRuntime?.modelCapabilities.imageInput ?? false}
+        hasMore={activeSessionId ? (chatPaging[activeSessionId]?.hasMore ?? true) : false}
+        loadingMore={activeSessionId ? (chatPaging[activeSessionId]?.loading ?? false) : false}
+        onLoadMore={() => {
+          void handleLoadMoreChatCycles();
+        }}
+        onSubmit={handleChatSubmit}
+        onSearchPaths={searchWorkspacePaths}
       />
     );
   };
 
-  const navItems: Array<{ key: MainView; label: string; icon: typeof MessageCircle }> = [
-    { key: "chat", label: "Chat", icon: MessageCircle },
-    { key: "sessions", label: "Sessions", icon: List },
-    { key: "workspaces", label: "Workspaces", icon: FolderTree },
-    { key: "settings", label: "Settings", icon: Settings2 },
+  const sessionShortcutItems = useMemo<NavItem[]>(() => {
+    return openedSessionIds
+      .map((sessionId) => runtimeState.sessions.find((item) => item.id === sessionId))
+      .filter((item): item is SessionEntry => Boolean(item))
+      .map((session) => ({
+        key: `session:${session.id}`,
+        label: session.name,
+        title: `${session.name} · ${session.id}`,
+        group: "session" as const,
+        avatar: {
+          label: sessionShortcutLabel(session.cwd, session.name.slice(0, 1) || "S"),
+          hue: sessionShortcutHue(session.cwd),
+        },
+      }));
+  }, [openedSessionIds, runtimeState.sessions]);
+
+  const navItems: NavItem[] = [
+    { key: "quickstart", label: "Quick Start", icon: Sparkles, group: "primary" },
+    { key: "chat", label: "Chat", icon: MessageSquare, group: "primary" },
+    { key: "workspaces", label: "Workspaces", icon: FolderTree, group: "primary" },
+    { key: "settings", label: "Settings", icon: Settings2, group: "primary" },
+    ...sessionShortcutItems,
   ];
 
+  const activeNavKey = mainView === "chat" && activeSessionId ? `session:${activeSessionId}` : mainView;
+
+  const handleSelectNav = (key: string) => {
+    if (key.startsWith("session:")) {
+      const sessionId = key.slice("session:".length);
+      const target = runtimeState.sessions.find((item) => item.id === sessionId);
+      void handleResumeSession(sessionId, target?.cwd);
+      return;
+    }
+    setMainView(key as MainView);
+  };
+
   return (
-    <main className="min-h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
-        <div className="mx-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileSidebarOpen((prev) => !prev)}
-            aria-label="Open navigation"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </Button>
-          <h1 className="text-sm font-semibold tracking-tight">Agenter</h1>
-          <div className="ml-auto flex items-center gap-1">
-            {mainView === "chat" && activeSession ? (
-              <Button
-                size="icon"
-                variant="secondary"
-                onClick={() => setMobileDetailsOpen(true)}
-                title="Open tools"
-                aria-label="Open tools"
-              >
-                <Activity className="h-4 w-4" />
-              </Button>
-            ) : null}
-            <Button
-              size="icon"
-              variant="secondary"
-              onClick={() => setCreateDialogOpen(true)}
-              title="New session"
-              aria-label="New session"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="secondary"
-              onClick={() => {
-                setWorkspacePickerTarget("quickstart");
-                setWorkspaceDialogOpen(true);
-              }}
-              title="Select workspace"
-              aria-label="Select workspace"
-            >
-              <FolderOpen className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="secondary"
-              onClick={() => void handleStart()}
-              disabled={!activeSessionId}
-              title="Start session"
-              aria-label="Start session"
-            >
-              <Play className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="secondary"
-              onClick={() => void handleStop()}
-              disabled={!activeSessionId}
-              title="Stop session"
-              aria-label="Stop session"
-            >
-              <Square className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="destructive"
-              onClick={() => void handleDelete()}
-              disabled={!activeSessionId}
-              title="Delete session"
-              aria-label="Delete session"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </header>
+    <TooltipProvider>
+      <main className="min-h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
+        <TopToolbar
+          showMobileDevtools={mainView === "chat" && Boolean(activeSession)}
+          activeSessionId={activeSessionId}
+          onOpenNavigation={() => setMobileSidebarOpen(true)}
+          onOpenDevtools={() => setMobileDetailsOpen(true)}
+          onOpenCreate={() => setCreateDialogOpen(true)}
+          onOpenWorkspace={() => {
+            setWorkspacePickerTarget("quickstart");
+            setWorkspaceDialogOpen(true);
+          }}
+          onStart={() => void handleStart()}
+          onStop={() => void handleStop()}
+          onDelete={() => void handleDelete()}
+        />
 
-      <div className="border-b border-slate-200 bg-white/90 px-3 py-2">
-        <div className="mx-auto flex items-center gap-2">
-          {notice ? <Badge variant="destructive">{notice}</Badge> : null}
-          <Badge variant="secondary">{runtimeState.connected ? "Connected" : "Reconnecting"}</Badge>
-          <Badge variant={aiStatus === "error" ? "destructive" : aiStatus === "idle" ? "secondary" : "warning"}>
-            AI: {aiStatus}
-          </Badge>
-          {activeSessionLabel ? (
-            <Badge variant="secondary">{activeSessionLabel}</Badge>
-          ) : (
-            <Badge variant="warning">No session</Badge>
-          )}
-        </div>
-      </div>
+        <StatusBar
+          notice={notice}
+          connected={runtimeState.connected}
+          aiStatus={aiStatus}
+          activeSessionLabel={activeSessionLabel}
+        />
 
-      <div className="mx-auto grid grid-cols-1 md:grid-cols-[56px_1fr]">
-        <aside className="hidden h-[calc(100dvh-92px)] border-r border-slate-200 bg-white md:flex md:flex-col md:items-center md:gap-1 md:p-2">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Button
-                key={item.key}
-                size="icon"
-                variant={mainView === item.key ? "default" : "ghost"}
-                onClick={() => setMainView(item.key)}
-                title={item.label}
-                aria-label={item.label}
-              >
-                <Icon className="h-4 w-4" />
-              </Button>
-            );
-          })}
-        </aside>
+        <div className="mx-auto grid grid-cols-1 md:grid-cols-[56px_1fr]">
+          <SidebarNav items={navItems} active={activeNavKey} onSelect={handleSelectNav} />
 
-        <section className="h-[calc(100dvh-92px)] min-h-0 p-3 md:p-4">
-          {mainView === "chat" && activeSessionId ? (
-            <div
-              className={`grid h-full min-h-0 grid-cols-1 gap-3 ${desktopDetailsOpen ? "xl:grid-cols-[1fr_380px]" : "xl:grid-cols-1"}`}
-            >
-              {renderMainView()}
-              {desktopDetailsOpen ? (
-                <aside className="hidden min-h-0 rounded-2xl bg-white p-3 shadow-sm xl:flex xl:flex-col xl:gap-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-sm font-semibold text-slate-900">Tools</h2>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => setDesktopDetailsOpen(false)}
-                      title="Hide tools"
-                      aria-label="Hide tools"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
+          <section className="h-[calc(100dvh-92px)] p-3 md:p-4">
+            {mainView === "chat" && activeSessionId ? (
+              <MasterDetailPage
+                main={renderMainView()}
+                detail={renderChatDetails()}
+                detailTitle="Devtools"
+                detailChrome={
                   <Tabs
                     items={DETAIL_TABS}
                     value={detailsTab}
                     onValueChange={(value) => setDetailsTab(value as DetailsTab)}
+                    className="w-full"
                   />
-                  <div className="min-h-0 flex-1 overflow-hidden">{renderChatDetails()}</div>
-                </aside>
-              ) : null}
-            </div>
-          ) : (
-            renderMainView()
-          )}
-        </section>
-      </div>
-
-      {mainView === "chat" && activeSessionId && !desktopDetailsOpen ? (
-        <div className="fixed right-4 bottom-4 hidden xl:block">
-          <Button size="icon" onClick={() => setDesktopDetailsOpen(true)} title="Show tools" aria-label="Show tools">
-            <TerminalSquare className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : null}
-
-      {mobileSidebarOpen ? (
-        <div className="fixed inset-0 z-30 bg-slate-900/50 md:hidden" onClick={() => setMobileSidebarOpen(false)}>
-          <aside className="h-full w-[88vw] max-w-[320px] bg-white p-3" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-semibold">Navigation</p>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setMobileSidebarOpen(false)}
-                aria-label="Close navigation"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      setMainView(item.key);
-                      setMobileSidebarOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm ${mainView === item.key ? "bg-teal-100 text-teal-900" : "bg-slate-100 text-slate-700"}`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-        </div>
-      ) : null}
-
-      {mobileDetailsOpen && mainView === "chat" && activeSessionId ? (
-        <div className="fixed inset-0 z-40 bg-white xl:hidden">
-          <div className="flex h-full flex-col">
-            <header className="flex items-center gap-2 border-b border-slate-200 p-3">
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setMobileDetailsOpen(false)}
-                aria-label="Back to chat"
-                title="Back to chat"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <h2 className="text-sm font-semibold text-slate-900">Tools</h2>
-            </header>
-            <div className="border-b border-slate-200 p-3">
-              <Tabs
-                items={DETAIL_TABS}
-                value={detailsTab}
-                onValueChange={(value) => setDetailsTab(value as DetailsTab)}
-                className="w-full"
+                }
+                mobileDetailOpen={mobileDetailsOpen}
+                onMobileDetailOpenChange={setMobileDetailsOpen}
+                desktopDetailVisible={desktopDetailsOpen}
+                onDesktopDetailVisibleChange={setDesktopDetailsOpen}
+                desktopResizable
+                desktopSplitStorageKey={CHAT_DEVTOOLS_SPLIT_STORAGE_KEY}
+                defaultDesktopMainWidthPercent={64}
+                minDesktopMainWidthPercent={45}
+                maxDesktopMainWidthPercent={82}
+                hiddenDesktopDetailTrigger={{ label: "Show Devtools", icon: TerminalSquare }}
               />
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden p-3">{renderChatDetails()}</div>
-          </div>
+            ) : mainView === "workspaces" ? (
+              <MasterDetailPage
+                main={renderWorkspacesView()}
+                detail={renderWorkspaceDetails()}
+                detailTitle="Sessions"
+                mobileDetailOpen={mobileWorkspaceDetailsOpen}
+                onMobileDetailOpenChange={setMobileWorkspaceDetailsOpen}
+                detailSelectionKey={selectedWorkspaceSessionId}
+                autoOpenMobileOnSelection
+                desktopResizable
+                desktopSplitStorageKey={WORKSPACES_SESSIONS_SPLIT_STORAGE_KEY}
+                defaultDesktopMainWidthPercent={58}
+                minDesktopMainWidthPercent={40}
+                maxDesktopMainWidthPercent={78}
+              />
+            ) : (
+              renderMainView()
+            )}
+          </section>
         </div>
-      ) : null}
 
-      <CreateSessionDialog
-        open={createDialogOpen}
-        cwd={createWorkspacePath}
-        onClose={() => setCreateDialogOpen(false)}
-        onOpenWorkspacePicker={() => {
-          setWorkspacePickerTarget("create");
-          setWorkspaceDialogOpen(true);
-        }}
-        onCreate={async ({ cwd, name }) => {
-          await handleCreateSession({ cwd, name });
-        }}
-      />
+        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen} side="left" title="Navigation">
+          <div className="space-y-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeNavKey === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    handleSelectNav(item.key);
+                    setMobileSidebarOpen(false);
+                  }}
+                  className={inlineAffordanceClassName({
+                    size: "control",
+                    layout: "leading",
+                    fill: true,
+                    className: isActive ? "text-sm bg-teal-100 text-teal-900" : "text-sm bg-slate-100 text-slate-700",
+                  })}
+                >
+                  <InlineAffordanceLeadingVisual>
+                    {item.avatar ? (
+                      <span
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-md text-[10px] font-semibold"
+                        style={{
+                          backgroundColor: `oklch(0.84 0.1 ${item.avatar.hue})`,
+                          color: `oklch(0.28 0.08 ${item.avatar.hue})`,
+                        }}
+                      >
+                        {item.avatar.label.slice(0, 1).toUpperCase()}
+                      </span>
+                    ) : Icon ? (
+                      <Icon className="h-4 w-4" />
+                    ) : null}
+                  </InlineAffordanceLeadingVisual>
+                  <InlineAffordanceLabel className="truncate">{item.title ?? item.label}</InlineAffordanceLabel>
+                </button>
+              );
+            })}
+          </div>
+        </Sheet>
+        <CreateSessionDialog
+          open={createDialogOpen}
+          cwd={createWorkspacePath}
+          onClose={() => setCreateDialogOpen(false)}
+          onOpenWorkspacePicker={() => {
+            setWorkspacePickerTarget("create");
+            setWorkspaceDialogOpen(true);
+          }}
+          onCreate={async ({ cwd, name }) => {
+            await handleCreateSession({ cwd, name });
+          }}
+        />
 
-      <WorkspacePickerDialog
-        open={workspaceDialogOpen}
-        initialPath={workspacePickerTarget === "create" ? createWorkspacePath : quickstartWorkspacePath}
-        recentWorkspaces={runtimeState.recentWorkspaces}
-        onClose={() => setWorkspaceDialogOpen(false)}
-        onPick={(path) => {
-          if (workspacePickerTarget === "create") {
-            setCreateWorkspacePath(path);
-          } else {
-            setQuickstartWorkspacePath(path);
-          }
-        }}
-        listDirectories={(input) => store.listDirectories(input)}
-        validateDirectory={(path) => store.validateDirectory(path)}
-      />
-    </main>
+        <WorkspacePickerDialog
+          open={workspaceDialogOpen}
+          initialPath={workspacePickerTarget === "create" ? createWorkspacePath : quickstartWorkspacePath}
+          recentWorkspaces={runtimeState.recentWorkspaces}
+          onClose={() => setWorkspaceDialogOpen(false)}
+          onPick={(path) => {
+            if (workspacePickerTarget === "create") {
+              setCreateWorkspacePath(path);
+            } else {
+              setQuickstartWorkspacePath(path);
+              setSelectedWorkspacePath(path);
+            }
+          }}
+          listDirectories={(input) => store.listDirectories(input)}
+          validateDirectory={(path) => store.validateDirectory(path)}
+        />
+      </main>
+    </TooltipProvider>
   );
 };

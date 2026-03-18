@@ -1,4 +1,5 @@
-import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { Dialog as DialogPrimitive } from "@base-ui-components/react/dialog";
+import { X } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "../../lib/utils";
@@ -16,11 +17,11 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out fixed inset-0 z-50 bg-slate-900/45" />
-        <DialogPrimitive.Content className="data-[state=open]:animate-in data-[state=closed]:animate-out fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-slate-900/45 data-[ending-style]:animate-out data-[starting-style]:animate-in" />
+        <DialogPrimitive.Popup className="fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none data-[ending-style]:animate-out data-[starting-style]:animate-in md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
           <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
             <div className="space-y-1">
-              <DialogPrimitive.Title className="text-sm font-semibold text-slate-900">{title}</DialogPrimitive.Title>
+              <DialogPrimitive.Title className="typo-title-3 text-slate-900">{title}</DialogPrimitive.Title>
               {description ? (
                 <DialogPrimitive.Description className="text-xs text-slate-600">
                   {description}
@@ -33,14 +34,14 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
               )}
               aria-label="Close dialog"
             >
-              ×
+              <X className="h-4 w-4" />
             </DialogPrimitive.Close>
           </header>
           <div className="max-h-[70dvh] overflow-auto p-4">{children}</div>
           {footer ? (
             <footer className="flex items-center justify-end gap-2 border-t border-slate-200 p-4">{footer}</footer>
           ) : null}
-        </DialogPrimitive.Content>
+        </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );

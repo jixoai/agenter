@@ -38,12 +38,12 @@ const statusVariant = (status: string): "success" | "warning" | "destructive" | 
 
 export const TasksPanel = ({ tasks, compact = false }: TasksPanelProps) => {
   return (
-    <Card className={cn("col-span-1 min-h-[40dvh] lg:col-span-2", compact ? "min-h-0" : "")}>
+    <Card className={cn("col-span-1 min-h-[40dvh] lg:col-span-2", compact ? "h-full" : "")}>
       <CardHeader className={cn("border-b border-slate-200", compact ? "p-3" : "")}>
         <CardTitle>Tasks</CardTitle>
       </CardHeader>
-      <CardContent className={cn("space-y-2 p-4", compact ? "p-3" : "")}>
-        <div className={cn("space-y-2 overflow-auto pr-1", compact ? "max-h-full" : "max-h-[36dvh]")}>
+      <CardContent className={cn("flex h-full flex-col space-y-2 p-4", compact ? "p-3" : "")}>
+        <div className={cn("flex-1 space-y-2 overflow-auto pr-1", compact ? "" : "max-h-[36dvh]")}>
           {tasks.length === 0 ? <p className="text-xs text-slate-500">No tasks loaded.</p> : null}
           {tasks.map((task) => (
             <article
