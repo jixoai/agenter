@@ -1,6 +1,14 @@
 import { ChevronDown, ChevronRight, Sparkles, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import {
+  InlineAffordance,
+  InlineAffordanceLabel,
+  InlineAffordanceLeadingVisual,
+  InlineAffordanceMeta,
+  InlineAffordanceTrailingVisual,
+} from "../../components/ui/inline-affordance";
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -44,10 +52,10 @@ export const ProcessPanel = ({ messages }: ProcessPanelProps) => {
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-xl bg-white p-3 shadow-xs">
-      <h2 className="mb-2 text-sm font-semibold text-slate-900">AI Process</h2>
-      <div className="min-h-0 space-y-2 overflow-auto">
-        {traces.length === 0 ? <p className="text-xs text-slate-500">No process trace yet.</p> : null}
+    <section className="flex h-full flex-1 flex-col overflow-hidden rounded-xl bg-white p-3 shadow-xs">
+      <h2 className="typo-title-3 mb-2 text-slate-900">AI Process</h2>
+      <div className="flex-1 space-y-2 overflow-auto">
+        {traces.length === 0 ? <p className="typo-caption text-slate-500">No process trace yet.</p> : null}
         {traces.map((trace) => {
           const isOpen = expanded[trace.id] ?? false;
           const title =
@@ -68,16 +76,20 @@ export const ProcessPanel = ({ messages }: ProcessPanelProps) => {
               <button
                 type="button"
                 onClick={() => setExpanded((prev) => ({ ...prev, [trace.id]: !isOpen }))}
-                className="flex w-full items-center gap-2 text-left"
+                className="w-full text-left"
               >
-                {icon}
-                <span className="font-medium text-slate-900">{title}</span>
-                {trace.channel === "tool_result" ? (
-                  <span className="ml-auto text-[11px] tracking-wide text-slate-500 uppercase">
-                    {trace.tool?.ok === false ? "failed" : "done"}
-                  </span>
-                ) : null}
-                {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <InlineAffordance className="flex w-full" fill>
+                  <InlineAffordanceLeadingVisual>{icon}</InlineAffordanceLeadingVisual>
+                  <InlineAffordanceLabel className="font-medium text-slate-900">{title}</InlineAffordanceLabel>
+                  {trace.channel === "tool_result" ? (
+                    <InlineAffordanceMeta className="text-[11px] tracking-wide text-slate-500 uppercase">
+                      {trace.tool?.ok === false ? "failed" : "done"}
+                    </InlineAffordanceMeta>
+                  ) : null}
+                  <InlineAffordanceTrailingVisual>
+                    {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </InlineAffordanceTrailingVisual>
+                </InlineAffordance>
               </button>
               {isOpen ? (
                 <pre className="mt-1 overflow-auto rounded bg-white p-2 text-[11px] leading-4">{compact}</pre>

@@ -1,9 +1,15 @@
 import { ChevronRight, Folder, FolderOpen, RotateCcw, StepBack } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { Button } from "../../components/ui/button";
+import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import {
+  InlineAffordanceLabel,
+  InlineAffordanceLeadingVisual,
+  InlineAffordanceTrailingVisual,
+  inlineAffordanceClassName,
+} from "../../components/ui/inline-affordance";
 
 interface DirectoryEntry {
   name: string;
@@ -98,10 +104,10 @@ export const WorkspacePickerDialog = ({
   const handleConfirm = async () => {
     const resolved = await validateDirectory(selectedPath);
     if (!resolved.ok) {
-      setStatus(`invalid directory: ${selectedPath}`);
+      setStatus(`invalid directory: ${resolved.path}`);
       return;
     }
-    onPick(selectedPath);
+    onPick(resolved.path);
     onClose();
   };
 
@@ -139,12 +145,16 @@ export const WorkspacePickerDialog = ({
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <Button type="button" size="sm" variant="ghost" onClick={() => setCurrentPath(parentPath)}>
-            <StepBack className="h-3.5 w-3.5" />
-            Up
+            <ButtonLeadingVisual>
+              <StepBack className="h-3.5 w-3.5" />
+            </ButtonLeadingVisual>
+            <ButtonLabel>Up</ButtonLabel>
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setCurrentPath(currentPath)}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            Refresh
+            <ButtonLeadingVisual>
+              <RotateCcw className="h-3.5 w-3.5" />
+            </ButtonLeadingVisual>
+            <ButtonLabel>Refresh</ButtonLabel>
           </Button>
           <span className="rounded-md bg-slate-100 px-2 py-1 font-mono">{currentPath}</span>
           <span className="rounded-md bg-teal-50 px-2 py-1 font-mono text-teal-700">selected: {selectedPath}</span>
@@ -189,13 +199,22 @@ export const WorkspacePickerDialog = ({
                         setPathInput(entry.path);
                         setSelectedPath(entry.path);
                       }}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-                        active ? "bg-teal-50 text-teal-900" : "hover:bg-slate-50"
-                      }`}
+                      className={inlineAffordanceClassName({
+                        size: "control",
+                        layout: "both",
+                        fill: true,
+                        className: active
+                          ? "text-left text-teal-900 bg-teal-50"
+                          : "text-left hover:bg-slate-50",
+                      })}
                     >
-                      {active ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4 text-slate-500" />}
-                      <span className="truncate">{entry.name}</span>
-                      <ChevronRight className="ml-auto h-4 w-4 text-slate-400" />
+                      <InlineAffordanceLeadingVisual>
+                        {active ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4 text-slate-500" />}
+                      </InlineAffordanceLeadingVisual>
+                      <InlineAffordanceLabel className="truncate">{entry.name}</InlineAffordanceLabel>
+                      <InlineAffordanceTrailingVisual className="ml-auto">
+                        <ChevronRight className="h-4 w-4 text-slate-400" />
+                      </InlineAffordanceTrailingVisual>
                     </button>
                   </li>
                 );

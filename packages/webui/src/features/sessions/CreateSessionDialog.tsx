@@ -1,7 +1,7 @@
 import { FolderTree } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "../../components/ui/button";
+import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 
@@ -74,8 +74,10 @@ export const CreateSessionDialog = ({
           <div className="flex gap-2">
             <Input value={cwd} readOnly />
             <Button type="button" variant="secondary" onClick={onOpenWorkspacePicker} title="Select workspace folder">
-              <FolderTree className="h-4 w-4" />
-              Browse
+              <ButtonLeadingVisual>
+                <FolderTree className="h-4 w-4" />
+              </ButtonLeadingVisual>
+              <ButtonLabel>Browse</ButtonLabel>
             </Button>
           </div>
         </label>
