@@ -2,9 +2,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 
 import { cn } from "../../lib/utils";
+import {
+  InlineAffordanceLabel,
+  InlineAffordanceLeadingVisual,
+  InlineAffordanceTrailingVisual,
+  inlineAffordanceClassName,
+  resolveInlineAffordanceLayout,
+} from "./inline-affordance";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
+  "rounded-md border text-xs font-medium transition-colors",
   {
     variants: {
       variant: {
@@ -23,6 +30,26 @@ const badgeVariants = cva(
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
-export const Badge = ({ className, variant, ...props }: BadgeProps) => {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+export const Badge = ({ children, className, variant, ...props }: BadgeProps) => {
+  const layout = resolveInlineAffordanceLayout(children);
+  return (
+    <div
+      data-inline-affordance-layout={layout}
+      className={cn(
+        badgeVariants({ variant }),
+        inlineAffordanceClassName({
+          size: "pill",
+          layout,
+        }),
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
 };
+
+export const BadgeLeadingVisual = InlineAffordanceLeadingVisual;
+export const BadgeLabel = InlineAffordanceLabel;
+export const BadgeTrailingVisual = InlineAffordanceTrailingVisual;
