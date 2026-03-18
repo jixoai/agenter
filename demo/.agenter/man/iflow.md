@@ -14,6 +14,16 @@
   - 发送 `<key data="escape"/>`（不要再发送普通文本）。
 - 退出后必须再次确认状态栏中不再显示 `shell mode enabled`，再继续后续任务。
 
+## Auth waiting hint
+
+- 如果终端中出现 `Waiting for auth...`，不要把它当成程序崩溃，也不要把它当成需要修复的内核问题。
+- 这通常表示 iFlow 正在等待用户在浏览器中完成授权。
+- 此时应该直接告知用户：请到浏览器中完成 iFlow 授权，然后再继续当前任务。
+- 在授权完成前：
+  - 不要因为这条信息而反复重试同一个动作；
+  - 不要将这种等待中的终端刷新误判为异常；
+  - 可以继续观察终端，但优先向用户说明当前阻塞点是“网页授权未完成”。
+
 ## Tips for getting started
 
 1. Create IFLOW.md files by /init command and then customize your interactions with iFlow.

@@ -62,7 +62,7 @@ test("parseRuntimeConfig parses --git-log mode and bare flag", async () => {
 test("parseRuntimeConfig exposes default provider config", async () => {
   const config = await parseRuntimeConfig(isolateSources, "/tmp/demo");
   expect(config.ai.providerId).toBe("default");
-  expect(config.ai.kind).toBe("openai-compatible");
+  expect(config.ai.kind).toBe("deepseek");
   expect(config.ai.model).toBe("deepseek-chat");
   expect(config.ai.baseUrl).toBe("https://api.deepseek.com/v1");
 });
@@ -113,7 +113,7 @@ test("parseRuntimeConfig supports terminal presets + feature bootTerminals", asy
   );
   const config = await parseRuntimeConfig([`--settings-source=${root}`], "/tmp/demo");
   expect(config.primaryTerminalId).toBe("iflow");
-  expect(config.focusedTerminalId).toBe("iflow");
+  expect(config.focusedTerminalIds).toEqual(["iflow"]);
   expect(config.bootTerminals).toEqual([
     { terminalId: "iflow", focus: true, autoRun: true },
     { terminalId: "codex", focus: false, autoRun: false },
@@ -151,12 +151,6 @@ test("parseRuntimeConfig keeps supported lang", async () => {
   expect(config.lang).toBe("zh-Hans");
 });
 
-test("parseRuntimeConfig defaults terminal features", async () => {
-  const config = await parseRuntimeConfig(isolateSources, "/tmp/demo");
-  expect(config.features.terminal.focusMode).toBe("exclusive");
-  expect(config.features.terminal.unfocusedSignal).toBe("summary");
-});
-
 test("parseRuntimeConfig supports string + object bootTerminals", async () => {
   const root = join("/tmp", `agenter-observe-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
   mkdirSync(root, { recursive: true });
@@ -178,7 +172,7 @@ test("parseRuntimeConfig supports string + object bootTerminals", async () => {
     "utf8",
   );
   const config = await parseRuntimeConfig([`--settings-source=${root}`], "/tmp/demo");
-  expect(config.focusedTerminalId).toBe("codex");
+  expect(config.focusedTerminalIds).toEqual(["codex"]);
   expect(config.bootTerminals).toEqual([
     { terminalId: "iflow", focus: false, autoRun: true },
     { terminalId: "codex", focus: true, autoRun: false },

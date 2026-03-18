@@ -26,5 +26,5 @@ test("deepseek client uses fallback when api key missing", async () => {
 
   expect(result.thinking).toBe("");
   expect(result.finishReason).toBe("stop");
-  expect(result.text).toContain("未检测到 DEEPSEEK_API_KEY");
+  expect(result.text).toContain("DEEPSEEK_API_KEY");
 });

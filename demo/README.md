@@ -1,6 +1,6 @@
 # Agenter Demo
 
-单包可行性实验：`agenter-ai` 通过 `@agenter/terminal` 管理通用终端进程与日志链路，OpenTUI 负责展示与交互。
+单包可行性实验：`agenter-ai` 通过 `@agenter/terminal-system` 管理通用终端进程与日志链路，OpenTUI 负责展示与交互。
 
 ## 面板布局
 
@@ -88,17 +88,14 @@ bun run diagnose:terminal-crash -- --cwd=./tmp --runs=8 --duration-ms=7000
 `settings.json` 使用 `features.terminal`：
 
 - `bootTerminals`: `Array<string | { id, focus?, autoRun? }>`
-  - `focus=true` 的 terminal 会成为初始焦点（exclusive 模式仅一个焦点）
+  - `focus=true` 的 terminal 会加入初始 focus 集合（支持多 focus）
   - `autoRun=false` 的 terminal 不会在启动时自动运行
-- `focusMode`: 当前固定 `"exclusive"`
-- `unfocusedSignal`: 当前固定 `"summary"`
 
 运行时语义：
 
-- focused terminal：LoopBus 自动注入 diff（默认 `remark=true`）
-- unfocused terminal：LoopBus 只注入 dirty summary
-- AI 如需 unfocused terminal 的细节，可主动调用 `terminal_sliceDirty`
-- 对 focused terminal 调 `terminal_sliceDirty` 会得到 `ignored=true`
+- focused terminal：LoopBus 自动注入 diff（内部 `sliceDirty({ remark: true })`）
+- unfocused terminal：只保留 dirty 状态，不主动注入 summary
+- AI 如需主动消费终端差异，统一使用 `terminal_consumeDiff`
 
 ## 统一资源加载器
 

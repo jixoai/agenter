@@ -23,7 +23,7 @@ export interface RuntimeConfig {
   lang: string;
   agentCwd: string;
   primaryTerminalId: string;
-  focusedTerminalId: string;
+  focusedTerminalIds: string[];
   bootTerminals: Array<{
     terminalId: string;
     focus: boolean;
@@ -48,12 +48,6 @@ export interface RuntimeConfig {
     maxRetries: number;
     maxToken?: number;
     compactThreshold?: number;
-  };
-  features: {
-    terminal: {
-      focusMode: "exclusive";
-      unfocusedSignal: "summary";
-    };
   };
   settingsMeta: {
     sources: Array<{
@@ -449,7 +443,7 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
 
   const configuredBoot = settings.features?.terminal?.bootTerminals;
   const bootTerminals = normalizeBootEntries(configuredBoot, terminals, primaryTerminalId);
-  const focusedTerminalId = bootTerminals.find((entry) => entry.focus)?.terminalId ?? primaryTerminalId;
+  const focusedTerminalIds = bootTerminals.filter((entry) => entry.focus).map((entry) => entry.terminalId);
 
   const prompt = settings.prompt ?? {};
   const firstSettingsPath = loadedSettings.meta.sources.find((source) => source.exists)?.path;
@@ -472,7 +466,6 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     maxToken: 64_000,
     compactThreshold: 0.75,
   };
-  const terminalFeatures = settings.features?.terminal ?? {};
   const apiKey = provider.apiKey ?? (provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined);
 
   const promptConfig = {
@@ -493,7 +486,7 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     lang: resolveLanguage(settings.lang ?? DEFAULT_LANGUAGE),
     agentCwd,
     primaryTerminalId,
-    focusedTerminalId,
+    focusedTerminalIds,
     bootTerminals,
     terminals,
     terminal: terminals[primaryTerminalId],
@@ -508,12 +501,6 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
       maxRetries: provider.maxRetries ?? 2,
       maxToken: provider.maxToken,
       compactThreshold: provider.compactThreshold,
-    },
-    features: {
-      terminal: {
-        focusMode: terminalFeatures.focusMode ?? "exclusive",
-        unfocusedSignal: terminalFeatures.unfocusedSignal ?? "summary",
-      },
     },
     settingsMeta: loadedSettings.meta,
   };

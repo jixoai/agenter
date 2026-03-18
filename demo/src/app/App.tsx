@@ -1,4 +1,4 @@
-import { ChatEngine } from "@agenter/chat-system";
+import { AttentionEngine } from "@agenter/attention-system";
 import { ResourceLoader } from "@agenter/settings";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
@@ -14,6 +14,7 @@ import {
   type AgentRuntimeStats,
   type LoopBusInput,
   type LoopBusPhase,
+  type LoopBusWakeSource,
   type TaskCreateInput,
   type TaskImportItem,
   type TaskUpdateInput,
@@ -40,9 +41,10 @@ const clamp = (value: number, min: number): number => Math.max(min, value);
 const HELP_MAX_CHARS = 8_192;
 const STATUS_BAR_HEIGHT = 6;
 const DEBUG_PANEL_HEIGHT = 14;
-const LOOP_IDLE_COLLECT_INTERVAL_MS = 1_500;
-const IDLE_HEARTBEAT_INTERVAL_MS = 12_000;
 const LARGE_DIFF_BYTES = 16_000;
+
+type DemoWakeSource = Exclude<LoopBusWakeSource, "unknown">;
+
 const resolveChatAiStatus = (
   stage: TaskStage,
   loopPhase: LoopBusPhase,
@@ -51,38 +53,61 @@ const resolveChatAiStatus = (
   if (loopPhase === "stopped") {
     return null;
   }
-  if (loopPhase === "waiting_processor_response") {
+  if (loopPhase === "calling_model") {
     return "等待服务返回";
   }
-  if (loopPhase === "waiting_messages") {
+  if (loopPhase === "waiting_commits") {
     if (stage === "done" || stage === "idle" || stage === "error") {
       return "等待用户输入";
     }
     return processState === "running" ? "等待终端输出" : "等待新消息";
   }
-  if (loopPhase === "processing_messages") {
-    return "思考中";
+  if (loopPhase === "settling_inputs" || loopPhase === "collecting_inputs" || loopPhase === "persisting_cycle") {
+    return processState === "running" ? "整理终端与输入" : "整理输入中";
   }
-  if (loopPhase === "dispatching_tools" || loopPhase === "dispatching_terminal") {
-    return "工具调用中";
-  }
-  if (loopPhase === "dispatching_user") {
-    return "生成回复中";
-  }
-  if (loopPhase === "collecting_inputs") {
-    return processState === "running" ? "等待终端输出" : "处理中";
-  }
-
-  if (stage === "done" || stage === "error" || stage === "idle") {
-    return null;
-  }
-  if (stage === "observe" || stage === "act") {
-    return processState === "running" ? "等待终端输出" : "处理中";
+  if (loopPhase === "applying_outputs") {
+    return stage === "observe" || stage === "act" ? "工具调用中" : "生成回复中";
   }
   if (stage === "plan" || stage === "decide") {
     return "思考中";
   }
+  if (stage === "observe" || stage === "act") {
+    return processState === "running" ? "等待终端输出" : "处理中";
+  }
   return null;
+};
+
+const classifyInputWakeSource = (input: LoopBusInput): DemoWakeSource => {
+  if (input.source === "terminal") {
+    return "terminal";
+  }
+  if (input.source === "task") {
+    return "task";
+  }
+  if (input.source === "attention-system") {
+    return "attention";
+  }
+  return "user";
+};
+
+const dedupeTerminalIds = (terminalIds: string[]): string[] => [
+  ...new Set(terminalIds.filter((item) => item.length > 0)),
+];
+
+const resolveFocusedTerminals = (runtimeConfig: RuntimeConfig, next?: string[]): string[] => {
+  const resolved = dedupeTerminalIds(next ?? runtimeConfig.focusedTerminalIds);
+  return resolved.length > 0 ? resolved : [runtimeConfig.primaryTerminalId];
+};
+
+const resolveVisibleTerminal = (
+  runtimeConfig: RuntimeConfig,
+  focusedTerminalIds: string[],
+  current?: string,
+): string => {
+  if (current && runtimeConfig.terminals[current]) {
+    return current;
+  }
+  return focusedTerminalIds[0] ?? runtimeConfig.primaryTerminalId;
 };
 
 const toCommandKey = (command: string): string => {
@@ -270,6 +295,12 @@ export const App = ({ runtimeConfig }: AppProps) => {
     return new Map(entries);
   }, [logger, runtimeConfig.terminals]);
 
+  const initialFocusedTerminalIds = useMemo(() => resolveFocusedTerminals(runtimeConfig), [runtimeConfig]);
+  const initialVisibleTerminalId = useMemo(
+    () => resolveVisibleTerminal(runtimeConfig, initialFocusedTerminalIds),
+    [initialFocusedTerminalIds, runtimeConfig],
+  );
+
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState(() => logger.getRecent(120));
@@ -277,8 +308,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [stage, setStage] = useState<TaskStage>("idle");
   const [processState, setProcessState] = useState<"stopped" | "running">("stopped");
-  const [loopPhase, setLoopPhase] = useState<LoopBusPhase>("waiting_messages");
-  const [focusedTerminalId, setFocusedTerminalId] = useState(runtimeConfig.focusedTerminalId);
+  const [loopPhase, setLoopPhase] = useState<LoopBusPhase>("waiting_commits");
+  const [focusedTerminalIds, setFocusedTerminalIds] = useState<string[]>(initialFocusedTerminalIds);
+  const [focusedTerminalId, setFocusedTerminalId] = useState(initialVisibleTerminalId);
   const [snapshotView, setSnapshotView] = useState<TerminalSnapshot>(createEmptySnapshot());
   const [terminalSize, setTerminalSize] = useState<{ cols: number; rows: number }>({ cols: 80, rows: 20 });
   const [layoutReady, setLayoutReady] = useState(false);
@@ -291,10 +323,16 @@ export const App = ({ runtimeConfig }: AppProps) => {
   });
 
   const terminalSizeRef = useRef<{ cols: number; rows: number }>({ cols: 80, rows: 20 });
-  const focusedTerminalIdRef = useRef(runtimeConfig.focusedTerminalId);
+  const focusedTerminalIdRef = useRef(initialVisibleTerminalId);
+  const focusedTerminalIdsRef = useRef<string[]>(initialFocusedTerminalIds);
   const terminalSnapshotsRef = useRef<Record<string, TerminalSnapshot>>({});
   const snapshotRef = useRef<TerminalSnapshot>(createEmptySnapshot());
   const loopBusRef = useRef<AgentRuntime | null>(null);
+  const agentRef = useRef<AgenterAI | null>(null);
+  const loopInputsRef = useRef<LoopBusInput[]>([]);
+  const loopWaitersRef = useRef<Array<(source: DemoWakeSource) => void>>([]);
+  const loopWakeSourceRef = useRef<DemoWakeSource | null>(null);
+  const cycleIdRef = useRef(0);
   const terminalDirtyQueuedRef = useRef(new Set<string>());
   const terminalDirtyStateRef = useRef<Record<string, boolean>>({});
   const terminalLatestSeqRef = useRef<Record<string, number>>({});
@@ -302,9 +340,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const bootInProgressRef = useRef(false);
   const stageRef = useRef<TaskStage>("idle");
   const processStateRef = useRef<"stopped" | "running">("stopped");
-  const lastIdleHeartbeatAtRef = useRef(0);
   const taskEngineRef = useRef(new TaskEngine());
-  const chatEngineRef = useRef(new ChatEngine());
+  const attentionEngineRef = useRef(new AttentionEngine());
 
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
@@ -316,9 +353,66 @@ export const App = ({ runtimeConfig }: AppProps) => {
 
   const getAdapter = (terminalId: string): TerminalAdapter | null => terminalAdapters.get(terminalId) ?? null;
 
+  const syncVisibleTerminal = (terminalId: string): void => {
+    focusedTerminalIdRef.current = terminalId;
+    setFocusedTerminalId(terminalId);
+    const snapshot = terminalSnapshotsRef.current[terminalId] ?? getAdapter(terminalId)?.getSnapshot();
+    if (snapshot) {
+      snapshotRef.current = snapshot;
+      setSnapshotView(snapshot);
+    }
+    const adapter = getAdapter(terminalId);
+    setProcessState(adapter?.isRunning() ? "running" : "stopped");
+  };
+
+  const applyFocusedTerminalIds = (nextIds: string[], preferredVisible?: string): string[] => {
+    const resolved = dedupeTerminalIds(nextIds);
+    focusedTerminalIdsRef.current = resolved;
+    setFocusedTerminalIds(resolved);
+    const visibleTerminalId = resolveVisibleTerminal(
+      runtimeConfig,
+      resolved,
+      preferredVisible ?? focusedTerminalIdRef.current,
+    );
+    syncVisibleTerminal(visibleTerminalId);
+    return resolved;
+  };
+
+  const notifyLoopWaiters = (source: DemoWakeSource): void => {
+    if (loopWakeSourceRef.current === null) {
+      loopWakeSourceRef.current = source;
+    }
+    const waiters = loopWaitersRef.current.splice(0, loopWaitersRef.current.length);
+    for (const resolve of waiters) {
+      resolve(source);
+    }
+  };
+
+  const enqueueLoopInputs = (inputs: LoopBusInput | LoopBusInput[]): void => {
+    const next = Array.isArray(inputs) ? inputs : [inputs];
+    if (next.length === 0) {
+      return;
+    }
+    loopInputsRef.current.push(...next);
+    notifyLoopWaiters(classifyInputWakeSource(next[0]!));
+  };
+
+  const hasReadyTerminalDiff = (): boolean =>
+    [...terminalDirtyQueuedRef.current].some((terminalId) => {
+      if (!focusedTerminalIdsRef.current.includes(terminalId)) {
+        return false;
+      }
+      const adapter = getAdapter(terminalId);
+      return adapter?.isRunning() === true && adapter.getStatus() === "IDLE";
+    });
+
   useEffect(() => {
     focusedTerminalIdRef.current = focusedTerminalId;
   }, [focusedTerminalId]);
+
+  useEffect(() => {
+    focusedTerminalIdsRef.current = focusedTerminalIds;
+  }, [focusedTerminalIds]);
 
   useEffect(() => {
     stageRef.current = stage;
@@ -329,9 +423,10 @@ export const App = ({ runtimeConfig }: AppProps) => {
   }, [processState]);
 
   useEffect(() => {
-    setFocusedTerminalId(runtimeConfig.focusedTerminalId);
-    focusedTerminalIdRef.current = runtimeConfig.focusedTerminalId;
-  }, [runtimeConfig.focusedTerminalId]);
+    focusedTerminalIdsRef.current = initialFocusedTerminalIds;
+    setFocusedTerminalIds(initialFocusedTerminalIds);
+    syncVisibleTerminal(initialVisibleTerminalId);
+  }, [initialFocusedTerminalIds, initialVisibleTerminalId]);
 
   const dispatchToTerminal = async (
     adapter: TerminalAdapter,
@@ -362,22 +457,35 @@ export const App = ({ runtimeConfig }: AppProps) => {
     if (typeof seq === "number") {
       terminalLatestSeqRef.current[terminalId] = seq;
     }
-    if (terminalDirtyQueuedRef.current.has(terminalId)) {
-      return;
-    }
     terminalDirtyQueuedRef.current.add(terminalId);
-    loopBusRef.current?.pushMessage({
-      name: `Terminal-${terminalId}`,
-      role: "user",
-      type: "text",
-      source: "terminal",
-      text: "__dirty__",
-      meta: {
-        signal: true,
-        terminalId,
-        seq: seq ?? null,
-      },
+    const adapter = getAdapter(terminalId);
+    if (adapter?.getStatus() === "IDLE") {
+      notifyLoopWaiters("terminal");
+    }
+  };
+
+  const consumeTerminalDiff = async (terminalId: string, remark?: boolean, wait?: boolean, timeoutMs?: number) => {
+    const adapter = getAdapter(terminalId);
+    if (!adapter) {
+      return {
+        ok: false,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+        reason: `unknown terminal: ${terminalId}`,
+      };
+    }
+    const result = await adapter.sliceDirty({
+      remark: remark ?? true,
+      wait: wait ?? false,
+      timeoutMs: timeoutMs ?? 30_000,
     });
+    if (result.ok && remark !== false) {
+      terminalDirtyStateRef.current[terminalId] = false;
+    }
+    return result;
   };
 
   const readHelp = async (
@@ -432,7 +540,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
           cwd: terminal.cwd,
           cols: terminalSizeRef.current.cols,
           rows: terminalSizeRef.current.rows,
-          focused: focusedTerminalIdRef.current === terminal.terminalId,
+          focused: focusedTerminalIdsRef.current.includes(terminal.terminalId),
           dirty: terminalDirtyStateRef.current[terminal.terminalId] ?? false,
           latestSeq: terminalLatestSeqRef.current[terminal.terminalId],
         })),
@@ -448,6 +556,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
           if (terminal.gitLog) {
             await adapter.markDirty();
           }
+        }
+        if (focusedTerminalIdRef.current === terminalId) {
+          syncVisibleTerminal(terminalId);
         }
         terminalDirtyStateRef.current[terminalId] = false;
         const commandKey = toCommandKey(terminal.command[0] ?? terminalId);
@@ -466,30 +577,24 @@ export const App = ({ runtimeConfig }: AppProps) => {
           return {
             ok: false,
             message: `unknown terminal: ${terminalId}`,
-            focusedTerminalId: focusedTerminalIdRef.current,
+            focusedTerminalIds: [...focusedTerminalIdsRef.current],
           };
         }
-        if (!focus) {
-          return {
-            ok: true,
-            message: "focus=false ignored in exclusive mode",
-            focusedTerminalId: focusedTerminalIdRef.current,
-          };
-        }
-        focusedTerminalIdRef.current = terminalId;
-        setFocusedTerminalId(terminalId);
-        const focusedSnapshot = terminalSnapshotsRef.current[terminalId] ?? getAdapter(terminalId)?.getSnapshot();
-        if (focusedSnapshot) {
-          snapshotRef.current = focusedSnapshot;
-          setSnapshotView(focusedSnapshot);
-        }
+        const nextFocusedIds = focus
+          ? dedupeTerminalIds([...focusedTerminalIdsRef.current, terminalId])
+          : focusedTerminalIdsRef.current.filter((item) => item !== terminalId);
+        const resolved = applyFocusedTerminalIds(nextFocusedIds, terminalId);
         logger.log({
           channel: "agent",
           level: "info",
           message: "terminal.focus",
-          meta: { terminalId },
+          meta: { terminalId, focus, count: resolved.length },
         });
-        return { ok: true, message: "focus updated", focusedTerminalId: terminalId };
+        return {
+          ok: true,
+          message: focus ? "focus added" : "focus removed",
+          focusedTerminalIds: [...resolved],
+        };
       },
       kill: async ({ terminalId }: { terminalId: string }) => {
         const adapter = getAdapter(terminalId);
@@ -497,6 +602,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
           return { ok: false, message: `unknown terminal: ${terminalId}` };
         }
         await adapter.stop();
+        if (focusedTerminalIdRef.current === terminalId) {
+          syncVisibleTerminal(terminalId);
+        }
         return { ok: true, message: "terminal stopped" };
       },
       write: async ({
@@ -546,6 +654,17 @@ export const App = ({ runtimeConfig }: AppProps) => {
         }
         return adapter.markDirty();
       },
+      consumeDiff: async ({
+        terminalId,
+        remark,
+        wait,
+        timeoutMs,
+      }: {
+        terminalId: string;
+        remark?: boolean;
+        wait?: boolean;
+        timeoutMs?: number;
+      }) => consumeTerminalDiff(terminalId, remark, wait, timeoutMs),
       sliceDirty: async ({
         terminalId,
         remark,
@@ -556,41 +675,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         remark?: boolean;
         wait?: boolean;
         timeoutMs?: number;
-      }) => {
-        const adapter = getAdapter(terminalId);
-        if (!adapter) {
-          return {
-            ok: false,
-            changed: false,
-            fromHash: null,
-            toHash: null,
-            diff: "",
-            bytes: 0,
-            reason: `unknown terminal: ${terminalId}`,
-          };
-        }
-        if (focusedTerminalIdRef.current === terminalId) {
-          return {
-            ok: true,
-            ignored: true,
-            changed: false,
-            fromHash: null,
-            toHash: null,
-            diff: "",
-            bytes: 0,
-            reason: "focused terminal is auto-fed by LoopBus",
-          };
-        }
-        const result = await adapter.sliceDirty({
-          remark: remark ?? true,
-          wait: wait ?? false,
-          timeoutMs: timeoutMs ?? 30_000,
-        });
-        if (result.ok && remark !== false) {
-          terminalDirtyStateRef.current[terminalId] = false;
-        }
-        return result;
-      },
+      }) => consumeTerminalDiff(terminalId, remark, wait, timeoutMs),
       releaseDirty: async ({ terminalId }: { terminalId: string }) => {
         const adapter = getAdapter(terminalId);
         if (!adapter) {
@@ -599,7 +684,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         return adapter.markDirty();
       },
     }),
-    [runtimeConfig.terminals, terminalAdapters],
+    [runtimeConfig, terminalAdapters],
   );
 
   const taskGateway = useMemo(
@@ -622,30 +707,37 @@ export const App = ({ runtimeConfig }: AppProps) => {
     [],
   );
 
-  const chatGateway = useMemo(
+  const attentionGateway = useMemo(
     () => ({
-      list: () => chatEngineRef.current.list(),
+      list: () => attentionEngineRef.current.list(),
       add: async (input: { content: string; from: string; score?: number; remark?: string }) =>
-        chatEngineRef.current.add(input),
-      remark: async (input: { id: number; score?: number; remark?: string }) => chatEngineRef.current.remark(input),
+        attentionEngineRef.current.add(input),
+      remark: async (input: { id: number; score?: number; remark?: string }) =>
+        attentionEngineRef.current.remark(input),
       query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
-        chatEngineRef.current.query(input),
+        attentionEngineRef.current.query(input),
       reply: async (input: {
         replyContent: string;
         from?: string;
         score?: number;
         relationships?: Array<{ id: number; score?: number; remark?: string }>;
-      }) => chatEngineRef.current.reply(input),
+      }) => attentionEngineRef.current.reply(input),
     }),
     [],
   );
 
   useEffect(() => {
+    let active = true;
+
     const stopLog = logger.subscribe((line) => {
       setLogs((prev) => [...prev.slice(-799), line]);
     });
     bootInjectedRef.current.clear();
     bootInProgressRef.current = false;
+    loopInputsRef.current = [];
+    loopWakeSourceRef.current = null;
+    cycleIdRef.current = 0;
+    sessionStore.setLifecycle({ status: "starting" });
 
     void promptStore
       .reload()
@@ -688,6 +780,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
           if (terminalId === focusedTerminalIdRef.current) {
             setProcessState(running ? "running" : "stopped");
           }
+          if (status === "IDLE" && terminalDirtyStateRef.current[terminalId]) {
+            notifyLoopWaiters("terminal");
+          }
           logger.log({
             channel: "ui",
             level: "debug",
@@ -698,20 +793,118 @@ export const App = ({ runtimeConfig }: AppProps) => {
       );
     }
 
+    const collectTerminalInputs = async (): Promise<LoopBusInput[]> => {
+      const pendingIds = [...terminalDirtyQueuedRef.current];
+      terminalDirtyQueuedRef.current.clear();
+      const outputs: LoopBusInput[] = [];
+
+      for (const terminalId of pendingIds) {
+        const terminal = runtimeConfig.terminals[terminalId];
+        const adapter = getAdapter(terminalId);
+        if (!terminal || !adapter) {
+          continue;
+        }
+        if (!focusedTerminalIdsRef.current.includes(terminalId)) {
+          terminalDirtyQueuedRef.current.add(terminalId);
+          continue;
+        }
+
+        const status = adapter.getStatus();
+        if (status === "BUSY") {
+          terminalDirtyQueuedRef.current.add(terminalId);
+          continue;
+        }
+
+        if (!terminal.gitLog) {
+          const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
+          terminalDirtyStateRef.current[terminalId] = false;
+          outputs.push({
+            name: `Terminal-${terminalId}`,
+            role: "user",
+            type: "text",
+            source: "terminal",
+            text: JSON.stringify(buildTerminalSnapshotPayload(terminalId, snapshot)),
+            meta: { terminalId, seq: snapshot.seq, focused: true },
+          });
+          continue;
+        }
+
+        const slice = await adapter.sliceDirty({ remark: true });
+        if (!slice.ok) {
+          logger.log({
+            channel: "error",
+            level: "error",
+            message: "terminal.sliceDirty failed",
+            meta: { terminalId, reason: slice.reason ?? "unknown" },
+          });
+          continue;
+        }
+        if (!slice.changed || slice.fromHash === slice.toHash) {
+          terminalDirtyStateRef.current[terminalId] = false;
+          continue;
+        }
+
+        terminalDirtyStateRef.current[terminalId] = false;
+        outputs.push({
+          name: `Terminal-${terminalId}`,
+          role: "user",
+          type: "text",
+          source: "terminal",
+          text: serializeTerminalDiff(terminalId, {
+            fromHash: slice.fromHash,
+            toHash: slice.toHash,
+            diff: slice.diff,
+            bytes: slice.bytes,
+            status,
+          }),
+          meta: {
+            terminalId,
+            focused: true,
+            bytes: slice.bytes,
+            fromHash: slice.fromHash ?? "none",
+            toHash: slice.toHash ?? "none",
+          },
+        });
+
+        if (slice.bytes >= LARGE_DIFF_BYTES) {
+          const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
+          outputs.push({
+            name: `Terminal-${terminalId}`,
+            role: "user",
+            type: "text",
+            source: "terminal",
+            text: JSON.stringify(buildTerminalHeartbeatPayload(terminalId, snapshot, status, "large-diff")),
+            meta: {
+              terminalId,
+              heartbeat: true,
+              reason: "large-diff",
+              seq: snapshot.seq,
+              status,
+            },
+          });
+        }
+      }
+
+      return outputs;
+    };
+
     const agent = new AgenterAI({
       modelClient,
       logger,
       promptStore,
       terminalGateway,
       taskGateway,
-      chatGateway,
+      attentionGateway,
       sessionStore,
     });
+    agentRef.current = agent;
+    sessionStore.setLifecycle({ status: "running" });
+
     const stopTask = agent.onTaskEvent((event) => {
       setStage(event.stage);
       if (event.stage === "done" || event.stage === "error") {
-        const focusedAdapter = getAdapter(focusedTerminalIdRef.current);
-        setProcessState(focusedAdapter?.isRunning() ? "running" : "stopped");
+        const visibleAdapter = getAdapter(focusedTerminalIdRef.current);
+        setProcessState(visibleAdapter?.isRunning() ? "running" : "stopped");
       }
     });
     const stopStats = agent.onStats((stats) => {
@@ -721,167 +914,37 @@ export const App = ({ runtimeConfig }: AppProps) => {
     const loopBus = new AgentRuntime({
       processor: agent,
       logger,
-      idleCollectIntervalMs: LOOP_IDLE_COLLECT_INTERVAL_MS,
-      onLoopStateChange: (state) => {
-        setLoopPhase(state.phase);
+      waitForCommit: async () => {
+        const queued = loopInputsRef.current[0];
+        if (queued) {
+          return loopWakeSourceRef.current ?? classifyInputWakeSource(queued);
+        }
+        if (hasReadyTerminalDiff()) {
+          return "terminal";
+        }
+        return await new Promise<DemoWakeSource>((resolve) => {
+          if (!active) {
+            resolve("user");
+            return;
+          }
+          loopWaitersRef.current.push(resolve);
+        });
       },
       collectInputs: async () => {
-        const pendingIds = Array.from(terminalDirtyQueuedRef.current.values());
-        if (pendingIds.length > 0) {
-          terminalDirtyQueuedRef.current.clear();
-        } else {
-          const focusedTerminalId = focusedTerminalIdRef.current;
-          const adapter = getAdapter(focusedTerminalId);
-          if (!adapter || !adapter.isRunning() || processStateRef.current !== "running") {
-            return;
-          }
-          const now = Date.now();
-          if (now - lastIdleHeartbeatAtRef.current < IDLE_HEARTBEAT_INTERVAL_MS) {
-            return;
-          }
-          lastIdleHeartbeatAtRef.current = now;
-          const snapshot = terminalSnapshotsRef.current[focusedTerminalId] ?? adapter.getSnapshot();
-          const status = adapter.getStatus();
-          logger.log({
-            channel: "agent",
-            level: "debug",
-            message: "terminal.heartbeat",
-            meta: { terminalId: focusedTerminalId, reason: "idle-poll", seq: snapshot.seq, status },
-          });
-          return {
-            name: `Terminal-${focusedTerminalId}`,
-            role: "user",
-            type: "text",
-            source: "terminal",
-            text: JSON.stringify(buildTerminalHeartbeatPayload(focusedTerminalId, snapshot, status, "idle-poll")),
-            meta: {
-              terminalId: focusedTerminalId,
-              heartbeat: true,
-              reason: "idle-poll",
-              seq: snapshot.seq,
-              status,
-            },
-          };
-        }
-
-        const outputs: LoopBusInput[] = [];
-        for (const terminalId of pendingIds) {
-          const terminal = runtimeConfig.terminals[terminalId];
-          const adapter = getAdapter(terminalId);
-          if (!terminal || !adapter) {
-            continue;
-          }
-
-          const isFocused = focusedTerminalIdRef.current === terminalId;
-          const latestSeq = terminalLatestSeqRef.current[terminalId] ?? 0;
-          const status = adapter.getStatus();
-
-          if (!isFocused) {
-            terminalDirtyStateRef.current[terminalId] = false;
-            outputs.push({
-              name: `Terminal-${terminalId}`,
-              role: "user",
-              type: "text",
-              source: "terminal",
-              text: JSON.stringify({
-                kind: "terminal-dirty-summary",
-                terminalId,
-                focused: false,
-                dirty: true,
-                seq: latestSeq,
-                status,
-              }),
-              meta: {
-                terminalId,
-                focused: false,
-                seq: latestSeq,
-                status,
-                signal: runtimeConfig.features.terminal.unfocusedSignal,
-              },
-            });
-            continue;
-          }
-
-          if (!terminal.gitLog) {
-            const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
-            terminalDirtyStateRef.current[terminalId] = false;
-            outputs.push({
-              name: `Terminal-${terminalId}`,
-              role: "user",
-              type: "text",
-              source: "terminal",
-              text: JSON.stringify({
-                kind: "terminal-snapshot",
-                terminalId,
-                seq: snapshot.seq,
-                cursor: snapshot.cursor,
-                tail: snapshot.lines.slice(-10),
-              }),
-              meta: { terminalId, seq: snapshot.seq },
-            });
-            continue;
-          }
-
-          const slice = await adapter.sliceDirty({ remark: true });
-          if (!slice.ok) {
-            logger.log({
-              channel: "error",
-              level: "error",
-              message: "terminal.sliceDirty failed",
-              meta: { terminalId, reason: slice.reason ?? "unknown" },
-            });
-            continue;
-          }
-
-          if (!slice.changed || slice.fromHash === slice.toHash) {
-            terminalDirtyStateRef.current[terminalId] = false;
-            continue;
-          }
-
-          terminalDirtyStateRef.current[terminalId] = false;
-          outputs.push({
-            name: `Terminal-${terminalId}`,
-            role: "user",
-            type: "text",
-            source: "terminal",
-            text: serializeTerminalDiff(terminalId, {
-              fromHash: slice.fromHash,
-              toHash: slice.toHash,
-              diff: slice.diff,
-              bytes: slice.bytes,
-              status,
-            }),
-            meta: {
-              terminalId,
-              focused: true,
-              bytes: slice.bytes,
-              fromHash: slice.fromHash ?? "none",
-              toHash: slice.toHash ?? "none",
-            },
-          });
-
-          if (slice.bytes >= LARGE_DIFF_BYTES) {
-            const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
-            outputs.push({
-              name: `Terminal-${terminalId}`,
-              role: "user",
-              type: "text",
-              source: "terminal",
-              text: JSON.stringify(buildTerminalHeartbeatPayload(terminalId, snapshot, status, "large-diff")),
-              meta: {
-                terminalId,
-                heartbeat: true,
-                reason: "large-diff",
-                seq: snapshot.seq,
-                status,
-              },
-            });
-          }
-        }
+        const outputs = loopInputsRef.current.splice(0, loopInputsRef.current.length);
+        loopWakeSourceRef.current = null;
+        outputs.push(...(await collectTerminalInputs()));
         if (outputs.length === 0) {
-          return;
+          return undefined;
         }
         return outputs.length === 1 ? outputs[0] : outputs;
+      },
+      persistCycle: async () => {
+        cycleIdRef.current += 1;
+        return { cycleId: cycleIdRef.current };
+      },
+      onLoopStateChange: (state) => {
+        setLoopPhase(state.phase);
       },
       onUserMessage: (message) => {
         setMessages((prev) => [...prev, message]);
@@ -912,27 +975,19 @@ export const App = ({ runtimeConfig }: AppProps) => {
           submitGapMs: terminal.submitGapMs,
         });
       },
-      onToolCall: async (calls) => {
-        logger.log({
-          channel: "agent",
-          level: "warn",
-          message: "tool.call not implemented",
-          meta: { count: calls.length },
-        });
-        return calls.map((call) => ({
-          name: `Tool-${call.name}`,
-          role: "tool" as const,
-          source: "tool" as const,
-          type: "text" as const,
-          text: JSON.stringify({ id: call.id, name: call.name, status: "unimplemented" }),
-        }));
-      },
     });
 
     loopBusRef.current = loopBus;
     loopBus.start();
 
     return () => {
+      active = false;
+      sessionStore.setLifecycle({ status: "stopped" });
+      agentRef.current = null;
+      const waiters = loopWaitersRef.current.splice(0, loopWaitersRef.current.length);
+      for (const resolve of waiters) {
+        resolve("user");
+      }
       loopBus.stop();
       loopBusRef.current = null;
       stopStats();
@@ -949,7 +1004,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
       }
     };
   }, [
-    chatGateway,
+    attentionGateway,
     logger,
     modelClient,
     promptStore,
@@ -983,10 +1038,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
     if (!layoutReady || !terminalSizeReady || bootInProgressRef.current) {
       return;
     }
-    const loopBus = loopBusRef.current;
-    if (!loopBus) {
-      return;
-    }
     const pending = runtimeConfig.bootTerminals
       .filter((entry) => entry.autoRun)
       .map((entry) => entry.terminalId)
@@ -1014,7 +1065,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
               }
             | { ok: false; message: string };
           if (!boot.ok) {
-            loopBus.pushMessage({
+            enqueueLoopInputs({
               name: `Terminal-${terminalId}`,
               role: "user",
               type: "text",
@@ -1033,7 +1084,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
             continue;
           }
           if (boot.help) {
-            loopBus.pushMessage({
+            enqueueLoopInputs({
               name: `Terminal-${terminalId}`,
               role: "user",
               type: "text",
@@ -1050,7 +1101,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
                 setSnapshotView(initialSnapshot);
               }
             }
-            loopBus.pushMessage({
+            enqueueLoopInputs({
               name: `Terminal-${terminalId}`,
               role: "user",
               type: "text",
@@ -1084,7 +1135,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
     setInput("");
     chatInputRef.current?.clear();
     if (value !== "/compact") {
-      chatEngineRef.current.add({
+      attentionEngineRef.current.add({
         content: value,
         from: "user",
         score: 100,
@@ -1122,7 +1173,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
       return;
     }
 
-    loopBusRef.current?.pushMessage({
+    enqueueLoopInputs({
       name: "User",
       role: "user",
       type: "text",

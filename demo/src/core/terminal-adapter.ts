@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { AgenticTerminal, type RenderResult, type TerminalGitLogMode, type TerminalStatus } from "@agenter/terminal";
+import { AgenticTerminal, type RenderResult, type TerminalGitLogMode, type TerminalStatus } from "@agenter/terminal-system";
 
 import type { DebugLogger } from "../infra/logger";
 import { createEmptySnapshot, type TerminalRichLine, type TerminalSnapshot } from "./protocol";

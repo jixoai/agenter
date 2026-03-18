@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@agenter/app-server": "workspace:*",
-    "@agenter/chat-system": "workspace:*",
+    "@agenter/attention-system": "workspace:*",
     "@agenter/settings": "workspace:*",
-    "@agenter/terminal": "workspace:*",
+    "@agenter/terminal-system": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",
     "@tanstack/ai": "^0.6.1",

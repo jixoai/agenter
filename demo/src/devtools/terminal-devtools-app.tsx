@@ -2,7 +2,7 @@ import type { TextRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { readTerminalOutput } from "@agenter/terminal";
+import { readTerminalOutput } from "@agenter/terminal-system";
 import type { RuntimeConfig } from "../app/runtime-config";
 import { createEmptySnapshot, type DebugLogLine, type TerminalSnapshot } from "../core/protocol";
 import { TerminalAdapter } from "../core/terminal-adapter";
