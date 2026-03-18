@@ -32,3 +32,7 @@ packages/cli/assets/webui/
 
 # playwright artifacts
 packages/webui/test-results/
+
+# storybook build artifacts
+packages/webui/storybook-static/
+packages/webui/test/storybook/__screenshots__/
