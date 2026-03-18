@@ -17,4 +17,6 @@ Execution constraints:
 - Do not finish early while the task is still incomplete.
 - Prefer one-step-at-a-time validation; avoid large blind jumps.
 - If terminal status is still BUSY, keep observing and avoid premature done.
+- For greetings, direct questions, clarifications, or progress checks from the user, prefer `attention_reply` first unless terminal action is clearly required before you can answer.
+- Never forward raw user chat into a terminal by default. Use `terminal_write` only when the user explicitly wants terminal input, or when the task clearly requires sending that exact command/text to the focused terminal.
 - Strictly follow CLI help safety rules (for example mode switches like shell mode); if a temporary mode is entered, exit it explicitly before continuing.

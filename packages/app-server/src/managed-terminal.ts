@@ -1,9 +1,10 @@
 import {
   AgenticTerminal,
   type RenderResult,
+  type RichLine,
   type TerminalDirtySliceResult,
   type TerminalStatus,
-} from "@agenter/terminal";
+} from "@agenter/terminal-system";
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
@@ -31,8 +32,30 @@ export interface ManagedTerminalSnapshot {
   cols: number;
   rows: number;
   lines: string[];
+  richLines?: RichLine[];
   cursor: { x: number; y: number };
+  cursorVisible?: boolean;
 }
+
+interface CommitWaitHandle<T = unknown> {
+  promise: Promise<T>;
+  reject: (reason: unknown) => void;
+}
+
+interface TerminalCommitWaiter {
+  afterSeq: number;
+  active: boolean;
+  resolve: (value: { toHash: string | null }) => void;
+  reject: (reason: unknown) => void;
+}
+
+const normalizeSeqHash = (value?: string | null): number => {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export class ManagedTerminal {
   private terminal: AgenticTerminal | null = null;
@@ -43,6 +66,7 @@ export class ManagedTerminal {
   private snapshot: ManagedTerminalSnapshot;
   private readonly snapshotListeners: Array<(snapshot: ManagedTerminalSnapshot) => void> = [];
   private readonly statusListeners: Array<(running: boolean, status: TerminalStatus) => void> = [];
+  private readonly commitWaiters = new Set<TerminalCommitWaiter>();
 
   constructor(private readonly config: ManagedTerminalConfig) {
     this.cols = config.cols;
@@ -53,7 +77,9 @@ export class ManagedTerminal {
       cols: this.cols,
       rows: this.rows,
       lines: Array.from({ length: this.rows }, () => ""),
+      richLines: Array.from({ length: this.rows }, () => ({ spans: [] })),
       cursor: { x: 0, y: 0 },
+      cursorVisible: false,
     };
   }
 
@@ -147,6 +173,48 @@ export class ManagedTerminal {
     return this.terminal?.getStatus() ?? "IDLE";
   }
 
+  getHeadHash(): string | null {
+    return String(this.snapshot.seq);
+  }
+
+  waitCommitted(input: { fromHash?: string | null } = {}): CommitWaitHandle<{ toHash: string | null }> {
+    const afterSeq = normalizeSeqHash(input.fromHash);
+    if (this.snapshot.seq > afterSeq) {
+      return {
+        promise: Promise.resolve({ toHash: String(this.snapshot.seq) }),
+        reject: () => {},
+      };
+    }
+
+    let resolveRef: ((value: { toHash: string | null }) => void) | null = null;
+    let rejectRef: ((reason: unknown) => void) | null = null;
+    const waiter: TerminalCommitWaiter = {
+      afterSeq,
+      active: true,
+      resolve: (value) => resolveRef?.(value),
+      reject: (reason) => rejectRef?.(reason),
+    };
+    const promise = new Promise<{ toHash: string | null }>((resolve, reject) => {
+      resolveRef = resolve;
+      rejectRef = reject;
+    }).finally(() => {
+      waiter.active = false;
+      this.commitWaiters.delete(waiter);
+    });
+    this.commitWaiters.add(waiter);
+    return {
+      promise,
+      reject: (reason) => {
+        if (!waiter.active) {
+          return;
+        }
+        waiter.active = false;
+        this.commitWaiters.delete(waiter);
+        rejectRef?.(reason);
+      },
+    };
+  }
+
   getWorkspace(): string | null {
     return this.terminal?.workspace ?? null;
   }
@@ -208,6 +276,14 @@ export class ManagedTerminal {
   }
 
   private emitSnapshot(): void {
+    for (const waiter of [...this.commitWaiters]) {
+      if (!waiter.active || this.snapshot.seq <= waiter.afterSeq) {
+        continue;
+      }
+      waiter.active = false;
+      this.commitWaiters.delete(waiter);
+      waiter.resolve({ toHash: String(this.snapshot.seq) });
+    }
     for (const listener of this.snapshotListeners) {
       listener(this.snapshot);
     }
@@ -215,6 +291,11 @@ export class ManagedTerminal {
 
   private emitStatus(): void {
     const status = this.getStatus();
+    if (!this.running) {
+      for (const waiter of [...this.commitWaiters]) {
+        waiter.reject(new Error(`terminal ${this.config.terminalId} stopped`));
+      }
+    }
     for (const listener of this.statusListeners) {
       listener(this.running, status);
     }
@@ -223,7 +304,9 @@ export class ManagedTerminal {
   private toSnapshot(render: RenderResult): ManagedTerminalSnapshot {
     const start = Math.max(0, render.plainLines.length - this.rows);
     const rawLines = render.plainLines.slice(start, start + this.rows);
+    const rawRichLines = render.richLines.slice(start, start + this.rows);
     const lines = padLines(rawLines, this.rows, () => "");
+    const richLines = padLines(rawRichLines, this.rows, () => ({ spans: [] }));
 
     const cursorY = clamp(render.cursorAbsRow - start, 0, Math.max(0, this.rows - 1));
     this.seq += 1;
@@ -234,10 +317,12 @@ export class ManagedTerminal {
       cols: this.cols,
       rows: this.rows,
       lines,
+      richLines,
       cursor: {
         x: render.cursorCol,
         y: cursorY,
       },
+      cursorVisible: render.cursorVisible,
     };
   }
 }

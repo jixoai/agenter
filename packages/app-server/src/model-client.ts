@@ -3,6 +3,7 @@ import {
   summarize,
   type AnySummarizeAdapter,
   type AnyTextAdapter,
+  type ModelMessage,
   type StreamChunk,
   type Tool,
 } from "@tanstack/ai";
@@ -33,14 +34,39 @@ export interface AssistantTurn {
   finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
 }
 
-export interface TextOnlyModelMessage {
-  role: "user" | "assistant" | "tool";
-  content: Array<{
-    type: "text";
-    content: string;
-  }>;
-  name?: string;
-}
+export type AssistantStreamUpdate =
+  | {
+      kind: "draft";
+      content: string;
+      usage?: DecisionUsage;
+      finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
+      timestamp: number;
+    }
+  | {
+      kind: "tool_call";
+      toolCallId: string;
+      toolName: string;
+      argsText: string;
+      input?: unknown;
+      timestamp: number;
+    }
+  | {
+      kind: "tool_result";
+      toolCallId: string;
+      toolName: string;
+      ok: boolean;
+      result?: unknown;
+      error?: string | null;
+      timestamp: number;
+    }
+  | {
+      kind: "run_finished";
+      usage?: DecisionUsage;
+      finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
+      timestamp: number;
+    };
+
+export type TextOnlyModelMessage = ModelMessage;
 
 export interface ModelProviderConfig {
   providerId: string;
@@ -67,6 +93,7 @@ interface RespondInput {
   systemPrompt: string;
   messages: TextOnlyModelMessage[];
   tools: Tool[];
+  onUpdate?: (update: AssistantStreamUpdate) => void | Promise<void>;
 }
 
 const isDeepseekBaseUrl = (baseUrl: string | undefined): boolean => {
@@ -84,6 +111,14 @@ const appendChunk = (current: string, chunk: string | undefined): string => {
   return current + chunk;
 };
 
+const safeJsonParse = (input: string): unknown => {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+};
+
 const isRunFinishedChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "RUN_FINISHED" }> =>
   chunk.type === "RUN_FINISHED";
 
@@ -92,6 +127,15 @@ const isTextChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: 
 
 const isThinkingChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> =>
   chunk.type === "STEP_FINISHED";
+
+const isToolCallStartChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TOOL_CALL_START" }> =>
+  chunk.type === "TOOL_CALL_START";
+
+const isToolCallArgsChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TOOL_CALL_ARGS" }> =>
+  chunk.type === "TOOL_CALL_ARGS";
+
+const isToolCallEndChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TOOL_CALL_END" }> =>
+  chunk.type === "TOOL_CALL_END";
 
 export class ModelClient {
   private readonly textAdapter: AnyTextAdapter;
@@ -137,6 +181,7 @@ export class ModelClient {
         let thinking = "";
         let usage: DecisionUsage | undefined;
         let finishReason: AssistantTurn["finishReason"];
+        const toolCalls = new Map<string, { toolName: string; argsText: string }>();
 
         for await (const chunk of chat({
           adapter: this.textAdapter,
@@ -148,15 +193,77 @@ export class ModelClient {
         })) {
           if (isTextChunk(chunk)) {
             text = appendChunk(text, chunk.delta);
+            await input.onUpdate?.({
+              kind: "draft",
+              content: text,
+              timestamp: chunk.timestamp,
+            });
             continue;
           }
           if (isThinkingChunk(chunk)) {
             thinking = appendChunk(thinking, chunk.delta);
             continue;
           }
+          if (isToolCallStartChunk(chunk)) {
+            toolCalls.set(chunk.toolCallId, { toolName: chunk.toolName, argsText: "" });
+            await input.onUpdate?.({
+              kind: "tool_call",
+              toolCallId: chunk.toolCallId,
+              toolName: chunk.toolName,
+              argsText: "",
+              timestamp: chunk.timestamp,
+            });
+            continue;
+          }
+          if (isToolCallArgsChunk(chunk)) {
+            const current = toolCalls.get(chunk.toolCallId);
+            const argsText = chunk.args ?? appendChunk(current?.argsText ?? "", chunk.delta);
+            const toolName = current?.toolName ?? "tool";
+            toolCalls.set(chunk.toolCallId, { toolName, argsText });
+            await input.onUpdate?.({
+              kind: "tool_call",
+              toolCallId: chunk.toolCallId,
+              toolName,
+              argsText,
+              input: safeJsonParse(argsText),
+              timestamp: chunk.timestamp,
+            });
+            continue;
+          }
+          if (isToolCallEndChunk(chunk)) {
+            const current = toolCalls.get(chunk.toolCallId);
+            const toolName = current?.toolName ?? chunk.toolName;
+            const argsText = current?.argsText ?? "";
+            await input.onUpdate?.({
+              kind: "tool_call",
+              toolCallId: chunk.toolCallId,
+              toolName,
+              argsText,
+              input: chunk.input ?? (argsText.length > 0 ? safeJsonParse(argsText) : undefined),
+              timestamp: chunk.timestamp,
+            });
+            if (chunk.result !== undefined) {
+              await input.onUpdate?.({
+                kind: "tool_result",
+                toolCallId: chunk.toolCallId,
+                toolName,
+                ok: true,
+                result: safeJsonParse(chunk.result),
+                timestamp: chunk.timestamp,
+              });
+            }
+            toolCalls.delete(chunk.toolCallId);
+            continue;
+          }
           if (isRunFinishedChunk(chunk)) {
             usage = chunk.usage;
             finishReason = chunk.finishReason;
+            await input.onUpdate?.({
+              kind: "run_finished",
+              usage,
+              finishReason,
+              timestamp: chunk.timestamp,
+            });
           }
         }
 

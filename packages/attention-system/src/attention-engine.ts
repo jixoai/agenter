@@ -1,12 +1,12 @@
 import type {
-  ChatAddInput,
-  ChatQueryInput,
-  ChatRecord,
-  ChatRemarkInput,
-  ChatReplyInput,
-  ChatReplyResult,
-  ChatSystemSnapshot,
-} from "./chat-types";
+  AttentionAddInput,
+  AttentionQueryInput,
+  AttentionRecord,
+  AttentionRemarkInput,
+  AttentionReplyInput,
+  AttentionReplyResult,
+  AttentionSystemSnapshot,
+} from "./attention-types";
 
 const MAX_SCORE = 100;
 const MIN_SCORE = 0;
@@ -32,11 +32,11 @@ const normalizeScore = (score: number | undefined, fallback: number): number => 
 
 const contains = (haystack: string, needle: string): boolean => haystack.toLowerCase().includes(needle.toLowerCase());
 
-export class ChatEngine {
-  private readonly records = new Map<number, ChatRecord>();
+export class AttentionEngine {
+  private readonly records = new Map<number, AttentionRecord>();
   private nextId = 1;
 
-  constructor(snapshot?: ChatSystemSnapshot) {
+  constructor(snapshot?: AttentionSystemSnapshot) {
     if (!snapshot) {
       return;
     }
@@ -49,15 +49,15 @@ export class ChatEngine {
     }
   }
 
-  list(): ChatRecord[] {
+  list(): AttentionRecord[] {
     return this.sorted().filter((record) => record.score > 0);
   }
 
-  all(): ChatRecord[] {
+  all(): AttentionRecord[] {
     return this.sorted();
   }
 
-  query(input: ChatQueryInput = {}): ChatRecord[] {
+  query(input: AttentionQueryInput = {}): AttentionRecord[] {
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
     const limit = Math.max(1, Math.trunc(input.limit ?? 20));
     const query = input.query?.trim();
@@ -76,18 +76,18 @@ export class ChatEngine {
     return filtered.slice(offset, offset + limit);
   }
 
-  add(input: ChatAddInput): ChatRecord {
+  add(input: AttentionAddInput): AttentionRecord {
     const content = input.content.trim();
     if (content.length === 0) {
-      throw new Error("chat content is required");
+      throw new Error("attention content is required");
     }
     const from = input.from.trim();
     if (from.length === 0) {
-      throw new Error("chat from is required");
+      throw new Error("attention from is required");
     }
 
     const timestamp = nowIso();
-    const record: ChatRecord = {
+    const record: AttentionRecord = {
       id: this.nextId,
       content,
       from,
@@ -101,13 +101,13 @@ export class ChatEngine {
     return { ...record };
   }
 
-  remark(input: ChatRemarkInput): ChatRecord | undefined {
+  remark(input: AttentionRemarkInput): AttentionRecord | undefined {
     const record = this.records.get(input.id);
     if (!record) {
       return undefined;
     }
 
-    const next: ChatRecord = {
+    const next: AttentionRecord = {
       ...record,
       score: normalizeScore(input.score, record.score),
       remark: input.remark !== undefined ? input.remark.trim() : record.remark,
@@ -117,14 +117,14 @@ export class ChatEngine {
     return { ...next };
   }
 
-  reply(input: ChatReplyInput): ChatReplyResult {
+  reply(input: AttentionReplyInput): AttentionReplyResult {
     const reply = this.add({
       content: input.replyContent,
       from: input.from?.trim() || "assistant",
       score: input.score ?? 0,
     });
 
-    const related: ChatRecord[] = [];
+    const related: AttentionRecord[] = [];
     for (const relation of input.relationships ?? []) {
       const updated = this.remark({
         id: relation.id,
@@ -139,14 +139,14 @@ export class ChatEngine {
     return { reply, related };
   }
 
-  snapshot(): ChatSystemSnapshot {
+  snapshot(): AttentionSystemSnapshot {
     return {
       nextId: this.nextId,
       records: this.sorted(),
     };
   }
 
-  private sorted(): ChatRecord[] {
+  private sorted(): AttentionRecord[] {
     return [...this.records.values()].sort((a, b) => a.id - b.id);
   }
 }

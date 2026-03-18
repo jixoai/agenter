@@ -1,11 +1,11 @@
 import type {
-  ChatAddInput,
-  ChatQueryInput,
-  ChatRecord,
-  ChatRemarkInput,
-  ChatReplyInput,
-  ChatReplyResult,
-} from "@agenter/chat-system";
+  AttentionAddInput,
+  AttentionQueryInput,
+  AttentionRecord,
+  AttentionRemarkInput,
+  AttentionReplyInput,
+  AttentionReplyResult,
+} from "@agenter/attention-system";
 import { mdxToMd } from "@agenter/mdx2md";
 import type {
   TaskCreateInput,
@@ -17,16 +17,16 @@ import type {
   TaskUpdateInput,
   TaskView,
 } from "@agenter/task-system";
-import { toolDefinition, type Tool } from "@tanstack/ai";
+import { toolDefinition, type ContentPart, type Tool } from "@tanstack/ai";
 import { z } from "zod";
 
 import type { LoopBusMessage, LoopBusResponse } from "./loop-bus";
-import type { ModelClient, TextOnlyModelMessage } from "./model-client";
+import type { AssistantStreamUpdate, ModelClient, TextOnlyModelMessage } from "./model-client";
 import { ModelDecisionError } from "./model-client";
 import type { PromptStore } from "./prompt-store";
 import { createRuntimeText } from "./runtime-text";
 import type { SessionStore } from "./session-store";
-import type { AppServerLogger, ChatMessage, TaskEvent, TaskStage } from "./types";
+import type { AppServerLogger, ChatImageAttachment, ChatMessage, TaskEvent, TaskStage } from "./types";
 
 interface TerminalDescriptor {
   terminalId: string;
@@ -57,10 +57,21 @@ interface TerminalGateway {
   focus: (input: {
     terminalId: string;
     focus?: boolean;
-  }) => Promise<{ ok: boolean; message: string; focusedTerminalId?: string }>;
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds?: string[] }>;
   write: (input: TerminalWriteInput) => Promise<{ ok: boolean; message: string }>;
   read: (input: TerminalReadInput) => Promise<unknown>;
-  sliceDirty: (input: { terminalId: string; remark?: boolean; wait?: boolean; timeoutMs?: number }) => Promise<unknown>;
+  consumeDiff: (input: {
+    terminalId: string;
+    remark?: boolean;
+    wait?: boolean;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  sliceDirty?: (input: {
+    terminalId: string;
+    remark?: boolean;
+    wait?: boolean;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
 }
 
 interface TaskGateway {
@@ -80,12 +91,17 @@ interface TaskGateway {
   import: (items: TaskImportItem[]) => TaskImportResult;
 }
 
-interface ChatGateway {
-  list: () => ChatRecord[];
-  add: (input: ChatAddInput) => Promise<ChatRecord> | ChatRecord;
-  remark: (input: ChatRemarkInput) => Promise<ChatRecord | undefined> | ChatRecord | undefined;
-  query: (input: ChatQueryInput) => Promise<ChatRecord[]> | ChatRecord[];
-  reply: (input: ChatReplyInput) => Promise<ChatReplyResult> | ChatReplyResult;
+interface AttentionGateway {
+  list: () => AttentionRecord[];
+  add: (input: AttentionAddInput) => Promise<AttentionRecord> | AttentionRecord;
+  remark: (input: AttentionRemarkInput) => Promise<AttentionRecord | undefined> | AttentionRecord | undefined;
+  query: (input: AttentionQueryInput) => Promise<AttentionRecord[]> | AttentionRecord[];
+  reply: (input: AttentionReplyInput) => Promise<AttentionReplyResult> | AttentionReplyResult;
+}
+
+interface ResolvedImageAttachmentSource {
+  mimeType: string;
+  dataBase64: string;
 }
 
 interface AgentDeps {
@@ -95,8 +111,53 @@ interface AgentDeps {
   locale?: string;
   terminalGateway: TerminalGateway;
   taskGateway: TaskGateway;
-  chatGateway: ChatGateway;
+  attentionGateway: AttentionGateway;
   sessionStore?: SessionStore;
+  resolveImageAttachment?: (
+    attachment: ChatImageAttachment,
+  ) => Promise<ResolvedImageAttachmentSource | null> | ResolvedImageAttachmentSource | null;
+  onAssistantStream?: (update: AssistantStreamUpdate) => Promise<void> | void;
+  onAssistantLiveMessage?: (message: ChatMessage) => Promise<void> | void;
+  onModelCall?: (record: AgentModelCallRecord) => Promise<void> | void;
+}
+
+export interface AgentModelCallRecord {
+  id: string;
+  timestamp: number;
+  provider: string;
+  model: string;
+  request: {
+    systemPrompt: string;
+    messages: TextOnlyModelMessage[];
+    tools: Array<{ name: string; description?: string }>;
+    meta?: Record<string, unknown>;
+  };
+  response?: {
+    decision?: unknown;
+    usage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
+    assistant?: {
+      thinking?: string;
+      text?: string;
+      finishReason?: string | null;
+    };
+    toolTrace?: Array<{
+      tool: string;
+      input: unknown;
+      output?: unknown;
+      error?: string;
+      timestamp: string;
+    }>;
+  };
+  error?: {
+    message: string;
+    name?: string;
+    stack?: string;
+    details?: unknown;
+  };
 }
 
 interface ActiveTask {
@@ -112,7 +173,7 @@ interface ToolTraceEntry {
   timestamp: string;
 }
 
-interface ChatReplyCall {
+interface AttentionReplyCall {
   id: number;
   text: string;
   from: string;
@@ -121,6 +182,13 @@ interface ChatReplyCall {
   done: boolean;
   stage?: TaskStage;
   relationships?: Array<{ id: number; score?: number; remark?: string }>;
+}
+
+interface AssistantFact {
+  content: string;
+  channel?: ChatMessage["channel"];
+  format?: ChatMessage["format"];
+  tool?: ChatMessage["tool"];
 }
 
 interface TerminalHelpDocument {
@@ -152,6 +220,37 @@ const safeJsonParse = (input: string): unknown => {
 };
 
 const formatTimestamp = (value: number): string => new Date(value).toISOString();
+
+const toTextPart = (content: string): ContentPart => ({
+  type: "text",
+  content,
+});
+
+const contentPartToText = (part: ContentPart): string => {
+  if (part.type === "text") {
+    return part.content;
+  }
+  if (part.type === "image") {
+    return "[image]";
+  }
+  if (part.type === "audio") {
+    return "[audio]";
+  }
+  if (part.type === "video") {
+    return "[video]";
+  }
+  return "[document]";
+};
+
+const historyContentToText = (content: TextOnlyModelMessage["content"]): string => {
+  if (content === null || content === undefined) {
+    return "";
+  }
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map((part) => contentPartToText(part)).join("\n");
+};
 
 const yamlScalar = (input: unknown): string => {
   if (input === null || input === undefined) {
@@ -204,13 +303,13 @@ const mdFence = (lang: string, content: string): string => {
   return `\`\`\`${lang}\n${normalized}\n\`\`\``;
 };
 
-const compactSnapshotTail = (lines: string[]): string[] => {
-  const trimmed = lines.map((line) => line.replace(/\s+$/g, ""));
+const compactSnapshotTail = (tail: string): string => {
+  const trimmed = tail.split(/\r?\n/g).map((line) => line.replace(/\s+$/g, ""));
   const compacted = trimmed.filter((line) => line.length > 0);
   if (compacted.length === 0) {
-    return [];
+    return "";
   }
-  return compacted.slice(-MAX_TERMINAL_SNAPSHOT_LINES);
+  return compacted.slice(-MAX_TERMINAL_SNAPSHOT_LINES).join("\n");
 };
 
 const inferStageFromToolTrace = (trace: ToolTraceEntry[]): TaskStage => {
@@ -219,7 +318,9 @@ const inferStageFromToolTrace = (trace: ToolTraceEntry[]): TaskStage => {
   }
   if (
     trace.some((entry) =>
-      ["terminal_sliceDirty", "terminal_read", "terminal_run", "terminal_list"].includes(entry.tool),
+      ["terminal_consumeDiff", "terminal_sliceDirty", "terminal_read", "terminal_run", "terminal_list"].includes(
+        entry.tool,
+      ),
     )
   ) {
     return "observe";
@@ -277,6 +378,13 @@ export class AgenterAI {
     };
   }
 
+  inspectDebugState(): { history: TextOnlyModelMessage[]; stats: AgentRuntimeStats } {
+    return {
+      history: structuredClone(this.history),
+      stats: { ...this.stats },
+    };
+  }
+
   async send(messages: LoopBusMessage[]): Promise<LoopBusResponse<ChatMessage, TaskStage> | void> {
     const orderedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
     if (orderedMessages.length === 0) {
@@ -306,11 +414,11 @@ export class AgenterAI {
       },
     });
     const toolTrace: ToolTraceEntry[] = [];
-    const chatReplies: ChatReplyCall[] = [];
+    const attentionReplies: AttentionReplyCall[] = [];
     const tools = ENABLE_AGENT_TOOLS
       ? this.buildTools(taskId, toolTrace, {
           onChatReply: (reply) => {
-            chatReplies.push(reply);
+            attentionReplies.push(reply);
           },
         })
       : [];
@@ -327,6 +435,9 @@ export class AgenterAI {
         systemPrompt,
         messages: historySnapshot,
         tools,
+        onUpdate: async (update) => {
+          await this.deps.onAssistantStream?.(update);
+        },
       });
 
       this.stats.apiCalls += 1;
@@ -344,9 +455,9 @@ export class AgenterAI {
       }
       this.emitStats();
 
-      this.deps.sessionStore?.appendCall({
+      const callRecord: AgentModelCallRecord = {
         id: callId,
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         provider: this.deps.modelClient.getMeta().provider,
         model: this.deps.modelClient.getMeta().model,
         request: {
@@ -361,9 +472,9 @@ export class AgenterAI {
         },
         response: {
           decision: {
-            stage: chatReplies[chatReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
-            done: chatReplies.some((item) => item.done),
-            toUser: chatReplies.map((item) => item.text),
+            stage: attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
+            done: attentionReplies.some((item) => item.done),
+            toUser: attentionReplies.map((item) => item.text),
           },
           usage: response.usage,
           toolTrace,
@@ -373,17 +484,24 @@ export class AgenterAI {
             finishReason: response.finishReason ?? null,
           },
         },
+      };
+      this.persistModelCall(callRecord);
+
+      const assistantFacts = this.buildAssistantFacts({
+        thinking: response.thinking,
+        text: response.text,
+        toolTrace,
+        attentionReplies,
       });
+      this.pushAssistantTurnToHistory(assistantFacts);
 
-      this.pushAssistantTurnToHistory({ thinking: response.thinking, text: response.text, toolTrace, chatReplies });
-
-      const stage = chatReplies[chatReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
-      const done = chatReplies.some((item) => item.done) || stage === "done";
-      const toUserMessages = this.composeAssistantMessages(chatReplies, response.thinking, toolTrace);
+      const stage = attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
+      const done = attentionReplies.some((item) => item.done) || stage === "done";
+      const toUserMessages = this.composeAssistantMessages(assistantFacts);
       const summary = this.resolveTaskSummary({
         stage,
         done,
-        chatReplies,
+        attentionReplies,
         text: response.text,
         thinking: response.thinking,
       });
@@ -409,9 +527,9 @@ export class AgenterAI {
       const name = error instanceof Error ? error.name : "Error";
       const stack = error instanceof Error ? error.stack : undefined;
       const details = error instanceof ModelDecisionError ? { retried: true } : undefined;
-      this.deps.sessionStore?.appendCall({
+      const callRecord: AgentModelCallRecord = {
         id: callId,
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         provider: this.deps.modelClient.getMeta().provider,
         model: this.deps.modelClient.getMeta().model,
         request: {
@@ -428,7 +546,8 @@ export class AgenterAI {
           toolTrace,
         },
         error: { message, name, stack, details },
-      });
+      };
+      this.persistModelCall(callRecord);
       this.activeTask = null;
       this.deps.logger.log({
         channel: "error",
@@ -446,123 +565,123 @@ export class AgenterAI {
     }
   }
 
-  private composeAssistantMessages(
-    chatReplies: ChatReplyCall[],
-    thinking: string,
-    toolTrace: ToolTraceEntry[],
-  ): ChatMessage[] {
-    const result: ChatMessage[] = [];
-    if (thinking.trim().length > 0) {
-      result.push(
-        this.createAssistantMessage(thinking.trim(), {
-          channel: "self_talk",
-          format: "markdown",
-        }),
-      );
+  private buildAssistantFacts(input: {
+    attentionReplies: AttentionReplyCall[];
+    thinking: string;
+    toolTrace: ToolTraceEntry[];
+    text?: string;
+  }): AssistantFact[] {
+    const result: AssistantFact[] = [];
+    const normalizedThinking = input.thinking.trim();
+    const normalizedText = input.text?.trim() ?? "";
+
+    if (normalizedThinking.length > 0) {
+      result.push({
+        content: normalizedThinking,
+        channel: "self_talk",
+        format: "markdown",
+      });
     }
 
-    for (const tool of toolTrace) {
-      result.push(
-        this.createAssistantMessage(
-          mdFence(
-            "yaml+tool_call",
+    if (normalizedText.length > 0 && normalizedText !== normalizedThinking) {
+      result.push({
+        content: normalizedText,
+        channel: "self_talk",
+        format: "markdown",
+      });
+    }
+
+    for (const tool of input.toolTrace) {
+      result.push({
+        content: mdFence(
+          "yaml+tool_call",
+          toYaml({
+            tool: tool.tool,
+            input: tool.input,
+            timestamp: tool.timestamp,
+          }),
+        ),
+        channel: "tool_call",
+        format: "markdown",
+        tool: { name: tool.tool },
+      });
+
+      if (tool.output !== undefined || tool.error !== undefined) {
+        result.push({
+          content: mdFence(
+            "yaml+tool_result",
             toYaml({
               tool: tool.tool,
-              input: tool.input,
+              ok: tool.error === undefined,
+              output: tool.output ?? null,
+              error: tool.error ?? null,
               timestamp: tool.timestamp,
             }),
           ),
-          {
-            channel: "tool_call",
-            format: "markdown",
-            tool: { name: tool.tool },
-          },
-        ),
-      );
-
-      if (tool.output !== undefined || tool.error !== undefined) {
-        result.push(
-          this.createAssistantMessage(
-            mdFence(
-              "yaml+tool_result",
-              toYaml({
-                tool: tool.tool,
-                ok: tool.error === undefined,
-                output: tool.output ?? null,
-                error: tool.error ?? null,
-                timestamp: tool.timestamp,
-              }),
-            ),
-            {
-              channel: "tool_result",
-              format: "markdown",
-              tool: { name: tool.tool, ok: tool.error === undefined },
-            },
-          ),
-        );
+          channel: "tool_result",
+          format: "markdown",
+          tool: { name: tool.tool, ok: tool.error === undefined },
+        });
       }
     }
 
-    const replies = chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
+    const replies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
     for (const reply of replies) {
-      result.push(
-        this.createAssistantMessage(reply, {
-          channel: "to_user",
-          format: "markdown",
-        }),
-      );
+      result.push({
+        content: reply,
+        channel: "to_user",
+        format: "markdown",
+      });
     }
     return result;
   }
 
+  private composeAssistantMessages(facts: readonly AssistantFact[]): ChatMessage[] {
+    return facts.map((fact) =>
+      this.createAssistantMessage(fact.content, {
+        channel: fact.channel,
+        format: fact.format,
+        tool: fact.tool,
+      }),
+    );
+  }
+
+  private persistModelCall(record: AgentModelCallRecord): void {
+    this.deps.sessionStore?.appendCall({
+      ...record,
+      timestamp: new Date(record.timestamp).toISOString(),
+    });
+    void this.deps.onModelCall?.(record);
+  }
+
   private async pushIncomingBatchToHistory(messages: LoopBusMessage[]): Promise<void> {
     const rendered = await Promise.all(messages.map((message) => this.formatUserMessage(message)));
-    const content = rendered.join("\n\n---\n\n");
+    const content: ContentPart[] = [];
+    rendered.forEach((parts, index) => {
+      if (index > 0) {
+        content.push(toTextPart("\n\n---\n\n"));
+      }
+      content.push(...parts);
+    });
     this.history.push({
       role: "user",
-      content: [
-        {
-          type: "text",
-          content,
-        },
-      ],
+      content,
     });
     this.trimHistory();
   }
 
-  private pushAssistantTurnToHistory(input: {
-    thinking: string;
-    text: string;
-    chatReplies: ChatReplyCall[];
-    toolTrace: ToolTraceEntry[];
-  }): void {
-    const toUserReplies = input.chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
-    const parts: string[] = [];
-    if (toUserReplies.length > 0) {
-      parts.push(`to_user_count: ${toUserReplies.length}`);
-      parts.push(`to_user_last: ${toUserReplies[toUserReplies.length - 1]}`);
-    }
-    if (input.thinking.trim().length > 0) {
-      parts.push(`self_talk: ${input.thinking.trim()}`);
-    }
-    if (input.text.trim().length > 0) {
-      parts.push(`assistant_text: ${input.text.trim()}`);
-    }
-    if (input.toolTrace.length > 0) {
-      const toolNames = Array.from(new Set(input.toolTrace.map((trace) => trace.tool)));
-      parts.push(`tool_trace_count: ${input.toolTrace.length}`);
-      parts.push(`tool_trace_tools: ${toolNames.join(", ")}`);
+  private pushAssistantTurnToHistory(facts: readonly AssistantFact[]): void {
+    if (facts.length === 0) {
+      return;
     }
 
-    this.history.push({
-      role: "assistant",
-      content: [
-        {
-          type: "text",
-          content: parts.join("\n\n"),
-        },
-      ],
-    });
+    for (const fact of facts) {
+      this.history.push({
+        role: "assistant",
+        content: [toTextPart(fact.content)],
+      });
+    }
+
     this.trimHistory();
   }
 
@@ -571,18 +690,19 @@ export class AgenterAI {
     if (!this.compactPending || this.history.length < minimumHistory) {
       return;
     }
-    const chatFacts = this.deps.chatGateway.list();
+    const attentionFacts = this.deps.attentionGateway.list();
     const historyText = this.history
       .map((item, index) => {
-        const content = item.content.map((part) => part.content).join("\n");
+        const content = historyContentToText(item.content);
         return `# ${index + 1} ${item.role}\n${content}`;
       })
       .join("\n\n");
+
     const compactInput =
-      chatFacts.length === 0
+      attentionFacts.length === 0
         ? historyText
-        : `${historyText}\n\n# chat_attention\n${JSON.stringify(
-            chatFacts.map((item) => ({
+        : `${historyText}\n\n# attention_system\n${JSON.stringify(
+            attentionFacts.map((item) => ({
               id: item.id,
               from: item.from,
               score: item.score,
@@ -608,12 +728,7 @@ export class AgenterAI {
     this.history = [
       {
         role: "assistant",
-        content: [
-          {
-            type: "text",
-            content: `history_summary:\n${compact.summary.trim()}`,
-          },
-        ],
+        content: [toTextPart(`history_summary:\n${compact.summary.trim()}`)],
       },
       ...this.history.slice(-12),
     ];
@@ -631,19 +746,34 @@ export class AgenterAI {
     });
   }
 
-  private async formatUserMessage(message: LoopBusMessage): Promise<string> {
+  private async formatUserMessage(message: LoopBusMessage): Promise<ContentPart[]> {
     const header = `### ${message.name}`;
     if (message.source === "chat") {
-      return [header, message.text].join("\n\n");
+      const parts: ContentPart[] = [toTextPart([header, message.text].join("\n\n"))];
+      for (const attachment of message.attachments ?? []) {
+        const resolved = await this.deps.resolveImageAttachment?.(attachment);
+        if (!resolved) {
+          continue;
+        }
+        parts.push({
+          type: "image",
+          source: {
+            type: "data",
+            mimeType: resolved.mimeType,
+            value: resolved.dataBase64,
+          },
+        });
+      }
+      return parts;
     }
     if (message.source === "terminal") {
-      return [header, await this.formatTerminalMessage(message.text)].join("\n\n");
+      return [toTextPart([header, await this.formatTerminalMessage(message.text)].join("\n\n"))];
     }
     if (message.source === "task") {
-      return [header, mdFence("yaml", message.text)].join("\n\n");
+      return [toTextPart([header, mdFence("yaml", message.text)].join("\n\n"))];
     }
-    if (message.source === "chat-system") {
-      return [header, await this.formatChatSystemMessage(message.text)].join("\n\n");
+    if (message.source === "attention-system") {
+      return [toTextPart([header, await this.formatAttentionSystemMessage(message.text)].join("\n\n"))];
     }
 
     const metaYaml = toYaml({
@@ -651,16 +781,16 @@ export class AgenterAI {
       timestamp: formatTimestamp(message.timestamp),
       ...(message.meta ?? {}),
     });
-    return [header, mdFence("yaml", metaYaml), mdFence("text", message.text)].join("\n\n");
+    return [toTextPart([header, mdFence("yaml", metaYaml), mdFence("text", message.text)].join("\n\n"))];
   }
 
-  private async formatChatSystemMessage(text: string): Promise<string> {
+  private async formatAttentionSystemMessage(text: string): Promise<string> {
     const parsed = safeJsonParse(text);
     if (!parsed || typeof parsed !== "object") {
       return mdFence("text", text);
     }
     const payload = parsed as Record<string, unknown>;
-    if (payload.kind !== "chat-system-list" || !Array.isArray(payload.items)) {
+    if (payload.kind !== "attention-system-list" || !Array.isArray(payload.items)) {
       return mdFence("yaml", toYaml(payload));
     }
     const items = payload.items
@@ -679,7 +809,7 @@ export class AgenterAI {
       )
       .join("\n");
     return [
-      mdFence("yaml", toYaml({ kind: "chat-system-list", count: items.length })),
+      mdFence("yaml", toYaml({ kind: "attention-system-list", count: items.length })),
       mdFence("markdown", markdown),
     ].join("\n\n");
   }
@@ -722,16 +852,20 @@ export class AgenterAI {
         dirty: payload.dirty ?? true,
         seq: payload.seq ?? 0,
         status: payload.status ?? "unknown",
-        hint: "call terminal_sliceDirty if detailed diff is needed",
+        hint: "call terminal_consumeDiff if detailed diff is needed",
       });
       return mdFence("yaml", metaYaml);
     }
 
     if (kind === "terminal-snapshot") {
-      const tail = Array.isArray(payload.tail)
-        ? payload.tail.filter((item): item is string => typeof item === "string")
-        : [];
-      const compactTail = compactSnapshotTail(tail);
+      const rawTail =
+        typeof payload.tail === "string"
+          ? payload.tail
+          : Array.isArray(payload.tail)
+            ? payload.tail.filter((item): item is string => typeof item === "string").join("\n")
+            : "";
+      const compactTail = compactSnapshotTail(rawTail);
+      const tailLines = compactTail.length === 0 ? 0 : compactTail.split(/\r?\n/g).length;
       const metaYaml = toYaml({
         kind,
         terminalId: payload.terminalId ?? "unknown",
@@ -739,9 +873,9 @@ export class AgenterAI {
         cols: payload.cols ?? 0,
         rows: payload.rows ?? 0,
         cursor: payload.cursor ?? null,
-        tailLines: compactTail.length,
+        tailLines,
       });
-      const body = compactTail.length > 0 ? mdFence("text", compactTail.join("\n")) : "_empty snapshot tail_";
+      const body = compactTail.length > 0 ? mdFence("text", compactTail) : "_empty snapshot tail_";
       return [mdFence("yaml", metaYaml), body].join("\n\n");
     }
 
@@ -823,7 +957,7 @@ export class AgenterAI {
     taskId: string,
     trace: ToolTraceEntry[],
     hooks: {
-      onChatReply: (reply: ChatReplyCall) => void;
+      onChatReply: (reply: AttentionReplyCall) => void;
     },
   ): Tool[] {
     const traceTool = async <TInput extends unknown, TOutput extends unknown>(
@@ -853,9 +987,9 @@ export class AgenterAI {
       }
     };
 
-    const chatListTool = toolDefinition({
-      name: "chat_list",
-      description: this.runtimeText.t("tool.chat_list.description"),
+    const attentionListTool = toolDefinition({
+      name: "attention_list",
+      description: this.runtimeText.t("tool.attention_list.description"),
       outputSchema: z.object({
         items: z.array(
           z.object({
@@ -869,14 +1003,14 @@ export class AgenterAI {
         ),
       }),
     }).server(async () =>
-      traceTool("chat_list", {}, async () => ({
-        items: this.deps.chatGateway.list(),
+      traceTool("attention_list", {}, async () => ({
+        items: this.deps.attentionGateway.list(),
       })),
     );
 
-    const chatAddTool = toolDefinition({
-      name: "chat_add",
-      description: this.runtimeText.t("tool.chat_add.description"),
+    const attentionAddTool = toolDefinition({
+      name: "attention_add",
+      description: this.runtimeText.t("tool.attention_add.description"),
       inputSchema: z.object({
         content: z.string().min(1),
         from: z.string().min(1),
@@ -895,15 +1029,15 @@ export class AgenterAI {
           remark: z.string().optional(),
         })
         .parse(rawInput);
-      return traceTool("chat_add", input, async () => {
-        const record = await this.deps.chatGateway.add(input);
+      return traceTool("attention_add", input, async () => {
+        const record = await this.deps.attentionGateway.add(input);
         return { id: record.id };
       });
     });
 
-    const chatRemarkTool = toolDefinition({
-      name: "chat_remark",
-      description: this.runtimeText.t("tool.chat_remark.description"),
+    const attentionRemarkTool = toolDefinition({
+      name: "attention_remark",
+      description: this.runtimeText.t("tool.attention_remark.description"),
       inputSchema: z.object({
         id: z.number().int(),
         score: z.number().int().min(0).max(100).optional(),
@@ -927,8 +1061,8 @@ export class AgenterAI {
           remark: z.string().optional(),
         })
         .parse(rawInput);
-      return traceTool("chat_remark", input, async () => {
-        const updated = await this.deps.chatGateway.remark(input);
+      return traceTool("attention_remark", input, async () => {
+        const updated = await this.deps.attentionGateway.remark(input);
         return {
           ok: Boolean(updated),
           updated: updated
@@ -942,9 +1076,9 @@ export class AgenterAI {
       });
     });
 
-    const chatQueryTool = toolDefinition({
-      name: "chat_query",
-      description: this.runtimeText.t("tool.chat_query.description"),
+    const attentionQueryTool = toolDefinition({
+      name: "attention_query",
+      description: this.runtimeText.t("tool.attention_query.description"),
       inputSchema: z.object({
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional(),
@@ -970,14 +1104,14 @@ export class AgenterAI {
           query: z.string().optional(),
         })
         .parse(rawInput);
-      return traceTool("chat_query", input, async () => ({
-        items: await this.deps.chatGateway.query(input),
+      return traceTool("attention_query", input, async () => ({
+        items: await this.deps.attentionGateway.query(input),
       }));
     });
 
-    const chatReplyTool = toolDefinition({
-      name: "chat_reply",
-      description: this.runtimeText.t("tool.chat_reply.description"),
+    const attentionReplyTool = toolDefinition({
+      name: "attention_reply",
+      description: this.runtimeText.t("tool.attention_reply.description"),
       inputSchema: z
         .object({
           replyContent: z.string().min(1).optional(),
@@ -999,7 +1133,7 @@ export class AgenterAI {
         .refine((value) => Boolean(value.replyContent || value.text), {
           message: "replyContent is required",
         }),
-      outputSchema: z.object({ ok: z.boolean(), id: z.number().int() }),
+      outputSchema: z.object({ ok: z.boolean(), id: z.number().int(), message: z.string().optional() }),
     }).server(async (rawInput) => {
       const input = z
         .object({
@@ -1024,8 +1158,16 @@ export class AgenterAI {
         })
         .parse(rawInput);
       const replyContent = input.replyContent ?? input.text ?? "";
-      return traceTool("chat_reply", input, async () => {
-        const result = await this.deps.chatGateway.reply({
+      return traceTool("attention_reply", input, async () => {
+        if (this.deps.attentionGateway.list().length === 0) {
+          return {
+            ok: false,
+            id: 0,
+            message: "no active attention items to answer",
+          };
+        }
+
+        const result = await this.deps.attentionGateway.reply({
           replyContent,
           from: input.from,
           score: input.score,
@@ -1041,6 +1183,12 @@ export class AgenterAI {
           stage: input.stage,
           relationships: input.relationships,
         });
+        await this.deps.onAssistantLiveMessage?.(
+          this.createAssistantMessage(result.reply.content, {
+            channel: "to_user",
+            format: "markdown",
+          }),
+        );
         return { ok: true, id: result.reply.id };
       });
     });
@@ -1088,7 +1236,7 @@ export class AgenterAI {
       outputSchema: z.object({
         ok: z.boolean(),
         message: z.string(),
-        focusedTerminalId: z.string().optional(),
+        focusedTerminalIds: z.array(z.string()).optional(),
       }),
     }).server(async (rawInput) => {
       const input = z
@@ -1111,6 +1259,35 @@ export class AgenterAI {
     });
 
     const sliceTool = toolDefinition({
+      name: "terminal_consumeDiff",
+      description: this.runtimeText.t("tool.terminal_slice_dirty.description"),
+      inputSchema: z.object({
+        terminalId: z.string(),
+        remark: z.boolean().optional(),
+        wait: z.boolean().optional(),
+        timeoutMs: z.number().int().positive().max(120_000).optional(),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          terminalId: z.string(),
+          remark: z.boolean().optional(),
+          wait: z.boolean().optional(),
+          timeoutMs: z.number().int().positive().max(120_000).optional(),
+        })
+        .parse(rawInput);
+      return traceTool("terminal_consumeDiff", input, async () =>
+        (this.deps.terminalGateway.consumeDiff ?? this.deps.terminalGateway.sliceDirty)?.({
+          terminalId: input.terminalId,
+          remark: input.remark ?? true,
+          wait: input.wait ?? false,
+          timeoutMs: input.timeoutMs,
+        }),
+      );
+    });
+
+    const sliceDirtyAliasTool = toolDefinition({
       name: "terminal_sliceDirty",
       description: this.runtimeText.t("tool.terminal_slice_dirty.description"),
       inputSchema: z.object({
@@ -1130,7 +1307,7 @@ export class AgenterAI {
         })
         .parse(rawInput);
       return traceTool("terminal_sliceDirty", input, async () =>
-        this.deps.terminalGateway.sliceDirty({
+        (this.deps.terminalGateway.consumeDiff ?? this.deps.terminalGateway.sliceDirty)?.({
           terminalId: input.terminalId,
           remark: input.remark ?? true,
           wait: input.wait ?? false,
@@ -1395,11 +1572,11 @@ export class AgenterAI {
     });
 
     const tools: Tool[] = [
-      chatListTool,
-      chatAddTool,
-      chatRemarkTool,
-      chatQueryTool,
-      chatReplyTool,
+      attentionListTool,
+      attentionAddTool,
+      attentionRemarkTool,
+      attentionQueryTool,
+      attentionReplyTool,
       listTool,
       runTool,
       focusTool,
@@ -1432,11 +1609,11 @@ export class AgenterAI {
   private resolveTaskSummary(input: {
     stage: TaskStage;
     done: boolean;
-    chatReplies: ChatReplyCall[];
+    attentionReplies: AttentionReplyCall[];
     text: string;
     thinking: string;
   }): string {
-    const explicitReplies = input.chatReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
+    const explicitReplies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
     const lastReply = explicitReplies[explicitReplies.length - 1];
     if (lastReply && lastReply.trim().length > 0) {
       return lastReply;

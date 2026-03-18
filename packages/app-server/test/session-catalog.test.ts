@@ -9,7 +9,7 @@ import { SessionCatalog } from "../src/session-catalog";
 describe("Feature: session catalog", () => {
   test("Scenario: Given create/update/delete actions When catalog mutates Then lifecycle state is managed", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agenter-session-catalog-"));
-    const catalog = new SessionCatalog({ globalRoot: join(dir, "sessions") });
+    const catalog = new SessionCatalog({ globalRoot: join(dir, "sessions"), archiveRoot: join(dir, "archive", "sessions") });
 
     const session = catalog.create({
       cwd: dir,
@@ -21,9 +21,16 @@ describe("Feature: session catalog", () => {
     expect(catalog.list()).toHaveLength(1);
     expect(session.name).toBe("demo");
     expect(session.status).toBe("stopped");
+    expect(session.storageState).toBe("active");
 
     const updated = catalog.update(session.id, { status: "running" });
     expect(updated.status).toBe("running");
+
+    const archived = catalog.archive(session.id);
+    expect(archived.storageState).toBe("archived");
+
+    const restored = catalog.restore(session.id);
+    expect(restored.storageState).toBe("active");
 
     const removed = catalog.remove(session.id);
     expect(removed).toBeTrue();
@@ -33,7 +40,7 @@ describe("Feature: session catalog", () => {
   test("Scenario: Given persisted running status When catalog refreshes Then status falls back to stopped", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agenter-session-catalog-refresh-"));
     const globalRoot = join(dir, "sessions");
-    const sessionRoot = join(globalRoot, "s-1");
+    const sessionRoot = join(globalRoot, "2026", "03", "06", "s-1");
     await mkdir(sessionRoot, { recursive: true });
     await writeFile(
       join(sessionRoot, "session.json"),
@@ -45,7 +52,10 @@ describe("Feature: session catalog", () => {
             cwd: dir,
             avatar: "tester",
             status: "running",
+            storageState: "active",
             storeTarget: "global",
+            createdAt: "2026-03-06T00:00:00.000Z",
+            updatedAt: "2026-03-06T00:00:00.000Z",
           },
         },
         null,
@@ -54,7 +64,7 @@ describe("Feature: session catalog", () => {
       "utf8",
     );
 
-    const catalog = new SessionCatalog({ globalRoot });
+    const catalog = new SessionCatalog({ globalRoot, archiveRoot: join(dir, "archive", "sessions") });
     catalog.refresh([]);
     const session = catalog.list()[0];
     expect(session?.id).toBe("s-1");

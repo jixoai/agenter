@@ -1,6 +1,7 @@
 import { chat, type StreamChunk, type Tool } from "@tanstack/ai";
 
 import { DeepseekTextAdapter } from "./deepseek-adapter";
+import type { TextOnlyModelMessage } from "./model-client";
 import { createRuntimeText } from "./runtime-text";
 
 interface RetryTrace {
@@ -45,14 +46,6 @@ interface RespondInput {
   tools: Tool[];
 }
 
-export interface TextOnlyModelMessage {
-  role: "user" | "assistant" | "tool";
-  content: Array<{
-    type: "text";
-    content: string;
-  }>;
-  name?: string;
-}
 
 const appendChunk = (current: string, chunk: string | undefined): string => {
   if (!chunk || chunk.length === 0) {
@@ -69,6 +62,35 @@ const isTextChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: 
 
 const isThinkingChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "STEP_FINISHED" }> =>
   chunk.type === "STEP_FINISHED";
+
+
+const toDeepseekMessageContent = (
+  content: TextOnlyModelMessage["content"],
+): Array<{ type: "text"; content: string }> => {
+  if (typeof content === "string") {
+    return [{ type: "text", content }];
+  }
+  if (!Array.isArray(content)) {
+    return [{ type: "text", content: "" }];
+  }
+  const parts = content
+    .map((part) => {
+      if (part && typeof part === "object" && "type" in part && part.type === "text" && "content" in part) {
+        return typeof part.content === "string" ? part.content : "";
+      }
+      return "";
+    })
+    .filter((part) => part.length > 0)
+    .map((part) => ({ type: "text" as const, content: part }));
+  return parts.length > 0 ? parts : [{ type: "text", content: "" }];
+};
+
+const toDeepseekMessages = (messages: TextOnlyModelMessage[]) =>
+  messages.map((message) => ({
+    role: message.role,
+    name: message.name,
+    content: toDeepseekMessageContent(message.content),
+  }));
 
 export class DeepseekClient {
   private readonly adapter: DeepseekTextAdapter<string>;
@@ -123,7 +145,7 @@ export class DeepseekClient {
 
         for await (const chunk of chat({
           adapter: this.adapter,
-          messages: input.messages,
+          messages: toDeepseekMessages(input.messages),
           systemPrompts: [input.systemPrompt],
           tools: input.tools,
           temperature: this.temperature,

@@ -56,8 +56,6 @@ export interface TerminalSettings {
 
 export interface TerminalFeatureSettings {
   bootTerminals?: TerminalBootEntry[];
-  focusMode?: "exclusive";
-  unfocusedSignal?: "summary";
 }
 
 export interface FeatureSettings {

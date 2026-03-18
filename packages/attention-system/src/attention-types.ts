@@ -1,4 +1,4 @@
-export interface ChatRecord {
+export interface AttentionRecord {
   id: number;
   content: string;
   from: string;
@@ -8,45 +8,45 @@ export interface ChatRecord {
   updatedAt: string;
 }
 
-export interface ChatAddInput {
+export interface AttentionAddInput {
   content: string;
   from: string;
   score?: number;
   remark?: string;
 }
 
-export interface ChatRemarkInput {
+export interface AttentionRemarkInput {
   id: number;
   score?: number;
   remark?: string;
 }
 
-export interface ChatQueryInput {
+export interface AttentionQueryInput {
   offset?: number;
   limit?: number;
   query?: string;
   includeInactive?: boolean;
 }
 
-export interface ChatReplyRelationship {
+export interface AttentionReplyRelationship {
   id: number;
   score?: number;
   remark?: string;
 }
 
-export interface ChatReplyInput {
+export interface AttentionReplyInput {
   replyContent: string;
   from?: string;
   score?: number;
-  relationships?: ChatReplyRelationship[];
+  relationships?: AttentionReplyRelationship[];
 }
 
-export interface ChatReplyResult {
-  reply: ChatRecord;
-  related: ChatRecord[];
+export interface AttentionReplyResult {
+  reply: AttentionRecord;
+  related: AttentionRecord[];
 }
 
-export interface ChatSystemSnapshot {
+export interface AttentionSystemSnapshot {
   nextId: number;
-  records: ChatRecord[];
+  records: AttentionRecord[];
 }

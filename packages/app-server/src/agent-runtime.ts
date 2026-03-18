@@ -4,6 +4,8 @@ import type {
   LoopBusMessage,
   LoopBusResponse,
   LoopBusState,
+  LoopBusTraceEntry,
+  LoopBusWakeSource,
   LoopChatMessage,
   LoopTerminalCommand,
   LoopToolCall,
@@ -23,31 +25,31 @@ export interface AgentRuntimeConfig<
 > {
   processor: AgentRuntimeProcessor<TChatMessage, TStage>;
   logger: LoopBusLogger;
-  collectInputs?: () => Promise<LoopBusInput[] | LoopBusInput | void>;
-  idleCollectIntervalMs?: number;
-  onUserMessage?: (message: TChatMessage) => Promise<void> | void;
-  onTerminalDispatch?: (command: LoopTerminalCommand) => Promise<void> | void;
-  onToolCall?: (calls: LoopToolCall[]) => Promise<LoopBusInput[] | LoopBusInput | void>;
+  waitForCommit: () => Promise<LoopBusWakeSource | void>;
+  collectInputs: () => Promise<LoopBusInput[] | LoopBusInput | void>;
+  persistCycle: (input: { wakeSource: LoopBusWakeSource; inputs: LoopBusInput[] }) => Promise<{ cycleId: number }>;
+  onUserMessage?: (message: TChatMessage, context: { cycleId: number }) => Promise<void> | void;
+  onTerminalDispatch?: (command: LoopTerminalCommand, context: { cycleId: number }) => Promise<void> | void;
+  onToolCall?: (calls: LoopToolCall[], context: { cycleId: number }) => Promise<void> | void;
   onLoopStateChange?: (state: LoopBusState) => Promise<void> | void;
+  onLoopTrace?: (entry: LoopBusTraceEntry) => Promise<void> | void;
 }
 
-/**
- * AgentRuntime is the app-server composition root for continuous loop processing.
- * It wraps LoopBus to provide a single server-side runtime entry.
- */
 export class AgentRuntime<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
   private readonly bus: LoopBus<TChatMessage, TStage>;
 
-  constructor(private readonly config: AgentRuntimeConfig<TChatMessage, TStage>) {
+  constructor(config: AgentRuntimeConfig<TChatMessage, TStage>) {
     this.bus = new LoopBus<TChatMessage, TStage>({
       processor: config.processor,
       logger: config.logger,
+      waitForCommit: config.waitForCommit,
       collectInputs: config.collectInputs,
-      idleCollectIntervalMs: config.idleCollectIntervalMs,
+      persistCycle: config.persistCycle,
       onUserMessage: config.onUserMessage,
       onTerminalDispatch: config.onTerminalDispatch,
       onToolCall: config.onToolCall,
       onStateChange: config.onLoopStateChange,
+      onTrace: config.onLoopTrace,
     });
   }
 
@@ -59,7 +61,15 @@ export class AgentRuntime<TChatMessage extends LoopChatMessage = LoopChatMessage
     this.bus.stop();
   }
 
-  pushMessage(message: LoopBusInput): LoopBusMessage {
-    return this.bus.pushMessage(message);
+  pause(): void {
+    this.bus.pause();
+  }
+
+  resume(): void {
+    this.bus.resume();
+  }
+
+  getLoopState(): LoopBusState {
+    return this.bus.getState();
   }
 }

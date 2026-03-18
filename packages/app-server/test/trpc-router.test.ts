@@ -24,6 +24,7 @@ describe("Feature: app-server trpc procedures", () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
@@ -40,6 +41,12 @@ describe("Feature: app-server trpc procedures", () => {
     const listed = await caller.session.list();
     expect(listed.sessions).toHaveLength(1);
 
+    const archived = await caller.session.archive({ sessionId: created.session.id });
+    expect(archived.session.storageState).toBe("archived");
+
+    const restored = await caller.session.restore({ sessionId: created.session.id });
+    expect(restored.session.storageState).toBe("active");
+
     const deleted = await caller.session.delete({ sessionId: created.session.id });
     expect(deleted.removed).toBe(true);
 
@@ -49,7 +56,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given workspace and fs procedures When querying Then recent and directory results are returned", async () => {
+  test("Scenario: Given workspace and session procedures When querying Then pages favorites and archive results are returned", async () => {
     const root = makeTempDir();
     const workspaceA = join(root, "workspace-a");
     const workspaceB = join(root, "workspace-b");
@@ -58,17 +65,41 @@ describe("Feature: app-server trpc procedures", () => {
 
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
     const caller = appRouter.createCaller(createTrpcContext(kernel));
 
-    await caller.session.create({ cwd: workspaceA, name: "A", autoStart: false });
+    const createdA = await caller.session.create({ cwd: workspaceA, name: "A", autoStart: false });
     await caller.session.create({ cwd: workspaceB, name: "B", autoStart: false });
 
     const recent = await caller.workspace.recent({ limit: 8 });
+    expect(recent.items[0]).toBe(workspaceB);
     expect(recent.items.includes(workspaceA)).toBeTrue();
-    expect(recent.items.includes(workspaceB)).toBeTrue();
+
+    const all = await caller.workspace.listAll();
+    expect(all.items.some((item) => item.path === workspaceA)).toBeTrue();
+    expect(all.items.some((item) => item.path === workspaceB)).toBeTrue();
+
+    const toggled = await caller.workspace.toggleFavorite({ path: workspaceA });
+    expect(toggled.item.path).toBe(workspaceA);
+    expect(toggled.item.favorite).toBeTrue();
+
+    const sessionFavorite = await caller.workspace.toggleSessionFavorite({ sessionId: createdA.session.id });
+    expect(sessionFavorite.favorite).toBeTrue();
+
+    const page = await caller.workspace.listSessions({ path: workspaceA, tab: "all", limit: 20 });
+    expect(page.items[0]?.sessionId).toBe(createdA.session.id);
+    expect(page.items[0]?.favorite).toBeTrue();
+
+    await caller.session.archive({ sessionId: createdA.session.id });
+    const archivePage = await caller.workspace.listSessions({ path: workspaceA, tab: "archive", limit: 20 });
+    expect(archivePage.items[0]?.sessionId).toBe(createdA.session.id);
+    expect(archivePage.counts.archive).toBe(1);
+
+    const removed = await caller.workspace.delete({ path: workspaceB });
+    expect(removed.removed).toBeTrue();
 
     const listing = await caller.fs.listDirectories({ path: root, includeHidden: false });
     expect(listing.items.some((item) => item.path === workspaceA)).toBeTrue();

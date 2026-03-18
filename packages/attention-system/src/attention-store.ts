@@ -1,14 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { ChatSystemSnapshot } from "./chat-types";
+import type { AttentionSystemSnapshot } from "./attention-types";
 
-const DEFAULT_SNAPSHOT: ChatSystemSnapshot = {
+const DEFAULT_SNAPSHOT: AttentionSystemSnapshot = {
   nextId: 1,
   records: [],
 };
 
-export class ChatStore {
+export class AttentionStore {
   private writeQueue = Promise.resolve();
 
   constructor(private readonly rootDir: string) {}
@@ -17,11 +17,11 @@ export class ChatStore {
     return join(this.rootDir, "state.json");
   }
 
-  async load(): Promise<ChatSystemSnapshot> {
+  async load(): Promise<AttentionSystemSnapshot> {
     const statePath = this.getStatePath();
     try {
       const text = await readFile(statePath, "utf8");
-      const parsed = JSON.parse(text) as ChatSystemSnapshot;
+      const parsed = JSON.parse(text) as AttentionSystemSnapshot;
       if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.records)) {
         return { ...DEFAULT_SNAPSHOT };
       }
@@ -34,7 +34,7 @@ export class ChatStore {
     }
   }
 
-  async save(snapshot: ChatSystemSnapshot): Promise<void> {
+  async save(snapshot: AttentionSystemSnapshot): Promise<void> {
     const payload = JSON.stringify(snapshot, null, 2);
     this.writeQueue = this.writeQueue.then(async () => {
       await mkdir(this.rootDir, { recursive: true });

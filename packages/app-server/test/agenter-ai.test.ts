@@ -1,10 +1,10 @@
-import { ChatEngine } from "@agenter/chat-system";
+import { AttentionEngine } from "@agenter/attention-system";
 import type { TaskImportItem } from "@agenter/task-system";
 import { describe, expect, test } from "bun:test";
 
 import { AgenterAI } from "../src/agenter-ai";
 import { type LoopBusMessage } from "../src/loop-bus";
-import type { ModelClient, TextOnlyModelMessage } from "../src/model-client";
+import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
 import type { AppServerLogger } from "../src/types";
@@ -26,6 +26,38 @@ const createLogger = (): AppServerLogger => ({
 });
 
 type ModelRespondInput = Parameters<ModelClient["respondWithMeta"]>[0];
+
+const flattenModelMessageContent = (message: unknown): string => {
+  if (!message || typeof message !== "object" || !("content" in message)) {
+    return "";
+  }
+  const content = message.content;
+  if (content === null || content === undefined) {
+    return "";
+  }
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object" || !("type" in part)) {
+        return "";
+      }
+      if (part.type === "text" && "content" in part && typeof part.content === "string") {
+        return part.content;
+      }
+      return `[${String(part.type)}]`;
+    })
+    .join("\n");
+};
+
+const extractAssistantReplay = (input: ModelRespondInput | undefined): string[] =>
+  (input?.messages ?? [])
+    .filter((message) => message.role === "assistant")
+    .map((message) => flattenModelMessageContent(message));
 
 const createModelClient = (
   handler: (input: ModelRespondInput) => ReturnType<ModelClient["respondWithMeta"]>,
@@ -82,7 +114,7 @@ const createTerminalGateway = () => {
       list: () => [],
       run: async () => ({ ok: true, message: "started" }),
       kill: async () => ({ ok: true, message: "stopped" }),
-      focus: async () => ({ ok: true, message: "focused", focusedTerminalId: "iflow" }),
+      focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
       write: async (input: {
         terminalId: string;
         text: string;
@@ -93,13 +125,14 @@ const createTerminalGateway = () => {
         return { ok: true, message: "written" };
       },
       read: async () => ({ ok: true }),
+      consumeDiff: async () => ({ ok: true, changed: false }),
       sliceDirty: async () => ({ ok: true, changed: false }),
     },
   };
 };
 
-const createChatGateway = () => {
-  const engine = new ChatEngine();
+const createAttentionGateway = () => {
+  const engine = new AttentionEngine();
   return {
     engine,
     gateway: {
@@ -130,9 +163,9 @@ const createUserMessage = (text: string): LoopBusMessage => ({
 
 describe("Feature: AgenterAI behavior", () => {
   test("Scenario: Given terminal help mdx When model receives context Then <CliHelp/> is rendered before call", async () => {
-    let capturedMessages: TextOnlyModelMessage[] | null = null;
+    let capturedMessages: unknown[] | null = null;
     const terminal = createTerminalGateway();
-    const chat = createChatGateway();
+    const chat = createAttentionGateway();
     const modelClient = createModelClient(async (input) => {
       capturedMessages = input.messages;
       return {
@@ -148,7 +181,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       terminalGateway: terminal.gateway,
       taskGateway: createTaskGateway(),
-      chatGateway: chat.gateway,
+      attentionGateway: chat.gateway,
     });
 
     const terminalHelpPayload = JSON.stringify({
@@ -173,15 +206,66 @@ describe("Feature: AgenterAI behavior", () => {
       },
     ]);
 
-    const joinedHistory =
-      capturedMessages?.map((item) => item.content.map((part) => part.content).join("\n")).join("\n\n") ?? "";
+    const captured = Array.isArray(capturedMessages) ? capturedMessages : [];
+    const joinedHistory = captured.map((item) => flattenModelMessageContent(item)).join("\n\n");
     expect(joinedHistory).toContain("IFLOW HELP CONTENT");
     expect(joinedHistory).not.toContain("<CliHelp");
   });
 
-  test("Scenario: Given active chat_list When model uses chat_reply relationships Then attention items are cleared", async () => {
+  test("Scenario: Given terminal snapshot tail as one string When model receives terminal context Then multiline tail stays intact", async () => {
+    let capturedMessages: unknown[] | null = null;
     const terminal = createTerminalGateway();
-    const chat = createChatGateway();
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      capturedMessages = input.messages;
+      return {
+        thinking: "",
+        text: "snapshot received",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+    });
+
+    const terminalSnapshotPayload = JSON.stringify({
+      kind: "terminal-snapshot",
+      terminalId: "iflow",
+      seq: 30,
+      cols: 80,
+      rows: 24,
+      cursor: { x: 0, y: 23 },
+      tail: "line 1\nline 2\nline 3",
+    });
+
+    await ai.send([
+      createUserMessage("inspect terminal snapshot"),
+      {
+        id: "m-snapshot",
+        timestamp: Date.now() + 1,
+        name: "Terminal-iflow",
+        role: "user",
+        type: "text",
+        source: "terminal",
+        text: terminalSnapshotPayload,
+      },
+    ]);
+
+    const captured = Array.isArray(capturedMessages) ? capturedMessages : [];
+    const joinedHistory = captured.map((item) => flattenModelMessageContent(item)).join("\n\n");
+    expect(joinedHistory).toContain("tailLines: 3");
+    expect(joinedHistory).toContain("line 1\nline 2\nline 3");
+  });
+
+  test("Scenario: Given active attention_list When model uses attention_reply relationships Then attention items are cleared", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
     const userItem = chat.engine.add({ content: "请做一个单页网页小游戏", from: "user", score: 100 });
 
     const modelClient = createModelClient(async (input) => {
@@ -199,10 +283,10 @@ describe("Feature: AgenterAI behavior", () => {
         });
       };
 
-      const list = (await callTool("chat_list", {})) as { items: Array<{ id: number }> };
+      const list = (await callTool("attention_list", {})) as { items: Array<{ id: number }> };
       expect(list.items.some((item) => item.id === userItem.id)).toBeTrue();
 
-      await callTool("chat_reply", {
+      await callTool("attention_reply", {
         replyContent: "我已确认需求，开始实现。",
         done: false,
         stage: "act",
@@ -222,7 +306,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       terminalGateway: terminal.gateway,
       taskGateway: createTaskGateway(),
-      chatGateway: chat.gateway,
+      attentionGateway: chat.gateway,
     });
 
     const response = await ai.send([createUserMessage("继续")]);
@@ -235,9 +319,61 @@ describe("Feature: AgenterAI behavior", () => {
     expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeTrue();
   });
 
-  test("Scenario: Given no chat_reply When model returns plain text Then output stays self_talk only", async () => {
+  test("Scenario: Given no active attention items When model calls attention_reply Then no user-visible reply is emitted", async () => {
     const terminal = createTerminalGateway();
-    const chat = createChatGateway();
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      const tool = input.tools.find((item) => item.name === "attention_reply");
+      expect(tool).toBeDefined();
+      if (!tool || typeof tool.execute !== "function") {
+        throw new Error("attention_reply tool missing");
+      }
+
+      const result = (await tool.execute(
+        {
+          replyContent: "startup ping",
+          stage: "observe",
+        },
+        {
+          toolCallId: "call-attention_reply",
+          emitCustomEvent: () => {},
+        },
+      )) as { ok: boolean; id: number; message?: string };
+
+      expect(result).toEqual({
+        ok: false,
+        id: 0,
+        message: "no active attention items to answer",
+      });
+
+      return {
+        thinking: "No active attention items, keep observing.",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+    });
+
+    const response = await ai.send([createUserMessage("continue")]);
+    expect(response).toBeDefined();
+    if (!response) {
+      return;
+    }
+
+    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
+  });
+
+  test("Scenario: Given no attention_reply When model returns plain text Then output stays self_talk only", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
     const modelClient = createModelClient(async () => ({
       thinking: "Observation: terminal idle\nDecision: wait\nNext: collect diff",
       text: "assistant internal note",
@@ -250,7 +386,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       terminalGateway: terminal.gateway,
       taskGateway: createTaskGateway(),
-      chatGateway: chat.gateway,
+      attentionGateway: chat.gateway,
     });
 
     const response = await ai.send([createUserMessage("下一步")]);
@@ -261,12 +397,143 @@ describe("Feature: AgenterAI behavior", () => {
 
     const outputs = response.outputs?.toUser ?? [];
     expect(outputs.some((item) => item.channel === "to_user")).toBeFalse();
-    expect(outputs.some((item) => item.channel === "self_talk")).toBeTrue();
+    expect(outputs.filter((item) => item.channel === "self_talk").map((item) => item.content)).toEqual([
+      "Observation: terminal idle\nDecision: wait\nNext: collect diff",
+      "assistant internal note",
+    ]);
   });
 
-  test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes chat_list and chat_reply still clears records", async () => {
+  test("Scenario: Given assistant self-talk in history When the next turn is built Then replayed history preserves factual self-talk without synthetic headings", async () => {
     const terminal = createTerminalGateway();
-    const chat = createChatGateway();
+    const chat = createAttentionGateway();
+    const seenInputs: ModelRespondInput[] = [];
+    let round = 0;
+
+    const modelClient = createModelClient(async (input) => {
+      seenInputs.push(input);
+      round += 1;
+      if (round === 1) {
+        return {
+          thinking: "Observation: terminal idle",
+          text: "Decision: wait for user",
+          finishReason: "stop",
+        };
+      }
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("first turn")]);
+    await ai.send([createUserMessage("second turn")]);
+
+    const replay = extractAssistantReplay(seenInputs[1]);
+    expect(replay).toEqual(["Observation: terminal idle", "Decision: wait for user"]);
+    expect(replay.join("\n\n")).not.toContain("### Notes");
+    expect(replay.join("\n\n")).not.toContain("### Replies");
+    expect(replay.join("\n\n")).not.toContain("### Tool activity");
+  });
+
+  test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed history preserves factual order and raw tool fences", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "inspect terminal and report back", from: "user", score: 100 });
+    const seenInputs: ModelRespondInput[] = [];
+    let round = 0;
+
+    const modelClient = createModelClient(async (input) => {
+      seenInputs.push(input);
+      round += 1;
+      if (round === 1) {
+        const terminalRead = input.tools.find((tool) => tool.name === "terminal_read");
+        expect(terminalRead).toBeDefined();
+        if (!terminalRead || typeof terminalRead.execute !== "function") {
+          throw new Error("terminal_read tool missing");
+        }
+
+        await terminalRead.execute(
+          {
+            terminalId: "iflow",
+          },
+          {
+            toolCallId: "call-terminal-read",
+            emitCustomEvent: () => {},
+          },
+        );
+
+        const attentionReply = input.tools.find((tool) => tool.name === "attention_reply");
+        expect(attentionReply).toBeDefined();
+        if (!attentionReply || typeof attentionReply.execute !== "function") {
+          throw new Error("attention_reply tool missing");
+        }
+
+        await attentionReply.execute(
+          {
+            replyContent: "Terminal checked.",
+            done: true,
+            stage: "done",
+            relationships: [{ id: tracked.id, score: 0, remark: "handled" }],
+          },
+          {
+            toolCallId: "call-attention-reply",
+            emitCustomEvent: () => {},
+          },
+        );
+
+        return {
+          thinking: "Observation: terminal focused",
+          text: "Decision: report result",
+          finishReason: "stop",
+        };
+      }
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("first turn")]);
+    await ai.send([createUserMessage("second turn")]);
+
+    const replay = extractAssistantReplay(seenInputs[1]);
+    expect(replay).toHaveLength(7);
+    expect(replay[0]).toBe("Observation: terminal focused");
+    expect(replay[1]).toBe("Decision: report result");
+    expect(replay[2]).toContain("```yaml+tool_call");
+    expect(replay[2]).toContain("tool: terminal_read");
+    expect(replay[3]).toContain("```yaml+tool_result");
+    expect(replay[3]).toContain("tool: terminal_read");
+    expect(replay[4]).toContain("```yaml+tool_call");
+    expect(replay[4]).toContain("tool: attention_reply");
+    expect(replay[5]).toContain("```yaml+tool_result");
+    expect(replay[5]).toContain("tool: attention_reply");
+    expect(replay[6]).toBe("Terminal checked.");
+  });
+
+  test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes attention_list and attention_reply still clears records", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "提醒我确认发布时间", from: "user", score: 100 });
     const summarizeInputs: string[] = [];
 
@@ -293,13 +560,13 @@ describe("Feature: AgenterAI behavior", () => {
           return { thinking: "round1", text: "", finishReason: "stop" };
         }
 
-        const chatReply = input.tools.find((tool) => tool.name === "chat_reply");
-        expect(chatReply).toBeDefined();
-        if (!chatReply || typeof chatReply.execute !== "function") {
-          throw new Error("chat_reply tool missing");
+        const attentionReply = input.tools.find((tool) => tool.name === "attention_reply");
+        expect(attentionReply).toBeDefined();
+        if (!attentionReply || typeof attentionReply.execute !== "function") {
+          throw new Error("attention_reply tool missing");
         }
 
-        await chatReply.execute(
+        await attentionReply.execute(
           {
             replyContent: "已完成压缩并继续处理。",
             done: true,
@@ -327,7 +594,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       terminalGateway: terminal.gateway,
       taskGateway: createTaskGateway(),
-      chatGateway: chat.gateway,
+      attentionGateway: chat.gateway,
     });
 
     await ai.send([createUserMessage("第一轮")]);
@@ -339,7 +606,7 @@ describe("Feature: AgenterAI behavior", () => {
       return;
     }
     expect(summarizeInputs.length).toBeGreaterThan(0);
-    expect(summarizeInputs.join("\n")).toContain("chat_attention");
+    expect(summarizeInputs.join("\n")).toContain("attention_system");
     expect(chat.engine.list()).toHaveLength(0);
     expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeTrue();
   });

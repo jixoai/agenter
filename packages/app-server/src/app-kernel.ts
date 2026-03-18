@@ -1,6 +1,15 @@
-import { accessSync, constants as fsConstants, readdirSync, statSync } from "node:fs";
+import { accessSync, existsSync, constants as fsConstants, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import {
+  SessionDb,
+  type SessionAssetRecord,
+  type SessionBlockRecord,
+  type SessionCollectedInput,
+  type SessionCycleRecord,
+} from "@agenter/session-system";
+import { collectClientMessageIds, toChatCycleId, type ChatCycle } from "./chat-cycles";
+import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -11,15 +20,231 @@ import {
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionConfig } from "./session-config";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
-import type { ChatMessage } from "./types";
-import { WorkspacesStore } from "./workspaces-store";
+import type { ChatImageAttachment, ChatMessage, ModelCapabilities } from "./types";
+import { WorkspacePathSearchIndex } from "./workspace-path-search";
+import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 
 const now = (): number => Date.now();
+
+const parseGitOwnerFromUrl = (raw: string): string | null => {
+  const value = raw.trim().replace(/\.git$/, "");
+  const scpMatch = value.match(/^[^@]+@[^:]+:([^/]+)\/.+$/);
+  if (scpMatch?.[1]) {
+    return scpMatch[1];
+  }
+  const sshMatch = value.match(/^ssh:\/\/[^/]+\/([^/]+)\/.+$/);
+  if (sshMatch?.[1]) {
+    return sshMatch[1];
+  }
+  const httpsMatch = value.match(/^https?:\/\/[^/]+\/([^/]+)\/.+$/);
+  if (httpsMatch?.[1]) {
+    return httpsMatch[1];
+  }
+  return null;
+};
+
+const resolveWorkspaceGroup = (workspacePath: string): string => {
+  const gitConfigPath = join(workspacePath, ".git", "config");
+  if (!existsSync(gitConfigPath)) {
+    return "Other";
+  }
+
+  try {
+    const lines = readFileSync(gitConfigPath, "utf8").split(/\r?\n/);
+    let inOriginRemote = false;
+    let userName: string | null = null;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        inOriginRemote = trimmed === '[remote "origin"]';
+        continue;
+      }
+      if (inOriginRemote && trimmed.startsWith("url =")) {
+        const owner = parseGitOwnerFromUrl(trimmed.slice("url =".length));
+        if (owner) {
+          return owner;
+        }
+      }
+      if (userName === null && trimmed.startsWith("name =")) {
+        userName = trimmed.slice("name =".length).trim();
+      }
+    }
+    if (userName && userName.length > 0) {
+      return userName;
+    }
+  } catch {
+    return "Other";
+  }
+
+  return "Other";
+};
+
+const isRunningSession = (status: SessionMeta["status"]): boolean => status === "running" || status === "starting";
+
+const buildSessionImageUrl = (sessionId: string, assetId: string): string =>
+  `/media/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(assetId)}`;
+
+const toChatAttachment = (sessionId: string, asset: SessionAssetRecord): ChatImageAttachment => ({
+  assetId: asset.id,
+  kind: "image",
+  name: asset.name,
+  mimeType: asset.mimeType,
+  sizeBytes: asset.sizeBytes,
+  url: buildSessionImageUrl(sessionId, asset.id),
+});
+
+const toChatMessage = (sessionId: string, block: SessionBlockRecord): ChatMessage => ({
+  id: `${block.id}`,
+  role: block.role,
+  content: block.content,
+  timestamp: block.createdAt,
+  channel: block.channel === "user_input" ? undefined : block.channel,
+  format: block.format,
+  tool: block.tool,
+  attachments: block.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+});
+
+const toChatCycle = (input: {
+  sessionId: string;
+  cycle: SessionCycleRecord;
+  inputs: SessionCollectedInput[];
+  outputs: SessionBlockRecord[];
+  modelCallId: number | null;
+}): ChatCycle => ({
+  id: toChatCycleId({ cycleId: input.cycle.id }),
+  cycleId: input.cycle.id,
+  seq: input.cycle.seq,
+  createdAt: input.cycle.createdAt,
+  wakeSource:
+    typeof input.cycle.wake?.source === "string" && input.cycle.wake.source.length > 0 ? input.cycle.wake.source : null,
+  kind: input.cycle.result.kind === "compact" ? "compact" : "model",
+  status: "done",
+  clientMessageIds: collectClientMessageIds(input.inputs),
+  inputs: structuredClone(input.inputs),
+  outputs: input.outputs.map((block) => toChatMessage(input.sessionId, block)),
+  liveMessages: [],
+  streaming: null,
+  modelCallId: input.modelCallId,
+});
+
+const hasCollectedUserMessage = (inputs: SessionCollectedInput[]): boolean =>
+  inputs.some((input) => input.source === "message" && input.role === "user");
+
+const blockToCollectedInput = (sessionId: string, block: SessionBlockRecord): SessionCollectedInput => ({
+  source: "message",
+  role: "user",
+  name: "User",
+  parts: [
+    ...(block.content.trim().length > 0 ? ([{ type: "text", text: block.content }] as const) : []),
+    ...block.attachments.map((attachment) => ({
+      type: "image" as const,
+      assetId: attachment.id,
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      sizeBytes: attachment.sizeBytes,
+      url: buildSessionImageUrl(sessionId, attachment.id),
+    })),
+  ],
+});
+
+const mergeLegacyCycleInputs = (
+  sessionId: string,
+  cycles: SessionCycleRecord[],
+  orphanUserInputs: SessionBlockRecord[],
+): Array<{ cycle: SessionCycleRecord; inputs: SessionCollectedInput[] }> => {
+  if (cycles.length === 0 || orphanUserInputs.length === 0) {
+    return cycles.map((cycle) => ({ cycle, inputs: cycle.collectedInputs }));
+  }
+
+  let orphanIndex = 0;
+  return cycles.map((cycle) => {
+    if (hasCollectedUserMessage(cycle.collectedInputs)) {
+      while (orphanIndex < orphanUserInputs.length && orphanUserInputs[orphanIndex]!.createdAt <= cycle.createdAt) {
+        orphanIndex += 1;
+      }
+      return { cycle, inputs: cycle.collectedInputs };
+    }
+
+    const legacyInputs: SessionCollectedInput[] = [];
+    while (orphanIndex < orphanUserInputs.length && orphanUserInputs[orphanIndex]!.createdAt <= cycle.createdAt) {
+      legacyInputs.push(blockToCollectedInput(sessionId, orphanUserInputs[orphanIndex]!));
+      orphanIndex += 1;
+    }
+
+    return {
+      cycle,
+      inputs: legacyInputs.length > 0 ? [...legacyInputs, ...cycle.collectedInputs] : cycle.collectedInputs,
+    };
+  });
+};
+
+const createWorkspaceSessionCounts = (): WorkspaceSessionCounts => ({
+  all: 0,
+  running: 0,
+  stopped: 0,
+  archive: 0,
+});
+
+const countWorkspaceSessions = (sessions: SessionMeta[]): WorkspaceSessionCounts => {
+  const counts = createWorkspaceSessionCounts();
+  for (const session of sessions) {
+    if (session.storageState === "archived") {
+      counts.archive += 1;
+      continue;
+    }
+    counts.all += 1;
+    if (isRunningSession(session.status)) {
+      counts.running += 1;
+    } else {
+      counts.stopped += 1;
+    }
+  }
+  return counts;
+};
+
+const sessionSortAt = (session: SessionMeta): string => {
+  if (session.storageState === "archived") {
+    return session.archivedAt ?? session.updatedAt;
+  }
+  return session.updatedAt;
+};
+
+const compareWorkspaceSessions =
+  (favoriteIds: Set<string>) =>
+  (left: SessionMeta, right: SessionMeta): number => {
+    const leftFavorite = favoriteIds.has(left.id);
+    const rightFavorite = favoriteIds.has(right.id);
+    if (leftFavorite !== rightFavorite) {
+      return leftFavorite ? -1 : 1;
+    }
+    const sortAtCompare = sessionSortAt(right).localeCompare(sessionSortAt(left));
+    if (sortAtCompare !== 0) {
+      return sortAtCompare;
+    }
+    return right.id.localeCompare(left.id);
+  };
+
+const matchesWorkspaceTab = (session: SessionMeta, tab: WorkspaceSessionTab): boolean => {
+  if (tab === "archive") {
+    return session.storageState === "archived";
+  }
+  if (session.storageState === "archived") {
+    return false;
+  }
+  if (tab === "running") {
+    return isRunningSession(session.status);
+  }
+  if (tab === "stopped") {
+    return !isRunningSession(session.status);
+  }
+  return true;
+};
 
 type KernelListener = (event: AnyRuntimeEvent) => void;
 
 export interface AppKernelOptions {
   globalSessionRoot?: string;
+  archiveSessionRoot?: string;
   workspacesPath?: string;
   initialWorkspace?: string;
   logger?: {
@@ -32,6 +257,45 @@ export interface AppKernelOptions {
   };
 }
 
+export type WorkspaceSessionTab = "all" | "running" | "stopped" | "archive";
+
+export interface WorkspaceSessionPreview {
+  firstUserMessage: string | null;
+  latestMessages: string[];
+}
+
+export interface WorkspaceSessionEntry {
+  sessionId: string;
+  name: string;
+  status: SessionMeta["status"];
+  storageState: SessionMeta["storageState"];
+  favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string;
+  preview: WorkspaceSessionPreview;
+}
+
+export interface WorkspaceSessionCounts {
+  all: number;
+  running: number;
+  stopped: number;
+  archive: number;
+}
+
+export interface WorkspaceSessionPage {
+  items: WorkspaceSessionEntry[];
+  nextCursor: number | null;
+  counts: WorkspaceSessionCounts;
+}
+
+export interface WorkspaceListItem extends WorkspaceEntry {
+  group: string;
+  missing: boolean;
+  counts: WorkspaceSessionCounts;
+  lastSessionActivityAt?: string;
+}
+
 export class AppKernel {
   private readonly sessions: SessionCatalog;
   private readonly workspaces: WorkspacesStore;
@@ -39,10 +303,14 @@ export class AppKernel {
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
   private readonly eventLog: AnyRuntimeEvent[] = [];
+  private readonly workspacePathSearch = new WorkspacePathSearchIndex();
   private eventSeq = 0;
 
   constructor(private readonly options: AppKernelOptions = {}) {
-    this.sessions = new SessionCatalog({ globalRoot: options.globalSessionRoot });
+    this.sessions = new SessionCatalog({
+      globalRoot: options.globalSessionRoot,
+      archiveRoot: options.archiveSessionRoot,
+    });
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
   }
 
@@ -95,12 +363,150 @@ export class AppKernel {
   }
 
   listRecentWorkspaces(limit = 8): string[] {
-    const safeLimit = Math.max(1, Math.min(Math.floor(limit), 128));
-    const list = this.workspaces.list();
-    if (list.length <= safeLimit) {
-      return list;
+    return this.workspaces.listRecent(limit);
+  }
+
+  listAllWorkspaces(): WorkspaceListItem[] {
+    this.sessions.refresh(this.workspaces.list());
+    const byWorkspace = new Map<string, SessionMeta[]>();
+    for (const session of this.sessions.list()) {
+      const list = byWorkspace.get(session.cwd) ?? [];
+      list.push(session);
+      byWorkspace.set(session.cwd, list);
     }
-    return list.slice(-safeLimit);
+
+    return this.workspaces.listEntries().map((entry) => {
+      const sessions = byWorkspace.get(entry.path) ?? [];
+      const counts = countWorkspaceSessions(sessions);
+      const lastSessionActivityAt = sessions
+        .map((session) => sessionSortAt(session))
+        .sort((left, right) => right.localeCompare(left))[0];
+      return {
+        ...entry,
+        group: resolveWorkspaceGroup(entry.path),
+        missing: !this.validateDirectory(entry.path).ok,
+        counts,
+        lastSessionActivityAt,
+      };
+    });
+  }
+
+  listWorkspaceSessions(input: {
+    path: string;
+    tab: WorkspaceSessionTab;
+    cursor?: number;
+    limit?: number;
+  }): WorkspaceSessionPage {
+    const workspacePath = resolve(input.path);
+    const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 50), 200));
+    const cursor = Math.max(0, Math.floor(input.cursor ?? 0));
+    this.sessions.refresh(this.workspaces.list());
+    const favoriteIds = new Set(this.workspaces.favoriteSessionIds());
+    const workspaceSessions = this.sessions.list().filter((session) => session.cwd === workspacePath);
+    const counts = countWorkspaceSessions(workspaceSessions);
+    const filtered = workspaceSessions
+      .filter((session) => matchesWorkspaceTab(session, input.tab))
+      .sort(compareWorkspaceSessions(favoriteIds));
+    const items = filtered.slice(cursor, cursor + limit).map((session) => ({
+      sessionId: session.id,
+      name: session.name,
+      status: session.status,
+      storageState: session.storageState,
+      favorite: favoriteIds.has(session.id),
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      archivedAt: session.archivedAt,
+      preview: this.readSessionPreview(session),
+    }));
+
+    return {
+      items,
+      nextCursor: cursor + items.length < filtered.length ? cursor + items.length : null,
+      counts,
+    };
+  }
+
+  toggleWorkspaceFavorite(workspacePath: string): WorkspaceEntry {
+    return this.workspaces.toggleWorkspaceFavorite(workspacePath);
+  }
+
+  toggleSessionFavorite(sessionId: string): { sessionId: string; favorite: boolean } {
+    return this.workspaces.toggleSessionFavorite(sessionId);
+  }
+
+  removeWorkspace(workspacePath: string): { removed: boolean } {
+    return { removed: this.workspaces.remove(workspacePath) };
+  }
+
+  removeMissingWorkspaces(): { removed: string[] } {
+    const removed: string[] = [];
+    for (const workspacePath of this.workspaces.list()) {
+      if (this.validateDirectory(workspacePath).ok) {
+        continue;
+      }
+      if (this.workspaces.remove(workspacePath)) {
+        removed.push(workspacePath);
+      }
+    }
+    return { removed };
+  }
+
+  listChatMessages(
+    sessionId: string,
+    afterId = 0,
+    limit = 200,
+  ): Array<
+    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
+      attachments: ChatImageAttachment[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    return this.readChatMessagesFromDb(session.sessionRoot, sessionId, afterId, limit);
+  }
+
+  listChatMessagesBefore(
+    sessionId: string,
+    beforeId: number,
+    limit = 200,
+  ): Array<
+    Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
+      attachments: ChatImageAttachment[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    return this.readChatMessagesBeforeFromDb(session.sessionRoot, sessionId, beforeId, limit);
+  }
+
+  listChatCycles(sessionId: string, limit = 120): ChatCycle[] {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    return this.readChatCyclesFromDb(session.sessionRoot, sessionId, limit);
+  }
+
+  listChatCyclesBefore(sessionId: string, beforeCycleId: number, limit = 120): ChatCycle[] {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    return this.readChatCyclesBeforeFromDb(session.sessionRoot, sessionId, beforeCycleId, limit);
   }
 
   listDirectories(input: { path?: string; includeHidden?: boolean }): Array<{ name: string; path: string }> {
@@ -123,16 +529,47 @@ export class AppKernel {
   }
 
   validateDirectory(path: string): { ok: boolean; path: string } {
+    const resolvedPath = resolve(path);
     try {
-      const stat = statSync(path);
+      const stat = statSync(resolvedPath);
       if (!stat.isDirectory()) {
-        return { ok: false, path };
+        return { ok: false, path: resolvedPath };
       }
-      accessSync(path, fsConstants.R_OK);
-      return { ok: true, path };
+      accessSync(resolvedPath, fsConstants.R_OK);
+      return { ok: true, path: resolvedPath };
     } catch {
-      return { ok: false, path };
+      return { ok: false, path: resolvedPath };
     }
+  }
+
+  async resolveDraft(input: { cwd: string; avatar?: string }): Promise<{
+    cwd: string;
+    avatar?: string;
+    provider: { providerId: string; kind: string; model: string; baseUrl?: string };
+    modelCapabilities: ModelCapabilities;
+  }> {
+    const cwd = resolve(input.cwd);
+    const config = await resolveSessionConfig(cwd, { avatar: input.avatar });
+    this.workspaces.add(cwd);
+    return {
+      cwd,
+      avatar: input.avatar,
+      provider: {
+        providerId: config.ai.providerId,
+        kind: config.ai.kind,
+        model: config.ai.model,
+        baseUrl: config.ai.baseUrl,
+      },
+      modelCapabilities: resolveModelCapabilities(config.ai),
+    };
+  }
+
+  searchWorkspacePaths(input: {
+    cwd: string;
+    query?: string;
+    limit?: number;
+  }): Array<{ label: string; path: string; isDirectory: boolean; ignored?: boolean }> {
+    return this.workspacePathSearch.search(input);
   }
 
   getSession(sessionId: string): SessionMeta | undefined {
@@ -145,12 +582,18 @@ export class AppKernel {
     avatar?: string;
     autoStart?: boolean;
   }): Promise<SessionMeta> {
-    const resolved = await resolveSessionConfig(input.cwd, { avatar: input.avatar });
-    this.workspaces.add(input.cwd);
+    const validatedWorkspace = this.validateDirectory(input.cwd);
+    if (!validatedWorkspace.ok) {
+      throw new Error(`invalid workspace directory: ${validatedWorkspace.path}`);
+    }
+
+    const workspacePath = validatedWorkspace.path;
+    const resolved = await resolveSessionConfig(workspacePath, { avatar: input.avatar });
+    this.workspaces.add(workspacePath);
 
     const session = this.sessions.create({
       name: input.name,
-      cwd: input.cwd,
+      cwd: workspacePath,
       avatar: resolved.avatar.nickname,
       storeTarget: resolved.sessionStoreTarget,
     });
@@ -177,6 +620,7 @@ export class AppKernel {
       await runtime.stop();
       this.detachRuntime(sessionId);
     }
+    this.workspaces.removeSessionFavorite(sessionId);
     const removed = this.sessions.remove(sessionId);
     if (removed) {
       this.emit("session.deleted", { sessionId, removed }, sessionId);
@@ -184,10 +628,30 @@ export class AppKernel {
     return { removed };
   }
 
+  async archiveSession(sessionId: string): Promise<SessionMeta> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      await runtime.stop();
+      this.detachRuntime(sessionId);
+    }
+    const archived = this.sessions.archive(sessionId);
+    this.emit("session.updated", { session: archived }, sessionId);
+    return archived;
+  }
+
+  async restoreSession(sessionId: string): Promise<SessionMeta> {
+    const restored = this.sessions.restore(sessionId);
+    this.emit("session.updated", { session: restored }, sessionId);
+    return restored;
+  }
+
   async startSession(sessionId: string): Promise<SessionMeta> {
     const meta = this.sessions.get(sessionId);
     if (!meta) {
       throw new Error(`session not found: ${sessionId}`);
+    }
+    if (meta.storageState === "archived") {
+      throw new Error(`session is archived: ${sessionId}`);
     }
 
     this.workspaces.add(meta.cwd);
@@ -254,15 +718,193 @@ export class AppKernel {
     return { ok };
   }
 
-  async sendChat(sessionId: string, text: string): Promise<{ ok: boolean; reason?: string }> {
+  async sendChat(
+    sessionId: string,
+    text: string,
+    assetIds: string[] = [],
+    clientMessageId?: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
     try {
       const runtime = await this.ensureRuntime(sessionId);
-      runtime.pushUserChat(text);
+      runtime.pushUserChat(text, assetIds, clientMessageId);
       return { ok: true };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       return { ok: false, reason };
     }
+  }
+
+  async uploadSessionImages(
+    sessionId: string,
+    files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>,
+  ): Promise<ChatImageAttachment[]> {
+    const runtime = await this.ensureRuntime(sessionId);
+    return await runtime.uploadImageAssets(files);
+  }
+
+  getSessionImage(
+    sessionId: string,
+    assetId: string,
+  ): { filePath: string; mimeType: string; name: string; sizeBytes: number } | null {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      const resolved = runtime.getImageAsset(assetId);
+      if (!resolved) {
+        return null;
+      }
+      return {
+        filePath: resolved.filePath,
+        mimeType: resolved.asset.mimeType,
+        name: resolved.asset.name,
+        sizeBytes: resolved.asset.sizeBytes,
+      };
+    }
+
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+    const dbPath = join(session.sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return null;
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const asset = db.getAssetById(assetId);
+      if (!asset || asset.kind !== "image") {
+        return null;
+      }
+      return {
+        filePath: join(session.sessionRoot, asset.relativePath),
+        mimeType: asset.mimeType,
+        name: asset.name,
+        sizeBytes: asset.sizeBytes,
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  listCurrentBranchCycles(sessionId: string, limit = 200) {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listCurrentBranchCycles(limit);
+  }
+
+  async rollbackSessionCycle(
+    sessionId: string,
+    cycleId: number,
+  ): Promise<{ ok: boolean; cycleId?: number; reason?: string }> {
+    const runtime = await this.ensureRuntime(sessionId);
+    return runtime.rollbackToCycle(cycleId);
+  }
+
+  async retainApiCallSubscription(sessionId: string): Promise<{ enabled: boolean; refCount: number }> {
+    const runtime = await this.ensureRuntime(sessionId);
+    return runtime.retainApiCallRecording();
+  }
+
+  releaseApiCallSubscription(sessionId: string): { enabled: boolean; refCount: number } {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return { enabled: false, refCount: 0 };
+    }
+    return runtime.releaseApiCallRecording();
+  }
+
+  listModelCalls(
+    sessionId: string,
+    afterId = 0,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listModelCalls"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listModelCalls(afterId, limit);
+  }
+
+  listModelCallsBefore(
+    sessionId: string,
+    beforeId: number,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listModelCallsBefore"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listModelCallsBefore(beforeId, limit);
+  }
+
+  listApiCalls(sessionId: string, afterId = 0, limit = 200): Array<ReturnType<SessionRuntime["listApiCalls"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listApiCalls(afterId, limit);
+  }
+
+  listApiCallsBefore(
+    sessionId: string,
+    beforeId: number,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listApiCallsBefore"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listApiCallsBefore(beforeId, limit);
+  }
+
+  listLoopbusStateLogs(
+    sessionId: string,
+    afterId = 0,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listLoopbusStateLogs"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listLoopbusStateLogs(afterId, limit);
+  }
+
+  listLoopbusStateLogsBefore(
+    sessionId: string,
+    beforeId: number,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listLoopbusStateLogsBefore"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listLoopbusStateLogsBefore(beforeId, limit);
+  }
+
+  listLoopbusTraces(
+    sessionId: string,
+    afterId = 0,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listLoopbusTraces"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listLoopbusTraces(afterId, limit);
+  }
+
+  listLoopbusTracesBefore(
+    sessionId: string,
+    beforeId: number,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listLoopbusTracesBefore"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listLoopbusTracesBefore(beforeId, limit);
   }
 
   listTasks(sessionId: string): { ok: boolean; tasks: ReturnType<SessionRuntime["snapshot"]>["tasks"] } {
@@ -290,6 +932,11 @@ export class AppKernel {
       return { ok: false };
     }
     return runtime.emitTaskEvent(input);
+  }
+
+  async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
+    const runtime = await this.ensureRuntime(sessionId);
+    return runtime.inspectModelDebug();
   }
 
   async readSettings(input: {
@@ -354,6 +1001,150 @@ export class AppKernel {
     return runtime;
   }
 
+  private readSessionPreview(session: SessionMeta): WorkspaceSessionPreview {
+    try {
+      const messages = this.readChatMessagesFromDb(session.sessionRoot, session.id, 0, 1_000);
+      if (messages.length === 0) {
+        return {
+          firstUserMessage: null,
+          latestMessages: [],
+        };
+      }
+
+      const firstUser = messages.find((item) => item.role === "user");
+      const latestMessages = messages
+        .filter((item) => item.role === "user" || item.channel === "to_user")
+        .slice(-3)
+        .map((item) => item.content.trim())
+        .filter((item) => item.length > 0);
+
+      return {
+        firstUserMessage: firstUser?.content.trim() || null,
+        latestMessages,
+      };
+    } catch {
+      return {
+        firstUserMessage: null,
+        latestMessages: [],
+      };
+    }
+  }
+
+  private readChatMessagesFromDb(
+    sessionRoot: string,
+    sessionId: string,
+    afterId: number,
+    limit: number,
+  ): Array<
+    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
+      attachments: ChatImageAttachment[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return [];
+    }
+
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listBlocksAfter(afterId, limit).map((item) => ({
+        ...item,
+        attachments: item.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+        sessionId,
+        messageId: `${item.id}`,
+        timestamp: item.createdAt,
+      }));
+    } finally {
+      db.close();
+    }
+  }
+
+  private readChatMessagesBeforeFromDb(
+    sessionRoot: string,
+    sessionId: string,
+    beforeId: number,
+    limit: number,
+  ): Array<
+    Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
+      attachments: ChatImageAttachment[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return [];
+    }
+
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listBlocksBefore(beforeId, limit).map((item) => ({
+        ...item,
+        attachments: item.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+        sessionId,
+        messageId: `${item.id}`,
+        timestamp: item.createdAt,
+      }));
+    } finally {
+      db.close();
+    }
+  }
+
+  private readChatCyclesFromDb(sessionRoot: string, sessionId: string, limit: number): ChatCycle[] {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return [];
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const cycles = db.listCurrentBranchCycles(limit);
+      const cycleInputs = mergeLegacyCycleInputs(sessionId, cycles, db.listOrphanUserInputBlocks(limit * 4));
+      return cycleInputs.map(({ cycle, inputs }) =>
+        toChatCycle({
+          sessionId,
+          cycle,
+          inputs,
+          outputs: db.listBlocksByCycleId(cycle.id),
+          modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
+        }),
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  private readChatCyclesBeforeFromDb(
+    sessionRoot: string,
+    sessionId: string,
+    beforeCycleId: number,
+    limit: number,
+  ): ChatCycle[] {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return [];
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const cycles = db.listCurrentBranchCyclesBefore(beforeCycleId, limit);
+      const cycleInputs = mergeLegacyCycleInputs(sessionId, cycles, db.listOrphanUserInputBlocks(limit * 4));
+      return cycleInputs.map(({ cycle, inputs }) =>
+        toChatCycle({
+          sessionId,
+          cycle,
+          inputs,
+          outputs: db.listBlocksByCycleId(cycle.id),
+          modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
+        }),
+      );
+    } finally {
+      db.close();
+    }
+  }
+
   private detachRuntime(sessionId: string): void {
     this.runtimes.delete(sessionId);
     const unsubscribe = this.runtimeStopListeners.get(sessionId);
@@ -378,7 +1169,12 @@ export class AppKernel {
         this.emit("runtime.stats", event.payload, sessionId, event.timestamp);
         return;
       case "focusedTerminal":
-        this.emit("runtime.focusedTerminal", { terminalId: event.payload.terminalId }, sessionId, event.timestamp);
+        this.emit(
+          "runtime.focusedTerminal",
+          { terminalIds: event.payload.terminalIds, terminalId: event.payload.terminalId },
+          sessionId,
+          event.timestamp,
+        );
         return;
       case "terminalSnapshot":
         this.emit("terminal.snapshot", event.payload, sessionId, event.timestamp);
@@ -397,6 +1193,30 @@ export class AppKernel {
         return;
       case "taskSourceChanged":
         this.emit("task.source.changed", event.payload, sessionId, event.timestamp);
+        return;
+      case "loopbusSnapshot":
+        this.emit("runtime.loopbus.snapshot", event.payload, sessionId, event.timestamp);
+        return;
+      case "loopbusStateLog":
+        this.emit("runtime.loopbus.stateLog", event.payload, sessionId, event.timestamp);
+        return;
+      case "loopbusTrace":
+        this.emit("runtime.loopbus.trace", event.payload, sessionId, event.timestamp);
+        return;
+      case "loopbusInputSignal":
+        this.emit("runtime.loopbus.inputSignal", event.payload, sessionId, event.timestamp);
+        return;
+      case "modelCall":
+        this.emit("runtime.modelCall", event.payload, sessionId, event.timestamp);
+        return;
+      case "apiCall":
+        this.emit("runtime.apiCall", event.payload, sessionId, event.timestamp);
+        return;
+      case "apiRecording":
+        this.emit("runtime.apiRecording", event.payload, sessionId, event.timestamp);
+        return;
+      case "cycleUpdated":
+        this.emit("runtime.cycle.updated", event.payload, sessionId, event.timestamp);
         return;
       case "error":
         this.emit("runtime.error", event.payload, sessionId, event.timestamp);

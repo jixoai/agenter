@@ -3,32 +3,27 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
 const nowIso = (): string => new Date().toISOString();
-
 const defaultPath = (): string => resolve(homedir(), ".agenter", "workspaces.yaml");
-
-const parseYamlList = (text: string): string[] => {
-  const lines = text.split(/\r?\n/);
-  const items: string[] = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("- ")) {
-      const value = trimmed.slice(2).trim();
-      if (value.length > 0) {
-        items.push(value);
-      }
-    }
-  }
-  return items;
-};
-
-const toYaml = (items: string[]): string => {
-  const body = items.map((item) => `  - ${item}`).join("\n");
-  return `updatedAt: ${nowIso()}\nworkspaces:\n${body}\n`;
-};
 
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 2_000;
 const STALE_LOCK_MS = 10_000;
+const CURRENT_VERSION = 2;
+
+type ArrayKey = "workspaces" | "favoriteWorkspaces" | "favoriteSessions";
+
+interface WorkspacesDocument {
+  version: number;
+  updatedAt: string;
+  workspaces: string[];
+  favoriteWorkspaces: string[];
+  favoriteSessions: string[];
+}
+
+export interface WorkspaceEntry {
+  path: string;
+  favorite: boolean;
+}
 
 const sleepSync = (ms: number): void => {
   const end = Date.now() + ms;
@@ -37,7 +32,129 @@ const sleepSync = (ms: number): void => {
   }
 };
 
-const asSortedArray = (items: Set<string>): string[] => [...items].sort((a, b) => a.localeCompare(b));
+const parseYamlScalar = (value: string): string => {
+  const text = value.trim();
+  if (text.length === 0) {
+    return "";
+  }
+  if (text.startsWith('"') || text.startsWith("'")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+  return text;
+};
+
+const emptyDocument = (): WorkspacesDocument => ({
+  version: CURRENT_VERSION,
+  updatedAt: nowIso(),
+  workspaces: [],
+  favoriteWorkspaces: [],
+  favoriteSessions: [],
+});
+
+const LEGACY_WORKSPACE_PATH_ASSIGNMENT = /(?:^|\/)path:\s*["']([^"']+)["']$/;
+
+const repairWorkspacePath = (value: string): string => {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^path:\s*["']([^"']+)["']$/) ?? trimmed.match(LEGACY_WORKSPACE_PATH_ASSIGNMENT);
+  return match?.[1] ?? trimmed;
+};
+
+const normalizeWorkspacePath = (value: string): string => resolve(repairWorkspacePath(value));
+
+const dedupe = (items: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of items) {
+    if (seen.has(item)) {
+      continue;
+    }
+    seen.add(item);
+    result.push(item);
+  }
+  return result;
+};
+
+const normalizeDocument = (input: Partial<WorkspacesDocument>): WorkspacesDocument => {
+  const workspaces = dedupe((input.workspaces ?? []).map((item) => normalizeWorkspacePath(item)));
+  const favoriteWorkspaces = dedupe(
+    (input.favoriteWorkspaces ?? [])
+      .map((item) => normalizeWorkspacePath(item))
+      .filter((item) => workspaces.includes(item)),
+  );
+  const favoriteSessions = dedupe((input.favoriteSessions ?? []).map((item) => item.trim()).filter(Boolean));
+
+  return {
+    version: CURRENT_VERSION,
+    updatedAt: input.updatedAt ?? nowIso(),
+    workspaces,
+    favoriteWorkspaces,
+    favoriteSessions,
+  };
+};
+
+const parseWorkspaceYaml = (text: string): WorkspacesDocument => {
+  const draft: Partial<WorkspacesDocument> = {};
+  let currentKey: ArrayKey | null = null;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) {
+      continue;
+    }
+    if (trimmed.startsWith("version:")) {
+      continue;
+    }
+    if (trimmed.startsWith("updatedAt:")) {
+      draft.updatedAt = parseYamlScalar(trimmed.slice("updatedAt:".length));
+      continue;
+    }
+    if (trimmed === "workspaces:") {
+      currentKey = "workspaces";
+      draft.workspaces = draft.workspaces ?? [];
+      continue;
+    }
+    if (trimmed === "favoriteWorkspaces:") {
+      currentKey = "favoriteWorkspaces";
+      draft.favoriteWorkspaces = draft.favoriteWorkspaces ?? [];
+      continue;
+    }
+    if (trimmed === "favoriteSessions:") {
+      currentKey = "favoriteSessions";
+      draft.favoriteSessions = draft.favoriteSessions ?? [];
+      continue;
+    }
+    if (trimmed.startsWith("- ") && currentKey) {
+      const value = parseYamlScalar(trimmed.slice(2));
+      const target = draft[currentKey] ?? [];
+      target.push(value);
+      draft[currentKey] = target;
+      continue;
+    }
+    currentKey = null;
+  }
+
+  return normalizeDocument(draft);
+};
+
+const toYaml = (doc: WorkspacesDocument): string => {
+  const lines = [
+    `version: ${CURRENT_VERSION}`,
+    `updatedAt: ${nowIso()}`,
+    "workspaces:",
+    ...doc.workspaces.map((item) => `  - ${JSON.stringify(item)}`),
+    "favoriteWorkspaces:",
+    ...doc.favoriteWorkspaces.map((item) => `  - ${JSON.stringify(item)}`),
+    "favoriteSessions:",
+    ...doc.favoriteSessions.map((item) => `  - ${JSON.stringify(item)}`),
+    "",
+  ];
+
+  return lines.join("\n");
+};
 
 export interface WorkspacesStoreOptions {
   filePath?: string;
@@ -45,10 +162,11 @@ export interface WorkspacesStoreOptions {
 
 export class WorkspacesStore {
   private readonly filePath: string;
-  private readonly byPath = new Set<string>();
+  private doc: WorkspacesDocument;
 
   constructor(options: WorkspacesStoreOptions = {}) {
     this.filePath = options.filePath ?? defaultPath();
+    this.doc = emptyDocument();
     this.load();
   }
 
@@ -57,60 +175,160 @@ export class WorkspacesStore {
   }
 
   list(): string[] {
-    return asSortedArray(this.byPath);
+    return [...this.doc.workspaces];
   }
 
-  add(workspacePath: string): void {
-    const normalized = resolve(workspacePath);
-    this.withFileLock(() => {
-      const merged = this.readFromDisk();
-      const beforeSize = merged.size;
-      for (const path of this.byPath) {
-        merged.add(path);
-      }
-      merged.add(normalized);
+  listRecent(limit = 8): string[] {
+    const safeLimit = Math.max(1, Math.min(Math.floor(limit), 128));
+    return this.doc.workspaces.slice(0, safeLimit);
+  }
 
-      this.byPath.clear();
-      for (const path of merged) {
-        this.byPath.add(path);
-      }
+  listEntries(): WorkspaceEntry[] {
+    const favorites = new Set(this.doc.favoriteWorkspaces);
+    return this.doc.workspaces.map((path) => ({
+      path,
+      favorite: favorites.has(path),
+    }));
+  }
 
-      if (merged.size === beforeSize) {
-        return;
+  favoriteSessionIds(): string[] {
+    return [...this.doc.favoriteSessions];
+  }
+
+  isSessionFavorite(sessionId: string): boolean {
+    return this.doc.favoriteSessions.includes(sessionId);
+  }
+
+  add(workspacePath: string): WorkspaceEntry {
+    const normalized = normalizeWorkspacePath(workspacePath);
+    return this.withFileLock(() => {
+      const doc = this.readFromDisk();
+      const nextWorkspaces = [normalized, ...doc.workspaces.filter((item) => item !== normalized)];
+      const next = normalizeDocument({
+        ...doc,
+        updatedAt: nowIso(),
+        workspaces: nextWorkspaces,
+      });
+      this.replace(next);
+      this.flushAtomic(next);
+      return {
+        path: normalized,
+        favorite: next.favoriteWorkspaces.includes(normalized),
+      };
+    });
+  }
+
+  toggleWorkspaceFavorite(workspacePath: string): WorkspaceEntry {
+    const normalized = normalizeWorkspacePath(workspacePath);
+    return this.withFileLock(() => {
+      const doc = this.readFromDisk();
+      const favorites = doc.favoriteWorkspaces.includes(normalized)
+        ? doc.favoriteWorkspaces.filter((item) => item !== normalized)
+        : [...doc.favoriteWorkspaces, normalized];
+      const next = normalizeDocument({
+        ...doc,
+        updatedAt: nowIso(),
+        workspaces: doc.workspaces.includes(normalized) ? doc.workspaces : [normalized, ...doc.workspaces],
+        favoriteWorkspaces: favorites,
+      });
+      this.replace(next);
+      this.flushAtomic(next);
+      return {
+        path: normalized,
+        favorite: next.favoriteWorkspaces.includes(normalized),
+      };
+    });
+  }
+
+  toggleSessionFavorite(sessionId: string): { sessionId: string; favorite: boolean } {
+    const normalized = sessionId.trim();
+    if (normalized.length === 0) {
+      throw new Error("sessionId is required");
+    }
+    return this.withFileLock(() => {
+      const doc = this.readFromDisk();
+      const favorites = doc.favoriteSessions.includes(normalized)
+        ? doc.favoriteSessions.filter((item) => item !== normalized)
+        : [...doc.favoriteSessions, normalized];
+      const next = normalizeDocument({
+        ...doc,
+        updatedAt: nowIso(),
+        favoriteSessions: favorites,
+      });
+      this.replace(next);
+      this.flushAtomic(next);
+      return {
+        sessionId: normalized,
+        favorite: next.favoriteSessions.includes(normalized),
+      };
+    });
+  }
+
+  removeSessionFavorite(sessionId: string): boolean {
+    const normalized = sessionId.trim();
+    if (normalized.length === 0) {
+      return false;
+    }
+    return this.withFileLock(() => {
+      const doc = this.readFromDisk();
+      if (!doc.favoriteSessions.includes(normalized)) {
+        this.replace(doc);
+        return false;
       }
-      this.flushAtomic(asSortedArray(merged));
+      const next = normalizeDocument({
+        ...doc,
+        updatedAt: nowIso(),
+        favoriteSessions: doc.favoriteSessions.filter((item) => item !== normalized),
+      });
+      this.replace(next);
+      this.flushAtomic(next);
+      return true;
+    });
+  }
+
+  remove(workspacePath: string): boolean {
+    const normalized = normalizeWorkspacePath(workspacePath);
+    return this.withFileLock(() => {
+      const doc = this.readFromDisk();
+      if (!doc.workspaces.includes(normalized)) {
+        this.replace(doc);
+        return false;
+      }
+      const next = normalizeDocument({
+        ...doc,
+        updatedAt: nowIso(),
+        workspaces: doc.workspaces.filter((item) => item !== normalized),
+        favoriteWorkspaces: doc.favoriteWorkspaces.filter((item) => item !== normalized),
+      });
+      this.replace(next);
+      this.flushAtomic(next);
+      return true;
     });
   }
 
   private load(): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const loaded = this.readFromDisk();
-    this.byPath.clear();
-    for (const path of loaded) {
-      this.byPath.add(path);
-    }
-    if (loaded.size === 0) {
-      this.flushAtomic([]);
-    }
+    this.replace(loaded);
+    this.flushAtomic(this.doc);
   }
 
-  private readFromDisk(): Set<string> {
-    const result = new Set<string>();
+  private readFromDisk(): WorkspacesDocument {
     try {
-      const text = readFileSync(this.filePath, "utf8");
-      for (const path of parseYamlList(text)) {
-        result.add(resolve(path));
-      }
-      return result;
+      return parseWorkspaceYaml(readFileSync(this.filePath, "utf8"));
     } catch {
-      return result;
+      return emptyDocument();
     }
   }
 
-  private flushAtomic(items: string[]): void {
+  private replace(next: WorkspacesDocument): void {
+    this.doc = normalizeDocument(next);
+  }
+
+  private flushAtomic(doc: WorkspacesDocument): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const tempPath = `${this.filePath}.tmp-${process.pid}-${Date.now()}`;
-    writeFileSync(tempPath, toYaml(items), "utf8");
+    writeFileSync(tempPath, toYaml(doc), "utf8");
     renameSync(tempPath, this.filePath);
   }
 

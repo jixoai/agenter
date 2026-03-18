@@ -1,4 +1,4 @@
-# @agenter/terminal
+# @agenter/terminal-system
 
 ATI (Agentic Terminal Interface): 用 PTY + `@xterm/headless` 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
 内核采用 ANSI-first：先生成结构化语义快照，再序列化为 `log.html`。
@@ -119,7 +119,7 @@ ati [options] [command] [args]
 
 ## 读取 output 链（供 demo/工具）
 
-`@agenter/terminal` 提供两种读取接口（同语义）：
+`@agenter/terminal-system` 提供两种读取接口（同语义）：
 
 - `readTerminalOutput(options): Promise<string>`
 - `streamTerminalOutput(options): ReadableStream<string>`

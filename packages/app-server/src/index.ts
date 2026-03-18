@@ -1,4 +1,9 @@
 export {
+  SessionDb,
+  type ApiCallRecord as SessionDbApiCallRecord,
+  type SessionBlockRecord as SessionDbChatMessageRecord,
+} from "@agenter/session-system";
+export {
   TaskEngine,
   parseTaskMarkdownRecord,
   pickProjectsFromMarkdown,
@@ -25,9 +30,26 @@ export type {
   TaskView,
 } from "@agenter/task-system";
 export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
-export { AgenterAI, type AgentRuntimeStats } from "./agenter-ai";
-export { AppKernel, type AppKernelOptions } from "./app-kernel";
-export { DeepseekClient, DeepseekDecisionError, type TextOnlyModelMessage } from "./deepseek-client";
+export { AgenterAI, type AgentModelCallRecord, type AgentRuntimeStats } from "./agenter-ai";
+export {
+  AppKernel,
+  type AppKernelOptions,
+  type WorkspaceListItem,
+  type WorkspaceSessionCounts,
+  type WorkspaceSessionEntry,
+  type WorkspaceSessionPage,
+  type WorkspaceSessionPreview,
+  type WorkspaceSessionTab,
+} from "./app-kernel";
+export {
+  collectClientMessageIds,
+  detectChatCycleKind,
+  toChatCycleId,
+  type ChatCycle,
+  type ChatCycleKind,
+  type ChatCycleStatus,
+} from "./chat-cycles";
+export { DeepseekClient, DeepseekDecisionError } from "./deepseek-client";
 export { DEFAULT_LANGUAGE, loadPromptDocsByLang, resolveLanguage } from "./i18n";
 export { resolveInstanceConfig, type InstanceTerminalConfig, type ResolvedInstanceConfig } from "./instance-config";
 export { InstanceRuntime, type InstanceRuntimeSnapshot } from "./instance-runtime";
@@ -41,11 +63,31 @@ export {
   type LoopBusPhase,
   type LoopBusResponse,
   type LoopBusState,
+  type LoopBusWakeSource,
   type LoopChatMessage,
   type LoopTerminalCommand,
   type LoopToolCall,
 } from "./loop-bus";
-export { ModelClient, ModelDecisionError, type ModelProviderConfig } from "./model-client";
+export {
+  applyLoopStatePatch,
+  createInitialLoopKernelState,
+  createLoopStatePatch,
+  hashLoopState,
+  stableStringify,
+  type LoopBusKernelSnapshot,
+  type LoopBusKernelState,
+  type LoopBusPatchOperation,
+  type LoopBusStateLogEntry,
+  type LoopBusTraceEntry,
+} from "./loopbus-kernel";
+export { resolveModelCapabilities } from "./model-capabilities";
+export {
+  ModelClient,
+  ModelDecisionError,
+  type AssistantStreamUpdate,
+  type ModelProviderConfig,
+  type TextOnlyModelMessage,
+} from "./model-client";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 export {
   PROMPT_DOC_KEYS,
@@ -72,11 +114,19 @@ export {
   SessionRuntime,
   type RuntimeEvent,
   type RuntimeEventMap,
+  type SessionRuntimeModelDebug,
   type SessionRuntimeSnapshot,
 } from "./session-runtime";
 export { SessionStore, type SessionCallRecord } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
 export { createTrpcContext, type TrpcContext } from "./trpc/context";
 export { appRouter, type AppRouter } from "./trpc/router";
-export type { AppServerLogger, ChatMessage, TaskEvent, TaskStage } from "./types";
+export type {
+  AppServerLogger,
+  ChatImageAttachment,
+  ChatMessage,
+  ModelCapabilities,
+  TaskEvent,
+  TaskStage,
+} from "./types";
 export { WorkspacesStore } from "./workspaces-store";

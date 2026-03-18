@@ -1,20 +1,7 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-interface SessionJson {
-  session: {
-    id: string;
-    name: string;
-    cwd: string;
-    avatar: string;
-    storeTarget: "global" | "workspace";
-    status: "stopped" | "starting" | "running" | "error";
-    createdAt: string;
-    updatedAt: string;
-    lastError?: string;
-  };
-  calls: SessionCallRecord[];
-}
+import { readSessionDocument, writeSessionDocument, type SessionDocument } from "./session-doc";
 
 export interface SessionCallRecord {
   id: string;
@@ -68,7 +55,7 @@ export interface SessionStoreOptions {
 
 export class SessionStore {
   private readonly filePath: string;
-  private readonly doc: SessionJson;
+  private readonly doc: SessionDocument<SessionCallRecord>;
 
   constructor(options: SessionStoreOptions) {
     const now = new Date().toISOString();
@@ -76,18 +63,34 @@ export class SessionStore {
     mkdirSync(sessionRoot, { recursive: true });
     mkdirSync(join(sessionRoot, "logs"), { recursive: true });
     this.filePath = join(sessionRoot, "session.json");
-    this.doc = {
+
+    const existing = readSessionDocument<SessionCallRecord>(this.filePath);
+    this.doc = existing ?? {
       session: {
         id: options.session.id,
         name: options.session.name,
         cwd: options.session.cwd,
         avatar: options.session.avatar,
         storeTarget: options.session.storeTarget,
-        status: "starting",
+        status: "stopped",
         createdAt: now,
         updatedAt: now,
+        storageState: "active",
       },
       calls: [],
+    };
+
+    this.doc.session = {
+      ...this.doc.session,
+      id: options.session.id,
+      name: options.session.name,
+      cwd: options.session.cwd,
+      avatar: options.session.avatar,
+      storeTarget: options.session.storeTarget,
+      status: "starting",
+      updatedAt: now,
+      storageState: this.doc.session.storageState ?? "active",
+      lastError: undefined,
     };
     this.flush();
   }
@@ -110,6 +113,6 @@ export class SessionStore {
   }
 
   private flush(): void {
-    writeFileSync(this.filePath, `${JSON.stringify(this.doc, null, 2)}\n`, "utf8");
+    writeSessionDocument(this.filePath, this.doc);
   }
 }

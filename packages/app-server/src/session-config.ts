@@ -50,7 +50,7 @@ export interface ResolvedSessionConfig {
   };
   terminals: Record<string, SessionTerminalConfig>;
   primaryTerminalId: string;
-  focusedTerminalId: string;
+  focusedTerminalIds: string[];
   bootTerminals: Array<{ terminalId: string; focus: boolean; autoRun: boolean }>;
   tasks: {
     sources: Array<{ name: string; path: string }>;
@@ -101,10 +101,13 @@ const normalizeBootEntries = (
     });
   }
   const entries = [...normalized.values()];
-  const focused = entries.find((entry) => entry.focus)?.terminalId ?? entries[0]?.terminalId ?? primaryTerminalId;
+  if (entries.some((entry) => entry.focus)) {
+    return entries;
+  }
+  const fallback = entries[0]?.terminalId ?? primaryTerminalId;
   return entries.map((entry) => ({
     ...entry,
-    focus: entry.terminalId === focused,
+    focus: entry.terminalId === fallback,
   }));
 };
 
@@ -181,7 +184,7 @@ export const resolveSessionConfig = async (
   );
 
   const bootTerminals = normalizeBootEntries(settings.features?.terminal?.bootTerminals, terminals, primaryTerminalId);
-  const focusedTerminalId = bootTerminals.find((entry) => entry.focus)?.terminalId ?? primaryTerminalId;
+  const focusedTerminalIds = bootTerminals.filter((entry) => entry.focus).map((entry) => entry.terminalId);
 
   const prompt = settings.prompt ?? {};
   const avatar = resolveAvatarSources({
@@ -231,7 +234,7 @@ export const resolveSessionConfig = async (
     },
     terminals,
     primaryTerminalId,
-    focusedTerminalId,
+    focusedTerminalIds: focusedTerminalIds.length > 0 ? focusedTerminalIds : [primaryTerminalId],
     bootTerminals,
     tasks: {
       sources: settings.tasks?.sources ?? [

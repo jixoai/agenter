@@ -1,3 +1,5 @@
+import type { ChatImageAttachment } from "./types";
+
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export interface LoopBusMeta {
@@ -10,9 +12,10 @@ export interface LoopBusMessage {
   name: string;
   role: "user" | "tool";
   type: "text";
-  source: "chat" | "terminal" | "tool" | "task" | "chat-system";
+  source: "chat" | "terminal" | "tool" | "task" | "attention-system";
   text: string;
   meta?: LoopBusMeta;
+  attachments?: ChatImageAttachment[];
 }
 
 export interface LoopTerminalCommand {
@@ -71,58 +74,70 @@ export interface LoopBusLogger {
 }
 
 export type LoopBusPhase =
-  | "waiting_messages"
+  | "waiting_commits"
   | "collecting_inputs"
-  | "processing_messages"
-  | "waiting_processor_response"
-  | "dispatching_tools"
-  | "dispatching_user"
-  | "dispatching_terminal"
+  | "persisting_cycle"
+  | "calling_model"
+  | "applying_outputs"
   | "stopped";
 
 export interface LoopBusState {
   phase: LoopBusPhase;
   timestamp: number;
-  queueSize: number;
+  cycle: number;
+  currentCycleId: number | null;
+  paused: boolean;
+  running: boolean;
+  lastWakeSource: LoopBusWakeSource | null;
+  lastError: string | null;
+}
+
+export type LoopBusWakeSource = "user" | "terminal" | "task" | "attention" | "unknown";
+
+export interface LoopBusTraceEntry {
+  cycleId: number;
+  step: string;
+  status: "ok" | "error";
+  startedAt: number;
+  endedAt: number;
+  detail: Record<string, unknown>;
 }
 
 interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
   processor: {
     send: (messages: LoopBusMessage[]) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
   };
-  collectInputs?: () => Promise<LoopBusInput[] | LoopBusInput | void>;
-  idleCollectIntervalMs?: number;
-  onUserMessage?: (message: TChatMessage) => Promise<void> | void;
-  onTerminalDispatch?: (command: LoopTerminalCommand) => Promise<void> | void;
-  onToolCall?: (calls: LoopToolCall[]) => Promise<LoopBusInput[] | LoopBusInput | void>;
+  waitForCommit: () => Promise<LoopBusWakeSource | void>;
+  collectInputs: () => Promise<LoopBusInput[] | LoopBusInput | void>;
+  persistCycle: (input: { wakeSource: LoopBusWakeSource; inputs: LoopBusMessage[] }) => Promise<{ cycleId: number }>;
+  onUserMessage?: (message: TChatMessage, context: { cycleId: number }) => Promise<void> | void;
+  onTerminalDispatch?: (command: LoopTerminalCommand, context: { cycleId: number }) => Promise<void> | void;
+  onToolCall?: (calls: LoopToolCall[], context: { cycleId: number }) => Promise<void> | void;
   onStateChange?: (state: LoopBusState) => Promise<void> | void;
+  onTrace?: (entry: LoopBusTraceEntry) => Promise<void> | void;
   logger: LoopBusLogger;
+  sleep?: (ms: number) => Promise<void>;
 }
 
-const LOOP_TRANSITIONS: Record<LoopBusPhase, ReadonlySet<LoopBusPhase>> = {
-  waiting_messages: new Set(["collecting_inputs", "stopped"]),
-  collecting_inputs: new Set(["processing_messages", "waiting_messages", "stopped"]),
-  processing_messages: new Set(["waiting_processor_response", "waiting_messages", "stopped"]),
-  waiting_processor_response: new Set([
-    "dispatching_tools",
-    "dispatching_user",
-    "dispatching_terminal",
-    "waiting_messages",
-    "stopped",
-  ]),
-  dispatching_tools: new Set(["dispatching_user", "dispatching_terminal", "waiting_messages", "stopped"]),
-  dispatching_user: new Set(["dispatching_terminal", "waiting_messages", "stopped"]),
-  dispatching_terminal: new Set(["waiting_messages", "stopped"]),
-  stopped: new Set(),
-};
+const LOOP_COLLECT_DEBOUNCE_MS = 300;
+const LOOP_COLLECT_THROTTLE_MS = 1_000;
 
-const DEFAULT_IDLE_COLLECT_INTERVAL_MS = 1_500;
-
-const normalizeInputs = (input: LoopBusInput[] | LoopBusInput | void): LoopBusInput[] => {
+const normalizeInputs = (input: LoopBusInput[] | LoopBusInput | void): LoopBusMessage[] => {
   if (!input) {
     return [];
   }
-  return Array.isArray(input) ? input : [input];
+  const items = Array.isArray(input) ? input : [input];
+  return items.map((item) => ({
+    id: item.id ?? createId(),
+    timestamp: item.timestamp ?? Date.now(),
+    name: item.name,
+    role: item.role,
+    type: item.type,
+    source: item.source,
+    text: item.text,
+    meta: item.meta,
+    attachments: item.attachments?.map((attachment) => ({ ...attachment })),
+  }));
 };
 
 const normalizeOutputs = <TChatMessage extends LoopChatMessage>(
@@ -136,15 +151,24 @@ const normalizeOutputs = <TChatMessage extends LoopChatMessage>(
   };
 };
 
+const defaultSleep = async (ms: number): Promise<void> => {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+};
+
 export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
-  private readonly queue: LoopBusMessage[] = [];
-  private waiters: Array<(messages: LoopBusMessage[]) => void> = [];
   private running = false;
-  private lastPhase: LoopBusPhase | null = null;
-  private readonly idleCollectIntervalMs: number;
+  private paused = false;
+  private waitResume: (() => void) | null = null;
+  private loopTask: Promise<void> | null = null;
+  private cycle = 0;
+  private currentCycleId: number | null = null;
+  private lastWakeSource: LoopBusWakeSource | null = null;
+  private lastError: string | null = null;
+  private phase: LoopBusPhase = "stopped";
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly deps: LoopBusDeps<TChatMessage, TStage>) {
-    this.idleCollectIntervalMs = Math.max(200, deps.idleCollectIntervalMs ?? DEFAULT_IDLE_COLLECT_INTERVAL_MS);
+    this.sleep = deps.sleep ?? defaultSleep;
   }
 
   start(): void {
@@ -152,324 +176,293 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       return;
     }
     this.running = true;
-    this.deps.logger.log({
-      channel: "agent",
-      level: "info",
-      message: "loopbus.started",
-    });
-    void this.run();
+    this.paused = false;
+    void this.emitState("waiting_commits");
+    this.loopTask = this.run();
   }
 
   stop(): void {
-    if (!this.running) {
+    this.running = false;
+    this.paused = false;
+    this.waitResume?.();
+    this.waitResume = null;
+    void this.emitState("stopped");
+  }
+
+  pause(): void {
+    if (!this.running || this.paused) {
       return;
     }
-    this.running = false;
-    while (this.waiters.length > 0) {
-      const waiter = this.waiters.shift();
-      waiter?.([]);
-    }
-    this.deps.logger.log({
-      channel: "agent",
-      level: "warn",
-      message: "loopbus.stopped",
-    });
-    void this.emitPhase("stopped");
+    this.paused = true;
+    void this.emitState(this.phase);
   }
 
-  pushMessage(input: LoopBusInput): LoopBusMessage {
-    if (input.source === "terminal") {
-      const merged = this.mergeTerminalDirty(input);
-      this.wakeWaiter();
-      return merged;
+  resume(): void {
+    if (!this.running || !this.paused) {
+      return;
     }
-
-    const message: LoopBusMessage = {
-      id: input.id ?? createId(),
-      timestamp: input.timestamp ?? Date.now(),
-      name: input.name,
-      role: input.role,
-      type: input.type,
-      source: input.source,
-      text: input.text,
-      meta: input.meta,
-    };
-
-    this.queue.push(message);
-    this.queue.sort((a, b) => a.timestamp - b.timestamp);
-    this.deps.logger.log({
-      channel: "agent",
-      level: "debug",
-      message: "loopbus.push",
-      meta: {
-        source: message.source,
-        role: message.role,
-        queueSize: this.queue.length,
-      },
-    });
-
-    this.wakeWaiter();
-    return message;
+    this.paused = false;
+    this.waitResume?.();
+    this.waitResume = null;
+    void this.emitState(this.phase);
   }
 
-  private mergeTerminalDirty(input: LoopBusInput): LoopBusMessage {
-    const nextTimestamp = input.timestamp ?? Date.now();
-    const existedIndex = this.queue.findIndex((line) => line.source === "terminal" && line.name === input.name);
-
-    if (existedIndex >= 0) {
-      const merged: LoopBusMessage = {
-        ...this.queue[existedIndex],
-        timestamp: nextTimestamp,
-        text: input.text,
-        meta: input.meta,
-      };
-      this.queue[existedIndex] = merged;
-      this.deps.logger.log({
-        channel: "agent",
-        level: "debug",
-        message: "loopbus.push.merge",
-        meta: {
-          source: merged.source,
-          role: merged.role,
-          queueSize: this.queue.length,
-        },
-      });
-      return merged;
-    }
-
-    const message: LoopBusMessage = {
-      id: input.id ?? createId(),
-      timestamp: nextTimestamp,
-      name: input.name,
-      role: input.role,
-      type: input.type,
-      source: input.source,
-      text: input.text,
-      meta: input.meta,
+  getState(): LoopBusState {
+    return {
+      phase: this.phase,
+      timestamp: Date.now(),
+      cycle: this.cycle,
+      currentCycleId: this.currentCycleId,
+      paused: this.paused,
+      running: this.running,
+      lastWakeSource: this.lastWakeSource,
+      lastError: this.lastError,
     };
-    this.queue.push(message);
-    this.queue.sort((a, b) => a.timestamp - b.timestamp);
-    this.deps.logger.log({
-      channel: "agent",
-      level: "debug",
-      message: "loopbus.push",
-      meta: {
-        source: message.source,
-        role: message.role,
-        queueSize: this.queue.length,
-      },
-    });
-    return message;
   }
 
   private async run(): Promise<void> {
-    while (this.running) {
-      await this.emitPhase("waiting_messages");
-      let messages: LoopBusMessage[] = [];
-      if (this.queue.length > 0) {
-        messages = this.drainQueue();
-      } else if (this.deps.collectInputs) {
-        messages = await this.popQueueMessages(this.idleCollectIntervalMs);
-      } else {
-        messages = await this.popQueueMessages();
+    try {
+      while (this.running) {
+        await this.waitWhilePaused();
+        if (!this.running) {
+          break;
+        }
+        await this.runCycle();
       }
+    } finally {
+      this.loopTask = null;
+    }
+  }
+
+  private async runCycle(): Promise<void> {
+    const traces: Array<Omit<LoopBusTraceEntry, "cycleId">> = [];
+    let wakeSource: LoopBusWakeSource = "unknown";
+
+    try {
+      await this.trace(traces, "wait_commits", { phase: this.phase }, async () => {
+        await this.emitState("waiting_commits");
+        wakeSource = (await this.deps.waitForCommit()) ?? "unknown";
+        this.lastWakeSource = wakeSource;
+      });
+
       if (!this.running) {
-        continue;
+        return;
       }
 
-      await this.emitPhase("collecting_inputs");
-      const collected = normalizeInputs(await this.deps.collectInputs?.());
-      if (collected.length > 0) {
-        for (const input of collected) {
-          this.pushMessage(input);
-        }
+      const collected = await this.trace(traces, "collect_inputs", { wakeSource }, async () => {
+        return await this.collectInputsWithinWindow();
+      });
+
+      if (collected.length === 0) {
+        this.deps.logger.log({
+          channel: "agent",
+          level: "debug",
+          message: "loopbus.collect.empty",
+          meta: { wakeSource },
+        });
+        return;
       }
 
-      if (this.queue.length > 0) {
-        messages = [...messages, ...this.drainQueue()].sort((a, b) => a.timestamp - b.timestamp);
-      }
-      if (messages.length === 0) {
-        continue;
+      if (!this.running) {
+        return;
       }
 
-      const visibleMessages = messages.filter(
-        (message) => !(message.source === "terminal" && Boolean(message.meta?.signal)),
+      this.cycle += 1;
+      const { cycleId } = await this.trace(
+        traces,
+        "persist_cycle",
+        { wakeSource, inputs: collected.length },
+        async () => {
+          await this.emitState("persisting_cycle");
+          return await this.deps.persistCycle({ wakeSource, inputs: collected });
+        },
       );
-      if (visibleMessages.length === 0) {
+      this.currentCycleId = cycleId;
+      await this.flushTraceBuffer(traces, cycleId);
+
+      const response = await this.traceWithCycle(cycleId, "call_model", { inputs: collected.length }, async () => {
+        await this.emitState("calling_model");
+        return await this.deps.processor.send(collected);
+      });
+
+      if (!response) {
         this.deps.logger.log({
           channel: "agent",
           level: "debug",
-          message: "loopbus.pop.skip",
-          meta: { count: messages.length, reason: "signal-only" },
+          message: "loopbus.response.empty",
+          meta: { cycleId, inputs: collected.length },
         });
+        return;
+      }
+
+      const outputs = normalizeOutputs(response);
+      await this.traceWithCycle(
+        cycleId,
+        "apply_outputs",
+        {
+          toUser: outputs.toUser.length,
+          toTerminal: outputs.toTerminal.length,
+          toTools: outputs.toTools.length,
+        },
+        async () => {
+          await this.emitState("applying_outputs");
+          if (outputs.toTools.length > 0) {
+            await this.deps.onToolCall?.(outputs.toTools, { cycleId });
+          }
+          for (const message of outputs.toUser) {
+            await this.deps.onUserMessage?.(message, { cycleId });
+          }
+          for (const command of outputs.toTerminal) {
+            await this.deps.onTerminalDispatch?.(command, { cycleId });
+          }
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastError = message;
+      this.deps.logger.log({
+        channel: "error",
+        level: "error",
+        message: `loopbus.cycle.failed: ${message}`,
+      });
+      if (this.currentCycleId !== null) {
+        await this.deps.onTrace?.({
+          cycleId: this.currentCycleId,
+          step: "cycle_error",
+          status: "error",
+          startedAt: Date.now(),
+          endedAt: Date.now(),
+          detail: { message },
+        });
+      }
+    } finally {
+      if (this.running) {
+        await this.emitState("waiting_commits");
+      }
+    }
+  }
+
+  private async collectInputsWithinWindow(): Promise<LoopBusMessage[]> {
+    const firstBatch = normalizeInputs(await this.deps.collectInputs());
+    if (firstBatch.length === 0) {
+      return [];
+    }
+
+    await this.emitState("collecting_inputs");
+
+    const collected = [...firstBatch];
+    let elapsedMs = 0;
+    let quietMs = 0;
+
+    while (this.running) {
+      const remainingThrottleMs = LOOP_COLLECT_THROTTLE_MS - elapsedMs;
+      if (remainingThrottleMs <= 0) {
+        break;
+      }
+
+      const waitMs = Math.min(LOOP_COLLECT_DEBOUNCE_MS, remainingThrottleMs);
+      await this.sleep(waitMs);
+      elapsedMs += waitMs;
+      const nextBatch = normalizeInputs(await this.deps.collectInputs());
+      if (nextBatch.length === 0) {
+        quietMs += waitMs;
+        if (quietMs >= LOOP_COLLECT_DEBOUNCE_MS) {
+          break;
+        }
         continue;
       }
 
-      this.deps.logger.log({
-        channel: "agent",
-        level: "debug",
-        message: "loopbus.pop",
-        meta: { count: visibleMessages.length, rawCount: messages.length },
+      collected.push(...nextBatch);
+      quietMs = 0;
+    }
+
+    return collected;
+  }
+
+  private async trace<T>(
+    bucket: Array<Omit<LoopBusTraceEntry, "cycleId">>,
+    step: string,
+    detail: Record<string, unknown>,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      const value = await run();
+      bucket.push({
+        step,
+        status: "ok",
+        startedAt,
+        endedAt: Date.now(),
+        detail,
       });
-
-      try {
-        await this.emitPhase("processing_messages");
-        await this.emitPhase("waiting_processor_response");
-        const response = await this.deps.processor.send(visibleMessages);
-        if (!response) {
-          this.deps.logger.log({
-            channel: "agent",
-            level: "debug",
-            message: "loopbus.response",
-            meta: { hasResponse: false, count: visibleMessages.length },
-          });
-          continue;
-        }
-
-        const outputs = normalizeOutputs(response);
-
-        this.deps.logger.log({
-          channel: "agent",
-          level: "debug",
-          message: "loopbus.response",
-          meta: {
-            hasResponse: true,
-            done: response.done ?? false,
-            toUser: outputs.toUser.length,
-            toTerminal: outputs.toTerminal.length,
-            toTools: outputs.toTools.length,
-            stage: response.stage ?? "unknown",
-          },
-        });
-
-        if (outputs.toTools.length > 0 && this.deps.onToolCall) {
-          await this.emitPhase("dispatching_tools");
-          const toolResult = await this.deps.onToolCall(outputs.toTools);
-          this.deps.logger.log({
-            channel: "agent",
-            level: "debug",
-            message: "loopbus.tool.result",
-            meta: {
-              calls: outputs.toTools.length,
-              returned: Array.isArray(toolResult) ? toolResult.length : toolResult ? 1 : 0,
-            },
-          });
-          if (Array.isArray(toolResult)) {
-            for (const item of toolResult) {
-              this.pushMessage(item);
-            }
-          } else if (toolResult) {
-            this.pushMessage(toolResult);
-          }
-        }
-
-        if (outputs.toUser.length > 0 && this.deps.onUserMessage) {
-          await this.emitPhase("dispatching_user");
-          for (const message of outputs.toUser) {
-            this.deps.logger.log({
-              channel: "agent",
-              level: "debug",
-              message: "loopbus.user.dispatch",
-              meta: { chars: message.content.length },
-            });
-            await this.deps.onUserMessage(message);
-          }
-        }
-
-        if (outputs.toTerminal.length > 0 && this.deps.onTerminalDispatch) {
-          await this.emitPhase("dispatching_terminal");
-          for (const command of outputs.toTerminal) {
-            this.deps.logger.log({
-              channel: "agent",
-              level: "debug",
-              message: "loopbus.terminal.dispatch",
-              meta: {
-                terminalId: command.terminalId,
-                submit: command.submit,
-                chars: command.text.length,
-              },
-            });
-            await this.deps.onTerminalDispatch(command);
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.deps.logger.log({
-          channel: "error",
-          level: "error",
-          message: `loopbus processor failed: ${message}`,
-        });
-      }
+      return value;
+    } catch (error) {
+      bucket.push({
+        step,
+        status: "error",
+        startedAt,
+        endedAt: Date.now(),
+        detail: {
+          ...detail,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
     }
   }
 
-  private popQueueMessages(timeoutMs?: number): Promise<LoopBusMessage[]> {
-    if (this.queue.length > 0) {
-      return Promise.resolve(this.drainQueue());
-    }
-    if (timeoutMs === undefined) {
-      return new Promise((resolve) => {
-        this.waiters.push(resolve);
+  private async traceWithCycle<T>(
+    cycleId: number,
+    step: string,
+    detail: Record<string, unknown>,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      const value = await run();
+      await this.deps.onTrace?.({
+        cycleId,
+        step,
+        status: "ok",
+        startedAt,
+        endedAt: Date.now(),
+        detail,
       });
+      return value;
+    } catch (error) {
+      await this.deps.onTrace?.({
+        cycleId,
+        step,
+        status: "error",
+        startedAt,
+        endedAt: Date.now(),
+        detail: {
+          ...detail,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      const waiter = (messages: LoopBusMessage[]) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        resolve(messages);
-      };
-      const timeout = setTimeout(() => {
-        const index = this.waiters.indexOf(waiter);
-        if (index >= 0) {
-          this.waiters.splice(index, 1);
-        }
-        waiter([]);
-      }, timeoutMs);
-      this.waiters.push(waiter);
-    });
   }
 
-  private wakeWaiter(): void {
-    if (this.waiters.length === 0 || this.queue.length === 0) {
+  private async flushTraceBuffer(traces: Array<Omit<LoopBusTraceEntry, "cycleId">>, cycleId: number): Promise<void> {
+    for (const trace of traces) {
+      await this.deps.onTrace?.({ cycleId, ...trace });
+    }
+    traces.length = 0;
+  }
+
+  private async emitState(phase: LoopBusPhase): Promise<void> {
+    this.phase = phase;
+    await this.deps.onStateChange?.(this.getState());
+  }
+
+  private async waitWhilePaused(): Promise<void> {
+    if (!this.paused) {
       return;
     }
-    const waiter = this.waiters.shift();
-    waiter?.(this.drainQueue());
-  }
-
-  private drainQueue(): LoopBusMessage[] {
-    const items = [...this.queue];
-    this.queue.length = 0;
-    return items.sort((a, b) => a.timestamp - b.timestamp);
-  }
-
-  private async emitPhase(phase: LoopBusPhase): Promise<void> {
-    if (this.lastPhase === phase) {
-      return;
-    }
-    if (this.lastPhase !== null) {
-      const allowed = LOOP_TRANSITIONS[this.lastPhase];
-      if (!allowed.has(phase)) {
-        this.deps.logger.log({
-          channel: "agent",
-          level: "warn",
-          message: "loopbus.phase.transition.invalid",
-          meta: {
-            from: this.lastPhase,
-            to: phase,
-          },
-        });
-      }
-    }
-    this.lastPhase = phase;
-    await this.deps.onStateChange?.({
-      phase,
-      timestamp: Date.now(),
-      queueSize: this.queue.length,
+    await new Promise<void>((resolve) => {
+      this.waitResume = resolve;
     });
   }
 }

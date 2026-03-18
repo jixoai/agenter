@@ -7,6 +7,19 @@ export interface TaskEvent {
   summary: string;
 }
 
+export interface ChatImageAttachment {
+  assetId: string;
+  kind: "image";
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+export interface ModelCapabilities {
+  imageInput: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -18,6 +31,7 @@ export interface ChatMessage {
     name: string;
     ok?: boolean;
   };
+  attachments?: ChatImageAttachment[];
 }
 
 export interface AppServerLogger {

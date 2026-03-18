@@ -1,10 +1,10 @@
-# @agenter/terminal SPEC
+# @agenter/terminal-system SPEC
 
-> 本文件是 `@agenter/terminal` 的开发者唯一可信源（source of truth）。
+> 本文件是 `@agenter/terminal-system` 的开发者唯一可信源（source of truth）。
 
 ## 1. 范围与目标
 
-`@agenter/terminal` 是一个 TypeScript 终端内核库：
+`@agenter/terminal-system` 是一个 TypeScript 终端内核库：
 
 - 使用 Bun PTY 运行任意 CLI 程序
 - 使用 `@xterm/headless` 维护绝对滚动缓冲

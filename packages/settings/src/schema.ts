@@ -69,8 +69,6 @@ export const settingsSchema = z.object({
               ]),
             )
             .optional(),
-          focusMode: z.literal("exclusive").optional(),
-          unfocusedSignal: z.literal("summary").optional(),
         })
         .optional(),
     })

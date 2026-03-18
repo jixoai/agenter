@@ -1,17 +1,45 @@
 import { describe, expect, test } from "bun:test";
 
-import { LoopBus, type LoopBusPhase } from "../src/loop-bus";
+import { LoopBus, type LoopBusInput, type LoopBusPhase, type LoopBusWakeSource } from "../src/loop-bus";
+
+const userInput: LoopBusInput = {
+  name: "User",
+  role: "user",
+  type: "text",
+  source: "chat",
+  text: "hello",
+};
+
+const createInput = (text: string): LoopBusInput => ({
+  ...userInput,
+  text,
+});
 
 describe("Feature: loop bus state transitions", () => {
-  test("Scenario: Given queued message When processor is in-flight Then phase includes waiting_processor_response", async () => {
+  test("Scenario: Given one committed input When a cycle runs Then phases follow the new fixed ledger flow", async () => {
     const phases: LoopBusPhase[] = [];
+    const persisted: Array<{ wakeSource: LoopBusWakeSource; inputs: LoopBusInput[] }> = [];
+    const sent: LoopBusInput[][] = [];
+    const outputs: string[] = [];
+    const sleeps: number[] = [];
+
+    let waitCalls = 0;
+    let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
+
     const bus = new LoopBus({
       processor: {
-        send: async () => {
-          await Bun.sleep(20);
+        send: async (messages) => {
+          sent.push(messages);
           return {
             outputs: {
-              toUser: [],
+              toUser: [
+                {
+                  id: "assistant-1",
+                  role: "assistant",
+                  content: "done",
+                  timestamp: Date.now(),
+                },
+              ],
               toTerminal: [],
               toTools: [],
             },
@@ -19,130 +47,197 @@ describe("Feature: loop bus state transitions", () => {
         },
       },
       logger: { log: () => {} },
+      waitForCommit: async () => {
+        waitCalls += 1;
+        if (waitCalls === 1) {
+          return "user";
+        }
+        return await new Promise<LoopBusWakeSource | void>((resolve) => {
+          releaseWait = resolve;
+        });
+      },
+      collectInputs: async () => [userInput],
+      persistCycle: async (input) => {
+        persisted.push({ wakeSource: input.wakeSource, inputs: input.inputs });
+        return { cycleId: 7 };
+      },
+      onUserMessage: (message) => {
+        outputs.push(message.content);
+      },
       onStateChange: (state) => {
         phases.push(state.phase);
+      },
+      sleep: async (ms) => {
+        sleeps.push(ms);
       },
     });
 
     bus.start();
-    bus.pushMessage({
-      name: "User",
-      role: "user",
-      type: "text",
-      source: "chat",
-      text: "hello",
-    });
 
-    await Bun.sleep(80);
+    const deadline = Date.now() + 1_000;
+    while (Date.now() < deadline) {
+      if (sent.length === 1 && outputs.length === 1) {
+        break;
+      }
+      await Bun.sleep(10);
+    }
+
     bus.stop();
+    const resolver: (value: LoopBusWakeSource | void) => void = releaseWait ?? (() => {});
+    resolver(undefined);
+    await Bun.sleep(10);
 
-    expect(phases.includes("waiting_messages")).toBeTrue();
-    expect(phases.includes("waiting_processor_response")).toBeTrue();
-    expect(phases.includes("processing_messages")).toBeTrue();
-
-    const waitIndex = phases.indexOf("waiting_processor_response");
-    const silentIndex = phases.lastIndexOf("waiting_messages");
-    expect(waitIndex).toBeGreaterThanOrEqual(0);
-    expect(silentIndex).toBeGreaterThan(waitIndex);
+    expect(sleeps).toContain(300);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.wakeSource).toBe("user");
+    expect(persisted[0]?.inputs[0]?.text).toBe("hello");
+    expect(sent).toHaveLength(1);
+    expect(outputs).toEqual(["done"]);
+    expect(phases).toContain("waiting_commits");
+    expect(phases).toContain("collecting_inputs");
+    expect(phases).toContain("persisting_cycle");
+    expect(phases).toContain("calling_model");
+    expect(phases).toContain("applying_outputs");
   });
 
-  test("Scenario: Given silent queue When loop ticks Then phase remains waiting_messages", async () => {
+  test("Scenario: Given wake signal but no collected facts When the cycle returns to race Then model call is skipped", async () => {
     const phases: LoopBusPhase[] = [];
+    const persisted: number[] = [];
+    const sent: number[] = [];
+
+    let waitCalls = 0;
+    let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
+
     const bus = new LoopBus({
       processor: {
         send: async () => {
-          throw new Error("processor should not be called in silent phase");
+          sent.push(1);
+          return { outputs: { toUser: [], toTerminal: [], toTools: [] } };
         },
       },
       logger: { log: () => {} },
+      waitForCommit: async () => {
+        waitCalls += 1;
+        if (waitCalls === 1) {
+          return "terminal";
+        }
+        return await new Promise<LoopBusWakeSource | void>((resolve) => {
+          releaseWait = resolve;
+        });
+      },
+      collectInputs: async () => [],
+      persistCycle: async () => {
+        persisted.push(1);
+        return { cycleId: 1 };
+      },
       onStateChange: (state) => {
         phases.push(state.phase);
+      },
+      sleep: async () => {},
+    });
+
+    bus.start();
+    await Bun.sleep(20);
+    bus.stop();
+    const resolver: (value: LoopBusWakeSource | void) => void = releaseWait ?? (() => {});
+    resolver(undefined);
+    await Bun.sleep(10);
+
+    expect(persisted).toHaveLength(0);
+    expect(sent).toHaveLength(0);
+    expect(phases).not.toContain("collecting_inputs");
+  });
+
+  test("Scenario: Given more inputs arrive inside the debounce window When collecting Then the bus batches them into one cycle", async () => {
+    const persisted: Array<{ wakeSource: LoopBusWakeSource; inputs: LoopBusInput[] }> = [];
+    const sleeps: number[] = [];
+    const collectResults = [[createInput("first")], [createInput("second")], []] as Array<LoopBusInput[]>;
+
+    let waitCalls = 0;
+    let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
+
+    const bus = new LoopBus({
+      processor: {
+        send: async () => ({ outputs: { toUser: [], toTerminal: [], toTools: [] } }),
+      },
+      logger: { log: () => {} },
+      waitForCommit: async () => {
+        waitCalls += 1;
+        if (waitCalls === 1) {
+          return "user";
+        }
+        return await new Promise<LoopBusWakeSource | void>((resolve) => {
+          releaseWait = resolve;
+        });
+      },
+      collectInputs: async () => collectResults.shift() ?? [],
+      persistCycle: async (input) => {
+        persisted.push({ wakeSource: input.wakeSource, inputs: input.inputs });
+        return { cycleId: 11 };
+      },
+      sleep: async (ms) => {
+        sleeps.push(ms);
       },
     });
 
     bus.start();
     await Bun.sleep(20);
     bus.stop();
+    (releaseWait ?? ((_value?: LoopBusWakeSource | void) => {}))(undefined);
+    await Bun.sleep(10);
 
-    expect(phases.includes("waiting_messages")).toBeTrue();
-    expect(phases.includes("waiting_processor_response")).toBeFalse();
+    expect(sleeps).toEqual([300, 300]);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.inputs.map((item) => item.text)).toEqual(["first", "second"]);
   });
 
-  test("Scenario: Given collectInputs polling When queue is silent Then loop still processes injected input", async () => {
-    const phases: LoopBusPhase[] = [];
-    let polled = 0;
+  test("Scenario: Given inputs keep arriving When collecting Then the bus stops batching after the 1s throttle window", async () => {
+    const persisted: Array<{ wakeSource: LoopBusWakeSource; inputs: LoopBusInput[] }> = [];
+    const sleeps: number[] = [];
+    const collectResults = [
+      [createInput("first")],
+      [createInput("second")],
+      [createInput("third")],
+      [createInput("fourth")],
+      [createInput("fifth")],
+      [createInput("late")],
+    ] as Array<LoopBusInput[]>;
+
+    let waitCalls = 0;
+    let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
+
     const bus = new LoopBus({
       processor: {
-        send: async () => ({
-          outputs: {
-            toUser: [],
-            toTerminal: [],
-            toTools: [],
-          },
-        }),
+        send: async () => ({ outputs: { toUser: [], toTerminal: [], toTools: [] } }),
       },
       logger: { log: () => {} },
-      idleCollectIntervalMs: 120,
-      collectInputs: async () => {
-        polled += 1;
-        if (polled !== 2) {
-          return;
+      waitForCommit: async () => {
+        waitCalls += 1;
+        if (waitCalls === 1) {
+          return "user";
         }
-        return {
-          name: "Terminal-iflow",
-          role: "user",
-          type: "text",
-          source: "terminal",
-          text: '{"kind":"terminal-heartbeat"}',
-        };
+        return await new Promise<LoopBusWakeSource | void>((resolve) => {
+          releaseWait = resolve;
+        });
       },
-      onStateChange: (state) => {
-        phases.push(state.phase);
+      collectInputs: async () => collectResults.shift() ?? [],
+      persistCycle: async (input) => {
+        persisted.push({ wakeSource: input.wakeSource, inputs: input.inputs });
+        return { cycleId: 12 };
+      },
+      sleep: async (ms) => {
+        sleeps.push(ms);
       },
     });
 
     bus.start();
-    await Bun.sleep(420);
+    await Bun.sleep(20);
     bus.stop();
+    (releaseWait ?? ((_value?: LoopBusWakeSource | void) => {}))(undefined);
+    await Bun.sleep(10);
 
-    expect(polled).toBeGreaterThanOrEqual(2);
-    expect(phases.includes("collecting_inputs")).toBeTrue();
-    expect(phases.includes("waiting_processor_response")).toBeTrue();
-  });
-
-  test("Scenario: Given terminal summary signal message When loop wakes Then processor is not called", async () => {
-    let called = 0;
-    const bus = new LoopBus({
-      processor: {
-        send: async () => {
-          called += 1;
-          return {
-            outputs: {
-              toUser: [],
-              toTerminal: [],
-              toTools: [],
-            },
-          };
-        },
-      },
-      logger: { log: () => {} },
-    });
-
-    bus.start();
-    bus.pushMessage({
-      name: "Terminal-iflow",
-      role: "user",
-      type: "text",
-      source: "terminal",
-      text: '{"kind":"terminal-dirty-summary"}',
-      meta: {
-        signal: "summary",
-      },
-    });
-
-    await Bun.sleep(80);
-    bus.stop();
-
-    expect(called).toBe(0);
+    expect(sleeps).toEqual([300, 300, 300, 100]);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.inputs.map((item) => item.text)).toEqual(["first", "second", "third", "fourth", "fifth"]);
   });
 });

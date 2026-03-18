@@ -36,12 +36,6 @@ const defaultSettings = (): AgenterSettings => ({
       },
     },
   },
-  features: {
-    terminal: {
-      focusMode: "exclusive",
-      unfocusedSignal: "summary",
-    },
-  },
   tasks: {
     sources: [
       { name: "user", path: "~/.agenter/tasks" },

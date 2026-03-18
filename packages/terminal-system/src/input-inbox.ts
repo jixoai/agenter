@@ -58,7 +58,17 @@ export class InputInbox {
     if (!this.running) {
       return;
     }
-    const files = readdirSync(this.pendingDir).filter(isInputFile).sort();
+    const files = (() => {
+      try {
+        return readdirSync(this.pendingDir).filter(isInputFile).sort();
+      } catch (cause) {
+        const error = cause as NodeJS.ErrnoException;
+        if (error?.code === "ENOENT") {
+          return [];
+        }
+        throw cause;
+      }
+    })();
     if (files.length === 0) {
       return;
     }
