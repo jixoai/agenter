@@ -679,6 +679,47 @@ export class RuntimeStore {
     }));
   }
 
+  sessionIconUrl(sessionId: string): string {
+    return this.resolveHttpUrl(`/media/sessions/${encodeURIComponent(sessionId)}/icon`);
+  }
+
+  avatarIconUrl(nickname: string, workspacePath?: string | null): string {
+    const base = this.resolveHttpUrl(`/media/avatars/${encodeURIComponent(nickname)}/icon`);
+    if (!workspacePath || workspacePath.trim().length === 0) {
+      return base;
+    }
+    const params = new URLSearchParams({ workspacePath });
+    return `${base}?${params.toString()}`;
+  }
+
+  async uploadSessionIcon(sessionId: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const response = await fetch(this.resolveHttpUrl(`/api/sessions/${encodeURIComponent(sessionId)}/icon`), {
+      method: "POST",
+      body: form,
+    });
+    const payload = (await response.json()) as { ok: boolean; url?: string; error?: string };
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error ?? `session icon upload failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  async uploadAvatarIcon(nickname: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const response = await fetch(this.resolveHttpUrl(`/api/avatars/${encodeURIComponent(nickname)}/icon`), {
+      method: "POST",
+      body: form,
+    });
+    const payload = (await response.json()) as { ok: boolean; url?: string; error?: string };
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error ?? `avatar icon upload failed (${response.status})`);
+    }
+    return payload;
+  }
+
   async sendChat(
     sessionId: string,
     text: string,
@@ -720,6 +761,22 @@ export class RuntimeStore {
 
   async listSettingsLayers(workspacePath: string) {
     return await this.client.trpc.settings.layers.list.query({ workspacePath });
+  }
+
+  async readGlobalSettings() {
+    return await this.client.trpc.settings.global.read.query();
+  }
+
+  async saveGlobalSettings(input: { content: string; baseMtimeMs: number }) {
+    return await this.client.trpc.settings.global.save.mutate(input);
+  }
+
+  async listAvatarCatalog() {
+    return await this.client.trpc.avatar.list.query();
+  }
+
+  async createAvatar(nickname: string) {
+    return await this.client.trpc.avatar.create.mutate({ nickname });
   }
 
   async readSettingsLayer(workspacePath: string, layerId: string) {

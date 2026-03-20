@@ -148,6 +148,17 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => await ctx.kernel.resolveDraft(input)),
   }),
   settings: t.router({
+    global: t.router({
+      read: t.procedure.query(async ({ ctx }) => await ctx.kernel.readGlobalSettings()),
+      save: t.procedure
+        .input(
+          z.object({
+            content: z.string(),
+            baseMtimeMs: z.number().nonnegative(),
+          }),
+        )
+        .mutation(async ({ ctx, input }) => await ctx.kernel.saveGlobalSettings(input)),
+    }),
     read: t.procedure
       .input(
         z.object({
@@ -197,6 +208,16 @@ export const appRouter = t.router({
         )
         .mutation(async ({ ctx, input }) => ctx.kernel.saveSettingsLayer(input)),
     }),
+  }),
+  avatar: t.router({
+    list: t.procedure.query(async ({ ctx }) => await ctx.kernel.listAvatarCatalog()),
+    create: t.procedure
+      .input(
+        z.object({
+          nickname: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => await ctx.kernel.createAvatar(input)),
   }),
   notification: t.router({
     snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getNotificationSnapshot()),

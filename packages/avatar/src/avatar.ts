@@ -12,6 +12,8 @@ const sanitizeNickname = (value: string): string => {
   return normalized.length > 0 ? normalized : "agenter-bot";
 };
 
+export const normalizeAvatarNickname = (value: string): string => sanitizeNickname(value);
+
 export const defaultAvatarNickname = (): string => {
   const envUser = process.env.USER ?? process.env.LOGNAME ?? process.env.USERNAME;
   const systemUser = envUser && envUser.trim().length > 0 ? envUser : userInfo().username;
@@ -70,6 +72,20 @@ export const resolveAvatarPromptPaths = (avatar: ResolvedAvatar): AvatarPromptPa
 export const resolveAvatarLayerSettingsPath = (sourceSettingsFilePath: string, nickname: string): string => {
   const baseDir = resolve(sourceSettingsFilePath, "..");
   return join(baseDir, "avatar", sanitizeNickname(nickname), "settings.json");
+};
+
+export const resolveAvatarIconCandidates = (avatar: ResolvedAvatar): string[] => {
+  const fileNames = ["icon.webp", "icon.png", "icon.jpg", "icon.jpeg", "icon.svg"];
+  const candidates: string[] = [];
+  for (const source of avatar.sources) {
+    for (const fileName of fileNames) {
+      const next = join(source.path, fileName);
+      if (existsSync(next)) {
+        candidates.push(next);
+      }
+    }
+  }
+  return candidates;
 };
 
 export class AgenterAvatar {

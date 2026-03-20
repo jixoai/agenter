@@ -1,6 +1,7 @@
-import { accessSync, existsSync, constants as fsConstants, readdirSync, readFileSync, statSync } from "node:fs";
+import { accessSync, existsSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { normalizeAvatarNickname } from "@agenter/avatar";
 import {
   SessionDb,
   type SessionBlockRecord,
@@ -8,7 +9,22 @@ import {
   type SessionCycleRecord,
 } from "@agenter/session-system";
 import { collectClientMessageIds, toChatCycleId, type ChatCycle } from "./chat-cycles";
+import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
+import {
+  buildAvatarIconUrl,
+  buildSessionIconUrl,
+  createAvatarCatalogItem,
+  listUserAvatarNicknames,
+  renderAvatarFallbackSvg,
+  renderSessionFallbackSvg,
+  resolveAvatarForWorkspace,
+  resolveAvatarIconFile,
+  resolveAvatarUserRoot,
+  resolveSessionIconFile,
+  writeAvatarIconUpload,
+  writeSessionIconUpload,
+} from "./profile-images";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -31,6 +47,14 @@ import {
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 
 const now = (): number => Date.now();
+
+const hashNumericLabel = (value: string): string => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33 + value.charCodeAt(index)) % 100;
+  }
+  return String(hash).padStart(2, "0");
+};
 
 const parseGitOwnerFromUrl = (raw: string): string | null => {
   const value = raw.trim().replace(/\.git$/, "");
@@ -794,6 +818,116 @@ export class AppKernel {
     }
   }
 
+  async uploadSessionIcon(sessionId: string, file: { bytes: Uint8Array; name: string; mimeType: string }): Promise<{ ok: true; url: string }> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    writeSessionIconUpload(session.sessionRoot, file);
+    return {
+      ok: true,
+      url: buildSessionIconUrl(sessionId),
+    };
+  }
+
+  getSessionIcon(
+    sessionId: string,
+  ):
+    | { kind: "file"; filePath: string; mimeType: string; sizeBytes: number }
+    | { kind: "generated"; svg: string; mimeType: "image/svg+xml" }
+    | null {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+    const uploaded = resolveSessionIconFile(session.sessionRoot);
+    if (uploaded) {
+      return {
+        kind: "file",
+        ...uploaded,
+      };
+    }
+    return {
+      kind: "generated",
+      svg: renderSessionFallbackSvg({
+        sessionId: session.id,
+        workspacePath: session.cwd,
+        label: String(session.id.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(session.id)),
+      }),
+      mimeType: "image/svg+xml",
+    };
+  }
+
+  async listAvatarCatalog(): Promise<{ activeAvatar: string; items: Array<{ nickname: string; active: boolean; iconUrl: string }> }> {
+    const settings = await readGlobalSettingsFile();
+    const nicknames = new Set(listUserAvatarNicknames());
+    nicknames.add(settings.activeAvatar);
+    return {
+      activeAvatar: settings.activeAvatar,
+      items: [...nicknames]
+        .map((nickname) =>
+          createAvatarCatalogItem({
+            nickname,
+            active: nickname === settings.activeAvatar,
+          }),
+        )
+        .sort((left, right) => {
+          if (left.active !== right.active) {
+            return left.active ? -1 : 1;
+          }
+          return left.nickname.localeCompare(right.nickname);
+        }),
+    };
+  }
+
+  async createAvatar(input: { nickname: string }): Promise<{ nickname: string; iconUrl: string }> {
+    const nickname = normalizeAvatarNickname(input.nickname);
+    mkdirSync(resolveAvatarUserRoot(nickname), { recursive: true });
+    return {
+      nickname,
+      iconUrl: buildAvatarIconUrl(nickname),
+    };
+  }
+
+  async uploadAvatarIcon(input: {
+    nickname: string;
+    bytes: Uint8Array;
+    name: string;
+    mimeType: string;
+  }): Promise<{ ok: true; url: string }> {
+    const nickname = normalizeAvatarNickname(input.nickname);
+    writeAvatarIconUpload(nickname, input);
+    return {
+      ok: true,
+      url: buildAvatarIconUrl(nickname),
+    };
+  }
+
+  getAvatarIcon(
+    input: { nickname: string; workspacePath?: string },
+  ):
+    | { kind: "file"; filePath: string; mimeType: string; sizeBytes: number }
+    | { kind: "generated"; svg: string; mimeType: "image/svg+xml" } {
+    const workspacePath = input.workspacePath ? resolve(input.workspacePath) : process.cwd();
+    const avatar = resolveAvatarForWorkspace(workspacePath, input.nickname);
+    const uploaded = resolveAvatarIconFile(avatar);
+    if (uploaded) {
+      return {
+        kind: "file",
+        ...uploaded,
+      };
+    }
+    return {
+      kind: "generated",
+      svg: renderAvatarFallbackSvg({
+        nickname: avatar.nickname,
+        label: avatar.nickname.slice(0, 1).toUpperCase(),
+      }),
+      mimeType: "image/svg+xml",
+    };
+  }
+
   listCurrentBranchCycles(sessionId: string, limit = 200) {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
@@ -967,6 +1101,14 @@ export class AppKernel {
 
   async listSettingsLayers(workspacePath: string) {
     return await listWorkspaceSettingsLayers({ workspacePath });
+  }
+
+  async readGlobalSettings() {
+    return await readGlobalSettingsFile();
+  }
+
+  async saveGlobalSettings(input: { content: string; baseMtimeMs: number }) {
+    return await saveGlobalSettingsFile(input);
   }
 
   async readSettingsLayer(input: {

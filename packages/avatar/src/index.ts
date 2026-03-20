@@ -1,6 +1,8 @@
 export {
   AgenterAvatar,
   defaultAvatarNickname,
+  normalizeAvatarNickname,
+  resolveAvatarIconCandidates,
   resolveAvatarLayerSettingsPath,
   resolveAvatarPromptPaths,
   resolveAvatarSources,

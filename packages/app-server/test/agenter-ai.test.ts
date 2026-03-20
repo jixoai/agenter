@@ -654,6 +654,9 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.completedAt).toBeNumber();
     expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
     expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
-    expect((response.outputs?.toUser ?? []).some((item) => item.content.includes("timed out after 10ms"))).toBeTrue();
+    if (!response || !("outputs" in response)) {
+      throw new Error("Expected a loop bus response payload.");
+    }
+    expect(response.outputs.toUser.some((item) => item.content.includes("timed out after 10ms"))).toBeTrue();
   });
 });
