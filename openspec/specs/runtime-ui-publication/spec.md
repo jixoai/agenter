@@ -3,17 +3,17 @@
 Define how runtime facts are published to the WebUI so hot session activity updates only the affected surfaces.
 ## Requirements
 ### Requirement: Runtime clients SHALL publish scoped UI updates
-The runtime client SHALL expose subscription primitives that let WebUI surfaces observe narrow runtime slices so hot updates from one session do not force unrelated application surfaces to rerender, while still allowing the active Chat route to hydrate the persisted facts it needs for a real session.
+The runtime client SHALL expose subscription primitives that let WebUI surfaces observe narrow runtime slices so hot updates from one session do not force unrelated application surfaces to rerender.
 
 #### Scenario: Unrelated shell surfaces stay stable during session activity
-- **WHEN** a hot runtime event burst updates one session's terminal, cycle, or notification state
+- **WHEN** a hot runtime event burst updates one session's terminal, cycle, notification, or message state
 - **THEN** WebUI surfaces that do not subscribe to that session-specific slice do not receive a fresh selected value
 - **THEN** unrelated shell chrome such as inactive routes or unrelated workspace lists can remain stable
 
-#### Scenario: Route-local hydration populates real-session chat history without broad shell churn
-- **WHEN** the user opens or resumes one specific session route
-- **THEN** the runtime client loads that session's persisted chat and cycle history into the route-local state it needs
-- **THEN** unrelated shell layers do not rerender solely because another session route hydrated its history
+#### Scenario: Unchanged selector results are not republished
+- **WHEN** runtime facts update without changing the selected value for a subscriber
+- **THEN** the runtime client does not republish a fresh React-facing value for that selector
+- **THEN** subscribers depending on that selector can preserve render stability
 
 ### Requirement: Runtime publication SHALL coalesce hot event bursts
 The runtime client SHALL coalesce listener publication for hot runtime bursts while preserving the latest consistent state.

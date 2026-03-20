@@ -230,11 +230,15 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **背景色必须有语义所有者**：`bg-*` 只允许出现在 semantic surface、交互控件、内容可视化块上；shell/layout wrapper 不得直接拥有 raw 背景色。
 - **先定 surface，再定 padding**：需要圆角、阴影、背景时，先抽象为 `surfaceToneClassName(...)` 或 surface primitive，再决定内部 padding；禁止在 layout 容器里同时混入 `bg-* + rounded-* + shadow-*`。
 - **裁剪与背景默认解耦**：`ClipSurface` 负责裁剪，semantic surface 负责背景；只有媒体/终端这类必须“裁剪即填充”的内容，才允许同一容器兼有二者。
+- **谁裁剪，谁解释原因**：只有明确的内容 surface 才能同时拥有 `border-radius + clip + fill`；layout wrapper 只负责排布，不得顺手接管视觉裁剪。
+- **移除裁剪必须恢复滚动语义**：如果去掉某层 `overflow-hidden/ViewportMask/ClipSurface`，必须同步确认滚动是否仍有单一 owner；“视觉问题修了但内容不滚动”视为回归。
 
 ## 8.1) Apple 风格信息架构（WebUI）
 
 - **先分层，再做样式**：先确定 `App Shell / Workspace Shell / Route Surface / Content Body` 的职责，再决定视觉表现；不要靠改颜色和圆角掩盖信息重叠。
 - **单层单责**：`AppHeader` 只负责全局定位与全局导航；`WorkspaceShell` 只负责 workspace 上下文与 route 切换；`Chat/Devtools/Settings` 自己负责局部动作与局部提示。
+- **GlobalSettings 只属于全局导航**：`GlobalSettings` 入口固定属于左侧导航或 compact drawer 这种 app-level navigation；禁止把它塞进 workspace route surface、`TopHeader`、`AppHeader` 右上角之类页面局部 chrome。
+- **TopHeader 只属于当前页面**：`TopHeader/AppHeader` 只能表达当前页面的位置、上下文、局部导航和局部状态；禁止承载全局入口、全局设置、全局账号切换这类 app-level 能力。
 - **相邻层禁止重复事实**：同一个 path、title、status、action 只能在一个层级表达一次；如果某信息已在 workspace bar 展示，就不能在 header 和 route card 再展示一次。
 - **正常状态要安静**：被动状态优先使用低强调文本，而不是不断堆 chip；chip 只用于需要快速扫描的稀缺状态，不是默认文案容器。
 - **异常状态要升级**：warning/error 不要混进 header 文本流；优先使用 banner 或独立 notice surface，让异常和正常信息分层。
@@ -243,6 +247,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **全局导航与局部导航分离**：sidebar/drawer 只负责全局入口与 running sessions；workspace 内的 `Chat / Devtools / Settings` 只放在 workspace bar 或 bottom nav。
 - **移动端 footer 独立拥有布局**：bottom nav 必须是独立 footer，负责 safe-area 和自己的 padding；不要把 footer 当成内容区里的一个带 padding 的卡片。
 - **文案表达优先语义，不优先控件**：先问“这是一条定位信息、一个状态、一个动作、还是一个异常”，再决定用标题、正文、状态文本、按钮还是 banner。
+- **最小视口先验**：默认把 `375x667` 视为必须成立的移动端下限；任何新增 shell / route / panel 都要先回答“主滚动区是谁、固定 chrome 是谁、溢出后如何兜底”。
 
 ## 9) 字体与排版最佳实践（WebUI）
 
@@ -256,6 +261,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
   - 代码/结构化内容（JSON/YAML/日志/终端片段）：`mono`
 - **密度优先原则**：在可读前提下保持紧凑（尤其移动端）；统一通过排版 token 调整，不做局部“魔法数字”。
 - **变更验收要求**：字体改动后至少走查 Chat、LoopBus、Settings 三块，确认中英日文/韩文混排无明显抖动或 fallback 断层。
+- **技术面板密度优先**：Cycles / LoopBus / Model / Terminal 这类技术面板优先使用 `typo-caption`、`typo-code`、`typo-emphasis` 的紧凑组合；避免 oversized title、重复 chip 和高饱和大面积状态色。
 
 ## 10) Icon 使用最佳实践（WebUI）
 
@@ -265,6 +271,13 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **尺寸规范**：默认图标尺寸使用 `h-4 w-4`，紧凑信息区用 `h-3 w-3`；同一区域保持一致。
 - **文本并排规范**：纯内联片段才允许直接写 `inline-flex items-center gap-*`；只要元素同时承担“surface + 图标 + 文字”的职责，就必须走统一 affordance 组件，不允许在业务代码里手搓 `gap + px + py`。
 - **可访问性**：纯装饰图标不应影响可读内容；交互图标按钮必须有 `aria-label/title`。
+
+## 10.2) Tooltip 使用契约（WebUI）
+
+- **tooltip 只隐藏非关键说明**：tooltip 适合 icon-only action、截断标识、补充解释；核心状态、错误、主导航、主动作不得只放在 tooltip 里。
+- **先可见再补充**：用户完成当前任务所必需的信息必须默认可见；tooltip 只补充“为什么/更多说明”，不能替代正文。
+- **列表里优先收纳噪音**：session rail、tooling list、icon action 这类高密度列表，优先用 tooltip 收纳长路径、二级解释和额外帮助，避免把主列表撑乱。
+- **移动端必须有替代路径**：如果某说明在移动端 hover 不可靠，就必须同时提供 `title`、长按菜单或可见文本兜底。
 
 ## 10.1) Icon + Text Surface 契约（WebUI）
 
@@ -300,11 +313,22 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Inspector 分组优先于长列表**：Model / Devtools 这类面板，优先用 tabs 把 request/result/tools/context/calls 分开，而不是把异构信息堆在同一个长滚动列表里。
 - **CodeMirror surface 密度控制**：聊天/检查器这类高频列表里，少量项优先直接内联渲染；达到阈值后再切到虚拟滚动，避免“小列表也上 virtualizer”带来的测量抖动和真实 DOM / jsdom 偏差。
 - **Cycle first only in tooling**：Chat 可以暴露 cycle 导航，但正文仍以 conversation 为主；完整 cycle 细节只进入 Devtools，不把技术事实重新堆回主聊天流。
+- **Bubble first, tooling second**：Chat 默认只表达 message / attachment / status / time；cycle、model、tooling 入口必须退到 context menu、长按菜单或 Devtools。
+- **时间提示要克制**：聊天流里的时间提示遵循 `debounce 2min + throttle 30min + cross-day 强制分隔`；时间是阅读辅助，不是新的信息噪音。
+- **附件可用性不等于模型兼容性**：图片粘贴/拖拽/选择能力默认开启；是否能把图片送进当前模型，由发送时校验与 notice 决定，不能靠 UI 先行硬隐藏。
 
 ## 13.1) Session / Runtime 状态优先级
 
 - **Session 状态优先于残留 runtime**：当 `session.status` 已经进入 `stopped`/`error`，路由工具栏、notice、侧边 running rail 必须优先反映该 durable 状态，不能被尚未回收的 `runtime.started` 覆盖。
 - **停止态需要单一语义**：`Start/Stop` 主按钮、页面 notice、导航入口必须共享同一状态判断，避免出现“侧栏已停止、主面板仍显示运行中”的分裂体验。
+
+## 13.2) Profile Image 契约（WebUI / App Server）
+
+- **语义 URL 固定**：session 图标与 avatar 图标必须各自拥有稳定的语义 URL（如 `/media/sessions/:id/icon`、`/media/avatars/:nickname/icon`），调用方不感知 fallback 或上传态差异。
+- **fallback 由服务端兜底**：前端可以把 fallback SVG 光栅化后回传 WebP，但渲染正确性不能依赖前端先上传；服务端必须始终能直接生成 deterministic fallback。
+- **上传覆盖，不改接口**：上传 icon 只改变同一语义 URL 背后的资源，不新增“uploaded vs fallback”两套消费路径。
+- **Session 与 Avatar 分开建模**：两者可以复用存储 helper，但 API 语义必须保持分离；业务层不得退化成抽象不清的 generic image bucket。
+- **全局 avatar 属于用户层**：avatar catalog 和用户级头像设置属于 global settings，不属于 workspace settings；workspace 只消费结果，不维护用户主档。
 
 ## 14) AIInput / Workspace Path Search
 
