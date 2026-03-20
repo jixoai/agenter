@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { memo, useMemo } from "react";
 
+import { ClipSurface } from "../ui/overflow-surface";
 import { cn } from "../../lib/utils";
 import { markdownPreview } from "./codemirror-markdown-preview";
 import {
@@ -415,14 +416,16 @@ const MarkdownDocumentComponent = ({
   }, [mode, themeExtension]);
 
   return (
-    <CodeMirror
-      value={value}
-      theme="none"
-      editable={false}
-      basicSetup={MARKDOWN_BASIC_SETUP}
-      className={cn("overflow-hidden text-inherit", surfaceClassNames[profile.surface], className)}
-      extensions={extensions}
-    />
+    <ClipSurface className={cn("text-inherit", surfaceClassNames[profile.surface], className)}>
+      <CodeMirror
+        value={value}
+        theme="none"
+        editable={false}
+        basicSetup={MARKDOWN_BASIC_SETUP}
+        className="text-inherit"
+        extensions={extensions}
+      />
+    </ClipSurface>
   );
 };
 

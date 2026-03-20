@@ -1,22 +1,41 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AIInput } from "../src/features/chat/AIInput";
 
-vi.mock("@uiw/react-codemirror", () => {
-  const React = require("react") as typeof import("react");
+const { captureDisplayScreenshotMock } = vi.hoisted(() => ({
+  captureDisplayScreenshotMock: vi.fn(async () => new File([new Uint8Array([4, 5, 6])], "screen.png", { type: "image/png" })),
+}));
 
+vi.mock("@uiw/react-codemirror", () => {
   return {
     default: ({ value, onChange, onCreateEditor, onKeyDown, placeholder, readOnly }: Record<string, unknown>) => {
+      const handleCreateEditor =
+        typeof onCreateEditor === "function"
+          ? (onCreateEditor as (view: {
+              dispatch: () => void;
+              focus: () => void;
+              state: { doc: { length: number } };
+            }) => void)
+          : null;
+      const handleChange =
+        typeof onChange === "function"
+          ? (onChange as (
+              value: string,
+              viewUpdate: { state: { selection: { main: { head: number } } } },
+            ) => void)
+          : null;
+
       React.useEffect(() => {
-        onCreateEditor?.({
+        handleCreateEditor?.({
           dispatch: () => {},
           focus: () => {},
           state: {
             doc: { length: 4096 },
           },
         });
-      }, [onCreateEditor]);
+      }, [handleCreateEditor]);
 
       return (
         <textarea
@@ -25,7 +44,7 @@ vi.mock("@uiw/react-codemirror", () => {
           placeholder={typeof placeholder === "string" ? placeholder : undefined}
           readOnly={Boolean(readOnly)}
           onChange={(event) =>
-            onChange?.(event.target.value, {
+            handleChange?.(event.target.value, {
               state: {
                 selection: {
                   main: {
@@ -42,10 +61,16 @@ vi.mock("@uiw/react-codemirror", () => {
   };
 });
 
+vi.mock("../src/features/chat/capture-display-screenshot", () => ({
+  canCaptureDisplayScreenshot: () => true,
+  captureDisplayScreenshot: captureDisplayScreenshotMock,
+}));
+
 const createObjectUrlMock = vi.fn(() => "blob:mock-image");
 const revokeObjectUrlMock = vi.fn();
 
 beforeEach(() => {
+  captureDisplayScreenshotMock.mockClear();
   createObjectUrlMock.mockClear();
   revokeObjectUrlMock.mockClear();
   vi.stubGlobal(
@@ -72,7 +97,7 @@ describe("Feature: AI input interactions", () => {
     fireEvent.keyDown(editor, { key: "Enter" });
 
     await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith({ text: "Ship it", images: [] });
+      expect(onSubmit).toHaveBeenCalledWith({ text: "Ship it", assets: [] });
     });
     await waitFor(() => {
       expect(screen.getByTestId("ai-input-editor")).toHaveValue("");
@@ -128,11 +153,49 @@ describe("Feature: AI input interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith({ text: "Review this", images: [image] });
+      expect(onSubmit).toHaveBeenCalledWith({ text: "Review this", assets: [image] });
     });
     await waitFor(() => {
       expect(screen.getByTestId("ai-input-editor")).toHaveValue("Review this");
     });
     expect(screen.getByAltText("photo.png")).toBeInTheDocument();
+  });
+
+  test("Scenario: Given a slash command draft When pressing Enter Then the command callback runs without sending a chat payload", async () => {
+    const onSubmit = vi.fn(async () => {});
+    const onCommand = vi.fn(async () => {});
+
+    render(<AIInput workspacePath="/repo/demo" onSubmit={onSubmit} onCommand={onCommand} onSearchPaths={async () => []} />);
+
+    const editor = screen.getByTestId("ai-input-editor");
+    fireEvent.change(editor, { target: { value: "/start", selectionStart: 6 } });
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledWith("/start");
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-input-editor")).toHaveValue("");
+    });
+  });
+
+  test("Scenario: Given screenshot capture is supported When using /screenshot Then a pending image attachment is added without sending chat", async () => {
+    const onSubmit = vi.fn(async () => {});
+
+    render(<AIInput workspacePath="/repo/demo" imageEnabled onSubmit={onSubmit} onSearchPaths={async () => []} />);
+
+    const editor = screen.getByTestId("ai-input-editor");
+    fireEvent.change(editor, { target: { value: "/screenshot", selectionStart: 11 } });
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(captureDisplayScreenshotMock).toHaveBeenCalledTimes(1);
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-input-editor")).toHaveValue("");
+    });
+    expect(await screen.findByAltText("screen.png")).toBeInTheDocument();
   });
 });

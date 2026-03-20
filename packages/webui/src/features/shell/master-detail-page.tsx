@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Sheet } from "../../components/ui/sheet";
 import { IconAction } from "./IconAction";
+import { useCompactViewport } from "./useCompactViewport";
 
 interface MasterDetailPageProps {
   main: ReactNode;
@@ -30,15 +31,6 @@ interface MasterDetailPageProps {
 const DEFAULT_MIN_SPLIT_PERCENT = 40;
 const DEFAULT_MAX_SPLIT_PERCENT = 82;
 const DEFAULT_MAIN_SPLIT_PERCENT = 64;
-const COMPACT_VIEWPORT_QUERY = "(max-width: 1279px)";
-
-const isCompactViewport = (): boolean => {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
-  }
-  return window.matchMedia(COMPACT_VIEWPORT_QUERY).matches;
-};
-
 const clampSplitPercent = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
@@ -76,7 +68,7 @@ export const MasterDetailPage = ({
   maxDesktopMainWidthPercent = DEFAULT_MAX_SPLIT_PERCENT,
   hiddenDesktopDetailTrigger,
 }: MasterDetailPageProps) => {
-  const [compactViewport, setCompactViewport] = useState(isCompactViewport);
+  const compactViewport = useCompactViewport();
   const [desktopMainWidthPercent, setDesktopMainWidthPercent] = useState(() =>
     readSplitPercent(
       desktopSplitStorageKey,
@@ -85,19 +77,6 @@ export const MasterDetailPage = ({
       maxDesktopMainWidthPercent,
     ),
   );
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-    const media = window.matchMedia(COMPACT_VIEWPORT_QUERY);
-    const update = () => {
-      setCompactViewport(media.matches);
-    };
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
 
   useEffect(() => {
     if (!compactViewport && mobileDetailOpen) {
@@ -165,7 +144,7 @@ export const MasterDetailPage = ({
         <div className="h-full">{main}</div>
         <Sheet open={mobileDetailOpen} onOpenChange={onMobileDetailOpenChange} side="right" title={detailTitle}>
           {detailChrome ? <div className="mb-3">{detailChrome}</div> : null}
-          <div className="flex h-full flex-col overflow-hidden">{detail}</div>
+          <div className="flex h-full flex-col">{detail}</div>
         </Sheet>
       </div>
     );
@@ -196,21 +175,20 @@ export const MasterDetailPage = ({
             <aside
               data-slot="master-detail-detail"
               style={desktopDetailStyle}
-              className={`flex h-full ${showDesktopResize ? "" : "flex-1"} flex-col gap-3 overflow-hidden rounded-2xl bg-white p-3 shadow-sm`}
+              className={`flex h-full ${showDesktopResize ? "" : "flex-1"} flex-col gap-3`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="typo-title-3 text-slate-900">{detailTitle}</h2>
-                {showDesktopHide ? (
+              {showDesktopHide ? (
+                <div className="flex items-center justify-end gap-2">
                   <IconAction
                     label={`Hide ${detailTitle}`}
                     icon={X}
                     variant="ghost"
                     onClick={() => onDesktopDetailVisibleChange(false)}
                   />
-                ) : null}
-              </div>
+                </div>
+              ) : null}
               {detailChrome ? <div>{detailChrome}</div> : null}
-              <div className="flex-1 overflow-hidden">{detail}</div>
+              <div className="flex-1">{detail}</div>
             </aside>
           </>
         ) : null}

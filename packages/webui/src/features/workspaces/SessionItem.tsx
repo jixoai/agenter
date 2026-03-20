@@ -10,6 +10,7 @@ import { workspaceSessionPreviewText } from "./session-preview";
 interface SessionItemProps {
   session: WorkspaceSessionEntry;
   selected: boolean;
+  unreadCount?: number;
   mode?: "workspace" | "quickstart";
   onSelect: (sessionId: string | null) => void;
   onActivate: (sessionId: string) => void;
@@ -28,6 +29,7 @@ const formatSessionCreatedAt = (value: string): string => {
 export const SessionItem = ({
   session,
   selected,
+  unreadCount = 0,
   mode = "workspace",
   onSelect,
   onActivate,
@@ -62,6 +64,7 @@ export const SessionItem = ({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-slate-900">{session.name}</span>
               <Badge variant={status.variant}>{status.label}</Badge>
+              {unreadCount > 0 ? <Badge variant="warning">{`${unreadCount} unread`}</Badge> : null}
               {session.favorite ? <Badge variant="secondary">favorite</Badge> : null}
               {session.archivedAt ? <Badge variant="secondary">archived</Badge> : null}
             </div>

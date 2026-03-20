@@ -32,7 +32,15 @@ const runtime = {
     attention: { version: 0, timestamp: null },
   },
   apiCallRecording: { enabled: false, refCount: 0 },
-  modelCapabilities: { imageInput: false },
+  modelCapabilities: {
+    streaming: true,
+    tools: true,
+    imageInput: false,
+    nativeCompact: false,
+    summarizeFallback: true,
+    fileUpload: false,
+    mcpCatalog: false,
+  },
   activeCycle: null,
 } satisfies RuntimeSnapshotEntry;
 

@@ -8,9 +8,12 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { MessageSquarePlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import { SessionItem } from "./SessionItem";
@@ -18,6 +21,7 @@ import { SessionItem } from "./SessionItem";
 interface WorkspaceSessionsPanelProps {
   workspace: WorkspaceEntry | null;
   sessions: WorkspaceSessionEntry[];
+  unreadBySession?: Record<string, number>;
   counts: WorkspaceSessionCounts;
   tab: WorkspaceSessionTab;
   selectedSessionId: string | null;
@@ -116,9 +120,26 @@ const dialogBody = (action: PendingAction | null): string => {
   return "Restored sessions return to the workspace and can be resumed again.";
 };
 
+const LoadingShell = () => (
+  <div className="space-y-3">
+    {Array.from({ length: 4 }, (_, index) => (
+      <div key={index} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="mt-3 h-3 w-full" />
+        <Skeleton className="mt-2 h-3 w-5/6" />
+        <div className="mt-4 flex gap-2">
+          <Skeleton className="h-7 w-20 rounded-full" />
+          <Skeleton className="h-7 w-16 rounded-full" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 export const WorkspaceSessionsPanel = ({
   workspace,
   sessions,
+  unreadBySession = {},
   counts,
   tab,
   selectedSessionId,
@@ -190,15 +211,23 @@ export const WorkspaceSessionsPanel = ({
   const renderSessionCard = (
     session: WorkspaceSessionEntry,
     key: string,
+    index?: number,
     style?: CSSProperties,
     measureRef?: (node: HTMLDivElement | null) => void,
   ): ReactNode => {
     const selected = session.sessionId === selectedSessionId;
 
     return (
-      <div key={key} ref={measureRef} style={style} className={cn(style ? "absolute top-0 left-0 w-full" : "")}>
+      <div
+        key={key}
+        ref={measureRef}
+        data-index={index}
+        style={style}
+        className={cn(style ? "absolute top-0 left-0 w-full" : "")}
+      >
         <SessionItem
           session={session}
+          unreadCount={unreadBySession[session.sessionId] ?? 0}
           selected={selected}
           onSelect={onSelectSession}
           onActivate={onOpenSession}
@@ -227,10 +256,9 @@ export const WorkspaceSessionsPanel = ({
     );
   };
 
-
   return (
     <>
-      <section className="flex h-full flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
+      <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl bg-white p-4 shadow-sm">
         <div className="space-y-3 border-b border-slate-200 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -269,33 +297,40 @@ export const WorkspaceSessionsPanel = ({
           />
         </div>
 
-        <div ref={parentRef} className="flex-1 overflow-auto pt-3">
-          {loading && sessions.length === 0 ? (
-            <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 p-6 text-sm text-slate-600">
-              Loading sessions...
-            </div>
-          ) : sessions.length === 0 ? (
+        <AsyncSurface
+          state={resolveAsyncSurfaceState({
+            loading: loading || loadingMore,
+            hasData: sessions.length > 0,
+          })}
+          loadingOverlayLabel={loadingMore ? "Loading more sessions..." : "Refreshing sessions..."}
+          skeleton={<LoadingShell />}
+          empty={
             <div className="flex h-full flex-col items-center justify-center rounded-2xl bg-slate-50 p-6 text-center">
               <h3 className="text-sm font-semibold text-slate-900">{emptyState.title}</h3>
               <p className="mt-1 max-w-sm text-sm text-slate-600">{emptyState.description}</p>
             </div>
-          ) : shouldVirtualize ? (
-            <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
-              {virtualRows.map((virtualRow) => {
-                const session = sessions[virtualRow.index];
-                return renderSessionCard(
-                  session,
-                  String(virtualRow.key),
-                  { transform: `translateY(${virtualRow.start}px)` },
-                  rowVirtualizer.measureElement,
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-3">{sessions.map((session) => renderSessionCard(session, session.sessionId))}</div>
-          )}
-          {loadingMore ? <p className="pt-3 text-center text-xs text-slate-500">Loading more sessions...</p> : null}
-        </div>
+          }
+          className="h-full pt-3"
+        >
+          <ScrollViewport ref={parentRef} data-testid="workspace-sessions-scroll-viewport" className="h-full">
+            {shouldVirtualize ? (
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+                {virtualRows.map((virtualRow) => {
+                  const session = sessions[virtualRow.index];
+                  return renderSessionCard(
+                    session,
+                    String(virtualRow.key),
+                    virtualRow.index,
+                    { transform: `translateY(${virtualRow.start}px)` },
+                    rowVirtualizer.measureElement,
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-3">{sessions.map((session) => renderSessionCard(session, session.sessionId, undefined))}</div>
+            )}
+          </ScrollViewport>
+        </AsyncSurface>
       </section>
 
       <Dialog

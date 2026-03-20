@@ -3,6 +3,7 @@ import { Clock3, Play, Plus, Square, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { cn } from "../../lib/utils";
 
 interface SessionsPanelProps {
@@ -42,7 +43,7 @@ export const SessionsPanel = ({
   onDelete,
 }: SessionsPanelProps) => {
   return (
-    <section className="flex h-full flex-col gap-3">
+    <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="typo-title-3 text-slate-900">Work Sessions</h2>
@@ -86,7 +87,7 @@ export const SessionsPanel = ({
         </div>
       </div>
 
-      <div className="flex-1 space-y-2 overflow-auto">
+      <ScrollViewport className="h-full space-y-2">
         {sessions.length === 0 ? <p className="typo-caption text-slate-500">No entries yet.</p> : null}
         {sessions.map((session) => (
           <button
@@ -107,7 +108,7 @@ export const SessionsPanel = ({
             <p className="truncate text-[11px] text-slate-600">{session.cwd}</p>
           </button>
         ))}
-      </div>
+      </ScrollViewport>
     </section>
   );
 };

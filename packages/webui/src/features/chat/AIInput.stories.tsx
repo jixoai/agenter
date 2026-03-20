@@ -128,7 +128,7 @@ export const SubmitRapidDraftsSeparately: Story = {
     await userEvent.click(sendButton);
 
     await waitFor(() => {
-      expect(args.onSubmit).toHaveBeenNthCalledWith(1, { text: "first rapid draft", images: [] });
+      expect(args.onSubmit).toHaveBeenNthCalledWith(1, { text: "first rapid draft", assets: [] });
     });
 
     await focusEditorSurface(canvasElement, async (target) => {
@@ -138,7 +138,7 @@ export const SubmitRapidDraftsSeparately: Story = {
     await userEvent.click(sendButton);
 
     await waitFor(() => {
-      expect(args.onSubmit).toHaveBeenNthCalledWith(2, { text: "second rapid draft", images: [] });
+      expect(args.onSubmit).toHaveBeenNthCalledWith(2, { text: "second rapid draft", assets: [] });
     });
     const currentEditor = within(canvasElement).getByRole("textbox");
     await waitFor(() => {

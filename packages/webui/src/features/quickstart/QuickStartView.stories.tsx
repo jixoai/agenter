@@ -1,3 +1,4 @@
+import type { WorkspaceSessionEntry } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
@@ -16,7 +17,19 @@ const recentSession = {
     firstUserMessage: "Audit the chat workflow",
     latestMessages: ["Collected runtime state", "Need a UI fix"],
   },
-};
+} satisfies WorkspaceSessionEntry;
+
+const buildRecentSession = (index: number): WorkspaceSessionEntry => ({
+  ...recentSession,
+  sessionId: `session-recent-${String(index + 1).padStart(3, "0")}`,
+  name: `Contract review ${index + 1}`,
+  createdAt: `2026-03-06T10:${String(index).padStart(2, "0")}:00.000Z`,
+  updatedAt: `2026-03-06T10:${String(index + 1).padStart(2, "0")}:30.000Z`,
+  preview: {
+    firstUserMessage: `Audit workspace flow ${index + 1}`,
+    latestMessages: [`Collected runtime state ${index + 1}`, `Need a UI fix ${index + 1}`],
+  },
+});
 
 const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: number }) => {
   if (query === "@") {
@@ -54,11 +67,18 @@ const meta = {
       cwd: "/repo/demo",
       provider: {
         providerId: "openai",
-        kind: "openai",
+        apiStandard: "openai-responses",
+        vendor: "openai",
         model: "gpt-4.1-mini",
       },
       modelCapabilities: {
+        streaming: true,
+        tools: true,
         imageInput: true,
+        nativeCompact: true,
+        summarizeFallback: true,
+        fileUpload: false,
+        mcpCatalog: false,
       },
     },
     recentSessions: [recentSession],
@@ -87,7 +107,7 @@ export const StartAndResumeFlow: Story = {
     const portal = within(canvasElement.ownerDocument.body);
 
     await expect(canvas.getByText("Quick Start")).toBeInTheDocument();
-    await expect(canvas.getByText("openai · gpt-4.1-mini")).toBeInTheDocument();
+    await expect(canvas.getByText("openai · openai-responses · gpt-4.1-mini")).toBeInTheDocument();
     await expect(canvas.getByText("Images on")).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("button", { name: "Change" }));
@@ -119,11 +139,58 @@ export const StartAndResumeFlow: Story = {
     await waitFor(() => {
       expect(args.onSubmit).toHaveBeenCalledWith({
         text: "Audit @src/index.ts",
-        images: [image],
+        assets: [image],
       });
     });
 
     await userEvent.click(canvas.getByRole("button", { name: "Resume Contract review · session-recent-001" }));
     await expect(args.onResumeSession).toHaveBeenCalledWith("session-recent-001");
+  },
+};
+
+export const ScrollViewportOwnsLongContent: Story = {
+  args: {
+    recentSessions: Array.from({ length: 12 }, (_, index) => buildRecentSession(index)),
+  },
+  render: (args) => (
+    <div className="h-[520px] p-6">
+      <QuickStartView {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = await canvas.findByTestId("quickstart-scroll-viewport");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 240;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBeGreaterThan(0);
+    });
+  },
+};
+
+export const CompactViewportKeepsPrimaryEntryPath: Story = {
+  args: {
+    recentSessions: Array.from({ length: 5 }, (_, index) => buildRecentSession(index)),
+  },
+  render: (args) => (
+    <div className="h-[780px] max-w-[390px] p-4">
+      <QuickStartView {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = await canvas.findByTestId("quickstart-scroll-viewport");
+
+    await expect(canvas.getByRole("button", { name: "Change" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Enter" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    await expect(canvas.getByText("Recent Sessions")).toBeInTheDocument();
+    await expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth + 1);
   },
 };

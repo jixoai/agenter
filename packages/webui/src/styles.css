@@ -145,8 +145,11 @@
       scrollbar-color: color-mix(in srgb, currentColor, transparent 50%) transparent;
     }
   }
-  scrollbar-none {
+  .scrollbar-none {
     scrollbar-width: none;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
   }
 
   body {

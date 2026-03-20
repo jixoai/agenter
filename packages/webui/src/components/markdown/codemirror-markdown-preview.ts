@@ -12,6 +12,7 @@ const codeBlockLine = Decoration.line({ class: "cm-md-codeblock-line" });
 const codeBlockStart = Decoration.line({ class: "cm-md-codeblock-line-start" });
 const codeBlockEnd = Decoration.line({ class: "cm-md-codeblock-line-end" });
 const codeBlockInactive = Decoration.line({ class: "cm-md-codeblock-inactive" });
+const blockquoteLine = Decoration.line({ class: "cm-md-blockquote-line" });
 const linkDecoration = Decoration.mark({ class: "cm-md-link" });
 const imageDecoration = Decoration.mark({ class: "cm-md-image" });
 const fadedDecoration = Decoration.mark({ class: "cm-md-faded" });
@@ -129,6 +130,25 @@ const applyCodeBlockLines = (
   }
 };
 
+const applyBlockquoteLines = (
+  view: EditorView,
+  node: SyntaxNodeRef,
+  widgets: Array<{ from: number; to: number; decoration: Decoration }>,
+  lineStarts: Set<number>,
+) => {
+  const firstLine = view.state.doc.lineAt(node.from).number;
+  const lastLine = view.state.doc.lineAt(node.to).number;
+
+  for (let lineNo = firstLine; lineNo <= lastLine; lineNo += 1) {
+    const line = view.state.doc.line(lineNo);
+    if (lineStarts.has(line.from)) {
+      continue;
+    }
+    lineStarts.add(line.from);
+    widgets.push({ from: line.from, to: line.from, decoration: blockquoteLine });
+  }
+};
+
 class MarkdownPreviewPlugin {
   decorations: DecorationSet;
 
@@ -151,6 +171,7 @@ class MarkdownPreviewPlugin {
       return { from: Math.min(lineFrom.from, lineTo.from), to: Math.max(lineFrom.to, lineTo.to) };
     });
     const listStack: number[] = [];
+    const blockquoteLineStarts = new Set<number>();
 
     for (const { from, to } of view.visibleRanges) {
       syntaxTree(view.state).iterate({
@@ -173,6 +194,10 @@ class MarkdownPreviewPlugin {
             const overlapsSelection = selectedLines.some((range) => node.from < range.to && node.to > range.from);
             applyCodeBlockLines(view, node, widgets, overlapsSelection);
             return;
+          }
+
+          if (name === "Blockquote") {
+            applyBlockquoteLines(view, node, widgets, blockquoteLineStarts);
           }
 
           if (name === "Link") {
@@ -390,7 +415,7 @@ const markdownPreviewTheme = EditorView.baseTheme({
   },
   ".cm-md-task-faded": { opacity: 0.55 },
   ".cm-md-ulmark": { color: "var(--md-heading)", fontWeight: 700, paddingRight: "0.2em" },
-  ".cm-line:has(.tok-quote)": {
+  ".cm-md-blockquote-line": {
     borderLeft: "3px solid color-mix(in srgb, var(--md-quote) 45%, transparent)",
     paddingLeft: "12px",
   },

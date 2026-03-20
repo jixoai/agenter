@@ -3,12 +3,15 @@ import { RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { MarkdownDocument, type MarkdownDocumentMode } from "../../components/markdown/MarkdownDocument";
+import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { PasswordInput } from "../../components/ui/password-input";
+import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { ToolStructuredView } from "../chat/tool-structured-view";
 import {
@@ -87,17 +90,27 @@ const readHistoryTab = (): HistoryPanelTab => {
   return window.localStorage.getItem(HISTORY_TAB_STORAGE_KEY) === "calls" ? "calls" : "context";
 };
 
-const configBadgeVariant = (kind: string | undefined): "secondary" | "warning" | "success" => {
-  if (kind === "openai" || kind === "openai-compatible") {
+const configBadgeVariant = (apiStandard: string | undefined): "secondary" | "warning" | "success" => {
+  if (apiStandard === "openai-chat" || apiStandard === "openai-completion" || apiStandard === "openai-responses") {
     return "secondary";
   }
-  if (kind === "anthropic" || kind === "anthropic-compatible") {
+  if (apiStandard === "anthropic") {
     return "warning";
   }
-  if (kind === "gemini") {
+  if (apiStandard === "gemini") {
     return "success";
   }
   return "secondary";
+};
+
+const modelCallBadgeVariant = (status: "running" | "done" | "error" | undefined): "secondary" | "success" | "destructive" => {
+  if (status === "running") {
+    return "secondary";
+  }
+  if (status === "error") {
+    return "destructive";
+  }
+  return "success";
 };
 
 const Field = ({ label, value }: { label: string; value: string }) => (
@@ -155,6 +168,27 @@ const StructuredPane = ({ label, value }: { label: string; value: unknown }) => 
 
 const EmptyCard = ({ message }: { message: string }) => (
   <div className="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">{message}</div>
+);
+
+const LoadingShell = () => (
+  <div className="space-y-3">
+    <div className="grid gap-3 xl:grid-cols-2">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="mt-4 h-10 w-full" />
+        <Skeleton className="mt-2 h-10 w-full" />
+        <Skeleton className="mt-2 h-10 w-full" />
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <Skeleton className="h-4 w-1/4" />
+        <Skeleton className="mt-4 h-32 w-full" />
+      </div>
+    </div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <Skeleton className="h-4 w-1/4" />
+      <Skeleton className="mt-4 h-48 w-full" />
+    </div>
+  </div>
 );
 
 export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps) => {
@@ -219,17 +253,25 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
   };
 
   return (
-    <section className="flex h-full flex-col gap-3 overflow-hidden">
+    <section className="flex h-full flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="typo-title-3 text-slate-900">Model</h3>
-            {debug?.config ? <Badge variant={configBadgeVariant(debug.config.kind)}>{debug.config.kind}</Badge> : null}
+            {latestModelCall ? (
+              <Badge variant={modelCallBadgeVariant(latestModelCall.status)}>{latestModelCall.status}</Badge>
+            ) : null}
+            {debug?.config ? (
+              <Badge variant={configBadgeVariant(debug.config.apiStandard)}>{debug.config.apiStandard}</Badge>
+            ) : null}
+            {debug?.config?.vendor ? <Badge variant="secondary">{debug.config.vendor}</Badge> : null}
             {debug?.config?.model ? <Badge variant="secondary">{debug.config.model}</Badge> : null}
           </div>
           <p className="text-[11px] text-slate-500">
             {latestModelCall
-              ? `Latest call #${latestModelCall.id} at ${formatTimestamp(latestModelCall.createdAt)}`
+              ? latestModelCall.status === "running"
+                ? `Latest call #${latestModelCall.id} is running since ${formatTimestamp(latestModelCall.createdAt)}`
+                : `Latest call #${latestModelCall.id} ${latestModelCall.status} at ${formatTimestamp(latestModelCall.completedAt ?? latestModelCall.createdAt)}`
               : "Waiting for the first model call."}
           </p>
         </div>
@@ -244,19 +286,22 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
 
       {error ? <div className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
 
-      {!debug ? (
-        <div className="flex flex-1 items-center justify-center rounded-2xl bg-slate-50 px-4 text-sm text-slate-500">
-          {loading ? "Loading model debug..." : "Open a running session to inspect model state."}
-        </div>
-      ) : (
-        <>
+      <AsyncSurface
+        state={resolveAsyncSurfaceState({ loading, hasData: Boolean(debug) })}
+        loadingOverlayLabel="Refreshing model..."
+        skeleton={<LoadingShell />}
+        empty={<EmptyCard message="Open a running session to inspect model state." />}
+        className="flex-1"
+      >
+        {debug ? (
+          <div className="flex h-full flex-col gap-3">
           <Tabs
             items={MODEL_TABS as unknown as TabItem[]}
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as ModelPanelTab)}
           />
 
-          <div className="flex-1 overflow-auto pr-1">
+          <ScrollViewport className="flex-1 pr-1">
             {activeTab === "overview" ? (
               <div className="space-y-3">
                 <div className="grid gap-3 xl:grid-cols-2">
@@ -269,17 +314,23 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                     </CardHeader>
                     <CardContent className="grid gap-3 pt-0 md:grid-cols-2">
                       <Field label="Provider ID" value={debug.config?.providerId ?? "-"} />
-                      <Field label="Model kind" value={debug.config?.kind ?? "-"} />
+                      <Field label="API standard" value={debug.config?.apiStandard ?? "-"} />
+                      <Field label="Vendor" value={debug.config?.vendor ?? "-"} />
+                      <Field label="Profile" value={debug.config?.profile ?? "-"} />
                       <Field label="Model" value={debug.config?.model ?? "-"} />
                       <Field label="Base URL" value={debug.config?.baseUrl ?? "-"} />
                       <label className="space-y-1 md:col-span-2">
                         <span className="text-[11px] text-slate-500">API token</span>
                         <PasswordInput value={debug.config?.apiKey ?? ""} readOnly />
                       </label>
+                      <Field label="API key env" value={debug.config?.apiKeyEnv ?? "-"} />
                       <Field label="Temperature" value={String(debug.config?.temperature ?? "-")} />
                       <Field label="Max retries" value={String(debug.config?.maxRetries ?? "-")} />
                       <Field label="Max token" value={String(debug.config?.maxToken ?? "-")} />
                       <Field label="Compact threshold" value={String(debug.config?.compactThreshold ?? "-")} />
+                      <StructuredPane label="Headers" value={debug.config?.headers ?? {}} />
+                      <StructuredPane label="Extensions" value={debug.config?.extensions ?? []} />
+                      <StructuredPane label="Capabilities" value={debug.config?.capabilities ?? {}} />
                     </CardContent>
                   </Card>
 
@@ -541,9 +592,11 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                                       value={{
                                         id: call.id,
                                         cycleId: call.cycleId,
+                                        status: call.status,
                                         provider: call.provider,
                                         model: call.model,
                                         createdAt: formatTimestamp(call.createdAt),
+                                        completedAt: formatTimestamp(call.completedAt),
                                       }}
                                     />
                                     <StructuredPane label="Request" value={call.request} />
@@ -600,9 +653,10 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                 </CardContent>
               </Card>
             ) : null}
+          </ScrollViewport>
           </div>
-        </>
-      )}
+        ) : null}
+      </AsyncSurface>
     </section>
   );
 };

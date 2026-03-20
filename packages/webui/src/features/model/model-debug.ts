@@ -145,9 +145,11 @@ export const buildLatestCallView = (debug: ModelDebugOutput): LatestCallView | n
     summary: {
       id: debug.latestModelCall.id,
       cycleId: debug.latestModelCall.cycleId,
+      status: debug.latestModelCall.status,
       provider: debug.latestModelCall.provider,
       model: debug.latestModelCall.model,
       createdAt: formatTimestamp(debug.latestModelCall.createdAt),
+      completedAt: formatTimestamp(debug.latestModelCall.completedAt),
       messageCount: asArray(request?.messages).length,
       toolCount: asArray(request?.tools).length,
       systemPromptChars: systemPrompt.length,

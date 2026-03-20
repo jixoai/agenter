@@ -7,16 +7,27 @@ import { ModelPanel } from "./ModelPanel";
 const debug = {
   config: {
     providerId: "deepseek",
-    kind: "openai-compatible",
+    apiStandard: "openai-chat",
+    vendor: "deepseek",
+    profile: "compatible",
+    extensions: ["file-upload"],
     model: "deepseek-chat",
     baseUrl: "https://api.deepseek.com/v1",
     apiKey: "sk-test",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    headers: { "x-trace-id": "trace-1" },
     temperature: 0.2,
     maxRetries: 1,
     maxToken: 8000,
     compactThreshold: 6000,
     capabilities: {
+      streaming: true,
+      tools: true,
       imageInput: true,
+      nativeCompact: false,
+      summarizeFallback: true,
+      fileUpload: true,
+      mcpCatalog: false,
     },
   },
   history: [
@@ -43,7 +54,9 @@ const debug = {
     id: 7,
     cycleId: 4,
     createdAt: 1_709_800_000_000,
-    provider: "openai-compatible",
+    status: "done",
+    completedAt: 1_709_800_000_900,
+    provider: "deepseek/openai-chat",
     model: "deepseek-chat",
     request: {
       systemPrompt: "# Agenter\n\nYou are a careful coding assistant.",
@@ -68,7 +81,9 @@ const debug = {
       id: 6,
       cycleId: 3,
       createdAt: 1_709_799_000_000,
-      provider: "openai-compatible",
+      status: "done",
+      completedAt: 1_709_799_000_800,
+      provider: "deepseek/openai-chat",
       model: "deepseek-chat",
       request: { systemPrompt: "# Previous" },
       response: { assistant: { text: "Previous call" } },
@@ -127,5 +142,25 @@ export const RichModelDebug: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: /Refresh/i }));
     await expect(args.onRefresh).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const RunningModelCallVisible: Story = {
+  args: {
+    debug: {
+      ...debug,
+      latestModelCall: {
+        ...debug.latestModelCall,
+        status: "running",
+        completedAt: undefined,
+        response: null,
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("running")).toBeInTheDocument();
+    await expect(canvas.getByText(/Latest call #7 is running since/i)).toBeInTheDocument();
   },
 };

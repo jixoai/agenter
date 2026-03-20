@@ -1,6 +1,6 @@
 import type { ModelDebugOutput } from "@agenter/client-sdk";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ModelPanel } from "../src/features/model/ModelPanel";
 
@@ -11,16 +11,27 @@ vi.mock("../src/components/markdown/MarkdownDocument", () => ({
 const debug = {
   config: {
     providerId: "deepseek",
-    kind: "openai-compatible",
+    apiStandard: "openai-chat",
+    vendor: "deepseek",
+    profile: "compatible",
+    extensions: ["file-upload"],
     model: "deepseek-chat",
     baseUrl: "https://api.deepseek.com/v1",
     apiKey: "sk-test",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    headers: { "x-trace-id": "trace-1" },
     temperature: 0.2,
     maxRetries: 1,
     maxToken: 8000,
     compactThreshold: 6000,
     capabilities: {
+      streaming: true,
+      tools: true,
       imageInput: true,
+      nativeCompact: false,
+      summarizeFallback: true,
+      fileUpload: true,
+      mcpCatalog: false,
     },
   },
   history: [
@@ -42,7 +53,9 @@ const debug = {
     id: 7,
     cycleId: 4,
     createdAt: 1_709_800_000_000,
-    provider: "openai-compatible",
+    status: "done",
+    completedAt: 1_709_800_000_900,
+    provider: "deepseek/openai-chat",
     model: "deepseek-chat",
     request: {
       systemPrompt: "# Agenter\n\nYou are a careful coding assistant.",
@@ -63,7 +76,9 @@ const debug = {
       id: 6,
       cycleId: 3,
       createdAt: 1_709_799_000_000,
-      provider: "openai-compatible",
+      status: "done",
+      completedAt: 1_709_799_000_800,
+      provider: "deepseek/openai-chat",
       model: "deepseek-chat",
       request: { systemPrompt: "# Previous" },
       response: { assistant: { text: "Previous call" } },
@@ -87,12 +102,19 @@ describe("Feature: model panel", () => {
     window.localStorage.clear();
   });
 
+  afterEach(() => {
+    cleanup();
+  });
+
   test("Scenario: Given model debug When switching tabs Then model data stays grouped by intent and text rendering remains scoped to text fields", () => {
     const onRefresh = vi.fn();
 
     render(<ModelPanel debug={debug} loading={false} error={null} onRefresh={onRefresh} />);
 
     expect(screen.getByText("Provider")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("openai-chat")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("deepseek").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Latest call #7 done at/i)).toBeInTheDocument();
     expect(screen.getByText("Current context")).toBeInTheDocument();
     expect(screen.getByText("Latest summary")).toBeInTheDocument();
     expect(screen.queryByText("Latest model call")).not.toBeInTheDocument();
@@ -132,5 +154,26 @@ describe("Feature: model panel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Refresh/i }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("Scenario: Given a running model call When rendering Then the panel exposes the in-flight lifecycle immediately", () => {
+    render(
+      <ModelPanel
+        debug={{
+          ...debug,
+          latestModelCall: {
+            ...debug.latestModelCall,
+            status: "running",
+            completedAt: undefined,
+            response: null,
+          },
+        }}
+        loading={false}
+        error={null}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Latest call #7 is running since/i)).toBeInTheDocument();
   });
 });

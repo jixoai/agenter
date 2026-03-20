@@ -94,27 +94,31 @@ describe("Feature: workspace browser", () => {
     expect(onDeleteWorkspace).toHaveBeenCalledWith("/repo/demo");
   });
 
+  test("Scenario: Given a workspace row When clicking it twice Then the shared selection contract toggles it off", () => {
+    const Harness = () => {
+      const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
+      return (
+        <WorkspacesPanel
+          recentPaths={["/repo/demo"]}
+          workspaces={[workspace]}
+          selectedPath={selectedPath}
+          onSelectPath={setSelectedPath}
+          onToggleFavorite={() => {}}
+          onDeleteWorkspace={() => {}}
+          onCreateSessionInWorkspace={() => {}}
+          onCleanMissing={() => {}}
+        />
+      );
+    };
 
-  test("Scenario: Given a workspace row When double-clicking it Then the shared item contract opens the sessions auxiliary view", () => {
-    const onSelectPath = vi.fn();
-    const onActivatePath = vi.fn();
+    render(<Harness />);
 
-    render(
-      <WorkspacesPanel
-        recentPaths={["/repo/demo"]}
-        workspaces={[workspace]}
-        selectedPath={null}
-        onSelectPath={onSelectPath}
-        onActivatePath={onActivatePath}
-        onToggleFavorite={() => {}}
-        onDeleteWorkspace={() => {}}
-        onCreateSessionInWorkspace={() => {}}
-        onCleanMissing={() => {}}
-      />,
-    );
+    const workspaceToggle = screen.getAllByTitle("/repo/demo")[0]!;
+    fireEvent.click(workspaceToggle);
+    expect(workspaceToggle.closest("article")).toHaveClass("border-teal-300");
 
-    fireEvent.doubleClick(screen.getAllByTitle("/repo/demo")[0]!);
-    expect(onActivatePath).toHaveBeenCalledWith("/repo/demo");
+    fireEvent.click(workspaceToggle);
+    expect(workspaceToggle.closest("article")).toHaveClass("border-slate-200");
   });
 
   test("Scenario: Given missing workspaces When rendering main panel Then batch clean is available and new chat is disabled", () => {
@@ -186,6 +190,34 @@ describe("Feature: workspace browser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: `Resume ${activeSession.name} · ${activeSession.sessionId}` }));
     expect(onOpenSession).toHaveBeenCalledWith("session-abc-123");
+  });
+
+  test("Scenario: Given sessions panel first load When no session rows are ready yet Then loading skeleton stays distinct from the empty state", () => {
+    const { container } = render(
+      <WorkspaceSessionsPanel
+        workspace={workspace}
+        sessions={[]}
+        counts={workspace.counts}
+        tab="all"
+        selectedSessionId={null}
+        loading
+        loadingMore={false}
+        hasMore={false}
+        onChangeTab={() => {}}
+        onSelectSession={() => {}}
+        onLoadMore={() => {}}
+        onCreateSessionInWorkspace={() => {}}
+        onOpenSession={() => {}}
+        onStopSession={() => {}}
+        onToggleSessionFavorite={() => {}}
+        onArchiveSession={() => {}}
+        onRestoreSession={() => {}}
+        onDeleteSession={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText("No sessions yet")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("[aria-hidden='true']").length).toBeGreaterThan(0);
   });
 
   test("Scenario: Given missing workspace in sessions panel When rendering header Then new session is disabled but history stays visible", () => {

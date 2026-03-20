@@ -3,6 +3,7 @@ import { Circle, CircleDot, Maximize2, Minimize2, Minus, Square } from "lucide-r
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 
+import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import {
@@ -11,11 +12,14 @@ import {
   InlineAffordanceLeadingVisual,
   InlineAffordanceTrailingVisual,
 } from "../../components/ui/inline-affordance";
+import { ClipSurface, ScrollViewport } from "../../components/ui/overflow-surface";
+import { Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/utils";
 
 interface TerminalPanelProps {
   runtime: RuntimeClientState["runtimes"][string] | undefined;
   snapshots: RuntimeClientState["terminalSnapshotsBySession"][string] | undefined;
+  loading?: boolean;
 }
 
 export interface TerminalViewportMetrics {
@@ -114,7 +118,21 @@ export const buildViewportMetrics = (input: {
   };
 };
 
-export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
+const LoadingShell = () => (
+  <div className="space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-3 w-40" />
+      </div>
+      <Skeleton className="h-8 w-28 rounded-xl" />
+    </div>
+    <Skeleton className="h-8 w-40 rounded-xl" />
+    <Skeleton className="h-full min-h-[22rem] w-full rounded-2xl" />
+  </div>
+);
+
+export const TerminalPanel = ({ runtime, snapshots, loading = false }: TerminalPanelProps) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [scaleMode, setScaleMode] = useState<TerminalScaleMode>(() => readScaleMode());
@@ -152,8 +170,25 @@ export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
     return () => observer.disconnect();
   }, []);
 
+  const hasRuntimeTerminals = Boolean(runtime && runtime.terminals.length > 0);
+  const surfaceState = resolveAsyncSurfaceState({
+    loading,
+    hasData: hasRuntimeTerminals,
+  });
+
   if (!runtime || runtime.terminals.length === 0) {
-    return <p className="typo-caption text-slate-500">No terminal in this session.</p>;
+    return (
+      <AsyncSurface
+        state={surfaceState}
+        skeleton={<LoadingShell />}
+        empty={
+          <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 px-4 text-sm text-slate-500">
+            No terminal in this session.
+          </div>
+        }
+        className="h-full"
+      />
+    );
   }
 
   const focusedTerminalId = runtime.focusedTerminalIds[0] ?? runtime.focusedTerminalId;
@@ -190,135 +225,147 @@ export const TerminalPanel = ({ runtime, snapshots }: TerminalPanelProps) => {
   const hasRichLines = richLines.length > 0;
 
   return (
-    <section className="flex h-full flex-1 flex-col gap-3 overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="typo-title-3 text-slate-900">Terminal</h3>
-            <Badge variant={statusVariant(focused.status)}>{focused.status}</Badge>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            seq {snapshot?.seq ?? focused.seq} · {cols} cols × {rows} rows
-          </p>
+    <AsyncSurface
+      state={surfaceState}
+      skeleton={<LoadingShell />}
+      empty={
+        <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 px-4 text-sm text-slate-500">
+          No terminal in this session.
         </div>
-
-        <div className="inline-flex rounded-xl bg-slate-100 p-1">
-          <Button
-            type="button"
-            size="sm"
-            variant={scaleMode === "fit" ? "secondary" : "ghost"}
-            aria-pressed={scaleMode === "fit"}
-            onClick={() => setScaleMode("fit")}
-            title="Fit terminal into the panel"
-          >
-            <ButtonLeadingVisual>
-              <Minimize2 className="h-3.5 w-3.5" />
-            </ButtonLeadingVisual>
-            <ButtonLabel>Fit</ButtonLabel>
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={scaleMode === "cover" ? "secondary" : "ghost"}
-            aria-pressed={scaleMode === "cover"}
-            onClick={() => setScaleMode("cover")}
-            title="Cover the panel and allow scrolling"
-          >
-            <ButtonLeadingVisual>
-              <Maximize2 className="h-3.5 w-3.5" />
-            </ButtonLeadingVisual>
-            <ButtonLabel>Cover</ButtonLabel>
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        {runtime.terminals.map((terminal) => (
-          <span
-            key={terminal.terminalId}
-            className={cn(
-              "rounded-md px-2 py-1 text-[11px]",
-              terminal.terminalId === focused.terminalId ? "bg-teal-100 text-teal-900" : "bg-slate-100 text-slate-700",
-            )}
-          >
-            {terminal.terminalId}
-          </span>
-        ))}
-      </div>
-
-      <div
-        ref={stageRef}
-        className={cn(
-          "flex flex-1 overflow-auto rounded-2xl bg-slate-100 p-3",
-          scaleMode === "fit" ? "items-start justify-center" : "items-start justify-start",
-        )}
-      >
-        <div className="shrink-0" style={scaledFrameStyle}>
-          <article
-            data-testid="terminal-viewport"
-            className="corner-superellipse/2 overflow-hidden rounded-[18px] border border-slate-300 bg-slate-900 shadow-[0_22px_80px_rgba(15,23,42,0.28)]"
-            style={viewportStyle}
-          >
-            <header className="flex h-8.5 items-center justify-between border-b border-slate-700 bg-[linear-gradient(180deg,#1f2937,#111827)] px-4 text-[11px] text-slate-200">
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <Circle className="h-2.5 w-2.5 fill-rose-400 text-rose-400" />
-                <Circle className="h-2.5 w-2.5 fill-amber-300 text-amber-300" />
-                <Circle className="h-2.5 w-2.5 fill-emerald-400 text-emerald-400" />
-              </div>
-              <InlineAffordance size="inline" className="text-slate-300">
-                <InlineAffordanceLeadingVisual>
-                  <Square className="h-3 w-3" />
-                </InlineAffordanceLeadingVisual>
-                <InlineAffordanceLabel className="max-w-[28ch] truncate">{focused.terminalId}</InlineAffordanceLabel>
-              </InlineAffordance>
-              <InlineAffordance size="inline" className="text-slate-500">
-                <InlineAffordanceLeadingVisual>
-                  <Minus className="h-3 w-3" />
-                </InlineAffordanceLeadingVisual>
-                <InlineAffordanceTrailingVisual>
-                  <Square className="h-2.5 w-2.5" />
-                </InlineAffordanceTrailingVisual>
-              </InlineAffordance>
-            </header>
-
-            <div className="bg-slate-950 px-4 py-3">
-              {hasRichLines ? (
-                <div
-                  data-testid="terminal-rich-surface"
-                  style={terminalBodyStyle}
-                  className="overflow-hidden font-mono whitespace-pre text-slate-100 [font-variant-ligatures:none]"
-                >
-                  {richLines.map((line, lineIndex) => (
-                    <div key={`line-${lineIndex}`} className="h-[18px] min-h-[18px]">
-                      {renderRichLine(line, lineIndex)}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <pre
-                  style={terminalBodyStyle}
-                  className="overflow-hidden font-mono whitespace-pre text-slate-100 [font-variant-ligatures:none]"
-                >
-                  {(snapshot?.lines ?? []).join("\n")}
-                </pre>
-              )}
+      }
+      className="h-full"
+      loadingOverlayLabel="Refreshing terminal..."
+    >
+      <section className="flex h-full flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="typo-title-3 text-slate-900">Terminal</h3>
+              <Badge variant={statusVariant(focused.status)}>{focused.status}</Badge>
             </div>
+            <p className="text-[11px] text-slate-500">
+              seq {snapshot?.seq ?? focused.seq} · {cols} cols × {rows} rows
+            </p>
+          </div>
 
-            <footer className="flex h-[26px] items-center justify-between gap-2 border-t border-slate-800 bg-slate-900 px-4 text-[11px] text-slate-400">
-              <InlineAffordance size="inline" className="min-w-0 flex-1">
-                <InlineAffordanceLeadingVisual>
-                  <CircleDot className="h-3 w-3 text-emerald-400" />
-                </InlineAffordanceLeadingVisual>
-                <InlineAffordanceLabel className="truncate">{focused.cwd}</InlineAffordanceLabel>
-              </InlineAffordance>
-              <span>
-                cursor {snapshot?.cursor.x ?? 0}:{snapshot?.cursor.y ?? 0}
-                {snapshot?.cursorVisible === false ? " · hidden" : ""}
-              </span>
-            </footer>
-          </article>
+          <div className="inline-flex rounded-xl bg-slate-100 p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={scaleMode === "fit" ? "secondary" : "ghost"}
+              aria-pressed={scaleMode === "fit"}
+              onClick={() => setScaleMode("fit")}
+              title="Fit terminal into the panel"
+            >
+              <ButtonLeadingVisual>
+                <Minimize2 className="h-3.5 w-3.5" />
+              </ButtonLeadingVisual>
+              <ButtonLabel>Fit</ButtonLabel>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={scaleMode === "cover" ? "secondary" : "ghost"}
+              aria-pressed={scaleMode === "cover"}
+              onClick={() => setScaleMode("cover")}
+              title="Cover the panel and allow scrolling"
+            >
+              <ButtonLeadingVisual>
+                <Maximize2 className="h-3.5 w-3.5" />
+              </ButtonLeadingVisual>
+              <ButtonLabel>Cover</ButtonLabel>
+            </Button>
+          </div>
         </div>
-      </div>
-    </section>
+
+        <div className="flex flex-wrap gap-1.5">
+          {runtime.terminals.map((terminal) => (
+            <span
+              key={terminal.terminalId}
+              className={cn(
+                "rounded-md px-2 py-1 text-[11px]",
+                terminal.terminalId === focused.terminalId ? "bg-teal-100 text-teal-900" : "bg-slate-100 text-slate-700",
+              )}
+            >
+              {terminal.terminalId}
+            </span>
+          ))}
+        </div>
+
+        <ScrollViewport
+          ref={stageRef}
+          className={cn(
+            "flex flex-1 rounded-2xl bg-slate-100 p-3",
+            scaleMode === "fit" ? "items-start justify-center" : "items-start justify-start",
+          )}
+        >
+          <div className="shrink-0" style={scaledFrameStyle}>
+            <ClipSurface
+              data-testid="terminal-viewport"
+              className="corner-superellipse/2 rounded-[18px] border border-slate-300 bg-slate-900 shadow-[0_22px_80px_rgba(15,23,42,0.28)]"
+              style={viewportStyle}
+            >
+              <header className="flex h-8.5 items-center justify-between border-b border-slate-700 bg-[linear-gradient(180deg,#1f2937,#111827)] px-4 text-[11px] text-slate-200">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <Circle className="h-2.5 w-2.5 fill-rose-400 text-rose-400" />
+                  <Circle className="h-2.5 w-2.5 fill-amber-300 text-amber-300" />
+                  <Circle className="h-2.5 w-2.5 fill-emerald-400 text-emerald-400" />
+                </div>
+                <InlineAffordance size="inline" className="text-slate-300">
+                  <InlineAffordanceLeadingVisual>
+                    <Square className="h-3 w-3" />
+                  </InlineAffordanceLeadingVisual>
+                  <InlineAffordanceLabel className="max-w-[28ch] truncate">{focused.terminalId}</InlineAffordanceLabel>
+                </InlineAffordance>
+                <InlineAffordance size="inline" className="text-slate-500">
+                  <InlineAffordanceLeadingVisual>
+                    <Minus className="h-3 w-3" />
+                  </InlineAffordanceLeadingVisual>
+                  <InlineAffordanceTrailingVisual>
+                    <Square className="h-2.5 w-2.5" />
+                  </InlineAffordanceTrailingVisual>
+                </InlineAffordance>
+              </header>
+
+              <div className="bg-slate-950 px-4 py-3">
+                {hasRichLines ? (
+                  <div
+                    data-testid="terminal-rich-surface"
+                    style={terminalBodyStyle}
+                    className="font-mono whitespace-pre text-slate-100 [font-variant-ligatures:none]"
+                  >
+                    {richLines.map((line, lineIndex) => (
+                      <div key={`line-${lineIndex}`} className="h-[18px] min-h-[18px]">
+                        {renderRichLine(line, lineIndex)}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <pre
+                    style={terminalBodyStyle}
+                    className="font-mono whitespace-pre text-slate-100 [font-variant-ligatures:none]"
+                  >
+                    {(snapshot?.lines ?? []).join("\n")}
+                  </pre>
+                )}
+              </div>
+
+              <footer className="flex h-[26px] items-center justify-between gap-2 border-t border-slate-800 bg-slate-900 px-4 text-[11px] text-slate-400">
+                <InlineAffordance size="inline" className="min-w-0 flex-1">
+                  <InlineAffordanceLeadingVisual>
+                    <CircleDot className="h-3 w-3 text-emerald-400" />
+                  </InlineAffordanceLeadingVisual>
+                  <InlineAffordanceLabel className="truncate">{focused.cwd}</InlineAffordanceLabel>
+                </InlineAffordance>
+                <span>
+                  cursor {snapshot?.cursor.x ?? 0}:{snapshot?.cursor.y ?? 0}
+                  {snapshot?.cursorVisible === false ? " · hidden" : ""}
+                </span>
+              </footer>
+            </ClipSurface>
+          </div>
+        </ScrollViewport>
+      </section>
+    </AsyncSurface>
   );
 };

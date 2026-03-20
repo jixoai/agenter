@@ -15,6 +15,7 @@ import {
 import { useMemo, useRef, useState } from "react";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
+import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge, BadgeLabel, BadgeLeadingVisual } from "../../components/ui/badge";
 import {
   InlineAffordance,
@@ -22,6 +23,7 @@ import {
   InlineAffordanceLeadingVisual,
   InlineAffordanceMeta,
 } from "../../components/ui/inline-affordance";
+import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Tabs } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 
@@ -305,7 +307,7 @@ export const LoopBusPanel = ({
   });
 
   return (
-    <section className="flex h-full flex-1 flex-col overflow-hidden rounded-xl bg-white p-3 shadow-xs">
+    <section className="flex h-full flex-1 flex-col rounded-xl bg-white p-3 shadow-xs">
       <header className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="typo-title-3 text-slate-900">LoopBus</h2>
@@ -380,7 +382,7 @@ export const LoopBusPanel = ({
       </div>
 
       {tab === "flow" ? (
-        <div className="flex flex-1 flex-col gap-2 overflow-auto rounded-lg bg-slate-50 p-2">
+        <ScrollViewport className="flex flex-1 flex-col gap-2 rounded-lg bg-slate-50 p-2">
           <div className="space-y-1">
             {FLOW_ROWS.map((row, rowIndex) => (
               <div key={`flow-row-${rowIndex + 1}`} className="grid grid-cols-3 gap-1.5">
@@ -390,7 +392,7 @@ export const LoopBusPanel = ({
                     <article
                       key={step.id}
                       className={cn(
-                        "relative overflow-hidden rounded-lg border px-2 py-2",
+                        "relative rounded-lg border px-2 py-2",
                         active
                           ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                           : "border-slate-200 bg-white text-slate-700",
@@ -455,11 +457,11 @@ export const LoopBusPanel = ({
           <div className="rounded-lg bg-white px-2 py-2 text-[10px] text-slate-500 ring-1 ring-slate-200">
             state logs kept for compatibility: {logs.length}
           </div>
-        </div>
+        </ScrollViewport>
       ) : null}
 
       {tab === "trace" ? (
-        <div className="flex h-full flex-1 flex-col overflow-hidden rounded-lg bg-slate-50">
+        <div className="flex h-full flex-1 flex-col rounded-lg bg-slate-50">
           <PanelHeader
             label="Trace"
             count={traces.length}
@@ -467,64 +469,71 @@ export const LoopBusPanel = ({
             loading={loadingTrace}
             onLoadMore={onLoadMoreTrace}
           />
-          <div ref={traceParentRef} className="flex-1 overflow-auto">
-            {traces.length === 0 ? <p className="px-3 py-3 text-[11px] text-slate-500">No trace rows yet.</p> : null}
-            <div style={{ height: traceVirtualizer.getTotalSize(), position: "relative" }}>
-              {traceVirtualizer.getVirtualItems().map((item) => {
-                const trace = traces[item.index];
-                if (!trace) {
-                  return null;
-                }
-                return (
-                  <div
-                    key={trace.id}
-                    ref={traceVirtualizer.measureElement}
-                    data-index={item.index}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${item.start}px)`,
-                    }}
-                    className="px-2 py-1"
-                  >
-                    <Accordion type="single" collapsible>
-                      <AccordionItem
-                        value={`trace-${trace.id}`}
-                        className="rounded-lg border border-slate-200 bg-white px-2"
-                      >
-                        <AccordionTrigger className="py-2 hover:no-underline">
-                          <InlineAffordance className="flex flex-1" fill>
-                            <InlineAffordanceLeadingVisual>
-                              <StatusIcon status={trace.status} />
-                            </InlineAffordanceLeadingVisual>
-                            <InlineAffordanceLabel className="min-w-0 truncate text-xs font-medium text-slate-800">
-                              #{trace.cycleId}.{trace.seq} {trace.step}
-                            </InlineAffordanceLabel>
-                            <InlineAffordanceMeta className="inline-flex items-center gap-2 text-[10px] text-slate-500">
-                              <Clock3 className="h-3.5 w-3.5" />
-                              {toDuration(trace.startedAt, trace.endedAt)}
-                            </InlineAffordanceMeta>
-                          </InlineAffordance>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <pre className="overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-4 text-slate-100">
-                            {toJson(trace.detail)}
-                          </pre>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <AsyncSurface
+            state={resolveAsyncSurfaceState({ loading: Boolean(loadingTrace), hasData: traces.length > 0 })}
+            loadingOverlayLabel="Refreshing trace..."
+            skeleton={<div className="h-full rounded-lg bg-white" />}
+            empty={<p className="px-3 py-3 text-[11px] text-slate-500">No trace rows yet.</p>}
+            className="flex-1"
+          >
+            <ScrollViewport ref={traceParentRef} className="flex-1">
+              <div style={{ height: traceVirtualizer.getTotalSize(), position: "relative" }}>
+                {traceVirtualizer.getVirtualItems().map((item) => {
+                  const trace = traces[item.index];
+                  if (!trace) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={trace.id}
+                      ref={traceVirtualizer.measureElement}
+                      data-index={item.index}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${item.start}px)`,
+                      }}
+                      className="px-2 py-1"
+                    >
+                      <Accordion type="single" collapsible>
+                        <AccordionItem
+                          value={`trace-${trace.id}`}
+                          className="rounded-lg border border-slate-200 bg-white px-2"
+                        >
+                          <AccordionTrigger className="py-2 hover:no-underline">
+                            <InlineAffordance className="flex flex-1" fill>
+                              <InlineAffordanceLeadingVisual>
+                                <StatusIcon status={trace.status} />
+                              </InlineAffordanceLeadingVisual>
+                              <InlineAffordanceLabel className="min-w-0 truncate text-xs font-medium text-slate-800">
+                                #{trace.cycleId}.{trace.seq} {trace.step}
+                              </InlineAffordanceLabel>
+                              <InlineAffordanceMeta className="inline-flex items-center gap-2 text-[10px] text-slate-500">
+                                <Clock3 className="h-3.5 w-3.5" />
+                                {toDuration(trace.startedAt, trace.endedAt)}
+                              </InlineAffordanceMeta>
+                            </InlineAffordance>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <pre className="overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-4 text-slate-100">
+                              {toJson(trace.detail)}
+                            </pre>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollViewport>
+          </AsyncSurface>
         </div>
       ) : null}
 
       {tab === "model" ? (
-        <div className="flex h-full flex-1 flex-col overflow-hidden rounded-lg bg-slate-50">
+        <div className="flex h-full flex-1 flex-col rounded-lg bg-slate-50">
           <PanelHeader
             label="Model"
             count={modelCalls.length}
@@ -532,89 +541,94 @@ export const LoopBusPanel = ({
             loading={loadingModel}
             onLoadMore={onLoadMoreModel}
           />
-          <div ref={modelParentRef} className="flex-1 overflow-auto">
-            {modelCalls.length === 0 ? (
-              <p className="px-3 py-3 text-[11px] text-slate-500">No model calls yet.</p>
-            ) : null}
-            <div style={{ height: modelVirtualizer.getTotalSize(), position: "relative" }}>
-              {modelVirtualizer.getVirtualItems().map((item) => {
-                const call = modelCalls[item.index];
-                if (!call) {
-                  return null;
-                }
-                const status = call.error === undefined ? "ok" : "error";
-                return (
-                  <div
-                    key={call.id}
-                    ref={modelVirtualizer.measureElement}
-                    data-index={item.index}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${item.start}px)`,
-                    }}
-                    className="px-2 py-1"
-                  >
-                    <Accordion type="single" collapsible>
-                      <AccordionItem
-                        value={`model-${call.id}`}
-                        className="rounded-lg border border-slate-200 bg-white px-2"
-                      >
-                        <AccordionTrigger className="py-2 hover:no-underline">
-                          <InlineAffordance className="flex flex-1" fill>
-                            <InlineAffordanceLeadingVisual>
-                              <StatusIcon status={status} />
-                            </InlineAffordanceLeadingVisual>
-                            <InlineAffordanceLabel className="min-w-0 truncate text-xs font-medium text-slate-800">
-                              {call.provider} / {call.model}
-                            </InlineAffordanceLabel>
-                            <InlineAffordanceMeta className="inline-flex items-center gap-2 text-[10px] text-slate-500">
-                              <Cpu className="h-3.5 w-3.5" />
-                              cycle #{call.cycleId} · {toTime(call.createdAt)}
-                            </InlineAffordanceMeta>
-                          </InlineAffordance>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="mb-1 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                                request
-                              </p>
-                              <pre className="overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-4 text-slate-100">
-                                {toJson(call.request)}
-                              </pre>
-                            </div>
-                            {call.response !== undefined ? (
+          <AsyncSurface
+            state={resolveAsyncSurfaceState({ loading: Boolean(loadingModel), hasData: modelCalls.length > 0 })}
+            loadingOverlayLabel="Refreshing model calls..."
+            skeleton={<div className="h-full rounded-lg bg-white" />}
+            empty={<p className="px-3 py-3 text-[11px] text-slate-500">No model calls yet.</p>}
+            className="flex-1"
+          >
+            <ScrollViewport ref={modelParentRef} className="flex-1">
+              <div style={{ height: modelVirtualizer.getTotalSize(), position: "relative" }}>
+                {modelVirtualizer.getVirtualItems().map((item) => {
+                  const call = modelCalls[item.index];
+                  if (!call) {
+                    return null;
+                  }
+                  const status = call.error === undefined ? "ok" : "error";
+                  return (
+                    <div
+                      key={call.id}
+                      ref={modelVirtualizer.measureElement}
+                      data-index={item.index}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${item.start}px)`,
+                      }}
+                      className="px-2 py-1"
+                    >
+                      <Accordion type="single" collapsible>
+                        <AccordionItem
+                          value={`model-${call.id}`}
+                          className="rounded-lg border border-slate-200 bg-white px-2"
+                        >
+                          <AccordionTrigger className="py-2 hover:no-underline">
+                            <InlineAffordance className="flex flex-1" fill>
+                              <InlineAffordanceLeadingVisual>
+                                <StatusIcon status={status} />
+                              </InlineAffordanceLeadingVisual>
+                              <InlineAffordanceLabel className="min-w-0 truncate text-xs font-medium text-slate-800">
+                                {call.provider} / {call.model}
+                              </InlineAffordanceLabel>
+                              <InlineAffordanceMeta className="inline-flex items-center gap-2 text-[10px] text-slate-500">
+                                <Cpu className="h-3.5 w-3.5" />
+                                cycle #{call.cycleId} · {toTime(call.createdAt)}
+                              </InlineAffordanceMeta>
+                            </InlineAffordance>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-2">
                               <div>
                                 <p className="mb-1 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                                  response
+                                  request
                                 </p>
                                 <pre className="overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-4 text-slate-100">
-                                  {toJson(call.response)}
+                                  {toJson(call.request)}
                                 </pre>
                               </div>
-                            ) : null}
-                            {call.error !== undefined ? (
-                              <div>
-                                <p className="mb-1 text-[10px] font-medium tracking-wide text-rose-500 uppercase">
-                                  error
-                                </p>
-                                <pre className="overflow-auto rounded-md bg-rose-950 p-2 text-[11px] leading-4 text-rose-100">
-                                  {toJson(call.error)}
-                                </pre>
-                              </div>
-                            ) : null}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                              {call.response !== undefined ? (
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                                    response
+                                  </p>
+                                  <pre className="overflow-auto rounded-md bg-slate-950 p-2 text-[11px] leading-4 text-slate-100">
+                                    {toJson(call.response)}
+                                  </pre>
+                                </div>
+                              ) : null}
+                              {call.error !== undefined ? (
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium tracking-wide text-rose-500 uppercase">
+                                    error
+                                  </p>
+                                  <pre className="overflow-auto rounded-md bg-rose-950 p-2 text-[11px] leading-4 text-rose-100">
+                                    {toJson(call.error)}
+                                  </pre>
+                                </div>
+                              ) : null}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollViewport>
+          </AsyncSurface>
         </div>
       ) : null}
 

@@ -1,3 +1,5 @@
+import type { RuntimeConnectionStatus } from "@agenter/client-sdk";
+
 import type { BadgeProps } from "../components/ui/badge";
 
 export interface StatusMeta {
@@ -26,4 +28,22 @@ export const runningCountMeta = (count: number): StatusMeta | null => {
     label: `running ${count}`,
     variant: "success",
   };
+};
+
+export interface TransportStatusMeta {
+  label: string;
+  className: string;
+}
+
+export const transportStatusMeta = (status: RuntimeConnectionStatus): TransportStatusMeta => {
+  if (status === "offline") {
+    return { label: "Offline", className: "text-rose-700" };
+  }
+  if (status === "reconnecting") {
+    return { label: "Reconnecting", className: "text-amber-700" };
+  }
+  if (status === "connecting") {
+    return { label: "Connecting", className: "text-slate-500" };
+  }
+  return { label: "Connected", className: "text-slate-500" };
 };

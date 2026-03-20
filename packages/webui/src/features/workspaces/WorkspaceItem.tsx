@@ -9,8 +9,8 @@ import { runningCountMeta } from "../../shared/status-meta";
 interface WorkspaceItemProps {
   workspace: WorkspaceEntry;
   selected: boolean;
+  unreadCount?: number;
   onSelect: (path: string | null) => void;
-  onActivate?: (path: string) => void;
   onCreateSession: (path: string) => void;
   onToggleFavorite: (path: string) => void;
   onDelete: (path: string) => void;
@@ -19,8 +19,8 @@ interface WorkspaceItemProps {
 export const WorkspaceItem = ({
   workspace,
   selected,
+  unreadCount = 0,
   onSelect,
-  onActivate,
   onCreateSession,
   onToggleFavorite,
   onDelete,
@@ -42,7 +42,6 @@ export const WorkspaceItem = ({
         <button
           type="button"
           onClick={() => onSelect(selected ? null : workspace.path)}
-          onDoubleClick={() => onActivate?.(workspace.path)}
           className={cn(
             "flex min-w-0 flex-1 flex-col items-start rounded-lg px-2 py-2 text-left",
             selected ? "bg-transparent" : workspace.missing ? "hover:bg-rose-100/60" : "hover:bg-slate-100",
@@ -54,7 +53,10 @@ export const WorkspaceItem = ({
             {workspace.missing ? <Badge variant="destructive">missing</Badge> : null}
             {runningMeta ? <Badge variant={runningMeta.variant}>{runningMeta.label}</Badge> : null}
             <Badge variant="secondary">{workspace.counts.all} sessions</Badge>
-            {workspace.counts.archive > 0 ? <Badge variant="secondary">archive {workspace.counts.archive}</Badge> : null}
+            {unreadCount > 0 ? <Badge variant="warning">{`${unreadCount} unread`}</Badge> : null}
+            {workspace.counts.archive > 0 ? (
+              <Badge variant="secondary">archive {workspace.counts.archive}</Badge>
+            ) : null}
           </span>
         </button>
 

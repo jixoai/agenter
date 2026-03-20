@@ -1,8 +1,10 @@
+import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { focusEditorSurface } from "./ai-input-story-utils";
 import { ChatPanel } from "./ChatPanel";
+import { createRealSessionHistoryFixture } from "./real-session-history-fixture";
 
 const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: number }) => {
   if (query === "@") {
@@ -22,25 +24,57 @@ const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: n
   return [];
 });
 
-const buildCycle = () => ({
+const buildMessages = (input?: Partial<RuntimeChatMessage>[]): RuntimeChatMessage[] => {
+  const base: RuntimeChatMessage[] = [
+    {
+      id: "101",
+      role: "user",
+      content: "Inspect the terminal state and attached diagram.",
+      timestamp: 7,
+      cycleId: null,
+      attachments: [
+        {
+          assetId: "image-1",
+          kind: "image",
+          mimeType: "image/png",
+          name: "diagram.png",
+          sizeBytes: 2048,
+          url: "https://placehold.co/320x240/png",
+        },
+      ],
+    },
+    {
+      id: "102",
+      role: "assistant",
+      channel: "to_user",
+      content: "Ready to inspect the terminal output with you.",
+      timestamp: 10,
+      cycleId: 7,
+    },
+  ];
+  return input ? [...base, ...input] : base;
+};
+
+const buildCycle = (input?: Partial<RuntimeChatCycle>): RuntimeChatCycle => ({
   id: "cycle:7",
   cycleId: 7,
   seq: 7,
   createdAt: 7,
   wakeSource: "user",
-  kind: "model" as const,
-  status: "done" as const,
+  kind: "model",
+  status: "done",
   clientMessageIds: ["client-7"],
   inputs: [
     {
-      source: "message" as const,
-      role: "user" as const,
+      source: "message",
+      role: "user",
       name: "User",
       parts: [
-        { type: "text" as const, text: "Inspect the terminal state and attached diagram." },
+        { type: "text", text: "Inspect the terminal state and attached diagram." },
         {
-          type: "image" as const,
+          type: "image",
           assetId: "image-1",
+          kind: "image",
           mimeType: "image/png",
           name: "diagram.png",
           sizeBytes: 2048,
@@ -49,37 +83,21 @@ const buildCycle = () => ({
       ],
       meta: { clientMessageId: "client-7" },
     },
-    {
-      source: "terminal" as const,
-      role: "tool" as const,
-      name: "Terminal-iflow",
-      parts: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            kind: "terminal-diff",
-            terminalId: "iflow",
-            status: "IDLE",
-            bytes: 332,
-            diff: "diff --git a/output/latest.log.html",
-          }),
-        },
-      ],
-    },
   ],
   outputs: [
     {
       id: "msg-tool-call",
-      role: "assistant" as const,
-      channel: "tool_call" as const,
+      role: "assistant",
+      channel: "tool_call",
       content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: iflow", "```"].join("\n"),
       timestamp: 8,
+      cycleId: 7,
       tool: { name: "terminal_read" },
     },
     {
       id: "msg-tool-result",
-      role: "assistant" as const,
-      channel: "tool_result" as const,
+      role: "assistant",
+      channel: "tool_result",
       content: [
         "```yaml+tool_result",
         "tool: terminal_read",
@@ -87,38 +105,51 @@ const buildCycle = () => ({
         "output:",
         "  kind: terminal-snapshot",
         "  terminalId: iflow",
-        "  tail: |-",
-        "    Hi~ What would you like to do today?",
-        "    > Type your message",
         "```",
       ].join("\n"),
       timestamp: 9,
+      cycleId: 7,
       tool: { name: "terminal_read", ok: true },
     },
     {
+      id: "msg-thought",
+      role: "assistant",
+      channel: "self_talk",
+      content: "hidden internal note",
+      timestamp: 9,
+      cycleId: 7,
+    },
+    {
       id: "msg-assistant-1",
-      role: "assistant" as const,
-      channel: "to_user" as const,
+      role: "assistant",
+      channel: "to_user",
       content: "Ready to inspect the terminal output with you.",
       timestamp: 10,
+      cycleId: 7,
     },
   ],
   liveMessages: [],
   streaming: null,
   modelCallId: 11,
+  ...input,
 });
 
 const meta = {
   title: "Features/Chat/ChatPanel",
   component: ChatPanel,
   args: {
-    activeSessionName: "contract-check",
     workspacePath: "/repo/demo",
     aiStatus: "idle",
+    sessionStateLabel: "Session stopped",
+    sessionStateTone: "neutral",
     disabled: false,
     imageEnabled: true,
+    sessionActionLabel: "Start session",
+    onSessionAction: fn(async () => undefined),
     onSubmit: fn(async () => undefined),
     onSearchPaths: searchPaths,
+    onOpenDevtools: fn(),
+    messages: buildMessages(),
     cycles: [buildCycle()],
   },
   render: (args) => (
@@ -132,13 +163,16 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const MergedToolConversation: Story = {
+export const ConversationFirstHistory: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
 
-    await expect(canvas.getByText("cycle #7")).toBeInTheDocument();
-    await expect(canvas.getByText("Ready to inspect the terminal output with you.")).toBeInTheDocument();
+    await expect(canvas.getAllByText("Inspect the terminal state and attached diagram.").length).toBeGreaterThan(0);
+    await expect(canvas.getAllByText("Ready to inspect the terminal output with you.").length).toBeGreaterThan(0);
+    await expect(canvas.queryByText(/Cycle 7/i)).not.toBeInTheDocument();
+    await expect(canvas.queryByText("terminal_read")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("hidden internal note")).not.toBeInTheDocument();
 
     await userEvent.click(canvas.getByAltText("diagram.png"));
     await expect(portal.getByRole("dialog", { name: "diagram.png" })).toBeInTheDocument();
@@ -159,21 +193,22 @@ export const MergedToolConversation: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Send" }));
     await waitFor(() => {
-      expect(args.onSubmit).toHaveBeenCalledWith({ text: "Check @README.md", images: [] });
+      expect(args.onSubmit).toHaveBeenCalledWith({ text: "Check @README.md", assets: [] });
     });
 
-    await userEvent.click(canvas.getByRole("button", { name: /terminal_read/i }));
-    await expect(canvas.getByText("call")).toBeInTheDocument();
-    await expect(canvas.getByText("result")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Start session" })).toBeInTheDocument();
   },
 };
 
-export const WorkingConversation: Story = {
+export const StreamingReply: Story = {
   args: {
-    aiStatus: "thinking",
+    aiStatus: "waiting model",
+    sessionStateLabel: "Session running",
+    sessionStateTone: "active",
+    sessionActionLabel: "Stop session",
+    messages: buildMessages(),
     cycles: [
-      {
-        ...buildCycle(),
+      buildCycle({
         id: "cycle:8",
         cycleId: 8,
         seq: 8,
@@ -181,25 +216,102 @@ export const WorkingConversation: Story = {
         outputs: [],
         liveMessages: [
           {
-            id: "live-tool-call-1",
+            id: "live-thought-1",
             role: "assistant",
-            channel: "tool_call",
-            content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: iflow", "```"].join("\n"),
-            timestamp: 9,
-            tool: { name: "terminal_read" },
+            channel: "self_talk",
+            content: "hidden streaming trace",
+            timestamp: 11,
+            cycleId: 8,
           },
         ],
         streaming: {
           content: "I am still collecting terminal updates.",
         },
-      },
+      }),
     ],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByText("AI thinking")).toBeInTheDocument();
-    await expect(canvas.getByText("I am still collecting terminal updates.")).toBeInTheDocument();
-    await expect(canvas.getByText("terminal_read")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Stop session" })).toBeInTheDocument();
+    await expect(canvas.getAllByText("I am still collecting terminal updates.").length).toBeGreaterThan(0);
+    await expect(canvas.queryByText(/Cycle 8/i)).not.toBeInTheDocument();
+    await expect(canvas.queryByText("hidden streaming trace")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("terminal_read")).not.toBeInTheDocument();
+  },
+};
+
+export const MessageActionsOpenDevtools: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const portal = within(canvasElement.ownerDocument.body);
+
+    await userEvent.click(canvas.getAllByRole("button", { name: "Message actions" })[1]!);
+    await userEvent.click(await portal.findByText("View In Devtools"));
+
+    await waitFor(() => {
+      expect(args.onOpenDevtools).toHaveBeenCalledWith(7);
+    });
+  },
+};
+
+export const ActionableStoppedNotice: Story = {
+  args: {
+    messages: [],
+    cycles: [],
+    routeNotice: {
+      tone: "warning",
+      message: "Session is stopped. Start it to continue.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getAllByText("Session is stopped. Start it to continue.")).toHaveLength(2);
+    await expect(canvas.getByRole("button", { name: "Start session" })).toBeInTheDocument();
+  },
+};
+
+export const CompactConversationKeepsNavigationAndComposerStable: Story = {
+  args: {
+    messages: buildMessages(),
+    cycles: [buildCycle()],
+  },
+  render: (args) => (
+    <div className="h-[760px] max-w-[390px] p-4">
+      <ChatPanel {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.queryByText(/Cycle 7/i)).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Send" })).toBeInTheDocument();
+    await expect(canvas.getAllByRole("button", { name: "Message actions" }).length).toBeGreaterThan(0);
+    await expect(canvas.getAllByText("Ready to inspect the terminal output with you.").length).toBeGreaterThan(0);
+  },
+};
+
+export const VirtualizedPersistedHistory: Story = {
+  args: {
+    messages: createRealSessionHistoryFixture().messages,
+    cycles: [],
+    sessionStateLabel: "Session running",
+    sessionStateTone: "active",
+    sessionActionLabel: "Stop session",
+  },
+  render: (args) => (
+    <div className="h-[760px] p-6">
+      <ChatPanel {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = await canvas.findByTestId("chat-scroll-viewport");
+
+    await expect(canvas.getByText("Assistant reply 14: completed the visible conversation turn 14.")).toBeInTheDocument();
+    await expect(canvas.getByAltText("briefing.png")).toBeInTheDocument();
+    await expect(viewport).toHaveClass("flex-1");
+    await expect(canvas.queryByText(/Cycle 14/i)).not.toBeInTheDocument();
   },
 };
