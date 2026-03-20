@@ -139,6 +139,14 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - Storybook DOM 测试应被视为 WebUI 的**BDD 主战场**，而不是装饰性文档。
 - 如果真实 DOM 测试失败，优先修组件真实行为，不要为了通过测试去改弱断言。
 
+## 3.3) WebUI 双端 viewport 契约
+
+- **桌面端 + 移动端都是强制验收项**：WebUI 走查、Playwright E2E、关键 shell/layout 回归，默认都必须同时覆盖 desktop 和 mobile，不能只看桌面端。
+- **移动端默认基线**：统一使用 `iPhone 14` 作为默认移动端环境；本项目当前的强制移动 viewport 基线就是 `390px` 宽。
+- **Playwright 默认双 project**：`packages/webui` 的 E2E 默认必须跑 `desktop-chromium` + `mobile-iphone14`；单 project 只允许本地调试，不算最终验收。
+- **验收按能力，不按 DOM 同构**：桌面与移动可以有不同导航结构（如 sidebar vs sheet / tabs vs bottom nav），但关键能力与主路径必须双端都可达、可操作、可观察。
+- **高风险面板补 compact stories**：Quick Start、Workspace shell、Chat、Devtools、Settings 这类在移动端会折叠、重排或切换导航方式的界面，默认需要至少一个 compact Storybook DOM contract。
+
 ## 4) 命名规范
 
 - `describe("Feature: ...")`
@@ -169,6 +177,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Session DB 只存事实**：`session.db` 只落 `session_head/session_cycle/model_call/session_block/loopbus_trace/api_call` 这类事实，不落可推导 snapshot/state-log。
 - **多终端聚焦**：默认支持多 focused terminal；每个 focused terminal 都独立注入 terminal input，unfocused 仅保留 dirty 状态。
 - **Provider 请求纯度**：provider request body 只保留真实 HTTP/model 参数；`collectedInputs` 之类循环事实必须写入 `session_cycle`。
+- **Provider 建模双轴化**：`apiStandard` 只表达传输/协议契约；`vendor/profile/extensions` 只表达厂商兼容与增强，禁止再用 vendor 名称替代协议分发。
 - **功能层次化呈现**：主界面聚焦聊天与任务推进；进阶能力放入侧栏/工具面板，不堆叠在主视图。
 - **问题定位分层实验**：先隔离运行时（PTY/Terminal），再隔离渲染层（xterm/headless/web），逐层缩小问题面。
 
@@ -176,11 +185,18 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 ### 7.1 固定流程
 
-1. `agent-browser open <url>`
-2. `agent-browser wait --load networkidle`
-3. `agent-browser snapshot -i`
-4. 交互后重新 `snapshot -i`
-5. `get text body` + `screenshot --full` 记录证据
+1. 先走 **desktop**，再走 **mobile**
+2. `agent-browser open <url>`
+3. `agent-browser wait --load networkidle`
+4. `agent-browser snapshot -i`
+5. 交互后重新 `snapshot -i`
+6. `get text body` + `screenshot --full` 记录证据
+
+补充约束：
+
+- **双端硬约束**：WebUI 浏览器走查必须同时产出 desktop 和 mobile 两份证据。
+- **默认移动端设备**：若无特别说明，mobile 一律按 `iPhone 14` 的 viewport/safe-area/touch 环境走查。
+- **路径必须真实**：移动端必须走真实 compact 导航路径（如 `Open navigation`、drawer、bottom nav），不能用桌面端捷径替代移动端交互。
 
 ### 7.2 默认回归用例（WebUI）
 
@@ -189,16 +205,44 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Case C / 对话链路**：发送消息后，能看到可观察的状态推进与最终 assistant 回复。
 - **Case D / 错误可见性**：当终端/模型失败时，界面出现明确错误信息，且可继续操作。
 
+附加规则：
+
+- 上述用例默认都要在 desktop 和 mobile 各执行一遍。
+- 若 desktop 与 mobile 的导航方式不同，测试用例必须分别按各自真实入口执行。
+
 ### 7.3 结果判定
 
 - 每个用例都要记录：`预期`、`实际`、`证据路径`、`是否通过`。
 - 不通过时必须附带最小复现步骤与日志位置。
+- 结果记录必须显式标注 viewport：`desktop` 或 `mobile`。
 
 ## 8) WebUI 布局最佳实践（Flex）
 
 - **禁止使用 `min-h-0`**：在本项目 WebUI 中不再使用该 class 处理滚动/压缩。
-- **只用直觉化 Flex 约束**：优先 `h-full` + `flex-1` + `overflow-hidden/auto` 组合明确滚动容器。
+- **`overflow-hidden` 不是默认布局工具**：禁止把 raw `overflow-hidden` 当作修复 flex/scroll 的通用手段；先修正布局层级与滚动所有权。
+- **移除 hidden 必须补 scroll owner**：一旦去掉祖先 `overflow-hidden`，必须同步为真正的内容区补上显式滚动拥有者；对 surface 级内容优先使用 `ScrollViewport`，不能只“去掉裁剪”却不恢复滚动。
+- **布局壳层禁止 raw clipping**：shell、route wrapper、panel wrapper 这类 layout surface 不允许直接写 raw `overflow-hidden`；应用级视口裁剪必须走 `ViewportMask`。
+- **主滚动区显式化**：每个 major panel 只允许一个主滚动区，并且必须通过 `ScrollViewport` 表达，而不是在祖先和子孙同时混用 `overflow-auto/hidden`。
+- **Flex/Grid 不会自动变成滚动层**：当内容区位于 `flex-1`、`grid` 的 `minmax(0,1fr)` 行列中时，仍然必须显式声明 `overflow-auto` 或 `ScrollViewport`；“高度对了”不等于“能够滚动”。
+- **视觉裁剪单独建模**：圆角媒体、终端窗口、Markdown/code surface 这类明确的视觉裁剪，统一使用 `ClipSurface`；不要把视觉裁剪和布局约束混在一个容器里。
+- **动画裁剪例外最小化**：只有像 `Accordion` 这种 animation primitive 允许保留 raw `overflow-hidden` 作为过渡 mask；新增例外必须先抽象成 primitive，再更新 allowlist。
 - **滚动容器单点定义**：每个面板只保留一个主滚动区，避免多层嵌套滚动导致内容挤压与重叠。
+- **背景色必须有语义所有者**：`bg-*` 只允许出现在 semantic surface、交互控件、内容可视化块上；shell/layout wrapper 不得直接拥有 raw 背景色。
+- **先定 surface，再定 padding**：需要圆角、阴影、背景时，先抽象为 `surfaceToneClassName(...)` 或 surface primitive，再决定内部 padding；禁止在 layout 容器里同时混入 `bg-* + rounded-* + shadow-*`。
+- **裁剪与背景默认解耦**：`ClipSurface` 负责裁剪，semantic surface 负责背景；只有媒体/终端这类必须“裁剪即填充”的内容，才允许同一容器兼有二者。
+
+## 8.1) Apple 风格信息架构（WebUI）
+
+- **先分层，再做样式**：先确定 `App Shell / Workspace Shell / Route Surface / Content Body` 的职责，再决定视觉表现；不要靠改颜色和圆角掩盖信息重叠。
+- **单层单责**：`AppHeader` 只负责全局定位与全局导航；`WorkspaceShell` 只负责 workspace 上下文与 route 切换；`Chat/Devtools/Settings` 自己负责局部动作与局部提示。
+- **相邻层禁止重复事实**：同一个 path、title、status、action 只能在一个层级表达一次；如果某信息已在 workspace bar 展示，就不能在 header 和 route card 再展示一次。
+- **正常状态要安静**：被动状态优先使用低强调文本，而不是不断堆 chip；chip 只用于需要快速扫描的稀缺状态，不是默认文案容器。
+- **异常状态要升级**：warning/error 不要混进 header 文本流；优先使用 banner 或独立 notice surface，让异常和正常信息分层。
+- **一个区域只允许一个主动作**：每个 surface 只能有一个最重要的 primary action；像 Start/Stop 这种互斥能力，必须合并为一个状态驱动的动作入口。
+- **菜单不能重复当前可见能力**：drawer、dropdown、context menu 只承载“当前层唯一额外能力”；如果某导航或动作已经在页面中清晰可见，就不要再放进菜单。
+- **全局导航与局部导航分离**：sidebar/drawer 只负责全局入口与 running sessions；workspace 内的 `Chat / Devtools / Settings` 只放在 workspace bar 或 bottom nav。
+- **移动端 footer 独立拥有布局**：bottom nav 必须是独立 footer，负责 safe-area 和自己的 padding；不要把 footer 当成内容区里的一个带 padding 的卡片。
+- **文案表达优先语义，不优先控件**：先问“这是一条定位信息、一个状态、一个动作、还是一个异常”，再决定用标题、正文、状态文本、按钮还是 banner。
 
 ## 9) 字体与排版最佳实践（WebUI）
 
@@ -254,6 +298,13 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Tool Fence 升级规则**：只有符合 `yaml+tool_call` / `yaml+tool_result` 契约且 schema 合法的 fenced block，才允许提升为结构化工具视图；否则一律按普通 code block 客观展示。
 - **Inspector 分工明确**：`MarkdownDocument` 只用于真正的自由文本字段（system prompt、message text 等）；对象/数组/HTTP body/tool schema 一律走结构化渲染器，避免把结构化数据伪装成文档正文。
 - **Inspector 分组优先于长列表**：Model / Devtools 这类面板，优先用 tabs 把 request/result/tools/context/calls 分开，而不是把异构信息堆在同一个长滚动列表里。
+- **CodeMirror surface 密度控制**：聊天/检查器这类高频列表里，少量项优先直接内联渲染；达到阈值后再切到虚拟滚动，避免“小列表也上 virtualizer”带来的测量抖动和真实 DOM / jsdom 偏差。
+- **Cycle first only in tooling**：Chat 可以暴露 cycle 导航，但正文仍以 conversation 为主；完整 cycle 细节只进入 Devtools，不把技术事实重新堆回主聊天流。
+
+## 13.1) Session / Runtime 状态优先级
+
+- **Session 状态优先于残留 runtime**：当 `session.status` 已经进入 `stopped`/`error`，路由工具栏、notice、侧边 running rail 必须优先反映该 durable 状态，不能被尚未回收的 `runtime.started` 覆盖。
+- **停止态需要单一语义**：`Start/Stop` 主按钮、页面 notice、导航入口必须共享同一状态判断，避免出现“侧栏已停止、主面板仍显示运行中”的分裂体验。
 
 ## 14) AIInput / Workspace Path Search
 

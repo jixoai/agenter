@@ -241,22 +241,26 @@ agenter/
 
 - `ai.activeProvider`：当前激活 provider id。
 - `ai.providers`：provider map（支持多供应商并行配置）。
-- provider `kind` 支持：
-  - `openai`
-  - `anthropic`
-  - `gemini`
-  - `grok`
-  - `ollama`
-  - `openai-compatible`
-  - `anthropic-compatible`
+- provider canonical 字段：
+  - `apiStandard`
+    - `gemini`
+    - `anthropic`
+    - `openai-chat`
+    - `openai-completion`
+    - `openai-responses`
+  - `vendor`：厂商身份，如 `deepseek/openai/anthropic/google/kimi/glm/doubao/ollama`
+  - `profile`：厂商兼容或官方画像
+  - `extensions`：厂商增强能力开关
 - provider 字段：
   - `model`
   - `apiKey` / `apiKeyEnv`
   - `baseUrl`
+  - `headers`
   - `temperature`
   - `maxRetries`
   - `maxToken`
   - `compactThreshold`
+- legacy `kind` 只允许作为设置输入兼容层存在；settings loader 必须先归一化为 canonical provider shape，再交给 runtime。
 
 ### 4.2 提示词分层
 

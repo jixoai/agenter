@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Define the WebUI navigation shell, workspace-scoped routes, and shared master-detail interaction model around Quick Start and Workspaces.
-## Requirements
 ### Requirement: Quick Start is a primary application view
 The WebUI SHALL expose Quick Start as a dedicated primary view that is separate from Workspaces and the workspace shell, and it SHALL provide the current workspace controls and recent session entry points needed to start work immediately.
 
@@ -12,6 +10,11 @@ The WebUI SHALL expose Quick Start as a dedicated primary view that is separate 
 #### Scenario: Quick Start shows recent sessions
 - **WHEN** recent sessions are available for the selected workspace context
 - **THEN** Quick Start shows up to three recent session entries that can be used to resume work
+
+#### Scenario: Compact Quick Start keeps the primary composer and start action in the first viewport
+- **WHEN** the application is rendered on a compact viewport
+- **THEN** the selected workspace control, shared AI input composer, and primary `Start` action remain visible without scrolling past provider or helper metadata
+- **THEN** secondary provider details and helper hints are visually subordinate to the start flow
 
 ### Requirement: Workspace routes SHALL provide a scoped application shell
 The WebUI SHALL provide a workspace-scoped shell for `Chat`, `Devtools`, and `Settings`, and that shell SHALL expose a route-aware app header plus a bottom navigation on mobile-first layouts. The app header MUST remain global and passive by keeping only application-level location, navigation, and passive runtime state visible, while workspace route switching and route-local actions stay inside the workspace shell or route surfaces. The shell MUST preserve explicit overflow and background ownership so layout wrappers do not clip route content or inject competing surface fills by default.
@@ -62,44 +65,3 @@ The WebUI SHALL preserve a fixed shell hierarchy where the left application side
 - **WHEN** the user views a workspace route on desktop or compact layouts
 - **THEN** app identity, workspace identity, and route-local session state are each owned by a single shell layer
 - **THEN** the header, workspace bar, and chat toolbar do not repeat the same workspace path, session name, or route title as competing chrome
-
-### Requirement: The application SHALL provide stable primary and secondary session navigation
-The WebUI SHALL render a stable primary navigation that only exposes `Quick Start` and `Workspaces`, and it SHALL render running-session entry points through a secondary running-session section inside the application sidebar model instead of adding dynamic session shortcuts to the primary sidebar or header.
-
-#### Scenario: Primary navigation stays fixed
-- **WHEN** the application renders its global navigation
-- **THEN** the primary sidebar shows `Quick Start` and `Workspaces` as the only primary entries
-
-#### Scenario: Running sessions use a sidebar secondary section
-- **WHEN** one or more sessions are running
-- **THEN** the application exposes those sessions through a secondary running-session section in the sidebar on desktop and in the shared navigation drawer on mobile
-- **THEN** the application does not add separate session shortcuts to the primary navigation or dedicate a header-only session switcher to them
-
-### Requirement: Chat and workspace auxiliary panels SHALL share one master-detail model
-The WebUI SHALL keep one shared master-detail model for the `Workspaces ↔ Sessions` flow, while workspace `Chat`, `Devtools`, and `Settings` are rendered inside the workspace shell without duplicating outer page chrome or padding. The master-detail shell MUST preserve one explicit detail viewport instead of stacking hidden wrappers across desktop and compact layouts.
-
-#### Scenario: Desktop keeps workspace-session split behavior
-- **WHEN** the application is rendered on a desktop-sized viewport
-- **THEN** the Workspaces view uses the shared resizable master-detail layout for workspace and session inspection
-
-#### Scenario: Compact workspace selection opens the Sessions detail flow
-- **WHEN** the application is rendered on a compact viewport and the user selects a workspace from the Workspaces list
-- **THEN** the shared mobile detail flow opens the Sessions detail surface for that workspace
-- **THEN** the user does not need a separate double-click or secondary activation gesture to inspect that workspace's sessions
-
-#### Scenario: Master-detail detail pane keeps one scroll owner
-- **WHEN** the desktop detail pane or compact sheet contains long content
-- **THEN** the detail surface exposes one deliberate primary scroll viewport
-- **THEN** outer master-detail wrappers do not clip or suppress that scrolling behavior
-
-### Requirement: Chat route SHALL own the primary session action surface
-The WebUI SHALL expose the active session's primary run control through the Chat route toolbar, and that surface SHALL use one state-driven action instead of separate Start and Stop actions in outer shell chrome.
-
-#### Scenario: Chat toolbar renders one state-driven session control
-- **WHEN** the user opens a workspace Chat route with an active session
-- **THEN** the Chat toolbar shows the session identity and one primary session action
-- **THEN** the action label and enabled state reflect whether the session can currently be started or stopped
-
-#### Scenario: Route-local notices stay in the Chat surface
-- **WHEN** the active Chat route has a local notice such as missing terminal configuration or a route-specific runtime warning
-- **THEN** the notice is rendered inside the Chat surface instead of the global app header
