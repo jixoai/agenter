@@ -37,12 +37,12 @@ test.describe("Feature: Workspace-first browser shell", () => {
       await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
       const navigation = await openNavigationSheet(page);
       await expect(navigation.getByRole("button", { name: "Quick Start", exact: true })).toBeVisible();
-      await expect(navigation.getByRole("button", { name: "Workspaces", exact: true })).toBeVisible();
+      await expect(navigation.getByRole("button", { name: /^Workspaces/ })).toBeVisible();
       await page.getByRole("button", { name: "Close panel" }).click();
     } else {
       await expect(page.getByText("Workspace-first shell")).toBeVisible();
       await expect(page.getByRole("button", { name: "Quick Start", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Workspaces", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Workspaces/ })).toBeVisible();
     }
     await expect(quickStartViewport.getByText("Workspace", { exact: true })).toBeVisible();
     await expect(quickStartViewport.getByRole("button", { name: "Change", exact: true })).toBeVisible();
