@@ -174,14 +174,14 @@ export const appRouter = t.router({
       list: t.procedure
         .input(
           z.object({
-            sessionId: z.string().min(1),
+            workspacePath: z.string().min(1),
           }),
         )
-        .query(async ({ ctx, input }) => ctx.kernel.listSettingsLayers(input.sessionId)),
+        .query(async ({ ctx, input }) => ctx.kernel.listSettingsLayers(input.workspacePath)),
       read: t.procedure
         .input(
           z.object({
-            sessionId: z.string().min(1),
+            workspacePath: z.string().min(1),
             layerId: z.string().min(1),
           }),
         )
@@ -189,7 +189,7 @@ export const appRouter = t.router({
       save: t.procedure
         .input(
           z.object({
-            sessionId: z.string().min(1),
+            workspacePath: z.string().min(1),
             layerId: z.string().min(1),
             content: z.string(),
             baseMtimeMs: z.number().nonnegative(),
@@ -197,6 +197,26 @@ export const appRouter = t.router({
         )
         .mutation(async ({ ctx, input }) => ctx.kernel.saveSettingsLayer(input)),
     }),
+  }),
+  notification: t.router({
+    snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getNotificationSnapshot()),
+    setChatVisibility: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          visible: z.boolean(),
+          focused: z.boolean(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.setChatVisibility(input)),
+    consume: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          upToMessageId: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.consumeNotifications(input)),
   }),
   task: t.router({
     list: t.procedure

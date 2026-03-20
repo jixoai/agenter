@@ -1,4 +1,4 @@
-import type { ChatImageAttachment } from "./types";
+import type { ChatSessionAsset } from "./types";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -15,7 +15,7 @@ export interface LoopBusMessage {
   source: "chat" | "terminal" | "tool" | "task" | "attention-system";
   text: string;
   meta?: LoopBusMeta;
-  attachments?: ChatImageAttachment[];
+  attachments?: ChatSessionAsset[];
 }
 
 export interface LoopTerminalCommand {

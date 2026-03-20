@@ -3,9 +3,10 @@ import { BaseTextAdapter, type StructuredOutputOptions, type StructuredOutputRes
 
 type DeepseekProviderOptions = Record<string, unknown>;
 
-export interface DeepseekTextConfig {
+export interface OpenAICompatChatTextConfig {
   apiKey: string;
   baseUrl: string;
+  name?: string;
   headers?: Record<string, string>;
 }
 
@@ -222,13 +223,13 @@ const convertTools = (tools: Tool[] = []): Array<Record<string, unknown>> => {
   }));
 };
 
-export class DeepseekTextAdapter<TModel extends string> extends BaseTextAdapter<
+export class OpenAICompatChatTextAdapter<TModel extends string> extends BaseTextAdapter<
   TModel,
   DeepseekProviderOptions,
   readonly ["text"],
   DefaultMessageMetadataByModality
 > {
-  readonly name = "deepseek";
+  readonly name: string;
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly headers: Record<string, string>;
@@ -240,8 +241,9 @@ export class DeepseekTextAdapter<TModel extends string> extends BaseTextAdapter<
       }
     | undefined;
 
-  constructor(config: DeepseekTextConfig, model: TModel) {
+  constructor(config: OpenAICompatChatTextConfig, model: TModel) {
     super({ apiKey: config.apiKey, baseUrl: config.baseUrl }, model);
+    this.name = config.name ?? "openai-chat-compatible";
     this.apiKey = config.apiKey;
     this.baseUrl = normalizeBaseUrl(config.baseUrl);
     this.headers = config.headers ?? {};
@@ -437,5 +439,11 @@ export class DeepseekTextAdapter<TModel extends string> extends BaseTextAdapter<
       rawText,
       data: parseJsonText(rawText),
     };
+  }
+}
+
+export class DeepseekTextAdapter<TModel extends string> extends OpenAICompatChatTextAdapter<TModel> {
+  constructor(config: OpenAICompatChatTextConfig, model: TModel) {
+    super({ ...config, name: "deepseek" }, model);
   }
 }

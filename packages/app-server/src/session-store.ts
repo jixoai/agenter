@@ -6,6 +6,8 @@ import { readSessionDocument, writeSessionDocument, type SessionDocument } from 
 export interface SessionCallRecord {
   id: string;
   timestamp: string;
+  status: "running" | "done" | "error";
+  completedAt?: string;
   provider: string;
   model: string;
   request: {
@@ -100,7 +102,12 @@ export class SessionStore {
   }
 
   appendCall(call: SessionCallRecord): void {
-    this.doc.calls.push(call);
+    const index = this.doc.calls.findIndex((entry) => entry.id === call.id);
+    if (index >= 0) {
+      this.doc.calls[index] = call;
+    } else {
+      this.doc.calls.push(call);
+    }
     this.doc.session.updatedAt = new Date().toISOString();
     this.flush();
   }

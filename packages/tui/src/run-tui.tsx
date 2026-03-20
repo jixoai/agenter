@@ -29,12 +29,14 @@ const App = ({ host, port }: { host: string; port: number }) => {
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState<RuntimeClientState>(() => ({
     connected: false,
+    connectionStatus: "connecting",
     lastEventId: 0,
     sessions: [],
     runtimes: {},
     activityBySession: {},
     terminalSnapshotsBySession: {},
     chatsBySession: {},
+    chatCyclesBySession: {},
     tasksBySession: {},
     recentWorkspaces: [],
     workspaces: [],
@@ -43,6 +45,8 @@ const App = ({ host, port }: { host: string; port: number }) => {
     apiCallsBySession: {},
     modelCallsBySession: {},
     apiCallRecordingBySession: {},
+    notifications: [],
+    unreadBySession: {},
   }));
 
   const client = useMemo(

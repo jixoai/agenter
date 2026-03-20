@@ -8,6 +8,7 @@ describe("Feature: tui view-model mapping", () => {
   test("Scenario: Given active session runtime When building view Then expose phase text and messages", () => {
     const state: RuntimeClientState = {
       connected: true,
+      connectionStatus: "connected",
       lastEventId: 3,
       sessions: [
         {
@@ -44,6 +45,16 @@ describe("Feature: tui view-model mapping", () => {
             attention: { version: 0, timestamp: null },
           },
           apiCallRecording: { enabled: false, refCount: 0 },
+          modelCapabilities: {
+            streaming: false,
+            tools: false,
+            imageInput: false,
+            nativeCompact: false,
+            summarizeFallback: false,
+            fileUpload: false,
+            mcpCatalog: false,
+          },
+          activeCycle: null,
         },
       },
       activityBySession: { "i-1": "active" },
@@ -58,6 +69,7 @@ describe("Feature: tui view-model mapping", () => {
           },
         ],
       },
+      chatCyclesBySession: { "i-1": [] },
       tasksBySession: { "i-1": [] },
       recentWorkspaces: [],
       workspaces: [],
@@ -66,6 +78,8 @@ describe("Feature: tui view-model mapping", () => {
       apiCallsBySession: { "i-1": [] },
       modelCallsBySession: { "i-1": [] },
       apiCallRecordingBySession: { "i-1": { enabled: false, refCount: 0 } },
+      notifications: [],
+      unreadBySession: {},
     };
 
     const view = buildViewModel(state, "i-1");

@@ -142,4 +142,46 @@ describe("Feature: session cycle ledger persistence", () => {
 
     db.close();
   });
+
+  test("Scenario: Given a running model call When it completes Then the same row is updated with lifecycle details", () => {
+    const root = makeTempDir();
+    const db = new SessionDb(join(root, "session.db"));
+
+    const cycle = db.appendCycle({
+      wake: { source: "user" },
+      collectedInputs: [
+        {
+          source: "message",
+          role: "user",
+          name: "User",
+          parts: [{ type: "text", text: "hello" }],
+        },
+      ],
+      result: { kind: "model-call" },
+    });
+    db.setHead(cycle.id);
+
+    const running = db.appendModelCall({
+      cycleId: cycle.id,
+      createdAt: 100,
+      status: "running",
+      provider: "openai-compatible",
+      model: "deepseek-chat",
+      request: { messages: [{ role: "user", content: "hello" }] },
+    });
+
+    const done = db.updateModelCall(running.id, {
+      status: "done",
+      completedAt: 120,
+      response: { assistant: { text: "hi" } },
+    });
+
+    expect(done.id).toBe(running.id);
+    expect(done.status).toBe("done");
+    expect(done.completedAt).toBe(120);
+    expect(done.response).toEqual({ assistant: { text: "hi" } });
+    expect(db.listModelCallsAfter(0, 10)).toEqual([done]);
+
+    db.close();
+  });
 });

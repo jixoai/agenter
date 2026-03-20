@@ -62,7 +62,7 @@ const resolveChatAiStatus = (
     }
     return processState === "running" ? "等待终端输出" : "等待新消息";
   }
-  if (loopPhase === "settling_inputs" || loopPhase === "collecting_inputs" || loopPhase === "persisting_cycle") {
+  if (loopPhase === "collecting_inputs" || loopPhase === "persisting_cycle") {
     return processState === "running" ? "整理终端与输入" : "整理输入中";
   }
   if (loopPhase === "applying_outputs") {
@@ -257,10 +257,15 @@ export const App = ({ runtimeConfig }: AppProps) => {
     () =>
       new ModelClient({
         providerId: runtimeConfig.ai.providerId,
-        kind: runtimeConfig.ai.kind,
+        apiStandard: runtimeConfig.ai.apiStandard,
+        vendor: runtimeConfig.ai.vendor,
+        profile: runtimeConfig.ai.profile,
+        extensions: runtimeConfig.ai.extensions,
         apiKey: runtimeConfig.ai.apiKey,
+        apiKeyEnv: runtimeConfig.ai.apiKeyEnv,
         model: runtimeConfig.ai.model,
         baseUrl: runtimeConfig.ai.baseUrl,
+        headers: runtimeConfig.ai.headers,
         temperature: runtimeConfig.ai.temperature,
         maxRetries: runtimeConfig.ai.maxRetries,
         maxToken: runtimeConfig.ai.maxToken,
@@ -268,10 +273,15 @@ export const App = ({ runtimeConfig }: AppProps) => {
       }),
     [
       runtimeConfig.ai.providerId,
-      runtimeConfig.ai.kind,
+      runtimeConfig.ai.apiStandard,
+      runtimeConfig.ai.vendor,
+      runtimeConfig.ai.profile,
+      runtimeConfig.ai.extensions,
       runtimeConfig.ai.apiKey,
+      runtimeConfig.ai.apiKeyEnv,
       runtimeConfig.ai.model,
       runtimeConfig.ai.baseUrl,
+      runtimeConfig.ai.headers,
       runtimeConfig.ai.temperature,
       runtimeConfig.ai.maxRetries,
       runtimeConfig.ai.maxToken,

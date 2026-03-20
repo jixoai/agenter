@@ -4,9 +4,11 @@ export interface MessageChannelConfig {
   useAttention: boolean;
 }
 
-export interface MessageDraftImageAttachment {
+export type MessageDraftAttachmentKind = "image" | "video" | "file";
+
+export interface MessageDraftAttachment {
   assetId: string;
-  kind: "image";
+  kind: MessageDraftAttachmentKind;
   name: string;
   mimeType: string;
   sizeBytes: number;
@@ -19,7 +21,7 @@ export interface MessageDraft {
   content: string;
   timestamp: number;
   meta?: Record<string, string | number | boolean | null>;
-  attachments?: MessageDraftImageAttachment[];
+  attachments?: MessageDraftAttachment[];
 }
 
 export interface MessageDiff {

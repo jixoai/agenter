@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("Feature: trpc server media routes", () => {
-  test("Scenario: Given a session image upload When posting valid and invalid files Then only image assets are persisted and retrievable", async () => {
+  test("Scenario: Given session asset uploads When posting supported files Then image and file assets are persisted and retrievable", async () => {
     const { dir, workspace } = createWorkspaceRoot();
     const handle = await startTrpcServer({
       host: "127.0.0.1",
@@ -60,8 +60,9 @@ describe("Feature: trpc server media routes", () => {
 
     const form = new FormData();
     form.append("files", new File([new Uint8Array([137, 80, 78, 71])], "diagram.png", { type: "image/png" }));
+    form.append("files", new File(["hello"], "notes.txt", { type: "text/plain" }));
     const uploadResponse = await fetch(
-      `http://${handle.host}:${handle.port}/api/sessions/${encodeURIComponent(created.session.id)}/images`,
+      `http://${handle.host}:${handle.port}/api/sessions/${encodeURIComponent(created.session.id)}/assets`,
       {
         method: "POST",
         body: form,
@@ -75,8 +76,9 @@ describe("Feature: trpc server media routes", () => {
 
     expect(uploadResponse.status).toBe(200);
     expect(uploadPayload.ok).toBe(true);
-    expect(uploadPayload.items).toHaveLength(1);
+    expect(uploadPayload.items).toHaveLength(2);
     expect(uploadPayload.items?.[0]?.mimeType).toBe("image/png");
+    expect(uploadPayload.items?.[1]?.mimeType).toContain("text/plain");
 
     const asset = uploadPayload.items?.[0];
     if (!asset) {
@@ -88,20 +90,42 @@ describe("Feature: trpc server media routes", () => {
     expect(mediaResponse.status).toBe(200);
     expect(mediaResponse.headers.get("content-type")).toBe("image/png");
     expect([...mediaBytes]).toEqual([137, 80, 78, 71]);
+  });
 
-    const badForm = new FormData();
-    badForm.append("files", new File(["not an image"], "notes.txt", { type: "text/plain" }));
-    const badResponse = await fetch(
-      `http://${handle.host}:${handle.port}/api/sessions/${encodeURIComponent(created.session.id)}/images`,
+  test("Scenario: Given cross-origin HTTP tRPC queries When requesting runtime snapshot Then the /trpc prefix is rewritten and CORS headers are present", async () => {
+    const { dir } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+    });
+    handles.push(handle);
+
+    const response = await fetch(
+      `http://${handle.host}:${handle.port}/trpc/runtime.snapshot?batch=1&input=${encodeURIComponent(
+        JSON.stringify({ 0: { json: null } }),
+      )}`,
       {
-        method: "POST",
-        body: badForm,
+        headers: {
+          origin: "http://127.0.0.1:4273",
+        },
       },
     );
-    const badPayload = (await badResponse.json()) as { ok: boolean; error?: string };
+    const payload = (await response.json()) as Array<{
+      result?: {
+        data?: {
+          json?: {
+            version: number;
+            sessions: unknown[];
+          };
+        };
+      };
+    }>;
 
-    expect(badResponse.status).toBe(400);
-    expect(badPayload.ok).toBe(false);
-    expect(badPayload.error).toContain("unsupported media type");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(payload[0]?.result?.data?.json?.version).toBe(1);
+    expect(Array.isArray(payload[0]?.result?.data?.json?.sessions)).toBe(true);
   });
 });

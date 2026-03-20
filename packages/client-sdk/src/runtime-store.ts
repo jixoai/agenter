@@ -1,16 +1,17 @@
-import type { AgenterClient } from "./trpc-client";
+import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
-  ChatListItem,
   ChatCycleItem,
+  ChatListItem,
   DraftResolutionOutput,
   ModelDebugOutput,
-  RuntimeChatMessage,
+  NotificationSnapshotOutput,
   RuntimeChatCycle,
+  RuntimeChatMessage,
   RuntimeClientState,
   RuntimeEvent,
   RuntimeSnapshotEntry,
   SessionEntry,
-  UploadedSessionImage,
+  UploadedSessionAsset,
   WorkspacePathSearchOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
@@ -19,6 +20,7 @@ import type {
 
 const createInitialState = (): RuntimeClientState => ({
   connected: false,
+  connectionStatus: "connecting",
   lastEventId: 0,
   sessions: [],
   runtimes: {},
@@ -34,31 +36,50 @@ const createInitialState = (): RuntimeClientState => ({
   apiCallsBySession: {},
   modelCallsBySession: {},
   apiCallRecordingBySession: {},
+  notifications: [],
+  unreadBySession: {},
 });
 
 type Listener = (state: RuntimeClientState) => void;
 type SubscriptionHandle = { unsubscribe: () => void };
+type ApiCallStreamHandle = { count: number; sub: SubscriptionHandle | null; cursor: number };
 
 const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
   return [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 };
 
 const LOOPBUS_LRU_LIMIT = 100;
+const DEFAULT_MODEL_CAPABILITIES = {
+  streaming: false,
+  tools: false,
+  imageInput: false,
+  nativeCompact: false,
+  summarizeFallback: false,
+  fileUpload: false,
+  mcpCatalog: false,
+} as const;
 
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
+
+const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
+  if (left.timestamp !== right.timestamp) {
+    return left.timestamp - right.timestamp;
+  }
+  return left.id.localeCompare(right.id);
+};
 
 export class RuntimeStore {
   private state: RuntimeClientState = createInitialState();
   private readonly listeners = new Set<Listener>();
+  private pendingEmitFrame: number | null = null;
   private eventSub: SubscriptionHandle | null = null;
+  private transportUnsubscribe: (() => void) | null = null;
+  private browserListenersAttached = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private connecting = false;
   private shouldReconnect = false;
-  private readonly apiCallStreams = new Map<
-    string,
-    { count: number; sub: SubscriptionHandle | null; cursor: number }
-  >();
+  private readonly apiCallStreams = new Map<string, ApiCallStreamHandle>();
   private readonly loopbusLogsAccessBySession = new Map<string, Map<number, number>>();
   private readonly loopbusTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
@@ -69,6 +90,7 @@ export class RuntimeStore {
   private readonly modelCallsBeforeCursorBySession = new Map<string, number>();
   private readonly chatBeforeCursorBySession = new Map<string, number>();
   private readonly chatCyclesBeforeCursorBySession = new Map<string, number>();
+  private readonly chatHydrationTasksBySession = new Map<string, Promise<void>>();
   private accessTick = 0;
 
   constructor(private readonly client: AgenterClient) {}
@@ -87,6 +109,7 @@ export class RuntimeStore {
   private normalizeRuntimeChatMessage(message: RuntimeChatMessage): RuntimeChatMessage {
     return {
       ...message,
+      cycleId: message.cycleId ?? null,
       attachments: message.attachments?.map((attachment) => ({
         ...attachment,
         url: this.resolveMediaUrl(attachment.url),
@@ -100,7 +123,7 @@ export class RuntimeStore {
       inputs: cycle.inputs.map((input) => ({
         ...input,
         parts: input.parts.map((part) =>
-          part.type === "image"
+          part.type !== "text"
             ? {
                 ...part,
                 url: this.resolveMediaUrl(part.url),
@@ -119,6 +142,7 @@ export class RuntimeStore {
       role: item.role,
       content: item.content,
       timestamp: item.timestamp,
+      cycleId: item.cycleId ?? null,
       channel: item.channel === "user_input" ? undefined : item.channel,
       format: item.format,
       tool: item.tool,
@@ -131,6 +155,17 @@ export class RuntimeStore {
 
   private toRuntimeChatCycle(item: ChatCycleItem): RuntimeChatCycle {
     return this.normalizeRuntimeChatCycle(item);
+  }
+
+  private mergeChatMessages(current: RuntimeChatMessage[], incoming: RuntimeChatMessage[]): RuntimeChatMessage[] {
+    const entries = new Map<string, RuntimeChatMessage>();
+    for (const message of current) {
+      entries.set(message.id, message);
+    }
+    for (const message of incoming) {
+      entries.set(message.id, message);
+    }
+    return [...entries.values()].sort(compareChatMessage);
   }
 
   private mergeChatCycles(current: RuntimeChatCycle[], incoming: RuntimeChatCycle[]): RuntimeChatCycle[] {
@@ -200,7 +235,7 @@ export class RuntimeStore {
   private createOptimisticCycle(input: {
     text: string;
     clientMessageId: string;
-    attachments?: UploadedSessionImage[];
+    attachments?: UploadedSessionAsset[];
   }): RuntimeChatCycle {
     const now = Date.now();
     return {
@@ -220,8 +255,9 @@ export class RuntimeStore {
           parts: [
             { type: "text", text: input.text },
             ...(input.attachments ?? []).map((attachment) => ({
-              type: "image" as const,
+              type: attachment.kind,
               assetId: attachment.assetId,
+              kind: attachment.kind,
               mimeType: attachment.mimeType,
               name: attachment.name,
               sizeBytes: attachment.sizeBytes,
@@ -245,8 +281,104 @@ export class RuntimeStore {
       ...runtime,
       chatMessages: runtime.chatMessages.map((message) => this.normalizeRuntimeChatMessage(message)),
       activeCycle: runtime.activeCycle ? this.normalizeRuntimeChatCycle(runtime.activeCycle) : null,
-      modelCapabilities: runtime.modelCapabilities ?? { imageInput: false },
+      modelCapabilities: runtime.modelCapabilities ?? DEFAULT_MODEL_CAPABILITIES,
     };
+  }
+
+  private applyNotificationSnapshot(snapshot: NotificationSnapshotOutput): void {
+    this.state.notifications = snapshot.items;
+    this.state.unreadBySession = snapshot.unreadBySession;
+  }
+
+  private setConnectionStatus(status: RuntimeClientState["connectionStatus"]): void {
+    this.state = {
+      ...this.state,
+      connectionStatus: status,
+      connected: status === "connected",
+    };
+  }
+
+  private getBrowserOnlineState(): boolean | null {
+    if (typeof navigator === "undefined" || typeof navigator.onLine !== "boolean") {
+      return null;
+    }
+    return navigator.onLine;
+  }
+
+  private resolveDisconnectedStatus(): RuntimeClientState["connectionStatus"] {
+    return this.getBrowserOnlineState() === false ? "offline" : "reconnecting";
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) {
+      return;
+    }
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private attachTransportSubscription(): void {
+    if (this.transportUnsubscribe) {
+      return;
+    }
+    this.transportUnsubscribe = this.client.subscribeTransport((event) => {
+      this.handleTransportEvent(event);
+    });
+  }
+
+  private detachTransportSubscription(): void {
+    this.transportUnsubscribe?.();
+    this.transportUnsubscribe = null;
+  }
+
+  private attachBrowserListeners(): void {
+    if (this.browserListenersAttached || typeof window === "undefined") {
+      return;
+    }
+    window.addEventListener("online", this.handleBrowserOnline);
+    window.addEventListener("offline", this.handleBrowserOffline);
+    this.browserListenersAttached = true;
+  }
+
+  private detachBrowserListeners(): void {
+    if (!this.browserListenersAttached || typeof window === "undefined") {
+      return;
+    }
+    window.removeEventListener("online", this.handleBrowserOnline);
+    window.removeEventListener("offline", this.handleBrowserOffline);
+    this.browserListenersAttached = false;
+  }
+
+  private readonly handleBrowserOnline = (): void => {
+    if (!this.shouldReconnect) {
+      return;
+    }
+    this.clearReconnectTimer();
+    if (this.state.connectionStatus !== "connected") {
+      this.setConnectionStatus("reconnecting");
+      this.emit();
+    }
+    if (!this.connecting) {
+      void this.connectOnce();
+    }
+  };
+
+  private readonly handleBrowserOffline = (): void => {
+    this.handleTransportLoss("offline");
+  };
+
+  private handleTransportEvent(event: AgenterTransportEvent): void {
+    if (!this.shouldReconnect) {
+      return;
+    }
+    if (event.type === "open") {
+      this.clearReconnectTimer();
+      if (!this.state.connected && !this.connecting) {
+        void this.connectOnce();
+      }
+      return;
+    }
+    this.handleTransportLoss(event.type === "close" ? "close" : "error");
   }
 
   getState(): RuntimeClientState {
@@ -262,16 +394,20 @@ export class RuntimeStore {
 
   async connect(): Promise<void> {
     this.shouldReconnect = true;
+    this.attachTransportSubscription();
+    this.attachBrowserListeners();
+    this.setConnectionStatus(this.getBrowserOnlineState() === false ? "offline" : "connecting");
+    this.emit();
     await this.connectOnce();
   }
 
   disconnect(): void {
     this.shouldReconnect = false;
     this.reconnectAttempt = 0;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    this.clearReconnectTimer();
+    this.cancelPendingEmit();
+    this.detachTransportSubscription();
+    this.detachBrowserListeners();
     this.eventSub?.unsubscribe();
     this.eventSub = null;
     for (const stream of this.apiCallStreams.values()) {
@@ -288,10 +424,7 @@ export class RuntimeStore {
     this.modelCallsBeforeCursorBySession.clear();
     this.chatBeforeCursorBySession.clear();
     this.chatCyclesBeforeCursorBySession.clear();
-    this.state = {
-      ...this.state,
-      connected: false,
-    };
+    this.setConnectionStatus("offline");
     this.emit();
     this.client.close();
   }
@@ -300,12 +433,25 @@ export class RuntimeStore {
     if (this.connecting) {
       return;
     }
+    if (this.getBrowserOnlineState() === false) {
+      this.setConnectionStatus("offline");
+      this.emit();
+      return;
+    }
     this.connecting = true;
+    if (this.state.connectionStatus !== "connected") {
+      const nextStatus =
+        this.reconnectAttempt > 0 || this.state.connectionStatus === "reconnecting" ? "reconnecting" : "connecting";
+      this.setConnectionStatus(nextStatus);
+      this.emit();
+    }
 
     try {
+      const previousState = this.state;
       const snapshot = await this.client.trpc.runtime.snapshot.query();
       const recentWorkspaces = await this.client.trpc.workspace.recent.query({ limit: 8 });
       const workspaces = await this.client.trpc.workspace.listAll.query();
+      const notifications = await this.client.trpc.notification.snapshot.query();
       const runtimes = Object.fromEntries(
         Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
           sessionId,
@@ -313,8 +459,7 @@ export class RuntimeStore {
         ]),
       );
       this.state = {
-        ...this.state,
-        connected: true,
+        ...previousState,
         sessions: sortSessions(snapshot.sessions),
         runtimes,
         lastEventId: snapshot.lastEventId,
@@ -337,55 +482,67 @@ export class RuntimeStore {
         tasksBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.tasks ?? []]),
         ),
-        loopbusStateLogsBySession: Object.fromEntries(Object.entries(runtimes).map(([sessionId]) => [sessionId, []])),
-        loopbusTracesBySession: Object.fromEntries(Object.entries(runtimes).map(([sessionId]) => [sessionId, []])),
-        apiCallsBySession: Object.fromEntries(Object.entries(runtimes).map(([sessionId]) => [sessionId, []])),
-        modelCallsBySession: Object.fromEntries(Object.entries(runtimes).map(([sessionId]) => [sessionId, []])),
+        loopbusStateLogsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [
+            sessionId,
+            previousState.loopbusStateLogsBySession[sessionId] ?? [],
+          ]),
+        ),
+        loopbusTracesBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [
+            sessionId,
+            previousState.loopbusTracesBySession[sessionId] ?? [],
+          ]),
+        ),
+        apiCallsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
+        ),
+        modelCallsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [
+            sessionId,
+            previousState.modelCallsBySession[sessionId] ?? [],
+          ]),
+        ),
         apiCallRecordingBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.apiCallRecording]),
         ),
         workspaces: workspaces.items,
+        notifications: notifications.items,
+        unreadBySession: notifications.unreadBySession,
       };
+      this.setConnectionStatus("connected");
       for (const session of this.state.sessions) {
         this.ensureRuntimeScaffold(session.id, session.status);
       }
-      this.emit();
-      for (const sessionId of this.state.sessions.map((session) => session.id)) {
-        void this.hydrateLoopbusArtifacts(sessionId);
-      }
 
       this.reconnectAttempt = 0;
-      if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = null;
-      }
+      this.clearReconnectTimer();
 
       this.eventSub?.unsubscribe();
-      this.eventSub = this.client.trpc.runtime.events.subscribe(
-        { afterEventId: snapshot.lastEventId },
-        {
-          onData: (event) => {
-            this.applyEvent(event);
-            this.state = { ...this.state, connected: true };
-            this.emit();
-          },
-          onError: () => {
-            this.handleConnectionLoss();
-          },
-        },
-      );
+      this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
+      this.restoreRetainedApiCallStreams();
+      this.emit();
     } catch {
-      this.handleConnectionLoss();
+      this.handleTransportLoss("error");
     } finally {
       this.connecting = false;
     }
   }
 
-  private handleConnectionLoss(): void {
-    this.state = { ...this.state, connected: false };
-    this.emit();
+  private handleTransportLoss(_reason: "close" | "error" | "offline"): void {
+    const nextStatus = this.resolveDisconnectedStatus();
+    this.eventSub?.unsubscribe();
+    this.eventSub = null;
+    this.pauseRetainedApiCallStreams();
+    if (nextStatus === "offline") {
+      this.clearReconnectTimer();
+    }
+    if (this.state.connectionStatus !== nextStatus || this.state.connected) {
+      this.setConnectionStatus(nextStatus);
+      this.emit();
+    }
 
-    if (!this.shouldReconnect || this.reconnectTimer) {
+    if (!this.shouldReconnect || nextStatus === "offline" || this.reconnectTimer) {
       return;
     }
 
@@ -499,22 +656,22 @@ export class RuntimeStore {
     return output.items;
   }
 
-  async uploadSessionImages(sessionId: string, files: File[]): Promise<UploadedSessionImage[]> {
+  async uploadSessionAssets(sessionId: string, files: File[]): Promise<UploadedSessionAsset[]> {
     const form = new FormData();
     for (const file of files) {
       form.append("files", file, file.name);
     }
-    const response = await fetch(this.resolveHttpUrl(`/api/sessions/${encodeURIComponent(sessionId)}/images`), {
+    const response = await fetch(this.resolveHttpUrl(`/api/sessions/${encodeURIComponent(sessionId)}/assets`), {
       method: "POST",
       body: form,
     });
     const payload = (await response.json()) as {
       ok: boolean;
-      items?: UploadedSessionImage[];
+      items?: UploadedSessionAsset[];
       error?: string;
     };
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.error ?? `image upload failed (${response.status})`);
+      throw new Error(payload.error ?? `asset upload failed (${response.status})`);
     }
     return (payload.items ?? []).map((item) => ({
       ...item,
@@ -526,7 +683,7 @@ export class RuntimeStore {
     sessionId: string,
     text: string,
     assetIds: string[] = [],
-    attachments: UploadedSessionImage[] = [],
+    attachments: UploadedSessionAsset[] = [],
   ): Promise<void> {
     const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticId = `pending:${clientMessageId}`;
@@ -561,16 +718,33 @@ export class RuntimeStore {
     return await this.client.trpc.settings.save.mutate(input);
   }
 
-  async listSettingsLayers(sessionId: string) {
-    return await this.client.trpc.settings.layers.list.query({ sessionId });
+  async listSettingsLayers(workspacePath: string) {
+    return await this.client.trpc.settings.layers.list.query({ workspacePath });
   }
 
-  async readSettingsLayer(sessionId: string, layerId: string) {
-    return await this.client.trpc.settings.layers.read.query({ sessionId, layerId });
+  async readSettingsLayer(workspacePath: string, layerId: string) {
+    return await this.client.trpc.settings.layers.read.query({ workspacePath, layerId });
   }
 
-  async saveSettingsLayer(input: { sessionId: string; layerId: string; content: string; baseMtimeMs: number }) {
+  async saveSettingsLayer(input: { workspacePath: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await this.client.trpc.settings.layers.save.mutate(input);
+  }
+
+  async setChatVisibility(input: { sessionId: string; visible: boolean; focused: boolean }) {
+    const snapshot = await this.client.trpc.notification.setChatVisibility.mutate(input);
+    this.applyNotificationSnapshot(snapshot);
+    this.emit();
+    return snapshot;
+  }
+
+  async consumeNotifications(input: { sessionId: string; upToMessageId?: string | null }) {
+    const snapshot = await this.client.trpc.notification.consume.mutate({
+      sessionId: input.sessionId,
+      upToMessageId: input.upToMessageId ?? undefined,
+    });
+    this.applyNotificationSnapshot(snapshot);
+    this.emit();
+    return snapshot;
   }
 
   async listTasks(sessionId: string) {
@@ -621,9 +795,11 @@ export class RuntimeStore {
   async loadChatMessages(sessionId: string, limit = 120): Promise<void> {
     const output = await this.client.trpc.chat.list.query({ sessionId, afterId: 0, limit });
     const mapped = output.items.map((item) => this.toRuntimeChatMessage(item));
-    this.state.chatsBySession[sessionId] = mapped;
+    this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], mapped);
     if (output.items.length > 0) {
       this.chatBeforeCursorBySession.set(sessionId, output.items[0].id);
+    } else {
+      this.chatBeforeCursorBySession.delete(sessionId);
     }
     this.emit();
   }
@@ -637,8 +813,55 @@ export class RuntimeStore {
     );
     if (output.items.length > 0) {
       this.chatCyclesBeforeCursorBySession.set(sessionId, output.items[0].cycleId ?? 0);
+    } else {
+      this.chatCyclesBeforeCursorBySession.delete(sessionId);
     }
     this.emit();
+  }
+
+  async hydrateSessionHistory(
+    sessionId: string,
+    input?: { messageLimit?: number; cycleLimit?: number },
+  ): Promise<void> {
+    const inFlight = this.chatHydrationTasksBySession.get(sessionId);
+    if (inFlight) {
+      return await inFlight;
+    }
+
+    const task = (async () => {
+      const [chatOutput, cyclesOutput] = await Promise.all([
+        this.client.trpc.chat.list.query({ sessionId, afterId: 0, limit: input?.messageLimit ?? 200 }),
+        this.client.trpc.chat.cycles.query({ sessionId, limit: input?.cycleLimit ?? 120 }),
+      ]);
+
+      const mappedMessages = chatOutput.items.map((item) => this.toRuntimeChatMessage(item));
+      const mappedCycles = cyclesOutput.items.map((item) => this.toRuntimeChatCycle(item));
+
+      this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], mappedMessages);
+      this.state.chatCyclesBySession[sessionId] = this.mergeChatCycles(
+        this.state.chatCyclesBySession[sessionId] ?? [],
+        mappedCycles,
+      );
+
+      if (chatOutput.items.length > 0) {
+        this.chatBeforeCursorBySession.set(sessionId, chatOutput.items[0].id);
+      } else {
+        this.chatBeforeCursorBySession.delete(sessionId);
+      }
+
+      if (cyclesOutput.items.length > 0) {
+        this.chatCyclesBeforeCursorBySession.set(sessionId, cyclesOutput.items[0].cycleId ?? 0);
+      } else {
+        this.chatCyclesBeforeCursorBySession.delete(sessionId);
+      }
+
+      this.emit();
+    })().finally(() => {
+      this.chatHydrationTasksBySession.delete(sessionId);
+    });
+
+    this.chatHydrationTasksBySession.set(sessionId, task);
+    return await task;
   }
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
@@ -810,45 +1033,92 @@ export class RuntimeStore {
     };
   }
 
+  private subscribeRuntimeEvents(afterEventId: number): SubscriptionHandle {
+    return this.client.trpc.runtime.events.subscribe(
+      { afterEventId },
+      {
+        onData: (event) => {
+          this.applyEvent(event);
+          if (this.state.connectionStatus !== "connected") {
+            this.setConnectionStatus("connected");
+          }
+          this.emit();
+        },
+        onError: () => {
+          this.handleTransportLoss("error");
+        },
+      },
+    );
+  }
+
+  private subscribeApiCallStream(sessionId: string, stream: ApiCallStreamHandle): SubscriptionHandle {
+    const afterId = Math.max(stream.cursor, this.state.apiCallsBySession[sessionId]?.at(-1)?.id ?? 0);
+    stream.cursor = afterId;
+    return this.client.trpc.runtime.apiCalls.subscribe(
+      { sessionId, afterId },
+      {
+        onData: (payload) => {
+          if (payload.type === "recording") {
+            this.state.apiCallRecordingBySession[sessionId] = payload.payload;
+            this.emit();
+            return;
+          }
+          stream.cursor = Math.max(stream.cursor, payload.payload.id);
+          const current = this.state.apiCallsBySession[sessionId] ?? [];
+          if (current.some((entry) => entry.id === payload.payload.id)) {
+            return;
+          }
+          this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
+            this.apiCallsAccessBySession,
+            sessionId,
+            current,
+            [payload.payload],
+            LOOPBUS_LRU_LIMIT,
+          );
+          this.emit();
+        },
+        onError: () => {
+          // Stream recovery follows the shared transport reconnect path.
+        },
+      },
+    );
+  }
+
+  private pauseRetainedApiCallStreams(): void {
+    for (const stream of this.apiCallStreams.values()) {
+      stream.sub?.unsubscribe();
+      stream.sub = null;
+    }
+  }
+
+  private restoreRetainedApiCallStreams(): void {
+    for (const [sessionId, stream] of this.apiCallStreams.entries()) {
+      if (stream.count <= 0 || stream.sub) {
+        continue;
+      }
+      stream.sub = this.subscribeApiCallStream(sessionId, stream);
+    }
+  }
+
   retainApiCallStream(sessionId: string): () => void {
     const existing = this.apiCallStreams.get(sessionId);
     if (existing) {
       existing.count += 1;
+      if (!existing.sub && this.state.connected) {
+        existing.sub = this.subscribeApiCallStream(sessionId, existing);
+      }
       return () => this.releaseApiCallStream(sessionId);
     }
 
     const cursor = this.state.apiCallsBySession[sessionId]?.at(-1)?.id ?? 0;
-    const stream = {
+    const stream: ApiCallStreamHandle = {
       count: 1,
       cursor,
-      sub: this.client.trpc.runtime.apiCalls.subscribe(
-        { sessionId, afterId: cursor },
-        {
-          onData: (payload) => {
-            if (payload.type === "recording") {
-              this.state.apiCallRecordingBySession[sessionId] = payload.payload;
-              this.emit();
-              return;
-            }
-            const current = this.state.apiCallsBySession[sessionId] ?? [];
-            if (current.some((entry) => entry.id === payload.payload.id)) {
-              return;
-            }
-            this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
-              this.apiCallsAccessBySession,
-              sessionId,
-              current,
-              [payload.payload],
-              LOOPBUS_LRU_LIMIT,
-            );
-            this.emit();
-          },
-          onError: () => {
-            // Stream reconnect is handled by full runtime reconnect path.
-          },
-        },
-      ),
+      sub: null,
     };
+    if (this.state.connected) {
+      stream.sub = this.subscribeApiCallStream(sessionId, stream);
+    }
     this.apiCallStreams.set(sessionId, stream);
     return () => this.releaseApiCallStream(sessionId);
   }
@@ -895,11 +1165,18 @@ export class RuntimeStore {
         return;
       }
       const message = this.normalizeRuntimeChatMessage(payload.message);
-      const current = this.state.chatsBySession[sessionId] ?? [];
-      if (current.some((item) => item.id === message.id)) {
-        return;
-      }
-      this.state.chatsBySession[sessionId] = [...current, message].slice(-200);
+      this.state.chatsBySession[sessionId] = this.mergeChatMessages(
+        this.state.chatsBySession[sessionId] ?? [],
+        [message],
+      ).slice(-200);
+      return;
+    }
+
+    if (event.type === "notification.updated") {
+      const payload = event.payload as {
+        snapshot: NotificationSnapshotOutput;
+      };
+      this.applyNotificationSnapshot(payload.snapshot);
       return;
     }
 
@@ -937,6 +1214,12 @@ export class RuntimeStore {
           return;
         }
       }
+      runtime = {
+        ...runtime,
+        terminals: [...runtime.terminals],
+        loopInputSignals: { ...runtime.loopInputSignals },
+      };
+      this.state.runtimes[sessionId] = runtime;
       if (event.type === "runtime.phase") {
         runtime.loopPhase = (event.payload as { phase: typeof runtime.loopPhase }).phase;
         this.state.activityBySession[sessionId] =
@@ -1061,6 +1344,8 @@ export class RuntimeStore {
             id: number;
             cycleId: number;
             createdAt: number;
+            status: "running" | "done" | "error";
+            completedAt?: number;
             provider: string;
             model: string;
             request: unknown;
@@ -1115,10 +1400,34 @@ export class RuntimeStore {
     }
   }
 
-  private emit(): void {
+  private flushListeners(): void {
+    this.pendingEmitFrame = null;
     for (const listener of this.listeners) {
       listener(this.state);
     }
+  }
+
+  private cancelPendingEmit(): void {
+    if (this.pendingEmitFrame === null) {
+      return;
+    }
+    if (typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(this.pendingEmitFrame);
+    }
+    this.pendingEmitFrame = null;
+  }
+
+  private emit(): void {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      this.flushListeners();
+      return;
+    }
+    if (this.pendingEmitFrame !== null) {
+      return;
+    }
+    this.pendingEmitFrame = window.requestAnimationFrame(() => {
+      this.flushListeners();
+    });
   }
 
   private ensureRuntimeScaffold(sessionId: string, status?: "stopped" | "starting" | "running" | "error"): void {
@@ -1146,9 +1455,7 @@ export class RuntimeStore {
           enabled: false,
           refCount: 0,
         },
-        modelCapabilities: {
-          imageInput: false,
-        },
+        modelCapabilities: DEFAULT_MODEL_CAPABILITIES,
         activeCycle: null,
       };
     }
@@ -1223,6 +1530,7 @@ export class RuntimeStore {
       return;
     }
     stream.sub?.unsubscribe();
+    stream.sub = null;
     this.apiCallStreams.delete(sessionId);
   }
 
@@ -1236,7 +1544,10 @@ export class RuntimeStore {
     this.state.runtimes[sessionId] = normalizedRuntime;
     this.state.activityBySession[sessionId] = normalizedRuntime.activityState ?? "idle";
     this.state.terminalSnapshotsBySession[sessionId] = normalizedRuntime.terminalSnapshots ?? {};
-    this.state.chatsBySession[sessionId] = normalizedRuntime.chatMessages ?? [];
+    this.state.chatsBySession[sessionId] = this.mergeChatMessages(
+      this.state.chatsBySession[sessionId] ?? [],
+      normalizedRuntime.chatMessages ?? [],
+    );
     this.state.chatCyclesBySession[sessionId] = normalizedRuntime.activeCycle
       ? this.mergeChatCycles(this.state.chatCyclesBySession[sessionId] ?? [], [normalizedRuntime.activeCycle])
       : (this.state.chatCyclesBySession[sessionId] ?? []);

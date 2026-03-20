@@ -93,10 +93,60 @@ describe("Feature: app kernel event replay", () => {
     const debug = await kernel.inspectModelDebug(session.id);
 
     expect(debug.config?.providerId).toBeTruthy();
+    expect(debug.config?.apiStandard).toBeTruthy();
     expect(debug.config?.model).toBeTruthy();
+    expect(debug.config?.capabilities.streaming).toBeBoolean();
     expect(debug.history).toEqual([]);
     expect(debug.latestModelCall).toBeNull();
     expect(debug.recentApiCalls).toEqual([]);
+  });
+
+  test("Scenario: Given a persisted session ledger without a live runtime When inspecting model debug Then model-call history is read directly from session.db", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "persisted-model-debug", autoStart: false });
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      const cycle = db.appendCycle({
+        wake: { source: "user" },
+        collectedInputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "hello" }],
+          },
+        ],
+        result: { kind: "model-call" },
+      });
+      db.setHead(cycle.id);
+      const call = db.appendModelCall({
+        cycleId: cycle.id,
+        createdAt: 100,
+        status: "done",
+        completedAt: 120,
+        provider: "deepseek/openai-chat",
+        model: "deepseek-chat",
+        request: { messages: [{ role: "user", content: "hello" }] },
+        response: { assistant: { text: "hi" } },
+      });
+      db.appendApiCall({
+        modelCallId: call.id,
+        createdAt: 121,
+        request: { url: "https://api.deepseek.com/v1/chat/completions" },
+        response: { id: "resp_1" },
+      });
+    } finally {
+      db.close();
+    }
+
+    const debug = await kernel.inspectModelDebug(session.id);
+
+    expect(debug.latestModelCall?.status).toBe("done");
+    expect(debug.latestModelCall?.response).toEqual({ assistant: { text: "hi" } });
+    expect(debug.recentModelCalls).toHaveLength(1);
+    expect(debug.recentApiCalls).toHaveLength(1);
   });
 
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {
@@ -315,8 +365,8 @@ describe("Feature: app kernel event replay", () => {
     expect(ignoredCompletions).toEqual([]);
   });
 
-  test("Scenario: Given uploaded session images When sending chat and deleting the session Then attachments persist and the asset files follow the session lifecycle", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-images-"));
+  test("Scenario: Given uploaded session assets When sending chat and deleting the session Then attachments persist and the asset files follow the session lifecycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-assets-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");
     mkdirSync(workspace, { recursive: true });
@@ -328,8 +378,8 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const session = await kernel.createSession({ cwd: workspace, name: "image-chat", autoStart: false });
-    const uploads = await kernel.uploadSessionImages(session.id, [
+    const session = await kernel.createSession({ cwd: workspace, name: "asset-chat", autoStart: false });
+    const uploads = await kernel.uploadSessionAssets(session.id, [
       {
         name: "diagram.png",
         mimeType: "image/png",
@@ -338,10 +388,10 @@ describe("Feature: app kernel event replay", () => {
     ]);
     const attachment = uploads[0];
     if (!attachment) {
-      throw new Error("expected uploaded image metadata");
+      throw new Error("expected uploaded asset metadata");
     }
 
-    const media = kernel.getSessionImage(session.id, attachment.assetId);
+    const media = kernel.getSessionAsset(session.id, attachment.assetId);
     expect(media?.mimeType).toBe("image/png");
     expect(media?.name).toBe("diagram.png");
 
@@ -353,7 +403,7 @@ describe("Feature: app kernel event replay", () => {
     expect(userMessage?.attachments).toHaveLength(1);
     expect(userMessage?.attachments[0]?.assetId).toBe(attachment.assetId);
     expect(userMessage?.attachments[0]?.url).toBe(
-      `/media/sessions/${encodeURIComponent(session.id)}/images/${encodeURIComponent(attachment.assetId)}`,
+      `/media/sessions/${encodeURIComponent(session.id)}/assets/${encodeURIComponent(attachment.assetId)}`,
     );
 
     const sessionRoot = session.sessionRoot;

@@ -1,7 +1,7 @@
 import { DEFAULT_LANGUAGE, resolveLanguage } from "@agenter/app-server";
 import {
   loadSettings,
-  type AiProviderKind,
+  type AiApiStandard,
   type SettingsSourceInput,
   type TerminalBootEntry,
   type TerminalPresetSettings,
@@ -40,10 +40,15 @@ export interface RuntimeConfig {
   };
   ai: {
     providerId: string;
-    kind: AiProviderKind;
+    apiStandard: AiApiStandard;
+    vendor?: string;
+    profile?: string;
+    extensions?: string[];
     apiKey?: string;
+    apiKeyEnv?: string;
     model: string;
     baseUrl?: string;
+    headers?: Record<string, string>;
     temperature: number;
     maxRetries: number;
     maxToken?: number;
@@ -457,7 +462,8 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
   const providers = ai.providers ?? {};
   const providerId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
   const provider = providers[providerId] ?? {
-    kind: "openai-compatible" as const,
+    apiStandard: "openai-chat" as const,
+    vendor: "deepseek",
     model: "deepseek-chat",
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyEnv: "DEEPSEEK_API_KEY",
@@ -493,10 +499,15 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     prompt: promptConfig,
     ai: {
       providerId,
-      kind: provider.kind,
+      apiStandard: provider.apiStandard,
+      vendor: provider.vendor,
+      profile: provider.profile,
+      extensions: provider.extensions,
       apiKey,
+      apiKeyEnv: provider.apiKeyEnv,
       model: provider.model,
       baseUrl: provider.baseUrl,
+      headers: provider.headers,
       temperature: provider.temperature ?? 0.2,
       maxRetries: provider.maxRetries ?? 2,
       maxToken: provider.maxToken,

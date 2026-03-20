@@ -4,7 +4,7 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar";
 import {
   loadSettings,
-  type AiProviderKind,
+  type AiApiStandard,
   type TerminalBootEntry,
   type TerminalPresetSettings,
 } from "@agenter/settings";
@@ -39,10 +39,15 @@ export interface ResolvedSessionConfig {
   };
   ai: {
     providerId: string;
-    kind: AiProviderKind;
+    apiStandard: AiApiStandard;
+    vendor?: string;
+    profile?: string;
+    extensions?: string[];
     apiKey?: string;
+    apiKeyEnv?: string;
     model: string;
     baseUrl?: string;
+    headers?: Record<string, string>;
     temperature: number;
     maxRetries: number;
     maxToken?: number;
@@ -198,7 +203,8 @@ export const resolveSessionConfig = async (
   const providers = ai.providers ?? {};
   const defaultProviderId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
   const provider = providers[defaultProviderId] ?? {
-    kind: "deepseek" as const,
+    apiStandard: "openai-chat" as const,
+    vendor: "deepseek",
     model: "deepseek-chat",
     apiKeyEnv: "DEEPSEEK_API_KEY",
     baseUrl: "https://api.deepseek.com/v1",
@@ -223,10 +229,15 @@ export const resolveSessionConfig = async (
     },
     ai: {
       providerId: defaultProviderId,
-      kind: provider.kind,
+      apiStandard: provider.apiStandard,
+      vendor: provider.vendor,
+      profile: provider.profile,
+      extensions: provider.extensions,
       apiKey: resolvedApiKey,
+      apiKeyEnv: provider.apiKeyEnv,
       model: provider.model,
       baseUrl: provider.baseUrl,
+      headers: provider.headers,
       temperature: provider.temperature ?? 0.2,
       maxRetries: provider.maxRetries ?? 2,
       maxToken: provider.maxToken,

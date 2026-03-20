@@ -1,25 +1,6 @@
 import { z } from "zod";
 
-const aiProviderSchema = z.object({
-  kind: z.enum([
-    "deepseek",
-    "openai",
-    "anthropic",
-    "gemini",
-    "grok",
-    "ollama",
-    "openai-compatible",
-    "anthropic-compatible",
-  ]),
-  model: z.string().min(1),
-  apiKey: z.string().min(1).optional(),
-  apiKeyEnv: z.string().min(1).optional(),
-  baseUrl: z.string().min(1).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  maxRetries: z.number().int().nonnegative().optional(),
-  maxToken: z.number().int().positive().optional(),
-  compactThreshold: z.number().gt(0).lte(1).optional(),
-});
+import { aiProviderSchema } from "./provider";
 
 export const settingsSchema = z.object({
   settingsSource: z.array(z.string()).optional(),

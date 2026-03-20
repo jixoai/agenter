@@ -371,7 +371,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
-  test("Scenario: Given no attention_reply When model returns plain text Then output stays self_talk only", async () => {
+  test("Scenario: Given no attention_reply When model returns plain text Then output is published as a user-facing assistant reply", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async () => ({
@@ -396,10 +396,11 @@ describe("Feature: AgenterAI behavior", () => {
     }
 
     const outputs = response.outputs?.toUser ?? [];
-    expect(outputs.some((item) => item.channel === "to_user")).toBeFalse();
+    expect(outputs.filter((item) => item.channel === "to_user").map((item) => item.content)).toEqual([
+      "assistant internal note",
+    ]);
     expect(outputs.filter((item) => item.channel === "self_talk").map((item) => item.content)).toEqual([
       "Observation: terminal idle\nDecision: wait\nNext: collect diff",
-      "assistant internal note",
     ]);
   });
 
@@ -609,5 +610,50 @@ describe("Feature: AgenterAI behavior", () => {
     expect(summarizeInputs.join("\n")).toContain("attention_system");
     expect(chat.engine.list()).toHaveLength(0);
     expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeTrue();
+  });
+
+  test("Scenario: Given a stalled model call When timeout elapses Then AgenterAI persists running then error lifecycle records", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const lifecycle: Array<{
+      status: "running" | "done" | "error";
+      completedAt?: number;
+      error?: { message: string; details?: unknown };
+    }> = [];
+
+    const modelClient = createModelClient(
+      () =>
+        new Promise(() => {
+          // keep pending; AgenterAI timeout should resolve the outer flow
+        }),
+    );
+
+    const ai = new AgenterAI({
+      modelClient,
+      modelCallTimeoutMs: 10,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+      onModelCall: (record) => {
+        lifecycle.push({
+          status: record.status,
+          completedAt: record.completedAt,
+          error: record.error,
+        });
+      },
+    });
+
+    const response = await ai.send([createUserMessage("hello")]);
+
+    expect(lifecycle).toHaveLength(2);
+    expect(lifecycle[0]?.status).toBe("running");
+    expect(lifecycle[0]?.completedAt).toBeUndefined();
+    expect(lifecycle[1]?.status).toBe("error");
+    expect(lifecycle[1]?.completedAt).toBeNumber();
+    expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
+    expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
+    expect((response.outputs?.toUser ?? []).some((item) => item.content.includes("timed out after 10ms"))).toBeTrue();
   });
 });

@@ -29,6 +29,7 @@ export type RuntimeEventType =
   | "session.updated"
   | "session.deleted"
   | "chat.message"
+  | "notification.updated"
   | "runtime.phase"
   | "runtime.stage"
   | "runtime.stats"

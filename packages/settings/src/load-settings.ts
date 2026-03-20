@@ -25,7 +25,8 @@ const defaultSettings = (): AgenterSettings => ({
     activeProvider: "default",
     providers: {
       default: {
-        kind: "deepseek",
+        apiStandard: "openai-chat",
+        vendor: "deepseek",
         model: "deepseek-chat",
         apiKeyEnv: "DEEPSEEK_API_KEY",
         baseUrl: "https://api.deepseek.com/v1",

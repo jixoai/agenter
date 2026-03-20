@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 
 import {
   SessionDb,
-  type SessionAssetRecord,
   type SessionBlockRecord,
   type SessionCollectedInput,
   type SessionCycleRecord,
@@ -18,10 +17,17 @@ import {
   type RuntimeSnapshotPayload,
 } from "./realtime-types";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
+import { SessionNotificationRegistry, type SessionNotificationSnapshot } from "./session-notifications";
 import { resolveSessionConfig } from "./session-config";
+import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
-import type { ChatImageAttachment, ChatMessage, ModelCapabilities } from "./types";
+import type { ChatMessage, ChatSessionAsset, ModelCapabilities } from "./types";
 import { WorkspacePathSearchIndex } from "./workspace-path-search";
+import {
+  listWorkspaceSettingsLayers,
+  readWorkspaceSettingsLayer,
+  saveWorkspaceSettingsLayer,
+} from "./workspace-settings";
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 
 const now = (): number => Date.now();
@@ -81,27 +87,16 @@ const resolveWorkspaceGroup = (workspacePath: string): string => {
 
 const isRunningSession = (status: SessionMeta["status"]): boolean => status === "running" || status === "starting";
 
-const buildSessionImageUrl = (sessionId: string, assetId: string): string =>
-  `/media/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(assetId)}`;
-
-const toChatAttachment = (sessionId: string, asset: SessionAssetRecord): ChatImageAttachment => ({
-  assetId: asset.id,
-  kind: "image",
-  name: asset.name,
-  mimeType: asset.mimeType,
-  sizeBytes: asset.sizeBytes,
-  url: buildSessionImageUrl(sessionId, asset.id),
-});
-
 const toChatMessage = (sessionId: string, block: SessionBlockRecord): ChatMessage => ({
   id: `${block.id}`,
   role: block.role,
   content: block.content,
   timestamp: block.createdAt,
+  cycleId: block.cycleId,
   channel: block.channel === "user_input" ? undefined : block.channel,
   format: block.format,
   tool: block.tool,
-  attachments: block.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+  attachments: block.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
 });
 
 const toChatCycle = (input: {
@@ -137,12 +132,13 @@ const blockToCollectedInput = (sessionId: string, block: SessionBlockRecord): Se
   parts: [
     ...(block.content.trim().length > 0 ? ([{ type: "text", text: block.content }] as const) : []),
     ...block.attachments.map((attachment) => ({
-      type: "image" as const,
+      type: attachment.kind,
       assetId: attachment.id,
+      kind: attachment.kind,
       mimeType: attachment.mimeType,
       name: attachment.name,
       sizeBytes: attachment.sizeBytes,
-      url: buildSessionImageUrl(sessionId, attachment.id),
+      url: buildSessionAssetUrl(sessionId, attachment.id),
     })),
   ],
 });
@@ -303,6 +299,7 @@ export class AppKernel {
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
   private readonly eventLog: AnyRuntimeEvent[] = [];
+  private readonly notifications = new SessionNotificationRegistry();
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
   private eventSeq = 0;
 
@@ -457,7 +454,7 @@ export class AppKernel {
     limit = 200,
   ): Array<
     Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatImageAttachment[];
+      attachments: ChatSessionAsset[];
       sessionId: string;
       messageId: string;
       timestamp: number;
@@ -477,7 +474,7 @@ export class AppKernel {
     limit = 200,
   ): Array<
     Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
-      attachments: ChatImageAttachment[];
+      attachments: ChatSessionAsset[];
       sessionId: string;
       messageId: string;
       timestamp: number;
@@ -545,7 +542,14 @@ export class AppKernel {
   async resolveDraft(input: { cwd: string; avatar?: string }): Promise<{
     cwd: string;
     avatar?: string;
-    provider: { providerId: string; kind: string; model: string; baseUrl?: string };
+    provider: {
+      providerId: string;
+      apiStandard: string;
+      vendor?: string;
+      profile?: string;
+      model: string;
+      baseUrl?: string;
+    };
     modelCapabilities: ModelCapabilities;
   }> {
     const cwd = resolve(input.cwd);
@@ -556,7 +560,9 @@ export class AppKernel {
       avatar: input.avatar,
       provider: {
         providerId: config.ai.providerId,
-        kind: config.ai.kind,
+        apiStandard: config.ai.apiStandard,
+        vendor: config.ai.vendor,
+        profile: config.ai.profile,
         model: config.ai.model,
         baseUrl: config.ai.baseUrl,
       },
@@ -623,6 +629,7 @@ export class AppKernel {
     this.workspaces.removeSessionFavorite(sessionId);
     const removed = this.sessions.remove(sessionId);
     if (removed) {
+      this.emitNotificationSnapshot(this.notifications.removeSession(sessionId), sessionId);
       this.emit("session.deleted", { sessionId, removed }, sessionId);
     }
     return { removed };
@@ -635,6 +642,7 @@ export class AppKernel {
       this.detachRuntime(sessionId);
     }
     const archived = this.sessions.archive(sessionId);
+    this.emitNotificationSnapshot(this.notifications.removeSession(sessionId), sessionId);
     this.emit("session.updated", { session: archived }, sessionId);
     return archived;
   }
@@ -734,21 +742,21 @@ export class AppKernel {
     }
   }
 
-  async uploadSessionImages(
+  async uploadSessionAssets(
     sessionId: string,
     files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>,
-  ): Promise<ChatImageAttachment[]> {
+  ): Promise<ChatSessionAsset[]> {
     const runtime = await this.ensureRuntime(sessionId);
-    return await runtime.uploadImageAssets(files);
+    return await runtime.uploadAssets(files);
   }
 
-  getSessionImage(
+  getSessionAsset(
     sessionId: string,
     assetId: string,
   ): { filePath: string; mimeType: string; name: string; sizeBytes: number } | null {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      const resolved = runtime.getImageAsset(assetId);
+      const resolved = runtime.getAsset(assetId);
       if (!resolved) {
         return null;
       }
@@ -772,7 +780,7 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       const asset = db.getAssetById(assetId);
-      if (!asset || asset.kind !== "image") {
+      if (!asset) {
         return null;
       }
       return {
@@ -935,8 +943,17 @@ export class AppKernel {
   }
 
   async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
-    const runtime = await this.ensureRuntime(sessionId);
-    return runtime.inspectModelDebug();
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.inspectModelDebug();
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    return await this.readPersistedModelDebug(session);
   }
 
   async readSettings(input: {
@@ -948,31 +965,40 @@ export class AppKernel {
     return runtime.readEditable(kind);
   }
 
-  async listSettingsLayers(sessionId: string): Promise<ReturnType<SessionRuntime["getSettingsLayers"]>> {
-    const runtime = await this.ensureRuntime(sessionId);
-    return runtime.getSettingsLayers();
+  async listSettingsLayers(workspacePath: string) {
+    return await listWorkspaceSettingsLayers({ workspacePath });
   }
 
   async readSettingsLayer(input: {
-    sessionId: string;
+    workspacePath: string;
     layerId: string;
-  }): Promise<Awaited<ReturnType<SessionRuntime["readSettingsLayer"]>>> {
-    const runtime = await this.ensureRuntime(input.sessionId);
-    return runtime.readSettingsLayer(input.layerId);
+  }) {
+    return await readWorkspaceSettingsLayer(input);
   }
 
   async saveSettingsLayer(input: {
-    sessionId: string;
+    workspacePath: string;
     layerId: string;
     content: string;
     baseMtimeMs: number;
-  }): Promise<Awaited<ReturnType<SessionRuntime["saveSettingsLayer"]>>> {
-    const runtime = await this.ensureRuntime(input.sessionId);
-    return runtime.saveSettingsLayer({
-      layerId: input.layerId,
-      content: input.content,
-      baseMtimeMs: input.baseMtimeMs,
-    });
+  }) {
+    return await saveWorkspaceSettingsLayer(input);
+  }
+
+  getNotificationSnapshot(): SessionNotificationSnapshot {
+    return this.notifications.snapshot();
+  }
+
+  setChatVisibility(input: { sessionId: string; visible: boolean; focused: boolean }): SessionNotificationSnapshot {
+    const snapshot = this.notifications.setChatVisibility(input) ?? this.notifications.snapshot();
+    this.emit("notification.updated", { snapshot }, input.sessionId);
+    return snapshot;
+  }
+
+  consumeNotifications(input: { sessionId: string; upToMessageId?: string | null }): SessionNotificationSnapshot {
+    const snapshot = this.notifications.consume(input) ?? this.notifications.snapshot();
+    this.emit("notification.updated", { snapshot }, input.sessionId);
+    return snapshot;
   }
 
   async saveSettings(input: {
@@ -1037,7 +1063,7 @@ export class AppKernel {
     limit: number,
   ): Array<
     Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatImageAttachment[];
+      attachments: ChatSessionAsset[];
       sessionId: string;
       messageId: string;
       timestamp: number;
@@ -1052,11 +1078,73 @@ export class AppKernel {
     try {
       return db.listBlocksAfter(afterId, limit).map((item) => ({
         ...item,
-        attachments: item.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+        attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
         sessionId,
         messageId: `${item.id}`,
         timestamp: item.createdAt,
       }));
+    } finally {
+      db.close();
+    }
+  }
+
+  private async readPersistedModelDebug(session: SessionMeta): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
+    const resolved = await resolveSessionConfig(session.cwd, { avatar: session.avatar });
+    const dbPath = join(session.sessionRoot, "session.db");
+
+    if (!existsSync(dbPath)) {
+      return {
+        config: {
+          providerId: resolved.ai.providerId,
+          apiStandard: resolved.ai.apiStandard,
+          vendor: resolved.ai.vendor,
+          profile: resolved.ai.profile,
+          extensions: resolved.ai.extensions,
+          model: resolved.ai.model,
+          baseUrl: resolved.ai.baseUrl,
+          apiKey: resolved.ai.apiKey,
+          apiKeyEnv: resolved.ai.apiKeyEnv,
+          headers: resolved.ai.headers,
+          temperature: resolved.ai.temperature,
+          maxRetries: resolved.ai.maxRetries,
+          maxToken: resolved.ai.maxToken,
+          compactThreshold: resolved.ai.compactThreshold,
+          capabilities: resolveModelCapabilities(resolved.ai),
+        },
+        history: [],
+        stats: null,
+        latestModelCall: null,
+        recentModelCalls: [],
+        recentApiCalls: [],
+      };
+    }
+
+    const db = new SessionDb(dbPath);
+    try {
+      return {
+        config: {
+          providerId: resolved.ai.providerId,
+          apiStandard: resolved.ai.apiStandard,
+          vendor: resolved.ai.vendor,
+          profile: resolved.ai.profile,
+          extensions: resolved.ai.extensions,
+          model: resolved.ai.model,
+          baseUrl: resolved.ai.baseUrl,
+          apiKey: resolved.ai.apiKey,
+          apiKeyEnv: resolved.ai.apiKeyEnv,
+          headers: resolved.ai.headers,
+          temperature: resolved.ai.temperature,
+          maxRetries: resolved.ai.maxRetries,
+          maxToken: resolved.ai.maxToken,
+          compactThreshold: resolved.ai.compactThreshold,
+          capabilities: resolveModelCapabilities(resolved.ai),
+        },
+        history: [],
+        stats: null,
+        latestModelCall: db.listModelCalls(1)[0] ?? null,
+        recentModelCalls: db.listModelCalls(8),
+        recentApiCalls: db.listApiCallsAfter(0, 12),
+      };
     } finally {
       db.close();
     }
@@ -1069,7 +1157,7 @@ export class AppKernel {
     limit: number,
   ): Array<
     Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
-      attachments: ChatImageAttachment[];
+      attachments: ChatSessionAsset[];
       sessionId: string;
       messageId: string;
       timestamp: number;
@@ -1084,7 +1172,7 @@ export class AppKernel {
     try {
       return db.listBlocksBefore(beforeId, limit).map((item) => ({
         ...item,
-        attachments: item.attachments.map((attachment) => toChatAttachment(sessionId, attachment)),
+        attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
         sessionId,
         messageId: `${item.id}`,
         timestamp: item.createdAt,
@@ -1158,6 +1246,7 @@ export class AppKernel {
     switch (event.type) {
       case "chat":
         this.emit("chat.message", { message: event.payload as ChatMessage }, sessionId, event.timestamp);
+        this.emitNotificationForMessage(sessionId, event.payload as ChatMessage);
         return;
       case "phase":
         this.emit("runtime.phase", { phase: event.payload.phase }, sessionId, event.timestamp);
@@ -1222,6 +1311,27 @@ export class AppKernel {
         this.emit("runtime.error", event.payload, sessionId, event.timestamp);
         return;
     }
+  }
+
+  private emitNotificationSnapshot(snapshot: SessionNotificationSnapshot | null, sessionId?: string): void {
+    if (!snapshot) {
+      return;
+    }
+    this.emit("notification.updated", { snapshot }, sessionId);
+  }
+
+  private emitNotificationForMessage(sessionId: string, message: ChatMessage): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const snapshot = this.notifications.noteAssistantReply({
+      sessionId,
+      workspacePath: session.cwd,
+      sessionName: session.name,
+      message,
+    });
+    this.emitNotificationSnapshot(snapshot, sessionId);
   }
 
   private emit<TType extends RuntimeEventType>(

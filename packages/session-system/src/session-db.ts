@@ -18,6 +18,7 @@ import type {
   SessionHeadRecord,
   SessionModelCallInsert,
   SessionModelCallRecord,
+  SessionModelCallUpdate,
 } from "./types";
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
@@ -205,21 +206,26 @@ export class SessionDb {
 
   appendModelCall(input: SessionModelCallInsert): SessionModelCallRecord {
     const createdAt = input.createdAt ?? Date.now();
+    const status = input.status ?? (input.error ? "error" : input.response === undefined ? "running" : "done");
     const result = this.db
       .query(
         `insert into model_call (
           cycle_id,
           created_at,
+          status,
+          completed_at,
           provider,
           model,
           request_json,
           response_json,
           error_json
-        ) values (?, ?, ?, ?, ?, ?, ?)`,
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.cycleId,
         createdAt,
+        status,
+        input.completedAt ?? null,
         input.provider,
         input.model,
         toJson(input.request),
@@ -236,7 +242,7 @@ export class SessionDb {
   getModelCallById(id: number): SessionModelCallRecord | null {
     const row = this.db
       .query(
-        `select id, cycle_id, created_at, provider, model, request_json, response_json, error_json
+        `select id, cycle_id, created_at, status, completed_at, provider, model, request_json, response_json, error_json
          from model_call where id = ?`,
       )
       .get(id) as
@@ -244,6 +250,8 @@ export class SessionDb {
           id: number;
           cycle_id: number;
           created_at: number;
+          status: SessionModelCallRecord["status"];
+          completed_at: number | null;
           provider: string;
           model: string;
           request_json: string;
@@ -258,12 +266,38 @@ export class SessionDb {
       id: row.id,
       cycleId: row.cycle_id,
       createdAt: row.created_at,
+      status: row.status,
+      completedAt: row.completed_at ?? undefined,
       provider: row.provider,
       model: row.model,
       request: parseJson(row.request_json, null),
       response: row.response_json ? parseJson(row.response_json, null) : undefined,
       error: row.error_json ? parseJson(row.error_json, null) : undefined,
     };
+  }
+
+  updateModelCall(id: number, input: SessionModelCallUpdate): SessionModelCallRecord {
+    this.db
+      .query(
+        `update model_call
+         set status = coalesce(?, status),
+             completed_at = ?,
+             response_json = ?,
+             error_json = ?
+         where id = ?`,
+      )
+      .run(
+        input.status ?? null,
+        input.completedAt ?? null,
+        input.response === undefined ? null : toJson(input.response),
+        input.error === undefined ? null : toJson(input.error),
+        id,
+      );
+    const row = this.getModelCallById(id);
+    if (!row) {
+      throw new Error("failed to load updated model_call");
+    }
+    return row;
   }
 
   getModelCallByCycleId(cycleId: number): SessionModelCallRecord | null {
@@ -712,6 +746,8 @@ export class SessionDb {
         id integer primary key autoincrement,
         cycle_id integer not null unique,
         created_at integer not null,
+        status text not null default 'done',
+        completed_at integer,
         provider text not null,
         model text not null,
         request_json text not null,
@@ -779,5 +815,17 @@ export class SessionDb {
 
       create index if not exists idx_api_call_model_call on api_call(model_call_id, id asc);
     `);
+
+    this.ensureColumn("model_call", "status", "alter table model_call add column status text not null default 'done'");
+    this.ensureColumn("model_call", "completed_at", "alter table model_call add column completed_at integer");
+    this.db.query(`update model_call set status = 'done' where status is null or status = ''`).run();
+  }
+
+  private ensureColumn(tableName: string, columnName: string, ddl: string): void {
+    const columns = this.db.query(`pragma table_info(${tableName})`).all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === columnName)) {
+      return;
+    }
+    this.db.exec(ddl);
   }
 }

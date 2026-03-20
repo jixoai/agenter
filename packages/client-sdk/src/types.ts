@@ -26,6 +26,8 @@ export type ModelCallsPageOutput = RouterOutputs["runtime"]["modelCallsPage"];
 export type ModelCallItem = ModelCallsPageOutput["items"][number];
 export type ApiCallsPageOutput = RouterOutputs["runtime"]["apiCallsPage"];
 export type ApiCallItem = ApiCallsPageOutput["items"][number];
+export type NotificationSnapshotOutput = RouterOutputs["notification"]["snapshot"];
+export type SessionNotificationItem = NotificationSnapshotOutput["items"][number];
 export type RuntimeEvent = RuntimeEventEnvelope;
 export type RuntimeSnapshot = RuntimeSnapshotPayload;
 export type RuntimeSnapshotEntry = RuntimeSnapshot["runtimes"][string];
@@ -33,10 +35,13 @@ export type RuntimeChatMessage = RuntimeSnapshotEntry["chatMessages"][number];
 export type RuntimeChatCycle = ChatCycleItem;
 export type WorkspaceSessionTab = "all" | "running" | "stopped" | "archive";
 export type ModelDebugOutput = RouterOutputs["runtime"]["modelDebug"];
+export type RuntimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline";
 
-export interface UploadedSessionImage {
+export type UploadedSessionAssetKind = "image" | "video" | "file";
+
+export interface UploadedSessionAsset {
   assetId: string;
-  kind: "image";
+  kind: UploadedSessionAssetKind;
   name: string;
   mimeType: string;
   sizeBytes: number;
@@ -45,6 +50,7 @@ export interface UploadedSessionImage {
 
 export interface RuntimeClientState {
   connected: boolean;
+  connectionStatus: RuntimeConnectionStatus;
   lastEventId: number;
   sessions: SessionEntry[];
   runtimes: RuntimeSnapshot["runtimes"];
@@ -60,4 +66,6 @@ export interface RuntimeClientState {
   modelCallsBySession: Record<string, ModelCallItem[]>;
   apiCallsBySession: Record<string, ApiCallItem[]>;
   apiCallRecordingBySession: Record<string, { enabled: boolean; refCount: number }>;
+  notifications: SessionNotificationItem[];
+  unreadBySession: Record<string, number>;
 }

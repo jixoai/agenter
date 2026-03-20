@@ -33,6 +33,7 @@ export interface TrpcServerOptions {
 export interface TrpcServerHandle {
   host: string;
   port: number;
+  kernel: AppKernel;
   stop: () => Promise<void>;
 }
 
@@ -110,6 +111,16 @@ const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: strin
   createReadStream(targetPath).pipe(res);
 };
 
+const rewriteTrpcHttpUrl = (req: IncomingMessage): (() => void) => {
+  const originalUrl = req.url ?? "/";
+  const parsed = new URL(originalUrl, "http://localhost");
+  const nextPath = parsed.pathname.slice("/trpc".length) || "/";
+  req.url = `${nextPath}${parsed.search}`;
+  return () => {
+    req.url = originalUrl;
+  };
+};
+
 export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcServerHandle> => {
   const kernel = new AppKernel({
     globalSessionRoot: options.globalSessionRoot,
@@ -143,7 +154,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    const uploadMatch = decodePathMatch(pathname, /^\/api\/sessions\/([^/]+)\/images$/);
+    const uploadMatch = decodePathMatch(pathname, /^\/api\/sessions\/([^/]+)\/assets$/);
     if (req.method === "POST" && uploadMatch) {
       setCors(res);
       const [sessionId] = uploadMatch;
@@ -153,22 +164,18 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           const form = await request.formData();
           const files = [...form.values()].filter((value): value is File => value instanceof File);
           if (files.length === 0) {
-            sendJson(res, 400, { ok: false, error: "image file is required" });
+            sendJson(res, 400, { ok: false, error: "asset file is required" });
             return;
           }
           const uploads: Array<{ name: string; mimeType: string; bytes: Uint8Array }> = [];
           for (const file of files) {
-            if (!file.type.toLowerCase().startsWith("image/")) {
-              sendJson(res, 400, { ok: false, error: `unsupported media type: ${file.type || file.name}` });
-              return;
-            }
             uploads.push({
-              name: file.name || "image",
-              mimeType: file.type,
+              name: file.name || "asset",
+              mimeType: file.type || "application/octet-stream",
               bytes: new Uint8Array(await file.arrayBuffer()),
             });
           }
-          const items = await kernel.uploadSessionImages(sessionId, uploads);
+          const items = await kernel.uploadSessionAssets(sessionId, uploads);
           sendJson(res, 200, { ok: true, items });
         } catch (error) {
           sendJson(res, 500, {
@@ -180,13 +187,13 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    const mediaMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/images\/([^/]+)$/);
+    const mediaMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/assets\/([^/]+)$/);
     if (req.method === "GET" && mediaMatch) {
       setCors(res);
       const [sessionId, assetId] = mediaMatch;
-      const media = kernel.getSessionImage(sessionId, assetId);
+      const media = kernel.getSessionAsset(sessionId, assetId);
       if (!media) {
-        sendJson(res, 404, { ok: false, error: "image not found" });
+        sendJson(res, 404, { ok: false, error: "asset not found" });
         return;
       }
       res.statusCode = 200;
@@ -197,7 +204,13 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     }
 
     if (pathname.startsWith("/trpc")) {
-      trpcHandler(req, res);
+      setCors(res);
+      const restoreUrl = rewriteTrpcHttpUrl(req);
+      try {
+        trpcHandler(req, res);
+      } finally {
+        queueMicrotask(restoreUrl);
+      }
       return;
     }
 
@@ -242,6 +255,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   return {
     host: options.host,
     port: actualPort,
+    kernel,
     stop: async () => {
       wsHandler.broadcastReconnectNotification();
       wss.close();

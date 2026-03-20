@@ -1,3 +1,5 @@
+import type { AiProviderSettings } from "./provider";
+
 export type BuiltinSettingsSource = "user" | "project" | "local";
 
 export type SettingsSourceInput = BuiltinSettingsSource | string;
@@ -62,27 +64,7 @@ export interface FeatureSettings {
   terminal?: TerminalFeatureSettings;
 }
 
-export type AiProviderKind =
-  | "deepseek"
-  | "openai"
-  | "anthropic"
-  | "gemini"
-  | "grok"
-  | "ollama"
-  | "openai-compatible"
-  | "anthropic-compatible";
-
-export interface AiProviderSettings {
-  kind: AiProviderKind;
-  model: string;
-  apiKey?: string;
-  apiKeyEnv?: string;
-  baseUrl?: string;
-  temperature?: number;
-  maxRetries?: number;
-  maxToken?: number;
-  compactThreshold?: number;
-}
+export type { AiApiStandard, AiProviderInputSettings, AiProviderKind, LegacyAiProviderKind } from "./provider";
 
 export interface AiSettings {
   activeProvider?: string;

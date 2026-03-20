@@ -1,3 +1,5 @@
+import type { SessionAssetKind } from "@agenter/session-system";
+
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
 export interface TaskEvent {
@@ -7,9 +9,9 @@ export interface TaskEvent {
   summary: string;
 }
 
-export interface ChatImageAttachment {
+export interface ChatSessionAsset {
   assetId: string;
-  kind: "image";
+  kind: SessionAssetKind;
   name: string;
   mimeType: string;
   sizeBytes: number;
@@ -17,7 +19,13 @@ export interface ChatImageAttachment {
 }
 
 export interface ModelCapabilities {
+  streaming: boolean;
+  tools: boolean;
   imageInput: boolean;
+  nativeCompact: boolean;
+  summarizeFallback: boolean;
+  fileUpload: boolean;
+  mcpCatalog: boolean;
 }
 
 export interface ChatMessage {
@@ -25,13 +33,14 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  cycleId?: number | null;
   channel?: "to_user" | "self_talk" | "tool_call" | "tool_result";
   format?: "plain" | "markdown";
   tool?: {
     name: string;
     ok?: boolean;
   };
-  attachments?: ChatImageAttachment[];
+  attachments?: ChatSessionAsset[];
 }
 
 export interface AppServerLogger {

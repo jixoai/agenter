@@ -26,7 +26,7 @@ import { ModelDecisionError } from "./model-client";
 import type { PromptStore } from "./prompt-store";
 import { createRuntimeText } from "./runtime-text";
 import type { SessionStore } from "./session-store";
-import type { AppServerLogger, ChatImageAttachment, ChatMessage, TaskEvent, TaskStage } from "./types";
+import type { AppServerLogger, ChatMessage, ChatSessionAsset, TaskEvent, TaskStage } from "./types";
 
 interface TerminalDescriptor {
   terminalId: string;
@@ -106,6 +106,7 @@ interface ResolvedImageAttachmentSource {
 
 interface AgentDeps {
   modelClient: ModelClient;
+  modelCallTimeoutMs?: number;
   logger: AppServerLogger;
   promptStore: PromptStore;
   locale?: string;
@@ -114,7 +115,7 @@ interface AgentDeps {
   attentionGateway: AttentionGateway;
   sessionStore?: SessionStore;
   resolveImageAttachment?: (
-    attachment: ChatImageAttachment,
+    attachment: ChatSessionAsset,
   ) => Promise<ResolvedImageAttachmentSource | null> | ResolvedImageAttachmentSource | null;
   onAssistantStream?: (update: AssistantStreamUpdate) => Promise<void> | void;
   onAssistantLiveMessage?: (message: ChatMessage) => Promise<void> | void;
@@ -124,6 +125,8 @@ interface AgentDeps {
 export interface AgentModelCallRecord {
   id: string;
   timestamp: number;
+  status: "running" | "done" | "error";
+  completedAt?: number;
   provider: string;
   model: string;
   request: {
@@ -210,6 +213,7 @@ const MAX_HISTORY_MESSAGES = 80;
 const MAX_TERMINAL_DIFF_CHARS = 6_000;
 const MAX_TERMINAL_SNAPSHOT_LINES = 16;
 const ENABLE_AGENT_TOOLS = true;
+const DEFAULT_MODEL_CALL_TIMEOUT_MS = 120_000;
 
 const safeJsonParse = (input: string): unknown => {
   try {
@@ -350,6 +354,29 @@ export class AgenterAI {
     this.runtimeText = createRuntimeText(this.deps.locale);
   }
 
+  private async withModelCallTimeout<T>(
+    run: (abortController: AbortController) => Promise<T>,
+  ): Promise<T> {
+    const abortController = new AbortController();
+    const timeoutMs = this.deps.modelCallTimeoutMs ?? DEFAULT_MODEL_CALL_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      return await new Promise<T>((resolve, reject) => {
+        timer = setTimeout(() => {
+          abortController.abort();
+          reject(new Error(`model call timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+
+        void run(abortController).then(resolve, reject);
+      });
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   requestCompact(reason = "manual"): void {
     this.compactPending = true;
     this.compactForced = true;
@@ -429,14 +456,66 @@ export class AgenterAI {
     this.stats.lastContextChars = contextChars;
     this.stats.totalContextChars += contextChars;
     this.emitStats();
+    const requestRecord = {
+      systemPrompt,
+      messages: historySnapshot,
+      tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
+      meta: {
+        taskId,
+        loopCount: this.stats.loops,
+        historySize: historySnapshot.length,
+      },
+    } satisfies AgentModelCallRecord["request"];
+    const callRecordBase = {
+      id: callId,
+      timestamp: Date.now(),
+      provider: this.deps.modelClient.getMeta().provider,
+      model: this.deps.modelClient.getMeta().model,
+      request: requestRecord,
+    } as const;
+    this.persistModelCall({
+      ...callRecordBase,
+      status: "running",
+    });
 
     try {
-      const response = await this.deps.modelClient.respondWithMeta({
-        systemPrompt,
-        messages: historySnapshot,
-        tools,
-        onUpdate: async (update) => {
-          await this.deps.onAssistantStream?.(update);
+      const response = await this.withModelCallTimeout((abortController) =>
+        this.deps.modelClient.respondWithMeta({
+          systemPrompt,
+          messages: historySnapshot,
+          tools,
+          abortController,
+          onUpdate: async (update) => {
+            await this.deps.onAssistantStream?.(update);
+          },
+        }),
+      );
+      const normalizedResponseText = response.text.trim();
+      const decisionToUser =
+        attentionReplies.length > 0
+          ? attentionReplies.map((item) => item.text)
+          : normalizedResponseText.length > 0
+            ? [normalizedResponseText]
+            : [];
+
+      const completedAt = Date.now();
+      this.persistModelCall({
+        ...callRecordBase,
+        status: "done",
+        completedAt,
+        response: {
+          decision: {
+            stage: attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
+            done: attentionReplies.some((item) => item.done),
+            toUser: decisionToUser,
+          },
+          usage: response.usage,
+          toolTrace,
+          assistant: {
+            thinking: response.thinking,
+            text: response.text,
+            finishReason: response.finishReason ?? null,
+          },
         },
       });
 
@@ -454,38 +533,6 @@ export class AgenterAI {
         }
       }
       this.emitStats();
-
-      const callRecord: AgentModelCallRecord = {
-        id: callId,
-        timestamp: Date.now(),
-        provider: this.deps.modelClient.getMeta().provider,
-        model: this.deps.modelClient.getMeta().model,
-        request: {
-          systemPrompt,
-          messages: historySnapshot,
-          tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
-          meta: {
-            taskId,
-            loopCount: this.stats.loops,
-            historySize: historySnapshot.length,
-          },
-        },
-        response: {
-          decision: {
-            stage: attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
-            done: attentionReplies.some((item) => item.done),
-            toUser: attentionReplies.map((item) => item.text),
-          },
-          usage: response.usage,
-          toolTrace,
-          assistant: {
-            thinking: response.thinking,
-            text: response.text,
-            finishReason: response.finishReason ?? null,
-          },
-        },
-      };
-      this.persistModelCall(callRecord);
 
       const assistantFacts = this.buildAssistantFacts({
         thinking: response.thinking,
@@ -526,28 +573,17 @@ export class AgenterAI {
       const message = error instanceof Error ? error.message : String(error);
       const name = error instanceof Error ? error.name : "Error";
       const stack = error instanceof Error ? error.stack : undefined;
-      const details = error instanceof ModelDecisionError ? { retried: true } : undefined;
-      const callRecord: AgentModelCallRecord = {
-        id: callId,
-        timestamp: Date.now(),
-        provider: this.deps.modelClient.getMeta().provider,
-        model: this.deps.modelClient.getMeta().model,
-        request: {
-          systemPrompt,
-          messages: historySnapshot,
-          tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
-          meta: {
-            taskId,
-            loopCount: this.stats.loops,
-            historySize: historySnapshot.length,
-          },
-        },
+      const details =
+        error instanceof ModelDecisionError ? { retried: true } : message.includes("timed out after") ? { timeout: true } : undefined;
+      this.persistModelCall({
+        ...callRecordBase,
+        status: "error",
+        completedAt: Date.now(),
         response: {
           toolTrace,
         },
         error: { message, name, stack, details },
-      };
-      this.persistModelCall(callRecord);
+      });
       this.activeTask = null;
       this.deps.logger.log({
         channel: "error",
@@ -574,6 +610,8 @@ export class AgenterAI {
     const result: AssistantFact[] = [];
     const normalizedThinking = input.thinking.trim();
     const normalizedText = input.text?.trim() ?? "";
+    const explicitReplies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
+    const hasExplicitReply = explicitReplies.length > 0;
 
     if (normalizedThinking.length > 0) {
       result.push({
@@ -583,7 +621,13 @@ export class AgenterAI {
       });
     }
 
-    if (normalizedText.length > 0 && normalizedText !== normalizedThinking) {
+    if (normalizedText.length > 0 && !hasExplicitReply) {
+      result.push({
+        content: normalizedText,
+        channel: "to_user",
+        format: "markdown",
+      });
+    } else if (normalizedText.length > 0 && normalizedText !== normalizedThinking) {
       result.push({
         content: normalizedText,
         channel: "self_talk",
@@ -625,8 +669,7 @@ export class AgenterAI {
       }
     }
 
-    const replies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
-    for (const reply of replies) {
+    for (const reply of explicitReplies) {
       result.push({
         content: reply,
         channel: "to_user",
@@ -650,6 +693,7 @@ export class AgenterAI {
     this.deps.sessionStore?.appendCall({
       ...record,
       timestamp: new Date(record.timestamp).toISOString(),
+      completedAt: record.completedAt ? new Date(record.completedAt).toISOString() : undefined,
     });
     void this.deps.onModelCall?.(record);
   }
@@ -749,20 +793,27 @@ export class AgenterAI {
   private async formatUserMessage(message: LoopBusMessage): Promise<ContentPart[]> {
     const header = `### ${message.name}`;
     if (message.source === "chat") {
-      const parts: ContentPart[] = [toTextPart([header, message.text].join("\n\n"))];
+      const attachmentFacts: string[] = [];
+      const parts: ContentPart[] = [toTextPart([header, message.text].filter((item) => item.length > 0).join("\n\n"))];
       for (const attachment of message.attachments ?? []) {
-        const resolved = await this.deps.resolveImageAttachment?.(attachment);
-        if (!resolved) {
-          continue;
+        if (attachment.kind === "image") {
+          const resolved = await this.deps.resolveImageAttachment?.(attachment);
+          if (resolved) {
+            parts.push({
+              type: "image",
+              source: {
+                type: "data",
+                mimeType: resolved.mimeType,
+                value: resolved.dataBase64,
+              },
+            });
+            continue;
+          }
         }
-        parts.push({
-          type: "image",
-          source: {
-            type: "data",
-            mimeType: resolved.mimeType,
-            value: resolved.dataBase64,
-          },
-        });
+        attachmentFacts.push(`- ${attachment.kind}: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`);
+      }
+      if (attachmentFacts.length > 0) {
+        parts[0] = toTextPart([header, message.text, "attachments:", ...attachmentFacts].filter((item) => item.length > 0).join("\n\n"));
       }
       return parts;
     }

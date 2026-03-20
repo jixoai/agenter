@@ -82,10 +82,14 @@ export {
 } from "./loopbus-kernel";
 export { resolveModelCapabilities } from "./model-capabilities";
 export {
+  canCallModel as canCallConfiguredModel,
+  resolveApiEnvHint,
+  type ModelProviderConfig,
+} from "./model-provider";
+export {
   ModelClient,
   ModelDecisionError,
   type AssistantStreamUpdate,
-  type ModelProviderConfig,
   type TextOnlyModelMessage,
 } from "./model-client";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
@@ -109,6 +113,11 @@ export {
   type SettingsKind,
 } from "./realtime-types";
 export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
+export {
+  SessionNotificationRegistry,
+  type SessionNotificationItem,
+  type SessionNotificationSnapshot,
+} from "./session-notifications";
 export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 export {
   SessionRuntime,
@@ -119,11 +128,19 @@ export {
 } from "./session-runtime";
 export { SessionStore, type SessionCallRecord } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
+export {
+  listWorkspaceSettingsLayers,
+  readWorkspaceSettingsLayer,
+  saveWorkspaceSettingsLayer,
+  type SettingsLayerFileResult,
+  type SettingsLayerSnapshot,
+  type SettingsLayersResult,
+} from "./workspace-settings";
 export { createTrpcContext, type TrpcContext } from "./trpc/context";
 export { appRouter, type AppRouter } from "./trpc/router";
 export type {
   AppServerLogger,
-  ChatImageAttachment,
+  ChatSessionAsset,
   ChatMessage,
   ModelCapabilities,
   TaskEvent,

@@ -10,7 +10,7 @@ import {
   type LoopbusTraceRecord as SessionDbLoopbusTraceRecord,
   type SessionModelCallRecord,
 } from "@agenter/session-system";
-import { ResourceLoader, loadSettings } from "@agenter/settings";
+import { ResourceLoader } from "@agenter/settings";
 import {
   TaskEngine,
   resolveTaskSources,
@@ -21,8 +21,7 @@ import {
 } from "@agenter/task-system";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, extname, isAbsolute, join, posix as posixPath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { AgentRuntime } from "./agent-runtime";
 import { AgenterAI, type AgentModelCallRecord, type AgentRuntimeStats } from "./agenter-ai";
@@ -40,11 +39,23 @@ import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-termina
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
+import {
+  buildSessionAssetRelativePath,
+  resolveSessionAssetKind,
+  toChatSessionAsset,
+} from "./session-assets";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
+import {
+  listWorkspaceSettingsLayers,
+  readWorkspaceSettingsLayer,
+  saveWorkspaceSettingsLayer,
+  type SettingsLayerSnapshot,
+  type SettingsLayersResult,
+} from "./workspace-settings";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
-import type { ChatImageAttachment, ChatMessage, ModelCapabilities, TaskStage } from "./types";
+import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from "./types";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -77,42 +88,6 @@ const buildTerminalSnapshotPayload = (terminalId: string, snapshot: ManagedTermi
   cursor: snapshot.cursor,
   tail: snapshot.lines.slice(-20).join("\n"),
 });
-
-const buildSessionImageUrl = (sessionId: string, assetId: string): string =>
-  `/media/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(assetId)}`;
-
-const toChatAttachment = (sessionId: string, asset: SessionAssetRecord): ChatImageAttachment => ({
-  assetId: asset.id,
-  kind: "image",
-  name: asset.name,
-  mimeType: asset.mimeType,
-  sizeBytes: asset.sizeBytes,
-  url: buildSessionImageUrl(sessionId, asset.id),
-});
-
-const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp",
-  "image/gif": ".gif",
-  "image/svg+xml": ".svg",
-  "image/bmp": ".bmp",
-  "image/x-icon": ".ico",
-  "image/heic": ".heic",
-  "image/heif": ".heif",
-};
-
-const resolveImageExtension = (name: string, mimeType: string): string => {
-  const byMime = IMAGE_EXTENSION_BY_MIME[mimeType.toLowerCase()];
-  if (byMime) {
-    return byMime;
-  }
-  const byName = extname(name).trim().toLowerCase();
-  return byName.length > 0 ? byName : ".bin";
-};
-
-const buildSessionImageRelativePath = (assetId: string, name: string, mimeType: string): string =>
-  posixPath.join("assets", "images", `${assetId}${resolveImageExtension(name, mimeType)}`);
 
 const serializeAttentionSystemFacts = (records: AttentionRecord[]): string =>
   JSON.stringify({
@@ -391,29 +366,18 @@ export interface SessionRuntimeOptions {
   };
 }
 
-export interface SettingsLayerSnapshot {
-  layerId: string;
-  sourceId: string;
-  path: string;
-  exists: boolean;
-  editable: boolean;
-  readonlyReason?: string;
-}
-
-export interface SettingsLayersResult {
-  effective: {
-    content: string;
-  };
-  layers: SettingsLayerSnapshot[];
-}
-
 export interface SessionRuntimeModelDebug {
   config: {
     providerId: string;
-    kind: ResolvedSessionConfig["ai"]["kind"];
+    apiStandard: ResolvedSessionConfig["ai"]["apiStandard"];
+    vendor?: string;
+    profile?: string;
+    extensions?: string[];
     model: string;
     baseUrl?: string;
     apiKey?: string;
+    apiKeyEnv?: string;
+    headers?: Record<string, string>;
     temperature: number;
     maxRetries: number;
     maxToken?: number;
@@ -587,11 +551,16 @@ export class SessionRuntime {
 
     const modelClient = new ModelClient({
       providerId: this.config.ai.providerId,
-      kind: this.config.ai.kind,
+      apiStandard: this.config.ai.apiStandard,
+      vendor: this.config.ai.vendor,
+      profile: this.config.ai.profile,
+      extensions: this.config.ai.extensions,
       lang: this.config.lang,
       apiKey: this.config.ai.apiKey,
+      apiKeyEnv: this.config.ai.apiKeyEnv,
       model: this.config.ai.model,
       baseUrl: this.config.ai.baseUrl,
+      headers: this.config.ai.headers,
       temperature: this.config.ai.temperature,
       maxRetries: this.config.ai.maxRetries,
       maxToken: this.config.ai.maxToken,
@@ -1127,10 +1096,15 @@ export class SessionRuntime {
       config: this.config
         ? {
             providerId: this.config.ai.providerId,
-            kind: this.config.ai.kind,
+            apiStandard: this.config.ai.apiStandard,
+            vendor: this.config.ai.vendor,
+            profile: this.config.ai.profile,
+            extensions: this.config.ai.extensions,
             model: this.config.ai.model,
             baseUrl: this.config.ai.baseUrl,
             apiKey: this.config.ai.apiKey,
+            apiKeyEnv: this.config.ai.apiKeyEnv,
+            headers: this.config.ai.headers,
             temperature: this.config.ai.temperature,
             maxRetries: this.config.ai.maxRetries,
             maxToken: this.config.ai.maxToken,
@@ -1204,35 +1178,11 @@ export class SessionRuntime {
   async readSettingsLayer(
     layerId: string,
   ): Promise<{ layer: SettingsLayerSnapshot; path: string; content: string; mtimeMs: number }> {
-    const layer = this.settingsLayers.find((item) => item.layerId === layerId);
-    if (!layer) {
-      throw new Error(`settings layer not found: ${layerId}`);
-    }
-    const filePath = this.resolveLayerFilePath(layer.path);
-    if (!filePath) {
-      return {
-        layer,
-        path: layer.path,
-        content: "",
-        mtimeMs: 0,
-      };
-    }
-    try {
-      const [content, info] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
-      return {
-        layer,
-        path: filePath,
-        content,
-        mtimeMs: info.mtimeMs,
-      };
-    } catch {
-      return {
-        layer,
-        path: filePath,
-        content: "",
-        mtimeMs: 0,
-      };
-    }
+    return await readWorkspaceSettingsLayer({
+      workspacePath: this.options.cwd,
+      layerId,
+      avatar: this.options.avatar,
+    });
   }
 
   async saveSettingsLayer(input: { layerId: string; content: string; baseMtimeMs: number }): Promise<
@@ -1248,60 +1198,20 @@ export class SessionRuntime {
       }
     | { ok: false; reason: "readonly"; message: string }
   > {
-    const layer = this.settingsLayers.find((item) => item.layerId === input.layerId);
-    if (!layer) {
-      throw new Error(`settings layer not found: ${input.layerId}`);
+    const result = await saveWorkspaceSettingsLayer({
+      workspacePath: this.options.cwd,
+      layerId: input.layerId,
+      content: input.content,
+      baseMtimeMs: input.baseMtimeMs,
+      avatar: this.options.avatar,
+    });
+    if (!result.ok) {
+      return result;
     }
-    if (!layer.editable) {
-      return {
-        ok: false,
-        reason: "readonly",
-        message: layer.readonlyReason ?? "layer is readonly",
-      };
-    }
-    const filePath = this.resolveLayerFilePath(layer.path);
-    if (!filePath) {
-      return {
-        ok: false,
-        reason: "readonly",
-        message: "layer is not a local file",
-      };
-    }
-
-    let currentContent = "";
-    let currentMtimeMs = 0;
-    try {
-      const [content, info] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
-      currentContent = content;
-      currentMtimeMs = info.mtimeMs;
-    } catch {
-      // New file is allowed.
-    }
-    if (Math.abs(currentMtimeMs - input.baseMtimeMs) > 0.5) {
-      return {
-        ok: false,
-        reason: "conflict",
-        latest: {
-          layer,
-          path: filePath,
-          content: currentContent,
-          mtimeMs: currentMtimeMs,
-        },
-      };
-    }
-
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, input.content, "utf8");
-    const [content, info] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
     await this.reloadSettingsLayers();
     return {
       ok: true,
-      file: {
-        layer,
-        path: filePath,
-        content,
-        mtimeMs: info.mtimeMs,
-      },
+      file: result.file,
       effective: {
         content: this.settingsEffective,
       },
@@ -1329,38 +1239,39 @@ export class SessionRuntime {
     return this.settingsEditor.save(kind, content, baseMtimeMs);
   }
 
-  async uploadImageAssets(
+  async uploadAssets(
     files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>,
-  ): Promise<ChatImageAttachment[]> {
+  ): Promise<ChatSessionAsset[]> {
     if (!this.sessionDb) {
       throw new Error("session db not initialized");
     }
-    const attachments: ChatImageAttachment[] = [];
+    const attachments: ChatSessionAsset[] = [];
     for (const file of files) {
       const assetId = crypto.randomUUID();
-      const relativePath = buildSessionImageRelativePath(assetId, file.name, file.mimeType);
+      const kind = resolveSessionAssetKind(file.mimeType);
+      const relativePath = buildSessionAssetRelativePath(assetId, file.name, file.mimeType, kind);
       const filePath = join(this.options.sessionRoot, relativePath);
       await mkdir(dirname(filePath), { recursive: true });
       await writeFile(filePath, file.bytes);
       const asset = this.sessionDb.appendAsset({
         id: assetId,
-        kind: "image",
+        kind,
         name: file.name,
         mimeType: file.mimeType,
         sizeBytes: file.bytes.byteLength,
         relativePath,
       });
-      attachments.push(toChatAttachment(this.options.sessionId, asset));
+      attachments.push(toChatSessionAsset(this.options.sessionId, asset));
     }
     return attachments;
   }
 
-  getImageAsset(assetId: string): { asset: SessionAssetRecord; filePath: string } | null {
+  getAsset(assetId: string): { asset: SessionAssetRecord; filePath: string } | null {
     if (!this.sessionDb) {
       return null;
     }
     const asset = this.sessionDb.getAssetById(assetId);
-    if (!asset || asset.kind !== "image") {
+    if (!asset) {
       return null;
     }
     return {
@@ -1370,8 +1281,8 @@ export class SessionRuntime {
   }
 
   private async readImageAttachmentSource(assetId: string): Promise<{ mimeType: string; dataBase64: string } | null> {
-    const resolved = this.getImageAsset(assetId);
-    if (!resolved) {
+    const resolved = this.getAsset(assetId);
+    if (!resolved || resolved.asset.kind !== "image") {
       return null;
     }
     try {
@@ -1385,11 +1296,11 @@ export class SessionRuntime {
     }
   }
 
-  private resolveChatAttachments(assetIds: string[]): ChatImageAttachment[] {
+  private resolveChatAttachments(assetIds: string[]): ChatSessionAsset[] {
     if (!this.sessionDb || assetIds.length === 0) {
       return [];
     }
-    return this.sessionDb.listAssetsByIds(assetIds).map((asset) => toChatAttachment(this.options.sessionId, asset));
+    return this.sessionDb.listAssetsByIds(assetIds).map((asset) => toChatSessionAsset(this.options.sessionId, asset));
   }
 
   pushUserChat(text: string, assetIds: string[] = [], clientMessageId?: string): void {
@@ -1492,7 +1403,17 @@ export class SessionRuntime {
         enabled: this.apiCallRecordingRefCount > 0,
         refCount: this.apiCallRecordingRefCount,
       },
-      modelCapabilities: this.config ? resolveModelCapabilities(this.config.ai) : { imageInput: false },
+      modelCapabilities: this.config
+        ? resolveModelCapabilities(this.config.ai)
+        : {
+            streaming: false,
+            tools: false,
+            imageInput: false,
+            nativeCompact: false,
+            summarizeFallback: false,
+            fileUpload: false,
+            mcpCatalog: false,
+          },
       activeCycle: this.cloneCycle(this.activeCycle),
     };
   }
@@ -2031,7 +1952,10 @@ export class SessionRuntime {
       this.activeCycle.liveMessages = [];
     }
     if (input.upsertLiveMessage) {
-      const nextMessage = structuredClone(input.upsertLiveMessage);
+      const nextMessage = structuredClone({
+        ...input.upsertLiveMessage,
+        cycleId: input.upsertLiveMessage.cycleId ?? this.activeCycle.cycleId,
+      });
       const nextMessages = [...this.activeCycle.liveMessages];
       const index = nextMessages.findIndex((message) => message.id === nextMessage.id);
       if (index >= 0) {
@@ -2042,8 +1966,12 @@ export class SessionRuntime {
       this.activeCycle.liveMessages = nextMessages;
     }
     if (input.appendOutput) {
-      this.activeCycle.outputs = [...this.activeCycle.outputs, structuredClone(input.appendOutput)];
-      if (input.appendOutput.channel !== "self_talk") {
+      const nextOutput = structuredClone({
+        ...input.appendOutput,
+        cycleId: input.appendOutput.cycleId ?? this.activeCycle.cycleId,
+      });
+      this.activeCycle.outputs = [...this.activeCycle.outputs, nextOutput];
+      if (nextOutput.channel !== "self_talk") {
         this.activeCycle.liveMessages = [];
         this.activeCycle.streaming = null;
       }
@@ -2071,34 +1999,37 @@ export class SessionRuntime {
     cycleId: number | null = this.activeCycleId,
     channelOverride?: SessionDbChatMessageRecord["channel"],
   ): void {
-    this.chatMessages.push(message);
+    const nextMessage: ChatMessage = {
+      ...message,
+      cycleId: message.cycleId ?? cycleId,
+      attachments: message.attachments?.map((attachment) => ({ ...attachment })),
+      tool: message.tool ? { ...message.tool } : undefined,
+    };
+    this.chatMessages.push(nextMessage);
     this.trimChat();
-    this.emit("chat", message);
+    this.emit("chat", nextMessage);
     if (!this.sessionDb) {
       return;
     }
-    const channel = channelOverride ?? message.channel ?? (message.role === "user" ? "user_input" : "to_user");
+    const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
     const block = this.sessionDb.appendBlock({
       cycleId,
-      createdAt: message.timestamp,
-      role: message.role,
+      createdAt: nextMessage.timestamp,
+      role: nextMessage.role,
       channel,
-      format: message.format ?? "markdown",
-      content: message.content,
-      tool: message.tool,
+      format: nextMessage.format ?? "markdown",
+      content: nextMessage.content,
+      tool: nextMessage.tool,
     });
-    if (message.attachments && message.attachments.length > 0) {
+    if (nextMessage.attachments && nextMessage.attachments.length > 0) {
       this.sessionDb.linkBlockAssets(
         block.id,
-        message.attachments.map((attachment) => attachment.assetId),
+        nextMessage.attachments.map((attachment) => attachment.assetId),
       );
     }
-    if (this.activeCycle && cycleId !== null && this.activeCycle.cycleId === cycleId && message.role === "assistant") {
+    if (this.activeCycle && cycleId !== null && this.activeCycle.cycleId === cycleId && nextMessage.role === "assistant") {
       this.updateActiveCycle({
-        appendOutput: {
-          ...message,
-          attachments: message.attachments?.map((attachment) => ({ ...attachment })),
-        },
+        appendOutput: nextMessage,
       });
     }
   }
@@ -2109,10 +2040,11 @@ export class SessionRuntime {
       role: record.role,
       content: record.content,
       timestamp: record.createdAt,
+      cycleId: record.cycleId,
       channel: record.channel === "user_input" ? undefined : record.channel,
       format: record.format,
       tool: record.tool,
-      attachments: record.attachments.map((attachment) => toChatAttachment(this.options.sessionId, attachment)),
+      attachments: record.attachments.map((attachment) => toChatSessionAsset(this.options.sessionId, attachment)),
     };
   }
 
@@ -2120,8 +2052,9 @@ export class SessionRuntime {
     const parts: SessionCollectedInputPart[] = [{ type: "text", text: input.text }];
     for (const attachment of input.attachments ?? []) {
       parts.push({
-        type: "image",
+        type: attachment.kind,
         assetId: attachment.assetId,
+        kind: attachment.kind,
         mimeType: attachment.mimeType,
         name: attachment.name,
         sizeBytes: attachment.sizeBytes,
@@ -2295,21 +2228,35 @@ export class SessionRuntime {
     if (!this.sessionDb || this.activeCycleId === null) {
       return;
     }
-    const modelCall = this.sessionDb.appendModelCall({
-      cycleId: this.activeCycleId,
-      createdAt: record.timestamp,
-      provider: record.provider,
-      model: record.model,
-      request: record.request,
-      response: record.response,
-      error: record.error,
-    });
-    this.activeModelCallId = modelCall.id;
+    const existingModelCallId = this.activeModelCallId ?? this.sessionDb.getModelCallByCycleId(this.activeCycleId)?.id ?? null;
+    const modelCall =
+      record.status === "running" || existingModelCallId === null
+        ? this.sessionDb.appendModelCall({
+            cycleId: this.activeCycleId,
+            createdAt: record.timestamp,
+            status: record.status,
+            completedAt: record.completedAt,
+            provider: record.provider,
+            model: record.model,
+            request: record.request,
+            response: record.response,
+            error: record.error,
+          })
+        : this.sessionDb.updateModelCall(existingModelCallId, {
+            status: record.status,
+            completedAt: record.completedAt ?? null,
+            response: record.response,
+            error: record.error,
+          });
+    this.activeModelCallId = record.status === "running" ? modelCall.id : this.activeModelCallId ?? modelCall.id;
     this.updateActiveCycle({
       modelCallId: modelCall.id,
-      status: modelCall.error ? "error" : this.activeCycle?.status,
+      status: modelCall.status === "error" ? "error" : this.activeCycle?.status,
     });
     this.emit("modelCall", { entry: modelCall });
+    if (record.status !== "running") {
+      this.activeModelCallId = null;
+    }
     if (!this.isApiCallRecordingEnabled()) {
       return;
     }
@@ -2341,52 +2288,11 @@ export class SessionRuntime {
     if (!config) {
       return;
     }
-    const loaded = await loadSettings({
-      projectRoot: config.agentCwd,
-      cwd: config.agentCwd,
+    const loaded = await listWorkspaceSettingsLayers({
+      workspacePath: config.agentCwd,
       avatar: config.avatar.nickname,
     });
-    this.settingsEffective = JSON.stringify(loaded.settings, null, 2);
-    this.settingsLayers = loaded.meta.sources.map((source, index) => {
-      const editable = this.isEditableLayerPath(source.path);
-      return {
-        layerId: `${index}:${source.id}`,
-        sourceId: source.id,
-        path: source.path,
-        exists: source.exists,
-        editable,
-        readonlyReason: editable ? undefined : "remote settings source",
-      };
-    });
-  }
-
-  private isEditableLayerPath(path: string): boolean {
-    if (isAbsolute(path) || path.startsWith("~/")) {
-      return true;
-    }
-    if (path.startsWith("file://")) {
-      return true;
-    }
-    return !/^[a-z][a-z0-9+.-]*:\/\//i.test(path);
-  }
-
-  private resolveLayerFilePath(path: string): string | null {
-    if (isAbsolute(path)) {
-      return path;
-    }
-    if (path.startsWith("~/")) {
-      return join(homedir(), path.slice(2));
-    }
-    if (path.startsWith("file://")) {
-      try {
-        return fileURLToPath(path);
-      } catch {
-        return null;
-      }
-    }
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
-      return null;
-    }
-    return join(this.options.cwd, path);
+    this.settingsEffective = loaded.effective.content;
+    this.settingsLayers = loaded.layers;
   }
 }

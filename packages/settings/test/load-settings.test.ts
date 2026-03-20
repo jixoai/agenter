@@ -22,7 +22,8 @@ describe("@agenter/settings", () => {
       ai: {
         providers: {
           default: {
-            kind: "openai-compatible",
+            apiStandard: "openai-chat",
+            vendor: "openrouter",
             model: "user-avatar-model",
             baseUrl: "https://example.com/user",
           },
@@ -35,7 +36,8 @@ describe("@agenter/settings", () => {
       ai: {
         providers: {
           default: {
-            kind: "openai-compatible",
+            apiStandard: "openai-chat",
+            vendor: "openrouter",
             model: "user-settings-model",
             baseUrl: "https://example.com/user-settings",
           },
@@ -47,7 +49,8 @@ describe("@agenter/settings", () => {
       ai: {
         providers: {
           default: {
-            kind: "openai-compatible",
+            apiStandard: "openai-chat",
+            vendor: "openrouter",
             model: "project-avatar-model",
             baseUrl: "https://example.com/project-avatar",
           },
@@ -59,7 +62,8 @@ describe("@agenter/settings", () => {
       ai: {
         providers: {
           default: {
-            kind: "openai-compatible",
+            apiStandard: "openai-chat",
+            vendor: "openrouter",
             model: "project-settings-model",
             baseUrl: "https://example.com/project-settings",
           },
@@ -137,6 +141,9 @@ describe("@agenter/settings", () => {
     expect(loaded.settings.lang).toBe("zh-Hans");
     expect(loaded.settings.ai?.activeProvider).toBe("proj");
     expect(loaded.settings.ai?.providers?.proj?.model).toBe("deepseek-reasoner");
+    expect(loaded.settings.ai?.providers?.proj?.apiStandard).toBe("openai-chat");
+    expect(loaded.settings.ai?.providers?.proj?.vendor).toBe("deepseek");
+    expect(loaded.settings.ai?.providers?.proj?.profile).toBe("compatible");
     expect(loaded.settings.prompt?.agenterPath).toBe(join(homeDir, ".agenter", "AGENTER.mdx"));
     expect(loaded.settings.terminal?.helpSources?.iflow).toBe(join(homeDir, ".agenter", "man", "iflow.md"));
     expect(loaded.settings.terminal?.presets?.iflow?.cwd).toBe(resolve(projectRoot, "./tmp-workspace"));
@@ -148,6 +155,47 @@ describe("@agenter/settings", () => {
 
     expect(loaded.meta.sources).toHaveLength(3);
     expect(loaded.meta.sources.every((entry) => entry.exists)).toBeTrue();
+  });
+
+  test("loadSettings keeps canonical providers untouched", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-canonical-"));
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "kimi",
+        providers: {
+          kimi: {
+            apiStandard: "anthropic",
+            vendor: "kimi",
+            profile: "official",
+            extensions: ["file-upload"],
+            model: "kimi-k2",
+            baseUrl: "https://api.moonshot.ai/anthropic",
+            headers: {
+              "x-tenant": "alpha",
+            },
+          },
+        },
+      },
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+    });
+
+    expect(loaded.settings.ai?.providers?.kimi).toEqual({
+      apiStandard: "anthropic",
+      vendor: "kimi",
+      profile: "official",
+      extensions: ["file-upload"],
+      model: "kimi-k2",
+      baseUrl: "https://api.moonshot.ai/anthropic",
+      headers: {
+        "x-tenant": "alpha",
+      },
+    });
   });
 
   test("resource loader resolves builtins, paths and custom protocol", async () => {

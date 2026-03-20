@@ -1,8 +1,9 @@
 export type SessionCollectedInputPart =
   | { type: "text"; text: string }
   | {
-      type: "image";
+      type: SessionAssetKind;
       assetId: string;
+      kind: SessionAssetKind;
       mimeType: string;
       name: string;
       sizeBytes: number;
@@ -47,6 +48,8 @@ export interface SessionModelCallRecord {
   id: number;
   cycleId: number;
   createdAt: number;
+  status: "running" | "done" | "error";
+  completedAt?: number;
   provider: string;
   model: string;
   request: unknown;
@@ -57,6 +60,8 @@ export interface SessionModelCallRecord {
 export interface SessionModelCallInsert {
   cycleId: number;
   createdAt?: number;
+  status?: SessionModelCallRecord["status"];
+  completedAt?: number;
   provider: string;
   model: string;
   request: unknown;
@@ -64,7 +69,14 @@ export interface SessionModelCallInsert {
   error?: unknown;
 }
 
-export type SessionAssetKind = "image";
+export interface SessionModelCallUpdate {
+  status?: SessionModelCallRecord["status"];
+  completedAt?: number | null;
+  response?: unknown;
+  error?: unknown;
+}
+
+export type SessionAssetKind = "image" | "video" | "file";
 
 export interface SessionAssetRecord {
   id: string;

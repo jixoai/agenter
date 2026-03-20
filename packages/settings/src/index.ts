@@ -1,5 +1,16 @@
 export { loadSettings } from "./load-settings";
 export {
+  AI_API_STANDARDS,
+  LEGACY_AI_PROVIDER_KINDS,
+  aiProviderSchema,
+  normalizeAiProviderSettings,
+  type AiApiStandard,
+  type AiProviderInputSettings,
+  type AiProviderKind,
+  type AiProviderSettings,
+  type LegacyAiProviderKind,
+} from "./provider";
+export {
   ResourceLoader,
   type ResolvedResource,
   type ResourceAliasResolver,
@@ -12,8 +23,6 @@ export { settingsSource } from "./source";
 export type {
   AgentSettings,
   AgenterSettings,
-  AiProviderKind,
-  AiProviderSettings,
   AiSettings,
   BuiltinSettingsSource,
   FeatureSettings,
