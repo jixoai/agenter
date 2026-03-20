@@ -236,7 +236,7 @@ export const TerminalPanel = ({ runtime, snapshots, loading = false }: TerminalP
       className="h-full"
       loadingOverlayLabel="Refreshing terminal..."
     >
-      <section className="flex h-full flex-1 flex-col gap-3">
+      <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">

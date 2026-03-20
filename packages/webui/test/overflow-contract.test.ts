@@ -4,12 +4,27 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 const WEBUI_SRC_ROOT = path.resolve(import.meta.dirname, "../src");
-const ALLOWLIST = new Set(["components/ui/accordion.tsx", "components/ui/overflow-surface.tsx"]);
+const ALLOWLIST = new Set([
+  "components/ui/accordion.tsx",
+  "components/ui/async-surface.tsx",
+  "components/ui/overflow-surface.tsx",
+]);
 const BACKGROUND_GUARD_FILES = new Map<string, string>([
   ["router.tsx", 'surfaceToneClassName("panel")'],
   ["features/shell/AppHeader.tsx", 'surfaceToneClassName("chrome")'],
   ["features/shell/BottomNavBar.tsx", 'surfaceToneClassName("chrome")'],
   ["features/shell/SidebarNav.tsx", 'surfaceToneClassName("chrome")'],
+]);
+const VIEWPORT_GUARD_FILES = new Map<string, string>([
+  ["features/shell/AppRoot.tsx", "ViewportMask"],
+  ["features/shell/WorkspaceShellFrame.tsx", "ViewportMask"],
+  ["features/shell/SidebarNav.tsx", "ScrollViewport"],
+  ["features/settings/GlobalSettingsPanel.tsx", "ScrollViewport"],
+  ["features/settings/SettingsPanel.tsx", "ScrollViewport"],
+]);
+const TOOLTIP_GUARD_FILES = new Map<string, string>([
+  ["features/shell/IconAction.tsx", "<Tooltip"],
+  ["features/shell/SidebarNav.tsx", "<Tooltip"],
 ]);
 
 const collectTsxFiles = (directory: string): string[] => {
@@ -51,6 +66,38 @@ describe("Feature: WebUI overflow source contract", () => {
       .map((filePath) => {
         const file = relativePath(filePath);
         const expectedToken = BACKGROUND_GUARD_FILES.get(file);
+        if (!expectedToken) {
+          return null;
+        }
+        const source = readFileSync(filePath, "utf8");
+        return source.includes(expectedToken) ? null : `${file} -> ${expectedToken}`;
+      })
+      .filter((entry): entry is string => entry !== null);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("Scenario: Given shell and settings surfaces When compact and desktop layouts are supported Then explicit viewport primitives own clipping and scrolling", () => {
+    const violations = collectTsxFiles(WEBUI_SRC_ROOT)
+      .map((filePath) => {
+        const file = relativePath(filePath);
+        const expectedToken = VIEWPORT_GUARD_FILES.get(file);
+        if (!expectedToken) {
+          return null;
+        }
+        const source = readFileSync(filePath, "utf8");
+        return source.includes(expectedToken) ? null : `${file} -> ${expectedToken}`;
+      })
+      .filter((entry): entry is string => entry !== null);
+
+    expect(violations).toEqual([]);
+  });
+
+  test("Scenario: Given shell icon actions and dense session rails When secondary help is needed Then the UI uses tooltip primitives instead of forcing extra visible chrome", () => {
+    const violations = collectTsxFiles(WEBUI_SRC_ROOT)
+      .map((filePath) => {
+        const file = relativePath(filePath);
+        const expectedToken = TOOLTIP_GUARD_FILES.get(file);
         if (!expectedToken) {
           return null;
         }

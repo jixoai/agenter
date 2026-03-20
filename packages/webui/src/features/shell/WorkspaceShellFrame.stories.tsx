@@ -9,6 +9,7 @@ const renderFrame = (narrow = false) => {
     workspacePath: string;
     workspaceMissing?: boolean;
     activeTab: "chat" | "devtools" | "settings";
+    navMode?: "top" | "bottom";
     onNavigate: (tab: "chat" | "devtools" | "settings") => void;
     children: ReactNode;
   }) => {
@@ -35,6 +36,7 @@ const meta = {
   args: {
     workspacePath: "/repo/demo",
     activeTab: "chat",
+    navMode: "top",
     onNavigate: fn(),
     children: (
       <section className="flex h-full items-center justify-center rounded-2xl bg-white p-6 shadow-sm">
@@ -77,7 +79,9 @@ export const SwitchTabsWithinWorkspaceShell: Story = {
 };
 
 export const MobileFooterNavigationOwnsRouteSwitching: Story = {
-  args: {},
+  args: {
+    navMode: "bottom",
+  },
   render: renderFrame(true),
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);

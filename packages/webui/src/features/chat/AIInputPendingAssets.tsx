@@ -1,4 +1,5 @@
 import { FileImage, FileText, Video, X } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { ClipSurface } from "../../components/ui/overflow-surface";
 import type { PendingAsset } from "./ai-input-types";
@@ -40,7 +41,7 @@ const formatBytes = (value: number): string => {
   return `${value} B`;
 };
 
-const assetKindMeta = (asset: PendingAsset): { icon: JSX.Element; label: string } => {
+const assetKindMeta = (asset: PendingAsset): { icon: ReactElement; label: string } => {
   switch (asset.kind) {
     case "image":
       return {

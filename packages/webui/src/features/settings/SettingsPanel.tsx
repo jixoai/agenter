@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { Sheet } from "../../components/ui/sheet";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { Textarea } from "../../components/ui/textarea";
+import { cn } from "../../lib/utils";
 
 export interface SettingsLayerItem {
   layerId: string;
@@ -33,6 +35,7 @@ interface SettingsPanelProps {
   layers: SettingsLayerItem[];
   selectedLayerId: string | null;
   layerContent: string;
+  detailMode?: "split" | "sheet";
   onSelectLayer: (layerId: string) => void;
   onLayerContentChange: (content: string) => void;
   onRefreshLayers: () => void;
@@ -124,6 +127,7 @@ export const SettingsPanel = ({
   layers,
   selectedLayerId,
   layerContent,
+  detailMode = "split",
   onSelectLayer,
   onLayerContentChange,
   onRefreshLayers,
@@ -131,11 +135,20 @@ export const SettingsPanel = ({
   onSaveLayer,
 }: SettingsPanelProps) => {
   const [activeTab, setActiveTab] = useState<"effective" | "layers">("effective");
+  const [detailOpen, setDetailOpen] = useState(false);
   const selectedLayer = useMemo(
     () => layers.find((item) => item.layerId === selectedLayerId) ?? null,
     [layers, selectedLayerId],
   );
   const editableJson = useMemo(() => tryParseJson(layerContent), [layerContent]);
+  const showSplitDetail = detailMode === "split";
+
+  const selectLayer = (layerId: string) => {
+    onSelectLayer(layerId);
+    if (detailMode === "sheet") {
+      setDetailOpen(true);
+    }
+  };
 
   const patchVisualField = (path: string[], value: string) => {
     if (!editableJson) {
@@ -146,6 +159,79 @@ export const SettingsPanel = ({
   };
 
   const hasData = activeTab === "effective" ? effectiveContent.trim().length > 0 : layers.length > 0;
+
+  useEffect(() => {
+    if (activeTab !== "layers" || detailMode !== "sheet") {
+      setDetailOpen(false);
+      return;
+    }
+    if (selectedLayerId) {
+      setDetailOpen(true);
+    }
+  }, [activeTab, detailMode, selectedLayerId]);
+
+  const layerEditor = (
+    <section className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-2 rounded-xl border border-slate-200 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="typo-emphasis text-xs text-slate-700">Layer editor</p>
+          <p className="max-w-[60ch] truncate text-[11px] text-slate-500">
+            {selectedLayer?.path ?? "Select a source layer"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={onLoadLayer} disabled={disabled || !selectedLayerId}>
+            Load
+          </Button>
+          <Button size="sm" onClick={onSaveLayer} disabled={disabled || !selectedLayer?.editable}>
+            Save
+          </Button>
+        </div>
+      </div>
+      <Textarea
+        value={layerContent}
+        onChange={(event) => onLayerContentChange(event.target.value)}
+        placeholder="Select a layer and load content"
+        readOnly={!selectedLayer?.editable}
+        className="h-full resize-none font-mono text-xs"
+      />
+      {selectedLayer?.editable ? (
+        <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <p className="typo-emphasis text-xs text-slate-700">Quick fields</p>
+          {editableJson ? (
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-[11px] text-slate-600">lang</span>
+                <Input
+                  value={readPathString(editableJson, ["lang"])}
+                  onChange={(event) => patchVisualField(["lang"], event.target.value)}
+                  placeholder="en"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-slate-600">ai.activeProvider</span>
+                <Input
+                  value={readPathString(editableJson, ["ai", "activeProvider"])}
+                  onChange={(event) => patchVisualField(["ai", "activeProvider"], event.target.value)}
+                  placeholder="default"
+                />
+              </label>
+              <label className="space-y-1 lg:col-span-2">
+                <span className="text-[11px] text-slate-600">terminal.outputRoot</span>
+                <Input
+                  value={readPathString(editableJson, ["terminal", "outputRoot"])}
+                  onChange={(event) => patchVisualField(["terminal", "outputRoot"], event.target.value)}
+                  placeholder="./tmp"
+                />
+              </label>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">Visual fields require valid JSON content in the editor.</p>
+          )}
+        </section>
+      ) : null}
+    </section>
+  );
 
   return (
     <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white/96 p-4 shadow-sm">
@@ -177,7 +263,7 @@ export const SettingsPanel = ({
             <Textarea value={effectiveContent} readOnly className="h-full resize-none font-mono text-xs" />
           </div>
         ) : (
-          <div className="grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className={cn("grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3", showSplitDetail ? "xl:grid-cols-[320px_minmax(0,1fr)]" : "")}>
             <section className="grid grid-rows-[auto_minmax(0,1fr)] rounded-xl border border-slate-200 bg-slate-50 p-2">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="typo-emphasis text-xs text-slate-700">Sources</p>
@@ -190,7 +276,7 @@ export const SettingsPanel = ({
                   <button
                     key={layer.layerId}
                     type="button"
-                    onClick={() => onSelectLayer(layer.layerId)}
+                    onClick={() => selectLayer(layer.layerId)}
                     className={
                       layer.layerId === selectedLayerId
                         ? "w-full rounded-md border border-teal-300 bg-teal-50 px-2 py-2 text-left"
@@ -210,69 +296,21 @@ export const SettingsPanel = ({
               </ScrollViewport>
             </section>
 
-            <section className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-2 rounded-xl border border-slate-200 p-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="typo-emphasis text-xs text-slate-700">Layer editor</p>
-                  <p className="max-w-[60ch] truncate text-[11px] text-slate-500">
-                    {selectedLayer?.path ?? "Select a source layer"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={onLoadLayer} disabled={disabled || !selectedLayerId}>
-                    Load
-                  </Button>
-                  <Button size="sm" onClick={onSaveLayer} disabled={disabled || !selectedLayer?.editable}>
-                    Save
-                  </Button>
-                </div>
-              </div>
-              <Textarea
-                value={layerContent}
-                onChange={(event) => onLayerContentChange(event.target.value)}
-                placeholder="Select a layer and load content"
-                readOnly={!selectedLayer?.editable}
-                className="h-full resize-none font-mono text-xs"
-              />
-              {selectedLayer?.editable ? (
-                <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
-                  <p className="typo-emphasis text-xs text-slate-700">Quick fields</p>
-                  {editableJson ? (
-                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-[11px] text-slate-600">lang</span>
-                        <Input
-                          value={readPathString(editableJson, ["lang"])}
-                          onChange={(event) => patchVisualField(["lang"], event.target.value)}
-                          placeholder="en"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] text-slate-600">ai.activeProvider</span>
-                        <Input
-                          value={readPathString(editableJson, ["ai", "activeProvider"])}
-                          onChange={(event) => patchVisualField(["ai", "activeProvider"], event.target.value)}
-                          placeholder="default"
-                        />
-                      </label>
-                      <label className="space-y-1 lg:col-span-2">
-                        <span className="text-[11px] text-slate-600">terminal.outputRoot</span>
-                        <Input
-                          value={readPathString(editableJson, ["terminal", "outputRoot"])}
-                          onChange={(event) => patchVisualField(["terminal", "outputRoot"], event.target.value)}
-                          placeholder="./tmp"
-                        />
-                      </label>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-500">Visual fields require valid JSON content in the editor.</p>
-                  )}
-                </section>
-              ) : null}
-            </section>
+            {showSplitDetail ? layerEditor : null}
           </div>
         )}
       </AsyncSurface>
+
+      {detailMode === "sheet" && activeTab === "layers" ? (
+        <Sheet
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          side="right"
+          title={selectedLayer ? "Layer editor" : "Layer source"}
+        >
+          <div className="h-full min-h-[40dvh]">{layerEditor}</div>
+        </Sheet>
+      ) : null}
     </section>
   );
 };

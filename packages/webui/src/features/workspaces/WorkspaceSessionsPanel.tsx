@@ -15,6 +15,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
+import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { cn } from "../../lib/utils";
 import { SessionItem } from "./SessionItem";
 
@@ -164,6 +165,7 @@ export const WorkspaceSessionsPanel = ({
   const rowVirtualizer = useVirtualizer({
     count: sessions.length,
     getScrollElement: () => parentRef.current,
+    observeElementOffset: observeElementOffsetWithCleanup,
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
     initialRect: {

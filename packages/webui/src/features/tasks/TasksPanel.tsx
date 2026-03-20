@@ -43,11 +43,11 @@ export const TasksPanel = ({ tasks, compact = false, loading = false }: TasksPan
   const state = resolveAsyncSurfaceState({ loading, hasData: tasks.length > 0 });
 
   return (
-    <Card className={cn("col-span-1 min-h-[40dvh] lg:col-span-2", compact ? "h-full" : "")}>
+    <Card className={cn("col-span-1 grid min-h-[40dvh] grid-rows-[auto_minmax(0,1fr)] lg:col-span-2", compact ? "h-full" : "")}>
       <CardHeader className={cn("border-b border-slate-200", compact ? "p-3" : "")}>
         <CardTitle>Tasks</CardTitle>
       </CardHeader>
-      <CardContent className={cn("flex h-full flex-col space-y-2 p-4", compact ? "p-3" : "")}>
+      <CardContent className={cn("grid h-full grid-rows-[minmax(0,1fr)] p-4", compact ? "p-3" : "")}>
         <AsyncSurface
           state={state}
           loadingOverlayLabel="Refreshing tasks..."
@@ -55,7 +55,7 @@ export const TasksPanel = ({ tasks, compact = false, loading = false }: TasksPan
           empty={<p className="text-xs text-slate-500">No tasks loaded.</p>}
           className="flex-1"
         >
-          <ScrollViewport className={cn("flex-1 space-y-2 pr-1", compact ? "" : "max-h-[36dvh]")}>
+          <ScrollViewport className="flex-1 space-y-2 pr-1">
             {tasks.map((task) => (
               <article
                 key={task.key}

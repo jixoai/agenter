@@ -38,7 +38,7 @@
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
   --font-sans:
-    "JetBrains Mono", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "IBM Plex Sans", "Segoe UI",
+    "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI",
     sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
   --font-serif:
@@ -79,7 +79,7 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
   --font-sans:
-    "JetBrains Mono", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "IBM Plex Sans", "Segoe UI",
+    "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI",
     sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
   --font-serif:

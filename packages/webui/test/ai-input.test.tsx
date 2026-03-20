@@ -198,4 +198,35 @@ describe("Feature: AI input interactions", () => {
     });
     expect(await screen.findByAltText("screen.png")).toBeInTheDocument();
   });
+
+  test("Scenario: Given image attachments on a non-image-capable model When submitting Then the composer keeps the draft and shows a compatibility notice", async () => {
+    const image = new File([new Uint8Array([1, 2, 3])], "photo.png", { type: "image/png" });
+    const onSubmit = vi.fn(async () => {});
+
+    const { container } = render(
+      <AIInput
+        workspacePath="/repo/demo"
+        imageEnabled
+        imageCompatible={false}
+        onSubmit={onSubmit}
+        onSearchPaths={async () => []}
+      />,
+    );
+
+    const fileInput = container.querySelector('input[type="file"]');
+    if (!fileInput) {
+      throw new Error("file input not found");
+    }
+    fireEvent.change(fileInput, { target: { files: [image] } });
+    fireEvent.change(screen.getByTestId("ai-input-editor"), { target: { value: "Review this image", selectionStart: 17 } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+    expect(screen.getByText("The current model cannot consume image input yet. Remove the image or switch to an image-capable model.")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-input-editor")).toHaveValue("Review this image");
+    expect(screen.getByAltText("photo.png")).toBeInTheDocument();
+  });
 });

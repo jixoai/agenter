@@ -7,6 +7,7 @@ const {
   ConversationFirstHistory,
   StreamingReply,
   MessageActionsOpenDevtools,
+  LongPressShowsMessageActions,
   ActionableStoppedNotice,
   CompactConversationKeepsNavigationAndComposerStable,
   VirtualizedPersistedHistory,
@@ -24,6 +25,10 @@ describe("Feature: Storybook DOM contract for chat rendering", () => {
 
   test("Scenario: Given a visible assistant message When the user opens message actions Then the related Devtools cycle remains reachable without cycle-first chat chrome", async () => {
     await MessageActionsOpenDevtools.run();
+  });
+
+  test("Scenario: Given a mobile-sized assistant bubble When the user long-presses Then the same message actions menu becomes visible without cycle chrome", async () => {
+    await LongPressShowsMessageActions.run();
   });
 
   test("Scenario: Given a mobile-sized chat viewport When the conversation renders Then the composer stays visible without horizontal overflow or cycle chrome", async () => {

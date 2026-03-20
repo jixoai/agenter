@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { memo, useMemo, type ComponentType } from "react";
 
 import { Button } from "../../components/ui/button";
 import { surfaceToneClassName } from "../../components/ui/surface";
@@ -14,19 +14,13 @@ export interface BottomNavItem {
 }
 
 interface BottomNavBarProps {
-  items: BottomNavItem[];
+  items: readonly BottomNavItem[];
 }
 
-export const BottomNavBar = ({ items }: BottomNavBarProps) => (
-  <nav
-    aria-label="Workspace navigation"
-    className={cn(
-      surfaceToneClassName("chrome"),
-      "shrink-0 border-t border-slate-200 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-    )}
-  >
-    <div className="grid grid-cols-3 gap-1.5">
-      {items.map((item) => {
+export const BottomNavBar = memo(({ items }: BottomNavBarProps) => {
+  const renderedItems = useMemo(
+    () =>
+      items.map((item) => {
         const Icon = item.icon;
         return (
           <Button
@@ -46,7 +40,21 @@ export const BottomNavBar = ({ items }: BottomNavBarProps) => (
             ) : null}
           </Button>
         );
-      })}
-    </div>
-  </nav>
-);
+      }),
+    [items],
+  );
+
+  return (
+    <nav
+      aria-label="Workspace navigation"
+      className={cn(
+        surfaceToneClassName("chrome"),
+        "shrink-0 border-t border-slate-200 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
+      )}
+    >
+      <div className="grid grid-cols-3 gap-1.5">{renderedItems}</div>
+    </nav>
+  );
+});
+
+BottomNavBar.displayName = "BottomNavBar";

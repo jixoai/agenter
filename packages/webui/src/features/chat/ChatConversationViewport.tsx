@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { cn } from "../../lib/utils";
-import { ChatMessageRow, StatusRow } from "./ChatConversationRows";
+import { ChatMessageRow, StatusRow, TimeDividerRow } from "./ChatConversationRows";
 import type { ConversationRow } from "./chat-projection";
 
 const LOAD_MORE_OFFSET = 160;
@@ -13,7 +14,8 @@ const STICKY_BOTTOM_OFFSET = 48;
 const MESSAGE_ROW_ESTIMATE = 132;
 const STATUS_ROW_ESTIMATE = 44;
 const ROW_OVERSCAN = 8;
-const INLINE_ROW_LIMIT = 20;
+// Keep moderate transcripts fully rendered so restored chat sessions land on the latest turn reliably.
+const INLINE_ROW_LIMIT = 120;
 
 interface ChatConversationViewportProps {
   rows: ConversationRow[];
@@ -27,6 +29,9 @@ interface ChatConversationViewportProps {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore?: () => void;
+  assistantAvatarUrl?: string | null;
+  assistantAvatarLabel?: string;
+  userAvatarLabel?: string;
   onPreviewAttachment: (assetId: string) => void;
   onOpenDevtools?: (cycleId: number) => void;
   onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
@@ -36,7 +41,7 @@ const EmptyConversation = ({
   sessionStateLabel,
   routeNotice,
 }: Pick<ChatConversationViewportProps, "sessionStateLabel" | "routeNotice">) => (
-  <div className="flex h-full items-center justify-center px-4 py-10 text-center">
+  <div className="flex h-full items-center justify-center px-4 py-10 text-center md:px-6">
     <div className="max-w-sm space-y-3">
       <h3 className="typo-title-3 text-slate-900">Start the conversation</h3>
       <p className="text-sm text-slate-600">
@@ -62,14 +67,18 @@ export const ChatConversationViewport = ({
   hasMore,
   loadingMore,
   onLoadMore,
+  assistantAvatarUrl,
+  assistantAvatarLabel,
+  userAvatarLabel,
   onPreviewAttachment,
   onOpenDevtools,
   onLatestVisibleAssistantMessageIdChange,
 }: ChatConversationViewportProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const rowNodesRef = useRef(new Map<string, HTMLDivElement>());
+  const rowNodesRef = useRef(new Map<string, HTMLElement>());
   const visibleAssistantIdsRef = useRef(new Map<string, boolean>());
   const latestVisibleAssistantMessageIdRef = useRef<string | null>(null);
   const prependAnchorRef = useRef<{ rowCount: number; scrollHeight: number; scrollTop: number } | null>(null);
@@ -79,7 +88,8 @@ export const ChatConversationViewport = ({
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
-    estimateSize: (index) => (rows[index]?.type === "status" ? STATUS_ROW_ESTIMATE : MESSAGE_ROW_ESTIMATE),
+    observeElementOffset: observeElementOffsetWithCleanup,
+    estimateSize: (index) => (rows[index]?.type === "message" ? MESSAGE_ROW_ESTIMATE : STATUS_ROW_ESTIMATE),
     overscan: ROW_OVERSCAN,
     initialRect: {
       width: 0,
@@ -88,16 +98,51 @@ export const ChatConversationViewport = ({
   });
   const useInlineRows = rows.length <= INLINE_ROW_LIMIT;
 
+  const scrollToBottom = useCallback(() => {
+    const node = viewportRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+  }, []);
+
+  const scheduleScrollToBottom = useCallback(() => {
+    const node = viewportRef.current;
+    const targetWindow = node?.ownerDocument.defaultView;
+    if (!node || !targetWindow) {
+      return () => undefined;
+    }
+
+    let settleFrame: number | null = null;
+    const frame = targetWindow.requestAnimationFrame(() => {
+      scrollToBottom();
+      settleFrame = targetWindow.requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    });
+
+    return () => {
+      targetWindow.cancelAnimationFrame(frame);
+      if (settleFrame !== null) {
+        targetWindow.cancelAnimationFrame(settleFrame);
+      }
+    };
+  }, [scrollToBottom]);
+
   const syncLatestVisibleAssistantMessageId = useCallback(() => {
     if (!onLatestVisibleAssistantMessageIdChange) {
       return;
     }
-    const next =
+    const nextMessage =
       [...rows]
         .reverse()
-        .find(
-          (row) => isConsumableAssistantRow(row) && visibleAssistantIdsRef.current.get(row.message.id) === true,
-        )?.message.id ?? null;
+        .find((row): row is Extract<ConversationRow, { type: "message" }> => {
+          if (!isConsumableAssistantRow(row)) {
+            return false;
+          }
+          return visibleAssistantIdsRef.current.get(row.message.id) === true;
+        }) ?? null;
+    const next = nextMessage?.message.id ?? null;
     if (latestVisibleAssistantMessageIdRef.current === next) {
       return;
     }
@@ -106,7 +151,7 @@ export const ChatConversationViewport = ({
   }, [onLatestVisibleAssistantMessageIdChange, rows]);
 
   const registerRowNode = useCallback(
-    (row: ConversationRow, node: HTMLDivElement | null) => {
+    (row: ConversationRow, node: HTMLElement | null) => {
       const previous = rowNodesRef.current.get(row.key);
       if (previous && observerRef.current) {
         observerRef.current.unobserve(previous);
@@ -198,15 +243,33 @@ export const ChatConversationViewport = ({
   }, [onLatestVisibleAssistantMessageIdChange, rows, syncLatestVisibleAssistantMessageId]);
 
   useEffect(() => {
-    const node = viewportRef.current;
-    if (!node || !stickToBottom) {
+    if (!stickToBottom) {
       return;
     }
-    const frame = window.requestAnimationFrame(() => {
-      node.scrollTop = node.scrollHeight;
+    return scheduleScrollToBottom();
+  }, [rowKeys, scheduleScrollToBottom, stickToBottom]);
+
+  useEffect(() => {
+    const node = contentRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    let cancelPendingScroll: (() => void) | null = null;
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottom) {
+        return;
+      }
+      cancelPendingScroll?.();
+      cancelPendingScroll = scheduleScrollToBottom();
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [rowKeys, stickToBottom]);
+
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      cancelPendingScroll?.();
+    };
+  }, [scheduleScrollToBottom, stickToBottom]);
 
   const renderRow = (row: ConversationRow, index: number, style?: CSSProperties) => {
     const visibleAssistant = isConsumableAssistantRow(row);
@@ -223,17 +286,22 @@ export const ChatConversationViewport = ({
           }
           registerRowNode(row, node);
         }}
-        className={cn("w-full px-1", style ? "absolute top-0 left-0" : "")}
+        className={cn("w-full", style ? "absolute top-0 left-0" : "")}
         style={style}
       >
         {row.type === "message" ? (
           <ChatMessageRow
             message={row.message}
+            assistantAvatarUrl={assistantAvatarUrl}
+            assistantAvatarLabel={assistantAvatarLabel}
+            userAvatarLabel={userAvatarLabel}
             onPreviewAttachment={onPreviewAttachment}
             onOpenDevtools={onOpenDevtools}
           />
-        ) : (
+        ) : row.type === "status" ? (
           <StatusRow row={row} />
+        ) : (
+          <TimeDividerRow row={row} />
         )}
       </section>
     );
@@ -241,51 +309,54 @@ export const ChatConversationViewport = ({
 
   const virtualItems = rowVirtualizer.getVirtualItems();
   const shouldVirtualize = !useInlineRows && virtualItems.length > 0;
+  const hasRouteNotice = routeNotice !== null;
 
   return (
-    <>
-      {routeNotice ? (
-        <div className="shrink-0 px-4 pt-3">
+    <section className={cn("grid h-full", hasRouteNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]")}>
+      {hasRouteNotice ? (
+        <div className="shrink-0 px-4 pt-3 md:px-5">
           <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner>
         </div>
       ) : null}
 
-      <div className="flex flex-1">
+      <div className="h-full">
         <ScrollViewport
           ref={viewportRef}
-          className="flex-1 h-full px-2 py-3 text-slate-600"
+          className="h-full px-3 py-3 text-slate-600 [overflow-anchor:none] md:px-4"
           onScroll={handleScroll}
           data-testid="chat-scroll-viewport"
           role="log"
           aria-label="Conversation"
         >
-          {loadingMore ? (
-            <div className="flex items-center justify-center gap-2 py-2 text-xs text-slate-500">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              Loading earlier messages...
-            </div>
-          ) : null}
+          <div ref={contentRef} className="min-h-full">
+            {loadingMore ? (
+              <div className="flex items-center justify-center gap-2 py-2 text-xs text-slate-500">
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                Loading earlier messages...
+              </div>
+            ) : null}
 
-          {rows.length === 0 ? (
-            <EmptyConversation sessionStateLabel={sessionStateLabel} routeNotice={routeNotice} />
-          ) : shouldVirtualize ? (
-            <div
-              className="relative w-full"
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-              }}
-            >
-              {virtualItems.map((item) =>
-                renderRow(rows[item.index]!, item.index, {
-                  transform: `translateY(${item.start}px)`,
-                }),
-              )}
-            </div>
-          ) : (
-            <div className="space-y-0.5">{rows.map((row, index) => renderRow(row, index))}</div>
-          )}
+            {rows.length === 0 ? (
+              <EmptyConversation sessionStateLabel={sessionStateLabel} routeNotice={routeNotice} />
+            ) : shouldVirtualize ? (
+              <div
+                className="relative w-full"
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                }}
+              >
+                {virtualItems.map((item) =>
+                  renderRow(rows[item.index]!, item.index, {
+                    transform: `translateY(${item.start}px)`,
+                  }),
+                )}
+              </div>
+            ) : (
+              <div className="space-y-0.5">{rows.map((row, index) => renderRow(row, index))}</div>
+            )}
+          </div>
         </ScrollViewport>
       </div>
-    </>
+    </section>
   );
 };

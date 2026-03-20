@@ -1,23 +1,35 @@
-import type { ModelDebugOutput, SessionEntry, WorkspaceEntry } from "@agenter/client-sdk";
+import type { ModelDebugOutput } from "@agenter/client-sdk";
 import { createRootRoute, createRoute, createRouter, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppController, useRuntimeSelector } from "./app-context";
 import { NoticeBanner } from "./components/ui/notice-banner";
+import { ViewportMask } from "./components/ui/overflow-surface";
 import { surfaceToneClassName } from "./components/ui/surface";
 import { Tabs, type TabItem } from "./components/ui/tabs";
 import { ChatPanel } from "./features/chat/ChatPanel";
 import { phaseToStatus, resolveChatRouteNotice, resolveSessionToolbarState } from "./features/chat/chat-route-status";
+import { SessionToolbar } from "./features/chat/SessionToolbar";
 import { LoopBusPanel } from "./features/loopbus/LoopBusPanel";
 import { ModelPanel } from "./features/model/ModelPanel";
 import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
 import { QuickStartView } from "./features/quickstart/QuickStartView";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
+import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import { AppRoot } from "./features/shell/AppRoot";
+import {
+  equalChatRuntimeState,
+  equalSessionChromeState,
+  equalWorkspaceChromeState,
+  selectChatRuntimeState,
+  selectSessionChromeState,
+  selectWorkspaceChromeState,
+} from "./features/shell/runtime-selectors";
 import { WorkspaceShellFrame } from "./features/shell/WorkspaceShellFrame";
 import { MasterDetailPage } from "./features/shell/master-detail-page";
+import { useAdaptiveViewport } from "./features/shell/useAdaptiveViewport";
 import { TasksPanel } from "./features/tasks/TasksPanel";
 import { TerminalPanel } from "./features/terminal/TerminalPanel";
 import { WorkspaceSessionsPanel } from "./features/workspaces/WorkspaceSessionsPanel";
@@ -77,16 +89,10 @@ const validateWorkspaceOnlySearch = (search: Record<string, unknown>) => ({
   sessionId: readSearchString(search.sessionId),
 });
 
-const resolveSession = (sessions: SessionEntry[], sessionId?: string): SessionEntry | null =>
-  sessionId ? (sessions.find((item) => item.id === sessionId) ?? null) : null;
-
-const resolveWorkspace = (workspaces: WorkspaceEntry[], workspacePath: string): WorkspaceEntry | null =>
-  workspaces.find((item) => item.path === workspacePath) ?? null;
-
 const renderWorkspaceRouteTarget = (workspacePath: string, sessionId?: string, options?: { cycleId?: number }) => ({
   workspacePath,
   sessionId,
-  ...(options?.cycleId ? { cycleId: options.cycleId } : {}),
+  cycleId: options?.cycleId,
 });
 
 const normalizeLoopbusLogs = (
@@ -188,7 +194,7 @@ const WorkspacesRouteView = () => {
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const selectedWorkspace = controller.selectedWorkspacePath
-    ? resolveWorkspace(workspaces, controller.selectedWorkspacePath)
+    ? (workspaces.find((item) => item.path === controller.selectedWorkspacePath) ?? null)
     : null;
 
   return (
@@ -292,11 +298,15 @@ const WorkspacesRouteView = () => {
 const WorkspaceChatRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
+  const adaptiveViewport = useAdaptiveViewport();
   const search = workspaceChatRoute.useSearch();
   const connected = useRuntimeSelector((state) => state.connected);
-  const sessions = useRuntimeSelector((state) => state.sessions);
-  const workspaces = useRuntimeSelector((state) => state.workspaces);
-  const runtime = useRuntimeSelector((state) => (search.sessionId ? state.runtimes[search.sessionId] : undefined));
+  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
+  const workspace = useRuntimeSelector(
+    selectWorkspaceChromeState(search.workspacePath),
+    equalWorkspaceChromeState,
+  );
+  const runtime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
   const cycles = useRuntimeSelector((state) =>
     search.sessionId ? (state.chatCyclesBySession[search.sessionId] ?? EMPTY_CYCLES) : EMPTY_CYCLES,
   );
@@ -305,17 +315,43 @@ const WorkspaceChatRouteView = () => {
   );
   const setChatVisibility = controller.setChatVisibility;
   const consumeNotifications = controller.consumeNotifications;
-  const session = resolveSession(sessions, search.sessionId);
-  const workspace = resolveWorkspace(workspaces, search.workspacePath);
-  const aiStatus = phaseToStatus(session, runtime);
-  const sessionToolbar = resolveSessionToolbarState(session, runtime);
+  const routeRuntime = runtime ?? undefined;
+  const aiStatus = phaseToStatus(session, routeRuntime);
+  const sessionToolbar = resolveSessionToolbarState(session, routeRuntime);
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
     session,
-    runtime,
+    runtime: routeRuntime,
   });
   const [latestVisibleMessageId, setLatestVisibleMessageId] = useState<string | null>(null);
   const pageFocusedRef = useRef(true);
+  const handleChatHeaderAction = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    if (sessionToolbar.action === "stop") {
+      void controller.stopSession(search.sessionId);
+      return;
+    }
+    void controller.startSession(search.sessionId);
+  }, [controller, search.sessionId, sessionToolbar.action]);
+
+  const handleWorkspaceChatNavigate = useCallback(
+    (tab: "chat" | "devtools" | "settings") => {
+      if (tab === "settings") {
+        void navigate({
+          to: "/workspace/settings",
+          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+        });
+        return;
+      }
+      void navigate({
+        to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
+        search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+      });
+    },
+    [navigate, search.sessionId, search.workspacePath],
+  );
 
   useEffect(() => {
     setLatestVisibleMessageId(null);
@@ -379,19 +415,19 @@ const WorkspaceChatRouteView = () => {
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="chat"
-      onNavigate={(tab) => {
-        if (tab === "settings") {
-          void navigate({
-            to: "/workspace/settings",
-            search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
-          });
-          return;
-        }
-        void navigate({
-          to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
-        });
-      }}
+      navMode={adaptiveViewport.workspaceNavMode}
+      headerActions={
+        search.sessionId ? (
+          <SessionToolbar
+            sessionStateLabel={sessionToolbar.label}
+            sessionStateTone={sessionToolbar.tone}
+            actionLabel={sessionToolbar.actionLabel}
+            actionDisabled={sessionToolbar.disabled}
+            onAction={handleChatHeaderAction}
+          />
+        ) : null
+      }
+      onNavigate={handleWorkspaceChatNavigate}
     >
       {search.sessionId ? (
         <ChatPanel
@@ -400,22 +436,13 @@ const WorkspaceChatRouteView = () => {
           cycles={cycles}
           aiStatus={aiStatus}
           sessionStateLabel={sessionToolbar.label}
-          sessionStateTone={sessionToolbar.tone}
           routeNotice={routeNotice}
           disabled={!search.sessionId}
-          imageEnabled={runtime?.modelCapabilities.imageInput ?? false}
-          sessionActionLabel={sessionToolbar.actionLabel}
-          sessionActionDisabled={sessionToolbar.disabled}
-          onSessionAction={() => {
-            if (!search.sessionId) {
-              return;
-            }
-            if (sessionToolbar.action === "stop") {
-              void controller.stopSession(search.sessionId);
-              return;
-            }
-            void controller.startSession(search.sessionId);
-          }}
+          imageEnabled
+          imageCompatible={runtime?.imageInput ?? false}
+          assistantAvatarUrl={session ? controller.runtimeStore.avatarIconUrl(session.avatar, search.workspacePath) : null}
+          assistantAvatarLabel={session?.avatar ?? "Assistant"}
+          userAvatarLabel="You"
           hasMore={search.sessionId ? (controller.chatPaging[search.sessionId]?.hasMore ?? true) : false}
           loadingMore={search.sessionId ? (controller.chatPaging[search.sessionId]?.loading ?? false) : false}
           onLoadMore={() => {
@@ -470,11 +497,16 @@ const WorkspaceChatRouteView = () => {
 const WorkspaceDevtoolsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
+  const adaptiveViewport = useAdaptiveViewport();
   const search = workspaceDevtoolsRoute.useSearch();
   const [detailsTab, setDetailsTab] = useState<"cycles" | "terminal" | "tasks" | "loopbus" | "model">("cycles");
   const connected = useRuntimeSelector((state) => state.connected);
-  const sessions = useRuntimeSelector((state) => state.sessions);
-  const workspaces = useRuntimeSelector((state) => state.workspaces);
+  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
+  const workspace = useRuntimeSelector(
+    selectWorkspaceChromeState(search.workspacePath),
+    equalWorkspaceChromeState,
+  );
+  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
   const runtime = useRuntimeSelector((state) => (search.sessionId ? state.runtimes[search.sessionId] : undefined));
   const cycles = useRuntimeSelector((state) =>
     search.sessionId ? (state.chatCyclesBySession[search.sessionId] ?? EMPTY_CYCLES) : EMPTY_CYCLES,
@@ -503,12 +535,10 @@ const WorkspaceDevtoolsRouteView = () => {
       : EMPTY_API_CALL_RECORDING,
   );
   const refreshModelDebug = controller.refreshModelDebug;
-  const session = resolveSession(sessions, search.sessionId);
-  const workspace = resolveWorkspace(workspaces, search.workspacePath);
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
     session,
-    runtime,
+    runtime: routeRuntime ?? undefined,
   });
   const devtoolsSurfaceLoading =
     Boolean(search.sessionId) && !runtime && session?.status !== "stopped" && session?.status !== "error";
@@ -541,6 +571,26 @@ const WorkspaceDevtoolsRouteView = () => {
   }, [apiCalls, controller.modelDebug, controller.modelDebugSessionId, modelCalls, search.sessionId]);
   const usingModelDebugFallback =
     (controller.modelDebugSessionId !== search.sessionId || controller.modelDebug === null) && modelDebug !== null;
+  const handleDetailsTabChange = useCallback((value: string) => {
+    setDetailsTab(value === "terminal" || value === "tasks" || value === "loopbus" || value === "model" ? value : "cycles");
+  }, []);
+
+  const handleWorkspaceDevtoolsNavigate = useCallback(
+    (tab: "chat" | "devtools" | "settings") => {
+      if (tab === "settings") {
+        void navigate({
+          to: "/workspace/settings",
+          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+        });
+        return;
+      }
+      void navigate({
+        to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
+        search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+      });
+    },
+    [navigate, search.sessionId, search.workspacePath],
+  );
 
   useEffect(() => {
     if (search.cycleId) {
@@ -575,6 +625,7 @@ const WorkspaceDevtoolsRouteView = () => {
           cycles={cycles}
           loading={devtoolsSurfaceLoading && cycles.length === 0}
           selectedCycleId={search.cycleId ? `cycle:${search.cycleId}` : null}
+          detailMode={adaptiveViewport.workspaceNavMode === "bottom" ? "sheet" : "split"}
         />
       );
     }
@@ -635,32 +686,20 @@ const WorkspaceDevtoolsRouteView = () => {
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="devtools"
-      onNavigate={(tab) => {
-        if (tab === "settings") {
-          void navigate({
-            to: "/workspace/settings",
-            search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
-          });
-          return;
-        }
-        void navigate({
-          to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
-        });
-      }}
+      navMode={adaptiveViewport.workspaceNavMode}
+      onNavigate={handleWorkspaceDevtoolsNavigate}
     >
-      <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col p-4")}>
-        <Tabs
-          items={DETAIL_TABS}
-          value={detailsTab}
-          onValueChange={(value) => setDetailsTab(value as typeof detailsTab)}
-        />
-        {routeNotice ? (
-          <div className="mt-3">
-            <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner>
-          </div>
-        ) : null}
-        <div className="mt-4 flex-1">{renderPanel()}</div>
+      <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 md:p-4")}>
+        <Tabs items={DETAIL_TABS} value={detailsTab} onValueChange={handleDetailsTabChange} />
+        <div
+          className={cn(
+            "grid h-full",
+            routeNotice ? "grid-rows-[auto_minmax(0,1fr)] gap-3" : "grid-rows-[minmax(0,1fr)]",
+          )}
+        >
+          {routeNotice ? <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner> : null}
+          <ViewportMask className="h-full">{renderPanel()}</ViewportMask>
+        </div>
       </section>
     </WorkspaceShellFrame>
   );
@@ -669,11 +708,14 @@ const WorkspaceDevtoolsRouteView = () => {
 const WorkspaceSettingsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
+  const adaptiveViewport = useAdaptiveViewport();
   const search = workspaceSettingsRoute.useSearch();
   const connected = useRuntimeSelector((state) => state.connected);
-  const workspaces = useRuntimeSelector((state) => state.workspaces);
+  const workspace = useRuntimeSelector(
+    selectWorkspaceChromeState(search.workspacePath),
+    equalWorkspaceChromeState,
+  );
   const refreshSettingsLayers = controller.refreshSettingsLayers;
-  const workspace = resolveWorkspace(workspaces, search.workspacePath);
 
   useEffect(() => {
     if (!connected || !search.workspacePath) {
@@ -681,21 +723,26 @@ const WorkspaceSettingsRouteView = () => {
     }
     void refreshSettingsLayers(search.workspacePath);
   }, [connected, refreshSettingsLayers, search.workspacePath]);
+  const handleWorkspaceSettingsNavigate = useCallback(
+    (tab: "chat" | "devtools" | "settings") => {
+      if (tab === "settings") {
+        return;
+      }
+      void navigate({
+        to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
+        search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+      });
+    },
+    [navigate, search.sessionId, search.workspacePath],
+  );
 
   return (
     <WorkspaceShellFrame
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="settings"
-      onNavigate={(tab) => {
-        if (tab === "settings") {
-          return;
-        }
-        void navigate({
-          to: tab === "chat" ? "/workspace/chat" : "/workspace/devtools",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
-        });
-      }}
+      navMode={adaptiveViewport.workspaceNavMode}
+      onNavigate={handleWorkspaceSettingsNavigate}
     >
       {search.workspacePath ? (
         <SettingsPanel
@@ -706,6 +753,7 @@ const WorkspaceSettingsRouteView = () => {
           layers={controller.settingsLayers}
           selectedLayerId={controller.selectedLayerId}
           layerContent={controller.layerDraft}
+          detailMode={adaptiveViewport.workspaceNavMode === "bottom" ? "sheet" : "split"}
           onSelectLayer={(layerId) => {
             controller.setSelectedLayerId(layerId);
             controller.setLayerDraft("");
@@ -739,6 +787,91 @@ const WorkspaceSettingsRouteView = () => {
   );
 };
 
+const GlobalSettingsRouteView = () => {
+  const controller = useAppController();
+  const connected = useRuntimeSelector((state) => state.connected);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("idle");
+  const [content, setContent] = useState("{}\n");
+  const [mtimeMs, setMtimeMs] = useState(0);
+  const [avatars, setAvatars] = useState<Array<{ nickname: string; active: boolean; iconUrl: string }>>([]);
+  const [activeAvatar, setActiveAvatar] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [settingsFile, avatarCatalog] = await Promise.all([
+        controller.runtimeStore.readGlobalSettings(),
+        controller.runtimeStore.listAvatarCatalog(),
+      ]);
+      setContent(settingsFile.content);
+      setMtimeMs(settingsFile.mtimeMs);
+      setAvatars(avatarCatalog.items);
+      setActiveAvatar(avatarCatalog.activeAvatar);
+      setStatus(`Loaded ${avatarCatalog.items.length} avatars`);
+    } catch (error) {
+      controller.setNotice(String(error instanceof Error ? error.message : error));
+      setStatus("load failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+    void refresh();
+  }, [connected]);
+
+  return (
+    <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col")}>
+      <GlobalSettingsPanel
+        loading={loading}
+        saving={saving}
+        status={status}
+        settingsContent={content}
+        avatars={avatars}
+        activeAvatar={activeAvatar}
+        onSettingsContentChange={setContent}
+        onSaveSettings={() => {
+          setSaving(true);
+          void controller.runtimeStore
+            .saveGlobalSettings({ content, baseMtimeMs: mtimeMs })
+            .then((result) => {
+              if (!result.ok) {
+                setContent(result.latest.content);
+                setMtimeMs(result.latest.mtimeMs);
+                setStatus("save conflict");
+                return;
+              }
+              setContent(result.file.content);
+              setMtimeMs(result.file.mtimeMs);
+              setStatus("saved");
+              return refresh();
+            })
+            .catch((error) => {
+              controller.setNotice(String(error instanceof Error ? error.message : error));
+              setStatus("save failed");
+            })
+            .finally(() => {
+              setSaving(false);
+            });
+        }}
+        onCreateAvatar={async (nickname) => {
+          await controller.runtimeStore.createAvatar(nickname);
+          await refresh();
+        }}
+        onUploadAvatarIcon={async (nickname, file) => {
+          await controller.runtimeStore.uploadAvatarIcon(nickname, file);
+          await refresh();
+        }}
+      />
+    </section>
+  );
+};
+
 const rootRoute = createRootRoute({
   component: AppRoot,
 });
@@ -753,6 +886,12 @@ const workspacesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workspaces",
   component: WorkspacesRouteView,
+});
+
+const globalSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: GlobalSettingsRouteView,
 });
 
 const workspaceChatRoute = createRoute({
@@ -779,6 +918,7 @@ const workspaceSettingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   quickStartRoute,
   workspacesRoute,
+  globalSettingsRoute,
   workspaceChatRoute,
   workspaceDevtoolsRoute,
   workspaceSettingsRoute,

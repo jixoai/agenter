@@ -36,7 +36,7 @@ export const QuickStartView = ({
   onResumeSession,
 }: QuickStartViewProps) => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-const providerLabel = draftResolution
+  const providerLabel = draftResolution
     ? [
         draftResolution.provider.vendor ?? draftResolution.provider.providerId,
         draftResolution.provider.apiStandard,
@@ -48,8 +48,8 @@ const providerLabel = draftResolution
       ? "Resolving provider..."
       : "Provider unavailable";
 
-  const imageInput = draftResolution?.modelCapabilities.imageInput ?? false;
-  const inputPlaceholder = imageInput
+  const imageInputCompatible = draftResolution?.modelCapabilities.imageInput ?? false;
+  const inputPlaceholder = imageInputCompatible
     ? "Describe the task, use @ to reference files, or paste images..."
     : "Describe the task and use @ to reference files...";
   const recentLoadingShell = (
@@ -100,7 +100,8 @@ const providerLabel = draftResolution
               <AIInput
                 workspacePath={workspacePath}
                 disabled={starting || loadingDraft}
-                imageEnabled={imageInput}
+                imageEnabled
+                imageCompatible={imageInputCompatible}
                 submitLabel="Start"
                 submitTitle="Create session and send the first message"
                 placeholder={inputPlaceholder}
@@ -119,8 +120,8 @@ const providerLabel = draftResolution
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <Badge variant="secondary">{providerLabel}</Badge>
-                <Badge variant={imageInput ? "success" : "secondary"}>
-                  {imageInput ? "Images on" : "Images off"}
+                <Badge variant={imageInputCompatible ? "success" : "secondary"}>
+                  {imageInputCompatible ? "Image input ready" : "Image upload ready"}
                 </Badge>
               </div>
             </div>

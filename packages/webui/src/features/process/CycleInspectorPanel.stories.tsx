@@ -8,6 +8,7 @@ const meta = {
   component: CycleInspectorPanel,
   args: {
     loading: false,
+    detailMode: "split",
     cycles: [
       {
         id: "cycle:11",
@@ -136,5 +137,18 @@ export const StreamingCycleState: Story = {
     await expect(canvas.getByText("streaming draft")).toBeInTheDocument();
     await expect(canvas.getByText("Streaming draft")).toBeInTheDocument();
     await expect(canvas.getByText("Streaming the operator summary right now...")).toBeInTheDocument();
+  },
+};
+
+export const CompactCycleDetailSheet: Story = {
+  args: {
+    detailMode: "sheet",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: /Cycle 11/i }));
+
+    await expect(within(document.body).getByRole("dialog")).toBeInTheDocument();
+    await expect(within(document.body).getByText("Technical records")).toBeInTheDocument();
   },
 };

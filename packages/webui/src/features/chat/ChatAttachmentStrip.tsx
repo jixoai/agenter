@@ -1,4 +1,5 @@
 import { FileImage, FileText, Video } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { ClipSurface } from "../../components/ui/overflow-surface";
 import type { MessageAttachment } from "./chat-projection";
@@ -24,7 +25,7 @@ const renderAttachmentTile = (attachment: MessageAttachment) => {
   );
 };
 
-const formatAttachmentMeta = (attachment: MessageAttachment): { icon: JSX.Element; label: string } => {
+const formatAttachmentMeta = (attachment: MessageAttachment): { icon: ReactElement; label: string } => {
   switch (attachment.kind) {
     case "image":
       return {

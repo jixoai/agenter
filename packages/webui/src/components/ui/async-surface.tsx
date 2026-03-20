@@ -32,15 +32,15 @@ export const AsyncSurface = ({
   children,
 }: AsyncSurfaceProps) => {
   if (state === "empty-loading") {
-    return <div className={cn("flex basis-0 flex-col", className)}>{skeleton ?? empty}</div>;
+    return <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>{skeleton ?? empty}</div>;
   }
 
   if (state === "empty-idle") {
-    return <div className={cn("flex basis-0 flex-col", className)}>{empty}</div>;
+    return <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>{empty}</div>;
   }
 
   return (
-    <div className={cn("relative grid basis-0 grid-rows-[minmax(0,1fr)]", className)}>
+    <div className={cn("relative grid basis-0 grid-rows-[minmax(0,1fr)] overflow-hidden", className)}>
       {viewportClassName ? <div className={viewportClassName}>{children}</div> : children}
       {state === "ready-loading" ? (
         <div className="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur">

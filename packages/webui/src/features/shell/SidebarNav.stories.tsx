@@ -4,11 +4,16 @@ import { useState } from "react";
 
 import { SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
 
+const sessionIconSvgUrl = `data:image/svg+xml;utf8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="18" fill="#155e75"/></svg>',
+)}`;
+
 const baseSessions: RunningSessionNavItem[] = [
   {
     sessionId: "session-running-1",
     name: "Fix layout drift",
     workspacePath: "/repo/agenter",
+    iconUrl: sessionIconSvgUrl,
     active: true,
     unreadCount: 1,
     status: "running",
@@ -43,14 +48,16 @@ const meta = {
     primaryItems: defaultPrimaryNavItems({
       quickStartActive: true,
       workspacesActive: false,
+      settingsActive: false,
       unreadWorkspaces: 4,
       onSelectQuickStart: () => {},
       onSelectWorkspaces: () => {},
+      onSelectSettings: () => {},
     }),
     runningSessions: baseSessions,
   },
   render: () => {
-    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces">("quickstart");
+    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "settings">("quickstart");
     const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
 
     return (
@@ -60,9 +67,11 @@ const meta = {
           primaryItems={defaultPrimaryNavItems({
             quickStartActive: activePrimary === "quickstart",
             workspacesActive: activePrimary === "workspaces",
+            settingsActive: activePrimary === "settings",
             unreadWorkspaces: 4,
             onSelectQuickStart: () => setActivePrimary("quickstart"),
             onSelectWorkspaces: () => setActivePrimary("workspaces"),
+            onSelectSettings: () => setActivePrimary("settings"),
           })}
           runningSessions={baseSessions.map((item) => ({
             ...item,
@@ -88,12 +97,14 @@ export const SidebarShowsPrimaryAndRunningSessions: Story = {
     await expect(canvas.getByText("Navigate")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: /^Quick Start$/ })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: /^Workspaces\b/i })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /^Global Settings$/ })).toBeInTheDocument();
     await expect(canvas.getByText("Running Sessions")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-1")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-2")).toBeInTheDocument();
+    await expect(canvas.getByRole("img", { name: "Fix layout drift" })).toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Devtools" })).not.toBeInTheDocument();
-    await expect(canvas.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: /^Settings$/ })).not.toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Start session" })).not.toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Stop session" })).not.toBeInTheDocument();
 
@@ -114,9 +125,11 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
           primaryItems={defaultPrimaryNavItems({
             quickStartActive: false,
             workspacesActive: true,
+            settingsActive: false,
             unreadWorkspaces: 9,
             onSelectQuickStart: () => {},
             onSelectWorkspaces: () => {},
+            onSelectSettings: () => {},
           })}
           runningSessions={longRunningSessions.map((item) => ({
             ...item,

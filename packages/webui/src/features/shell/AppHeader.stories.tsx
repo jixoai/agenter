@@ -8,7 +8,7 @@ const meta = {
   component: AppHeader,
   args: {
     locationLabel: "Chat",
-    compactViewport: false,
+    showNavigationTrigger: false,
     connectionStatus: "connected",
     aiStatus: "working",
     onOpenNavigation: fn(),
@@ -25,6 +25,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const PassiveDesktopHeader: Story = {
+  args: {},
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
@@ -32,6 +33,7 @@ export const PassiveDesktopHeader: Story = {
     await expect(canvas.getByText("Chat")).toBeInTheDocument();
     await expect(canvas.getByText("Connected")).toBeInTheDocument();
     await expect(canvas.getByText("AI working")).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Open global settings" })).not.toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Start session" })).not.toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Stop session" })).not.toBeInTheDocument();
   },
@@ -39,13 +41,14 @@ export const PassiveDesktopHeader: Story = {
 
 export const CompactHeaderKeepsOnlyNavigationTrigger: Story = {
   args: {
-    compactViewport: true,
+    showNavigationTrigger: true,
     aiStatus: null,
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
 
     await expect(canvas.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Open global settings" })).not.toBeInTheDocument();
     await expect(canvas.queryByText(/AI /)).not.toBeInTheDocument();
     await expect(args.onOpenNavigation).not.toHaveBeenCalled();
     await expect(canvas.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument();

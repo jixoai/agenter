@@ -1,6 +1,6 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import { expect, fireEvent, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { focusEditorSurface } from "./ai-input-story-utils";
 import { ChatPanel } from "./ChatPanel";
@@ -24,7 +24,7 @@ const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: n
   return [];
 });
 
-const buildMessages = (input?: Partial<RuntimeChatMessage>[]): RuntimeChatMessage[] => {
+const buildMessages = (input: RuntimeChatMessage[] = []): RuntimeChatMessage[] => {
   const base: RuntimeChatMessage[] = [
     {
       id: "101",
@@ -52,7 +52,7 @@ const buildMessages = (input?: Partial<RuntimeChatMessage>[]): RuntimeChatMessag
       cycleId: 7,
     },
   ];
-  return input ? [...base, ...input] : base;
+  return [...base, ...input];
 };
 
 const buildCycle = (input?: Partial<RuntimeChatCycle>): RuntimeChatCycle => ({
@@ -141,11 +141,8 @@ const meta = {
     workspacePath: "/repo/demo",
     aiStatus: "idle",
     sessionStateLabel: "Session stopped",
-    sessionStateTone: "neutral",
     disabled: false,
     imageEnabled: true,
-    sessionActionLabel: "Start session",
-    onSessionAction: fn(async () => undefined),
     onSubmit: fn(async () => undefined),
     onSearchPaths: searchPaths,
     onOpenDevtools: fn(),
@@ -196,7 +193,6 @@ export const ConversationFirstHistory: Story = {
       expect(args.onSubmit).toHaveBeenCalledWith({ text: "Check @README.md", assets: [] });
     });
 
-    await expect(canvas.getByRole("button", { name: "Start session" })).toBeInTheDocument();
   },
 };
 
@@ -204,8 +200,6 @@ export const StreamingReply: Story = {
   args: {
     aiStatus: "waiting model",
     sessionStateLabel: "Session running",
-    sessionStateTone: "active",
-    sessionActionLabel: "Stop session",
     messages: buildMessages(),
     cycles: [
       buildCycle({
@@ -233,7 +227,6 @@ export const StreamingReply: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByRole("button", { name: "Stop session" })).toBeInTheDocument();
     await expect(canvas.getAllByText("I am still collecting terminal updates.").length).toBeGreaterThan(0);
     await expect(canvas.queryByText(/Cycle 8/i)).not.toBeInTheDocument();
     await expect(canvas.queryByText("hidden streaming trace")).not.toBeInTheDocument();
@@ -255,6 +248,39 @@ export const MessageActionsOpenDevtools: Story = {
   },
 };
 
+export const LongPressShowsMessageActions: Story = {
+  render: (args) => (
+    <div className="h-[760px] max-w-[390px] p-4">
+      <ChatPanel {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const assistantRow = canvasElement.querySelector("[data-message-role='assistant']");
+    const assistantBubble = assistantRow?.querySelector("article");
+    if (!(assistantBubble instanceof HTMLElement)) {
+      throw new Error("Assistant bubble not found");
+    }
+    const portal = within(canvasElement.ownerDocument.body);
+
+    fireEvent.pointerDown(assistantBubble, {
+      pointerId: 7,
+      pointerType: "touch",
+      button: 0,
+      clientX: 32,
+      clientY: 48,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 430));
+    fireEvent.pointerUp(assistantBubble, {
+      pointerId: 7,
+      pointerType: "touch",
+      button: 0,
+      clientX: 32,
+      clientY: 48,
+    });
+    await expect(await portal.findByText("View In Devtools")).toBeInTheDocument();
+  },
+};
+
 export const ActionableStoppedNotice: Story = {
   args: {
     messages: [],
@@ -268,7 +294,6 @@ export const ActionableStoppedNotice: Story = {
     const canvas = within(canvasElement);
 
     await expect(canvas.getAllByText("Session is stopped. Start it to continue.")).toHaveLength(2);
-    await expect(canvas.getByRole("button", { name: "Start session" })).toBeInTheDocument();
   },
 };
 
@@ -297,8 +322,6 @@ export const VirtualizedPersistedHistory: Story = {
     messages: createRealSessionHistoryFixture().messages,
     cycles: [],
     sessionStateLabel: "Session running",
-    sessionStateTone: "active",
-    sessionActionLabel: "Stop session",
   },
   render: (args) => (
     <div className="h-[760px] p-6">
@@ -311,7 +334,7 @@ export const VirtualizedPersistedHistory: Story = {
 
     await expect(canvas.getByText("Assistant reply 14: completed the visible conversation turn 14.")).toBeInTheDocument();
     await expect(canvas.getByAltText("briefing.png")).toBeInTheDocument();
-    await expect(viewport).toHaveClass("flex-1");
+    await expect(viewport).toHaveClass("h-full");
     await expect(canvas.queryByText(/Cycle 14/i)).not.toBeInTheDocument();
   },
 };

@@ -1,4 +1,5 @@
 import { Tabs as TabsPrimitive } from "@base-ui-components/react/tabs";
+import { memo, useCallback } from "react";
 
 import { cn } from "../../lib/utils";
 
@@ -14,9 +15,16 @@ interface TabsProps {
   className?: string;
 }
 
-export const Tabs = ({ items, value, onValueChange, className }: TabsProps) => {
+export const Tabs = memo(({ items, value, onValueChange, className }: TabsProps) => {
+  const handleValueChange = useCallback(
+    (next: string) => {
+      onValueChange(String(next));
+    },
+    [onValueChange],
+  );
+
   return (
-    <TabsPrimitive.Root value={value} onValueChange={(next) => onValueChange(String(next))}>
+    <TabsPrimitive.Root value={value} onValueChange={handleValueChange}>
       <TabsPrimitive.List
         className={cn("inline-flex rounded-lg bg-slate-100 p-1", className)}
         aria-label="Details tabs"
@@ -37,4 +45,6 @@ export const Tabs = ({ items, value, onValueChange, className }: TabsProps) => {
       </TabsPrimitive.List>
     </TabsPrimitive.Root>
   );
-};
+});
+
+Tabs.displayName = "Tabs";

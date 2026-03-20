@@ -1,4 +1,4 @@
-import type { RuntimeClientState, WorkspaceSessionCounts, WorkspaceSessionEntry } from "@agenter/client-sdk";
+import type { ModelDebugOutput, RuntimeClientState, WorkspaceSessionCounts, WorkspaceSessionEntry } from "@agenter/client-sdk";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,8 @@ import { App } from "../src/App";
 import { createRealSessionHistoryFixture } from "../src/features/chat/real-session-history-fixture";
 
 const originalMatchMedia = globalThis.window?.matchMedia;
+const originalInnerWidth = globalThis.window?.innerWidth;
+const originalInnerHeight = globalThis.window?.innerHeight;
 
 const createState = (): RuntimeClientState => ({
   connected: true,
@@ -29,7 +31,14 @@ const createState = (): RuntimeClientState => ({
   unreadBySession: {},
 });
 
+const setViewport = (input: { width: number; height: number }) => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: input.width });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: input.height });
+  window.dispatchEvent(new Event("resize"));
+};
+
 const stubMatchMedia = (matches: boolean) => {
+  setViewport(matches ? { width: 390, height: 844 } : { width: 1440, height: 900 });
   window.matchMedia = vi.fn().mockImplementation(() => ({
     matches,
     media: "(max-width: 1279px)",
@@ -107,7 +116,19 @@ const hydrateSessionHistoryMock = vi.fn(async () => {});
 const loadChatMessagesMock = vi.fn(async () => {});
 const loadChatCyclesMock = vi.fn(async () => {});
 const retainApiCallStreamMock = vi.fn(() => () => {});
-const inspectModelDebugMock = vi.fn(async () => ({
+const sessionIconUrlMock = vi.fn((sessionId: string) => `/media/sessions/${sessionId}/icon`);
+const avatarIconUrlMock = vi.fn((nickname: string) => `/media/avatars/${nickname}/icon`);
+const uploadSessionIconMock = vi.fn(async () => ({ ok: true }));
+const uploadAvatarIconMock = vi.fn(async () => ({ ok: true }));
+const readGlobalSettingsMock = vi.fn(async () => ({ path: "settings.json", content: "{}\n", mtimeMs: 0 }));
+const saveGlobalSettingsMock = vi.fn(async () => ({
+  ok: true,
+  file: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
+  latest: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
+}));
+const listAvatarCatalogMock = vi.fn(async () => ({ items: [], activeAvatar: "" }));
+const createAvatarMock = vi.fn(async () => ({ nickname: "assistant" }));
+const inspectModelDebugMock = vi.fn<() => Promise<ModelDebugOutput>>(async () => ({
   config: null,
   history: [],
   stats: null,
@@ -149,6 +170,10 @@ vi.mock("@agenter/client-sdk", () => ({
     resolveDraft: resolveDraftMock,
     searchWorkspacePaths: async () => [],
     uploadSessionAssets: async () => [],
+    sessionIconUrl: sessionIconUrlMock,
+    avatarIconUrl: avatarIconUrlMock,
+    uploadSessionIcon: uploadSessionIconMock,
+    uploadAvatarIcon: uploadAvatarIconMock,
     hydrateSessionHistory: hydrateSessionHistoryMock,
     loadChatMessages: loadChatMessagesMock,
     loadChatCycles: loadChatCyclesMock,
@@ -156,6 +181,10 @@ vi.mock("@agenter/client-sdk", () => ({
     loadMoreChatCyclesBefore: async () => ({ items: 0, hasMore: false }),
     readSettings: async () => ({ path: "settings.json", content: "{}", mtimeMs: 0 }),
     saveSettings: async () => ({ ok: true, file: { path: "settings.json", content: "{}", mtimeMs: 1 } }),
+    readGlobalSettings: readGlobalSettingsMock,
+    saveGlobalSettings: saveGlobalSettingsMock,
+    listAvatarCatalog: listAvatarCatalogMock,
+    createAvatar: createAvatarMock,
     listSettingsLayers: listSettingsLayersMock,
     readSettingsLayer: readSettingsLayerMock,
     saveSettingsLayer: saveSettingsLayerMock,
@@ -177,6 +206,7 @@ vi.mock("@agenter/client-sdk", () => ({
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  stubMatchMedia(false);
   mockState = createState();
   stateListeners = [];
   listWorkspaceSessionsMock.mockReset();
@@ -197,6 +227,14 @@ beforeEach(() => {
   loadChatMessagesMock.mockClear();
   loadChatCyclesMock.mockClear();
   retainApiCallStreamMock.mockClear();
+  sessionIconUrlMock.mockClear();
+  avatarIconUrlMock.mockClear();
+  uploadSessionIconMock.mockClear();
+  uploadAvatarIconMock.mockClear();
+  readGlobalSettingsMock.mockClear();
+  saveGlobalSettingsMock.mockClear();
+  listAvatarCatalogMock.mockClear();
+  createAvatarMock.mockClear();
   inspectModelDebugMock.mockReset();
   listWorkspaceSessionsMock.mockResolvedValue({
     items: [],
@@ -221,6 +259,12 @@ afterEach(() => {
   } else {
     stubMatchMedia(false);
   }
+  if (originalInnerWidth) {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalInnerWidth });
+  }
+  if (originalInnerHeight) {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: originalInnerHeight });
+  }
 });
 
 describe("Feature: web ui app shell", () => {
@@ -233,6 +277,18 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getByRole("button", { name: "Enter" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Workspaces" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Tasks" })).not.toBeInTheDocument();
+  });
+
+  test("Scenario: Given shell navigation When opening global settings Then the left rail owns the entry and the page header stays local", async () => {
+    render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Global Settings" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/settings");
+    });
+    expect(await screen.findByRole("heading", { name: "Global Settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open global settings" })).not.toBeInTheDocument();
   });
 
   test("Scenario: Given quick start workspace picker When selecting a folder Then the chosen workspace becomes visible before session creation", async () => {
@@ -518,11 +574,11 @@ describe("Feature: web ui app shell", () => {
   test("Scenario: Given Devtools Model is opened When the first debug request is still pending Then the route does not recursively refetch", async () => {
     const workspacePath = "/repo/devtools";
     const sessionId = "session-model";
-    let resolveInspect: ((value: Awaited<ReturnType<typeof inspectModelDebugMock>>) => void) | null = null;
+    let resolveInspect: ((value: ModelDebugOutput) => void) | null = null;
 
     inspectModelDebugMock.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<ModelDebugOutput>((resolve) => {
           resolveInspect = resolve;
         }),
     );
@@ -568,27 +624,25 @@ describe("Feature: web ui app shell", () => {
       expect(inspectModelDebugMock).toHaveBeenCalledTimes(1);
     });
 
-    if (resolveInspect) {
-      resolveInspect({
-        config: null,
-        history: [],
-        stats: null,
-        latestModelCall: {
-          id: 7,
-          cycleId: 4,
-          createdAt: 1_709_800_000_000,
-          status: "done",
-          completedAt: 1_709_800_000_900,
-          provider: "deepseek/openai-chat",
-          model: "deepseek-chat",
-          request: { messages: [] },
-          response: { assistant: { text: "done" } },
-          error: null,
-        },
-        recentModelCalls: [],
-        recentApiCalls: [],
-      });
-    }
+    resolveInspect!({
+      config: null,
+      history: [],
+      stats: null,
+      latestModelCall: {
+        id: 7,
+        cycleId: 4,
+        createdAt: 1_709_800_000_000,
+        status: "done",
+        completedAt: 1_709_800_000_900,
+        provider: "deepseek/openai-chat",
+        model: "deepseek-chat",
+        request: { messages: [] },
+        response: { assistant: { text: "done" } },
+        error: null,
+      },
+      recentModelCalls: [],
+      recentApiCalls: [],
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Latest call #7 done at/i)).toBeInTheDocument();
@@ -727,9 +781,9 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getAllByRole("button", { name: "Workspaces" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Quick Start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Build shell .*session-1.*\/repo\/demo/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Devtools" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Devtools" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
   });
 
   test("Scenario: Given a workspace shell session When switching to Settings and Devtools Then the session context stays attached to the route", async () => {
@@ -811,14 +865,14 @@ describe("Feature: web ui app shell", () => {
       expect(screen.getAllByText("Build shell").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
 
     await waitFor(() => {
       expect(window.location.search).toContain(`sessionId=${encodeURIComponent(sessionId)}`);
     });
     expect(screen.getByText(workspacePath)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Devtools" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Devtools" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/workspace/devtools");

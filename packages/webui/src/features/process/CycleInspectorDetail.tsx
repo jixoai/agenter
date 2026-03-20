@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
+import { ViewportMask } from "../../components/ui/overflow-surface";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { cn } from "../../lib/utils";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
@@ -245,7 +246,7 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
   const stepStates = resolveStepStates(cycle);
 
   return (
-    <section className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white">
+    <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-sm text-slate-700">
@@ -260,8 +261,9 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
         <p className="mt-2 text-sm text-slate-500">{summarizeCycle(cycle)}</p>
       </div>
 
-      <ScrollViewport className="flex-1 px-3 py-3">
-        <div className="space-y-3">
+      <ViewportMask className="h-full">
+        <ScrollViewport className="flex-1 px-3 py-3">
+          <div className="space-y-3">
           <section className="grid gap-3 lg:grid-cols-4">
             <StepChip label="Collect" detail={`${cycle.inputs.length} inputs`} state={stepStates[0]} />
             <StepChip
@@ -362,8 +364,9 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-        </div>
-      </ScrollViewport>
+          </div>
+        </ScrollViewport>
+      </ViewportMask>
     </section>
   );
 };

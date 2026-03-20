@@ -17,6 +17,7 @@ export interface AIInputProps {
   placeholder?: string;
   disabled?: boolean;
   imageEnabled?: boolean;
+  imageCompatible?: boolean;
   submitLabel?: string;
   submitTitle?: string;
   onSubmit: (payload: AIInputSubmitPayload) => Promise<void> | void;
@@ -29,6 +30,7 @@ export const AIInput = ({
   placeholder = "Message Agenter...",
   disabled = false,
   imageEnabled = false,
+  imageCompatible = true,
   submitLabel = "Send",
   submitTitle,
   onSubmit,
@@ -38,6 +40,7 @@ export const AIInput = ({
   const controller = useAIInputController({
     disabled,
     imageEnabled,
+    imageCompatible,
     onSubmit,
     onCommand,
   });

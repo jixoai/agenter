@@ -11,6 +11,7 @@ const {
   ShowIgnoredWorkspacePath,
   PastePendingImage,
   DropPendingImage,
+  BlockIncompatibleImageSend,
 } = composeStories(stories);
 
 describe("Feature: Storybook DOM contract for AI input", () => {
@@ -40,5 +41,9 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
   test("Scenario: Given image-enabled input When an image is dropped Then the pending thumbnail appears in the real DOM surface", async () => {
     await DropPendingImage.run();
+  });
+
+  test("Scenario: Given an image attachment on a non-image-capable model When the user sends Then the real DOM keeps the attachment and shows a compatibility notice", async () => {
+    await BlockIncompatibleImageSend.run();
   });
 });

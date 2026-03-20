@@ -5,7 +5,6 @@ import { ChatAssetPreviewDialog } from "./ChatAssetPreviewDialog";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
 import { ChatConversationViewport } from "./ChatConversationViewport";
 import { projectConversationRows } from "./chat-projection";
-import { SessionToolbar, type SessionToolbarTone } from "./SessionToolbar";
 
 interface ChatPanelProps {
   workspacePath?: string | null;
@@ -13,17 +12,16 @@ interface ChatPanelProps {
   cycles: RuntimeChatCycle[];
   aiStatus: string;
   sessionStateLabel: string;
-  sessionStateTone?: SessionToolbarTone;
   routeNotice?: {
     tone: "info" | "warning" | "destructive";
     message: string;
   } | null;
   disabled: boolean;
   imageEnabled?: boolean;
-  sessionActionLabel: string;
-  sessionActionDisabled?: boolean;
-  sessionActionPending?: boolean;
-  onSessionAction: () => void;
+  imageCompatible?: boolean;
+  assistantAvatarUrl?: string | null;
+  assistantAvatarLabel?: string;
+  userAvatarLabel?: string;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -42,14 +40,13 @@ export const ChatPanel = ({
   cycles,
   aiStatus,
   sessionStateLabel,
-  sessionStateTone = "neutral",
   routeNotice = null,
   disabled,
   imageEnabled = false,
-  sessionActionLabel,
-  sessionActionDisabled = false,
-  sessionActionPending = false,
-  onSessionAction,
+  imageCompatible = true,
+  assistantAvatarUrl = null,
+  assistantAvatarLabel = "Assistant",
+  userAvatarLabel = "You",
   hasMore = false,
   loadingMore = false,
   onLoadMore,
@@ -100,18 +97,7 @@ export const ChatPanel = ({
     : "Message Agenter and use @ to reference files...";
 
   return (
-    <section className="flex h-full flex-1 flex-col rounded-[1.6rem] bg-white shadow-sm ring-1 ring-slate-200/80">
-      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
-        <SessionToolbar
-          sessionStateLabel={sessionStateLabel}
-          sessionStateTone={sessionStateTone}
-          actionLabel={sessionActionLabel}
-          actionDisabled={sessionActionDisabled}
-          actionPending={sessionActionPending}
-          onAction={onSessionAction}
-        />
-      </div>
-
+    <section className="grid h-full flex-1 grid-rows-[minmax(0,1fr)_auto] rounded-[1.6rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(241,245,249,0.92)_100%)] shadow-sm ring-1 ring-slate-200/80">
       <ChatConversationViewport
         rows={rows}
         sessionStateLabel={sessionStateLabel}
@@ -119,17 +105,21 @@ export const ChatPanel = ({
         hasMore={hasMore}
         loadingMore={loadingMore}
         onLoadMore={onLoadMore}
+        assistantAvatarUrl={assistantAvatarUrl}
+        assistantAvatarLabel={assistantAvatarLabel}
+        userAvatarLabel={userAvatarLabel}
         onPreviewAttachment={setPreviewAssetId}
         onOpenDevtools={onOpenDevtools}
         onLatestVisibleAssistantMessageIdChange={onLatestVisibleAssistantMessageIdChange}
       />
 
-      <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+      <div className="shrink-0 border-t border-slate-200/90 bg-white/94 px-3 py-3 backdrop-blur">
         <AIInput
           workspacePath={workspacePath}
           placeholder={inputPlaceholder}
           disabled={disabled}
           imageEnabled={imageEnabled}
+          imageCompatible={imageCompatible}
           onSubmit={onSubmit}
           onCommand={onCommand}
           onSearchPaths={onSearchPaths}

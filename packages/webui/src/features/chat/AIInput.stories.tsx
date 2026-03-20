@@ -271,3 +271,27 @@ export const DropPendingImage: Story = {
     await expect(await canvas.findByAltText("dropped-reference.png")).toBeInTheDocument();
   },
 };
+
+export const BlockIncompatibleImageSend: Story = {
+  args: {
+    imageEnabled: true,
+    imageCompatible: false,
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const editor = await focusEditorSurface(canvasElement, async (target) => {
+      await userEvent.click(target);
+    });
+    const image = new File([new Uint8Array([1, 2, 3, 4])], "blocked-image.png", { type: "image/png" });
+
+    dispatchClipboardImage(editor, image);
+    await userEvent.keyboard("Please inspect this image");
+    await userEvent.click(canvas.getByRole("button", { name: "Send" }));
+
+    await expect(args.onSubmit).not.toHaveBeenCalled();
+    await expect(
+      canvas.getByText("The current model cannot consume image input yet. Remove the image or switch to an image-capable model."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByAltText("blocked-image.png")).toBeInTheDocument();
+  },
+};

@@ -1,6 +1,6 @@
 import type { ModelDebugOutput } from "@agenter/client-sdk";
 import { RefreshCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MarkdownDocument, type MarkdownDocumentMode } from "../../components/markdown/MarkdownDocument";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
@@ -231,15 +231,23 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
   const latestCall = useMemo(() => (debug ? buildLatestCallView(debug) : null), [debug]);
   const httpRecords = useMemo(() => (debug ? buildHttpRecords(debug) : []), [debug]);
   const recentModelCalls = debug?.recentModelCalls ?? [];
+  const handleTextModeChange = useCallback((value: string) => {
+    setTextMode(value === "raw" ? "raw" : "preview");
+  }, []);
+  const handleModelTabChange = useCallback((value: string) => {
+    setActiveTab(value === "latest" || value === "history" || value === "transport" ? value : "overview");
+  }, []);
+  const handleLatestTabChange = useCallback((value: string) => {
+    setLatestTab(value === "result" || value === "tools" ? value : "request");
+  }, []);
+  const handleHistoryTabChange = useCallback((value: string) => {
+    setHistoryTab(value === "calls" ? "calls" : "context");
+  }, []);
 
   const textViewControl = (
     <div className="space-y-1">
       <span className="block text-[11px] text-slate-500">Text view</span>
-      <Tabs
-        items={TEXT_MODE_TABS as unknown as TabItem[]}
-        value={textMode}
-        onValueChange={(value) => setTextMode(value === "raw" ? "raw" : "preview")}
-      />
+      <Tabs items={TEXT_MODE_TABS as unknown as TabItem[]} value={textMode} onValueChange={handleTextModeChange} />
     </div>
   );
 
@@ -253,7 +261,13 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
   };
 
   return (
-    <section className="flex h-full flex-col gap-3">
+    <section
+      className={
+        error
+          ? "grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3"
+          : "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3"
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -294,14 +308,14 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
         className="flex-1"
       >
         {debug ? (
-          <div className="flex h-full flex-col gap-3">
-          <Tabs
-            items={MODEL_TABS as unknown as TabItem[]}
-            value={activeTab}
-            onValueChange={(value) => setActiveTab(value as ModelPanelTab)}
-          />
+          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
+            <Tabs
+              items={MODEL_TABS as unknown as TabItem[]}
+              value={activeTab}
+              onValueChange={handleModelTabChange}
+            />
 
-          <ScrollViewport className="flex-1 pr-1">
+            <ScrollViewport className="flex-1 pr-1">
             {activeTab === "overview" ? (
               <div className="space-y-3">
                 <div className="grid gap-3 xl:grid-cols-2">
@@ -373,7 +387,7 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                   <Tabs
                     items={LATEST_TABS as unknown as TabItem[]}
                     value={latestTab}
-                    onValueChange={(value) => setLatestTab(value === "result" || value === "tools" ? value : "request")}
+                    onValueChange={handleLatestTabChange}
                   />
                   {textViewControl}
                 </div>
@@ -507,7 +521,7 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                   <Tabs
                     items={HISTORY_TABS as unknown as TabItem[]}
                     value={historyTab}
-                    onValueChange={(value) => setHistoryTab(value === "calls" ? "calls" : "context")}
+                    onValueChange={handleHistoryTabChange}
                   />
                   {textViewControl}
                 </div>

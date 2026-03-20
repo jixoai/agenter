@@ -1,20 +1,33 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAppController, useRuntimeSelector } from "../../app-context";
 import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
+import { cn } from "../../lib/utils";
 import { AppHeader } from "./AppHeader";
 import { SidebarNav, SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
-import { useCompactViewport } from "./useCompactViewport";
-
-const unreadTotal = (record: Record<string, number>): number =>
-  Object.values(record).reduce((total, value) => total + value, 0);
+import {
+  equalHeaderRuntimeState,
+  equalRunningSessionsState,
+  equalSessionChromeState,
+  selectHeaderRuntimeState,
+  selectRunningSessionsState,
+  selectSessionChromeState,
+  selectUnreadTotal,
+} from "./runtime-selectors";
+import { useAdaptiveViewport } from "./useAdaptiveViewport";
 
 const routeLabelFromPath = (pathname: string): string => {
+  if (pathname.startsWith("/workspace/")) {
+    return "Workspace";
+  }
   if (pathname === "/workspaces") {
     return "Workspaces";
+  }
+  if (pathname === "/settings") {
+    return "Settings";
   }
   if (pathname === "/workspace/chat") {
     return "Chat";
@@ -40,9 +53,6 @@ const resolveWorkspaceTarget = (
   return "/workspace/chat";
 };
 
-const isRunningSession = (sessionStatus: string): boolean =>
-  sessionStatus === "running" || sessionStatus === "starting";
-
 const resolveHeaderAiStatus = (
   routeSession: { status: string } | null,
   routeRuntime?: { started: boolean; loopPhase: string } | null,
@@ -65,20 +75,39 @@ export const AppRoot = () => {
   const location = useRouterState({
     select: (state) => state.location,
   });
-  const compactViewport = useCompactViewport();
+  const adaptiveViewport = useAdaptiveViewport();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const connected = useRuntimeSelector((state) => state.connected);
   const connectionStatus = useRuntimeSelector((state) => state.connectionStatus);
-  const sessions = useRuntimeSelector((state) => state.sessions);
-  const unreadBySession = useRuntimeSelector((state) => state.unreadBySession);
+  const unreadTotal = useRuntimeSelector(selectUnreadTotal);
   const hydrateSession = controller.hydrateSession;
   const retainApiCallStream = controller.retainApiCallStream;
 
   const searchParams =
     typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const routeSessionId = searchParams.get("sessionId") ?? undefined;
-  const routeSession = routeSessionId ? (sessions.find((item) => item.id === routeSessionId) ?? null) : null;
-  const routeRuntime = useRuntimeSelector((state) => (routeSessionId ? state.runtimes[routeSessionId] : undefined));
+  const routeSession = useRuntimeSelector(selectSessionChromeState(routeSessionId), equalSessionChromeState);
+  const routeRuntime = useRuntimeSelector(selectHeaderRuntimeState(routeSessionId), equalHeaderRuntimeState);
+  const runningSessionStates = useRuntimeSelector(selectRunningSessionsState, equalRunningSessionsState);
+
+  const handleOpenNavigation = useCallback(() => {
+    setMobileSidebarOpen(true);
+  }, []);
+
+  const handleSelectQuickStart = useCallback(() => {
+    void navigate({ to: "/" });
+    setMobileSidebarOpen(false);
+  }, [navigate]);
+
+  const handleSelectWorkspaces = useCallback(() => {
+    void navigate({ to: "/workspaces" });
+    setMobileSidebarOpen(false);
+  }, [navigate]);
+
+  const handleSelectSettings = useCallback(() => {
+    void navigate({ to: "/settings" });
+    setMobileSidebarOpen(false);
+  }, [navigate]);
 
   useEffect(() => {
     if (!connected || !routeSessionId) {
@@ -97,37 +126,33 @@ export const AppRoot = () => {
   const primaryItems = useMemo(
     () =>
       defaultPrimaryNavItems({
-        quickStartActive: location.pathname !== "/workspaces",
+        quickStartActive: location.pathname === "/",
         workspacesActive: location.pathname === "/workspaces",
-        unreadWorkspaces: unreadTotal(unreadBySession),
-        onSelectQuickStart: () => {
-          void navigate({ to: "/" });
-          setMobileSidebarOpen(false);
-        },
-        onSelectWorkspaces: () => {
-          void navigate({ to: "/workspaces" });
-          setMobileSidebarOpen(false);
-        },
+        settingsActive: location.pathname === "/settings",
+        unreadWorkspaces: unreadTotal,
+        onSelectQuickStart: handleSelectQuickStart,
+        onSelectWorkspaces: handleSelectWorkspaces,
+        onSelectSettings: handleSelectSettings,
       }),
-    [location.pathname, navigate, unreadBySession],
+    [handleSelectQuickStart, handleSelectSettings, handleSelectWorkspaces, location.pathname, unreadTotal],
   );
 
   const runningSessions = useMemo<RunningSessionNavItem[]>(() => {
     const targetRoute = resolveWorkspaceTarget(location.pathname);
 
-    return sessions
-      .filter((session) => isRunningSession(session.status))
+    return runningSessionStates
       .map((session) => ({
-        sessionId: session.id,
+        sessionId: session.sessionId,
         name: session.name,
-        workspacePath: session.cwd,
-        active: session.id === routeSessionId,
-        unreadCount: unreadBySession[session.id] ?? 0,
+        workspacePath: session.workspacePath,
+        iconUrl: controller.runtimeStore.sessionIconUrl(session.sessionId),
+        active: session.sessionId === routeSessionId,
+        unreadCount: session.unreadCount,
         status: session.status,
         onSelect: () => {
           void navigate({
             to: targetRoute,
-            search: { workspacePath: session.cwd, sessionId: session.id },
+            search: { workspacePath: session.workspacePath, sessionId: session.sessionId },
           });
           setMobileSidebarOpen(false);
         },
@@ -141,37 +166,53 @@ export const AppRoot = () => {
         }
         return left.name.localeCompare(right.name);
       });
-  }, [location.pathname, navigate, routeSessionId, sessions, unreadBySession]);
+  }, [controller.runtimeStore, location.pathname, navigate, routeSessionId, runningSessionStates]);
 
   const showGlobalNotice =
     controller.notice.length > 0 && (location.pathname === "/" || location.pathname === "/workspaces");
+  const isWorkspaceRoute = location.pathname.startsWith("/workspace/");
+  const showSidebarRail = adaptiveViewport.globalNavMode === "rail";
+  const showDrawerTrigger = adaptiveViewport.globalNavMode === "drawer";
 
   return (
     <main className="h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
       <ViewportMask className="h-full">
         <div className="flex h-full">
-          <SidebarNav primaryItems={primaryItems} runningSessions={runningSessions} />
+          {showSidebarRail ? <SidebarNav primaryItems={primaryItems} runningSessions={runningSessions} /> : null}
 
           <section className="flex min-w-0 flex-1 flex-col">
             <AppHeader
               locationLabel={routeLabelFromPath(location.pathname)}
-              compactViewport={compactViewport}
+              showNavigationTrigger={showDrawerTrigger}
               connectionStatus={connectionStatus}
               aiStatus={resolveHeaderAiStatus(routeSession, routeRuntime)}
-              onOpenNavigation={() => setMobileSidebarOpen(true)}
+              onOpenNavigation={handleOpenNavigation}
             />
 
-            <div className="flex flex-1 flex-col">
-              {showGlobalNotice ? (
-                <div className="shrink-0 px-3 pt-3 md:px-4 md:pt-4">
-                  <NoticeBanner tone="destructive">{controller.notice}</NoticeBanner>
-                </div>
-              ) : null}
+            <ViewportMask className="flex-1">
+              <div
+                className={cn(
+                  "grid h-full",
+                  showGlobalNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+                )}
+              >
+                {showGlobalNotice ? (
+                  <div className="shrink-0 px-3 pt-3 md:px-4 md:pt-4">
+                    <NoticeBanner tone="destructive">{controller.notice}</NoticeBanner>
+                  </div>
+                ) : null}
 
-              <div className="flex-1 px-3 py-3 md:px-4 md:py-4">
-                <Outlet />
+                {isWorkspaceRoute ? (
+                  <ViewportMask className="h-full">
+                    <Outlet />
+                  </ViewportMask>
+                ) : (
+                  <div className="h-full px-3 py-3 md:px-4 md:py-4">
+                    <Outlet />
+                  </div>
+                )}
               </div>
-            </div>
+            </ViewportMask>
           </section>
         </div>
 

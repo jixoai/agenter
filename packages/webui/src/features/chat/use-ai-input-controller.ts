@@ -20,6 +20,7 @@ import { canCaptureDisplayScreenshot, captureDisplayScreenshot } from "./capture
 interface UseAIInputControllerProps {
   disabled: boolean;
   imageEnabled: boolean;
+  imageCompatible: boolean;
   onSubmit: (payload: AIInputSubmitPayload) => Promise<void> | void;
   onCommand?: (command: AIInputCommand) => Promise<void> | void;
 }
@@ -27,6 +28,7 @@ interface UseAIInputControllerProps {
 export const useAIInputController = ({
   disabled,
   imageEnabled,
+  imageCompatible,
   onSubmit,
   onCommand,
 }: UseAIInputControllerProps) => {
@@ -53,6 +55,8 @@ export const useAIInputController = ({
   submittingRef.current = submitting;
   const imageEnabledRef = useRef(imageEnabled);
   imageEnabledRef.current = imageEnabled;
+  const imageCompatibleRef = useRef(imageCompatible);
+  imageCompatibleRef.current = imageCompatible;
   const canSubmit = !disabled && !submitting && draft.trim().length > 0;
   const canSubmitRef = useRef(canSubmit);
   canSubmitRef.current = canSubmit;
@@ -153,6 +157,10 @@ export const useAIInputController = ({
     const text = draftRef.current.trim();
     const assets = pendingAssetsRef.current;
     if (text.length === 0) {
+      return;
+    }
+    if (assets.some((item) => item.kind === "image") && !imageCompatibleRef.current) {
+      setNotice("The current model cannot consume image input yet. Remove the image or switch to an image-capable model.");
       return;
     }
     const command = assets.length === 0 ? resolveAIInputCommand(text) : null;

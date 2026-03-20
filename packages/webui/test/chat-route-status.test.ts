@@ -12,7 +12,7 @@ describe("Feature: chat route status resolution", () => {
         },
         runtime: {
           started: true,
-          terminals: [{ terminalId: "iflow", running: true, status: "IDLE", seq: 1, cwd: "/repo/demo" }],
+          terminalCount: 1,
           loopPhase: "waiting_commits",
           stage: "idle",
         },
@@ -24,9 +24,9 @@ describe("Feature: chat route status resolution", () => {
   });
 
   test("Scenario: Given a stopped session When resolving toolbar and activity state Then the chat surface offers one start action", () => {
-    const session = {
+    const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
-    } as const;
+    };
 
     expect(phaseToStatus(session, undefined)).toBe("stopped");
     expect(resolveSessionToolbarState(session, undefined)).toEqual({
@@ -39,15 +39,15 @@ describe("Feature: chat route status resolution", () => {
   });
 
   test("Scenario: Given a stale started runtime after stop When resolving toolbar notice and activity Then stopped semantics win over runtime leftovers", () => {
-    const session = {
+    const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
-    } as const;
-    const runtime = {
+    };
+    const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
       started: true,
-      terminals: [{ terminalId: "iflow", running: true, status: "IDLE", seq: 1, cwd: "/repo/demo" }],
+      terminalCount: 1,
       loopPhase: "calling_model",
       stage: "act",
-    } as const;
+    };
 
     expect(phaseToStatus(session, runtime)).toBe("stopped");
     expect(resolveSessionToolbarState(session, runtime)).toEqual({

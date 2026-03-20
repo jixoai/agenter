@@ -116,4 +116,58 @@ describe("Feature: conversation projection", () => {
     expect(rows.filter((row) => row.type === "message").map((row) => row.message.content)).toContain("streaming reply");
     expect(rows.some((row) => row.type === "message" && row.message.content.includes("hidden internal trace"))).toBe(false);
   });
+
+  test("Scenario: Given long same-day gaps and a day change When projecting rows Then restrained time dividers are inserted without spamming every turn", () => {
+    const rows = projectConversationRows(
+      [
+        {
+          id: "200",
+          role: "user",
+          content: "first turn",
+          timestamp: Date.parse("2026-03-19T10:00:00.000Z"),
+          cycleId: null,
+        },
+        {
+          id: "201",
+          role: "assistant",
+          channel: "to_user",
+          content: "second turn",
+          timestamp: Date.parse("2026-03-19T10:05:00.000Z"),
+          cycleId: 3,
+        },
+        {
+          id: "202",
+          role: "assistant",
+          channel: "to_user",
+          content: "third turn",
+          timestamp: Date.parse("2026-03-19T10:12:00.000Z"),
+          cycleId: 3,
+        },
+        {
+          id: "203",
+          role: "assistant",
+          channel: "to_user",
+          content: "next day turn",
+          timestamp: Date.parse("2026-03-20T09:00:00.000Z"),
+          cycleId: 4,
+        },
+      ],
+      [],
+      "idle",
+    );
+
+    const dividerRows = rows.filter((row) => row.type === "time-divider");
+    expect(dividerRows).toHaveLength(2);
+    expect(dividerRows[0]?.emphasis).toBe("time");
+    expect(dividerRows[1]?.emphasis).toBe("date");
+
+    expect(rows.map((row) => row.type)).toEqual([
+      "message",
+      "time-divider",
+      "message",
+      "message",
+      "time-divider",
+      "message",
+    ]);
+  });
 });

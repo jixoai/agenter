@@ -4,7 +4,9 @@ import type { SessionToolbarTone } from "./SessionToolbar";
 import { isLikelyErrorNotice, normalizeUserNotice } from "../../shared/notice";
 
 type RouteSession = Pick<SessionEntry, "status">;
-type RouteRuntime = Pick<RuntimeSnapshot["runtimes"][string], "started" | "terminals" | "loopPhase" | "stage">;
+type RouteRuntime = Pick<RuntimeSnapshot["runtimes"][string], "started" | "loopPhase" | "stage"> & {
+  terminalCount: number;
+};
 
 export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRuntime): string => {
   if (!session) {
@@ -156,7 +158,7 @@ export const resolveChatRouteNotice = (input: {
     };
   }
 
-  if (input.runtime.terminals.length === 0) {
+  if (input.runtime.terminalCount === 0) {
     return {
       tone: "info",
       message: "Session is running without a terminal. Open Settings if this workspace should boot one automatically.",

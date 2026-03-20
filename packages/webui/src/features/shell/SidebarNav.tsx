@@ -1,15 +1,16 @@
-import { FolderTree, MessageSquare, Sparkles } from "lucide-react";
+import { FolderTree, MessageSquare, Settings2, Sparkles } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual, ButtonTrailingVisual } from "../../components/ui/button";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { ProfileImage } from "../../components/ui/profile-image";
 import { surfaceToneClassName } from "../../components/ui/surface";
 import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { sessionStatusMeta } from "../../shared/status-meta";
 
-type SidebarPrimaryKey = "quickstart" | "workspaces";
+type SidebarPrimaryKey = "quickstart" | "workspaces" | "settings";
 
 interface NavAvatar {
   label: string;
@@ -29,6 +30,7 @@ export interface RunningSessionNavItem {
   sessionId: string;
   name: string;
   workspacePath: string;
+  iconUrl?: string;
   active: boolean;
   unreadCount: number;
   status: string;
@@ -113,7 +115,7 @@ const PrimaryButton = ({ item, compact }: { item: PrimaryNavItem; compact: boole
 };
 
 const SessionButton = ({ item }: { item: RunningSessionNavItem }) => {
-  const avatar = createWorkspaceAvatar(item.workspacePath);
+  const workspaceAvatar = createWorkspaceAvatar(item.workspacePath);
   const status = sessionStatusMeta(isRunningStatus(item.status) ? item.status : "stopped");
   const summary = [item.name, item.sessionId, item.workspacePath].filter(Boolean).join(" · ");
 
@@ -138,7 +140,11 @@ const SessionButton = ({ item }: { item: RunningSessionNavItem }) => {
         )}
       >
         <div className="flex items-start gap-2.5">
-          <SidebarWorkspaceGlyph avatar={avatar} />
+          {item.iconUrl ? (
+            <ProfileImage src={item.iconUrl} label={item.name} alt={item.name} className="h-7 w-7 shrink-0 rounded-lg" />
+          ) : (
+            <SidebarWorkspaceGlyph avatar={workspaceAvatar} />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium text-slate-900">{item.name}</span>
@@ -243,9 +249,11 @@ export const SidebarNav = ({ className, ...props }: SidebarNavProps) => (
 export const defaultPrimaryNavItems = (input: {
   quickStartActive: boolean;
   workspacesActive: boolean;
+  settingsActive: boolean;
   unreadWorkspaces?: number;
   onSelectQuickStart: () => void;
   onSelectWorkspaces: () => void;
+  onSelectSettings: () => void;
 }): PrimaryNavItem[] => [
   {
     key: "quickstart",
@@ -261,5 +269,12 @@ export const defaultPrimaryNavItems = (input: {
     active: input.workspacesActive,
     badgeCount: input.unreadWorkspaces,
     onSelect: input.onSelectWorkspaces,
+  },
+  {
+    key: "settings",
+    label: "Global Settings",
+    icon: Settings2,
+    active: input.settingsActive,
+    onSelect: input.onSelectSettings,
   },
 ];

@@ -30,7 +30,7 @@ export const resolveChatMessagePresentation = (input: {
   }
 
   return {
-    bubbleClassName: "bg-white text-slate-900",
+    bubbleClassName: "bg-slate-50 text-slate-900 ring-1 ring-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
     markdownSurface: "bubble-assistant",
     syntaxTone: "accented",
   };

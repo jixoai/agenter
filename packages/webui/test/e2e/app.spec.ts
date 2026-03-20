@@ -96,9 +96,19 @@ test.describe("Feature: Workspace-first browser shell", () => {
       await expect(page.getByRole("tab", { name: "Devtools", exact: true })).toBeVisible();
     }
     await expect(page.getByRole("heading", { name: "Cycles", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Cycle 1 ·/ }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Technical records", exact: true })).toBeVisible();
-    await expect(page.getByRole("textbox").filter({ hasText: fixture.mockReply }).first()).toBeVisible();
+    const cycleButton = page.getByRole("button", { name: /Cycle 1 ·/ }).first();
+    await expect(cycleButton).toBeVisible();
+
+    if (mobile) {
+      await cycleButton.click();
+      const cycleDialog = page.getByRole("dialog", { name: /Cycle 1/i });
+      await expect(cycleDialog).toBeVisible();
+      await expect(cycleDialog.getByRole("heading", { name: "Technical records", exact: true })).toBeVisible();
+      await expect(cycleDialog.getByRole("textbox").filter({ hasText: fixture.mockReply }).first()).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "Technical records", exact: true })).toBeVisible();
+      await expect(page.getByRole("textbox").filter({ hasText: fixture.mockReply }).first()).toBeVisible();
+    }
   });
 
   test("Scenario: Given a seeded long-history session When Chat opens on desktop and mobile Then persisted turns stay visible and running-session navigation stays available", async ({
@@ -119,11 +129,48 @@ test.describe("Feature: Workspace-first browser shell", () => {
 
     const viewport = page.getByTestId("chat-scroll-viewport");
     await expect(viewport).toBeVisible();
+    const beforeScroll = await viewport.evaluate((element) => ({
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(beforeScroll.scrollHeight).toBeGreaterThan(beforeScroll.clientHeight);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - 240);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const afterManualScroll = await viewport.evaluate((element) => element.scrollTop);
+    expect(afterManualScroll).toBeGreaterThan(0);
+
     await viewport.evaluate((element) => {
       element.scrollTop = 0;
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
     await expect(page.getByRole("article").filter({ hasText: firstPrompt }).first()).toBeVisible();
+
+    if (mobile) {
+      await page.getByRole("button", { name: "Devtools", exact: true }).click();
+    } else {
+      await page.getByRole("tab", { name: "Devtools", exact: true }).click();
+    }
+    await page.waitForURL(/\/workspace\/devtools\?/, { timeout: 20_000 });
+
+    const cycleTimelineViewport = page.getByTestId("cycle-timeline-scroll-viewport");
+    await expect(cycleTimelineViewport).toBeVisible();
+    const cycleTimelineBeforeScroll = await cycleTimelineViewport.evaluate((element) => ({
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(cycleTimelineBeforeScroll.scrollHeight).toBeGreaterThan(cycleTimelineBeforeScroll.clientHeight);
+
+    await cycleTimelineViewport.evaluate((element) => {
+      element.scrollTop = 160;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const cycleTimelineAfterScroll = await cycleTimelineViewport.evaluate((element) => element.scrollTop);
+    expect(cycleTimelineAfterScroll).toBeGreaterThan(0);
 
     if (mobile) {
       const navigation = await openNavigationSheet(page);

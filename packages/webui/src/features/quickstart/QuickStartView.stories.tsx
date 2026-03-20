@@ -108,7 +108,7 @@ export const StartAndResumeFlow: Story = {
 
     await expect(canvas.getByText("Quick Start")).toBeInTheDocument();
     await expect(canvas.getByText("openai · openai-responses · gpt-4.1-mini")).toBeInTheDocument();
-    await expect(canvas.getByText("Images on")).toBeInTheDocument();
+    await expect(canvas.getByText("Image input ready")).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("button", { name: "Change" }));
     await expect(args.onOpenWorkspacePicker).toHaveBeenCalledTimes(1);

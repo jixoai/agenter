@@ -7,12 +7,12 @@ import { cn } from "../../lib/utils";
 type AccordionSingleProps = {
   type?: "single";
   collapsible?: boolean;
-} & Omit<React.ComponentProps<typeof AccordionPrimitive.Root>, "value" | "defaultValue" | "multiple">;
+} & Omit<React.ComponentProps<typeof AccordionPrimitive.Root>, "multiple">;
 
 type AccordionMultipleProps = {
   type: "multiple";
   collapsible?: boolean;
-} & Omit<React.ComponentProps<typeof AccordionPrimitive.Root>, "value" | "defaultValue" | "multiple">;
+} & Omit<React.ComponentProps<typeof AccordionPrimitive.Root>, "multiple">;
 
 type AccordionProps = AccordionSingleProps | AccordionMultipleProps;
 

@@ -23,6 +23,7 @@ vi.mock("../src/components/markdown/MarkdownDocument", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 const buildMessages = (extra: RuntimeChatMessage[] = []): RuntimeChatMessage[] => [
@@ -131,8 +132,6 @@ describe("Feature: conversation-first chat panel", () => {
         aiStatus="idle"
         sessionStateLabel="Session stopped"
         disabled={false}
-        sessionActionLabel="Start session"
-        onSessionAction={vi.fn()}
         onSubmit={vi.fn(async () => undefined)}
       />,
     );
@@ -175,10 +174,7 @@ describe("Feature: conversation-first chat panel", () => {
         ]}
         aiStatus="waiting model"
         sessionStateLabel="Session running"
-        sessionStateTone="active"
         disabled={false}
-        sessionActionLabel="Stop session"
-        onSessionAction={vi.fn()}
         onSubmit={onSubmit}
       />,
     );
@@ -186,7 +182,6 @@ describe("Feature: conversation-first chat panel", () => {
     expect(screen.getAllByText("I am still checking the terminal output.").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Cycle 4/i)).not.toBeInTheDocument();
     expect(screen.queryByText("hidden trace")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop session" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Mock Send" }));
 
@@ -206,19 +201,16 @@ describe("Feature: conversation-first chat panel", () => {
           message: "Session is stopped. Start it to continue.",
         }}
         disabled={false}
-        sessionActionLabel="Start session"
-        onSessionAction={vi.fn()}
         onSubmit={vi.fn(async () => undefined)}
       />,
     );
 
     expect(screen.getAllByText("Session is stopped. Start it to continue.")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Start session" })).toBeInTheDocument();
     expect(screen.queryByText("Use the primary session action to begin or continue working.")).not.toBeInTheDocument();
   });
 
   test("Scenario: Given a long conversation When the viewport virtualizes Then the scroll viewport still owns the available width", () => {
-    render(
+    const { container } = render(
       <ChatPanel
         workspacePath="/repo/demo"
         messages={buildLongMessages(0, 24)}
@@ -226,13 +218,14 @@ describe("Feature: conversation-first chat panel", () => {
         aiStatus="idle"
         sessionStateLabel="Session running"
         disabled={false}
-        sessionActionLabel="Stop session"
-        onSessionAction={vi.fn()}
         onSubmit={vi.fn(async () => undefined)}
       />,
     );
 
-    expect(screen.getByTestId("chat-scroll-viewport")).toHaveClass("flex-1");
+    expect(container.firstElementChild).toHaveClass("grid");
+    expect(container.firstElementChild).toHaveClass("grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("chat-scroll-viewport")).toHaveClass("h-full");
+    expect(screen.getByTestId("chat-scroll-viewport")).toHaveClass("px-3");
     expect(screen.getByText("message-23")).toBeInTheDocument();
   });
 
@@ -249,8 +242,6 @@ describe("Feature: conversation-first chat panel", () => {
           aiStatus="idle"
           sessionStateLabel="Session running"
           disabled={false}
-          sessionActionLabel="Stop session"
-          onSessionAction={vi.fn()}
           hasMore
           onLoadMore={() => {
             scrollHeight = 1800;

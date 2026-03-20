@@ -6,10 +6,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   optimizeDeps: {
     include: [
+      "@base-ui-components/react/tabs",
       "@base-ui-components/react/accordion",
       "@base-ui-components/react/dialog",
       "@base-ui-components/react/menu",
       "@base-ui-components/react/tooltip",
+      "@tanstack/react-router",
+      "react-dom/client",
     ],
   },
   test: {

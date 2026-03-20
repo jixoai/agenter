@@ -36,6 +36,7 @@ const meta = {
     disabled: false,
     loading: false,
     status: "layers refreshed",
+    detailMode: "split",
     effectiveContent: '{\n  "lang": "en"\n}\n',
     layers,
     selectedLayerId: "1:project",
@@ -126,5 +127,20 @@ export const LayerSourcesKeepExplicitScrollViewport: Story = {
     await userEvent.click(canvas.getByRole("tab", { name: "Layer Sources" }));
     const viewport = canvas.getByTestId("settings-sources-scroll-viewport");
     await expect(["auto", "scroll"]).toContain(getComputedStyle(viewport).overflowY);
+  },
+};
+
+export const CompactLayerEditorSheet: Story = {
+  args: {
+    detailMode: "sheet",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Layer Sources" }));
+
+    const dialog = within(document.body).getByRole("dialog");
+    await expect(dialog).toBeInTheDocument();
+    await expect(within(dialog).getByRole("heading", { name: "Layer editor" })).toBeInTheDocument();
   },
 };

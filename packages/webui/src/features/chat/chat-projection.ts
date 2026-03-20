@@ -29,6 +29,13 @@ export type ConversationRow =
       text: string;
       tone: "muted" | "active" | "danger";
       timestamp: number;
+    }
+  | {
+      key: string;
+      type: "time-divider";
+      label: string;
+      timestamp: number;
+      emphasis: "time" | "date";
     };
 
 const hasRenderableContent = (message: Pick<RuntimeChatMessage, "content" | "attachments">): boolean =>
@@ -58,6 +65,34 @@ const compareMessageId = (leftId: string, rightId: string): number => {
     return left - right;
   }
   return leftId.localeCompare(rightId);
+};
+
+const DAY_GAP_MS = 24 * 60 * 60 * 1000;
+const TIME_GAP_MS = 2 * 60 * 1000;
+const TIME_THROTTLE_MS = 30 * 60 * 1000;
+
+const sameDay = (left: number, right: number): boolean => {
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+  return (
+    leftDate.getFullYear() === rightDate.getFullYear() &&
+    leftDate.getMonth() === rightDate.getMonth() &&
+    leftDate.getDate() === rightDate.getDate()
+  );
+};
+
+const formatDividerLabel = (timestamp: number, emphasis: "time" | "date"): string => {
+  const date = new Date(timestamp);
+  return emphasis === "date"
+    ? new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        weekday: "short",
+      }).format(date)
+    : new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(date);
 };
 
 const sameAttachmentSet = (
@@ -270,18 +305,17 @@ export const projectConversationRows = (
   cycles: RuntimeChatCycle[],
   aiStatus: string,
 ): ConversationRow[] => {
-  const persistedRows = messages
+  const orderedRows = [
+    ...messages
     .filter(isChatRenderableMessage)
     .slice()
     .sort((left, right) => left.timestamp - right.timestamp || compareMessageId(left.id, right.id))
-    .map(toPersistedMessageRow);
-
-  const transientRows = cycles
+    .map(toPersistedMessageRow),
+    ...cycles
     .slice()
     .sort((left, right) => left.createdAt - right.createdAt || (left.cycleId ?? 0) - (right.cycleId ?? 0))
-    .flatMap((cycle) => [...toPendingUserRows(cycle, messages), ...toTransientAssistantRows(cycle, aiStatus)]);
-
-  return [...persistedRows, ...transientRows].sort((left, right) => {
+    .flatMap((cycle) => [...toPendingUserRows(cycle, messages), ...toTransientAssistantRows(cycle, aiStatus)]),
+  ].sort((left, right) => {
     const leftTimestamp = left.type === "message" ? left.message.timestamp : left.timestamp;
     const rightTimestamp = right.type === "message" ? right.message.timestamp : right.timestamp;
     if (leftTimestamp !== rightTimestamp) {
@@ -295,4 +329,32 @@ export const projectConversationRows = (
     }
     return left.key.localeCompare(right.key);
   });
+
+  const rows: ConversationRow[] = [];
+  let previousTimestamp: number | null = null;
+  let lastTimeDividerAt: number | null = null;
+
+  for (const row of orderedRows) {
+    const timestamp = row.type === "message" ? row.message.timestamp : row.timestamp;
+    if (previousTimestamp !== null) {
+      const crossedDay = !sameDay(previousTimestamp, timestamp);
+      const longGap = timestamp - previousTimestamp >= TIME_GAP_MS;
+      const throttled = lastTimeDividerAt === null || timestamp - lastTimeDividerAt >= TIME_THROTTLE_MS;
+      if (crossedDay || (longGap && throttled)) {
+        const emphasis: "time" | "date" = crossedDay ? "date" : "time";
+        rows.push({
+          key: `time-divider:${timestamp}:${emphasis}`,
+          type: "time-divider",
+          label: formatDividerLabel(timestamp, emphasis),
+          timestamp,
+          emphasis,
+        });
+        lastTimeDividerAt = timestamp;
+      }
+    }
+    rows.push(row);
+    previousTimestamp = timestamp;
+  }
+
+  return rows;
 };

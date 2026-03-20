@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppControllerContext, type AppController, useRuntimeStoreSelector } from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
 import { type SettingsLayerItem } from "./features/settings/SettingsPanel";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
@@ -96,6 +97,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const modelDebugSessionIdRef = useRef<string | null>(null);
   const workspaceSelectionRef = useRef<{ path: string | null; tab: WorkspaceSessionTab } | null>(null);
   const seenNotificationIdsRef = useRef<string[]>([]);
+  const rasterizedSessionIconIdsRef = useRef(new Set<string>());
 
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
   const store = useMemo(() => createRuntimeStore(client), [client]);
@@ -148,6 +150,32 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }
     setQuickstartWorkspacePath((prev) => (prev === "." ? runtimeRecentWorkspaces[0]! : prev));
   }, [runtimeRecentWorkspaces]);
+
+  useEffect(() => {
+    const pending = runtimeSessions.filter(
+      (session) =>
+        (session.status === "running" || session.status === "starting") &&
+        !rasterizedSessionIconIdsRef.current.has(session.id),
+    );
+    if (pending.length === 0) {
+      return;
+    }
+    for (const session of pending) {
+      rasterizedSessionIconIdsRef.current.add(session.id);
+      void rasterizeSessionIconFallback({
+        iconUrl: store.sessionIconUrl(session.id),
+      })
+        .then((file) => {
+          if (!file) {
+            return;
+          }
+          return store.uploadSessionIcon(session.id, file);
+        })
+        .catch(() => {
+          rasterizedSessionIconIdsRef.current.delete(session.id);
+        });
+    }
+  }, [runtimeSessions, store]);
 
   useEffect(() => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {

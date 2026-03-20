@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { RuntimeConnectionStatus } from "@agenter/client-sdk";
 import { PanelLeftOpen } from "lucide-react";
 
@@ -8,7 +9,7 @@ import { IconAction } from "./IconAction";
 
 interface AppHeaderProps {
   locationLabel: string;
-  compactViewport: boolean;
+  showNavigationTrigger: boolean;
   connectionStatus: RuntimeConnectionStatus;
   aiStatus: string | null;
   onOpenNavigation: () => void;
@@ -30,18 +31,20 @@ const aiToneClassName = (status: string): string => {
   return "text-slate-500";
 };
 
-export const AppHeader = ({
+export const AppHeader = memo(({
   locationLabel,
-  compactViewport,
+  showNavigationTrigger,
   connectionStatus,
   aiStatus,
   onOpenNavigation,
 }: AppHeaderProps) => {
   const transport = transportStatusMeta(connectionStatus);
   return (
+    // AppHeader is passive global chrome only. Workspace identity, route tabs,
+    // and session actions stay inside workspace-local scaffold surfaces.
     <header className={cn(surfaceToneClassName("chrome"), "border-b border-slate-200")}>
       <div className="flex items-start gap-3 px-3 py-3 md:px-4">
-        {compactViewport ? (
+        {showNavigationTrigger ? (
           <IconAction label="Open navigation" icon={PanelLeftOpen} variant="ghost" onClick={onOpenNavigation} />
         ) : null}
 
@@ -61,4 +64,6 @@ export const AppHeader = ({
       </div>
     </header>
   );
-};
+});
+
+AppHeader.displayName = "AppHeader";
