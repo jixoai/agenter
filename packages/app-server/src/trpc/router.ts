@@ -47,6 +47,10 @@ export const appRouter = t.router({
       const session = await ctx.kernel.stopSession(input.sessionId);
       return { session };
     }),
+    abort: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+      const session = await ctx.kernel.abortSession(input.sessionId);
+      return { session };
+    }),
     archive: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.archiveSession(input.sessionId);
       return { session };

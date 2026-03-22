@@ -5,8 +5,8 @@ export type {
   AttentionQueryInput,
   AttentionRecord,
   AttentionRemarkInput,
-  AttentionReplyInput,
-  AttentionReplyRelationship,
-  AttentionReplyResult,
+  AttentionUpdateInput,
+  AttentionUpdateRelationship,
+  AttentionUpdateResult,
   AttentionSystemSnapshot,
 } from "./attention-types";

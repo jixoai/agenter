@@ -112,7 +112,7 @@ export class SessionStore {
     this.flush();
   }
 
-  setLifecycle(patch: { status: "stopped" | "starting" | "running" | "error"; lastError?: string }): void {
+  setLifecycle(patch: { status: "stopped" | "paused" | "starting" | "running" | "error"; lastError?: string }): void {
     this.doc.session.status = patch.status;
     this.doc.session.lastError = patch.lastError;
     this.doc.session.updatedAt = new Date().toISOString();

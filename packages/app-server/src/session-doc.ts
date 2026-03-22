@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-export type PersistedSessionStatus = "stopped" | "starting" | "running" | "error";
+export type PersistedSessionStatus = "stopped" | "paused" | "starting" | "running" | "error";
 export type PersistedSessionStorageState = "active" | "archived";
 
 export interface PersistedSession {

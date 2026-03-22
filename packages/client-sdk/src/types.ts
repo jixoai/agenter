@@ -59,6 +59,7 @@ export interface RuntimeClientState {
   runtimes: RuntimeSnapshot["runtimes"];
   activityBySession: Record<string, "idle" | "active">;
   terminalSnapshotsBySession: Record<string, RuntimeSnapshotEntry["terminalSnapshots"]>;
+  terminalReadsBySession: Record<string, RuntimeSnapshotEntry["terminalReads"]>;
   chatsBySession: Record<string, RuntimeSnapshotEntry["chatMessages"]>;
   chatCyclesBySession: Record<string, RuntimeChatCycle[]>;
   tasksBySession: Record<string, RuntimeSnapshotEntry["tasks"]>;

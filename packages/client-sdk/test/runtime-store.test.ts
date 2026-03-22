@@ -42,6 +42,7 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
           cursor: { x: 0, y: 0 },
         },
       },
+      terminalReads: {},
       tasks: [],
       loopKernelState: null,
       loopInputSignals: {
@@ -254,6 +255,7 @@ const createMockClient = (input: {
         },
         start: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         stop: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
+        abort: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         archive: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         restore: { mutate: async () => ({ session: createSnapshot(0).sessions[0] }) },
         delete: { mutate: async () => ({}) },
@@ -683,6 +685,81 @@ describe("Feature: runtime store synchronization", () => {
     onError?.();
     expect(store.getState().connected).toBe(false);
     expect(store.getState().connectionStatus).toBe("reconnecting");
+    store.disconnect();
+  });
+
+  test("Scenario: Given snapshot and focused-terminal events When multiple focused terminals are published Then the ordered focus set stays primary", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const snapshot = createSnapshot(40);
+    snapshot.runtimes["i-1"] = {
+      ...snapshot.runtimes["i-1"],
+      focusedTerminalId: "legacy-main",
+      focusedTerminalIds: ["aux", "main", "aux"],
+    };
+
+    const client = createMockClient({
+      snapshotQuery: async () => snapshot,
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    expect(store.getState().runtimes["i-1"]?.focusedTerminalIds).toEqual(["aux", "main"]);
+    expect(store.getState().runtimes["i-1"]?.focusedTerminalId).toBe("aux");
+
+    onData?.({
+      version: 1,
+      eventId: 41,
+      timestamp: Date.now(),
+      type: "runtime.focusedTerminal",
+      sessionId: "i-1",
+      payload: {
+        terminalId: "stale-single",
+        terminalIds: ["main", "aux", "main"],
+      },
+    });
+
+    expect(store.getState().runtimes["i-1"]?.focusedTerminalIds).toEqual(["main", "aux"]);
+    expect(store.getState().runtimes["i-1"]?.focusedTerminalId).toBe("main");
+    store.disconnect();
+  });
+
+  test("Scenario: Given terminal read events When representation metadata is published Then the runtime store preserves it without inference", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(60),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    onData?.({
+      version: 1,
+      eventId: 61,
+      timestamp: Date.now(),
+      type: "terminal.read",
+      sessionId: "i-1",
+      payload: {
+        terminalId: "main",
+        result: {
+          kind: "terminal-diff",
+          representation: "diff",
+          terminalId: "main",
+          fromHash: "10",
+          toHash: "11",
+          diff: "echo ready",
+          bytes: 10,
+          status: "IDLE",
+        },
+      },
+    });
+
+    expect(store.getState().terminalReadsBySession["i-1"]?.main?.representation).toBe("diff");
+    expect(store.getState().runtimes["i-1"]?.terminalReads.main?.kind).toBe("terminal-diff");
     store.disconnect();
   });
 
@@ -1418,5 +1495,128 @@ describe("Feature: runtime store synchronization", () => {
       globalThis.fetch = originalFetch;
       store.disconnect();
     }
+  });
+
+  test("Scenario: Given hydrateRuntime no longer sees a runtime When stopSession completes Then paused runtime scaffolding is kept while persisted cycles remain visible", async () => {
+    let snapshotCalls = 0;
+    const pausedSession = {
+      ...createSnapshot(0).sessions[0],
+      status: "paused" as const,
+    };
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 1) {
+          return createSnapshot(800);
+        }
+        return {
+          ...createSnapshot(801),
+          sessions: [pausedSession],
+          runtimes: {},
+        };
+      },
+    });
+    client.trpc.session.stop.mutate = async () => ({ session: pausedSession });
+
+    const store = new RuntimeStore(client);
+    const internal = store as unknown as { applyEvent: (event: unknown) => void };
+    await store.connect();
+    expect(store.getState().runtimes["i-1"]?.started).toBe(true);
+    internal.applyEvent({
+      version: 1,
+      eventId: 801,
+      type: "runtime.cycle.updated",
+      sessionId: "i-1",
+      timestamp: Date.now(),
+      payload: {
+        cycle: {
+          id: "cycle:11",
+          cycleId: 11,
+          seq: 11,
+          createdAt: Date.now(),
+          wakeSource: "user",
+          kind: "model",
+          status: "done",
+          clientMessageIds: ["client-11"],
+          inputs: [
+            {
+              source: "message",
+              role: "user",
+              name: "User",
+              parts: [{ type: "text", text: "hello cycle" }],
+              meta: { clientMessageId: "client-11" },
+            },
+          ],
+          outputs: [],
+          liveMessages: [],
+          streaming: null,
+          modelCallId: 12,
+        },
+      },
+    });
+
+    await store.stopSession("i-1");
+
+    expect(store.getState().runtimes["i-1"]?.started).toBe(true);
+    expect(store.getState().runtimes["i-1"]?.terminals).toEqual([]);
+    expect(store.getState().terminalSnapshotsBySession["i-1"]).toEqual({});
+    expect(store.getState().chatCyclesBySession["i-1"]?.map((cycle) => cycle.id)).toEqual(["cycle:11"]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given abort clears runtime ownership When the stopped event is applied Then volatile runtime state resets while persisted cycles remain inspectable", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const stoppedSession = {
+      ...createSnapshot(0).sessions[0],
+      status: "stopped" as const,
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(900),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+    const internal = store as unknown as { applyEvent: (event: unknown) => void };
+    internal.applyEvent({
+      version: 1,
+      eventId: 901,
+      type: "runtime.cycle.updated",
+      sessionId: "i-1",
+      timestamp: Date.now(),
+      payload: {
+        cycle: {
+          id: "cycle:12",
+          cycleId: 12,
+          seq: 12,
+          createdAt: Date.now(),
+          wakeSource: "user",
+          kind: "model",
+          status: "done",
+          clientMessageIds: ["client-12"],
+          inputs: [],
+          outputs: [],
+          liveMessages: [],
+          streaming: null,
+          modelCallId: 13,
+        },
+      },
+    });
+    onData?.({
+      eventId: 902,
+      type: "session.updated",
+      sessionId: "i-1",
+      timestamp: Date.now(),
+      payload: { session: stoppedSession },
+    });
+
+    expect(store.getState().runtimes["i-1"]?.started).toBe(false);
+    expect(store.getState().runtimes["i-1"]?.activeCycle).toBeNull();
+    expect(store.getState().terminalReadsBySession["i-1"]).toEqual({});
+    expect(store.getState().chatCyclesBySession["i-1"]?.map((cycle) => cycle.id)).toEqual(["cycle:12"]);
+    store.disconnect();
   });
 });

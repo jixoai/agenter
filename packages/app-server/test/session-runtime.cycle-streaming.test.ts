@@ -53,7 +53,7 @@ const createRuntime = (): SessionRuntime => {
 };
 
 describe("Feature: session runtime live cycle projection", () => {
-  test("Scenario: Given streamed tool events When the active cycle updates Then tool rows and attention reply preview stay in the same cycle", () => {
+  test("Scenario: Given streamed tool events When the active cycle updates Then tool rows stay in the same cycle without injecting attention previews into chat streaming", () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternals;
 
@@ -76,20 +76,20 @@ describe("Feature: session runtime live cycle projection", () => {
     internal.handleAssistantStreamUpdate({
       kind: "tool_call",
       toolCallId: "tool-1",
-      toolName: "attention_reply",
-      argsText: '{"replyContent":"Streaming reply',
+      toolName: "attention_update",
+      argsText: '{"content":"Streaming reply',
       timestamp: 12,
     });
 
     let activeCycle = runtime.snapshot().activeCycle;
-    expect(activeCycle?.streaming?.content).toBe("Streaming reply");
+    expect(activeCycle?.streaming).toBeNull();
     expect(activeCycle?.liveMessages).toHaveLength(1);
     expect(activeCycle?.liveMessages[0]?.channel).toBe("tool_call");
 
     internal.handleAssistantStreamUpdate({
       kind: "tool_result",
       toolCallId: "tool-1",
-      toolName: "attention_reply",
+      toolName: "attention_update",
       ok: true,
       result: { ok: true, id: 7 },
       timestamp: 13,

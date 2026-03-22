@@ -3,8 +3,8 @@ import type {
   AttentionQueryInput,
   AttentionRecord,
   AttentionRemarkInput,
-  AttentionReplyInput,
-  AttentionReplyResult,
+  AttentionUpdateInput,
+  AttentionUpdateResult,
   AttentionSystemSnapshot,
 } from "./attention-types";
 
@@ -61,10 +61,10 @@ export class AttentionEngine {
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
     const limit = Math.max(1, Math.trunc(input.limit ?? 20));
     const query = input.query?.trim();
-    const includeInactive = input.includeInactive ?? true;
+    const minScore = normalizeScore(input.minScore, 1);
 
     const filtered = this.sorted().filter((record) => {
-      if (!includeInactive && record.score <= 0) {
+      if (record.score < minScore) {
         return false;
       }
       if (!query) {
@@ -117,9 +117,9 @@ export class AttentionEngine {
     return { ...next };
   }
 
-  reply(input: AttentionReplyInput): AttentionReplyResult {
-    const reply = this.add({
-      content: input.replyContent,
+  update(input: AttentionUpdateInput): AttentionUpdateResult {
+    const record = this.add({
+      content: input.content,
       from: input.from?.trim() || "assistant",
       score: input.score ?? 0,
     });
@@ -136,9 +136,8 @@ export class AttentionEngine {
       }
     }
 
-    return { reply, related };
+    return { record, related };
   }
-
   snapshot(): AttentionSystemSnapshot {
     return {
       nextId: this.nextId,

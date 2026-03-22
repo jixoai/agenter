@@ -19,6 +19,12 @@ import {
   type TaskSourceResolved,
   type TaskView,
 } from "@agenter/task-system";
+import {
+  TerminalControlPlane,
+  type TerminalControlPlaneConfig,
+  type TerminalControlPlaneEntry,
+  type TerminalReadResult as ControlPlaneTerminalReadResult,
+} from "@agenter/terminal-system";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -38,6 +44,14 @@ import { createInitialLoopKernelState, hashLoopState } from "./loopbus-kernel";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
+import {
+  LoopBusPluginRuntime,
+  type AttentionDraft,
+  type LoopBusPlugin,
+  type LoopSourceReadRequest,
+  type LoopSourceReadResult,
+  type LoopSourceRef,
+} from "./loopbus-plugin-runtime";
 import { FilePromptStore } from "./prompt-store";
 import {
   buildSessionAssetRelativePath,
@@ -59,6 +73,30 @@ import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
+type TerminalReadMode = "auto" | "diff" | "snapshot";
+type TerminalReadRepresentation = "diff" | "snapshot";
+
+const buildTerminalDiffPayload = (
+  terminalId: string,
+  input: {
+    fromHash: string | null;
+    toHash: string | null;
+    diff: string;
+    bytes: number;
+    status: "IDLE" | "BUSY";
+  },
+): ControlPlaneTerminalReadResult => ({
+  kind: "terminal-diff",
+  representation: "diff" as const,
+  terminalId,
+  fromHash: input.fromHash,
+  toHash: input.toHash,
+  bytes: input.bytes,
+  status: input.status,
+  diff: input.diff,
+});
+
 const serializeTerminalDiff = (
   terminalId: string,
   input: {
@@ -69,25 +107,25 @@ const serializeTerminalDiff = (
     status: "IDLE" | "BUSY";
   },
 ): string =>
-  JSON.stringify({
-    kind: "terminal-diff",
-    terminalId,
-    fromHash: input.fromHash,
-    toHash: input.toHash,
-    bytes: input.bytes,
-    status: input.status,
-    diff: input.diff,
-  });
+  JSON.stringify(buildTerminalDiffPayload(terminalId, input));
 
-const buildTerminalSnapshotPayload = (terminalId: string, snapshot: ManagedTerminalSnapshot) => ({
+const buildTerminalSnapshotPayload = (
+  terminalId: string,
+  snapshot: ManagedTerminalSnapshot,
+  status: "IDLE" | "BUSY",
+): ControlPlaneTerminalReadResult => ({
   kind: "terminal-snapshot",
+  representation: "snapshot" as const,
   terminalId,
   seq: snapshot.seq,
   cols: snapshot.cols,
   rows: snapshot.rows,
   cursor: snapshot.cursor,
   tail: snapshot.lines.slice(-20).join("\n"),
+  status,
 });
+
+type TerminalReadPayload = ControlPlaneTerminalReadResult | { ok: false; reason: string };
 
 const serializeAttentionSystemFacts = (records: AttentionRecord[]): string =>
   JSON.stringify({
@@ -181,23 +219,6 @@ const buildLiveToolResultMarkdown = (
     }),
   );
 
-const extractAttentionReplyPreview = (argsText: string): string | null => {
-  const match = argsText.match(/"(replyContent|text)"\s*:\s*"((?:\\.|[^"])*)/s);
-  if (!match?.[2]) {
-    return null;
-  }
-  const raw = match[2];
-  try {
-    return JSON.parse(`"${raw}"`);
-  } catch {
-    return raw
-      .replace(/\\n/g, "\n")
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, "\\")
-      .trim();
-  }
-};
-
 const listMarkdownFiles = async (dir: string): Promise<string[]> => {
   try {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -227,6 +248,19 @@ const pathExists = async (path: string): Promise<boolean> => {
 
 type LoopInputKind = "user" | "terminal" | "task" | "attention";
 const IGNORE_WAIT = Symbol("ignore-wait");
+
+const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
+  const semanticHint =
+    typeof draft.meta?.semanticHash === "string"
+      ? draft.meta.semanticHash
+      : typeof draft.meta?.toHash === "string"
+        ? draft.meta.toHash
+        : JSON.stringify({
+            content: draft.content,
+            meta: draft.meta ?? null,
+          });
+  return `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}:${semanticHint}`;
+};
 
 class LoopInputSignal {
   private version = 0;
@@ -290,6 +324,7 @@ export interface RuntimeEventMap {
   stats: AgentRuntimeStats;
   chat: ChatMessage;
   terminalSnapshot: { terminalId: string; snapshot: ManagedTerminalSnapshot };
+  terminalRead: { terminalId: string; result: ControlPlaneTerminalReadResult };
   terminalStatus: { terminalId: string; running: boolean; status: "IDLE" | "BUSY" };
   focusedTerminal: { terminalIds: string[]; terminalId: string | null };
   taskUpdated: { task: TaskView };
@@ -331,12 +366,17 @@ export interface SessionRuntimeSnapshot {
   focusedTerminalIds: string[];
   chatMessages: ChatMessage[];
   terminalSnapshots: Record<string, ManagedTerminalSnapshot>;
+  terminalReads: Record<string, ControlPlaneTerminalReadResult>;
   terminals: Array<{
     terminalId: string;
     running: boolean;
     status: "IDLE" | "BUSY";
     seq: number;
     cwd: string;
+    icon?: string;
+    title?: string;
+    shortcuts?: Record<string, string>;
+    transportUrl?: string;
   }>;
   tasks: TaskView[];
   loopKernelState: LoopBusKernelState | null;
@@ -395,6 +435,7 @@ export class SessionRuntime {
   private readonly listeners: Array<(event: RuntimeEvent) => void> = [];
   private readonly dirtyQueue = new Set<string>();
   private readonly terminalSnapshots: Record<string, ManagedTerminalSnapshot> = {};
+  private readonly terminalReads: Record<string, ControlPlaneTerminalReadResult> = {};
   private readonly terminalDirtyState: Record<string, boolean> = {};
   private readonly terminalLatestSeq: Record<string, number> = {};
   private readonly terminalViewFingerprint: Record<string, string> = {};
@@ -414,6 +455,7 @@ export class SessionRuntime {
   private attentionEngine: AttentionEngine = new AttentionEngine();
   private readonly messageSystem = new MessageSystem();
   private agent: AgenterAI | null = null;
+  private terminalControlPlane: TerminalControlPlane | null = null;
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
   private started = false;
@@ -428,6 +470,7 @@ export class SessionRuntime {
   private loopKernelSnapshot: LoopBusKernelSnapshot | null = null;
   private activeCycleId: number | null = null;
   private activeModelCallId: number | null = null;
+  private abortingActiveCycle = false;
   private loopKernelVersion = 0;
   private apiCallRecordingRefCount = 0;
   private readonly inputSignals: Record<LoopInputKind, LoopInputSignal> = {
@@ -444,6 +487,7 @@ export class SessionRuntime {
   };
   private attentionFactsVersion = 0;
   private attentionFactsSentVersion = 0;
+  private readonly attentionSourceDigests = new Map<string, string>();
   private inputSignalVersion: Record<LoopInputKind, number> = {
     user: 0,
     terminal: 0,
@@ -456,10 +500,284 @@ export class SessionRuntime {
     task: null,
     attention: null,
   };
-
   private messageConsumedHash: string | null = null;
+  private loopPluginRuntime: LoopBusPluginRuntime | null = null;
 
   constructor(private readonly options: SessionRuntimeOptions) {}
+
+  private createMessageSourceRef(input: {
+    channelId: string;
+    messageId: string;
+    content: string;
+    attachments: ChatSessionAsset[];
+    meta?: Record<string, string | number | boolean | null>;
+  }): LoopSourceRef {
+    return {
+      systemId: "message",
+      subjectId: input.messageId,
+      reason: "message-committed",
+      meta: {
+        channelId: input.channelId,
+        content: input.content,
+        attachments: input.attachments,
+        meta: input.meta,
+      },
+    };
+  }
+
+  private createTerminalSourceRef(terminalId: string, reason: string, versionHint?: string | number): LoopSourceRef {
+    return {
+      systemId: "terminal",
+      subjectId: terminalId,
+      reason,
+      versionHint,
+    };
+  }
+
+  private createLoopPlugins(): LoopBusPlugin[] {
+    return [
+      {
+        name: "builtin-message-source",
+        setup: (api) => {
+          api.registerSource({
+            systemId: "message",
+            match: (ref) => ref.systemId === "message",
+            read: async (request) => this.readMessageSource(request),
+            toAttentionDrafts: async (result, request) => this.toMessageAttentionDrafts(result, request),
+          });
+        },
+      },
+      {
+        name: "builtin-terminal-source",
+        setup: (api) => {
+          api.registerSource({
+            systemId: "terminal",
+            match: (ref) => ref.systemId === "terminal",
+            read: async (request) => this.readTerminalSource(request),
+            toAttentionDrafts: async (result, request) => this.toTerminalAttentionDrafts(result, request),
+          });
+        },
+      },
+    ];
+  }
+
+  private async createLoopPluginRuntime(): Promise<LoopBusPluginRuntime> {
+    const runtime = new LoopBusPluginRuntime(this.createLoopPlugins(), this.options.logger ?? { log: () => {} });
+    await runtime.setup();
+    return runtime;
+  }
+
+  private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
+    const content = typeof request.ref.meta?.content === "string" ? request.ref.meta.content : "";
+    const bytes = Buffer.byteLength(content, "utf8");
+    return {
+      kind: "snapshot",
+      content,
+      bytes,
+      fromHash: null,
+      toHash:
+        typeof request.ref.versionHint === "string" || typeof request.ref.versionHint === "number"
+          ? String(request.ref.versionHint)
+          : null,
+      meta: request.ref.meta ? { ...request.ref.meta } : undefined,
+    };
+  }
+
+  private async toMessageAttentionDrafts(
+    result: LoopSourceReadResult,
+    request: LoopSourceReadRequest,
+  ): Promise<AttentionDraft[]> {
+    const channelId = typeof request.ref.meta?.channelId === "string" ? request.ref.meta.channelId : "user";
+    const channel = this.messageSystem.getChannel(channelId);
+    if (channel?.useAttention === false || result.content.trim().length === 0 || result.content.trim() === "/compact") {
+      return [];
+    }
+    return [
+      {
+        sourceRef: request.ref,
+        content: result.content,
+        from: channel?.displayName ?? channelId,
+        score: channelId === "user" ? 100 : undefined,
+        meta: request.ref.meta ? { ...request.ref.meta } : undefined,
+      },
+    ];
+  }
+
+  private async readTerminalSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
+    const payload = await this.readTerminalRepresentation(request.ref.subjectId, {
+      mode: request.mode ?? "auto",
+      remark: true,
+    });
+    if ("ok" in payload) {
+      return {
+        kind: "snapshot",
+        content: "",
+        bytes: 0,
+        fromHash: null,
+        toHash: null,
+        meta: {
+          terminalId: request.ref.subjectId,
+          reason: payload.reason,
+        },
+      };
+    }
+    const kind = payload.kind === "terminal-diff" ? "diff" : "snapshot";
+    const content = JSON.stringify(payload);
+    return {
+      kind,
+      content,
+      bytes: Buffer.byteLength(content, "utf8"),
+      fromHash: typeof payload.fromHash === "string" ? payload.fromHash : null,
+      toHash:
+        typeof payload.toHash === "string" || typeof payload.seq === "number"
+          ? String(payload.toHash ?? payload.seq)
+          : null,
+      semanticHash: this.terminalSemanticFingerprint[request.ref.subjectId] ?? null,
+      viewHash: this.terminalViewFingerprint[request.ref.subjectId] ?? null,
+      meta: {
+        terminalId: request.ref.subjectId,
+        representation: kind,
+        semanticHash: this.terminalSemanticFingerprint[request.ref.subjectId] ?? null,
+        viewHash: this.terminalViewFingerprint[request.ref.subjectId] ?? null,
+      },
+    };
+  }
+
+  private async toTerminalAttentionDrafts(
+    result: LoopSourceReadResult,
+    request: LoopSourceReadRequest,
+  ): Promise<AttentionDraft[]> {
+    if (result.content.trim().length === 0) {
+      return [];
+    }
+    return [
+      {
+        sourceRef: request.ref,
+        content: result.content,
+        from: "terminal",
+        meta: {
+          terminalId: request.ref.subjectId,
+          representation: result.kind,
+          ...(result.meta ?? {}),
+        },
+      },
+    ];
+  }
+
+  private emitFocusedTerminal(): void {
+    this.emit("focusedTerminal", {
+      terminalIds: [...this.focusedTerminalIds],
+      terminalId: this.focusedTerminalIds[0] ?? null,
+    });
+  }
+
+  private normalizeFocusedTerminalIds(input: Iterable<string>): string[] {
+    const deduped = new Set<string>();
+    for (const terminalId of input) {
+      if (!this.terminals.has(terminalId) || deduped.has(terminalId)) {
+        continue;
+      }
+      deduped.add(terminalId);
+    }
+    return [...deduped];
+  }
+
+  private invalidateFocusedTerminals(reason: string): void {
+    let invalidated = false;
+    for (const terminalId of this.focusedTerminalIds) {
+      if (!this.terminalDirtyState[terminalId]) {
+        continue;
+      }
+      const terminal = this.terminals.get(terminalId);
+      if (!terminal?.isRunning()) {
+        continue;
+      }
+      this.dirtyQueue.add(terminalId);
+      this.loopPluginRuntime?.invalidate(
+        this.createTerminalSourceRef(terminalId, reason, this.terminalLatestSeq[terminalId]),
+      );
+      invalidated = true;
+    }
+    if (invalidated) {
+      this.notifyInput("terminal");
+    }
+  }
+
+  private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
+    if (this.terminalControlPlane) {
+      const next = this.terminalControlPlane.focus(op, terminalIds);
+      this.focusedTerminalIds = [...next];
+      this.emitFocusedTerminal();
+      this.invalidateFocusedTerminals(`focus-${op}`);
+      return next;
+    }
+    const incoming = this.normalizeFocusedTerminalIds(terminalIds);
+    const current = new Set(this.focusedTerminalIds);
+    switch (op) {
+      case "add":
+        for (const terminalId of incoming) {
+          current.add(terminalId);
+        }
+        break;
+      case "remove":
+        for (const terminalId of incoming) {
+          current.delete(terminalId);
+        }
+        break;
+      case "replace":
+        current.clear();
+        for (const terminalId of incoming) {
+          current.add(terminalId);
+        }
+        break;
+      case "clear":
+        current.clear();
+        break;
+    }
+    this.focusedTerminalIds = [...current];
+    this.emitFocusedTerminal();
+    this.invalidateFocusedTerminals(`focus-${op}`);
+    return [...this.focusedTerminalIds];
+  }
+
+  private async commitAttentionDrafts(drafts: AttentionDraft[]): Promise<boolean> {
+    if (drafts.length === 0) {
+      return false;
+    }
+    let changed = false;
+    for (const draft of drafts) {
+      const digest = stableAttentionDraftDigest(draft);
+      const sourceKey = `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}`;
+      if (this.attentionSourceDigests.get(sourceKey) === digest) {
+        continue;
+      }
+      this.attentionSourceDigests.set(sourceKey, digest);
+      this.attentionEngine.add({
+        content: draft.content,
+        from: draft.from,
+        score: draft.score,
+        remark: draft.meta ? JSON.stringify(draft.meta) : undefined,
+      });
+      changed = true;
+    }
+    if (!changed) {
+      return false;
+    }
+    this.attentionFactsVersion += 1;
+    await this.persistAttentionSystem();
+    return true;
+  }
+
+  private async flushPluginAttentionDrafts(): Promise<boolean> {
+    if (!this.loopPluginRuntime || !this.loopPluginRuntime.hasInvalidations()) {
+      return false;
+    }
+    const drafts = await this.loopPluginRuntime.readInvalidatedAttentionDrafts();
+    if (drafts.length === 0) {
+      return false;
+    }
+    return await this.commitAttentionDrafts(drafts);
+  }
 
   onEvent(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.push(listener);
@@ -511,6 +829,15 @@ export class SessionRuntime {
       avatar: this.options.avatar,
     });
     this.focusedTerminalIds = [...this.config.focusedTerminalIds];
+    this.terminalControlPlane = new TerminalControlPlane({
+      outputRoot: join(this.options.sessionRoot, "logs", "terminals"),
+      initialConfig: {
+        transport: {
+          port: 0,
+        },
+      },
+    });
+    this.loopPluginRuntime = await this.createLoopPluginRuntime();
     await this.migrateLegacyAttentionStoreDir();
     this.attentionStore = new AttentionStore(join(this.options.sessionRoot, "attention-system"));
     this.attentionEngine = new AttentionEngine(await this.attentionStore.load());
@@ -527,7 +854,15 @@ export class SessionRuntime {
     await this.reloadSettingsLayers();
 
     for (const [terminalId, terminalConfig] of Object.entries(this.config.terminals)) {
-      this.createTerminal(terminalId, terminalConfig);
+      await this.createTerminal(terminalId, terminalConfig);
+    }
+    this.requireTerminalControlPlane().focus("replace", this.focusedTerminalIds);
+    try {
+      await this.terminalControlPlane.startTransport({ port: 0 });
+    } catch (error) {
+      this.emit("error", {
+        message: `terminal transport failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
 
     const resourceLoader = new ResourceLoader({
@@ -620,119 +955,149 @@ export class SessionRuntime {
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
       terminalGateway: {
-        list: () =>
-          Object.values(this.config?.terminals ?? {}).map((terminal) => ({
-            terminalId: terminal.terminalId,
-            running: this.terminals.get(terminal.terminalId)?.isRunning() ?? false,
-            cwd: terminal.cwd,
-            cols: this.terminals.get(terminal.terminalId)?.getSnapshot().cols ?? 0,
-            rows: this.terminals.get(terminal.terminalId)?.getSnapshot().rows ?? 0,
-            focused: this.focusedTerminalIds.includes(terminal.terminalId),
-            dirty: this.terminalDirtyState[terminal.terminalId] ?? false,
-            latestSeq: this.terminalLatestSeq[terminal.terminalId] ?? 0,
-          })),
-        run: async ({ terminalId }) => {
-          const terminal = this.terminals.get(terminalId);
-          if (!terminal) {
-            return { ok: false, message: `unknown terminal: ${terminalId}` };
-          }
+        list: () => {
+          const planeEntries = new Map(
+            this.requireTerminalControlPlane()
+              .list()
+              .map((entry) => [entry.terminalId, entry] as const),
+          );
+          const configured = Object.values(this.config?.terminals ?? {}).map((terminal) => {
+            const entry = planeEntries.get(terminal.terminalId);
+            return {
+              terminalId: terminal.terminalId,
+              running: entry?.running ?? false,
+              cwd: entry?.cwd ?? terminal.cwd,
+              cols: entry ? this.requireTerminalControlPlane().getSnapshot(terminal.terminalId).cols : 0,
+              rows: entry ? this.requireTerminalControlPlane().getSnapshot(terminal.terminalId).rows : 0,
+              focused: this.focusedTerminalIds.includes(terminal.terminalId),
+              dirty: this.terminalDirtyState[terminal.terminalId] ?? false,
+              latestSeq: this.terminalLatestSeq[terminal.terminalId] ?? 0,
+              icon: entry?.icon,
+              title: entry?.title,
+              shortcuts: entry?.shortcuts,
+              transportUrl: entry?.transportUrl,
+            };
+          });
+          const dynamic = this.requireTerminalControlPlane()
+            .list()
+            .filter((entry) => !this.config?.terminals[entry.terminalId])
+            .map((entry) => ({
+              terminalId: entry.terminalId,
+              running: entry.running,
+              cwd: entry.cwd,
+              cols: this.requireTerminalControlPlane().getSnapshot(entry.terminalId).cols,
+              rows: this.requireTerminalControlPlane().getSnapshot(entry.terminalId).rows,
+              focused: this.focusedTerminalIds.includes(entry.terminalId),
+              dirty: this.terminalDirtyState[entry.terminalId] ?? false,
+              latestSeq: this.terminalLatestSeq[entry.terminalId] ?? 0,
+              icon: entry.icon,
+              title: entry.title,
+              shortcuts: entry.shortcuts,
+              transportUrl: entry.transportUrl,
+            }));
+          return [...configured, ...dynamic];
+        },
+        create: async ({ terminalId, processKind, command, cwd, profile }) => {
+          const controlPlane = this.requireTerminalControlPlane();
           try {
-            terminal.start();
-            if (this.config?.terminals[terminalId]?.gitLog) {
-              await terminal.markDirty();
+            if (terminalId && this.config?.terminals[terminalId]) {
+              await this.createTerminal(terminalId, this.config.terminals[terminalId]);
+              controlPlane.start(terminalId);
+              if (this.config.terminals[terminalId]?.gitLog) {
+                await controlPlane.markDirty(terminalId);
+              }
+              this.terminalDirtyState[terminalId] = false;
+              return {
+                ok: true,
+                message: "terminal started",
+                terminal: controlPlane.list().find((entry) => entry.terminalId === terminalId),
+              };
             }
+            const created = await controlPlane.create({
+              terminalId,
+              processKind,
+              command,
+              cwd,
+              profile,
+            });
+            const managed = controlPlane.getManagedTerminal(created.terminalId);
+            if (managed) {
+              this.attachRuntimeTerminal(created.terminalId, managed);
+            }
+            this.terminalDirtyState[created.terminalId] = false;
+            return { ok: true, message: "terminal created", terminal: created };
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            this.emit("error", { message: `terminal start failed (${terminalId}): ${message}` });
+            this.emit("error", { message: `terminal create failed (${terminalId ?? "dynamic"}): ${message}` });
             return { ok: false, message };
           }
-          this.terminalDirtyState[terminalId] = false;
-          return { ok: true, message: "terminal started" };
         },
         kill: async ({ terminalId }) => {
-          const terminal = this.terminals.get(terminalId);
-          if (!terminal) {
-            return { ok: false, message: `unknown terminal: ${terminalId}` };
-          }
-          await terminal.stop();
-          return { ok: true, message: "terminal stopped" };
-        },
-        focus: async ({ terminalId, focus = true }) => {
-          if (!this.terminals.has(terminalId)) {
-            return {
-              ok: false,
-              message: `unknown terminal: ${terminalId}`,
-              focusedTerminalIds: [...this.focusedTerminalIds],
-            };
-          }
-          if (focus) {
-            if (!this.focusedTerminalIds.includes(terminalId)) {
-              this.focusedTerminalIds = [...this.focusedTerminalIds, terminalId];
-            }
-          } else {
-            this.focusedTerminalIds = this.focusedTerminalIds.filter((item) => item !== terminalId);
-          }
-          this.emit("focusedTerminal", {
-            terminalIds: [...this.focusedTerminalIds],
-            terminalId: this.focusedTerminalIds[0] ?? null,
-          });
-          return {
-            ok: true,
-            message: focus ? "focus added" : "focus removed",
-            focusedTerminalIds: [...this.focusedTerminalIds],
-          };
-        },
-        write: async ({ terminalId, text, submit, submitKey }) => {
-          const terminal = this.terminals.get(terminalId);
-          if (!terminal) {
-            return { ok: false, message: `unknown terminal: ${terminalId}` };
-          }
-          if (!terminal.isRunning()) {
-            try {
-              terminal.start();
-              if (this.config?.terminals[terminalId]?.gitLog) {
-                await terminal.markDirty();
-              }
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              this.emit("error", { message: `terminal start failed (${terminalId}): ${message}` });
-              return { ok: false, message };
-            }
-          }
-          const submitGapMs = this.config?.terminals[terminalId]?.submitGapMs ?? 80;
-          await terminal.write(text, submit ?? true, submitKey ?? "enter", submitGapMs);
-          return { ok: true, message: "written" };
-        },
-        read: async ({ terminalId }) => {
-          const terminal = this.terminals.get(terminalId);
-          if (!terminal) {
-            return { ok: false, reason: `unknown terminal: ${terminalId}` };
-          }
-          return buildTerminalSnapshotPayload(terminalId, terminal.getSnapshot());
-        },
-        consumeDiff: async ({ terminalId, remark, wait, timeoutMs }) => {
-          const terminal = this.terminals.get(terminalId);
-          if (!terminal) {
-            return {
-              ok: false,
-              changed: false,
-              fromHash: null,
-              toHash: null,
-              diff: "",
-              bytes: 0,
-              reason: `unknown terminal: ${terminalId}`,
-            };
-          }
-          const result = await terminal.sliceDirty({
-            remark: remark ?? true,
-            wait: wait ?? false,
-            timeoutMs: timeoutMs ?? 30_000,
-          });
-          if (result.ok && (remark ?? true)) {
-            this.terminalDirtyState[terminalId] = false;
+          const result = await this.requireTerminalControlPlane().kill(terminalId);
+          if (result.ok) {
+            this.terminals.delete(terminalId);
+            delete this.terminalDirtyState[terminalId];
+            delete this.terminalLatestSeq[terminalId];
+            delete this.terminalSnapshots[terminalId];
+            delete this.terminalReads[terminalId];
+            this.focusedTerminalIds = this.requireTerminalControlPlane().getFocusedTerminalIds();
+            this.emitFocusedTerminal();
           }
           return result;
         },
+        focus: async ({ op = "replace", terminalIds = [] }) => {
+          const unknown = terminalIds.filter((terminalId) => !this.requireTerminalControlPlane().has(terminalId));
+          if (unknown.length > 0) {
+            return {
+              ok: false,
+              message: `unknown terminal: ${unknown[0]}`,
+              focusedTerminalIds: [...this.focusedTerminalIds],
+            };
+          }
+          const next = this.updateFocusedTerminals(op, terminalIds);
+          return {
+            ok: true,
+            message: `focus ${op}`,
+            focusedTerminalIds: next,
+          };
+        },
+        write: async ({ terminalId, text, submit, submitKey }) => {
+          const controlPlane = this.requireTerminalControlPlane();
+          if (!controlPlane.has(terminalId)) {
+            return { ok: false, message: `unknown terminal: ${terminalId}` };
+          }
+          const submitGapMs = this.config?.terminals[terminalId]?.submitGapMs ?? 80;
+          try {
+            if (this.config?.terminals[terminalId]?.gitLog && !controlPlane.isRunning(terminalId)) {
+              controlPlane.start(terminalId);
+              await controlPlane.markDirty(terminalId);
+            }
+            const result = await controlPlane.write({
+              terminalId,
+              text,
+              submit,
+              submitKey,
+              submitGapMs,
+            });
+            return { ok: result.ok, message: result.message };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.emit("error", { message: `terminal write failed (${terminalId}): ${message}` });
+            return { ok: false, message };
+          }
+        },
+        read: async ({ terminalId, mode = "auto" }) =>
+          this.readTerminalRepresentation(terminalId, {
+            mode,
+            remark: false,
+          }),
+        snapshot: async ({ terminalId }) =>
+          this.readTerminalRepresentation(terminalId, {
+            mode: "snapshot",
+            remark: false,
+          }),
+        getConfig: async () => this.requireTerminalControlPlane().getConfig(),
+        setConfig: async ({ patch }) => this.requireTerminalControlPlane().setConfig(patch),
       },
       attentionGateway: {
         list: () => this.attentionEngine.list(),
@@ -753,8 +1118,8 @@ export class SessionRuntime {
           return updated;
         },
         query: async (input) => this.attentionEngine.query(input),
-        reply: async (input) => {
-          const result = this.attentionEngine.reply(input);
+        update: async (input) => {
+          const result = this.attentionEngine.update(input);
           this.attentionFactsVersion += 1;
           this.notifyInput("attention");
           await this.persistAttentionSystem();
@@ -871,7 +1236,10 @@ export class SessionRuntime {
         this.loopPhase = state.phase;
         if (this.activeCycle) {
           if (state.phase === "waiting_commits" && previousPhase !== "waiting_commits") {
-            this.finalizeActiveCycle(this.activeCycle.status === "error" ? "error" : "done");
+            const nextStatus =
+              this.abortingActiveCycle || this.activeCycle.status === "error" ? "error" : "done";
+            this.abortingActiveCycle = false;
+            this.finalizeActiveCycle(nextStatus);
           } else if (state.phase === "applying_outputs") {
             this.updateActiveCycle({ status: "applying" });
           } else if (state.phase === "calling_model" && this.activeCycle.status === "collecting") {
@@ -889,6 +1257,7 @@ export class SessionRuntime {
           lastWakeSource: state.lastWakeSource,
           lastError: state.lastError,
           cycle: state.cycle,
+          paused: state.paused,
         });
         this.emit("phase", { phase: state.phase });
       },
@@ -941,25 +1310,49 @@ export class SessionRuntime {
     }
   }
 
-  async stop(): Promise<void> {
+  async pause(): Promise<void> {
+    if (!this.started) {
+      return;
+    }
+    if (this.activeCycle && this.loopPhase !== "waiting_commits") {
+      this.abortingActiveCycle = true;
+    }
+    this.runtime?.pause();
+    // Wake commit waiters so the paused loop can settle without waiting for new external input.
+    this.notifyInput("attention");
+    this.sessionStore?.setLifecycle({ status: "paused" });
+  }
+
+  resume(): void {
+    if (!this.started) {
+      return;
+    }
+    this.runtime?.resume();
+    this.sessionStore?.setLifecycle({ status: "running" });
+  }
+
+  async abort(): Promise<void> {
     if (!this.started) {
       return;
     }
     this.runtime?.stop();
     this.runtime = null;
     this.agent = null;
+    this.loopPluginRuntime = null;
     this.sessionStore?.setLifecycle({ status: "stopped" });
     this.apiCallRecordingRefCount = 0;
 
-    for (const terminal of this.terminals.values()) {
-      await terminal.stop();
-    }
+    await this.terminalControlPlane?.dispose();
+    this.terminalControlPlane = null;
     this.terminals.clear();
     this.taskSourceQueue.length = 0;
     this.taskSourceMtime.clear();
     this.taskSources = [];
     for (const terminalId of Object.keys(this.terminalSnapshots)) {
       delete this.terminalSnapshots[terminalId];
+    }
+    for (const terminalId of Object.keys(this.terminalReads)) {
+      delete this.terminalReads[terminalId];
     }
     for (const terminalId of Object.keys(this.terminalViewFingerprint)) {
       delete this.terminalViewFingerprint[terminalId];
@@ -977,15 +1370,20 @@ export class SessionRuntime {
     this.inputSignalCursor = { user: 0, terminal: 0, task: 0, attention: 0 };
     this.inputSignalVersion = { user: 0, terminal: 0, task: 0, attention: 0 };
     this.inputSignalAt = { user: null, terminal: null, task: null, attention: null };
+    this.attentionSourceDigests.clear();
     this.started = false;
     this.loopPhase = "stopped";
+  }
+
+  async stop(): Promise<void> {
+    await this.abort();
   }
 
   isStarted(): boolean {
     return this.started;
   }
 
-  setSessionStatus(status: "stopped" | "starting" | "running" | "error", lastError?: string): void {
+  setSessionStatus(status: "stopped" | "paused" | "starting" | "running" | "error", lastError?: string): void {
     this.sessionStore?.setLifecycle({ status, lastError });
   }
 
@@ -1059,10 +1457,7 @@ export class SessionRuntime {
     this.sessionDb.setHead(cycleId);
     this.activeCycleId = cycleId;
     this.activeModelCallId = null;
-    this.emit("focusedTerminal", {
-      terminalIds: [...this.focusedTerminalIds],
-      terminalId: this.focusedTerminalIds[0] ?? null,
-    });
+    this.emitFocusedTerminal();
     this.updateLoopKernelSnapshot({
       phase: "waiting_commits",
       currentCycleId: cycleId,
@@ -1324,6 +1719,15 @@ export class SessionRuntime {
       attachments,
       meta: clientMessageId ? { clientMessageId } : undefined,
     });
+    this.loopPluginRuntime?.invalidate(
+      this.createMessageSourceRef({
+        channelId: "user",
+        messageId: message.id,
+        content: text,
+        attachments,
+        meta: clientMessageId ? { clientMessageId } : undefined,
+      }),
+    );
     this.notifyInput("user");
   }
 
@@ -1357,39 +1761,63 @@ export class SessionRuntime {
     if (!this.terminals.has(terminalId)) {
       return false;
     }
-    this.focusedTerminalIds = this.focusedTerminalIds.includes(terminalId)
-      ? [...this.focusedTerminalIds]
-      : [...this.focusedTerminalIds, terminalId];
-    this.emit("focusedTerminal", {
-      terminalIds: [...this.focusedTerminalIds],
-      terminalId: this.focusedTerminalIds[0] ?? null,
-    });
+    this.updateFocusedTerminals("add", [terminalId]);
     return true;
   }
 
   snapshot(): SessionRuntimeSnapshot {
+    const planeEntries = new Map(
+      this.terminalControlPlane?.list().map((entry) => [entry.terminalId, entry] as const) ?? [],
+    );
+    const configuredIds = new Set<string>();
     const terminals = Object.values(this.config?.terminals ?? {}).map((terminal) => {
+      configuredIds.add(terminal.terminalId);
       const managed = this.terminals.get(terminal.terminalId);
       const snapshot = managed?.getSnapshot();
+      const planeEntry = planeEntries.get(terminal.terminalId);
       return {
         terminalId: terminal.terminalId,
         running: managed?.isRunning() ?? false,
         status: managed?.getStatus() ?? "IDLE",
         seq: snapshot?.seq ?? 0,
         cwd: terminal.cwd,
+        icon: planeEntry?.icon,
+        title: planeEntry?.title,
+        shortcuts: planeEntry?.shortcuts,
+        transportUrl: planeEntry?.transportUrl,
       };
     });
+    for (const entry of planeEntries.values()) {
+      if (configuredIds.has(entry.terminalId)) {
+        continue;
+      }
+      terminals.push({
+        terminalId: entry.terminalId,
+        running: entry.running,
+        status: entry.status,
+        seq: entry.seq,
+        cwd: entry.cwd,
+        icon: entry.icon,
+        title: entry.title,
+        shortcuts: entry.shortcuts,
+        transportUrl: entry.transportUrl,
+      });
+    }
 
     return {
       sessionId: this.options.sessionId,
       started: this.started,
-      activityState: this.loopPhase === "waiting_commits" && this.stage === "idle" ? "idle" : "active",
+      activityState:
+        this.loopKernelSnapshot?.state.paused || (this.loopPhase === "waiting_commits" && this.stage === "idle")
+          ? "idle"
+          : "active",
       loopPhase: this.loopPhase,
       stage: this.stage,
       focusedTerminalId: this.focusedTerminalIds[0] ?? "",
       focusedTerminalIds: [...this.focusedTerminalIds],
       chatMessages: [...this.chatMessages],
       terminalSnapshots: { ...this.terminalSnapshots },
+      terminalReads: { ...this.terminalReads },
       terminals,
       tasks: this.taskEngine.list(),
       loopKernelState: this.loopKernelSnapshot?.state ?? null,
@@ -1418,18 +1846,96 @@ export class SessionRuntime {
     };
   }
 
-  private createTerminal(terminalId: string, config: SessionTerminalConfig): void {
-    const terminal = new ManagedTerminal({
-      terminalId,
-      command: config.command,
-      cwd: config.cwd,
-      cols: 80,
-      rows: 24,
-      outputRoot: config.outputRoot ?? join(this.options.sessionRoot, "logs", "terminals", terminalId),
-      gitLog: config.gitLog,
-      logStyle: "rich",
-    });
+  private async readTerminalRepresentation(
+    terminalId: string,
+    input: {
+      mode: TerminalReadMode;
+      remark: boolean;
+    },
+  ): Promise<TerminalReadPayload> {
+    const controlPlane = this.terminalControlPlane;
+    if (!controlPlane || !controlPlane.has(terminalId)) {
+      const terminal = this.terminals.get(terminalId);
+      const config = this.config?.terminals[terminalId];
+      if (!terminal || !config) {
+        return { ok: false, reason: `unknown terminal: ${terminalId}` };
+      }
 
+      const snapshotPayload = buildTerminalSnapshotPayload(terminalId, terminal.getSnapshot(), terminal.getStatus());
+      const snapshotJson = JSON.stringify(snapshotPayload);
+
+      if (config.gitLog && input.mode !== "snapshot") {
+        const slice = await terminal.sliceDirty({
+          remark: input.remark,
+          wait: false,
+        });
+        if (slice.ok && slice.changed && slice.fromHash !== slice.toHash) {
+          const diffPayload = buildTerminalDiffPayload(terminalId, {
+            fromHash: slice.fromHash,
+            toHash: slice.toHash,
+            diff: slice.diff,
+            bytes: slice.bytes,
+            status: terminal.getStatus(),
+          });
+          const shouldUseDiff =
+            input.mode === "diff" || (input.mode === "auto" && JSON.stringify(diffPayload).length <= snapshotJson.length);
+          if (shouldUseDiff) {
+            if (input.remark) {
+              this.terminalDirtyState[terminalId] = false;
+              this.dirtyQueue.delete(terminalId);
+            }
+            this.terminalReads[terminalId] = diffPayload;
+            this.emit("terminalRead", { terminalId, result: diffPayload });
+            return diffPayload;
+          }
+        }
+      }
+
+      if (input.remark) {
+        this.terminalDirtyState[terminalId] = false;
+        this.dirtyQueue.delete(terminalId);
+      }
+      this.terminalReads[terminalId] = snapshotPayload;
+      this.emit("terminalRead", { terminalId, result: snapshotPayload });
+      return snapshotPayload;
+    }
+    const payload = await controlPlane.read(terminalId, input.mode, { remark: input.remark });
+    if (input.remark) {
+      this.terminalDirtyState[terminalId] = false;
+      this.dirtyQueue.delete(terminalId);
+    }
+    this.terminalReads[terminalId] = payload;
+    this.emit("terminalRead", { terminalId, result: payload });
+    return payload;
+  }
+
+  private async createTerminal(terminalId: string, config: SessionTerminalConfig): Promise<void> {
+    const controlPlane = this.requireTerminalControlPlane();
+    if (!controlPlane.has(terminalId)) {
+      await controlPlane.create({
+        terminalId,
+        command: config.command,
+        cwd: config.cwd,
+        profile: {
+          cols: 80,
+          rows: 24,
+          gitLog: config.gitLog,
+          logStyle: "rich",
+        },
+        start: false,
+      });
+    }
+    const terminal = controlPlane.getManagedTerminal(terminalId);
+    if (!terminal) {
+      return;
+    }
+    this.attachRuntimeTerminal(terminalId, terminal);
+  }
+
+  private attachRuntimeTerminal(terminalId: string, terminal: ManagedTerminal): void {
+    if (this.terminals.has(terminalId)) {
+      return;
+    }
     terminal.onSnapshot((snapshot) => {
       const viewFingerprint = buildTerminalViewFingerprint(snapshot);
       const semanticFingerprint = buildTerminalSemanticFingerprint(snapshot);
@@ -1442,8 +1948,11 @@ export class SessionRuntime {
       this.terminalLatestSeq[terminalId] = snapshot.seq;
       if (semanticChanged) {
         this.terminalDirtyState[terminalId] = true;
-        this.dirtyQueue.add(terminalId);
-        this.notifyInput("terminal");
+        if (this.focusedTerminalIds.includes(terminalId)) {
+          this.dirtyQueue.add(terminalId);
+          this.loopPluginRuntime?.invalidate(this.createTerminalSourceRef(terminalId, "semantic-change", snapshot.seq));
+          this.notifyInput("terminal");
+        }
       }
       if (viewChanged) {
         this.emit("terminalSnapshot", { terminalId, snapshot });
@@ -1455,6 +1964,13 @@ export class SessionRuntime {
     });
 
     this.terminals.set(terminalId, terminal);
+  }
+
+  private requireTerminalControlPlane(): TerminalControlPlane {
+    if (!this.terminalControlPlane) {
+      throw new Error("terminal control plane is not initialized");
+    }
+    return this.terminalControlPlane;
   }
 
   private notifyInput(kind: LoopInputKind): void {
@@ -1478,7 +1994,7 @@ export class SessionRuntime {
     if (this.messageSystem.getDirty().length > 0) {
       return "user";
     }
-    if (this.dirtyQueue.size > 0) {
+    if (this.focusedTerminalIds.some((terminalId) => this.terminalDirtyState[terminalId])) {
       return "terminal";
     }
     if (this.taskSourceQueue.length > 0) {
@@ -1568,6 +2084,7 @@ export class SessionRuntime {
   private async collectLoopInputs(): Promise<LoopBusInput[] | undefined> {
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
+    await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
     if (triggered.affected.length > 0) {
       this.emit("taskTriggered", triggered);
@@ -1593,7 +2110,7 @@ export class SessionRuntime {
     const messageDiff = this.messageSystem.consumeDiff({ fromHash: this.messageConsumedHash });
     if (messageDiff.changed) {
       this.messageConsumedHash = messageDiff.toHash;
-      let addedAttention = false;
+      let addedLegacyAttention = false;
       for (const draft of messageDiff.drafts) {
         const channel = this.messageSystem.getChannel(draft.channelId);
         outputs.push({
@@ -1605,16 +2122,16 @@ export class SessionRuntime {
           meta: draft.meta,
           attachments: draft.attachments,
         });
-        if (draft.content.trim() !== "/compact") {
+        if (!this.loopPluginRuntime && draft.content.trim() !== "/compact") {
           this.attentionEngine.add({
             content: draft.content,
             from: "user",
             score: 100,
           });
-          addedAttention = true;
+          addedLegacyAttention = true;
         }
       }
-      if (addedAttention) {
+      if (addedLegacyAttention) {
         this.attentionFactsVersion += 1;
         void this.persistAttentionSystem().catch((error) => {
           this.emit("error", { message: error instanceof Error ? error.message : String(error) });
@@ -1628,7 +2145,7 @@ export class SessionRuntime {
     if (taskHeartbeat) {
       outputs.push(taskHeartbeat);
     }
-    const terminalInputs = await this.collectTerminalInputs();
+    const terminalInputs = this.loopPluginRuntime ? undefined : await this.collectTerminalInputs();
     if (terminalInputs) {
       outputs.push(...terminalInputs);
     }
@@ -1747,7 +2264,7 @@ export class SessionRuntime {
           role: "user",
           type: "text",
           source: "terminal",
-          text: JSON.stringify(buildTerminalSnapshotPayload(terminalId, snapshot)),
+          text: JSON.stringify(buildTerminalSnapshotPayload(terminalId, snapshot, terminal.getStatus())),
           meta: { terminalId, seq: snapshot.seq, focused: true },
         });
         continue;
@@ -2132,13 +2649,14 @@ export class SessionRuntime {
     lastWakeSource: string | null;
     lastError: string | null;
     cycle?: number;
+    paused?: boolean;
   }): void {
     const previous = this.loopKernelSnapshot?.state ?? createInitialLoopKernelState(Date.now(), input.phase);
     const next: LoopBusKernelState = {
       ...previous,
       phase: input.phase,
       running: this.started,
-      paused: false,
+      paused: input.paused ?? previous.paused,
       gate: input.phase === "waiting_commits" ? "waiting_input" : "open",
       queueSize: 0,
       cycle: input.cycle ?? previous.cycle,
@@ -2172,15 +2690,6 @@ export class SessionRuntime {
         });
         return;
       case "tool_call": {
-        if (input.toolName === "attention_reply") {
-          const preview = extractAttentionReplyPreview(input.argsText);
-          if (preview && preview.length > 0) {
-            this.updateActiveCycle({
-              status: "streaming",
-              streaming: { content: preview },
-            });
-          }
-        }
         this.updateActiveCycle({
           status: "streaming",
           upsertLiveMessage: {

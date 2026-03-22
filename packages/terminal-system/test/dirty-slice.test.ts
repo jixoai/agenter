@@ -53,3 +53,27 @@ test("markDirty + sliceDirty(wait) advances mark hash", async () => {
   await terminal.destroy(true);
   rmSync(outputRoot, { recursive: true, force: true });
 });
+
+test("markDirty reports disabled when git log tracking is off", async () => {
+  const outputRoot = mkdtempSync(join(tmpdir(), "ati-dirty-disabled-"));
+  const terminal = new AgenticTerminal("cat", [], {
+    outputRoot,
+    gitLog: false,
+    cols: 80,
+    rows: 20,
+  });
+
+  terminal.start();
+  await waitUntil(() => terminal.workspace.length > 0);
+  await Bun.sleep(150);
+
+  const mark = await terminal.markDirty();
+  expect(mark).toEqual({
+    ok: false,
+    hash: null,
+    reason: "git-log-disabled",
+  });
+
+  await terminal.destroy(true);
+  rmSync(outputRoot, { recursive: true, force: true });
+});

@@ -1,4 +1,9 @@
 export { AgenticTerminal } from "./agentic-terminal";
+export {
+  ManagedTerminal,
+  type ManagedTerminalConfig,
+  type ManagedTerminalSnapshot,
+} from "./managed-terminal";
 export { keyToSequence, parseMixedInput, runMixedInput } from "./input-parser";
 export { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "./output-reader";
 export {
@@ -8,6 +13,23 @@ export {
   serializeStructuredLinesForLog,
   stripHtmlTags,
 } from "./renderer";
+export {
+  TerminalControlPlane,
+  type TerminalControlPlaneConfig,
+  type TerminalControlPlaneConfigPatch,
+  type TerminalControlPlaneEntry,
+  type TerminalCreateInput,
+  type TerminalFocusOp,
+  type TerminalProcessProfile,
+  type TerminalReadMode,
+  type TerminalReadResult,
+  type TerminalShortcutMap,
+  type TerminalTransportClientMessage,
+  type TerminalTransportConfig,
+  type TerminalTransportEndpoint,
+  type TerminalTransportServerMessage,
+  type TerminalWriteInput,
+} from "./terminal-control-plane";
 export type {
   PageMeta,
   RenderResult,

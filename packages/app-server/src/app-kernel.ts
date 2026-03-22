@@ -662,7 +662,7 @@ export class AppKernel {
   async archiveSession(sessionId: string): Promise<SessionMeta> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      await runtime.stop();
+      await runtime.abort();
       this.detachRuntime(sessionId);
     }
     const archived = this.sessions.archive(sessionId);
@@ -690,6 +690,8 @@ export class AppKernel {
 
     const existing = this.runtimes.get(sessionId);
     if (existing?.isStarted()) {
+      existing.resume();
+      existing.setSessionStatus("running");
       const running = this.sessions.update(sessionId, { status: "running", lastError: undefined });
       this.emit("session.updated", { session: running }, sessionId);
       return running;
@@ -733,7 +735,17 @@ export class AppKernel {
   async stopSession(sessionId: string): Promise<SessionMeta> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      await runtime.stop();
+      await runtime.pause();
+    }
+    const paused = this.sessions.update(sessionId, { status: "paused", lastError: undefined });
+    this.emit("session.updated", { session: paused }, sessionId);
+    return paused;
+  }
+
+  async abortSession(sessionId: string): Promise<SessionMeta> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      await runtime.abort();
       this.detachRuntime(sessionId);
     }
     const stopped = this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
@@ -945,7 +957,10 @@ export class AppKernel {
   }
 
   async retainApiCallSubscription(sessionId: string): Promise<{ enabled: boolean; refCount: number }> {
-    const runtime = await this.ensureRuntime(sessionId);
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return { enabled: false, refCount: 0 };
+    }
     return runtime.retainApiCallRecording();
   }
 
@@ -1406,6 +1421,9 @@ export class AppKernel {
           sessionId,
           event.timestamp,
         );
+        return;
+      case "terminalRead":
+        this.emit("terminal.read", event.payload, sessionId, event.timestamp);
         return;
       case "terminalSnapshot":
         this.emit("terminal.snapshot", event.payload, sessionId, event.timestamp);

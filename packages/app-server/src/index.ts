@@ -69,6 +69,26 @@ export {
   type LoopToolCall,
 } from "./loop-bus";
 export {
+  LoopBusPluginRuntime,
+  type AttentionCommittedHook,
+  type AttentionDraft,
+  type AttentionTransformHook,
+  type AttentionWillLoadHook,
+  type CycleShouldStartHook,
+  type CycleShouldStartResult,
+  type LoopBusHook,
+  type LoopBusHookContext,
+  type LoopBusHookDescriptor,
+  type LoopBusHookKind,
+  type LoopBusHookOrder,
+  type LoopBusPlugin,
+  type LoopBusPluginApi,
+  type LoopSourceAdapter,
+  type LoopSourceReadRequest,
+  type LoopSourceReadResult,
+  type LoopSourceRef,
+} from "./loopbus-plugin-runtime";
+export {
   applyLoopStatePatch,
   createInitialLoopKernelState,
   createLoopStatePatch,

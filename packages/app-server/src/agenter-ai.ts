@@ -3,8 +3,8 @@ import type {
   AttentionQueryInput,
   AttentionRecord,
   AttentionRemarkInput,
-  AttentionReplyInput,
-  AttentionReplyResult,
+  AttentionUpdateInput,
+  AttentionUpdateResult,
 } from "@agenter/attention-system";
 import { mdxToMd } from "@agenter/mdx2md";
 import type {
@@ -17,6 +17,12 @@ import type {
   TaskUpdateInput,
   TaskView,
 } from "@agenter/task-system";
+import type {
+  TerminalControlPlaneConfig,
+  TerminalControlPlaneConfigPatch,
+  TerminalControlPlaneEntry,
+  TerminalProcessProfile,
+} from "@agenter/terminal-system";
 import { toolDefinition, type ContentPart, type Tool } from "@tanstack/ai";
 import { z } from "zod";
 
@@ -37,9 +43,21 @@ interface TerminalDescriptor {
   focused?: boolean;
   dirty?: boolean;
   latestSeq?: number;
+  icon?: string;
+  title?: string;
+  shortcuts?: Record<string, string>;
+  transportUrl?: string;
 }
 
-interface TerminalWriteInput {
+interface TerminalCreateToolInput {
+  terminalId?: string;
+  processKind?: string;
+  command?: string[];
+  cwd?: string;
+  profile?: TerminalProcessProfile;
+}
+
+interface TerminalWriteToolInput {
   terminalId: string;
   text: string;
   submit?: boolean;
@@ -48,30 +66,24 @@ interface TerminalWriteInput {
 
 interface TerminalReadInput {
   terminalId: string;
+  mode?: "auto" | "diff" | "snapshot";
+}
+
+interface TerminalFocusInput {
+  op?: "add" | "remove" | "replace" | "clear";
+  terminalIds?: string[];
 }
 
 interface TerminalGateway {
   list: () => TerminalDescriptor[];
-  run: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  create: (input: TerminalCreateToolInput) => Promise<{ ok: boolean; message: string; terminal?: TerminalControlPlaneEntry }>;
   kill: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
-  focus: (input: {
-    terminalId: string;
-    focus?: boolean;
-  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds?: string[] }>;
-  write: (input: TerminalWriteInput) => Promise<{ ok: boolean; message: string }>;
+  focus: (input: TerminalFocusInput) => Promise<{ ok: boolean; message: string; focusedTerminalIds?: string[] }>;
+  write: (input: TerminalWriteToolInput) => Promise<{ ok: boolean; message: string }>;
   read: (input: TerminalReadInput) => Promise<unknown>;
-  consumeDiff: (input: {
-    terminalId: string;
-    remark?: boolean;
-    wait?: boolean;
-    timeoutMs?: number;
-  }) => Promise<unknown>;
-  sliceDirty?: (input: {
-    terminalId: string;
-    remark?: boolean;
-    wait?: boolean;
-    timeoutMs?: number;
-  }) => Promise<unknown>;
+  snapshot: (input: { terminalId: string }) => Promise<unknown>;
+  getConfig: () => Promise<TerminalControlPlaneConfig> | TerminalControlPlaneConfig;
+  setConfig: (input: { patch: TerminalControlPlaneConfigPatch }) => Promise<TerminalControlPlaneConfig> | TerminalControlPlaneConfig;
 }
 
 interface TaskGateway {
@@ -96,7 +108,7 @@ interface AttentionGateway {
   add: (input: AttentionAddInput) => Promise<AttentionRecord> | AttentionRecord;
   remark: (input: AttentionRemarkInput) => Promise<AttentionRecord | undefined> | AttentionRecord | undefined;
   query: (input: AttentionQueryInput) => Promise<AttentionRecord[]> | AttentionRecord[];
-  reply: (input: AttentionReplyInput) => Promise<AttentionReplyResult> | AttentionReplyResult;
+  update: (input: AttentionUpdateInput) => Promise<AttentionUpdateResult> | AttentionUpdateResult;
 }
 
 interface ResolvedImageAttachmentSource {
@@ -176,7 +188,7 @@ interface ToolTraceEntry {
   timestamp: string;
 }
 
-interface AttentionReplyCall {
+interface AttentionUpdateCall {
   id: number;
   text: string;
   from: string;
@@ -222,6 +234,13 @@ const safeJsonParse = (input: string): unknown => {
     return input;
   }
 };
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error
+      ? error.name === "AbortError" || error.message === "This operation was aborted"
+      : false;
 
 const formatTimestamp = (value: number): string => new Date(value).toISOString();
 
@@ -322,7 +341,7 @@ const inferStageFromToolTrace = (trace: ToolTraceEntry[]): TaskStage => {
   }
   if (
     trace.some((entry) =>
-      ["terminal_consumeDiff", "terminal_sliceDirty", "terminal_read", "terminal_run", "terminal_list"].includes(
+      ["terminal_read", "terminal_snapshot", "terminal_create", "terminal_list", "terminal_get_config"].includes(
         entry.tool,
       ),
     )
@@ -355,25 +374,40 @@ export class AgenterAI {
   }
 
   private async withModelCallTimeout<T>(
-    run: (abortController: AbortController) => Promise<T>,
+    input: {
+      signal?: AbortSignal;
+      run: (abortController: AbortController) => Promise<T>;
+    },
   ): Promise<T> {
     const abortController = new AbortController();
     const timeoutMs = this.deps.modelCallTimeoutMs ?? DEFAULT_MODEL_CALL_TIMEOUT_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const externalSignal = input.signal;
+    const abortFromExternal = () => {
+      abortController.abort(externalSignal?.reason ?? "session.stop");
+    };
 
     try {
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          abortFromExternal();
+        } else {
+          externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+        }
+      }
       return await new Promise<T>((resolve, reject) => {
         timer = setTimeout(() => {
           abortController.abort();
           reject(new Error(`model call timed out after ${timeoutMs}ms`));
         }, timeoutMs);
 
-        void run(abortController).then(resolve, reject);
+        void input.run(abortController).then(resolve, reject);
       });
     } finally {
       if (timer) {
         clearTimeout(timer);
       }
+      externalSignal?.removeEventListener("abort", abortFromExternal);
     }
   }
 
@@ -412,7 +446,10 @@ export class AgenterAI {
     };
   }
 
-  async send(messages: LoopBusMessage[]): Promise<LoopBusResponse<ChatMessage, TaskStage> | void> {
+  async send(
+    messages: LoopBusMessage[],
+    context?: { signal?: AbortSignal },
+  ): Promise<LoopBusResponse<ChatMessage, TaskStage> | void> {
     const orderedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
     if (orderedMessages.length === 0) {
       return;
@@ -441,11 +478,11 @@ export class AgenterAI {
       },
     });
     const toolTrace: ToolTraceEntry[] = [];
-    const attentionReplies: AttentionReplyCall[] = [];
+    const attentionUpdates: AttentionUpdateCall[] = [];
     const tools = ENABLE_AGENT_TOOLS
       ? this.buildTools(taskId, toolTrace, {
-          onChatReply: (reply) => {
-            attentionReplies.push(reply);
+          onAttentionUpdate: (update) => {
+            attentionUpdates.push(update);
           },
         })
       : [];
@@ -479,24 +516,21 @@ export class AgenterAI {
     });
 
     try {
-      const response = await this.withModelCallTimeout((abortController) =>
-        this.deps.modelClient.respondWithMeta({
-          systemPrompt,
-          messages: historySnapshot,
-          tools,
-          abortController,
-          onUpdate: async (update) => {
-            await this.deps.onAssistantStream?.(update);
-          },
-        }),
-      );
+      const response = await this.withModelCallTimeout({
+        signal: context?.signal,
+        run: (abortController) =>
+          this.deps.modelClient.respondWithMeta({
+            systemPrompt,
+            messages: historySnapshot,
+            tools,
+            abortController,
+            onUpdate: async (update) => {
+              await this.deps.onAssistantStream?.(update);
+            },
+          }),
+      });
       const normalizedResponseText = response.text.trim();
-      const decisionToUser =
-        attentionReplies.length > 0
-          ? attentionReplies.map((item) => item.text)
-          : normalizedResponseText.length > 0
-            ? [normalizedResponseText]
-            : [];
+      const decisionToUser = normalizedResponseText.length > 0 ? [normalizedResponseText] : [];
 
       const completedAt = Date.now();
       this.persistModelCall({
@@ -505,8 +539,8 @@ export class AgenterAI {
         completedAt,
         response: {
           decision: {
-            stage: attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
-            done: attentionReplies.some((item) => item.done),
+            stage: attentionUpdates[attentionUpdates.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
+            done: attentionUpdates.some((item) => item.done),
             toUser: decisionToUser,
           },
           usage: response.usage,
@@ -538,17 +572,17 @@ export class AgenterAI {
         thinking: response.thinking,
         text: response.text,
         toolTrace,
-        attentionReplies,
+        attentionUpdates,
       });
       this.pushAssistantTurnToHistory(assistantFacts);
 
-      const stage = attentionReplies[attentionReplies.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
-      const done = attentionReplies.some((item) => item.done) || stage === "done";
+      const stage = attentionUpdates[attentionUpdates.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
+      const done = attentionUpdates.some((item) => item.done) || stage === "done";
       const toUserMessages = this.composeAssistantMessages(assistantFacts);
       const summary = this.resolveTaskSummary({
         stage,
         done,
-        attentionReplies,
+        attentionUpdates,
         text: response.text,
         thinking: response.thinking,
       });
@@ -573,8 +607,15 @@ export class AgenterAI {
       const message = error instanceof Error ? error.message : String(error);
       const name = error instanceof Error ? error.name : "Error";
       const stack = error instanceof Error ? error.stack : undefined;
+      const aborted = isAbortError(error);
       const details =
-        error instanceof ModelDecisionError ? { retried: true } : message.includes("timed out after") ? { timeout: true } : undefined;
+        aborted
+          ? { canceled: true }
+          : error instanceof ModelDecisionError
+            ? { retried: true }
+            : message.includes("timed out after")
+              ? { timeout: true }
+              : undefined;
       this.persistModelCall({
         ...callRecordBase,
         status: "error",
@@ -585,6 +626,9 @@ export class AgenterAI {
         error: { message, name, stack, details },
       });
       this.activeTask = null;
+      if (aborted) {
+        throw error;
+      }
       this.deps.logger.log({
         channel: "error",
         level: "error",
@@ -602,7 +646,7 @@ export class AgenterAI {
   }
 
   private buildAssistantFacts(input: {
-    attentionReplies: AttentionReplyCall[];
+    attentionUpdates: AttentionUpdateCall[];
     thinking: string;
     toolTrace: ToolTraceEntry[];
     text?: string;
@@ -610,8 +654,6 @@ export class AgenterAI {
     const result: AssistantFact[] = [];
     const normalizedThinking = input.thinking.trim();
     const normalizedText = input.text?.trim() ?? "";
-    const explicitReplies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
-    const hasExplicitReply = explicitReplies.length > 0;
 
     if (normalizedThinking.length > 0) {
       result.push({
@@ -621,16 +663,10 @@ export class AgenterAI {
       });
     }
 
-    if (normalizedText.length > 0 && !hasExplicitReply) {
+    if (normalizedText.length > 0) {
       result.push({
         content: normalizedText,
         channel: "to_user",
-        format: "markdown",
-      });
-    } else if (normalizedText.length > 0 && normalizedText !== normalizedThinking) {
-      result.push({
-        content: normalizedText,
-        channel: "self_talk",
         format: "markdown",
       });
     }
@@ -669,13 +705,6 @@ export class AgenterAI {
       }
     }
 
-    for (const reply of explicitReplies) {
-      result.push({
-        content: reply,
-        channel: "to_user",
-        format: "markdown",
-      });
-    }
     return result;
   }
 
@@ -903,7 +932,7 @@ export class AgenterAI {
         dirty: payload.dirty ?? true,
         seq: payload.seq ?? 0,
         status: payload.status ?? "unknown",
-        hint: "call terminal_consumeDiff if detailed diff is needed",
+        hint: "call terminal_read if an explicit terminal inspection is needed",
       });
       return mdFence("yaml", metaYaml);
     }
@@ -1008,7 +1037,7 @@ export class AgenterAI {
     taskId: string,
     trace: ToolTraceEntry[],
     hooks: {
-      onChatReply: (reply: AttentionReplyCall) => void;
+      onAttentionUpdate: (update: AttentionUpdateCall) => void;
     },
   ): Tool[] {
     const traceTool = async <TInput extends unknown, TOutput extends unknown>(
@@ -1134,6 +1163,7 @@ export class AgenterAI {
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional(),
         query: z.string().optional(),
+        minScore: z.number().int().min(0).max(100).optional(),
       }),
       outputSchema: z.object({
         items: z.array(
@@ -1153,6 +1183,7 @@ export class AgenterAI {
           offset: z.number().int().min(0).optional(),
           limit: z.number().int().min(1).max(200).optional(),
           query: z.string().optional(),
+          minScore: z.number().int().min(0).max(100).optional(),
         })
         .parse(rawInput);
       return traceTool("attention_query", input, async () => ({
@@ -1160,12 +1191,12 @@ export class AgenterAI {
       }));
     });
 
-    const attentionReplyTool = toolDefinition({
-      name: "attention_reply",
-      description: this.runtimeText.t("tool.attention_reply.description"),
+    const attentionUpdateTool = toolDefinition({
+      name: "attention_update",
+      description: this.runtimeText.t("tool.attention_update.description"),
       inputSchema: z
         .object({
-          replyContent: z.string().min(1).optional(),
+          content: z.string().min(1).optional(),
           text: z.string().min(1).optional(),
           from: z.string().optional(),
           score: z.number().int().min(0).max(100).optional(),
@@ -1181,14 +1212,14 @@ export class AgenterAI {
           done: z.boolean().optional(),
           stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
         })
-        .refine((value) => Boolean(value.replyContent || value.text), {
-          message: "replyContent is required",
+        .refine((value) => Boolean(value.content || value.text), {
+          message: "content is required",
         }),
-      outputSchema: z.object({ ok: z.boolean(), id: z.number().int(), message: z.string().optional() }),
+      outputSchema: z.object({ ok: z.boolean(), id: z.number().int() }),
     }).server(async (rawInput) => {
       const input = z
         .object({
-          replyContent: z.string().min(1).optional(),
+          content: z.string().min(1).optional(),
           text: z.string().min(1).optional(),
           from: z.string().optional(),
           score: z.number().int().min(0).max(100).optional(),
@@ -1204,44 +1235,55 @@ export class AgenterAI {
           done: z.boolean().optional(),
           stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
         })
-        .refine((value) => Boolean(value.replyContent || value.text), {
-          message: "replyContent is required",
+        .refine((value) => Boolean(value.content || value.text), {
+          message: "content is required",
         })
         .parse(rawInput);
-      const replyContent = input.replyContent ?? input.text ?? "";
-      return traceTool("attention_reply", input, async () => {
-        if (this.deps.attentionGateway.list().length === 0) {
-          return {
-            ok: false,
-            id: 0,
-            message: "no active attention items to answer",
-          };
-        }
-
-        const result = await this.deps.attentionGateway.reply({
-          replyContent,
+      const content = input.content ?? input.text ?? "";
+      return traceTool("attention_update", input, async () => {
+        const result = await this.deps.attentionGateway.update({
+          content,
           from: input.from,
           score: input.score,
           relationships: input.relationships,
         });
-        hooks.onChatReply({
-          id: result.reply.id,
-          text: result.reply.content,
-          from: result.reply.from,
-          score: result.reply.score,
-          remark: result.reply.remark,
+        hooks.onAttentionUpdate({
+          id: result.record.id,
+          text: result.record.content,
+          from: result.record.from,
+          score: result.record.score,
+          remark: result.record.remark,
           done: input.done ?? false,
           stage: input.stage,
           relationships: input.relationships,
         });
-        await this.deps.onAssistantLiveMessage?.(
-          this.createAssistantMessage(result.reply.content, {
-            channel: "to_user",
-            format: "markdown",
-          }),
-        );
-        return { ok: true, id: result.reply.id };
+        return { ok: true, id: result.record.id };
       });
+    });
+
+    const terminalProcessProfileSchema = z.object({
+      command: z.array(z.string()).optional(),
+      cwd: z.string().optional(),
+      cols: z.number().optional(),
+      rows: z.number().optional(),
+      gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+      logStyle: z.enum(["rich", "plain"]).optional(),
+      icon: z.string().optional(),
+      title: z.string().optional(),
+      shortcuts: z.record(z.string(), z.string()).optional(),
+    });
+
+    const terminalControlPlaneConfigPatchSchema = z.object({
+      defaults: terminalProcessProfileSchema.optional(),
+      processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+      terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+      transport: z
+        .object({
+          host: z.string().optional(),
+          port: z.number().nullable().optional(),
+          pathPrefix: z.string().optional(),
+        })
+        .optional(),
     });
 
     const listTool = toolDefinition({
@@ -1258,6 +1300,10 @@ export class AgenterAI {
             focused: z.boolean().optional(),
             dirty: z.boolean().optional(),
             latestSeq: z.number().optional(),
+            icon: z.string().optional(),
+            title: z.string().optional(),
+            shortcuts: z.record(z.string(), z.string()).optional(),
+            transportUrl: z.string().optional(),
           }),
         ),
       }),
@@ -1267,22 +1313,36 @@ export class AgenterAI {
       })),
     );
 
-    const runTool = toolDefinition({
-      name: "terminal_run",
-      description: this.runtimeText.t("tool.terminal_run.description"),
-      inputSchema: z.object({ terminalId: z.string() }),
+    const createTool = toolDefinition({
+      name: "terminal_create",
+      description: this.runtimeText.t("tool.terminal_create.description"),
+      inputSchema: z.object({
+        terminalId: z.string().optional(),
+        processKind: z.string().optional(),
+        command: z.array(z.string()).optional(),
+        cwd: z.string().optional(),
+        profile: terminalProcessProfileSchema.optional(),
+      }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
-      const input = z.object({ terminalId: z.string() }).parse(rawInput);
-      return traceTool("terminal_run", input, async () => this.deps.terminalGateway.run(input));
+      const input = z
+        .object({
+          terminalId: z.string().optional(),
+          processKind: z.string().optional(),
+          command: z.array(z.string()).optional(),
+          cwd: z.string().optional(),
+          profile: terminalProcessProfileSchema.optional(),
+        })
+        .parse(rawInput);
+      return traceTool("terminal_create", input, async () => this.deps.terminalGateway.create(input));
     });
 
     const focusTool = toolDefinition({
       name: "terminal_focus",
       description: this.runtimeText.t("tool.terminal_focus.description"),
       inputSchema: z.object({
-        terminalId: z.string(),
-        focus: z.boolean().optional(),
+        op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+        terminalIds: z.array(z.string()).optional(),
       }),
       outputSchema: z.object({
         ok: z.boolean(),
@@ -1292,8 +1352,8 @@ export class AgenterAI {
     }).server(async (rawInput) => {
       const input = z
         .object({
-          terminalId: z.string(),
-          focus: z.boolean().optional(),
+          op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+          terminalIds: z.array(z.string()).optional(),
         })
         .parse(rawInput);
       return traceTool("terminal_focus", input, async () => this.deps.terminalGateway.focus(input));
@@ -1307,64 +1367,6 @@ export class AgenterAI {
     }).server(async (rawInput) => {
       const input = z.object({ terminalId: z.string() }).parse(rawInput);
       return traceTool("terminal_kill", input, async () => this.deps.terminalGateway.kill(input));
-    });
-
-    const sliceTool = toolDefinition({
-      name: "terminal_consumeDiff",
-      description: this.runtimeText.t("tool.terminal_slice_dirty.description"),
-      inputSchema: z.object({
-        terminalId: z.string(),
-        remark: z.boolean().optional(),
-        wait: z.boolean().optional(),
-        timeoutMs: z.number().int().positive().max(120_000).optional(),
-      }),
-      outputSchema: z.record(z.string(), z.unknown()),
-    }).server(async (rawInput) => {
-      const input = z
-        .object({
-          terminalId: z.string(),
-          remark: z.boolean().optional(),
-          wait: z.boolean().optional(),
-          timeoutMs: z.number().int().positive().max(120_000).optional(),
-        })
-        .parse(rawInput);
-      return traceTool("terminal_consumeDiff", input, async () =>
-        (this.deps.terminalGateway.consumeDiff ?? this.deps.terminalGateway.sliceDirty)?.({
-          terminalId: input.terminalId,
-          remark: input.remark ?? true,
-          wait: input.wait ?? false,
-          timeoutMs: input.timeoutMs,
-        }),
-      );
-    });
-
-    const sliceDirtyAliasTool = toolDefinition({
-      name: "terminal_sliceDirty",
-      description: this.runtimeText.t("tool.terminal_slice_dirty.description"),
-      inputSchema: z.object({
-        terminalId: z.string(),
-        remark: z.boolean().optional(),
-        wait: z.boolean().optional(),
-        timeoutMs: z.number().int().positive().max(120_000).optional(),
-      }),
-      outputSchema: z.record(z.string(), z.unknown()),
-    }).server(async (rawInput) => {
-      const input = z
-        .object({
-          terminalId: z.string(),
-          remark: z.boolean().optional(),
-          wait: z.boolean().optional(),
-          timeoutMs: z.number().int().positive().max(120_000).optional(),
-        })
-        .parse(rawInput);
-      return traceTool("terminal_sliceDirty", input, async () =>
-        (this.deps.terminalGateway.consumeDiff ?? this.deps.terminalGateway.sliceDirty)?.({
-          terminalId: input.terminalId,
-          remark: input.remark ?? true,
-          wait: input.wait ?? false,
-          timeoutMs: input.timeoutMs,
-        }),
-      );
     });
 
     const writeTool = toolDefinition({
@@ -1392,11 +1394,51 @@ export class AgenterAI {
     const readTool = toolDefinition({
       name: "terminal_read",
       description: this.runtimeText.t("tool.terminal_read.description"),
+      inputSchema: z.object({
+        terminalId: z.string(),
+        mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          terminalId: z.string(),
+          mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+        })
+        .parse(rawInput);
+      return traceTool("terminal_read", input, async () => this.deps.terminalGateway.read(input));
+    });
+
+    const snapshotTool = toolDefinition({
+      name: "terminal_snapshot",
+      description: this.runtimeText.t("tool.terminal_snapshot.description"),
       inputSchema: z.object({ terminalId: z.string() }),
       outputSchema: z.record(z.string(), z.unknown()),
     }).server(async (rawInput) => {
       const input = z.object({ terminalId: z.string() }).parse(rawInput);
-      return traceTool("terminal_read", input, async () => this.deps.terminalGateway.read(input));
+      return traceTool("terminal_snapshot", input, async () => this.deps.terminalGateway.snapshot(input));
+    });
+
+    const getConfigTool = toolDefinition({
+      name: "terminal_get_config",
+      description: this.runtimeText.t("tool.terminal_get_config.description"),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async () => traceTool("terminal_get_config", {}, async () => this.deps.terminalGateway.getConfig()));
+
+    const setConfigTool = toolDefinition({
+      name: "terminal_set_config",
+      description: this.runtimeText.t("tool.terminal_set_config.description"),
+      inputSchema: z.object({
+        patch: terminalControlPlaneConfigPatchSchema,
+      }),
+      outputSchema: z.record(z.string(), z.unknown()),
+    }).server(async (rawInput) => {
+      const input = z
+        .object({
+          patch: terminalControlPlaneConfigPatchSchema,
+        })
+        .parse(rawInput);
+      return traceTool("terminal_set_config", input, async () => this.deps.terminalGateway.setConfig({ patch: input.patch }));
     });
 
     const taskSourceSchema = z.string().min(1);
@@ -1627,14 +1669,16 @@ export class AgenterAI {
       attentionAddTool,
       attentionRemarkTool,
       attentionQueryTool,
-      attentionReplyTool,
+      attentionUpdateTool,
       listTool,
-      runTool,
+      createTool,
       focusTool,
       killTool,
-      sliceTool,
       writeTool,
       readTool,
+      snapshotTool,
+      getConfigTool,
+      setConfigTool,
       taskListTool,
       taskGetTool,
       taskImportTool,
@@ -1660,14 +1704,16 @@ export class AgenterAI {
   private resolveTaskSummary(input: {
     stage: TaskStage;
     done: boolean;
-    attentionReplies: AttentionReplyCall[];
+    attentionUpdates: AttentionUpdateCall[];
     text: string;
     thinking: string;
   }): string {
-    const explicitReplies = input.attentionReplies.map((item) => item.text.trim()).filter((item) => item.length > 0);
-    const lastReply = explicitReplies[explicitReplies.length - 1];
-    if (lastReply && lastReply.trim().length > 0) {
-      return lastReply;
+    const lastUpdate = [...input.attentionUpdates]
+      .map((item) => item.text.trim())
+      .filter((item) => item.length > 0)
+      .at(-1);
+    if (lastUpdate && lastUpdate.trim().length > 0) {
+      return lastUpdate;
     }
     if (input.text.trim().length > 0) {
       return input.text.trim();

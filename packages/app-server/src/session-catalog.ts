@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { readSessionDocument, writeSessionDocument, type PersistedSessionStorageState } from "./session-doc";
 
-export type SessionStatus = "stopped" | "starting" | "running" | "error";
+export type SessionStatus = "stopped" | "paused" | "starting" | "running" | "error";
 export type SessionStorageState = PersistedSessionStorageState;
 
 const isoNow = (): string => new Date().toISOString();
@@ -68,7 +68,7 @@ export interface SessionMeta {
 }
 
 const normalizePersistedStatus = (status: SessionStatus | undefined): SessionStatus => {
-  if (status === "running" || status === "starting") {
+  if (status === "running" || status === "starting" || status === "paused") {
     return "stopped";
   }
   return status ?? "stopped";
@@ -253,11 +253,19 @@ export class SessionCatalog {
     const next = new Map<string, SessionMeta>();
     for (const meta of discovered.values()) {
       const current = this.byId.get(meta.id);
-      next.set(meta.id, current?.status === "running" || current?.status === "starting" ? { ...meta, status: current.status } : meta);
+      next.set(
+        meta.id,
+        current?.status === "running" || current?.status === "starting" || current?.status === "paused"
+          ? { ...meta, status: current.status }
+          : meta,
+      );
     }
 
     for (const current of this.byId.values()) {
-      if ((current.status === "running" || current.status === "starting") && !next.has(current.id)) {
+      if (
+        (current.status === "running" || current.status === "starting" || current.status === "paused") &&
+        !next.has(current.id)
+      ) {
         next.set(current.id, current);
       }
     }

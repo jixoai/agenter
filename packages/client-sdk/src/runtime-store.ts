@@ -26,6 +26,7 @@ const createInitialState = (): RuntimeClientState => ({
   runtimes: {},
   activityBySession: {},
   terminalSnapshotsBySession: {},
+  terminalReadsBySession: {},
   chatsBySession: {},
   chatCyclesBySession: {},
   tasksBySession: {},
@@ -66,6 +67,31 @@ const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage)
     return left.timestamp - right.timestamp;
   }
   return left.id.localeCompare(right.id);
+};
+
+const normalizeFocusedTerminalState = (input: {
+  focusedTerminalIds?: string[];
+  focusedTerminalId?: string | null;
+}): {
+  focusedTerminalIds: string[];
+  focusedTerminalId: string;
+} => {
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const terminalId of input.focusedTerminalIds ?? []) {
+    if (!terminalId || seen.has(terminalId)) {
+      continue;
+    }
+    seen.add(terminalId);
+    deduped.push(terminalId);
+  }
+  if (deduped.length === 0 && input.focusedTerminalId) {
+    deduped.push(input.focusedTerminalId);
+  }
+  return {
+    focusedTerminalIds: deduped,
+    focusedTerminalId: deduped[0] ?? "",
+  };
 };
 
 export class RuntimeStore {
@@ -277,8 +303,11 @@ export class RuntimeStore {
   }
 
   private normalizeRuntimeEntry(runtime: RuntimeSnapshotEntry): RuntimeSnapshotEntry {
+    const focused = normalizeFocusedTerminalState(runtime);
     return {
       ...runtime,
+      ...focused,
+      terminalReads: runtime.terminalReads ?? {},
       chatMessages: runtime.chatMessages.map((message) => this.normalizeRuntimeChatMessage(message)),
       activeCycle: runtime.activeCycle ? this.normalizeRuntimeChatCycle(runtime.activeCycle) : null,
       modelCapabilities: runtime.modelCapabilities ?? DEFAULT_MODEL_CAPABILITIES,
@@ -470,6 +499,9 @@ export class RuntimeStore {
         terminalSnapshotsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.terminalSnapshots ?? {}]),
         ),
+        terminalReadsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.terminalReads ?? {}]),
+        ),
         chatsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.chatMessages ?? []]),
         ),
@@ -581,12 +613,20 @@ export class RuntimeStore {
     await this.listAllWorkspaces();
   }
 
+  async abortSession(sessionId: string): Promise<void> {
+    const result = await this.client.trpc.session.abort.mutate({ sessionId });
+    this.upsertSession(result.session);
+    await this.hydrateRuntime(sessionId);
+    await this.listAllWorkspaces();
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     await this.client.trpc.session.delete.mutate({ sessionId });
     this.state.sessions = this.state.sessions.filter((item) => item.id !== sessionId);
     delete this.state.runtimes[sessionId];
     delete this.state.activityBySession[sessionId];
     delete this.state.terminalSnapshotsBySession[sessionId];
+    delete this.state.terminalReadsBySession[sessionId];
     delete this.state.chatsBySession[sessionId];
     delete this.state.chatCyclesBySession[sessionId];
     delete this.state.tasksBySession[sessionId];
@@ -615,6 +655,7 @@ export class RuntimeStore {
     delete this.state.runtimes[sessionId];
     delete this.state.activityBySession[sessionId];
     delete this.state.terminalSnapshotsBySession[sessionId];
+    delete this.state.terminalReadsBySession[sessionId];
     await this.listAllWorkspaces();
   }
 
@@ -1191,6 +1232,9 @@ export class RuntimeStore {
       const next = this.state.sessions.filter((item) => item.id !== payload.session.id);
       next.push(payload.session);
       this.state.sessions = sortSessions(next);
+      if (payload.session.status === "stopped" || payload.session.status === "paused") {
+        this.clearRuntimeState(payload.session.id, payload.session.status);
+      }
       void this.listAllWorkspaces();
       return;
     }
@@ -1201,6 +1245,7 @@ export class RuntimeStore {
       delete this.state.runtimes[payload.sessionId];
       delete this.state.activityBySession[payload.sessionId];
       delete this.state.terminalSnapshotsBySession[payload.sessionId];
+      delete this.state.terminalReadsBySession[payload.sessionId];
       delete this.state.chatsBySession[payload.sessionId];
       delete this.state.chatCyclesBySession[payload.sessionId];
       delete this.state.tasksBySession[payload.sessionId];
@@ -1242,6 +1287,7 @@ export class RuntimeStore {
       event.type === "runtime.stage" ||
       event.type === "runtime.stats" ||
       event.type === "runtime.focusedTerminal" ||
+      event.type === "terminal.read" ||
       event.type === "terminal.snapshot" ||
       event.type === "terminal.status" ||
       event.type === "runtime.error" ||
@@ -1274,6 +1320,7 @@ export class RuntimeStore {
       runtime = {
         ...runtime,
         terminals: [...runtime.terminals],
+        terminalReads: { ...(runtime.terminalReads ?? {}) },
         loopInputSignals: { ...runtime.loopInputSignals },
       };
       this.state.runtimes[sessionId] = runtime;
@@ -1287,8 +1334,12 @@ export class RuntimeStore {
           runtime.loopPhase === "waiting_commits" && runtime.stage === "idle" ? "idle" : "active";
       } else if (event.type === "runtime.focusedTerminal") {
         const payload = event.payload as { terminalId?: string | null; terminalIds?: string[] };
-        runtime.focusedTerminalIds = payload.terminalIds ?? (payload.terminalId ? [payload.terminalId] : []);
-        runtime.focusedTerminalId = payload.terminalId ?? runtime.focusedTerminalIds[0] ?? "";
+        const focused = normalizeFocusedTerminalState({
+          focusedTerminalId: payload.terminalId,
+          focusedTerminalIds: payload.terminalIds,
+        });
+        runtime.focusedTerminalIds = focused.focusedTerminalIds;
+        runtime.focusedTerminalId = focused.focusedTerminalId;
       } else if (event.type === "terminal.status") {
         const payload = event.payload as { terminalId: string; running: boolean; status: "IDLE" | "BUSY" };
         runtime.terminals = runtime.terminals.map((item) =>
@@ -1323,6 +1374,19 @@ export class RuntimeStore {
         this.state.terminalSnapshotsBySession[sessionId] = {
           ...(this.state.terminalSnapshotsBySession[sessionId] ?? {}),
           [payload.terminalId]: payload.snapshot,
+        };
+      } else if (event.type === "terminal.read") {
+        const payload = event.payload as {
+          terminalId: string;
+          result: NonNullable<typeof runtime.terminalReads>[string];
+        };
+        runtime.terminalReads = {
+          ...(runtime.terminalReads ?? {}),
+          [payload.terminalId]: payload.result,
+        };
+        this.state.terminalReadsBySession[sessionId] = {
+          ...(this.state.terminalReadsBySession[sessionId] ?? {}),
+          [payload.terminalId]: payload.result,
         };
       } else if (event.type === "task.updated") {
         const payload = event.payload as { task: { key: string } };
@@ -1487,11 +1551,11 @@ export class RuntimeStore {
     });
   }
 
-  private ensureRuntimeScaffold(sessionId: string, status?: "stopped" | "starting" | "running" | "error"): void {
+  private ensureRuntimeScaffold(sessionId: string, status?: "stopped" | "paused" | "starting" | "running" | "error"): void {
     if (!this.state.runtimes[sessionId]) {
       this.state.runtimes[sessionId] = {
         sessionId,
-        started: status === "running" || status === "starting",
+        started: status === "running" || status === "starting" || status === "paused",
         activityState: "idle",
         loopPhase: "waiting_commits",
         stage: "idle",
@@ -1499,6 +1563,7 @@ export class RuntimeStore {
         focusedTerminalIds: [],
         chatMessages: [],
         terminalSnapshots: {},
+        terminalReads: {},
         tasks: [],
         terminals: [],
         loopKernelState: null,
@@ -1518,6 +1583,7 @@ export class RuntimeStore {
     }
     this.state.activityBySession[sessionId] = this.state.activityBySession[sessionId] ?? "idle";
     this.state.terminalSnapshotsBySession[sessionId] = this.state.terminalSnapshotsBySession[sessionId] ?? {};
+    this.state.terminalReadsBySession[sessionId] = this.state.terminalReadsBySession[sessionId] ?? {};
     this.state.chatsBySession[sessionId] = this.state.chatsBySession[sessionId] ?? [];
     this.state.chatCyclesBySession[sessionId] = this.state.chatCyclesBySession[sessionId] ?? [];
     this.state.tasksBySession[sessionId] = this.state.tasksBySession[sessionId] ?? [];
@@ -1529,6 +1595,27 @@ export class RuntimeStore {
       enabled: false,
       refCount: 0,
     };
+  }
+
+  private clearRuntimeState(sessionId: string, status?: "stopped" | "paused" | "starting" | "running" | "error"): void {
+    delete this.state.runtimes[sessionId];
+    this.state.activityBySession[sessionId] = "idle";
+    this.state.terminalSnapshotsBySession[sessionId] = {};
+    this.state.terminalReadsBySession[sessionId] = {};
+    this.state.tasksBySession[sessionId] = [];
+    this.state.apiCallRecordingBySession[sessionId] = {
+      enabled: false,
+      refCount: 0,
+    };
+    if (status) {
+      this.ensureRuntimeScaffold(sessionId, status);
+      this.state.runtimes[sessionId]!.started = status === "paused";
+      this.state.runtimes[sessionId]!.activityState = "idle";
+      this.state.runtimes[sessionId]!.activeCycle = null;
+      this.state.runtimes[sessionId]!.terminals = [];
+      this.state.runtimes[sessionId]!.terminalReads = {};
+      this.state.runtimes[sessionId]!.terminalSnapshots = {};
+    }
   }
 
   private applyLruEntries<T extends { id: number }>(
@@ -1595,12 +1682,17 @@ export class RuntimeStore {
     const snapshot = await this.client.trpc.runtime.snapshot.query();
     const runtime = snapshot.runtimes[sessionId];
     if (!runtime) {
+      const session = this.state.sessions.find((item) => item.id === sessionId);
+      this.clearRuntimeState(sessionId, session?.status);
+      this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
+      this.emit();
       return;
     }
     const normalizedRuntime = this.normalizeRuntimeEntry(runtime);
     this.state.runtimes[sessionId] = normalizedRuntime;
     this.state.activityBySession[sessionId] = normalizedRuntime.activityState ?? "idle";
     this.state.terminalSnapshotsBySession[sessionId] = normalizedRuntime.terminalSnapshots ?? {};
+    this.state.terminalReadsBySession[sessionId] = normalizedRuntime.terminalReads ?? {};
     this.state.chatsBySession[sessionId] = this.mergeChatMessages(
       this.state.chatsBySession[sessionId] ?? [],
       normalizedRuntime.chatMessages ?? [],

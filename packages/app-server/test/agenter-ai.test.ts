@@ -112,7 +112,7 @@ const createTerminalGateway = () => {
     writeCalls,
     gateway: {
       list: () => [],
-      run: async () => ({ ok: true, message: "started" }),
+      create: async () => ({ ok: true, message: "created" }),
       kill: async () => ({ ok: true, message: "stopped" }),
       focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
       write: async (input: {
@@ -125,8 +125,9 @@ const createTerminalGateway = () => {
         return { ok: true, message: "written" };
       },
       read: async () => ({ ok: true }),
-      consumeDiff: async () => ({ ok: true, changed: false }),
-      sliceDirty: async () => ({ ok: true, changed: false }),
+      snapshot: async () => ({ ok: true }),
+      getConfig: async () => ({ transport: { port: 4100 } }),
+      setConfig: async () => ({ transport: { port: 4100 } }),
     },
   };
 };
@@ -139,14 +140,14 @@ const createAttentionGateway = () => {
       list: () => engine.list(),
       add: async (input: { content: string; from: string; score?: number; remark?: string }) => engine.add(input),
       remark: async (input: { id: number; score?: number; remark?: string }) => engine.remark(input),
-      query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
+      query: async (input: { offset?: number; limit?: number; query?: string; minScore?: number }) =>
         engine.query(input),
-      reply: async (input: {
-        replyContent: string;
+      update: async (input: {
+        content: string;
         from?: string;
         score?: number;
         relationships?: Array<{ id: number; score?: number; remark?: string }>;
-      }) => engine.reply(input),
+      }) => engine.update(input),
     },
   };
 };
@@ -162,6 +163,39 @@ const createUserMessage = (text: string): LoopBusMessage => ({
 });
 
 describe("Feature: AgenterAI behavior", () => {
+  test("Scenario: Given a model call When terminal tools are exposed Then create config and snapshot tools are available while legacy aliases stay hidden", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    let toolNames: string[] = [];
+
+    const modelClient = createModelClient(async (input) => {
+      toolNames = input.tools.map((tool) => tool.name);
+      return {
+        thinking: "",
+        text: "checked",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      terminalGateway: terminal.gateway,
+      taskGateway: createTaskGateway(),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("inspect the terminal surface")]);
+
+    expect(toolNames).toContain("terminal_create");
+    expect(toolNames).toContain("terminal_read");
+    expect(toolNames).toContain("terminal_snapshot");
+    expect(toolNames).toContain("terminal_get_config");
+    expect(toolNames).toContain("terminal_set_config");
+    expect(toolNames).not.toContain("terminal_run");
+  });
+
   test("Scenario: Given terminal help mdx When model receives context Then <CliHelp/> is rendered before call", async () => {
     let capturedMessages: unknown[] | null = null;
     const terminal = createTerminalGateway();
@@ -263,7 +297,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(joinedHistory).toContain("line 1\nline 2\nline 3");
   });
 
-  test("Scenario: Given active attention_list When model uses attention_reply relationships Then attention items are cleared", async () => {
+  test("Scenario: Given active attention_list When model uses attention_update relationships Then attention items are cleared without leaking a user-visible reply", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const userItem = chat.engine.add({ content: "请做一个单页网页小游戏", from: "user", score: 100 });
@@ -286,8 +320,8 @@ describe("Feature: AgenterAI behavior", () => {
       const list = (await callTool("attention_list", {})) as { items: Array<{ id: number }> };
       expect(list.items.some((item) => item.id === userItem.id)).toBeTrue();
 
-      await callTool("attention_reply", {
-        replyContent: "我已确认需求，开始实现。",
+      await callTool("attention_update", {
+        content: "我已确认需求，开始实现。",
         done: false,
         stage: "act",
         relationships: [{ id: userItem.id, score: 0, remark: "已处理" }],
@@ -316,35 +350,32 @@ describe("Feature: AgenterAI behavior", () => {
     }
 
     expect(chat.engine.list()).toHaveLength(0);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeTrue();
+    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
-  test("Scenario: Given no active attention items When model calls attention_reply Then no user-visible reply is emitted", async () => {
+  test("Scenario: Given no active attention items When model calls attention_update Then an internal fact is recorded without a user-visible reply", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((item) => item.name === "attention_reply");
+      const tool = input.tools.find((item) => item.name === "attention_update");
       expect(tool).toBeDefined();
       if (!tool || typeof tool.execute !== "function") {
-        throw new Error("attention_reply tool missing");
+        throw new Error("attention_update tool missing");
       }
 
       const result = (await tool.execute(
         {
-          replyContent: "startup ping",
+          content: "startup ping",
           stage: "observe",
         },
         {
-          toolCallId: "call-attention_reply",
+          toolCallId: "call-attention_update",
           emitCustomEvent: () => {},
         },
-      )) as { ok: boolean; id: number; message?: string };
+      )) as { ok: boolean; id: number };
 
-      expect(result).toEqual({
-        ok: false,
-        id: 0,
-        message: "no active attention items to answer",
-      });
+      expect(result.ok).toBeTrue();
+      expect(result.id).toBeGreaterThan(0);
 
       return {
         thinking: "No active attention items, keep observing.",
@@ -368,10 +399,12 @@ describe("Feature: AgenterAI behavior", () => {
       return;
     }
 
+    expect(chat.engine.list()).toHaveLength(0);
+    expect(chat.engine.query({ minScore: 0, query: "startup ping" })).toHaveLength(1);
     expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
-  test("Scenario: Given no attention_reply When model returns plain text Then output is published as a user-facing assistant reply", async () => {
+  test("Scenario: Given no attention_update When model returns plain text Then output is published as a user-facing assistant reply", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async () => ({
@@ -473,15 +506,15 @@ describe("Feature: AgenterAI behavior", () => {
           },
         );
 
-        const attentionReply = input.tools.find((tool) => tool.name === "attention_reply");
-        expect(attentionReply).toBeDefined();
-        if (!attentionReply || typeof attentionReply.execute !== "function") {
-          throw new Error("attention_reply tool missing");
+        const attentionUpdate = input.tools.find((tool) => tool.name === "attention_update");
+        expect(attentionUpdate).toBeDefined();
+        if (!attentionUpdate || typeof attentionUpdate.execute !== "function") {
+          throw new Error("attention_update tool missing");
         }
 
-        await attentionReply.execute(
+        await attentionUpdate.execute(
           {
-            replyContent: "Terminal checked.",
+            content: "Terminal checked.",
             done: true,
             stage: "done",
             relationships: [{ id: tracked.id, score: 0, remark: "handled" }],
@@ -518,7 +551,7 @@ describe("Feature: AgenterAI behavior", () => {
     await ai.send([createUserMessage("second turn")]);
 
     const replay = extractAssistantReplay(seenInputs[1]);
-    expect(replay).toHaveLength(7);
+    expect(replay).toHaveLength(6);
     expect(replay[0]).toBe("Observation: terminal focused");
     expect(replay[1]).toBe("Decision: report result");
     expect(replay[2]).toContain("```yaml+tool_call");
@@ -526,13 +559,12 @@ describe("Feature: AgenterAI behavior", () => {
     expect(replay[3]).toContain("```yaml+tool_result");
     expect(replay[3]).toContain("tool: terminal_read");
     expect(replay[4]).toContain("```yaml+tool_call");
-    expect(replay[4]).toContain("tool: attention_reply");
+    expect(replay[4]).toContain("tool: attention_update");
     expect(replay[5]).toContain("```yaml+tool_result");
-    expect(replay[5]).toContain("tool: attention_reply");
-    expect(replay[6]).toBe("Terminal checked.");
+    expect(replay[5]).toContain("tool: attention_update");
   });
 
-  test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes attention_list and attention_reply still clears records", async () => {
+  test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes attention_list and attention_update still clears records", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "提醒我确认发布时间", from: "user", score: 100 });
@@ -561,15 +593,15 @@ describe("Feature: AgenterAI behavior", () => {
           return { thinking: "round1", text: "", finishReason: "stop" };
         }
 
-        const attentionReply = input.tools.find((tool) => tool.name === "attention_reply");
-        expect(attentionReply).toBeDefined();
-        if (!attentionReply || typeof attentionReply.execute !== "function") {
-          throw new Error("attention_reply tool missing");
+        const attentionUpdate = input.tools.find((tool) => tool.name === "attention_update");
+        expect(attentionUpdate).toBeDefined();
+        if (!attentionUpdate || typeof attentionUpdate.execute !== "function") {
+          throw new Error("attention_update tool missing");
         }
 
-        await attentionReply.execute(
+        await attentionUpdate.execute(
           {
-            replyContent: "已完成压缩并继续处理。",
+            content: "已完成压缩并继续处理。",
             done: true,
             stage: "done",
             relationships: [{ id: tracked.id, score: 0, remark: "压缩后已处理" }],
@@ -609,7 +641,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(summarizeInputs.length).toBeGreaterThan(0);
     expect(summarizeInputs.join("\n")).toContain("attention_system");
     expect(chat.engine.list()).toHaveLength(0);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeTrue();
+    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
   test("Scenario: Given a stalled model call When timeout elapses Then AgenterAI persists running then error lifecycle records", async () => {
@@ -654,7 +686,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.completedAt).toBeNumber();
     expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
     expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
-    if (!response || !("outputs" in response)) {
+    if (!response || !response.outputs?.toUser) {
       throw new Error("Expected a loop bus response payload.");
     }
     expect(response.outputs.toUser.some((item) => item.content.includes("timed out after 10ms"))).toBeTrue();

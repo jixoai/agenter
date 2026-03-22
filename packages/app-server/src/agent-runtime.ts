@@ -16,7 +16,10 @@ export interface AgentRuntimeProcessor<
   TChatMessage extends LoopChatMessage = LoopChatMessage,
   TStage extends string = string,
 > {
-  send: (messages: LoopBusMessage[]) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
+  send: (
+    messages: LoopBusMessage[],
+    context?: { signal?: AbortSignal },
+  ) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
 }
 
 export interface AgentRuntimeConfig<

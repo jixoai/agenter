@@ -149,6 +149,44 @@ describe("Feature: app kernel event replay", () => {
     expect(debug.recentApiCalls).toHaveLength(1);
   });
 
+  test("Scenario: Given a stopped session When retaining the Devtools API stream Then the kernel stays stopped and reports recording disabled", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "stopped-devtools", autoStart: false });
+    const retained = await kernel.retainApiCallSubscription(session.id);
+
+    expect(retained).toEqual({ enabled: false, refCount: 0 });
+    const snapshot = kernel.getSnapshot();
+    expect(snapshot.runtimes[session.id]).toBeUndefined();
+    expect(snapshot.sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
+  });
+
+  test("Scenario: Given a running session When stop resume and abort are requested Then pause keeps runtime ownership while abort tears it down", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "pause-abort", autoStart: true });
+
+    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("running");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+
+    const paused = await kernel.stopSession(session.id);
+    expect(paused.status).toBe("paused");
+    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("paused");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+
+    const resumed = await kernel.startSession(session.id);
+    expect(resumed.status).toBe("running");
+    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("running");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+
+    const aborted = await kernel.abortSession(session.id);
+    expect(aborted.status).toBe("stopped");
+    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+  });
+
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-preview-"));
     tempDirs.push(root);

@@ -105,7 +105,10 @@ export interface LoopBusTraceEntry {
 
 interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
   processor: {
-    send: (messages: LoopBusMessage[]) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
+    send: (
+      messages: LoopBusMessage[],
+      context?: { signal?: AbortSignal },
+    ) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
   };
   waitForCommit: () => Promise<LoopBusWakeSource | void>;
   collectInputs: () => Promise<LoopBusInput[] | LoopBusInput | void>;
@@ -166,6 +169,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   private lastError: string | null = null;
   private phase: LoopBusPhase = "stopped";
   private readonly sleep: (ms: number) => Promise<void>;
+  private cycleAbortController: AbortController | null = null;
 
   constructor(private readonly deps: LoopBusDeps<TChatMessage, TStage>) {
     this.sleep = deps.sleep ?? defaultSleep;
@@ -184,6 +188,8 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   stop(): void {
     this.running = false;
     this.paused = false;
+    this.cycleAbortController?.abort("loopbus.stop");
+    this.cycleAbortController = null;
     this.waitResume?.();
     this.waitResume = null;
     void this.emitState("stopped");
@@ -194,6 +200,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       return;
     }
     this.paused = true;
+    this.cycleAbortController?.abort("loopbus.pause");
     void this.emitState(this.phase);
   }
 
@@ -280,10 +287,21 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       this.currentCycleId = cycleId;
       await this.flushTraceBuffer(traces, cycleId);
 
+      const cycleAbortController = new AbortController();
+      this.cycleAbortController = cycleAbortController;
       const response = await this.traceWithCycle(cycleId, "call_model", { inputs: collected.length }, async () => {
         await this.emitState("calling_model");
-        return await this.deps.processor.send(collected);
+        return await this.deps.processor.send(collected, {
+          signal: cycleAbortController.signal,
+        });
       });
+      if (this.cycleAbortController === cycleAbortController) {
+        this.cycleAbortController = null;
+      }
+
+      if (!this.running || cycleAbortController.signal.aborted) {
+        return;
+      }
 
       if (!response) {
         this.deps.logger.log({
@@ -306,6 +324,9 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         },
         async () => {
           await this.emitState("applying_outputs");
+          if (!this.running || cycleAbortController.signal.aborted) {
+            return;
+          }
           if (outputs.toTools.length > 0) {
             await this.deps.onToolCall?.(outputs.toTools, { cycleId });
           }
@@ -318,6 +339,15 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         },
       );
     } catch (error) {
+      if (this.isAbortError(error)) {
+        this.deps.logger.log({
+          channel: "agent",
+          level: "debug",
+          message: "loopbus.cycle.aborted",
+          meta: this.currentCycleId === null ? undefined : { cycleId: this.currentCycleId },
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.lastError = message;
       this.deps.logger.log({
@@ -336,6 +366,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         });
       }
     } finally {
+      this.cycleAbortController = null;
       if (this.running) {
         await this.emitState("waiting_commits");
       }
@@ -464,5 +495,15 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
     await new Promise<void>((resolve) => {
       this.waitResume = resolve;
     });
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return (
+      error instanceof DOMException
+        ? error.name === "AbortError"
+        : error instanceof Error
+          ? error.name === "AbortError" || error.message === "This operation was aborted"
+          : false
+    );
   }
 }

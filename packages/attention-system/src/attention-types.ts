@@ -25,24 +25,24 @@ export interface AttentionQueryInput {
   offset?: number;
   limit?: number;
   query?: string;
-  includeInactive?: boolean;
+  minScore?: number;
 }
 
-export interface AttentionReplyRelationship {
+export interface AttentionUpdateRelationship {
   id: number;
   score?: number;
   remark?: string;
 }
 
-export interface AttentionReplyInput {
-  replyContent: string;
+export interface AttentionUpdateInput {
+  content: string;
   from?: string;
   score?: number;
-  relationships?: AttentionReplyRelationship[];
+  relationships?: AttentionUpdateRelationship[];
 }
 
-export interface AttentionReplyResult {
-  reply: AttentionRecord;
+export interface AttentionUpdateResult {
+  record: AttentionRecord;
   related: AttentionRecord[];
 }
 

@@ -49,4 +49,26 @@ describe("Feature: message-system committed drafts", () => {
     await expect(loserPromise).resolves.toBeInstanceOf(Error);
     await expect(loserPromise).resolves.toMatchObject({ message: "ignore" });
   });
+
+  test("Scenario: Given custom channels When user channel is omitted Then adapter-facing channel metadata remains stable", () => {
+    const system = new MessageSystem([{ channelId: "background", displayName: "Background", useAttention: false }]);
+
+    expect(system.getChannel("user")).toEqual({
+      channelId: "user",
+      displayName: "User",
+      useAttention: true,
+    });
+    expect(system.getChannel("background")).toEqual({
+      channelId: "background",
+      displayName: "Background",
+      useAttention: false,
+    });
+
+    const copy = system.getChannel("background");
+    if (!copy) {
+      throw new Error("background channel missing");
+    }
+    copy.displayName = "mutated";
+    expect(system.getChannel("background")?.displayName).toBe("Background");
+  });
 });

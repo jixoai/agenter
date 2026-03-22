@@ -42,6 +42,7 @@ export type RuntimeEventType =
   | "runtime.apiCall"
   | "runtime.apiRecording"
   | "runtime.cycle.updated"
+  | "terminal.read"
   | "terminal.snapshot"
   | "terminal.status"
   | "task.updated"

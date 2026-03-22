@@ -240,4 +240,59 @@ describe("Feature: loop bus state transitions", () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.inputs.map((item) => item.text)).toEqual(["first", "second", "third", "fourth", "fifth"]);
   });
+
+  test("Scenario: Given an in-flight model call When stop is requested Then the active cycle is aborted and no outputs are applied", async () => {
+    const outputs: string[] = [];
+    let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
+    let signalSeen = false;
+    let waitCalls = 0;
+
+    const bus = new LoopBus({
+      processor: {
+        send: async (_messages, context) => {
+          signalSeen = Boolean(context?.signal);
+          return await new Promise((_resolve, reject) => {
+            context?.signal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("This operation was aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+      logger: { log: () => {} },
+      waitForCommit: async () => {
+        waitCalls += 1;
+        if (waitCalls === 1) {
+          return "user";
+        }
+        return await new Promise<LoopBusWakeSource | void>((resolve) => {
+          releaseWait = resolve;
+        });
+      },
+      collectInputs: async () => [userInput],
+      persistCycle: async () => ({ cycleId: 21 }),
+      onUserMessage: (message) => {
+        outputs.push(message.content);
+      },
+      sleep: async () => {},
+    });
+
+    bus.start();
+
+    const deadline = Date.now() + 1_000;
+    while (Date.now() < deadline && !signalSeen) {
+      await Bun.sleep(10);
+    }
+
+    bus.stop();
+    releaseWait?.(undefined);
+    await Bun.sleep(20);
+
+    expect(signalSeen).toBe(true);
+    expect(outputs).toEqual([]);
+    expect(bus.getState().phase).toBe("stopped");
+  });
 });

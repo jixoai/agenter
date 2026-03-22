@@ -1,5 +1,16 @@
-import { AttentionEngine } from "@agenter/attention-system";
+import {
+  AttentionEngine,
+  type AttentionQueryInput,
+  type AttentionUpdateInput,
+} from "@agenter/attention-system";
 import { ResourceLoader } from "@agenter/settings";
+import type {
+  TerminalControlPlaneConfig,
+  TerminalControlPlaneConfigPatch,
+  TerminalControlPlaneEntry,
+  TerminalProcessProfile,
+  TerminalReadResult,
+} from "@agenter/terminal-system";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -201,6 +212,68 @@ const buildTerminalHelpPayload = (
   manuals: help.manuals ?? {},
 });
 
+const cloneTerminalConfig = (input: TerminalControlPlaneConfig): TerminalControlPlaneConfig => structuredClone(input);
+
+const mergeTerminalConfigPatch = (
+  current: TerminalControlPlaneConfig,
+  patch: TerminalControlPlaneConfigPatch,
+): TerminalControlPlaneConfig => ({
+  defaults: {
+    ...(current.defaults ?? {}),
+    ...(patch.defaults ?? {}),
+  },
+  processProfiles: {
+    ...(current.processProfiles ?? {}),
+    ...(patch.processProfiles ?? {}),
+  },
+  terminalProfiles: {
+    ...(current.terminalProfiles ?? {}),
+    ...(patch.terminalProfiles ?? {}),
+  },
+  transport: {
+    host: current.transport?.host ?? "127.0.0.1",
+    port: current.transport?.port ?? null,
+    pathPrefix: current.transport?.pathPrefix ?? "/pty",
+    ...(patch.transport ?? {}),
+  },
+});
+
+const buildTerminalReadSnapshotResult = (
+  terminalId: string,
+  snapshot: TerminalSnapshot,
+  status: "IDLE" | "BUSY",
+): TerminalReadResult => ({
+  kind: "terminal-snapshot",
+  representation: "snapshot",
+  terminalId,
+  seq: snapshot.seq,
+  cols: snapshot.cols,
+  rows: snapshot.rows,
+  cursor: snapshot.cursor,
+  tail: snapshot.lines.slice(-20).join("\n"),
+  status,
+});
+
+const buildTerminalReadDiffResult = (
+  terminalId: string,
+  input: {
+    fromHash: string | null;
+    toHash: string | null;
+    diff: string;
+    bytes: number;
+    status: "IDLE" | "BUSY";
+  },
+): TerminalReadResult => ({
+  kind: "terminal-diff",
+  representation: "diff",
+  terminalId,
+  fromHash: input.fromHash,
+  toHash: input.toHash,
+  diff: input.diff,
+  bytes: input.bytes,
+  status: input.status,
+});
+
 interface AppProps {
   runtimeConfig: RuntimeConfig;
 }
@@ -352,6 +425,29 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const processStateRef = useRef<"stopped" | "running">("stopped");
   const taskEngineRef = useRef(new TaskEngine());
   const attentionEngineRef = useRef(new AttentionEngine());
+  const terminalConfigRef = useRef<TerminalControlPlaneConfig>({
+    defaults: {
+      cols: 80,
+      rows: 20,
+    },
+    terminalProfiles: Object.fromEntries(
+      Object.values(runtimeConfig.terminals).map((terminal) => [
+        terminal.terminalId,
+        {
+          command: [...terminal.command],
+          cwd: terminal.cwd,
+          cols: 80,
+          rows: 20,
+          title: terminal.commandLabel,
+        },
+      ]),
+    ),
+    transport: {
+      host: "127.0.0.1",
+      port: null,
+      pathPrefix: "/pty",
+    },
+  });
 
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
@@ -541,68 +637,136 @@ export const App = ({ runtimeConfig }: AppProps) => {
     }
   };
 
+  const describeTerminalEntry = (terminalId: string): TerminalControlPlaneEntry | null => {
+    const terminal = runtimeConfig.terminals[terminalId];
+    const adapter = getAdapter(terminalId);
+    if (!terminal || !adapter) {
+      return null;
+    }
+    const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
+    const profile = terminalConfigRef.current.terminalProfiles?.[terminalId];
+    return {
+      terminalId,
+      processKind: "shell",
+      command: [...(profile?.command ?? terminal.command)],
+      cwd: profile?.cwd ?? terminal.cwd,
+      workspace: adapter.getWorkspace(),
+      running: adapter.isRunning(),
+      status: adapter.getStatus(),
+      seq: snapshot.seq,
+      focused: focusedTerminalIdsRef.current.includes(terminalId),
+      icon: profile?.icon,
+      title: profile?.title ?? terminal.commandLabel,
+      shortcuts: profile?.shortcuts ? { ...profile.shortcuts } : undefined,
+      transportUrl: undefined,
+    };
+  };
+
+  const startConfiguredTerminal = async (terminalId: string) => {
+    const terminal = runtimeConfig.terminals[terminalId];
+    const adapter = getAdapter(terminalId);
+    if (!terminal || !adapter) {
+      return { ok: false as const, message: `unknown terminal: ${terminalId}` };
+    }
+    adapter.resize(terminalSizeRef.current.cols, terminalSizeRef.current.rows);
+    if (!adapter.isRunning()) {
+      adapter.start();
+      if (terminal.gitLog) {
+        await adapter.markDirty();
+      }
+    }
+    if (focusedTerminalIdRef.current === terminalId) {
+      syncVisibleTerminal(terminalId);
+    }
+    terminalDirtyStateRef.current[terminalId] = false;
+    const commandKey = toCommandKey(terminal.command[0] ?? terminalId);
+    const help = await readHelp(commandKey, terminal.helpSource);
+    const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
+    return {
+      ok: true as const,
+      message: "terminal started",
+      terminalId,
+      help,
+      snapshot: buildTerminalSnapshotPayload(terminalId, snapshot),
+      terminal: describeTerminalEntry(terminalId),
+    };
+  };
+
   const terminalGateway = useMemo(
     () => ({
       list: () =>
-        Object.values(runtimeConfig.terminals).map((terminal) => ({
-          terminalId: terminal.terminalId,
-          running: getAdapter(terminal.terminalId)?.isRunning() ?? false,
-          cwd: terminal.cwd,
-          cols: terminalSizeRef.current.cols,
-          rows: terminalSizeRef.current.rows,
-          focused: focusedTerminalIdsRef.current.includes(terminal.terminalId),
-          dirty: terminalDirtyStateRef.current[terminal.terminalId] ?? false,
-          latestSeq: terminalLatestSeqRef.current[terminal.terminalId],
-        })),
-      run: async ({ terminalId }: { terminalId: string }) => {
-        const terminal = runtimeConfig.terminals[terminalId];
-        const adapter = getAdapter(terminalId);
-        if (!terminal || !adapter) {
-          return { ok: false, message: `unknown terminal: ${terminalId}` };
+        Object.values(runtimeConfig.terminals).map((terminal) => {
+          const entry = describeTerminalEntry(terminal.terminalId);
+          return {
+            terminalId: terminal.terminalId,
+            running: entry?.running ?? false,
+            cwd: entry?.cwd ?? terminal.cwd,
+            cols: terminalSizeRef.current.cols,
+            rows: terminalSizeRef.current.rows,
+            focused: entry?.focused ?? false,
+            dirty: terminalDirtyStateRef.current[terminal.terminalId] ?? false,
+            latestSeq: terminalLatestSeqRef.current[terminal.terminalId],
+            icon: entry?.icon,
+            title: entry?.title,
+            shortcuts: entry?.shortcuts,
+            transportUrl: entry?.transportUrl,
+          };
+        }),
+      create: async ({
+        terminalId,
+      }: {
+        terminalId?: string;
+        processKind?: string;
+        command?: string[];
+        cwd?: string;
+        profile?: TerminalProcessProfile;
+      }) => {
+        if (!terminalId) {
+          return { ok: false, message: "demo terminal_create requires a configured terminalId" };
         }
-        adapter.resize(terminalSizeRef.current.cols, terminalSizeRef.current.rows);
-        if (!adapter.isRunning()) {
-          adapter.start();
-          if (terminal.gitLog) {
-            await adapter.markDirty();
-          }
+        const started = await startConfiguredTerminal(terminalId);
+        if (!started.ok) {
+          return started;
         }
-        if (focusedTerminalIdRef.current === terminalId) {
-          syncVisibleTerminal(terminalId);
-        }
-        terminalDirtyStateRef.current[terminalId] = false;
-        const commandKey = toCommandKey(terminal.command[0] ?? terminalId);
-        const help = await readHelp(commandKey, terminal.helpSource);
-        const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
         return {
           ok: true,
-          message: "terminal started",
-          terminalId,
-          help,
-          snapshot: buildTerminalSnapshotPayload(terminalId, snapshot),
+          message: started.message,
+          terminal: started.terminal ?? undefined,
         };
       },
-      focus: async ({ terminalId, focus = true }: { terminalId: string; focus?: boolean }) => {
-        if (!runtimeConfig.terminals[terminalId]) {
-          return {
-            ok: false,
-            message: `unknown terminal: ${terminalId}`,
-            focusedTerminalIds: [...focusedTerminalIdsRef.current],
-          };
+      focus: async ({
+        op = "replace",
+        terminalIds = [],
+      }: {
+        op?: "add" | "remove" | "replace" | "clear";
+        terminalIds?: string[];
+      }) => {
+        const knownTerminalIds = terminalIds.filter((terminalId) => runtimeConfig.terminals[terminalId]);
+        let nextFocusedIds = [...focusedTerminalIdsRef.current];
+        switch (op) {
+          case "add":
+            nextFocusedIds = dedupeTerminalIds([...nextFocusedIds, ...knownTerminalIds]);
+            break;
+          case "remove":
+            nextFocusedIds = nextFocusedIds.filter((terminalId) => !knownTerminalIds.includes(terminalId));
+            break;
+          case "replace":
+            nextFocusedIds = [...knownTerminalIds];
+            break;
+          case "clear":
+            nextFocusedIds = [];
+            break;
         }
-        const nextFocusedIds = focus
-          ? dedupeTerminalIds([...focusedTerminalIdsRef.current, terminalId])
-          : focusedTerminalIdsRef.current.filter((item) => item !== terminalId);
-        const resolved = applyFocusedTerminalIds(nextFocusedIds, terminalId);
+        const resolved = applyFocusedTerminalIds(nextFocusedIds, knownTerminalIds[0]);
         logger.log({
           channel: "agent",
           level: "info",
           message: "terminal.focus",
-          meta: { terminalId, focus, count: resolved.length },
+          meta: { op, terminalIds: knownTerminalIds.join(","), count: resolved.length },
         });
         return {
           ok: true,
-          message: focus ? "focus added" : "focus removed",
+          message: `focus ${op}`,
           focusedTerminalIds: [...resolved],
         };
       },
@@ -622,11 +786,15 @@ export const App = ({ runtimeConfig }: AppProps) => {
         text,
         submit = true,
         submitKey = "enter",
+        returnRead,
+        readMode,
       }: {
         terminalId: string;
         text: string;
         submit?: boolean;
         submitKey?: "enter" | "linefeed";
+        returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+        readMode?: "auto" | "diff" | "snapshot";
       }) => {
         const terminal = runtimeConfig.terminals[terminalId];
         const adapter = getAdapter(terminalId);
@@ -647,15 +815,59 @@ export const App = ({ runtimeConfig }: AppProps) => {
           submitKey,
           submitGapMs: terminal.submitGapMs,
         });
-        return { ok: true, message: "written" };
+        if (!returnRead) {
+          return { ok: true, message: "written" };
+        }
+        if (typeof returnRead === "object") {
+          const waitMs = Math.max(returnRead.throttleMs ?? 0, returnRead.debounceMs ?? 0);
+          if (waitMs > 0) {
+            await Bun.sleep(waitMs);
+          }
+        }
+        return {
+          ok: true,
+          message: "written",
+          read: await terminalGateway.read({ terminalId, mode: readMode }),
+        };
       },
-      read: async ({ terminalId }: { terminalId: string }) => {
+      read: async ({ terminalId, mode = "auto" }: { terminalId: string; mode?: "auto" | "diff" | "snapshot" }) => {
+        const terminal = runtimeConfig.terminals[terminalId];
         const adapter = getAdapter(terminalId);
-        if (!adapter) {
+        if (!terminal || !adapter) {
           return { ok: false, reason: `unknown terminal: ${terminalId}` };
         }
         const snapshot = terminalSnapshotsRef.current[terminalId] ?? adapter.getSnapshot();
-        return buildTerminalSnapshotPayload(terminalId, snapshot);
+        const status = adapter.getStatus();
+        const snapshotResult = buildTerminalReadSnapshotResult(terminalId, snapshot, status);
+        if (terminal.gitLog && mode !== "snapshot") {
+          const diff = await consumeTerminalDiff(terminalId, false, false);
+          if (diff.ok && diff.changed && diff.fromHash !== diff.toHash) {
+            const diffResult = buildTerminalReadDiffResult(terminalId, {
+              fromHash: diff.fromHash,
+              toHash: diff.toHash,
+              diff: diff.diff,
+              bytes: diff.bytes,
+              status,
+            });
+            if (
+              mode === "diff" ||
+              JSON.stringify(diffResult).length <= JSON.stringify(snapshotResult).length
+            ) {
+              return diffResult;
+            }
+          }
+        }
+        return snapshotResult;
+      },
+      snapshot: async ({ terminalId }: { terminalId: string }) => {
+        return await terminalGateway.read({ terminalId, mode: "snapshot" });
+      },
+      getConfig: () => {
+        return cloneTerminalConfig(terminalConfigRef.current);
+      },
+      setConfig: ({ patch }: { patch: TerminalControlPlaneConfigPatch }) => {
+        terminalConfigRef.current = mergeTerminalConfigPatch(terminalConfigRef.current, patch);
+        return cloneTerminalConfig(terminalConfigRef.current);
       },
       markDirty: async ({ terminalId }: { terminalId: string }) => {
         const adapter = getAdapter(terminalId);
@@ -724,14 +936,10 @@ export const App = ({ runtimeConfig }: AppProps) => {
         attentionEngineRef.current.add(input),
       remark: async (input: { id: number; score?: number; remark?: string }) =>
         attentionEngineRef.current.remark(input),
-      query: async (input: { offset?: number; limit?: number; query?: string; includeInactive?: boolean }) =>
+      query: async (input: AttentionQueryInput) =>
         attentionEngineRef.current.query(input),
-      reply: async (input: {
-        replyContent: string;
-        from?: string;
-        score?: number;
-        relationships?: Array<{ id: number; score?: number; remark?: string }>;
-      }) => attentionEngineRef.current.reply(input),
+      update: async (input: AttentionUpdateInput) =>
+        attentionEngineRef.current.update(input),
     }),
     [],
   );
@@ -1059,7 +1267,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
     void (async () => {
       try {
         for (const terminalId of pending) {
-          const boot = (await terminalGateway.run({ terminalId })) as
+          const boot = (await startConfiguredTerminal(terminalId)) as
             | {
                 ok: true;
                 terminalId: string;
