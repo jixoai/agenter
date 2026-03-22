@@ -9,6 +9,7 @@
 - 仓库：`agenter`（monorepo）
 - 语言：TypeScript（强类型优先，默认禁止 `any` / `as any` / `@ts-nocheck`）
 - 运行时：Bun
+- 落地与验收任务清单：`TASKS.md`
 
 ---
 

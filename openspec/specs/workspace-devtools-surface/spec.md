@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the dedicated technical inspection surface for workspace Devtools.
+
 ## Requirements
+
 ### Requirement: Workspace Devtools SHALL own technical session inspection
 The WebUI SHALL provide a dedicated Devtools route for technical session inspection, and that route SHALL own cycle-oriented, terminal-oriented, task-oriented, LoopBus-oriented, and model-oriented inspection details that are not part of the default Chat narrative. The cycle-oriented inspection surface SHALL be presented as a live timeline instead of a default accordion dump, and Devtools typography, color density, and tooltips SHALL remain optimized for compact technical reading.
 
@@ -23,6 +25,11 @@ The WebUI SHALL expose a Devtools view that allows the user to inspect session c
 - **THEN** Devtools exposes a cycle-oriented view that shows cycle identity and related factual inspection content such as collected inputs or internal assistant records
 - **THEN** those details remain available even though they are no longer the default structure of Chat
 
+#### Scenario: Large structured fact lists stay readable
+- **WHEN** a cycle fact contains a large structured payload such as dozens of attention items
+- **THEN** Devtools renders the payload as structured list items with a YAML-first preview instead of one markdown dump
+- **THEN** raw JSON remains available through the viewer menu for exact inspection
+
 ### Requirement: Devtools SHALL keep technical panels independently operable
 The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and its cycle, LoopBus, and model-facing panels SHALL remain independently operable within that route instead of relying on one oversized mixed-responsibility panel.
 
@@ -35,6 +42,11 @@ The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and
 - **WHEN** the user browses long technical records in Devtools
 - **THEN** each technical panel keeps an explicit primary scroll viewport for its own long content
 - **THEN** headers and tab chrome remain outside the scrolled content region
+
+#### Scenario: Inactive tabs do not keep heavy runtime subscriptions alive
+- **WHEN** the user views one Devtools tab while other tabs remain inactive
+- **THEN** only the active tab subscribes to its heavy runtime slices and derived view-models
+- **THEN** inactive tabs do not retain model/API stream work or hot list projections unnecessarily
 
 ### Requirement: Workspace Devtools SHALL adapt cycle detail presentation by viewport class
 The WebUI SHALL present cycle inspection as a desktop-or-landscape split pane and as a portrait compact right-sheet detail flow. Devtools MUST keep the technical tab strip fixed in route-local chrome while the selected panel owns its own scrolling behavior.
@@ -57,3 +69,34 @@ The WebUI SHALL keep Devtools tabs in route-local chrome outside the active pane
 - **THEN** that panel provides its own primary scroll viewport
 - **THEN** the route wrapper does not introduce an additional competing scroll layer for the same content
 
+### Requirement: Devtools SHALL reflect the published LoopBus runtime model
+The Devtools surface SHALL inspect LoopBus runtime state and traces through the explicit publication contract introduced by the LoopBus runtime refactor.
+
+#### Scenario: Devtools renders cycle phases from published runtime state
+- **WHEN** the session runtime publishes LoopBus phases and trace entries
+- **THEN** Devtools renders those phases and traces from the published contract
+- **THEN** UI logic does not depend on backend-private LoopBus state assembly
+
+### Requirement: Devtools SHALL embed the standalone terminal renderer instead of owning terminal rendering internals
+The Devtools surface SHALL consume the standalone `terminal-view` renderer contract and keep its own responsibility limited to layout, selection, and surrounding inspection controls.
+
+#### Scenario: Devtools hosts a terminal-view instance
+- **WHEN** the Devtools surface renders a terminal panel
+- **THEN** it embeds the standalone `terminal-view` component for the terminal body
+- **THEN** Devtools-specific code does not re-implement xterm rendering internals locally
+
+### Requirement: Devtools SHALL preserve persisted cycle history across lifecycle changes
+The cycle inspection surface SHALL continue to render persisted cycle history after a session is paused or aborted, unless the session history itself has been removed.
+
+#### Scenario: Paused session still shows cycles
+- **WHEN** a session with persisted cycle history is paused
+- **THEN** Devtools continues to show the previously loaded cycle timeline and detail
+- **THEN** the empty-state message is not shown just because live runtime state was cleared
+
+### Requirement: Cycle technical records SHALL render as merged tool traces
+Tool call and tool result records for the same tool invocation SHALL render as one tool trace card in cycle detail.
+
+#### Scenario: Tool call and result are paired
+- **WHEN** a cycle contains a tool call followed by its result
+- **THEN** cycle detail renders one trace card with call and result sections
+- **THEN** the card status reflects `done` or `failed` based on the result

@@ -15,6 +15,11 @@ The runtime client SHALL expose subscription primitives that let WebUI surfaces 
 - **THEN** the runtime client does not republish a fresh React-facing value for that selector
 - **THEN** subscribers depending on that selector can preserve render stability
 
+#### Scenario: Active route tabs subscribe only to active heavy slices
+- **WHEN** a route contains multiple heavy inspection tabs backed by different runtime slices
+- **THEN** the active tab subscribes only to the slices needed for its visible panel
+- **THEN** inactive tabs do not receive fresh selected values for unrelated hot slices
+
 ### Requirement: Runtime publication SHALL coalesce hot event bursts
 The runtime client SHALL coalesce listener publication for hot runtime bursts while preserving the latest consistent state.
 

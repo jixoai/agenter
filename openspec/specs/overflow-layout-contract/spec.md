@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the explicit overflow and clipping ownership contract for WebUI layout, scroll, and visual surfaces.
+
 ## Requirements
+
 ### Requirement: WebUI overflow roles SHALL use explicit surface contracts
 The WebUI SHALL distinguish layout containment, scrolling, visual clipping, semantic background ownership, and animation masking as separate surface roles. Layout wrappers MUST NOT use raw `overflow-hidden` or own raw background color unless they are implemented through an approved surface primitive, and semantic surfaces that own rounded clipping MUST also own the fill required to avoid transparent bleed.
 
@@ -64,3 +66,15 @@ The WebUI SHALL declare scroll ownership per workspace route type instead of for
 - **THEN** the active technical panel or settings pane owns scrolling for its own content
 - **THEN** shared shell wrappers do not suppress that scrolling by adding competing overflow rules or padding stacks
 
+### Requirement: Overflow ownership SHALL remain explicit for terminal renderer surfaces
+Terminal renderer surfaces SHALL have one explicit scroll owner with visible scrollbar support, and embedding shells SHALL not wrap the renderer in competing nested scroll containers.
+
+#### Scenario: Terminal surface owns the only active scrollbar
+- **WHEN** a terminal renderer is embedded inside WebUI or another host
+- **THEN** the renderer viewport owns one active scroll container
+- **THEN** outer shells do not introduce a second competing vertical scroll area around the same terminal content
+
+#### Scenario: Narrow viewport still keeps terminal scrolling usable
+- **WHEN** the terminal renderer is displayed in a narrow viewport
+- **THEN** terminal output remains scrollable with a visible scrollbar
+- **THEN** the viewport does not clip the terminal body into a non-scrollable region

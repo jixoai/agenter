@@ -9,6 +9,7 @@ The WebUI SHALL treat content availability and loading activity as separate stat
 - **WHEN** a surface has no data yet and a fetch is in progress
 - **THEN** the UI renders a loading treatment instead of idle empty-state copy
 - **THEN** the surface state is represented as `empty-loading`
+- **THEN** the surface may show explicit loading copy when no existing data is available yet
 
 #### Scenario: Empty surface shows idle empty-state copy
 - **WHEN** a surface has no data and no fetch is in progress
@@ -45,3 +46,4 @@ The WebUI SHALL provide shared async-surface primitives for fetch-driven applica
 - **WHEN** a panel composes a shared async surface inside a semantic container
 - **THEN** the async surface does not add its own competing background color
 - **THEN** the caller keeps background ownership on the semantic surface that already frames that panel
+
