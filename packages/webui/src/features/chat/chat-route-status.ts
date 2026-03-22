@@ -15,6 +15,9 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
   if (session.status === "error") {
     return "error";
   }
+  if (session.status === "paused") {
+    return "paused";
+  }
   if (session.status === "stopped") {
     return "stopped";
   }
@@ -85,6 +88,15 @@ export const resolveSessionToolbarState = (
       disabled: false,
     };
   }
+  if (session.status === "paused") {
+    return {
+      label: "Session paused",
+      tone: "warning",
+      actionLabel: "Resume session",
+      action: "start",
+      disabled: false,
+    };
+  }
   if (session.status === "stopped") {
     return {
       label: "Session stopped",
@@ -148,6 +160,13 @@ export const resolveChatRouteNotice = (input: {
     return {
       tone: "warning",
       message: "Session is stopped. Start it to continue.",
+    };
+  }
+
+  if (input.session.status === "paused") {
+    return {
+      tone: "warning",
+      message: "Session is paused. Resume it to continue.",
     };
   }
 

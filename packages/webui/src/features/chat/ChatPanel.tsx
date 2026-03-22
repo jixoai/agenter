@@ -1,12 +1,13 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 
 import { ChatAssetPreviewDialog } from "./ChatAssetPreviewDialog";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
 import { ChatConversationViewport } from "./ChatConversationViewport";
-import { projectConversationRows } from "./chat-projection";
+import { projectConversationRows, stabilizeConversationRows } from "./chat-projection";
 
 interface ChatPanelProps {
+  sessionId?: string;
   workspacePath?: string | null;
   messages: RuntimeChatMessage[];
   cycles: RuntimeChatCycle[];
@@ -34,7 +35,7 @@ interface ChatPanelProps {
 
 type ChatAttachment = NonNullable<RuntimeChatMessage["attachments"]>[number];
 
-export const ChatPanel = ({
+const ChatPanelComponent = ({
   workspacePath,
   messages,
   cycles,
@@ -57,8 +58,14 @@ export const ChatPanel = ({
   onLatestVisibleAssistantMessageIdChange,
 }: ChatPanelProps) => {
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+  const previousRowsRef = useRef<ReturnType<typeof projectConversationRows>>([]);
 
-  const rows = useMemo(() => projectConversationRows(messages, cycles, aiStatus), [aiStatus, cycles, messages]);
+  const rows = useMemo(() => {
+    const projected = projectConversationRows(messages, cycles, aiStatus);
+    const stabilized = stabilizeConversationRows(projected, previousRowsRef.current);
+    previousRowsRef.current = stabilized;
+    return stabilized;
+  }, [aiStatus, cycles, messages]);
 
   const attachmentsById = useMemo(() => {
     const entries = new Map<string, ChatAttachment>();
@@ -130,3 +137,27 @@ export const ChatPanel = ({
     </section>
   );
 };
+
+const chatPanelPropsEqual = (left: ChatPanelProps, right: ChatPanelProps): boolean => {
+  return (
+    left.sessionId === right.sessionId &&
+    left.workspacePath === right.workspacePath &&
+    left.messages === right.messages &&
+    left.cycles === right.cycles &&
+    left.aiStatus === right.aiStatus &&
+    left.sessionStateLabel === right.sessionStateLabel &&
+    left.routeNotice?.tone === right.routeNotice?.tone &&
+    left.routeNotice?.message === right.routeNotice?.message &&
+    left.disabled === right.disabled &&
+    left.imageEnabled === right.imageEnabled &&
+    left.imageCompatible === right.imageCompatible &&
+    left.assistantAvatarUrl === right.assistantAvatarUrl &&
+    left.assistantAvatarLabel === right.assistantAvatarLabel &&
+    left.userAvatarLabel === right.userAvatarLabel &&
+    left.hasMore === right.hasMore &&
+    left.loadingMore === right.loadingMore
+  );
+};
+
+export const ChatPanel = memo(ChatPanelComponent, chatPanelPropsEqual);
+ChatPanel.displayName = "ChatPanel";

@@ -1,5 +1,5 @@
 import { AlertTriangle, LoaderCircle, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { DropdownMenu } from "../../components/ui/dropdown-menu";
 import { ProfileImage } from "../../components/ui/profile-image";
@@ -22,7 +22,7 @@ interface ChatMessageRowProps {
   onOpenDevtools?: (cycleId: number) => void;
 }
 
-export const ChatMessageRow = ({
+const ChatMessageRowComponent = ({
   message,
   assistantAvatarUrl,
   assistantAvatarLabel = "Assistant",
@@ -161,7 +161,19 @@ export const ChatMessageRow = ({
   );
 };
 
-export const StatusRow = ({ row }: { row: Extract<ConversationRow, { type: "status" }> }) => {
+export const ChatMessageRow = memo(
+  ChatMessageRowComponent,
+  (left, right) =>
+    left.message === right.message &&
+    left.assistantAvatarUrl === right.assistantAvatarUrl &&
+    left.assistantAvatarLabel === right.assistantAvatarLabel &&
+    left.userAvatarLabel === right.userAvatarLabel &&
+    left.onPreviewAttachment === right.onPreviewAttachment &&
+    left.onOpenDevtools === right.onOpenDevtools,
+);
+ChatMessageRow.displayName = "ChatMessageRow";
+
+export const StatusRow = memo(({ row }: { row: Extract<ConversationRow, { type: "status" }> }) => {
   const toneClassName =
     row.tone === "danger"
       ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
@@ -191,9 +203,10 @@ export const StatusRow = ({ row }: { row: Extract<ConversationRow, { type: "stat
       </div>
     </div>
   );
-};
+});
+StatusRow.displayName = "StatusRow";
 
-export const TimeDividerRow = ({ row }: { row: Extract<ConversationRow, { type: "time-divider" }> }) => (
+export const TimeDividerRow = memo(({ row }: { row: Extract<ConversationRow, { type: "time-divider" }> }) => (
   <div className="flex w-full items-center justify-center py-3" data-chat-row="time-divider">
     <div className="flex min-w-0 items-center gap-3 text-[11px] text-slate-400">
       <span className="h-px w-8 bg-slate-200" />
@@ -205,4 +218,5 @@ export const TimeDividerRow = ({ row }: { row: Extract<ConversationRow, { type: 
       <span className="h-px w-8 bg-slate-200" />
     </div>
   </div>
-);
+));
+TimeDividerRow.displayName = "TimeDividerRow";

@@ -6,6 +6,8 @@ interface CycleSystemFact {
   title: string;
   summary: string;
   detail: string;
+  value: unknown | null;
+  attentionItems: unknown[];
 }
 
 const pluralize = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -105,6 +107,11 @@ export const splitCycleInputs = (cycle: RuntimeChatCycle): {
         .filter((part): part is Extract<(typeof input.parts)[number], { type: "text" }> => part.type === "text")
         .map((part) => part.text)
         .join("\n");
+      const parsed = safeJsonParse(text);
+      const attentionItems =
+        input.source === "attention" && parsed && typeof parsed === "object" && Array.isArray((parsed as { items?: unknown[] }).items)
+          ? ((parsed as { items?: unknown[] }).items ?? [])
+          : [];
 
       const summary =
         input.source === "terminal"
@@ -121,6 +128,8 @@ export const splitCycleInputs = (cycle: RuntimeChatCycle): {
         title: summary.title,
         summary: summary.summary,
         detail: text,
+        value: parsed,
+        attentionItems,
       };
     });
 

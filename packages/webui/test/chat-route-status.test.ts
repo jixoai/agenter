@@ -38,6 +38,37 @@ describe("Feature: chat route status resolution", () => {
     });
   });
 
+  test("Scenario: Given a paused session When resolving toolbar and notice Then the chat surface offers resume while keeping retained inspection visible", () => {
+    const session: Parameters<typeof phaseToStatus>[0] = {
+      status: "paused",
+    };
+    const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
+      started: true,
+      terminalCount: 1,
+      loopPhase: "waiting_commits",
+      stage: "idle",
+    };
+
+    expect(phaseToStatus(session, runtime)).toBe("paused");
+    expect(resolveSessionToolbarState(session, runtime)).toEqual({
+      label: "Session paused",
+      tone: "warning",
+      actionLabel: "Resume session",
+      action: "start",
+      disabled: false,
+    });
+    expect(
+      resolveChatRouteNotice({
+        notice: "",
+        session,
+        runtime,
+      }),
+    ).toEqual({
+      tone: "warning",
+      message: "Session is paused. Resume it to continue.",
+    });
+  });
+
   test("Scenario: Given a stale started runtime after stop When resolving toolbar notice and activity Then stopped semantics win over runtime leftovers", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",

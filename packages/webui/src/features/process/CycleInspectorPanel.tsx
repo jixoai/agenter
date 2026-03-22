@@ -5,8 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
-import { ViewportMask } from "../../components/ui/overflow-surface";
-import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { cn } from "../../lib/utils";
@@ -94,15 +93,18 @@ export const CycleInspectorPanel = ({
   const timelineRef = useRef<HTMLDivElement | null>(null);
 
   const items = useMemo<CycleTimelineItem[]>(
-    () =>
-      cycles
-        .slice()
-        .reverse()
-        .map((cycle) => ({
+    () => {
+      const next: CycleTimelineItem[] = [];
+      for (let index = cycles.length - 1; index >= 0; index -= 1) {
+        const cycle = cycles[index]!;
+        next.push({
           id: cycle.id,
           cycle,
           summary: summarizeCycle(cycle),
-        })),
+        });
+      }
+      return next;
+    },
     [cycles],
   );
 
@@ -162,6 +164,7 @@ export const CycleInspectorPanel = ({
 
       <AsyncSurface
         state={surfaceState}
+        emptyLoadingLabel="Loading cycle history..."
         loadingOverlayLabel="Refreshing cycles..."
         skeleton={<div className="h-full rounded-lg bg-slate-100" />}
         empty={<p className="px-3 py-4 text-sm text-slate-500">No cycle inspection data yet.</p>}
@@ -177,7 +180,7 @@ export const CycleInspectorPanel = ({
             <div className="border-b border-slate-200 px-3 py-2">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Timeline</p>
             </div>
-            <ScrollViewport ref={timelineRef} className="flex-1 px-2 py-2" data-testid="cycle-timeline-scroll-viewport">
+            <ScrollViewport ref={timelineRef} className="h-full px-2 py-2" data-testid="cycle-timeline-scroll-viewport">
               <div
                 className="relative"
                 style={{

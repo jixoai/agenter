@@ -1,16 +1,17 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 import { CircleAlert, CircleCheckBig, LoaderCircle, MessageSquareText } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
-import { ViewportMask } from "../../components/ui/overflow-surface";
-import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { JSONViewer } from "../../components/ui/json-viewer";
+import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { cn } from "../../lib/utils";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
 import { formatCycleTitle, getCycleStatusMeta, summarizeCycle } from "../chat/cycle-meta";
 import { splitCycleInputs, summarizeSystemFacts, type CycleSystemFact } from "../chat/cycle-facts";
+import { normalizeCycleTechnicalRecords } from "./cycle-technical-records";
 
 interface CycleInspectorDetailProps {
   cycle: RuntimeChatCycle;
@@ -221,32 +222,45 @@ const renderFactCard = (fact: CycleSystemFact) => (
       <span className="font-medium text-slate-900">{fact.title}</span>
       <span>{fact.summary}</span>
     </div>
-    {fact.detail.trim().length > 0 ? (
-      <MarkdownDocument
-        value={fact.detail}
-        mode="raw"
-        usage="inspector"
-        surface="muted"
-        syntaxTone="accented"
-        density="compact"
-        padding="compact"
-        maxHeight={220}
-        className="mt-2 text-xs text-slate-600"
-      />
+    {fact.attentionItems.length > 0 ? (
+      <ol className="mt-3 space-y-2">
+        {fact.attentionItems.map((item, index) => (
+          <li key={`${fact.key}:attention:${index}`} className="rounded-xl border border-slate-200 bg-white/85 p-2.5">
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <span className="font-medium text-slate-700">Attention {index + 1}</span>
+              {typeof item === "object" && item !== null && typeof (item as { score?: unknown }).score === "number" ? (
+                <span>score {(item as { score: number }).score}</span>
+              ) : null}
+              {typeof item === "object" && item !== null && typeof (item as { from?: unknown }).from === "string" ? (
+                <span>from {(item as { from: string }).from}</span>
+              ) : null}
+            </div>
+            <JSONViewer value={item} className="border-none bg-transparent" contentClassName="rounded-lg bg-slate-50 p-2.5 pr-9" />
+          </li>
+        ))}
+      </ol>
+    ) : fact.value !== null ? (
+      <div className="mt-3">
+        <JSONViewer value={fact.value} rawText={fact.detail} />
+      </div>
+    ) : fact.detail.trim().length > 0 ? (
+      <pre className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white/85 p-3 typo-code text-[11px] leading-5 whitespace-pre-wrap text-slate-700">
+        {fact.detail}
+      </pre>
     ) : null}
   </article>
 );
 
 export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
   const status = getCycleStatusMeta(cycle);
-  const userInputs = toUserInputBlocks(cycle);
-  const { systemFacts } = splitCycleInputs(cycle);
-  const replyMessages = collectReplyMessages(cycle);
-  const technicalMessages = collectTechnicalMessages(cycle);
-  const stepStates = resolveStepStates(cycle);
+  const userInputs = useMemo(() => toUserInputBlocks(cycle), [cycle]);
+  const systemFacts = useMemo(() => splitCycleInputs(cycle).systemFacts, [cycle]);
+  const replyMessages = useMemo(() => collectReplyMessages(cycle), [cycle]);
+  const technicalRecords = useMemo(() => normalizeCycleTechnicalRecords(cycle), [cycle]);
+  const stepStates = useMemo(() => resolveStepStates(cycle), [cycle]);
 
   return (
-    <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
+    <ViewportMask className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-sm text-slate-700">
@@ -261,8 +275,7 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
         <p className="mt-2 text-sm text-slate-500">{summarizeCycle(cycle)}</p>
       </div>
 
-      <ViewportMask className="h-full">
-        <ScrollViewport className="flex-1 px-3 py-3">
+      <ScrollViewport className="h-full px-3 py-3" data-testid="cycle-detail-scroll-viewport">
           <div className="space-y-3">
           <section className="grid gap-3 lg:grid-cols-4">
             <StepChip label="Collect" detail={`${cycle.inputs.length} inputs`} state={stepStates[0]} />
@@ -273,7 +286,7 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
               }
               state={stepStates[1]}
             />
-            <StepChip label="Apply" detail={`${technicalMessages.length} technical records`} state={stepStates[2]} />
+            <StepChip label="Apply" detail={`${technicalRecords.length} technical records`} state={stepStates[2]} />
             <StepChip label="Ready" detail={status.label.toLowerCase()} state={stepStates[3]} />
           </section>
 
@@ -340,23 +353,33 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
             )}
           </SectionShell>
 
-          <Accordion type="multiple" defaultValue={technicalMessages.length > 0 ? ["technical"] : []}>
+          <Accordion type="multiple" defaultValue={technicalRecords.length > 0 ? ["technical"] : []}>
             <AccordionItem value="technical" className="rounded-2xl border border-slate-200 bg-white">
               <AccordionTrigger className="px-4 py-3 text-left text-sm font-medium hover:no-underline">
                 Technical records
               </AccordionTrigger>
               <AccordionContent className="border-t border-slate-200 px-4 py-4">
-                {technicalMessages.length > 0 ? (
+                {technicalRecords.length > 0 ? (
                   <div className="space-y-3">
-                    {technicalMessages.map((message) => (
-                      <article key={message.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                        <div className="mb-2 inline-flex items-center gap-2 text-xs text-slate-500">
-                          <MessageSquareText className="h-3.5 w-3.5" />
-                          <span>{roleLabel(message)}</span>
-                        </div>
-                        <AssistantMarkdown content={message.content} channel={message.channel} tool={message.tool} />
-                      </article>
-                    ))}
+                    {technicalRecords.map((record) =>
+                      record.kind === "tool-trace" ? (
+                        <article key={record.key} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                          <AssistantMarkdown content="" toolTrace={record.toolTrace} />
+                        </article>
+                      ) : (
+                        <article key={record.key} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                          <div className="mb-2 inline-flex items-center gap-2 text-xs text-slate-500">
+                            <MessageSquareText className="h-3.5 w-3.5" />
+                            <span>{roleLabel(record.message)}</span>
+                          </div>
+                          <AssistantMarkdown
+                            content={record.message.content}
+                            channel={record.message.channel}
+                            tool={record.message.tool}
+                          />
+                        </article>
+                      ),
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">No assistant-side technical records for this cycle.</p>
@@ -365,8 +388,7 @@ export const CycleInspectorDetail = ({ cycle }: CycleInspectorDetailProps) => {
             </AccordionItem>
           </Accordion>
           </div>
-        </ScrollViewport>
-      </ViewportMask>
-    </section>
+      </ScrollViewport>
+    </ViewportMask>
   );
 };

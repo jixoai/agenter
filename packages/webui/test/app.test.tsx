@@ -17,6 +17,7 @@ const createState = (): RuntimeClientState => ({
   runtimes: {},
   activityBySession: {},
   terminalSnapshotsBySession: {},
+  terminalReadsBySession: {},
   chatsBySession: {},
   chatCyclesBySession: {},
   tasksBySession: {},
@@ -88,6 +89,7 @@ const createSessionMock = vi.fn(async () => ({ id: "session-new" }));
 const sendChatMock = vi.fn(async () => {});
 const startSessionMock = vi.fn(async () => {});
 const stopSessionMock = vi.fn(async () => {});
+const abortSessionMock = vi.fn(async () => {});
 const resolveDraftMock = vi.fn(async (input: { cwd: string }) => ({
   cwd: input.cwd,
   provider: { providerId: "default", apiStandard: "openai-chat", vendor: "deepseek", model: "test" },
@@ -160,6 +162,7 @@ vi.mock("@agenter/client-sdk", () => ({
     createSession: createSessionMock,
     startSession: startSessionMock,
     stopSession: stopSessionMock,
+    abortSession: abortSessionMock,
     archiveSession: async () => {},
     restoreSession: async () => {},
     deleteSession: async () => {},
@@ -215,6 +218,7 @@ beforeEach(() => {
   sendChatMock.mockClear();
   startSessionMock.mockClear();
   stopSessionMock.mockClear();
+  abortSessionMock.mockClear();
   resolveDraftMock.mockClear();
   listDirectoriesMock.mockClear();
   validateDirectoryMock.mockClear();
@@ -513,8 +517,8 @@ describe("Feature: web ui app shell", () => {
 
     await waitFor(() => {
       expect(hydrateSessionHistoryMock).toHaveBeenCalledWith(sessionId, { messageLimit: 200, cycleLimit: 120 });
-      expect(retainApiCallStreamMock).toHaveBeenCalledWith(sessionId);
     });
+    expect(retainApiCallStreamMock).not.toHaveBeenCalled();
   });
 
   test("Scenario: Given a long-history chat route When the route becomes visible Then hydration runs without consuming unread replies before the viewport reports a visible boundary", async () => {
@@ -622,6 +626,7 @@ describe("Feature: web ui app shell", () => {
 
     await waitFor(() => {
       expect(inspectModelDebugMock).toHaveBeenCalledTimes(1);
+      expect(retainApiCallStreamMock).toHaveBeenCalledWith(sessionId);
     });
 
     resolveInspect!({
@@ -829,6 +834,7 @@ describe("Feature: web ui app shell", () => {
           focusedTerminalIds: [],
           chatMessages: [],
           terminalSnapshots: {},
+          terminalReads: {},
           terminals: [],
           tasks: [],
           loopKernelState: null,
@@ -926,6 +932,7 @@ describe("Feature: web ui app shell", () => {
           focusedTerminalIds: [],
           chatMessages: [],
           terminalSnapshots: {},
+          terminalReads: {},
           terminals: [],
           tasks: [],
           loopKernelState: null,
@@ -974,6 +981,83 @@ describe("Feature: web ui app shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start session" }));
     await waitFor(() => {
       expect(startSessionMock).toHaveBeenCalledWith(stoppedSessionId);
+    });
+  });
+
+  test("Scenario: Given a paused session When advanced actions are opened Then resume stays primary while abort stays secondary", async () => {
+    const workspacePath = "/repo/lifecycle";
+    const pausedSessionId = "session-paused";
+
+    mockState = {
+      ...createState(),
+      sessions: [
+        {
+          id: pausedSessionId,
+          name: "Paused shell",
+          cwd: workspacePath,
+          avatar: "jon",
+          createdAt: "2026-03-06T08:00:00.000Z",
+          updatedAt: "2026-03-06T08:01:00.000Z",
+          status: "paused",
+          storageState: "active",
+          sessionRoot: "/tmp/session-paused",
+          storeTarget: "global",
+        },
+      ],
+      runtimes: {
+        [pausedSessionId]: {
+          sessionId: pausedSessionId,
+          started: true,
+          activityState: "idle",
+          loopPhase: "waiting_commits",
+          stage: "idle",
+          focusedTerminalId: "",
+          focusedTerminalIds: [],
+          chatMessages: [],
+          terminalSnapshots: {},
+          terminalReads: {},
+          terminals: [],
+          tasks: [],
+          loopKernelState: null,
+          loopInputSignals: {
+            user: { version: 0, timestamp: null },
+            terminal: { version: 0, timestamp: null },
+            task: { version: 0, timestamp: null },
+            attention: { version: 0, timestamp: null },
+          },
+          apiCallRecording: { enabled: false, refCount: 0 },
+          modelCapabilities: {
+            streaming: false,
+            tools: false,
+            imageInput: false,
+            nativeCompact: false,
+            summarizeFallback: false,
+            fileUpload: false,
+            mcpCatalog: false,
+          },
+          activeCycle: null,
+        },
+      },
+    };
+
+    render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+
+    window.history.replaceState(
+      null,
+      "",
+      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(pausedSessionId)}`,
+    );
+    fireEvent.popState(window);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume session" }));
+    await waitFor(() => {
+      expect(startSessionMock).toHaveBeenCalledWith(pausedSessionId);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Abort session/i }));
+    await waitFor(() => {
+      expect(abortSessionMock).toHaveBeenCalledWith(pausedSessionId);
     });
   });
 
@@ -1033,6 +1117,7 @@ describe("Feature: web ui app shell", () => {
           focusedTerminalIds: [],
           chatMessages: [],
           terminalSnapshots: {},
+          terminalReads: {},
           terminals: [],
           tasks: [],
           loopKernelState: null,

@@ -477,6 +477,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [setError, store],
   );
 
+  const abortSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      try {
+        await store.abortSession(sessionId);
+        setNotice("");
+      } catch (error) {
+        setError(error);
+      }
+    },
+    [setError, store],
+  );
+
   const deleteSession = useCallback(
     async (sessionId: string): Promise<void> => {
       try {
@@ -930,6 +942,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       resumeSession,
       startSession,
       stopSession,
+      abortSession,
       deleteSession,
       sendChat,
       loadMoreChatMessages,
@@ -997,6 +1010,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       selectedLayerId,
       selectedWorkspacePath,
       selectedWorkspaceSessionId,
+      abortSession,
       sendChat,
       setChatVisibility,
       settingsEffective,

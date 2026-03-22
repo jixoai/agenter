@@ -7,12 +7,15 @@ export interface StatusMeta {
   variant: NonNullable<BadgeProps["variant"]>;
 }
 
-export const sessionStatusMeta = (status: "stopped" | "starting" | "running" | "error"): StatusMeta => {
+export const sessionStatusMeta = (status: "stopped" | "paused" | "starting" | "running" | "error"): StatusMeta => {
   if (status === "running") {
     return { label: "running", variant: "success" };
   }
   if (status === "starting") {
     return { label: "starting", variant: "warning" };
+  }
+  if (status === "paused") {
+    return { label: "paused", variant: "warning" };
   }
   if (status === "error") {
     return { label: "error", variant: "destructive" };

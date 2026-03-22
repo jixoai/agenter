@@ -13,6 +13,7 @@ const createState = (): RuntimeClientState => ({
   runtimes: {},
   activityBySession: {},
   terminalSnapshotsBySession: {},
+  terminalReadsBySession: {},
   chatsBySession: {},
   chatCyclesBySession: {},
   tasksBySession: {},
@@ -126,6 +127,60 @@ describe("Feature: runtime selector isolation", () => {
     expect(renderCount).toEqual({
       connected: 2,
       sessions: 2,
+    });
+  });
+
+  test("Scenario: Given Devtools-style tab ownership When inactive slices update Then the active tab subtree does not subscribe to them", () => {
+    const store = createRuntimeStoreReader(createState());
+    const EMPTY_CYCLES: RuntimeClientState["chatCyclesBySession"][string] = [];
+    const renderCount = {
+      cycles: 0,
+      model: 0,
+    };
+
+    const CyclesProbe = () => {
+      renderCount.cycles += 1;
+      const cycles = useRuntimeStoreSelector(store, (state) => state.chatCyclesBySession["session-1"] ?? EMPTY_CYCLES);
+      return <output data-testid="cycles-probe">{cycles.length}</output>;
+    };
+
+    const ModelProbe = () => {
+      renderCount.model += 1;
+      const activity = useRuntimeStoreSelector(store, (state) => state.activityBySession["session-1"] ?? "idle");
+      return <output data-testid="model-probe">{activity}</output>;
+    };
+
+    const DevtoolsTabOwner = ({ tab }: { tab: "cycles" | "model" }) => {
+      return tab === "cycles" ? <CyclesProbe /> : <ModelProbe />;
+    };
+
+    const { rerender } = render(<DevtoolsTabOwner tab="cycles" />);
+
+    expect(screen.getByTestId("cycles-probe")).toHaveTextContent("0");
+    expect(renderCount).toEqual({
+      cycles: 1,
+      model: 0,
+    });
+
+    act(() => {
+      store.publish({
+        ...store.getState(),
+        activityBySession: {
+          "session-1": "active",
+        },
+      });
+    });
+
+    expect(renderCount).toEqual({
+      cycles: 1,
+      model: 0,
+    });
+
+    rerender(<DevtoolsTabOwner tab="model" />);
+    expect(screen.getByTestId("model-probe")).toHaveTextContent("active");
+    expect(renderCount).toEqual({
+      cycles: 1,
+      model: 1,
     });
   });
 });

@@ -31,6 +31,7 @@ export const FourStateContract: Story = {
       <SurfaceCard title="Empty + Loading">
         <AsyncSurface
           state="empty-loading"
+          emptyLoadingLabel="Loading the first page..."
           skeleton={<Skeleton className="h-full w-full rounded-2xl" />}
           empty={<div>Empty idle</div>}
         />
@@ -54,6 +55,7 @@ export const FourStateContract: Story = {
     const canvas = within(canvasElement);
 
     await expect(canvas.getByText("Empty + Loading")).toBeInTheDocument();
+    await expect(canvas.getByText("Loading the first page...")).toBeInTheDocument();
     await expect(canvas.getByText("No data yet")).toBeInTheDocument();
     await expect(canvas.getByText("Refreshing sessions...")).toBeInTheDocument();
     await expect(canvas.getByText("Steady-state content remains visible.")).toBeInTheDocument();

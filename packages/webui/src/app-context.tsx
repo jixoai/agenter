@@ -55,6 +55,7 @@ export interface AppController {
   resumeSession: (sessionId: string, workspacePath?: string) => Promise<void>;
   startSession: (sessionId: string) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
+  abortSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   sendChat: (sessionId: string, payload: { text: string; assets: File[] }) => Promise<void>;
   loadMoreChatMessages: (sessionId: string) => Promise<void>;

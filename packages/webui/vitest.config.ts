@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   optimizeDeps: {
     include: [
+      "@agenter/terminal-view",
       "@base-ui-components/react/tabs",
       "@base-ui-components/react/accordion",
       "@base-ui-components/react/dialog",

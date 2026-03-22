@@ -43,6 +43,36 @@ const meta = {
               },
             ],
           },
+          {
+            source: "attention" as const,
+            role: "tool" as const,
+            name: "Attention",
+            parts: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  kind: "attention-system-list",
+                  count: 2,
+                  items: [
+                    {
+                      id: 41,
+                      from: "terminal",
+                      score: 72,
+                      remark: "Investigate the new stderr burst",
+                      content: "stderr shows repeated retry noise",
+                    },
+                    {
+                      id: 42,
+                      from: "user",
+                      score: 18,
+                      remark: "Keep user-facing answer concise",
+                      content: "User only asked for the root cause",
+                    },
+                  ],
+                }),
+              },
+            ],
+          },
         ],
         outputs: [
           {
@@ -52,6 +82,26 @@ const meta = {
             content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: iflow", "```"].join("\n"),
             timestamp: 12,
             tool: { name: "terminal_read" },
+          },
+          {
+            id: "tool-result-1",
+            role: "assistant" as const,
+            channel: "tool_result" as const,
+            content: [
+              "```yaml+tool_result",
+              "tool: terminal_read",
+              "ok: true",
+              "output:",
+              "  kind: terminal-snapshot",
+              "  terminalId: iflow",
+              "  seq: 30",
+              "  cols: 80",
+              "  rows: 24",
+              'timestamp: "2026-03-06T07:12:43.406Z"',
+              "```",
+            ].join("\n"),
+            timestamp: 12,
+            tool: { name: "terminal_read", ok: true },
           },
           {
             id: "reply-1",
@@ -94,9 +144,20 @@ export const CycleDetailsStayInDevtools: Story = {
     await expect(canvas.getByText("Apply")).toBeInTheDocument();
     await expect(canvas.getAllByText("Inputs").length).toBeGreaterThan(0);
     await expect(canvas.getAllByText("Facts").length).toBeGreaterThan(0);
+    await expect(canvas.getByText("Attention 1")).toBeInTheDocument();
+    await expect(canvas.getByText("score 72")).toBeInTheDocument();
+    await expect(canvas.getAllByText("remark").length).toBeGreaterThan(0);
+    await expect(canvas.getByText("Investigate the new stderr burst")).toBeInTheDocument();
     await expect(canvas.getByText("Technical records")).toBeInTheDocument();
     await expect(canvas.getByText("terminal_read")).toBeInTheDocument();
+    await expect(canvas.getAllByText("terminal_read")).toHaveLength(1);
     await expect(canvas.getAllByText("Please inspect the terminal diff.").length).toBeGreaterThan(0);
+    await expect(canvas.getByTestId("cycle-timeline-scroll-viewport")).toBeInTheDocument();
+    await expect(canvas.getByTestId("cycle-detail-scroll-viewport")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: /terminal_read/i }));
+    await expect(canvas.getByText("call")).toBeInTheDocument();
+    await expect(canvas.getByText("result")).toBeInTheDocument();
   },
 };
 

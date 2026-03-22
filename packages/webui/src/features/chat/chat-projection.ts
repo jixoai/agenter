@@ -105,15 +105,92 @@ const sameAttachmentSet = (
   return (left ?? []).every((attachment, index) => attachment.assetId === right?.[index]?.assetId);
 };
 
+const projectedMessageEqual = (left: ProjectedConversationMessage, right: ProjectedConversationMessage): boolean => {
+  return (
+    left.id === right.id &&
+    left.role === right.role &&
+    left.cycleId === right.cycleId &&
+    left.channel === right.channel &&
+    left.content === right.content &&
+    left.timestamp === right.timestamp &&
+    left.tool?.name === right.tool?.name &&
+    left.tool?.ok === right.tool?.ok &&
+    left.transient === right.transient &&
+    sameAttachmentSet(left.attachments, right.attachments)
+  );
+};
+
+const conversationRowEqual = (left: ConversationRow, right: ConversationRow): boolean => {
+  if (left.type !== right.type || left.key !== right.key) {
+    return false;
+  }
+  if (left.type === "message" && right.type === "message") {
+    return projectedMessageEqual(left.message, right.message);
+  }
+  if (left.type === "status" && right.type === "status") {
+    return (
+      left.cycleId === right.cycleId &&
+      left.text === right.text &&
+      left.tone === right.tone &&
+      left.timestamp === right.timestamp
+    );
+  }
+  if (left.type === "time-divider" && right.type === "time-divider") {
+    return (
+      left.label === right.label &&
+      left.timestamp === right.timestamp &&
+      left.emphasis === right.emphasis
+    );
+  }
+  return false;
+};
+
 const matchesPersistedUserMessage = (
   cycle: RuntimeChatCycle,
+  cycles: readonly RuntimeChatCycle[],
   messages: readonly RuntimeChatMessage[],
   content: string,
   attachments: readonly MessageAttachment[],
 ): boolean => {
+  if (
+    cycle.clientMessageIds.some((clientMessageId) =>
+      cycles.some(
+        (other) =>
+          other.id !== cycle.id &&
+          !other.id.startsWith("pending:") &&
+          other.clientMessageIds.includes(clientMessageId),
+      ),
+    )
+  ) {
+    return true;
+  }
   const cycleCreatedAt = cycle.createdAt;
   return messages.some((message) => {
     if (message.role !== "user") {
+      return false;
+    }
+    if (message.content !== content) {
+      return false;
+    }
+    if (!sameAttachmentSet(message.attachments, attachments)) {
+      return false;
+    }
+    return Math.abs(message.timestamp - cycleCreatedAt) <= 120_000;
+  });
+};
+
+const matchesPersistedAssistantMessage = (
+  cycle: RuntimeChatCycle,
+  messages: readonly RuntimeChatMessage[],
+  content: string,
+  attachments: readonly MessageAttachment[] | undefined,
+): boolean => {
+  const cycleCreatedAt = cycle.createdAt;
+  return messages.some((message) => {
+    if (!isUserFacingAssistantMessage(message)) {
+      return false;
+    }
+    if ((message.cycleId ?? null) !== (cycle.cycleId ?? null)) {
       return false;
     }
     if (message.content !== content) {
@@ -141,7 +218,11 @@ const toPersistedMessageRow = (message: RuntimeChatMessage): ConversationRow => 
   },
 });
 
-const toPendingUserRows = (cycle: RuntimeChatCycle, messages: readonly RuntimeChatMessage[]): ConversationRow[] => {
+const toPendingUserRows = (
+  cycle: RuntimeChatCycle,
+  cycles: readonly RuntimeChatCycle[],
+  messages: readonly RuntimeChatMessage[],
+): ConversationRow[] => {
   if (!cycle.id.startsWith("pending:")) {
     return [];
   }
@@ -165,7 +246,7 @@ const toPendingUserRows = (cycle: RuntimeChatCycle, messages: readonly RuntimeCh
     if (!hasRenderableContent({ content, attachments })) {
       return [];
     }
-    if (matchesPersistedUserMessage(cycle, messages, content, attachments)) {
+    if (matchesPersistedUserMessage(cycle, cycles, messages, content, attachments)) {
       return [];
     }
     return [
@@ -253,29 +334,35 @@ const cycleProgressText = (cycle: RuntimeChatCycle, aiStatus: string): Conversat
   return null;
 };
 
-const toTransientAssistantRows = (cycle: RuntimeChatCycle, aiStatus: string): ConversationRow[] => {
+const toTransientAssistantRows = (
+  cycle: RuntimeChatCycle,
+  messages: readonly RuntimeChatMessage[],
+  aiStatus: string,
+): ConversationRow[] => {
   const liveMessages = [...cycle.liveMessages]
     .filter(isUserFacingAssistantMessage)
     .sort((left, right) => left.timestamp - right.timestamp || compareMessageId(left.id, right.id));
 
-  const rows = liveMessages.map<ConversationRow>((message) => ({
-    key: `live:${cycle.id}:${message.id}`,
-    type: "message",
-    message: {
-      id: `live:${cycle.id}:${message.id}`,
-      role: "assistant",
-      cycleId: cycle.cycleId ?? null,
-      channel: message.channel,
-      content: message.content,
-      timestamp: message.timestamp,
-      attachments: message.attachments,
-      tool: message.tool,
-      transient: true,
-    },
-  }));
+  const rows = liveMessages
+    .filter((message) => !matchesPersistedAssistantMessage(cycle, messages, message.content, message.attachments))
+    .map<ConversationRow>((message) => ({
+      key: `live:${cycle.id}:${message.id}`,
+      type: "message",
+      message: {
+        id: `live:${cycle.id}:${message.id}`,
+        role: "assistant",
+        cycleId: cycle.cycleId ?? null,
+        channel: message.channel,
+        content: message.content,
+        timestamp: message.timestamp,
+        attachments: message.attachments,
+        tool: message.tool,
+        transient: true,
+      },
+    }));
 
   const streamingContent = cycle.streaming?.content.trim() ?? "";
-  if (streamingContent.length > 0) {
+  if (streamingContent.length > 0 && !matchesPersistedAssistantMessage(cycle, messages, streamingContent, undefined)) {
     rows.push({
       key: `stream:${cycle.id}`,
       type: "message",
@@ -314,7 +401,10 @@ export const projectConversationRows = (
     ...cycles
     .slice()
     .sort((left, right) => left.createdAt - right.createdAt || (left.cycleId ?? 0) - (right.cycleId ?? 0))
-    .flatMap((cycle) => [...toPendingUserRows(cycle, messages), ...toTransientAssistantRows(cycle, aiStatus)]),
+    .flatMap((cycle) => [
+      ...toPendingUserRows(cycle, cycles, messages),
+      ...toTransientAssistantRows(cycle, messages, aiStatus),
+    ]),
   ].sort((left, right) => {
     const leftTimestamp = left.type === "message" ? left.message.timestamp : left.timestamp;
     const rightTimestamp = right.type === "message" ? right.message.timestamp : right.timestamp;
@@ -357,4 +447,30 @@ export const projectConversationRows = (
   }
 
   return rows;
+};
+
+export const stabilizeConversationRows = (
+  nextRows: ConversationRow[],
+  previousRows: readonly ConversationRow[],
+): ConversationRow[] => {
+  if (previousRows.length === 0 || nextRows.length === 0) {
+    return nextRows;
+  }
+
+  const previousByKey = new Map(previousRows.map((row) => [row.key, row]));
+  let changed = nextRows.length !== previousRows.length;
+
+  const stabilized = nextRows.map((row, index) => {
+    const previous = previousByKey.get(row.key);
+    if (!previous || !conversationRowEqual(previous, row)) {
+      changed = true;
+      return row;
+    }
+    if (previousRows[index] !== previous) {
+      changed = true;
+    }
+    return previous;
+  });
+
+  return changed ? stabilized : (previousRows as ConversationRow[]);
 };

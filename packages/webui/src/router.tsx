@@ -113,6 +113,174 @@ const normalizeLoopbusLogs = (
     patch: item.patch ?? [],
   }));
 
+const DevtoolsCyclesSurface = ({
+  sessionId,
+  loading,
+  selectedCycleId,
+  detailMode,
+}: {
+  sessionId: string;
+  loading: boolean;
+  selectedCycleId: string | null;
+  detailMode: "split" | "sheet";
+}) => {
+  const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
+  return (
+    <CycleInspectorPanel
+      cycles={cycles}
+      loading={loading}
+      selectedCycleId={selectedCycleId}
+      detailMode={detailMode}
+    />
+  );
+};
+
+const DevtoolsTerminalSurface = ({
+  sessionId,
+  loading,
+}: {
+  sessionId: string;
+  loading: boolean;
+}) => {
+  const runtime = useRuntimeSelector((state) => state.runtimes[sessionId]);
+  const snapshots = useRuntimeSelector((state) => state.terminalSnapshotsBySession[sessionId]);
+  const terminalReads = useRuntimeSelector((state) => state.terminalReadsBySession[sessionId]);
+  const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
+
+  return (
+    <TerminalPanel
+      runtime={runtime}
+      snapshots={snapshots}
+      terminalReads={runtime?.terminalReads ?? terminalReads}
+      cycles={cycles}
+      loading={loading}
+    />
+  );
+};
+
+const DevtoolsTasksSurface = ({
+  sessionId,
+  loading,
+}: {
+  sessionId: string;
+  loading: boolean;
+}) => {
+  const tasks = useRuntimeSelector((state) => state.tasksBySession[sessionId] ?? EMPTY_TASKS);
+  return <TasksPanel tasks={tasks} loading={loading} />;
+};
+
+const DevtoolsLoopBusSurface = ({
+  sessionId,
+}: {
+  sessionId: string;
+}) => {
+  const controller = useAppController();
+  const runtime = useRuntimeSelector((state) => state.runtimes[sessionId]);
+  const loopbusStateLogs = useRuntimeSelector((state) => state.loopbusStateLogsBySession[sessionId] ?? EMPTY_LOGS);
+  const loopbusTraces = useRuntimeSelector((state) => state.loopbusTracesBySession[sessionId] ?? EMPTY_TRACES);
+  const modelCalls = useRuntimeSelector((state) => state.modelCallsBySession[sessionId] ?? EMPTY_MODEL_CALLS);
+  const apiCalls = useRuntimeSelector((state) => state.apiCallsBySession[sessionId] ?? EMPTY_API_CALLS);
+  const apiCallRecording = useRuntimeSelector(
+    (state) => state.apiCallRecordingBySession[sessionId] ?? EMPTY_API_CALL_RECORDING,
+  );
+
+  return (
+    <LoopBusPanel
+      stage={runtime?.stage ?? "idle"}
+      kernel={runtime?.loopKernelState ?? null}
+      inputSignals={
+        runtime?.loopInputSignals ?? {
+          user: { version: 0, timestamp: null },
+          terminal: { version: 0, timestamp: null },
+          task: { version: 0, timestamp: null },
+          attention: { version: 0, timestamp: null },
+        }
+      }
+      logs={normalizeLoopbusLogs(loopbusStateLogs)}
+      traces={loopbusTraces}
+      modelCalls={modelCalls}
+      apiCalls={apiCalls}
+      apiRecording={apiCallRecording}
+      hasMoreTrace={controller.tracePaging[sessionId]?.hasMore ?? true}
+      loadingTrace={controller.tracePaging[sessionId]?.loading ?? false}
+      onLoadMoreTrace={() => {
+        void controller.loadMoreTrace(sessionId);
+      }}
+      hasMoreModel={controller.modelPaging[sessionId]?.hasMore ?? true}
+      loadingModel={controller.modelPaging[sessionId]?.loading ?? false}
+      onLoadMoreModel={() => {
+        void controller.loadMoreModel(sessionId);
+      }}
+    />
+  );
+};
+
+const DevtoolsModelSurface = ({
+  sessionId,
+  loading,
+}: {
+  sessionId: string;
+  loading: boolean;
+}) => {
+  const controller = useAppController();
+  const connected = useRuntimeSelector((state) => state.connected);
+  const modelCalls = useRuntimeSelector((state) => state.modelCallsBySession[sessionId] ?? EMPTY_MODEL_CALLS);
+  const apiCalls = useRuntimeSelector((state) => state.apiCallsBySession[sessionId] ?? EMPTY_API_CALLS);
+  const refreshModelDebug = controller.refreshModelDebug;
+  const retainApiCallStream = controller.retainApiCallStream;
+
+  const latestModelCallKey = useMemo(() => {
+    const latest = modelCalls.at(-1);
+    if (!latest) {
+      return "none";
+    }
+    return `${latest.id}:${latest.status}:${latest.completedAt ?? "pending"}`;
+  }, [modelCalls]);
+  const latestApiCallId = apiCalls.at(-1)?.id ?? 0;
+
+  useEffect(() => {
+    return retainApiCallStream(sessionId);
+  }, [retainApiCallStream, sessionId]);
+
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+    void refreshModelDebug(sessionId);
+  }, [connected, latestApiCallId, latestModelCallKey, refreshModelDebug, sessionId]);
+
+  const modelDebug = useMemo<ModelDebugOutput | null>(() => {
+    if (controller.modelDebugSessionId === sessionId && controller.modelDebug) {
+      return controller.modelDebug;
+    }
+    if (modelCalls.length === 0 && apiCalls.length === 0) {
+      return null;
+    }
+    return {
+      config: null,
+      history: [],
+      stats: null,
+      latestModelCall: modelCalls.at(-1) ?? null,
+      recentModelCalls: modelCalls,
+      recentApiCalls: apiCalls,
+    };
+  }, [apiCalls, controller.modelDebug, controller.modelDebugSessionId, modelCalls, sessionId]);
+
+  const usingModelDebugFallback =
+    (controller.modelDebugSessionId !== sessionId || controller.modelDebug === null) && modelDebug !== null;
+
+  return (
+    <ModelPanel
+      debug={modelDebug}
+      loading={usingModelDebugFallback ? loading : loading || controller.modelDebugLoading}
+      error={usingModelDebugFallback ? null : controller.modelDebugError}
+      onRefresh={() => {
+        void refreshModelDebug(sessionId);
+      }}
+    />
+  );
+};
+
 const QuickStartRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
@@ -335,6 +503,12 @@ const WorkspaceChatRouteView = () => {
     }
     void controller.startSession(search.sessionId);
   }, [controller, search.sessionId, sessionToolbar.action]);
+  const handleAbortSession = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    void controller.abortSession(search.sessionId);
+  }, [controller, search.sessionId]);
 
   const handleWorkspaceChatNavigate = useCallback(
     (tab: "chat" | "devtools" | "settings") => {
@@ -424,6 +598,7 @@ const WorkspaceChatRouteView = () => {
             actionLabel={sessionToolbar.actionLabel}
             actionDisabled={sessionToolbar.disabled}
             onAction={handleChatHeaderAction}
+            onAbort={handleAbortSession}
           />
         ) : null
       }
@@ -431,6 +606,7 @@ const WorkspaceChatRouteView = () => {
     >
       {search.sessionId ? (
         <ChatPanel
+          sessionId={search.sessionId}
           workspacePath={search.workspacePath}
           messages={messages}
           cycles={cycles}
@@ -500,77 +676,24 @@ const WorkspaceDevtoolsRouteView = () => {
   const adaptiveViewport = useAdaptiveViewport();
   const search = workspaceDevtoolsRoute.useSearch();
   const [detailsTab, setDetailsTab] = useState<"cycles" | "terminal" | "tasks" | "loopbus" | "model">("cycles");
-  const connected = useRuntimeSelector((state) => state.connected);
   const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
   const workspace = useRuntimeSelector(
     selectWorkspaceChromeState(search.workspacePath),
     equalWorkspaceChromeState,
   );
   const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
-  const runtime = useRuntimeSelector((state) => (search.sessionId ? state.runtimes[search.sessionId] : undefined));
-  const cycles = useRuntimeSelector((state) =>
-    search.sessionId ? (state.chatCyclesBySession[search.sessionId] ?? EMPTY_CYCLES) : EMPTY_CYCLES,
-  );
-  const tasks = useRuntimeSelector((state) =>
-    search.sessionId ? (state.tasksBySession[search.sessionId] ?? EMPTY_TASKS) : EMPTY_TASKS,
-  );
-  const terminalSnapshots = useRuntimeSelector((state) =>
-    search.sessionId ? state.terminalSnapshotsBySession[search.sessionId] : undefined,
-  );
-  const loopbusStateLogs = useRuntimeSelector((state) =>
-    search.sessionId ? (state.loopbusStateLogsBySession[search.sessionId] ?? EMPTY_LOGS) : EMPTY_LOGS,
-  );
-  const loopbusTraces = useRuntimeSelector((state) =>
-    search.sessionId ? (state.loopbusTracesBySession[search.sessionId] ?? EMPTY_TRACES) : EMPTY_TRACES,
-  );
-  const modelCalls = useRuntimeSelector((state) =>
-    search.sessionId ? (state.modelCallsBySession[search.sessionId] ?? EMPTY_MODEL_CALLS) : EMPTY_MODEL_CALLS,
-  );
-  const apiCalls = useRuntimeSelector((state) =>
-    search.sessionId ? (state.apiCallsBySession[search.sessionId] ?? EMPTY_API_CALLS) : EMPTY_API_CALLS,
-  );
-  const apiCallRecording = useRuntimeSelector((state) =>
-    search.sessionId
-      ? (state.apiCallRecordingBySession[search.sessionId] ?? EMPTY_API_CALL_RECORDING)
-      : EMPTY_API_CALL_RECORDING,
-  );
-  const refreshModelDebug = controller.refreshModelDebug;
+  const hasRuntime = useRuntimeSelector((state) => (search.sessionId ? Boolean(state.runtimes[search.sessionId]) : false));
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
     session,
     runtime: routeRuntime ?? undefined,
   });
   const devtoolsSurfaceLoading =
-    Boolean(search.sessionId) && !runtime && session?.status !== "stopped" && session?.status !== "error";
-  const latestModelCallKey = (() => {
-    const latest = modelCalls.at(-1);
-    if (!latest) {
-      return "none";
-    }
-    return `${latest.id}:${latest.status}:${latest.completedAt ?? "pending"}`;
-  })();
-  const latestApiCallId = apiCalls.at(-1)?.id ?? 0;
-  const modelDebug = useMemo<ModelDebugOutput | null>(() => {
-    if (controller.modelDebugSessionId === search.sessionId && controller.modelDebug) {
-      return controller.modelDebug;
-    }
-    if (!search.sessionId) {
-      return null;
-    }
-    if (modelCalls.length === 0 && apiCalls.length === 0) {
-      return null;
-    }
-    return {
-      config: null,
-      history: [],
-      stats: null,
-      latestModelCall: modelCalls.at(-1) ?? null,
-      recentModelCalls: modelCalls,
-      recentApiCalls: apiCalls,
-    };
-  }, [apiCalls, controller.modelDebug, controller.modelDebugSessionId, modelCalls, search.sessionId]);
-  const usingModelDebugFallback =
-    (controller.modelDebugSessionId !== search.sessionId || controller.modelDebug === null) && modelDebug !== null;
+    Boolean(search.sessionId) &&
+    !hasRuntime &&
+    session?.status !== "stopped" &&
+    session?.status !== "paused" &&
+    session?.status !== "error";
   const handleDetailsTabChange = useCallback((value: string) => {
     setDetailsTab(value === "terminal" || value === "tasks" || value === "loopbus" || value === "model" ? value : "cycles");
   }, []);
@@ -598,13 +721,6 @@ const WorkspaceDevtoolsRouteView = () => {
     }
   }, [search.cycleId]);
 
-  useEffect(() => {
-    if (!connected || detailsTab !== "model" || !search.sessionId) {
-      return;
-    }
-    void refreshModelDebug(search.sessionId);
-  }, [connected, detailsTab, latestApiCallId, latestModelCallKey, refreshModelDebug, search.sessionId]);
-
   const renderPanel = () => {
     if (!search.sessionId) {
       return (
@@ -614,71 +730,25 @@ const WorkspaceDevtoolsRouteView = () => {
       );
     }
     if (detailsTab === "terminal") {
-      return <TerminalPanel runtime={runtime} snapshots={terminalSnapshots} loading={devtoolsSurfaceLoading} />;
+      return <DevtoolsTerminalSurface sessionId={search.sessionId} loading={devtoolsSurfaceLoading} />;
     }
     if (detailsTab === "tasks") {
-      return <TasksPanel tasks={tasks} loading={devtoolsSurfaceLoading && tasks.length === 0} />;
+      return <DevtoolsTasksSurface sessionId={search.sessionId} loading={devtoolsSurfaceLoading} />;
     }
     if (detailsTab === "cycles") {
       return (
-        <CycleInspectorPanel
-          cycles={cycles}
-          loading={devtoolsSurfaceLoading && cycles.length === 0}
+        <DevtoolsCyclesSurface
+          sessionId={search.sessionId}
+          loading={devtoolsSurfaceLoading}
           selectedCycleId={search.cycleId ? `cycle:${search.cycleId}` : null}
           detailMode={adaptiveViewport.workspaceNavMode === "bottom" ? "sheet" : "split"}
         />
       );
     }
     if (detailsTab === "model") {
-      return (
-        <ModelPanel
-          debug={modelDebug}
-          loading={usingModelDebugFallback ? false : controller.modelDebugLoading}
-          error={usingModelDebugFallback ? null : controller.modelDebugError}
-          onRefresh={() => {
-            if (!search.sessionId) {
-              return;
-            }
-            void refreshModelDebug(search.sessionId);
-          }}
-        />
-      );
+      return <DevtoolsModelSurface sessionId={search.sessionId} loading={devtoolsSurfaceLoading} />;
     }
-    return (
-      <LoopBusPanel
-        stage={runtime?.stage ?? "idle"}
-        kernel={runtime?.loopKernelState ?? null}
-        inputSignals={
-          runtime?.loopInputSignals ?? {
-            user: { version: 0, timestamp: null },
-            terminal: { version: 0, timestamp: null },
-            task: { version: 0, timestamp: null },
-            attention: { version: 0, timestamp: null },
-          }
-        }
-        logs={normalizeLoopbusLogs(loopbusStateLogs)}
-        traces={loopbusTraces}
-        modelCalls={modelCalls}
-        apiCalls={apiCalls}
-        apiRecording={apiCallRecording}
-        hasMoreTrace={search.sessionId ? (controller.tracePaging[search.sessionId]?.hasMore ?? true) : false}
-        loadingTrace={search.sessionId ? (controller.tracePaging[search.sessionId]?.loading ?? false) : false}
-        onLoadMoreTrace={() => {
-          if (!search.sessionId) {
-            return;
-          }
-          void controller.loadMoreTrace(search.sessionId);
-        }}
-        hasMoreModel={search.sessionId ? (controller.modelPaging[search.sessionId]?.hasMore ?? true) : false}
-        loadingModel={search.sessionId ? (controller.modelPaging[search.sessionId]?.loading ?? false) : false}
-        onLoadMoreModel={() => {
-          if (!search.sessionId) {
-            return;
-          }
-          void controller.loadMoreModel(search.sessionId);
-        }}
-      />
-    );
+    return <DevtoolsLoopBusSurface sessionId={search.sessionId} />;
   };
 
   return (

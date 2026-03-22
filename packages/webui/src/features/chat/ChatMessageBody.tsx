@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { ChatAttachmentStrip } from "./ChatAttachmentStrip";
@@ -10,7 +12,7 @@ interface ChatMessageBodyProps {
   onPreviewAttachment: (assetId: string) => void;
 }
 
-export const ChatMessageBody = ({ message, presentation, onPreviewAttachment }: ChatMessageBodyProps) => {
+const ChatMessageBodyComponent = ({ message, presentation, onPreviewAttachment }: ChatMessageBodyProps) => {
   const attachments = message.attachments ?? [];
   const hasText = message.content.trim().length > 0;
 
@@ -36,3 +38,14 @@ export const ChatMessageBody = ({ message, presentation, onPreviewAttachment }: 
     </div>
   );
 };
+
+export const ChatMessageBody = memo(
+  ChatMessageBodyComponent,
+  (left, right) =>
+    left.message === right.message &&
+    left.presentation.bubbleClassName === right.presentation.bubbleClassName &&
+    left.presentation.markdownSurface === right.presentation.markdownSurface &&
+    left.presentation.syntaxTone === right.presentation.syntaxTone &&
+    left.onPreviewAttachment === right.onPreviewAttachment,
+);
+ChatMessageBody.displayName = "ChatMessageBody";

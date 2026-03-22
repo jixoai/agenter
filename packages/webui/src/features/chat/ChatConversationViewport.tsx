@@ -84,7 +84,27 @@ export const ChatConversationViewport = ({
   const prependAnchorRef = useRef<{ rowCount: number; scrollHeight: number; scrollTop: number } | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
 
-  const rowKeys = useMemo(() => rows.map((row) => row.key).join("|"), [rows]);
+  const rowStructureKey = useMemo(() => {
+    const first = rows[0]?.key ?? "none";
+    const last = rows.at(-1)?.key ?? "none";
+    return `${rows.length}:${first}:${last}`;
+  }, [rows]);
+  const assistantVisibilityKey = useMemo(() => {
+    let count = 0;
+    let first = "none";
+    let last = "none";
+    for (const row of rows) {
+      if (!isConsumableAssistantRow(row)) {
+        continue;
+      }
+      count += 1;
+      if (first === "none") {
+        first = row.message.id;
+      }
+      last = row.message.id;
+    }
+    return `${count}:${first}:${last}`;
+  }, [rows]);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -133,16 +153,17 @@ export const ChatConversationViewport = ({
     if (!onLatestVisibleAssistantMessageIdChange) {
       return;
     }
-    const nextMessage =
-      [...rows]
-        .reverse()
-        .find((row): row is Extract<ConversationRow, { type: "message" }> => {
-          if (!isConsumableAssistantRow(row)) {
-            return false;
-          }
-          return visibleAssistantIdsRef.current.get(row.message.id) === true;
-        }) ?? null;
-    const next = nextMessage?.message.id ?? null;
+    let next: string | null = null;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      if (!row || !isConsumableAssistantRow(row)) {
+        continue;
+      }
+      if (visibleAssistantIdsRef.current.get(row.message.id) === true) {
+        next = row.message.id;
+        break;
+      }
+    }
     if (latestVisibleAssistantMessageIdRef.current === next) {
       return;
     }
@@ -192,7 +213,7 @@ export const ChatConversationViewport = ({
 
   useEffect(() => {
     loadMoreRef.current = false;
-  }, [loadingMore, rowKeys]);
+  }, [loadingMore, rowStructureKey]);
 
   useEffect(() => {
     const anchor = prependAnchorRef.current;
@@ -205,7 +226,7 @@ export const ChatConversationViewport = ({
       node.scrollTop = Math.max(0, nextScrollTop);
     }
     prependAnchorRef.current = null;
-  }, [loadingMore, rowKeys, rows.length]);
+  }, [loadingMore, rowStructureKey, rows.length]);
 
   useEffect(() => {
     visibleAssistantIdsRef.current.clear();
@@ -240,14 +261,14 @@ export const ChatConversationViewport = ({
       observer.disconnect();
       observerRef.current = null;
     };
-  }, [onLatestVisibleAssistantMessageIdChange, rows, syncLatestVisibleAssistantMessageId]);
+  }, [assistantVisibilityKey, onLatestVisibleAssistantMessageIdChange, rows, syncLatestVisibleAssistantMessageId]);
 
   useEffect(() => {
     if (!stickToBottom) {
       return;
     }
     return scheduleScrollToBottom();
-  }, [rowKeys, scheduleScrollToBottom, stickToBottom]);
+  }, [rowStructureKey, scheduleScrollToBottom, stickToBottom]);
 
   useEffect(() => {
     const node = contentRef.current;

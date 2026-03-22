@@ -1,7 +1,7 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
-import { projectConversationRows } from "../src/features/chat/chat-projection";
+import { projectConversationRows, stabilizeConversationRows } from "../src/features/chat/chat-projection";
 
 const buildMessages = (): RuntimeChatMessage[] => [
   {
@@ -87,6 +87,42 @@ describe("Feature: conversation projection", () => {
     expect(rows.some((row) => row.type === "status" && row.text.includes("preparing a reply"))).toBe(true);
   });
 
+  test("Scenario: Given a pending cycle whose clientMessageId was absorbed by a persisted cycle When projecting rows Then the optimistic duplicate is suppressed", () => {
+    const rows = projectConversationRows(
+      [
+        {
+          id: "150",
+          role: "user",
+          content: "hello from client-1",
+          timestamp: 12,
+          cycleId: null,
+        },
+      ],
+      [
+        {
+          ...buildCycle("pending:client-1", 0),
+          cycleId: null,
+          status: "streaming",
+          createdAt: 10,
+          clientMessageIds: ["client-1"],
+          outputs: [],
+          liveMessages: [],
+          streaming: null,
+        },
+        {
+          ...buildCycle("cycle:4", 4),
+          createdAt: 11,
+          clientMessageIds: ["client-1"],
+          outputs: [],
+        },
+      ],
+      "waiting model",
+    );
+
+    expect(rows.map((row) => row.key)).not.toContain("pending-user:pending:client-1:0");
+    expect(rows.filter((row) => row.type === "message" && row.message.role === "user")).toHaveLength(1);
+  });
+
   test("Scenario: Given a streaming cycle When projecting rows Then the in-flight assistant reply is appended without exposing cycle chrome", () => {
     const rows = projectConversationRows(
       buildMessages(),
@@ -115,6 +151,42 @@ describe("Feature: conversation projection", () => {
 
     expect(rows.filter((row) => row.type === "message").map((row) => row.message.content)).toContain("streaming reply");
     expect(rows.some((row) => row.type === "message" && row.message.content.includes("hidden internal trace"))).toBe(false);
+  });
+
+  test("Scenario: Given a persisted assistant reply arrives before the transient cycle is cleared When projecting rows Then the user-visible assistant turn is not duplicated", () => {
+    const rows = projectConversationRows(
+      [
+        ...buildMessages(),
+        {
+          id: "102",
+          role: "assistant",
+          channel: "to_user",
+          content: "streaming reply",
+          timestamp: 4,
+          cycleId: 3,
+        },
+      ],
+      [
+        {
+          ...buildCycle("cycle:3", 3),
+          status: "streaming",
+          outputs: [],
+          liveMessages: [],
+          streaming: {
+            content: "streaming reply",
+          },
+        },
+      ],
+      "waiting model",
+    );
+
+    const visibleAssistantMessages = rows
+      .filter(
+        (row): row is Extract<(typeof rows)[number], { type: "message" }> =>
+          row.type === "message" && row.message.role === "assistant",
+      )
+      .map((row) => row.message.content);
+    expect(visibleAssistantMessages.filter((content) => content === "streaming reply")).toHaveLength(1);
   });
 
   test("Scenario: Given long same-day gaps and a day change When projecting rows Then restrained time dividers are inserted without spamming every turn", () => {
@@ -169,5 +241,16 @@ describe("Feature: conversation projection", () => {
       "time-divider",
       "message",
     ]);
+  });
+
+  test("Scenario: Given identical projected rows When stabilizing them Then unchanged transcript rows reuse their previous identities", () => {
+    const previousRows = projectConversationRows(buildMessages(), [], "idle");
+    const nextRows = projectConversationRows(buildMessages(), [], "idle");
+
+    const stabilized = stabilizeConversationRows(nextRows, previousRows);
+
+    expect(stabilized).toBe(previousRows);
+    expect(stabilized[0]).toBe(previousRows[0]);
+    expect(stabilized[1]).toBe(previousRows[1]);
   });
 });

@@ -81,7 +81,6 @@ export const AppRoot = () => {
   const connectionStatus = useRuntimeSelector((state) => state.connectionStatus);
   const unreadTotal = useRuntimeSelector(selectUnreadTotal);
   const hydrateSession = controller.hydrateSession;
-  const retainApiCallStream = controller.retainApiCallStream;
 
   const searchParams =
     typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
@@ -115,13 +114,6 @@ export const AppRoot = () => {
     }
     void hydrateSession(routeSessionId);
   }, [connected, hydrateSession, routeSessionId]);
-
-  useEffect(() => {
-    if (!connected || location.pathname !== "/workspace/devtools" || !routeSessionId) {
-      return;
-    }
-    return retainApiCallStream(routeSessionId);
-  }, [connected, location.pathname, retainApiCallStream, routeSessionId]);
 
   const primaryItems = useMemo(
     () =>

@@ -73,7 +73,7 @@ const emptyCopy = (tab: WorkspaceSessionTab) => {
   if (tab === "stopped") {
     return {
       title: "No stopped sessions",
-      description: "Stopped and errored sessions appear here.",
+      description: "Stopped, paused, and errored sessions appear here.",
     };
   }
   return {

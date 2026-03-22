@@ -9,6 +9,7 @@ interface AsyncSurfaceProps {
   state: AsyncSurfaceState;
   empty: ReactNode;
   skeleton?: ReactNode;
+  emptyLoadingLabel?: ReactNode;
   loadingOverlayLabel?: string;
   className?: string;
   viewportClassName?: string;
@@ -26,13 +27,23 @@ export const AsyncSurface = ({
   state,
   empty,
   skeleton,
+  emptyLoadingLabel = "Loading…",
   loadingOverlayLabel = "Refreshing…",
   className,
   viewportClassName,
   children,
 }: AsyncSurfaceProps) => {
   if (state === "empty-loading") {
-    return <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>{skeleton ?? empty}</div>;
+    return (
+      <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>
+        {skeleton ?? (
+          <div className="flex h-full items-center justify-center px-4 py-6 text-sm text-slate-500">{emptyLoadingLabel}</div>
+        )}
+        {skeleton ? (
+          <div className="px-4 pb-4 text-center text-sm text-slate-500">{emptyLoadingLabel}</div>
+        ) : null}
+      </div>
+    );
   }
 
   if (state === "empty-idle") {
