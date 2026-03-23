@@ -13,19 +13,21 @@ import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
+import type { LongListPagingState } from "../../shared/long-list-paging";
 import { ToolStructuredView } from "../chat/tool-structured-view";
-import {
-  buildHistoryMessages,
-  buildHttpRecords,
-  buildLatestCallView,
-  buildLatestTools,
-  formatTimestamp,
-} from "./model-debug";
+import { buildHistoryMessages, buildLatestCallView, buildLatestTools, formatTimestamp } from "./model-debug";
+import { ModelInspectorTimeline } from "./ModelInspectorTimeline";
 
 interface ModelPanelProps {
   debug: ModelDebugOutput | null;
   loading: boolean;
   error: string | null;
+  recentModelCalls?: ModelDebugOutput["recentModelCalls"];
+  recentApiCalls?: ModelDebugOutput["recentApiCalls"];
+  modelPagingState?: LongListPagingState;
+  apiPagingState?: LongListPagingState;
+  onLoadMoreModelCalls?: () => void;
+  onLoadMoreApiCalls?: () => void;
   onRefresh: () => void;
 }
 
@@ -191,7 +193,18 @@ const LoadingShell = () => (
   </div>
 );
 
-export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps) => {
+export const ModelPanel = ({
+  debug,
+  loading,
+  error,
+  recentModelCalls: recentModelCallsOverride,
+  recentApiCalls: recentApiCallsOverride,
+  modelPagingState,
+  apiPagingState,
+  onLoadMoreModelCalls,
+  onLoadMoreApiCalls,
+  onRefresh,
+}: ModelPanelProps) => {
   const [textMode, setTextMode] = useState<MarkdownDocumentMode>(() => readTextMode());
   const [activeTab, setActiveTab] = useState<ModelPanelTab>(() => readModelTab());
   const [latestTab, setLatestTab] = useState<LatestPanelTab>(() => readLatestTab());
@@ -229,8 +242,26 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
   const historyMessages = useMemo(() => (debug ? buildHistoryMessages(debug) : []), [debug]);
   const latestTools = useMemo(() => (debug ? buildLatestTools(debug) : []), [debug]);
   const latestCall = useMemo(() => (debug ? buildLatestCallView(debug) : null), [debug]);
-  const httpRecords = useMemo(() => (debug ? buildHttpRecords(debug) : []), [debug]);
-  const recentModelCalls = debug?.recentModelCalls ?? [];
+  const recentModelCalls = recentModelCallsOverride ?? debug?.recentModelCalls ?? [];
+  const recentApiCalls = recentApiCallsOverride ?? debug?.recentApiCalls ?? [];
+  const httpRecords = useMemo(
+    () =>
+      recentApiCalls
+        .slice()
+        .reverse()
+        .map((call) => ({
+          key: `http-${call.id}`,
+          title: `HTTP #${call.id}`,
+          meta: {
+            modelCallId: call.modelCallId,
+            createdAt: formatTimestamp(call.createdAt),
+          },
+          request: call.request ?? null,
+          response: call.response ?? null,
+          error: call.error ?? null,
+        })),
+    [recentApiCalls],
+  );
   const handleTextModeChange = useCallback((value: string) => {
     setTextMode(value === "raw" ? "raw" : "preview");
   }, []);
@@ -581,47 +612,41 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                       />
                     </CardHeader>
                     <CardContent className="pt-0">
-                      {recentModelCalls.length === 0 ? (
-                        <EmptyCard message="No model calls have been recorded for this session yet." />
-                      ) : (
-                        <Accordion type="single" collapsible>
-                          {recentModelCalls
-                            .slice()
-                            .reverse()
-                            .map((call) => (
-                              <AccordionItem key={call.id} value={`model-call-${call.id}`} className="border-slate-200">
-                                <AccordionTrigger className="py-2 hover:no-underline">
-                                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                                    <span className="truncate text-xs font-medium text-slate-900">Call #{call.id}</span>
-                                    <span className="truncate text-[11px] text-slate-500">cycle {call.cycleId}</span>
-                                    <span className="truncate text-[11px] text-slate-500">
-                                      {formatTimestamp(call.createdAt)}
-                                    </span>
-                                  </span>
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                  <div className="space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/80">
-                                    <StructuredPane
-                                      label="Envelope"
-                                      value={{
-                                        id: call.id,
-                                        cycleId: call.cycleId,
-                                        status: call.status,
-                                        provider: call.provider,
-                                        model: call.model,
-                                        createdAt: formatTimestamp(call.createdAt),
-                                        completedAt: formatTimestamp(call.completedAt),
-                                      }}
-                                    />
-                                    <StructuredPane label="Request" value={call.request} />
-                                    <StructuredPane label="Response" value={call.response ?? null} />
-                                    <StructuredPane label="Error" value={call.error ?? null} />
-                                  </div>
-                                </AccordionContent>
-                              </AccordionItem>
-                            ))}
-                        </Accordion>
-                      )}
+                      <ModelInspectorTimeline
+                        items={[...recentModelCalls].reverse()}
+                        loading={Boolean(modelPagingState?.loading && !modelPagingState.hydrated)}
+                        loadingOlder={Boolean(modelPagingState?.loadingOlder)}
+                        hasMore={modelPagingState?.hasMore ?? false}
+                        emptyMessage="No model calls have been recorded for this session yet."
+                        onLoadMore={onLoadMoreModelCalls}
+                        itemKey={(call) => `model-call-${call.id}`}
+                        renderTrigger={(call) => (
+                          <span className="flex min-w-0 flex-1 items-center gap-2">
+                            <span className="truncate text-xs font-medium text-slate-900">Call #{call.id}</span>
+                            <span className="truncate text-[11px] text-slate-500">cycle {call.cycleId}</span>
+                            <span className="truncate text-[11px] text-slate-500">{formatTimestamp(call.createdAt)}</span>
+                          </span>
+                        )}
+                        renderContent={(call) => (
+                          <div className="space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/80">
+                            <StructuredPane
+                              label="Envelope"
+                              value={{
+                                id: call.id,
+                                cycleId: call.cycleId,
+                                status: call.status,
+                                provider: call.provider,
+                                model: call.model,
+                                createdAt: formatTimestamp(call.createdAt),
+                                completedAt: formatTimestamp(call.completedAt),
+                              }}
+                            />
+                            <StructuredPane label="Request" value={call.request} />
+                            <StructuredPane label="Response" value={call.response ?? null} />
+                            <StructuredPane label="Error" value={call.error ?? null} />
+                          </div>
+                        )}
+                      />
                     </CardContent>
                   </Card>
                 ) : null}
@@ -638,32 +663,29 @@ export const ModelPanel = ({ debug, loading, error, onRefresh }: ModelPanelProps
                   />
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {httpRecords.length === 0 ? (
-                    <EmptyCard message="HTTP recording is empty for this session." />
-                  ) : (
-                    <Accordion type="single" collapsible>
-                      {httpRecords.map((record) => (
-                        <AccordionItem key={record.key} value={record.key} className="border-slate-200">
-                          <AccordionTrigger className="py-2 hover:no-underline">
-                            <span className="flex min-w-0 flex-1 items-center gap-2">
-                              <span className="truncate text-xs font-medium text-slate-900">{record.title}</span>
-                              <span className="truncate text-[11px] text-slate-500">
-                                {String(record.meta.createdAt ?? "-")}
-                              </span>
-                            </span>
-                          </AccordionTrigger>
-                          <AccordionContent>
-                            <div className="space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/80">
-                              <StructuredPane label="Meta" value={record.meta} />
-                              <StructuredPane label="Request body" value={record.request} />
-                              <StructuredPane label="Response body" value={record.response} />
-                              <StructuredPane label="Error body" value={record.error} />
-                            </div>
-                          </AccordionContent>
-                        </AccordionItem>
-                      ))}
-                    </Accordion>
-                  )}
+                  <ModelInspectorTimeline
+                    items={httpRecords}
+                    loading={Boolean(apiPagingState?.loading && !apiPagingState.hydrated)}
+                    loadingOlder={Boolean(apiPagingState?.loadingOlder)}
+                    hasMore={apiPagingState?.hasMore ?? false}
+                    emptyMessage="HTTP recording is empty for this session."
+                    onLoadMore={onLoadMoreApiCalls}
+                    itemKey={(record) => record.key}
+                    renderTrigger={(record) => (
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <span className="truncate text-xs font-medium text-slate-900">{record.title}</span>
+                        <span className="truncate text-[11px] text-slate-500">{String(record.meta.createdAt ?? "-")}</span>
+                      </span>
+                    )}
+                    renderContent={(record) => (
+                      <div className="space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/80">
+                        <StructuredPane label="Meta" value={record.meta} />
+                        <StructuredPane label="Request body" value={record.request} />
+                        <StructuredPane label="Response body" value={record.response} />
+                        <StructuredPane label="Error body" value={record.error} />
+                      </div>
+                    )}
+                  />
                 </CardContent>
               </Card>
             ) : null}

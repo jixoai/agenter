@@ -29,6 +29,7 @@ describe("Feature: chat transcript scroll ownership", () => {
       <div className="h-[420px]">
         <ChatConversationViewport
           rows={rows}
+          conversationState="ready-idle"
           sessionStateLabel="Session running"
           hasMore={false}
           loadingMore={false}
@@ -49,6 +50,7 @@ describe("Feature: chat transcript scroll ownership", () => {
       <div className="h-[420px]">
         <ChatConversationViewport
           rows={rows}
+          conversationState="empty-idle"
           sessionStateLabel="Session stopped"
           routeNotice={{ tone: "warning", message: "Start the session to continue." }}
           hasMore={false}

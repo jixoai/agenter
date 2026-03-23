@@ -18,7 +18,7 @@ export const ScrollViewport = forwardRef<HTMLDivElement, DivProps>(({ className,
     <div
       ref={ref}
       data-overflow-role="scroll-viewport"
-      className={cn("basis-0 overflow-auto", SCROLLBAR_CLASS_NAME, className)}
+      className={cn("min-w-0 basis-0 overflow-auto", SCROLLBAR_CLASS_NAME, className)}
       {...props}
     />
   );

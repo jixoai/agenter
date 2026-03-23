@@ -9,6 +9,8 @@ const {
   MessageActionsOpenDevtools,
   LongPressShowsMessageActions,
   ActionableStoppedNotice,
+  LoadingConversationHistory,
+  RefreshingConversationHistory,
   CompactConversationKeepsNavigationAndComposerStable,
   VirtualizedPersistedHistory,
 } = composeStories(stories);
@@ -18,9 +20,14 @@ describe("Feature: Storybook DOM contract for chat rendering", () => {
     await ConversationFirstHistory.run();
   });
 
-  test("Scenario: Given a streaming story and a stopped-session story When rendered in the browser Then Chat keeps one primary action and one actionable summary", async () => {
+  test("Scenario: Given a streaming story and a stopped-session story When rendered in the browser Then Chat keeps one route-local session action and avoids duplicated warning banners", async () => {
     await StreamingReply.run();
     await ActionableStoppedNotice.run();
+  });
+
+  test("Scenario: Given empty and populated history hydration states When the chat surface renders Then loading feedback stays inside the conversation viewport", async () => {
+    await LoadingConversationHistory.run();
+    await RefreshingConversationHistory.run();
   });
 
   test("Scenario: Given a visible assistant message When the user opens message actions Then the related Devtools cycle remains reachable without cycle-first chat chrome", async () => {
@@ -31,7 +38,7 @@ describe("Feature: Storybook DOM contract for chat rendering", () => {
     await LongPressShowsMessageActions.run();
   });
 
-  test("Scenario: Given a mobile-sized chat viewport When the conversation renders Then the composer stays visible without horizontal overflow or cycle chrome", async () => {
+  test("Scenario: Given a mobile-sized chat viewport When the conversation renders Then the route-local status pill and dense composer stay visible without horizontal overflow or cycle chrome", async () => {
     await CompactConversationKeepsNavigationAndComposerStable.run();
   });
 

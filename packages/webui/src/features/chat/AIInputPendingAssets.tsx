@@ -61,33 +61,29 @@ const assetKindMeta = (asset: PendingAsset): { icon: ReactElement; label: string
   }
 };
 
-export const AIInputPendingAssets = ({
-  pendingAssets,
-  onPreviewAsset,
-  onRemoveAsset,
-}: AIInputPendingAssetsProps) => {
+export const AIInputPendingAssets = ({ pendingAssets, onPreviewAsset, onRemoveAsset }: AIInputPendingAssetsProps) => {
   if (pendingAssets.length === 0) {
     return null;
   }
 
   return (
-    <div className="border-b border-slate-200 px-3 py-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="border-b border-slate-200 px-1.5 py-1.5 md:px-2">
+      <div className="mb-1 flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pending attachments</p>
-          <p className="text-xs text-slate-500">These files stay local until you send this message.</p>
+          <p className="text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">Pending attachments</p>
+          <p className="text-[11px] text-slate-500">These files stay local until you send this message.</p>
         </div>
         <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
           {pendingAssets.length} queued
         </span>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[color-mix(in_srgb,currentColor,transparent)]">
+      <div className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[color-mix(in_srgb,currentColor,transparent)] flex gap-2 overflow-x-auto pb-1">
         {pendingAssets.map((asset) => {
           const meta = assetKindMeta(asset);
           return (
             <div key={asset.id} className="shrink-0">
-              <ClipSurface className="rounded-2xl border border-slate-200 bg-slate-50">
+              <ClipSurface className="rounded-xl border border-slate-200 bg-slate-50">
                 <div className="flex items-stretch">
                   <button
                     type="button"

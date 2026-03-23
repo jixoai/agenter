@@ -23,6 +23,7 @@ const createState = (): RuntimeClientState => ({
   loopbusTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
+  terminalActivityBySession: {},
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},

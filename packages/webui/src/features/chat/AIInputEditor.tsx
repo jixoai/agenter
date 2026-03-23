@@ -113,7 +113,9 @@ export const AIInputEditor = ({
   }, [onSearchPaths, workspacePath]);
 
   const extensions = useMemo(() => {
-    const completionOverrides = pathCompletionSource ? [slashCompletionSource, pathCompletionSource] : [slashCompletionSource];
+    const completionOverrides = pathCompletionSource
+      ? [slashCompletionSource, pathCompletionSource]
+      : [slashCompletionSource];
 
     return [
       markdown({ codeLanguages: languages }),
@@ -168,11 +170,16 @@ export const AIInputEditor = ({
         },
         ".cm-scroller": {
           fontFamily: "var(--font-sans)",
-          lineHeight: "1.55",
+          lineHeight: "1.5",
+          minWidth: "0",
+          maxWidth: "100%",
         },
         ".cm-content": {
-          padding: "14px 14px 12px",
-          minHeight: "132px",
+          padding: "6px 8px 4px",
+          minHeight: "72px",
+          minWidth: "0",
+          maxWidth: "100%",
+          overflowWrap: "anywhere",
         },
         ".cm-gutters": {
           display: "none",
@@ -181,6 +188,8 @@ export const AIInputEditor = ({
           outline: "none",
         },
         ".cm-editor": {
+          minWidth: "0",
+          maxWidth: "100%",
           backgroundColor: "transparent",
         },
         ".cm-cursor": {
@@ -188,6 +197,8 @@ export const AIInputEditor = ({
         },
         ".cm-placeholder": {
           color: "#94a3b8",
+          whiteSpace: "normal",
+          overflowWrap: "anywhere",
         },
         ".cm-tooltip-autocomplete": {
           border: "1px solid #e2e8f0",
@@ -278,7 +289,7 @@ export const AIInputEditor = ({
   }, [imageEnabled, onMergePendingFiles, onResetDragState, pathCompletionSource, slashCompletionSource]);
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <CodeMirror
         key={editorResetKey}
         value={value}
@@ -295,6 +306,7 @@ export const AIInputEditor = ({
         editable={!disabled && !submitting}
         readOnly={disabled || submitting}
         theme="none"
+        className="max-w-full min-w-0"
         onKeyDown={onKeyDown}
       />
     </div>

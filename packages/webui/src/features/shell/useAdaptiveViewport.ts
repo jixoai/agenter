@@ -33,14 +33,12 @@ export const resolveAdaptiveViewportState = (input: {
   const widthClass: AdaptiveWidthClass =
     input.width >= EXPANDED_MIN_WIDTH ? "expanded" : input.width >= MEDIUM_MIN_WIDTH ? "medium" : "compact";
   const orientation: AdaptiveOrientation = input.width > input.height ? "landscape" : "portrait";
-  const workspaceNavMode: WorkspaceNavMode =
-    widthClass === "expanded" || orientation === "landscape" ? "top" : "bottom";
 
   return {
     widthClass,
     orientation,
     compact: widthClass !== "expanded",
-    workspaceNavMode,
+    workspaceNavMode: "top",
     globalNavMode: widthClass === "expanded" ? "rail" : "drawer",
   };
 };

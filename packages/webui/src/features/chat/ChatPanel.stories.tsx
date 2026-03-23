@@ -2,6 +2,7 @@ import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, fn, userEvent, waitFor, within } from "storybook/test";
 
+import { SessionStatusPillMenu } from "../shell/SessionStatusPillMenu";
 import { focusEditorSurface } from "./ai-input-story-utils";
 import { ChatPanel } from "./ChatPanel";
 import { createRealSessionHistoryFixture } from "./real-session-history-fixture";
@@ -23,6 +24,16 @@ const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: n
   }
   return [];
 });
+
+const renderSessionPill = (statusLabel: string, tone: "neutral" | "active" | "warning" | "danger", primaryActionLabel: string) => (
+  <SessionStatusPillMenu
+    statusLabel={statusLabel}
+    tone={tone}
+    primaryActionLabel={primaryActionLabel}
+    onPrimaryAction={fn()}
+    onAbort={fn()}
+  />
+);
 
 const buildMessages = (input: RuntimeChatMessage[] = []): RuntimeChatMessage[] => {
   const base: RuntimeChatMessage[] = [
@@ -54,6 +65,17 @@ const buildMessages = (input: RuntimeChatMessage[] = []): RuntimeChatMessage[] =
   ];
   return [...base, ...input];
 };
+
+const MOBILE_ASSISTANT_REPLY = [
+  "Decision: Since the automatic upgrade has failed twice, manual upgrade is required.",
+  "",
+  "Next:",
+  "",
+  "1. Current version: 0.5.15",
+  "2. Available version: 0.5.18",
+  "3. Status: Automatic upgrade failed twice",
+  "4. Recommended action: `npm i -g @iflow/cli@latest`",
+].join("\n");
 
 const buildCycle = (input?: Partial<RuntimeChatCycle>): RuntimeChatCycle => ({
   id: "cycle:7",
@@ -140,7 +162,8 @@ const meta = {
   args: {
     workspacePath: "/repo/demo",
     aiStatus: "idle",
-    sessionStateLabel: "Session stopped",
+    sessionStateLabel: "Session running",
+    statusSlot: renderSessionPill("Session running", "active", "Stop session"),
     disabled: false,
     imageEnabled: true,
     onSubmit: fn(async () => undefined),
@@ -165,6 +188,7 @@ export const ConversationFirstHistory: Story = {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
 
+    await expect(canvas.getByRole("button", { name: /Session status: Session running/ })).toBeInTheDocument();
     await expect(canvas.getAllByText("Inspect the terminal state and attached diagram.").length).toBeGreaterThan(0);
     await expect(canvas.getAllByText("Ready to inspect the terminal output with you.").length).toBeGreaterThan(0);
     await expect(canvas.queryByText(/Cycle 7/i)).not.toBeInTheDocument();
@@ -192,14 +216,12 @@ export const ConversationFirstHistory: Story = {
     await waitFor(() => {
       expect(args.onSubmit).toHaveBeenCalledWith({ text: "Check @README.md", assets: [] });
     });
-
   },
 };
 
 export const StreamingReply: Story = {
   args: {
     aiStatus: "waiting model",
-    sessionStateLabel: "Session running",
     messages: buildMessages(),
     cycles: [
       buildCycle({
@@ -250,7 +272,7 @@ export const MessageActionsOpenDevtools: Story = {
 
 export const LongPressShowsMessageActions: Story = {
   render: (args) => (
-    <div className="h-[760px] max-w-[390px] p-4">
+    <div className="h-[760px] w-[390px] p-4">
       <ChatPanel {...args} />
     </div>
   ),
@@ -283,37 +305,91 @@ export const LongPressShowsMessageActions: Story = {
 
 export const ActionableStoppedNotice: Story = {
   args: {
+    sessionStateLabel: "Session stopped",
+    statusSlot: renderSessionPill("Session stopped", "neutral", "Start session"),
     messages: [],
     cycles: [],
-    routeNotice: {
-      tone: "warning",
-      message: "Session is stopped. Start it to continue.",
-    },
+    routeNotice: null,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getAllByText("Session is stopped. Start it to continue.")).toHaveLength(2);
+    await expect(canvas.getByRole("button", { name: /Session status: Session stopped/ })).toBeInTheDocument();
+    await expect(canvas.queryByText("Session is stopped. Start it to continue.")).not.toBeInTheDocument();
+    await expect(
+      canvas.getByText("Session stopped. Use the primary session action to begin or continue working."),
+    ).toBeInTheDocument();
+  },
+};
+
+export const LoadingConversationHistory: Story = {
+  args: {
+    messages: [],
+    cycles: [],
+    conversationState: "empty-loading",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Loading conversation...")).toBeInTheDocument();
+    await expect(canvas.queryByText("Start the conversation")).not.toBeInTheDocument();
+  },
+};
+
+export const RefreshingConversationHistory: Story = {
+  args: {
+    conversationState: "ready-loading",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Refreshing conversation...")).toBeInTheDocument();
+    await expect(canvas.getAllByText("Ready to inspect the terminal output with you.").length).toBeGreaterThan(0);
   },
 };
 
 export const CompactConversationKeepsNavigationAndComposerStable: Story = {
   args: {
-    messages: buildMessages(),
+    messages: buildMessages([
+      {
+        id: "103",
+        role: "assistant",
+        channel: "to_user",
+        content: MOBILE_ASSISTANT_REPLY,
+        timestamp: 11,
+        cycleId: 7,
+      },
+    ]),
     cycles: [buildCycle()],
   },
   render: (args) => (
-    <div className="h-[760px] max-w-[390px] p-4">
+    <div className="h-[667px] w-[375px] bg-slate-100">
       <ChatPanel {...args} />
     </div>
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const panel = canvas.getByTestId("chat-panel");
+    const viewport = canvas.getByTestId("chat-scroll-viewport");
+    const toolbar = canvas.getByTestId("composer-toolbar");
+    const actionBar = canvas.getByTestId("composer-action-bar");
+    const statusBar = canvas.getByTestId("composer-status-bar");
 
+    await expect(canvas.getByTestId("chat-route-status-strip")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /Session status: Session running/ })).toBeInTheDocument();
     await expect(canvas.queryByText(/Cycle 7/i)).not.toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Send" })).toBeInTheDocument();
+    await expect(toolbar).toBeInTheDocument();
     await expect(canvas.getAllByRole("button", { name: "Message actions" }).length).toBeGreaterThan(0);
     await expect(canvas.getAllByText("Ready to inspect the terminal output with you.").length).toBeGreaterThan(0);
+    await expect(canvas.getByText("Decision: Since the automatic upgrade has failed twice, manual upgrade is required.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth + 1);
+      expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth + 1);
+      expect(actionBar.scrollWidth).toBeLessThanOrEqual(actionBar.clientWidth + 1);
+      expect(statusBar.scrollWidth).toBeLessThanOrEqual(statusBar.clientWidth + 1);
+      expect(statusBar.getBoundingClientRect().height).toBeLessThan(40);
+      expect(canvas.getByRole("button", { name: "Composer help" }).querySelector("svg")).toBeNull();
+    });
   },
 };
 
@@ -333,8 +409,14 @@ export const VirtualizedPersistedHistory: Story = {
     const viewport = await canvas.findByTestId("chat-scroll-viewport");
 
     await expect(canvas.getByText("Assistant reply 14: completed the visible conversation turn 14.")).toBeInTheDocument();
-    await expect(canvas.getByAltText("briefing.png")).toBeInTheDocument();
     await expect(viewport).toHaveClass("h-full");
     await expect(canvas.queryByText(/Cycle 14/i)).not.toBeInTheDocument();
+
+    viewport.scrollTop = 0;
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(canvas.getByAltText("briefing.png")).toBeInTheDocument();
+    });
   },
 };

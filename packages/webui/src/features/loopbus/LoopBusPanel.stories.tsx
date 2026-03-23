@@ -10,7 +10,7 @@ const traces = Array.from({ length: 12 }, (_, index) => ({
   cycleId: 40 - Math.floor(index / 3),
   seq: index + 1,
   step: index % 3 === 0 ? "race" : index % 3 === 1 ? "collect" : "persist",
-  status: index === 2 ? ("running" as const) : "ok",
+  status: index === 2 ? "running" : "ok",
   startedAt: now - index * 1_000,
   endedAt: now - index * 1_000 + 240,
   detail: {
@@ -18,7 +18,16 @@ const traces = Array.from({ length: 12 }, (_, index) => ({
     index,
     payload: { size: 512 + index },
   },
-}));
+})) satisfies Array<{
+  id: number;
+  cycleId: number;
+  seq: number;
+  step: string;
+  status: "running" | "ok" | "error";
+  startedAt: number;
+  endedAt: number;
+  detail: { event: string; index: number; payload: { size: number } };
+}>;
 
 const modelCalls = Array.from({ length: 10 }, (_, index) => ({
   id: index + 1,

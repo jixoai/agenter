@@ -31,21 +31,21 @@ describe("Feature: adaptive workspace viewport decisions", () => {
     });
   });
 
-  test("Scenario: Given a portrait compact viewport When resolving layout Then the shell uses drawer navigation and bottom workspace tabs", () => {
+  test("Scenario: Given a portrait compact viewport When resolving layout Then the shell keeps drawer navigation while workspace tabs stay in the top header", () => {
     expect(resolveAdaptiveViewportState({ width: 390, height: 844 })).toMatchObject({
       widthClass: "compact",
       orientation: "portrait",
       compact: true,
       globalNavMode: "drawer",
-      workspaceNavMode: "bottom",
+      workspaceNavMode: "top",
     });
   });
 
-  test("Scenario: Given a compact landscape viewport When the hook updates Then workspace navigation returns to the top header", () => {
+  test("Scenario: Given compact viewport changes When the hook updates Then workspace navigation remains in the same top header contract", () => {
     setViewport(390, 844);
     render(<HookProbe />);
 
-    expect(screen.getByTestId("adaptive-state").textContent).toContain('"workspaceNavMode":"bottom"');
+    expect(screen.getByTestId("adaptive-state").textContent).toContain('"workspaceNavMode":"top"');
 
     setViewport(844, 390);
 

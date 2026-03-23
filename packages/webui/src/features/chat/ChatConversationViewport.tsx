@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { AsyncSurface, type AsyncSurfaceState } from "../../components/ui/async-surface";
 import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
@@ -14,12 +15,11 @@ const STICKY_BOTTOM_OFFSET = 48;
 const MESSAGE_ROW_ESTIMATE = 132;
 const STATUS_ROW_ESTIMATE = 44;
 const ROW_OVERSCAN = 8;
-// Keep moderate transcripts fully rendered so restored chat sessions land on the latest turn reliably.
-const INLINE_ROW_LIMIT = 120;
 
 interface ChatConversationViewportProps {
   rows: ConversationRow[];
   sessionStateLabel: string;
+  conversationState: AsyncSurfaceState;
   routeNotice?:
     | {
         tone: "info" | "warning" | "destructive";
@@ -63,6 +63,7 @@ const isConsumableAssistantRow = (row: ConversationRow): row is Extract<Conversa
 export const ChatConversationViewport = ({
   rows,
   sessionStateLabel,
+  conversationState,
   routeNotice = null,
   hasMore,
   loadingMore,
@@ -116,7 +117,6 @@ export const ChatConversationViewport = ({
       height: MESSAGE_ROW_ESTIMATE * 5,
     },
   });
-  const useInlineRows = rows.length <= INLINE_ROW_LIMIT;
 
   const scrollToBottom = useCallback(() => {
     const node = viewportRef.current;
@@ -329,55 +329,66 @@ export const ChatConversationViewport = ({
   };
 
   const virtualItems = rowVirtualizer.getVirtualItems();
-  const shouldVirtualize = !useInlineRows && virtualItems.length > 0;
+  const shouldVirtualize = virtualItems.length > 0;
   const hasRouteNotice = routeNotice !== null;
 
   return (
-    <section className={cn("grid h-full", hasRouteNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]")}>
+    <section
+      className={cn(
+        "grid h-full min-w-0 grid-cols-[minmax(0,1fr)]",
+        hasRouteNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+      )}
+    >
       {hasRouteNotice ? (
         <div className="shrink-0 px-4 pt-3 md:px-5">
           <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner>
         </div>
       ) : null}
 
-      <div className="h-full">
-        <ScrollViewport
-          ref={viewportRef}
-          className="h-full px-3 py-3 text-slate-600 [overflow-anchor:none] md:px-4"
-          onScroll={handleScroll}
-          data-testid="chat-scroll-viewport"
-          role="log"
-          aria-label="Conversation"
-        >
-          <div ref={contentRef} className="min-h-full">
-            {loadingMore ? (
-              <div className="flex items-center justify-center gap-2 py-2 text-xs text-slate-500">
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                Loading earlier messages...
-              </div>
-            ) : null}
+      <AsyncSurface
+        state={conversationState}
+        className="h-full min-w-0"
+        empty={<EmptyConversation sessionStateLabel={sessionStateLabel} routeNotice={routeNotice} />}
+        emptyLoadingLabel="Loading conversation..."
+        loadingOverlayLabel="Refreshing conversation..."
+      >
+        <div className="h-full min-w-0">
+          <ScrollViewport
+            ref={viewportRef}
+            className="h-full min-w-0 px-3 py-3 text-slate-600 [overflow-anchor:none] md:px-4"
+            onScroll={handleScroll}
+            data-testid="chat-scroll-viewport"
+            role="log"
+            aria-label="Conversation"
+          >
+            <div ref={contentRef} className="min-h-full min-w-0">
+              {loadingMore ? (
+                <div className="flex items-center justify-center gap-2 py-2 text-xs text-slate-500">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  Loading earlier messages...
+                </div>
+              ) : null}
 
-            {rows.length === 0 ? (
-              <EmptyConversation sessionStateLabel={sessionStateLabel} routeNotice={routeNotice} />
-            ) : shouldVirtualize ? (
-              <div
-                className="relative w-full"
-                style={{
-                  height: `${rowVirtualizer.getTotalSize()}px`,
-                }}
-              >
-                {virtualItems.map((item) =>
-                  renderRow(rows[item.index]!, item.index, {
-                    transform: `translateY(${item.start}px)`,
-                  }),
-                )}
-              </div>
-            ) : (
-              <div className="space-y-0.5">{rows.map((row, index) => renderRow(row, index))}</div>
-            )}
-          </div>
-        </ScrollViewport>
-      </div>
+              {shouldVirtualize ? (
+                <div
+                  className="relative w-full"
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                  }}
+                >
+                  {virtualItems.map((item) =>
+                    renderRow(rows[item.index]!, item.index, {
+                      transform: `translateY(${item.start}px)`,
+                    }),
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-0.5">{rows.map((row, index) => renderRow(row, index))}</div>
+              )}
+            </div>
+          </ScrollViewport>
+        </div>
+      </AsyncSurface>
     </section>
   );
 };

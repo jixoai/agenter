@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { phaseToStatus, resolveChatRouteNotice, resolveSessionToolbarState } from "../src/features/chat/chat-route-status";
+import {
+  phaseToStatus,
+  resolveChatConversationState,
+  resolveChatRouteNotice,
+  resolveSessionStatusPillState,
+} from "../src/features/chat/chat-route-status";
 
 describe("Feature: chat route status resolution", () => {
   test("Scenario: Given an unknown backend notice When resolving the route notice Then the UI exposes a stable recovery message", () => {
@@ -23,22 +28,22 @@ describe("Feature: chat route status resolution", () => {
     });
   });
 
-  test("Scenario: Given a stopped session When resolving toolbar and activity state Then the chat surface offers one start action", () => {
+  test("Scenario: Given a stopped session When resolving the route pill and activity state Then the chat surface offers one start action", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
     };
 
     expect(phaseToStatus(session, undefined)).toBe("stopped");
-    expect(resolveSessionToolbarState(session, undefined)).toEqual({
+    expect(resolveSessionStatusPillState(session, undefined)).toEqual({
       label: "Session stopped",
       tone: "neutral",
-      actionLabel: "Start session",
-      action: "start",
+      primaryActionLabel: "Start session",
+      primaryAction: "start",
       disabled: false,
     });
   });
 
-  test("Scenario: Given a paused session When resolving toolbar and notice Then the chat surface offers resume while keeping retained inspection visible", () => {
+  test("Scenario: Given a paused session When resolving the route pill and notice Then the chat surface offers resume while avoiding duplicated warning banners", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "paused",
     };
@@ -50,11 +55,11 @@ describe("Feature: chat route status resolution", () => {
     };
 
     expect(phaseToStatus(session, runtime)).toBe("paused");
-    expect(resolveSessionToolbarState(session, runtime)).toEqual({
+    expect(resolveSessionStatusPillState(session, runtime)).toEqual({
       label: "Session paused",
       tone: "warning",
-      actionLabel: "Resume session",
-      action: "start",
+      primaryActionLabel: "Resume session",
+      primaryAction: "start",
       disabled: false,
     });
     expect(
@@ -63,13 +68,10 @@ describe("Feature: chat route status resolution", () => {
         session,
         runtime,
       }),
-    ).toEqual({
-      tone: "warning",
-      message: "Session is paused. Resume it to continue.",
-    });
+    ).toBeNull();
   });
 
-  test("Scenario: Given a stale started runtime after stop When resolving toolbar notice and activity Then stopped semantics win over runtime leftovers", () => {
+  test("Scenario: Given a stale started runtime after stop When resolving the pill notice and activity Then stopped semantics win over runtime leftovers", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
     };
@@ -81,11 +83,11 @@ describe("Feature: chat route status resolution", () => {
     };
 
     expect(phaseToStatus(session, runtime)).toBe("stopped");
-    expect(resolveSessionToolbarState(session, runtime)).toEqual({
+    expect(resolveSessionStatusPillState(session, runtime)).toEqual({
       label: "Session stopped",
       tone: "neutral",
-      actionLabel: "Start session",
-      action: "start",
+      primaryActionLabel: "Start session",
+      primaryAction: "start",
       disabled: false,
     });
     expect(
@@ -94,9 +96,44 @@ describe("Feature: chat route status resolution", () => {
         session,
         runtime,
       }),
-    ).toEqual({
-      tone: "warning",
-      message: "Session is stopped. Start it to continue.",
-    });
+    ).toBeNull();
+  });
+
+  test("Scenario: Given chat hydration states When resolving the conversation surface Then empty-loading and ready-loading only appear during initial history hydration", () => {
+    expect(
+      resolveChatConversationState({
+        connected: true,
+        hasData: false,
+        chatPaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
+        cyclePaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
+      }),
+    ).toBe("empty-loading");
+
+    expect(
+      resolveChatConversationState({
+        connected: true,
+        hasData: true,
+        chatPaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
+        cyclePaging: { hydrated: true, hasMore: true, loading: false, loadingOlder: false },
+      }),
+    ).toBe("ready-loading");
+
+    expect(
+      resolveChatConversationState({
+        connected: true,
+        hasData: true,
+        chatPaging: { hydrated: true, hasMore: true, loading: false, loadingOlder: false },
+        cyclePaging: { hydrated: true, hasMore: true, loading: false, loadingOlder: false },
+      }),
+    ).toBe("ready-idle");
+
+    expect(
+      resolveChatConversationState({
+        connected: false,
+        hasData: false,
+        chatPaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
+        cyclePaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
+      }),
+    ).toBe("empty-idle");
   });
 });

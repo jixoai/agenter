@@ -11,6 +11,7 @@ import { createContext, useContext, useRef, useSyncExternalStore } from "react";
 
 import type { AIInputSuggestion } from "./features/chat/AIInput";
 import type { SettingsLayerItem } from "./features/settings/SettingsPanel";
+import type { LongListPagingInput, LongListPagingState } from "./shared/long-list-paging";
 
 export interface AppController {
   runtimeStore: RuntimeStore;
@@ -45,9 +46,7 @@ export interface AppController {
   modelDebugSessionId: string | null;
   modelDebugLoading: boolean;
   modelDebugError: string | null;
-  tracePaging: Record<string, { hasMore: boolean; loading: boolean }>;
-  modelPaging: Record<string, { hasMore: boolean; loading: boolean }>;
-  chatPaging: Record<string, { hasMore: boolean; loading: boolean }>;
+  getLongListPagingState: (input: LongListPagingInput) => LongListPagingState;
   searchWorkspacePaths: (input: { cwd: string; query: string; limit?: number }) => Promise<AIInputSuggestion[]>;
   createWorkspaceSession: (workspacePath: string) => Promise<string | null>;
   quickstartSubmit: (payload: { text: string; assets: File[] }) => Promise<string | null>;
@@ -62,6 +61,9 @@ export interface AppController {
   loadMoreChatCycles: (sessionId: string) => Promise<void>;
   loadMoreTrace: (sessionId: string) => Promise<void>;
   loadMoreModel: (sessionId: string) => Promise<void>;
+  loadMoreApi: (sessionId: string) => Promise<void>;
+  loadTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
+  loadMoreTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
   refreshModelDebug: (sessionId: string) => Promise<void>;
   toggleWorkspaceFavorite: (path: string) => Promise<void>;
   deleteWorkspace: (path: string) => Promise<void>;

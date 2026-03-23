@@ -2,12 +2,12 @@ import { useEffect, type ClipboardEvent as ReactClipboardEvent, type DragEvent a
 
 import { NoticeBanner } from "../../components/ui/notice-banner";
 import { cn } from "../../lib/utils";
-import { AIInputEditor } from "./AIInputEditor";
-import { AIInputPendingAssets } from "./AIInputPendingAssets";
-import { ChatAssetPreviewDialog } from "./ChatAssetPreviewDialog";
 import { hasFileTransfer, toPendingAssetPreview } from "./ai-input-assets";
 import type { AIInputCommand, AIInputSubmitPayload, AIInputSuggestion } from "./ai-input-contract";
+import { AIInputEditor } from "./AIInputEditor";
+import { AIInputPendingAssets } from "./AIInputPendingAssets";
 import { AIInputToolbar } from "./AIInputToolbar";
+import { ChatAssetPreviewDialog } from "./ChatAssetPreviewDialog";
 import { useAIInputController } from "./use-ai-input-controller";
 
 export type { AIInputCommand, AIInputSubmitPayload, AIInputSuggestion } from "./ai-input-contract";
@@ -77,10 +77,7 @@ export const AIInput = ({
     }
     event.preventDefault();
     controller.dragDepthRef.current = Math.max(0, controller.dragDepthRef.current - 1);
-    if (
-      controller.dragDepthRef.current === 0 &&
-      !event.currentTarget.contains(event.relatedTarget as Node | null)
-    ) {
+    if (controller.dragDepthRef.current === 0 && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
       controller.setDragging(false);
     }
   };
@@ -96,7 +93,7 @@ export const AIInput = ({
   return (
     <section
       className={cn(
-        "rounded-2xl border border-slate-200 bg-white shadow-sm transition-colors",
+        "min-w-0 rounded-[1rem] border border-slate-200/90 bg-white/96 shadow-xs transition-colors",
         controller.dragging ? "border-teal-500 bg-teal-50/40" : "",
         disabled ? "opacity-80" : "",
       )}
@@ -107,7 +104,7 @@ export const AIInput = ({
       onPaste={handlePaste}
     >
       {controller.notice ? (
-        <div className="border-b border-slate-200 px-3 py-3">
+        <div className="border-b border-slate-200 px-1.5 py-1.5 md:px-2">
           <NoticeBanner tone="warning">{controller.notice}</NoticeBanner>
         </div>
       ) : null}

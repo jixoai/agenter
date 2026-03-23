@@ -7,8 +7,9 @@ import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/asyn
 import { Badge } from "../../components/ui/badge";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
-import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { cn } from "../../lib/utils";
+import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
+import type { LongListPagingState } from "../../shared/long-list-paging";
 import { formatCycleBadge, formatCycleTitle, getCycleStatusMeta, summarizeCycle } from "../chat/cycle-meta";
 import { CycleInspectorDetail } from "./CycleInspectorDetail";
 
@@ -17,6 +18,8 @@ interface CycleInspectorPanelProps {
   loading?: boolean;
   selectedCycleId?: string | null;
   detailMode?: "split" | "sheet";
+  pagingState?: LongListPagingState;
+  onLoadMore?: () => void;
 }
 
 interface CycleTimelineItem {
@@ -57,7 +60,9 @@ const TimelineItemButton = ({
       onClick={() => onSelect(item.id)}
       className={cn(
         "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
-        selected ? "border-slate-900 bg-slate-900 text-white shadow-sm" : "border-slate-200 bg-white hover:border-slate-300",
+        selected
+          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+          : "border-slate-200 bg-white hover:border-slate-300",
       )}
       aria-label={`${formatCycleTitle(item.cycle, index + 1)} · ${status.label}`}
     >
@@ -66,7 +71,9 @@ const TimelineItemButton = ({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{formatCycleTitle(item.cycle, index + 1)}</span>
-            <Badge className={selected ? "bg-white/15 text-white" : status.toneClassName}>{formatCycleBadge(item.cycle, index + 1)}</Badge>
+            <Badge className={selected ? "bg-white/15 text-white" : status.toneClassName}>
+              {formatCycleBadge(item.cycle, index + 1)}
+            </Badge>
             <Badge variant="secondary" className={selected ? "bg-white/12 text-white/80" : ""}>
               {item.cycle.kind}
             </Badge>
@@ -83,30 +90,30 @@ export const CycleInspectorPanel = ({
   loading = false,
   selectedCycleId: preferredSelectedCycleId = null,
   detailMode = "split",
+  pagingState,
+  onLoadMore,
 }: CycleInspectorPanelProps) => {
+  const initialLoading = loading || Boolean(pagingState?.loading && !pagingState.hydrated);
   const surfaceState = resolveAsyncSurfaceState({
-    loading,
+    loading: initialLoading,
     hasData: cycles.length > 0,
   });
   const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
 
-  const items = useMemo<CycleTimelineItem[]>(
-    () => {
-      const next: CycleTimelineItem[] = [];
-      for (let index = cycles.length - 1; index >= 0; index -= 1) {
-        const cycle = cycles[index]!;
-        next.push({
-          id: cycle.id,
-          cycle,
-          summary: summarizeCycle(cycle),
-        });
-      }
-      return next;
-    },
-    [cycles],
-  );
+  const items = useMemo<CycleTimelineItem[]>(() => {
+    const next: CycleTimelineItem[] = [];
+    for (let index = cycles.length - 1; index >= 0; index -= 1) {
+      const cycle = cycles[index]!;
+      next.push({
+        id: cycle.id,
+        cycle,
+        summary: summarizeCycle(cycle),
+      });
+    }
+    return next;
+  }, [cycles]);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -159,7 +166,28 @@ export const CycleInspectorPanel = ({
           {activeCount > 0 ? <Badge className="bg-teal-100 text-teal-700">{activeCount} active</Badge> : null}
           {errorCount > 0 ? <Badge className="bg-rose-100 text-rose-700">{errorCount} error</Badge> : null}
         </div>
-        <p className="mt-1 text-[11px] text-slate-500">Live cycle timeline, collected state, and assistant-side technical records.</p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-500">
+            Live cycle timeline, collected state, and assistant-side technical records.
+          </p>
+          {pagingState || onLoadMore ? (
+            <button
+              type="button"
+              disabled={!pagingState?.hasMore || pagingState.loadingOlder || !onLoadMore}
+              onClick={onLoadMore}
+              className="rounded-md bg-white px-2 py-1 text-[11px] text-slate-600 shadow-xs ring-1 ring-slate-200 transition hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pagingState?.loadingOlder ? (
+                <span className="inline-flex items-center gap-1">
+                  <LoaderCircle className="h-3 w-3 animate-spin" />
+                  Loading...
+                </span>
+              ) : (
+                "Load older"
+              )}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <AsyncSurface
@@ -178,7 +206,7 @@ export const CycleInspectorPanel = ({
         >
           <ViewportMask className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50">
             <div className="border-b border-slate-200 px-3 py-2">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Timeline</p>
+              <p className="text-[11px] font-medium tracking-[0.14em] text-slate-500 uppercase">Timeline</p>
             </div>
             <ScrollViewport ref={timelineRef} className="h-full px-2 py-2" data-testid="cycle-timeline-scroll-viewport">
               <div
@@ -216,25 +244,20 @@ export const CycleInspectorPanel = ({
             </ScrollViewport>
           </ViewportMask>
 
-          {showSplitDetail && selectedCycle ? (
-            <CycleInspectorDetail cycle={selectedCycle} />
-          ) : null}
+          {showSplitDetail && selectedCycle ? <CycleInspectorDetail cycle={selectedCycle} /> : null}
 
           {showSplitDetail && !selectedCycle ? (
             <section className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
-              <p className="text-sm text-slate-500">Select a cycle in the timeline to inspect collected inputs and assistant records.</p>
+              <p className="text-sm text-slate-500">
+                Select a cycle in the timeline to inspect collected inputs and assistant records.
+              </p>
             </section>
           ) : null}
         </ViewportMask>
       </AsyncSurface>
 
       {detailMode === "sheet" && selectedCycle ? (
-        <Sheet
-          open={detailOpen}
-          onOpenChange={setDetailOpen}
-          side="right"
-          title={formatCycleTitle(selectedCycle)}
-        >
+        <Sheet open={detailOpen} onOpenChange={setDetailOpen} side="right" title={formatCycleTitle(selectedCycle)}>
           <div className="h-full min-h-[40dvh]">
             <CycleInspectorDetail cycle={selectedCycle} />
           </div>

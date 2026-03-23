@@ -1,7 +1,10 @@
 import type { RuntimeSnapshot, SessionEntry } from "@agenter/client-sdk";
+import type { AsyncSurfaceState } from "../../components/ui/async-surface";
+import type { LongListPagingState } from "../../shared/long-list-paging";
 
-import type { SessionToolbarTone } from "./SessionToolbar";
 import { isLikelyErrorNotice, normalizeUserNotice } from "../../shared/notice";
+
+export type SessionStatusTone = "neutral" | "active" | "warning" | "danger";
 
 type RouteSession = Pick<SessionEntry, "status">;
 type RouteRuntime = Pick<RuntimeSnapshot["runtimes"][string], "started" | "loopPhase" | "stage"> & {
@@ -60,22 +63,22 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
   return "idle";
 };
 
-export const resolveSessionToolbarState = (
+export const resolveSessionStatusPillState = (
   session: RouteSession | null,
   runtime?: RouteRuntime,
 ): {
   label: string;
-  tone: SessionToolbarTone;
-  actionLabel: string;
-  action: "start" | "stop";
+  tone: SessionStatusTone;
+  primaryActionLabel: string;
+  primaryAction: "start" | "stop";
   disabled: boolean;
 } => {
   if (!session) {
     return {
       label: "No session",
       tone: "neutral",
-      actionLabel: "Start session",
-      action: "start",
+      primaryActionLabel: "Start session",
+      primaryAction: "start",
       disabled: true,
     };
   }
@@ -83,8 +86,8 @@ export const resolveSessionToolbarState = (
     return {
       label: "Session error",
       tone: "danger",
-      actionLabel: "Start session",
-      action: "start",
+      primaryActionLabel: "Start session",
+      primaryAction: "start",
       disabled: false,
     };
   }
@@ -92,8 +95,8 @@ export const resolveSessionToolbarState = (
     return {
       label: "Session paused",
       tone: "warning",
-      actionLabel: "Resume session",
-      action: "start",
+      primaryActionLabel: "Resume session",
+      primaryAction: "start",
       disabled: false,
     };
   }
@@ -101,8 +104,8 @@ export const resolveSessionToolbarState = (
     return {
       label: "Session stopped",
       tone: "neutral",
-      actionLabel: "Start session",
-      action: "start",
+      primaryActionLabel: "Start session",
+      primaryAction: "start",
       disabled: false,
     };
   }
@@ -110,8 +113,8 @@ export const resolveSessionToolbarState = (
     return {
       label: "Session starting",
       tone: "warning",
-      actionLabel: "Stop session",
-      action: "stop",
+      primaryActionLabel: "Stop session",
+      primaryAction: "stop",
       disabled: false,
     };
   }
@@ -119,16 +122,16 @@ export const resolveSessionToolbarState = (
     return {
       label: "Session running",
       tone: "active",
-      actionLabel: "Stop session",
-      action: "stop",
+      primaryActionLabel: "Stop session",
+      primaryAction: "stop",
       disabled: false,
     };
   }
   return {
     label: "Session stopped",
     tone: "neutral",
-    actionLabel: "Start session",
-    action: "start",
+    primaryActionLabel: "Start session",
+    primaryAction: "start",
     disabled: false,
   };
 };
@@ -156,28 +159,7 @@ export const resolveChatRouteNotice = (input: {
     };
   }
 
-  if (input.session.status === "stopped") {
-    return {
-      tone: "warning",
-      message: "Session is stopped. Start it to continue.",
-    };
-  }
-
-  if (input.session.status === "paused") {
-    return {
-      tone: "warning",
-      message: "Session is paused. Resume it to continue.",
-    };
-  }
-
-  if (!input.runtime?.started) {
-    return {
-      tone: "warning",
-      message: "Session is stopped. Start it to continue.",
-    };
-  }
-
-  if (input.runtime.terminalCount === 0) {
+  if (input.runtime?.started && input.runtime.terminalCount === 0) {
     return {
       tone: "info",
       message: "Session is running without a terminal. Open Settings if this workspace should boot one automatically.",
@@ -185,4 +167,26 @@ export const resolveChatRouteNotice = (input: {
   }
 
   return null;
+};
+
+export const resolveChatConversationState = (input: {
+  connected: boolean;
+  hasData: boolean;
+  chatPaging: LongListPagingState;
+  cyclePaging: LongListPagingState;
+}): AsyncSurfaceState => {
+  if (!input.connected) {
+    return input.hasData ? "ready-idle" : "empty-idle";
+  }
+
+  if (
+    !input.chatPaging.hydrated ||
+    !input.cyclePaging.hydrated ||
+    input.chatPaging.loading ||
+    input.cyclePaging.loading
+  ) {
+    return input.hasData ? "ready-loading" : "empty-loading";
+  }
+
+  return input.hasData ? "ready-idle" : "empty-idle";
 };

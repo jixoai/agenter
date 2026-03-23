@@ -17,7 +17,7 @@ const ChatMessageBodyComponent = ({ message, presentation, onPreviewAttachment }
   const hasText = message.content.trim().length > 0;
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {attachments.length > 0 ? (
         <ChatAttachmentStrip attachments={attachments} onPreview={onPreviewAttachment} />
       ) : null}

@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
 import { useState, type ReactNode } from "react";
+import { expect, fn, userEvent, within } from "storybook/test";
 
+import { ShellLayoutProvider } from "./shell-layout-context";
 import { WorkspaceShellFrame } from "./WorkspaceShellFrame";
 
 const renderFrame = (narrow = false) => {
@@ -9,23 +10,34 @@ const renderFrame = (narrow = false) => {
     workspacePath: string;
     workspaceMissing?: boolean;
     activeTab: "chat" | "devtools" | "settings";
-    navMode?: "top" | "bottom";
     onNavigate: (tab: "chat" | "devtools" | "settings") => void;
     children: ReactNode;
   }) => {
     const [activeTab, setActiveTab] = useState<"chat" | "devtools" | "settings">(args.activeTab);
 
     return (
-      <div className={narrow ? "max-w-[430px] p-4" : "h-[860px] p-6"}>
-        <WorkspaceShellFrame
-          {...args}
-          activeTab={activeTab}
-          onNavigate={(tab) => {
-            setActiveTab(tab);
-            args.onNavigate(tab);
-          }}
-        />
-      </div>
+      <ShellLayoutProvider
+        value={{
+          showNavigationTrigger: narrow,
+          connectionStatus: "connected",
+          aiStatus: narrow ? "ready" : "working",
+          onOpenNavigation: fn(),
+        }}
+      >
+        <div
+          className={narrow ? "w-[320px] bg-slate-100" : "h-[860px] p-6"}
+          data-testid={narrow ? "compact-workspace-shell" : undefined}
+        >
+          <WorkspaceShellFrame
+            {...args}
+            activeTab={activeTab}
+            onNavigate={(tab) => {
+              setActiveTab(tab);
+              args.onNavigate(tab);
+            }}
+          />
+        </div>
+      </ShellLayoutProvider>
     );
   };
 };
@@ -34,12 +46,11 @@ const meta = {
   title: "Features/Shell/WorkspaceShellFrame",
   component: WorkspaceShellFrame,
   args: {
-    workspacePath: "/repo/demo",
+    workspacePath: "/repo/demo/project-alpha",
     activeTab: "chat",
-    navMode: "top",
     onNavigate: fn(),
     children: (
-      <section className="flex h-full items-center justify-center rounded-2xl bg-white p-6 shadow-sm">
+      <section className="flex h-full items-center justify-center rounded-2xl bg-white p-4 shadow-sm">
         <p className="text-sm text-slate-600">Workspace body</p>
       </section>
     ),
@@ -50,27 +61,18 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const SwitchTabsWithinWorkspaceShell: Story = {
-  args: {},
+export const SwitchTabsWithinUnifiedTopHeader: Story = {
   render: renderFrame(false),
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
-    const activate = async (label: "Chat" | "Devtools" | "Settings") => {
-      const desktopTab = canvas.queryByRole("tab", { name: label });
-      if (desktopTab) {
-        await userEvent.click(desktopTab);
-        return;
-      }
 
-      await userEvent.click(canvas.getByRole("button", { name: label }));
-    };
+    await expect(canvas.getByText("project-alpha")).toBeInTheDocument();
+    await expect(canvas.queryByText("/repo/demo/project-alpha")).not.toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
 
-    await expect(canvas.getByText("/repo/demo")).toBeInTheDocument();
-    await expect(canvas.queryByText(/unread/i)).not.toBeInTheDocument();
-
-    await activate("Devtools");
-    await activate("Settings");
-    await activate("Chat");
+    await userEvent.click(canvas.getByRole("tab", { name: "Devtools" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Settings" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Chat" }));
 
     await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "devtools");
     await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "settings");
@@ -78,23 +80,22 @@ export const SwitchTabsWithinWorkspaceShell: Story = {
   },
 };
 
-export const MobileFooterNavigationOwnsRouteSwitching: Story = {
-  args: {
-    navMode: "bottom",
-  },
+export const CompactShellStillKeepsTopTabs: Story = {
   render: renderFrame(true),
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
+    const shell = canvas.getByTestId("compact-workspace-shell");
 
-    await expect(canvas.getByText("/repo/demo")).toBeInTheDocument();
-    await expect(canvas.queryByRole("tab", { name: "Chat" })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    await expect(canvas.queryByTestId("workspace-basename-chip")).not.toBeInTheDocument();
+    await expect(canvas.getByLabelText("Workspace /repo/demo/project-alpha")).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
+    await expect(shell.scrollWidth).toBeLessThanOrEqual(shell.clientWidth + 1);
 
-    await userEvent.click(canvas.getByRole("button", { name: "Devtools" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Settings" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Chat" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Devtools" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Settings" }));
 
     await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "devtools");
     await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "settings");
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(3, "chat");
   },
 };

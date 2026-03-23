@@ -27,6 +27,7 @@ const createState = (): RuntimeClientState => ({
   loopbusTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
+  terminalActivityBySession: {},
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
@@ -114,7 +115,7 @@ const saveSettingsLayerMock = vi.fn(async () => ({
 }));
 const setChatVisibilityMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
 const consumeNotificationsMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
-const hydrateSessionHistoryMock = vi.fn(async () => {});
+const hydrateSessionHistoryMock = vi.fn(async () => ({ messagesHasMore: false, cyclesHasMore: false }));
 const loadChatMessagesMock = vi.fn(async () => {});
 const loadChatCyclesMock = vi.fn(async () => {});
 const retainApiCallStreamMock = vi.fn(() => () => {});
@@ -204,6 +205,8 @@ vi.mock("@agenter/client-sdk", () => ({
     loadMoreLoopbusTimeline: async () => ({ logs: 0, traces: 0, hasMore: false }),
     loadMoreModelCalls: async () => ({ items: 0, hasMore: false }),
     loadMoreApiCalls: async () => ({ items: 0, hasMore: false }),
+    loadTerminalActivity: async () => ({ items: 0, hasMore: false }),
+    loadMoreTerminalActivity: async () => ({ items: 0, hasMore: false }),
   }),
 }));
 
@@ -791,7 +794,7 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
   });
 
-  test("Scenario: Given a workspace shell session When switching to Settings and Devtools Then the session context stays attached to the route", async () => {
+  test("Scenario: Given a workspace shell session When switching to Settings and Devtools Then the compact header keeps the workspace context attached to the route", async () => {
     const workspacePath = "/repo/demo";
     const sessionId = "session-keep-context";
     const counts: WorkspaceSessionCounts = { all: 1, running: 1, stopped: 0, archive: 0 };
@@ -876,7 +879,8 @@ describe("Feature: web ui app shell", () => {
     await waitFor(() => {
       expect(window.location.search).toContain(`sessionId=${encodeURIComponent(sessionId)}`);
     });
-    expect(screen.getByText(workspacePath)).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-basename-chip")).toHaveAttribute("title", workspacePath);
+    expect(screen.getByTestId("workspace-basename-chip")).toHaveTextContent("demo");
 
     fireEvent.click(screen.getByRole("tab", { name: "Devtools" }));
 
@@ -884,11 +888,12 @@ describe("Feature: web ui app shell", () => {
       expect(window.location.pathname).toBe("/workspace/devtools");
       expect(window.location.search).toContain(`sessionId=${encodeURIComponent(sessionId)}`);
     });
-    expect(screen.getByText(workspacePath)).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-basename-chip")).toHaveAttribute("title", workspacePath);
+    expect(screen.getByTestId("workspace-basename-chip")).toHaveTextContent("demo");
     expect(screen.queryByText("No session")).not.toBeInTheDocument();
   });
 
-  test("Scenario: Given a chat session When the toolbar action is pressed Then one state-driven button starts or stops the session", async () => {
+  test("Scenario: Given a chat session When the route-local session status menu is opened Then one state-driven action starts or stops the session", async () => {
     const workspacePath = "/repo/control";
     const runningSessionId = "session-running";
     const stoppedSessionId = "session-stopped";
@@ -966,7 +971,8 @@ describe("Feature: web ui app shell", () => {
     );
     fireEvent.popState(window);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Session status: Session running" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Stop session" }));
     await waitFor(() => {
       expect(stopSessionMock).toHaveBeenCalledWith(runningSessionId);
     });
@@ -978,13 +984,14 @@ describe("Feature: web ui app shell", () => {
     );
     fireEvent.popState(window);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Start session" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Session status: Session stopped" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Start session" }));
     await waitFor(() => {
       expect(startSessionMock).toHaveBeenCalledWith(stoppedSessionId);
     });
   });
 
-  test("Scenario: Given a paused session When advanced actions are opened Then resume stays primary while abort stays secondary", async () => {
+  test("Scenario: Given a paused session When route-local session actions are opened Then resume stays primary while abort stays secondary", async () => {
     const workspacePath = "/repo/lifecycle";
     const pausedSessionId = "session-paused";
 
@@ -1049,12 +1056,13 @@ describe("Feature: web ui app shell", () => {
     );
     fireEvent.popState(window);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Resume session" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Session status: Session paused" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Resume session" }));
     await waitFor(() => {
       expect(startSessionMock).toHaveBeenCalledWith(pausedSessionId);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Session status: Session paused" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Abort session/i }));
     await waitFor(() => {
       expect(abortSessionMock).toHaveBeenCalledWith(pausedSessionId);
@@ -1088,7 +1096,7 @@ describe("Feature: web ui app shell", () => {
     });
   });
 
-  test("Scenario: Given LoopBus is back to waiting_commits While stage is stale Then the app header presents AI ready instead of thinking", async () => {
+  test("Scenario: Given LoopBus is back to waiting_commits While stage is stale Then the app header presents the AI ready signal instead of thinking", async () => {
     const sessionId = "session-idle";
     mockState = {
       ...createState(),
@@ -1151,6 +1159,6 @@ describe("Feature: web ui app shell", () => {
     fireEvent.popState(window);
 
     const header = await screen.findByRole("banner");
-    expect(within(header).getByText("AI ready")).toBeInTheDocument();
+    expect(within(header).getByLabelText("AI ready")).toBeInTheDocument();
   });
 });

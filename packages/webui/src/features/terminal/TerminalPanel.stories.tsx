@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 
 import { TerminalPanel } from "./TerminalPanel";
+import { DEFAULT_LONG_LIST_PAGING_STATE } from "../../shared/long-list-paging";
 
 const runtime = {
   sessionId: "session-1",
@@ -62,7 +63,7 @@ const snapshots = {
 
 const terminalReads = {
   iflow: {
-    kind: "terminal-snapshot",
+    kind: "terminal-snapshot" as const,
     representation: "snapshot" as const,
     terminalId: "iflow",
     seq: 8,
@@ -74,86 +75,47 @@ const terminalReads = {
   },
 };
 
-const cycles = [
-  {
-    id: "cycle:8",
-    cycleId: 8,
-    seq: 8,
-    createdAt: 8,
-    wakeSource: "user" as const,
-    kind: "model" as const,
-    status: "done" as const,
-    clientMessageIds: ["client-8"],
-    inputs: [],
-    outputs: [
-      {
-        id: "tool-call-8",
-        role: "assistant" as const,
-        channel: "tool_call" as const,
-        content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: iflow", "```"].join("\n"),
-        timestamp: 9,
-        tool: { name: "terminal_read" },
-      },
-      {
-        id: "tool-result-8",
-        role: "assistant" as const,
-        channel: "tool_result" as const,
-        content: [
-          "```yaml+tool_result",
-          "tool: terminal_read",
-          "ok: true",
-          "output:",
-          "  kind: terminal-snapshot",
-          "  terminalId: iflow",
-          "  seq: 8",
-          "  cols: 80",
-          "  rows: 24",
-          "```",
-        ].join("\n"),
-        timestamp: 10,
-        tool: { name: "terminal_read", ok: true },
-      },
-    ],
-    liveMessages: [],
-    streaming: null,
-    modelCallId: 12,
-  },
-  {
-    id: "cycle:9",
-    cycleId: 9,
-    seq: 9,
-    createdAt: 9,
-    wakeSource: "terminal" as const,
-    kind: "model" as const,
-    status: "done" as const,
-    clientMessageIds: ["client-9"],
-    inputs: [],
-    outputs: [
-      {
-        id: "tool-call-9",
-        role: "assistant" as const,
-        channel: "tool_call" as const,
-        content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: other-terminal", "```"].join(
-          "\n",
-        ),
-        timestamp: 11,
-        tool: { name: "terminal_read" },
-      },
-    ],
-    liveMessages: [],
-    streaming: null,
-    modelCallId: 13,
-  },
-];
+const terminalActivityByTerminal = {
+  iflow: [
+    {
+      id: 21,
+      terminalId: "iflow",
+      createdAt: 9,
+      kind: "terminal_read" as const,
+      cycleId: 8,
+      title: "terminal_read",
+      content: "stdout for iflow",
+    },
+  ],
+  "other-terminal": [
+    {
+      id: 22,
+      terminalId: "other-terminal",
+      createdAt: 10,
+      kind: "terminal_read" as const,
+      cycleId: 9,
+      title: "terminal_read",
+      content: "stdout for other-terminal",
+    },
+  ],
+};
 
 const meta = {
   title: "Features/Terminal/TerminalPanel",
   component: TerminalPanel,
   args: {
+    sessionId: "session-1",
     runtime,
     snapshots,
     terminalReads,
-    cycles,
+    terminalActivityByTerminal,
+    getTerminalActivityPagingState: () => ({
+      ...DEFAULT_LONG_LIST_PAGING_STATE,
+      hydrated: true,
+      hasMore: true,
+    }),
+    onLoadTerminalActivity: async () => {},
+    onLoadMoreTerminalActivity: async () => {},
   },
   render: (args) => (
     <div className="h-[520px] w-[min(960px,100vw)] p-6">
@@ -174,7 +136,7 @@ export const EmbeddedSnapshotFallback: Story = {
     await expect(canvas.getByRole("button", { name: "Fit" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Cover" })).toBeInTheDocument();
     await expect(canvas.getByText("Activity")).toBeInTheDocument();
-    await expect(canvas.getByText("terminal_read")).toBeInTheDocument();
+    await expect(canvas.getAllByText("terminal_read").length).toBeGreaterThan(0);
     await expect(canvas.queryByText("other-terminal")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(canvasElement.querySelector("terminal-view")).not.toBeNull();

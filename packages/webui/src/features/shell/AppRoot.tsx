@@ -6,8 +6,8 @@ import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { cn } from "../../lib/utils";
-import { AppHeader } from "./AppHeader";
 import { SidebarNav, SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
+import { TopHeader } from "./TopHeader";
 import {
   equalHeaderRuntimeState,
   equalRunningSessionsState,
@@ -17,6 +17,7 @@ import {
   selectSessionChromeState,
   selectUnreadTotal,
 } from "./runtime-selectors";
+import { ShellLayoutProvider } from "./shell-layout-context";
 import { useAdaptiveViewport } from "./useAdaptiveViewport";
 
 const routeLabelFromPath = (pathname: string): string => {
@@ -165,6 +166,7 @@ export const AppRoot = () => {
   const isWorkspaceRoute = location.pathname.startsWith("/workspace/");
   const showSidebarRail = adaptiveViewport.globalNavMode === "rail";
   const showDrawerTrigger = adaptiveViewport.globalNavMode === "drawer";
+  const headerAiStatus = resolveHeaderAiStatus(routeSession, routeRuntime);
 
   return (
     <main className="h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
@@ -172,40 +174,52 @@ export const AppRoot = () => {
         <div className="flex h-full">
           {showSidebarRail ? <SidebarNav primaryItems={primaryItems} runningSessions={runningSessions} /> : null}
 
-          <section className="flex min-w-0 flex-1 flex-col">
-            <AppHeader
-              locationLabel={routeLabelFromPath(location.pathname)}
-              showNavigationTrigger={showDrawerTrigger}
-              connectionStatus={connectionStatus}
-              aiStatus={resolveHeaderAiStatus(routeSession, routeRuntime)}
-              onOpenNavigation={handleOpenNavigation}
-            />
+          <ShellLayoutProvider
+            value={{
+              showNavigationTrigger: showDrawerTrigger,
+              connectionStatus,
+              aiStatus: headerAiStatus,
+              onOpenNavigation: handleOpenNavigation,
+            }}
+          >
+            <section className="flex min-w-0 flex-1 flex-col">
+              {/* GlobalSettings stays in SidebarNav/Drawer only. TopHeader is page-local chrome and must not absorb app-level settings entry points. */}
+              {!isWorkspaceRoute ? (
+                <TopHeader
+                  locationLabel={routeLabelFromPath(location.pathname)}
+                  showNavigationTrigger={showDrawerTrigger}
+                  connectionStatus={connectionStatus}
+                  aiStatus={headerAiStatus}
+                  onOpenNavigation={handleOpenNavigation}
+                />
+              ) : null}
 
-            <ViewportMask className="flex-1">
-              <div
-                className={cn(
-                  "grid h-full",
-                  showGlobalNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
-                )}
-              >
-                {showGlobalNotice ? (
-                  <div className="shrink-0 px-3 pt-3 md:px-4 md:pt-4">
-                    <NoticeBanner tone="destructive">{controller.notice}</NoticeBanner>
-                  </div>
-                ) : null}
+              <ViewportMask className="flex-1">
+                <div
+                  className={cn(
+                    "grid h-full",
+                    showGlobalNotice ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+                  )}
+                >
+                  {showGlobalNotice ? (
+                    <div className="shrink-0 px-3 pt-3 md:px-4 md:pt-4">
+                      <NoticeBanner tone="destructive">{controller.notice}</NoticeBanner>
+                    </div>
+                  ) : null}
 
-                {isWorkspaceRoute ? (
-                  <ViewportMask className="h-full">
-                    <Outlet />
-                  </ViewportMask>
-                ) : (
-                  <div className="h-full px-3 py-3 md:px-4 md:py-4">
-                    <Outlet />
-                  </div>
-                )}
-              </div>
-            </ViewportMask>
-          </section>
+                  {isWorkspaceRoute ? (
+                    <ViewportMask className="h-full">
+                      <Outlet />
+                    </ViewportMask>
+                  ) : (
+                    <div className="h-full px-3 py-3 md:px-4 md:py-4">
+                      <Outlet />
+                    </div>
+                  )}
+                </div>
+              </ViewportMask>
+            </section>
+          </ShellLayoutProvider>
         </div>
 
         <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen} side="left" title="Navigation">

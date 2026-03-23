@@ -25,6 +25,7 @@ vi.mock("@agenter/terminal-view", () => {
 });
 
 import { TerminalPanel } from "../src/features/terminal/TerminalPanel";
+import { DEFAULT_LONG_LIST_PAGING_STATE } from "../src/shared/long-list-paging";
 
 const runtime = {
   sessionId: "session-1",
@@ -86,78 +87,6 @@ const snapshots = {
   },
 } satisfies RuntimeClientState["terminalSnapshotsBySession"][string];
 
-const cycles = [
-  {
-    id: "cycle:8",
-    cycleId: 8,
-    seq: 8,
-    createdAt: 8,
-    wakeSource: "user" as const,
-    kind: "model" as const,
-    status: "done" as const,
-    clientMessageIds: ["client-8"],
-    inputs: [],
-    outputs: [
-      {
-        id: "tool-call-8",
-        role: "assistant" as const,
-        channel: "tool_call" as const,
-        content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: iflow", "```"].join("\n"),
-        timestamp: 9,
-        tool: { name: "terminal_read" },
-      },
-      {
-        id: "tool-result-8",
-        role: "assistant" as const,
-        channel: "tool_result" as const,
-        content: [
-          "```yaml+tool_result",
-          "tool: terminal_read",
-          "ok: true",
-          "output:",
-          "  kind: terminal-snapshot",
-          "  terminalId: iflow",
-          "  seq: 8",
-          "  cols: 80",
-          "  rows: 24",
-          "```",
-        ].join("\n"),
-        timestamp: 10,
-        tool: { name: "terminal_read", ok: true },
-      },
-    ],
-    liveMessages: [],
-    streaming: null,
-    modelCallId: 12,
-  },
-  {
-    id: "cycle:9",
-    cycleId: 9,
-    seq: 9,
-    createdAt: 9,
-    wakeSource: "terminal" as const,
-    kind: "model" as const,
-    status: "done" as const,
-    clientMessageIds: ["client-9"],
-    inputs: [],
-    outputs: [
-      {
-        id: "tool-call-9",
-        role: "assistant" as const,
-        channel: "tool_call" as const,
-        content: ["```yaml+tool_call", "tool: terminal_read", "input:", "  terminalId: other-terminal", "```"].join(
-          "\n",
-        ),
-        timestamp: 11,
-        tool: { name: "terminal_read" },
-      },
-    ],
-    liveMessages: [],
-    streaming: null,
-    modelCallId: 13,
-  },
-];
-
 const terminalReads = {
   iflow: {
     kind: "terminal-snapshot",
@@ -172,6 +101,44 @@ const terminalReads = {
   },
 } satisfies RuntimeClientState["terminalReadsBySession"][string];
 
+const terminalActivityByTerminal = {
+  iflow: [
+    {
+      id: 21,
+      terminalId: "iflow",
+      createdAt: 9,
+      kind: "terminal_read" as const,
+      cycleId: 8,
+      title: "terminal_read",
+      content: "stdout for iflow",
+    },
+  ],
+  "other-terminal": [
+    {
+      id: 22,
+      terminalId: "other-terminal",
+      createdAt: 10,
+      kind: "terminal_read" as const,
+      cycleId: 9,
+      title: "terminal_read",
+      content: "stdout for other-terminal",
+    },
+  ],
+} satisfies RuntimeClientState["terminalActivityBySession"][string];
+
+const getTerminalActivityPagingState = (terminalId: string) =>
+  terminalId === "iflow"
+    ? {
+        ...DEFAULT_LONG_LIST_PAGING_STATE,
+        hydrated: true,
+        hasMore: true,
+      }
+    : {
+        ...DEFAULT_LONG_LIST_PAGING_STATE,
+        hydrated: true,
+        hasMore: false,
+      };
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -180,7 +147,16 @@ afterEach(() => {
 describe("Feature: terminal panel uses the standalone renderer host", () => {
   test("Scenario: Given a live terminal entry When rendering Then WebUI passes transport metadata into the standalone terminal-view host", async () => {
     const { container } = render(
-      <TerminalPanel runtime={runtime} snapshots={snapshots} terminalReads={terminalReads} cycles={cycles} />,
+      <TerminalPanel
+        sessionId="session-1"
+        runtime={runtime}
+        snapshots={snapshots}
+        terminalReads={terminalReads}
+        terminalActivityByTerminal={terminalActivityByTerminal}
+        getTerminalActivityPagingState={getTerminalActivityPagingState}
+        onLoadTerminalActivity={async () => {}}
+        onLoadMoreTerminalActivity={async () => {}}
+      />,
     );
 
     await waitFor(() => {
@@ -202,7 +178,7 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.getByRole("button", { name: "Cover" })).toBeInTheDocument();
     expect(screen.getByText("Activity")).toBeInTheDocument();
     expect(screen.getByText("Latest terminal_read result")).toBeInTheDocument();
-    expect(screen.getByText("terminal_read")).toBeInTheDocument();
+    expect(screen.getAllByText("terminal_read").length).toBeGreaterThan(0);
     expect(screen.queryByText("other-terminal")).not.toBeInTheDocument();
     expect(container.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
     expect(container.querySelector('[data-terminal-activity-scroll-owner="inspector"]')).not.toBeNull();
@@ -222,9 +198,13 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
           ...runtime,
           terminals: [{ ...runtime.terminals[0], transportUrl: "" }],
         }}
+        sessionId="session-1"
         snapshots={snapshots}
         terminalReads={terminalReads}
-        cycles={cycles}
+        terminalActivityByTerminal={terminalActivityByTerminal}
+        getTerminalActivityPagingState={getTerminalActivityPagingState}
+        onLoadTerminalActivity={async () => {}}
+        onLoadMoreTerminalActivity={async () => {}}
       />,
     );
 
@@ -262,9 +242,13 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
             },
           ],
         }}
+        sessionId="session-1"
         snapshots={snapshots}
         terminalReads={terminalReads}
-        cycles={cycles}
+        terminalActivityByTerminal={terminalActivityByTerminal}
+        getTerminalActivityPagingState={getTerminalActivityPagingState}
+        onLoadTerminalActivity={async () => {}}
+        onLoadMoreTerminalActivity={async () => {}}
       />,
     );
 

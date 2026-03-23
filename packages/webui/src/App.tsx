@@ -10,13 +10,23 @@ import {
 import { RouterProvider } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AppControllerContext, type AppController, useRuntimeStoreSelector } from "./app-context";
+import {
+  AppControllerContext,
+  type AppController,
+  useRuntimeStoreSelector,
+} from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
 import { type SettingsLayerItem } from "./features/settings/SettingsPanel";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
 import { displayNoticeFromError } from "./shared/notice";
+import {
+  DEFAULT_LONG_LIST_PAGING_STATE,
+  resolveLongListPagingKey,
+  type LongListPagingInput,
+  type LongListPagingState,
+} from "./shared/long-list-paging";
 import { defaultWsUrl } from "./shared/ws-url";
 
 interface AppProps {
@@ -84,9 +94,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [layerDraft, setLayerDraft] = useState("");
   const [layerMtimeMs, setLayerMtimeMs] = useState(0);
   const [settingsStatus, setSettingsStatus] = useState("idle");
-  const [tracePaging, setTracePaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
-  const [modelPaging, setModelPaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
-  const [chatPaging, setChatPaging] = useState<Record<string, { hasMore: boolean; loading: boolean }>>({});
+  const [longListPagingByKey, setLongListPagingByKey] = useState<Record<string, LongListPagingState>>({});
   const [modelDebug, setModelDebug] = useState<ModelDebugOutput | null>(null);
   const [modelDebugLoading, setModelDebugLoading] = useState(false);
   const [modelDebugError, setModelDebugError] = useState<string | null>(null);
@@ -98,6 +106,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const workspaceSelectionRef = useRef<{ path: string | null; tab: WorkspaceSessionTab } | null>(null);
   const seenNotificationIdsRef = useRef<string[]>([]);
   const rasterizedSessionIconIdsRef = useRef(new Set<string>());
+  const longListPagingByKeyRef = useRef<Record<string, LongListPagingState>>({});
 
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
   const store = useMemo(() => createRuntimeStore(client), [client]);
@@ -108,6 +117,134 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const setError = useCallback((error: unknown) => {
     setNotice(displayNoticeFromError(error, "Something failed while loading the application."));
   }, []);
+
+  useEffect(() => {
+    longListPagingByKeyRef.current = longListPagingByKey;
+  }, [longListPagingByKey]);
+
+  const patchLongListPagingState = useCallback(
+    (input: LongListPagingInput, patch: Partial<LongListPagingState>) => {
+      const key = resolveLongListPagingKey(input);
+      setLongListPagingByKey((prev) => {
+        const current = prev[key] ?? DEFAULT_LONG_LIST_PAGING_STATE;
+        const next = { ...current, ...patch };
+        if (
+          current.hydrated === next.hydrated &&
+          current.hasMore === next.hasMore &&
+          current.loading === next.loading &&
+          current.loadingOlder === next.loadingOlder
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [key]: next,
+        };
+      });
+    },
+    [],
+  );
+
+  const getLongListPagingState = useCallback((input: LongListPagingInput): LongListPagingState => {
+    return longListPagingByKeyRef.current[resolveLongListPagingKey(input)] ?? DEFAULT_LONG_LIST_PAGING_STATE;
+  }, []);
+
+  const runLongListLoad = useCallback(
+    async (
+      input: LongListPagingInput & {
+        older?: boolean;
+        run: () => Promise<{ hasMore: boolean }>;
+      },
+    ): Promise<void> => {
+      const current = getLongListPagingState(input);
+      if (input.older) {
+        if (current.loadingOlder || !current.hasMore) {
+          return;
+        }
+      } else if (current.loading) {
+        return;
+      }
+
+      patchLongListPagingState(input, {
+        loading: input.older ? current.loading : true,
+        loadingOlder: input.older ? true : current.loadingOlder,
+      });
+
+      try {
+        const output = await input.run();
+        patchLongListPagingState(input, {
+          hydrated: true,
+          hasMore: output.hasMore,
+          loading: false,
+          loadingOlder: false,
+        });
+        setNotice("");
+      } catch (error) {
+        patchLongListPagingState(input, {
+          loading: false,
+          loadingOlder: false,
+        });
+        setError(error);
+      }
+    },
+    [getLongListPagingState, patchLongListPagingState, setError],
+  );
+
+  const primeRuntimeLongLists = useCallback(
+    (sessionId: string) => {
+      const state = store.getState();
+      patchLongListPagingState(
+        { resource: "loopbus-trace", sessionId },
+        {
+          hydrated: true,
+          hasMore: (state.loopbusTracesBySession[sessionId]?.length ?? 0) >= 200,
+        },
+      );
+      patchLongListPagingState(
+        { resource: "model-calls", sessionId },
+        {
+          hydrated: true,
+          hasMore: (state.modelCallsBySession[sessionId]?.length ?? 0) >= 200,
+        },
+      );
+      patchLongListPagingState(
+        { resource: "api-calls", sessionId },
+        {
+          hydrated: true,
+          hasMore: (state.apiCallsBySession[sessionId]?.length ?? 0) >= 200,
+        },
+      );
+    },
+    [patchLongListPagingState, store],
+  );
+
+  const hydrateSessionLongLists = useCallback(
+    async (sessionId: string): Promise<void> => {
+      patchLongListPagingState({ resource: "chat", sessionId }, { loading: true, hydrated: false });
+      patchLongListPagingState({ resource: "cycles", sessionId }, { loading: true, hydrated: false });
+      const output = await store.hydrateSessionHistory(sessionId, { messageLimit: 200, cycleLimit: 120 });
+      patchLongListPagingState(
+        { resource: "chat", sessionId },
+        {
+          hydrated: true,
+          hasMore: output.messagesHasMore,
+          loading: false,
+          loadingOlder: false,
+        },
+      );
+      patchLongListPagingState(
+        { resource: "cycles", sessionId },
+        {
+          hydrated: true,
+          hasMore: output.cyclesHasMore,
+          loading: false,
+          loadingOlder: false,
+        },
+      );
+      primeRuntimeLongLists(sessionId);
+    },
+    [patchLongListPagingState, primeRuntimeLongLists, store],
+  );
 
   const searchWorkspacePaths = useCallback(
     async (input: { cwd: string; query: string; limit?: number }) => {
@@ -395,7 +532,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         await store.listRecentWorkspaces(8);
         await store.listAllWorkspaces();
         await loadQuickstartRecentSessions(workspacePath);
-        await store.hydrateSessionHistory(session.id, { messageLimit: 200, cycleLimit: 120 });
+        await hydrateSessionLongLists(session.id);
         setNotice("");
         return session.id;
       } catch (error) {
@@ -444,25 +581,26 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           setQuickstartWorkspacePath(workspacePath);
         }
         setSelectedWorkspaceSessionId(sessionId);
-        await store.hydrateSessionHistory(sessionId, { messageLimit: 200, cycleLimit: 120 });
+        await hydrateSessionLongLists(sessionId);
         setNotice("");
       } catch (error) {
         setError(error);
       }
     },
-    [setError, store],
+    [hydrateSessionLongLists, setError, store],
   );
 
   const startSession = useCallback(
     async (sessionId: string): Promise<void> => {
       try {
         await store.startSession(sessionId);
+        primeRuntimeLongLists(sessionId);
         setNotice("");
       } catch (error) {
         setError(error);
       }
     },
-    [setError, store],
+    [primeRuntimeLongLists, setError, store],
   );
 
   const stopSession = useCallback(
@@ -516,114 +654,90 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
 
   const loadMoreChatCycles = useCallback(
     async (sessionId: string): Promise<void> => {
-      const current = chatPaging[sessionId] ?? { hasMore: true, loading: false };
-      if (current.loading || !current.hasMore) {
-        return;
-      }
-      setChatPaging((prev) => ({
-        ...prev,
-        [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: true },
-      }));
-      try {
-        const output = await store.loadMoreChatCyclesBefore(sessionId, 80);
-        setChatPaging((prev) => ({
-          ...prev,
-          [sessionId]: { hasMore: output.hasMore, loading: false },
-        }));
-        setNotice("");
-      } catch (error) {
-        setChatPaging((prev) => ({
-          ...prev,
-          [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: false },
-        }));
-        setError(error);
-      }
+      await runLongListLoad({
+        resource: "cycles",
+        sessionId,
+        older: true,
+        run: () => store.loadMoreChatCyclesBefore(sessionId, 80),
+      });
     },
-    [chatPaging, setError, store],
+    [runLongListLoad, store],
   );
 
   const loadMoreChatMessages = useCallback(
     async (sessionId: string): Promise<void> => {
-      const current = chatPaging[sessionId] ?? { hasMore: true, loading: false };
-      if (current.loading || !current.hasMore) {
-        return;
-      }
-      setChatPaging((prev) => ({
-        ...prev,
-        [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: true },
-      }));
-      try {
-        const output = await store.loadMoreChatMessagesBefore(sessionId, 80);
-        setChatPaging((prev) => ({
-          ...prev,
-          [sessionId]: { hasMore: output.hasMore, loading: false },
-        }));
-        setNotice("");
-      } catch (error) {
-        setChatPaging((prev) => ({
-          ...prev,
-          [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: false },
-        }));
-        setError(error);
-      }
+      await runLongListLoad({
+        resource: "chat",
+        sessionId,
+        older: true,
+        run: () => store.loadMoreChatMessagesBefore(sessionId, 80),
+      });
     },
-    [chatPaging, setError, store],
+    [runLongListLoad, store],
   );
 
   const loadMoreTrace = useCallback(
     async (sessionId: string): Promise<void> => {
-      const current = tracePaging[sessionId] ?? { hasMore: true, loading: false };
-      if (current.loading || !current.hasMore) {
-        return;
-      }
-      setTracePaging((prev) => ({
-        ...prev,
-        [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: true },
-      }));
-      try {
-        const output = await store.loadMoreLoopbusTimeline(sessionId, 120);
-        setTracePaging((prev) => ({
-          ...prev,
-          [sessionId]: { hasMore: output.hasMore, loading: false },
-        }));
-        setNotice("");
-      } catch (error) {
-        setTracePaging((prev) => ({
-          ...prev,
-          [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: false },
-        }));
-        setError(error);
-      }
+      await runLongListLoad({
+        resource: "loopbus-trace",
+        sessionId,
+        older: true,
+        run: async () => {
+          const output = await store.loadMoreLoopbusTimeline(sessionId, 120);
+          return { hasMore: output.hasMore };
+        },
+      });
     },
-    [setError, store, tracePaging],
+    [runLongListLoad, store],
   );
 
   const loadMoreModel = useCallback(
     async (sessionId: string): Promise<void> => {
-      const current = modelPaging[sessionId] ?? { hasMore: true, loading: false };
-      if (current.loading || !current.hasMore) {
-        return;
-      }
-      setModelPaging((prev) => ({
-        ...prev,
-        [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: true },
-      }));
-      try {
-        const output = await store.loadMoreModelCalls(sessionId, 120);
-        setModelPaging((prev) => ({
-          ...prev,
-          [sessionId]: { hasMore: output.hasMore, loading: false },
-        }));
-        setNotice("");
-      } catch (error) {
-        setModelPaging((prev) => ({
-          ...prev,
-          [sessionId]: { ...(prev[sessionId] ?? { hasMore: true, loading: false }), loading: false },
-        }));
-        setError(error);
-      }
+      await runLongListLoad({
+        resource: "model-calls",
+        sessionId,
+        older: true,
+        run: () => store.loadMoreModelCalls(sessionId, 120),
+      });
     },
-    [modelPaging, setError, store],
+    [runLongListLoad, store],
+  );
+
+  const loadMoreApi = useCallback(
+    async (sessionId: string): Promise<void> => {
+      await runLongListLoad({
+        resource: "api-calls",
+        sessionId,
+        older: true,
+        run: () => store.loadMoreApiCalls(sessionId, 120),
+      });
+    },
+    [runLongListLoad, store],
+  );
+
+  const loadTerminalActivity = useCallback(
+    async (sessionId: string, terminalId: string): Promise<void> => {
+      await runLongListLoad({
+        resource: "terminal-activity",
+        sessionId,
+        detailId: terminalId,
+        run: () => store.loadTerminalActivity(sessionId, terminalId, 120),
+      });
+    },
+    [runLongListLoad, store],
+  );
+
+  const loadMoreTerminalActivity = useCallback(
+    async (sessionId: string, terminalId: string): Promise<void> => {
+      await runLongListLoad({
+        resource: "terminal-activity",
+        sessionId,
+        detailId: terminalId,
+        older: true,
+        run: () => store.loadMoreTerminalActivity(sessionId, terminalId, 120),
+      });
+    },
+    [runLongListLoad, store],
   );
 
   const refreshModelDebug = useCallback(
@@ -884,9 +998,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
 
   const hydrateSession = useCallback(
     async (sessionId: string): Promise<void> => {
-      await store.hydrateSessionHistory(sessionId, { messageLimit: 200, cycleLimit: 120 });
+      await hydrateSessionLongLists(sessionId);
     },
-    [store],
+    [hydrateSessionLongLists],
   );
 
   const retainApiCallStream = useCallback((sessionId: string) => store.retainApiCallStream(sessionId), [store]);
@@ -932,9 +1046,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       modelDebugSessionId,
       modelDebugLoading,
       modelDebugError,
-      tracePaging,
-      modelPaging,
-      chatPaging,
+      getLongListPagingState,
       searchWorkspacePaths,
       createWorkspaceSession,
       quickstartSubmit,
@@ -949,6 +1061,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       loadMoreChatCycles,
       loadMoreTrace,
       loadMoreModel,
+      loadMoreApi,
+      loadTerminalActivity,
+      loadMoreTerminalActivity,
       refreshModelDebug,
       toggleWorkspaceFavorite,
       deleteWorkspace,
@@ -971,7 +1086,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }),
     [
       archiveWorkspaceSession,
-      chatPaging,
       cleanMissingWorkspaces,
       consumeNotifications,
       createWorkspaceSession,
@@ -979,10 +1093,14 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       deleteWorkspace,
       deleteWorkspaceSession,
       enterWorkspace,
+      getLongListPagingState,
       hydrateSession,
       layerDraft,
       loadMoreChatCycles,
       loadMoreChatMessages,
+      loadMoreApi,
+      loadMoreTerminalActivity,
+      loadTerminalActivity,
       loadMoreModel,
       loadMoreTrace,
       loadMoreWorkspaceSessions,
@@ -992,7 +1110,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       modelDebugError,
       modelDebugLoading,
       modelDebugSessionId,
-      modelPaging,
       notice,
       quickstartBusy,
       quickstartDraft,
@@ -1022,7 +1139,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       stopWorkspaceSession,
       toggleSessionFavorite,
       toggleWorkspaceFavorite,
-      tracePaging,
       store,
       validateDirectory,
       workspaceSessionCounts,

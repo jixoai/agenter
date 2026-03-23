@@ -326,6 +326,8 @@ const buildTheme = (input: {
     ".cm-scroller": {
       overflow: input.overflow === "scroll" ? "auto" : "visible",
       maxHeight: input.maxHeight ? `${input.maxHeight}px` : "none",
+      minWidth: "0",
+      maxWidth: "100%",
     },
     ".cm-content": {
       padding: resolvedPadding,
@@ -334,12 +336,20 @@ const buildTheme = (input: {
       lineHeight: density.lineHeight,
       caretColor: "transparent",
       color: "inherit",
+      minWidth: "0",
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
     },
     ".cm-line": {
       paddingInline: 0,
     },
     ".cm-gutters": {
       display: "none",
+    },
+    ".cm-editor": {
+      minWidth: "0",
+      maxWidth: "100%",
+      backgroundColor: "transparent",
     },
     ".cm-activeLine": {
       backgroundColor: "transparent",
@@ -416,13 +426,13 @@ const MarkdownDocumentComponent = ({
   }, [mode, themeExtension]);
 
   return (
-    <ClipSurface className={cn("text-inherit", surfaceClassNames[profile.surface], className)}>
+    <ClipSurface className={cn("min-w-0 max-w-full text-inherit", surfaceClassNames[profile.surface], className)}>
       <CodeMirror
         value={value}
         theme="none"
         editable={false}
         basicSetup={MARKDOWN_BASIC_SETUP}
-        className="text-inherit"
+        className="min-w-0 max-w-full text-inherit"
         extensions={extensions}
       />
     </ClipSurface>

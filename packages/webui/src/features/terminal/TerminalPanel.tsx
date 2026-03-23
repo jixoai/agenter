@@ -1,4 +1,4 @@
-import type { RuntimeChatCycle, RuntimeClientState } from "@agenter/client-sdk";
+import type { RuntimeClientState } from "@agenter/client-sdk";
 import { MonitorCog, ScanLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -7,14 +7,19 @@ import { Badge } from "../../components/ui/badge";
 import { ClipSurface, ViewportMask } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/utils";
+import type { LongListPagingState } from "../../shared/long-list-paging";
 import { TerminalActivityPanel } from "./TerminalActivityPanel";
 import { TerminalViewHost } from "./TerminalViewHost";
 
 interface TerminalPanelProps {
+  sessionId: string;
   runtime: RuntimeClientState["runtimes"][string] | undefined;
   snapshots: RuntimeClientState["terminalSnapshotsBySession"][string] | undefined;
   terminalReads?: RuntimeClientState["terminalReadsBySession"][string] | undefined;
-  cycles?: RuntimeChatCycle[];
+  terminalActivityByTerminal?: RuntimeClientState["terminalActivityBySession"][string] | undefined;
+  getTerminalActivityPagingState: (terminalId: string) => LongListPagingState;
+  onLoadTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
+  onLoadMoreTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
   loading?: boolean;
 }
 
@@ -84,10 +89,14 @@ const getTerminalTitle = (terminal: RuntimeTerminal) => {
 };
 
 export const TerminalPanel = ({
+  sessionId,
   runtime,
   snapshots,
   terminalReads,
-  cycles = [],
+  terminalActivityByTerminal,
+  getTerminalActivityPagingState,
+  onLoadTerminalActivity,
+  onLoadMoreTerminalActivity,
   loading = false,
 }: TerminalPanelProps) => {
   const terminals = runtime?.terminals ?? [];
@@ -121,6 +130,17 @@ export const TerminalPanel = ({
     );
   }, [focused, runtime, terminals]);
 
+  useEffect(() => {
+    if (!selectedTerminal) {
+      return;
+    }
+    const pagingState = getTerminalActivityPagingState(selectedTerminal.terminalId);
+    if (pagingState.hydrated || pagingState.loading) {
+      return;
+    }
+    void onLoadTerminalActivity(sessionId, selectedTerminal.terminalId);
+  }, [getTerminalActivityPagingState, onLoadTerminalActivity, selectedTerminal, sessionId]);
+
   if (!runtime || runtime.terminals.length === 0) {
     return (
       <AsyncSurface
@@ -146,6 +166,8 @@ export const TerminalPanel = ({
   const rows = flattenedSnapshot?.rows ?? 24;
   const cols = flattenedSnapshot?.cols ?? 80;
   const terminalRead = terminalReads?.[selectedTerminal.terminalId];
+  const terminalActivity = terminalActivityByTerminal?.[selectedTerminal.terminalId] ?? [];
+  const activityPaging = getTerminalActivityPagingState(selectedTerminal.terminalId);
 
   return (
     <AsyncSurface
@@ -242,7 +264,17 @@ export const TerminalPanel = ({
             />
           </ClipSurface>
 
-          <TerminalActivityPanel terminalId={selectedTerminal.terminalId} terminalRead={terminalRead} cycles={cycles} />
+          <TerminalActivityPanel
+            terminalId={selectedTerminal.terminalId}
+            terminalRead={terminalRead}
+            items={terminalActivity}
+            hasMore={activityPaging.hasMore}
+            loading={activityPaging.loading}
+            loadingOlder={activityPaging.loadingOlder}
+            onLoadMore={() => {
+              void onLoadMoreTerminalActivity(sessionId, selectedTerminal.terminalId);
+            }}
+          />
         </ViewportMask>
       </ViewportMask>
     </AsyncSurface>

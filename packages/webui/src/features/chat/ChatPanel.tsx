@@ -1,6 +1,7 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 
+import type { AsyncSurfaceState } from "../../components/ui/async-surface";
 import { ChatAssetPreviewDialog } from "./ChatAssetPreviewDialog";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
 import { ChatConversationViewport } from "./ChatConversationViewport";
@@ -13,6 +14,8 @@ interface ChatPanelProps {
   cycles: RuntimeChatCycle[];
   aiStatus: string;
   sessionStateLabel: string;
+  statusSlot?: ReactNode;
+  conversationState?: AsyncSurfaceState;
   routeNotice?: {
     tone: "info" | "warning" | "destructive";
     message: string;
@@ -41,6 +44,8 @@ const ChatPanelComponent = ({
   cycles,
   aiStatus,
   sessionStateLabel,
+  statusSlot = null,
+  conversationState,
   routeNotice = null,
   disabled,
   imageEnabled = false,
@@ -102,12 +107,27 @@ const ChatPanelComponent = ({
   const inputPlaceholder = imageEnabled
     ? "Message Agenter, use @ to reference files, or attach files, videos, and images..."
     : "Message Agenter and use @ to reference files...";
+  const hasStatusSlot = statusSlot !== null;
+  const resolvedConversationState = conversationState ?? (rows.length > 0 ? "ready-idle" : "empty-idle");
+  const panelRowsClassName = hasStatusSlot
+    ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+    : "grid-rows-[minmax(0,1fr)_auto]";
 
   return (
-    <section className="grid h-full flex-1 grid-rows-[minmax(0,1fr)_auto] rounded-[1.6rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(241,245,249,0.92)_100%)] shadow-sm ring-1 ring-slate-200/80">
+    <section
+      className={`grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)] ${panelRowsClassName} rounded-[1.45rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(241,245,249,0.92)_100%)] shadow-sm ring-1 ring-slate-200/80`}
+      data-testid="chat-panel"
+    >
+      {hasStatusSlot ? (
+        <div className="flex items-center border-b border-slate-200/80 px-2.5 py-2 md:px-3 md:py-2.5" data-testid="chat-route-status-strip">
+          {statusSlot}
+        </div>
+      ) : null}
+
       <ChatConversationViewport
         rows={rows}
         sessionStateLabel={sessionStateLabel}
+        conversationState={resolvedConversationState}
         routeNotice={routeNotice}
         hasMore={hasMore}
         loadingMore={loadingMore}
@@ -120,7 +140,7 @@ const ChatPanelComponent = ({
         onLatestVisibleAssistantMessageIdChange={onLatestVisibleAssistantMessageIdChange}
       />
 
-      <div className="shrink-0 border-t border-slate-200/90 bg-white/94 px-3 py-3 backdrop-blur">
+      <div className="shrink-0 border-t border-slate-200/90 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
         <AIInput
           workspacePath={workspacePath}
           placeholder={inputPlaceholder}
@@ -146,6 +166,8 @@ const chatPanelPropsEqual = (left: ChatPanelProps, right: ChatPanelProps): boole
     left.cycles === right.cycles &&
     left.aiStatus === right.aiStatus &&
     left.sessionStateLabel === right.sessionStateLabel &&
+    left.statusSlot === right.statusSlot &&
+    left.conversationState === right.conversationState &&
     left.routeNotice?.tone === right.routeNotice?.tone &&
     left.routeNotice?.message === right.routeNotice?.message &&
     left.disabled === right.disabled &&

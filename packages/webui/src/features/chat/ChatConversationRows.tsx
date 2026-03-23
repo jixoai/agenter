@@ -9,7 +9,7 @@ import { resolveChatMessagePresentation } from "./chat-contract";
 import { ChatMessageActions } from "./chat-message-actions";
 import type { ConversationRow, ProjectedConversationMessage } from "./chat-projection";
 
-const rowShellClassName = "group w-fit max-w-[92%] md:max-w-[44rem]";
+const rowShellClassName = "group min-w-0 w-fit max-w-[92%] md:max-w-[44rem]";
 const LONG_PRESS_OPEN_DELAY_MS = 420;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
 
@@ -114,7 +114,9 @@ const ChatMessageRowComponent = ({
       data-message-channel={message.channel ?? ""}
       data-message-transient={message.transient ? "true" : "false"}
     >
-      <div className={cn("flex max-w-full items-end gap-2.5", alignment === "end" ? "flex-row-reverse" : "flex-row")}>
+      <div
+        className={cn("flex min-w-0 max-w-full items-end gap-2.5", alignment === "end" ? "flex-row-reverse" : "flex-row")}
+      >
         <ProfileImage
           src={message.role === "assistant" ? assistantAvatarUrl : null}
           label={message.role === "assistant" ? assistantAvatarLabel : userAvatarLabel}
@@ -124,7 +126,7 @@ const ChatMessageRowComponent = ({
           data-chat-bubble="true"
           className={cn(
             rowShellClassName,
-            "relative rounded-2xl px-3 py-2.5 pr-10 text-[13px] transition-shadow",
+            "relative min-w-0 rounded-2xl px-3 py-2.5 pr-10 text-[13px] transition-shadow",
             presentation.bubbleClassName,
             longPressPending ? "ring-2 ring-teal-200/70" : "",
           )}

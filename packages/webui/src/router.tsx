@@ -9,8 +9,12 @@ import { ViewportMask } from "./components/ui/overflow-surface";
 import { surfaceToneClassName } from "./components/ui/surface";
 import { Tabs, type TabItem } from "./components/ui/tabs";
 import { ChatPanel } from "./features/chat/ChatPanel";
-import { phaseToStatus, resolveChatRouteNotice, resolveSessionToolbarState } from "./features/chat/chat-route-status";
-import { SessionToolbar } from "./features/chat/SessionToolbar";
+import {
+  phaseToStatus,
+  resolveChatConversationState,
+  resolveChatRouteNotice,
+  resolveSessionStatusPillState,
+} from "./features/chat/chat-route-status";
 import { LoopBusPanel } from "./features/loopbus/LoopBusPanel";
 import { ModelPanel } from "./features/model/ModelPanel";
 import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
@@ -19,6 +23,7 @@ import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog
 import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import { AppRoot } from "./features/shell/AppRoot";
+import { SessionStatusPillMenu } from "./features/shell/SessionStatusPillMenu";
 import {
   equalChatRuntimeState,
   equalSessionChromeState,
@@ -124,13 +129,19 @@ const DevtoolsCyclesSurface = ({
   selectedCycleId: string | null;
   detailMode: "split" | "sheet";
 }) => {
+  const controller = useAppController();
   const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
+  const pagingState = controller.getLongListPagingState({ resource: "cycles", sessionId });
   return (
     <CycleInspectorPanel
       cycles={cycles}
       loading={loading}
       selectedCycleId={selectedCycleId}
       detailMode={detailMode}
+      pagingState={pagingState}
+      onLoadMore={() => {
+        void controller.loadMoreChatCycles(sessionId);
+      }}
     />
   );
 };
@@ -142,17 +153,24 @@ const DevtoolsTerminalSurface = ({
   sessionId: string;
   loading: boolean;
 }) => {
+  const controller = useAppController();
   const runtime = useRuntimeSelector((state) => state.runtimes[sessionId]);
   const snapshots = useRuntimeSelector((state) => state.terminalSnapshotsBySession[sessionId]);
   const terminalReads = useRuntimeSelector((state) => state.terminalReadsBySession[sessionId]);
-  const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
+  const terminalActivityByTerminal = useRuntimeSelector((state) => state.terminalActivityBySession[sessionId]);
 
   return (
     <TerminalPanel
+      sessionId={sessionId}
       runtime={runtime}
       snapshots={snapshots}
       terminalReads={runtime?.terminalReads ?? terminalReads}
-      cycles={cycles}
+      terminalActivityByTerminal={terminalActivityByTerminal}
+      getTerminalActivityPagingState={(terminalId) =>
+        controller.getLongListPagingState({ resource: "terminal-activity", sessionId, detailId: terminalId })
+      }
+      onLoadTerminalActivity={controller.loadTerminalActivity}
+      onLoadMoreTerminalActivity={controller.loadMoreTerminalActivity}
       loading={loading}
     />
   );
@@ -201,13 +219,13 @@ const DevtoolsLoopBusSurface = ({
       modelCalls={modelCalls}
       apiCalls={apiCalls}
       apiRecording={apiCallRecording}
-      hasMoreTrace={controller.tracePaging[sessionId]?.hasMore ?? true}
-      loadingTrace={controller.tracePaging[sessionId]?.loading ?? false}
+      hasMoreTrace={controller.getLongListPagingState({ resource: "loopbus-trace", sessionId }).hasMore}
+      loadingTrace={controller.getLongListPagingState({ resource: "loopbus-trace", sessionId }).loadingOlder}
       onLoadMoreTrace={() => {
         void controller.loadMoreTrace(sessionId);
       }}
-      hasMoreModel={controller.modelPaging[sessionId]?.hasMore ?? true}
-      loadingModel={controller.modelPaging[sessionId]?.loading ?? false}
+      hasMoreModel={controller.getLongListPagingState({ resource: "model-calls", sessionId }).hasMore}
+      loadingModel={controller.getLongListPagingState({ resource: "model-calls", sessionId }).loadingOlder}
       onLoadMoreModel={() => {
         void controller.loadMoreModel(sessionId);
       }}
@@ -226,6 +244,8 @@ const DevtoolsModelSurface = ({
   const connected = useRuntimeSelector((state) => state.connected);
   const modelCalls = useRuntimeSelector((state) => state.modelCallsBySession[sessionId] ?? EMPTY_MODEL_CALLS);
   const apiCalls = useRuntimeSelector((state) => state.apiCallsBySession[sessionId] ?? EMPTY_API_CALLS);
+  const modelPagingState = controller.getLongListPagingState({ resource: "model-calls", sessionId });
+  const apiPagingState = controller.getLongListPagingState({ resource: "api-calls", sessionId });
   const refreshModelDebug = controller.refreshModelDebug;
   const retainApiCallStream = controller.retainApiCallStream;
 
@@ -274,6 +294,16 @@ const DevtoolsModelSurface = ({
       debug={modelDebug}
       loading={usingModelDebugFallback ? loading : loading || controller.modelDebugLoading}
       error={usingModelDebugFallback ? null : controller.modelDebugError}
+      recentModelCalls={modelCalls}
+      recentApiCalls={apiCalls}
+      modelPagingState={modelPagingState}
+      apiPagingState={apiPagingState}
+      onLoadMoreModelCalls={() => {
+        void controller.loadMoreModel(sessionId);
+      }}
+      onLoadMoreApiCalls={() => {
+        void controller.loadMoreApi(sessionId);
+      }}
       onRefresh={() => {
         void refreshModelDebug(sessionId);
       }}
@@ -485,7 +515,22 @@ const WorkspaceChatRouteView = () => {
   const consumeNotifications = controller.consumeNotifications;
   const routeRuntime = runtime ?? undefined;
   const aiStatus = phaseToStatus(session, routeRuntime);
-  const sessionToolbar = resolveSessionToolbarState(session, routeRuntime);
+  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime);
+  const chatPagingState = search.sessionId
+    ? controller.getLongListPagingState({ resource: "chat", sessionId: search.sessionId })
+    : null;
+  const cyclePagingState = search.sessionId
+    ? controller.getLongListPagingState({ resource: "cycles", sessionId: search.sessionId })
+    : null;
+  const conversationState =
+    search.sessionId && chatPagingState && cyclePagingState
+      ? resolveChatConversationState({
+          connected,
+          hasData: messages.length > 0 || cycles.length > 0,
+          chatPaging: chatPagingState,
+          cyclePaging: cyclePagingState,
+        })
+      : undefined;
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
     session,
@@ -497,12 +542,12 @@ const WorkspaceChatRouteView = () => {
     if (!search.sessionId) {
       return;
     }
-    if (sessionToolbar.action === "stop") {
+    if (sessionStatusPill.primaryAction === "stop") {
       void controller.stopSession(search.sessionId);
       return;
     }
     void controller.startSession(search.sessionId);
-  }, [controller, search.sessionId, sessionToolbar.action]);
+  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
   const handleAbortSession = useCallback(() => {
     if (!search.sessionId) {
       return;
@@ -589,20 +634,20 @@ const WorkspaceChatRouteView = () => {
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="chat"
-      navMode={adaptiveViewport.workspaceNavMode}
-      headerActions={
+      onNavigate={handleWorkspaceChatNavigate}
+      headerStatusSlot={
         search.sessionId ? (
-          <SessionToolbar
-            sessionStateLabel={sessionToolbar.label}
-            sessionStateTone={sessionToolbar.tone}
-            actionLabel={sessionToolbar.actionLabel}
-            actionDisabled={sessionToolbar.disabled}
-            onAction={handleChatHeaderAction}
+          <SessionStatusPillMenu
+            triggerVariant="icon"
+            statusLabel={sessionStatusPill.label}
+            tone={sessionStatusPill.tone}
+            primaryActionLabel={sessionStatusPill.primaryActionLabel}
+            primaryActionDisabled={sessionStatusPill.disabled}
+            onPrimaryAction={handleChatHeaderAction}
             onAbort={handleAbortSession}
           />
         ) : null
       }
-      onNavigate={handleWorkspaceChatNavigate}
     >
       {search.sessionId ? (
         <ChatPanel
@@ -611,7 +656,20 @@ const WorkspaceChatRouteView = () => {
           messages={messages}
           cycles={cycles}
           aiStatus={aiStatus}
-          sessionStateLabel={sessionToolbar.label}
+          sessionStateLabel={sessionStatusPill.label}
+          conversationState={conversationState}
+          statusSlot={
+            adaptiveViewport.compact ? null : (
+              <SessionStatusPillMenu
+                statusLabel={sessionStatusPill.label}
+                tone={sessionStatusPill.tone}
+                primaryActionLabel={sessionStatusPill.primaryActionLabel}
+                primaryActionDisabled={sessionStatusPill.disabled}
+                onPrimaryAction={handleChatHeaderAction}
+                onAbort={handleAbortSession}
+              />
+            )
+          }
           routeNotice={routeNotice}
           disabled={!search.sessionId}
           imageEnabled
@@ -619,8 +677,8 @@ const WorkspaceChatRouteView = () => {
           assistantAvatarUrl={session ? controller.runtimeStore.avatarIconUrl(session.avatar, search.workspacePath) : null}
           assistantAvatarLabel={session?.avatar ?? "Assistant"}
           userAvatarLabel="You"
-          hasMore={search.sessionId ? (controller.chatPaging[search.sessionId]?.hasMore ?? true) : false}
-          loadingMore={search.sessionId ? (controller.chatPaging[search.sessionId]?.loading ?? false) : false}
+          hasMore={chatPagingState?.hasMore ?? false}
+          loadingMore={chatPagingState?.loadingOlder ?? false}
           onLoadMore={() => {
             if (!search.sessionId) {
               return;
@@ -682,6 +740,7 @@ const WorkspaceDevtoolsRouteView = () => {
     equalWorkspaceChromeState,
   );
   const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
+  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
   const hasRuntime = useRuntimeSelector((state) => (search.sessionId ? Boolean(state.runtimes[search.sessionId]) : false));
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
@@ -697,6 +756,22 @@ const WorkspaceDevtoolsRouteView = () => {
   const handleDetailsTabChange = useCallback((value: string) => {
     setDetailsTab(value === "terminal" || value === "tasks" || value === "loopbus" || value === "model" ? value : "cycles");
   }, []);
+  const handleSessionPrimaryAction = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    if (sessionStatusPill.primaryAction === "stop") {
+      void controller.stopSession(search.sessionId);
+      return;
+    }
+    void controller.startSession(search.sessionId);
+  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
+  const handleAbortSession = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    void controller.abortSession(search.sessionId);
+  }, [controller, search.sessionId]);
 
   const handleWorkspaceDevtoolsNavigate = useCallback(
     (tab: "chat" | "devtools" | "settings") => {
@@ -736,12 +811,12 @@ const WorkspaceDevtoolsRouteView = () => {
       return <DevtoolsTasksSurface sessionId={search.sessionId} loading={devtoolsSurfaceLoading} />;
     }
     if (detailsTab === "cycles") {
-      return (
+          return (
         <DevtoolsCyclesSurface
           sessionId={search.sessionId}
           loading={devtoolsSurfaceLoading}
           selectedCycleId={search.cycleId ? `cycle:${search.cycleId}` : null}
-          detailMode={adaptiveViewport.workspaceNavMode === "bottom" ? "sheet" : "split"}
+          detailMode={adaptiveViewport.compact ? "sheet" : "split"}
         />
       );
     }
@@ -756,15 +831,41 @@ const WorkspaceDevtoolsRouteView = () => {
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="devtools"
-      navMode={adaptiveViewport.workspaceNavMode}
       onNavigate={handleWorkspaceDevtoolsNavigate}
+      headerStatusSlot={
+        search.sessionId ? (
+          <SessionStatusPillMenu
+            triggerVariant="icon"
+            statusLabel={sessionStatusPill.label}
+            tone={sessionStatusPill.tone}
+            primaryActionLabel={sessionStatusPill.primaryActionLabel}
+            primaryActionDisabled={sessionStatusPill.disabled}
+            onPrimaryAction={handleSessionPrimaryAction}
+            onAbort={handleAbortSession}
+          />
+        ) : null
+      }
     >
-      <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 md:p-4")}>
-        <Tabs items={DETAIL_TABS} value={detailsTab} onValueChange={handleDetailsTabChange} />
+      <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col gap-2.5 p-2.5 md:p-3")}>
+        {search.sessionId && !adaptiveViewport.compact ? (
+          <div className="shrink-0">
+            <SessionStatusPillMenu
+              statusLabel={sessionStatusPill.label}
+              tone={sessionStatusPill.tone}
+              primaryActionLabel={sessionStatusPill.primaryActionLabel}
+              primaryActionDisabled={sessionStatusPill.disabled}
+              onPrimaryAction={handleSessionPrimaryAction}
+              onAbort={handleAbortSession}
+            />
+          </div>
+        ) : null}
+        <div className="shrink-0">
+          <Tabs items={DETAIL_TABS} value={detailsTab} onValueChange={handleDetailsTabChange} />
+        </div>
         <div
           className={cn(
-            "grid h-full",
-            routeNotice ? "grid-rows-[auto_minmax(0,1fr)] gap-3" : "grid-rows-[minmax(0,1fr)]",
+            "grid min-h-0 flex-1",
+            routeNotice ? "grid-rows-[auto_minmax(0,1fr)] gap-2.5" : "grid-rows-[minmax(0,1fr)]",
           )}
         >
           {routeNotice ? <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner> : null}
@@ -781,10 +882,13 @@ const WorkspaceSettingsRouteView = () => {
   const adaptiveViewport = useAdaptiveViewport();
   const search = workspaceSettingsRoute.useSearch();
   const connected = useRuntimeSelector((state) => state.connected);
+  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
+  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
   const workspace = useRuntimeSelector(
     selectWorkspaceChromeState(search.workspacePath),
     equalWorkspaceChromeState,
   );
+  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
   const refreshSettingsLayers = controller.refreshSettingsLayers;
 
   useEffect(() => {
@@ -805,54 +909,98 @@ const WorkspaceSettingsRouteView = () => {
     },
     [navigate, search.sessionId, search.workspacePath],
   );
+  const handleSessionPrimaryAction = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    if (sessionStatusPill.primaryAction === "stop") {
+      void controller.stopSession(search.sessionId);
+      return;
+    }
+    void controller.startSession(search.sessionId);
+  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
+  const handleAbortSession = useCallback(() => {
+    if (!search.sessionId) {
+      return;
+    }
+    void controller.abortSession(search.sessionId);
+  }, [controller, search.sessionId]);
 
   return (
     <WorkspaceShellFrame
       workspacePath={search.workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="settings"
-      navMode={adaptiveViewport.workspaceNavMode}
       onNavigate={handleWorkspaceSettingsNavigate}
+      headerStatusSlot={
+        search.sessionId ? (
+          <SessionStatusPillMenu
+            triggerVariant="icon"
+            statusLabel={sessionStatusPill.label}
+            tone={sessionStatusPill.tone}
+            primaryActionLabel={sessionStatusPill.primaryActionLabel}
+            primaryActionDisabled={sessionStatusPill.disabled}
+            onPrimaryAction={handleSessionPrimaryAction}
+            onAbort={handleAbortSession}
+          />
+        ) : null
+      }
     >
-      {search.workspacePath ? (
-        <SettingsPanel
-          disabled={!search.workspacePath}
-          loading={controller.settingsLoading}
-          status={controller.settingsStatus}
-          effectiveContent={controller.settingsEffective}
-          layers={controller.settingsLayers}
-          selectedLayerId={controller.selectedLayerId}
-          layerContent={controller.layerDraft}
-          detailMode={adaptiveViewport.workspaceNavMode === "bottom" ? "sheet" : "split"}
-          onSelectLayer={(layerId) => {
-            controller.setSelectedLayerId(layerId);
-            controller.setLayerDraft("");
-          }}
-          onLayerContentChange={controller.setLayerDraft}
-          onRefreshLayers={() => {
-            void refreshSettingsLayers(search.workspacePath);
-          }}
-          onLoadLayer={() => {
-            if (!controller.selectedLayerId) {
-              return;
-            }
-            void controller.loadSelectedLayer(search.workspacePath, controller.selectedLayerId);
-          }}
-          onSaveLayer={() => {
-            if (!controller.selectedLayerId) {
-              return;
-            }
-            void controller.saveSelectedLayer(search.workspacePath, controller.selectedLayerId);
-          }}
-        />
-      ) : (
-        <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
-          <div className="space-y-3 text-center">
-            <AlertTriangle className="mx-auto h-5 w-5 text-amber-600" />
-            <p className="text-sm text-slate-600">Choose a workspace before editing settings.</p>
+      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5">
+        {search.sessionId && !adaptiveViewport.compact ? (
+          <div className="shrink-0">
+            <SessionStatusPillMenu
+              statusLabel={sessionStatusPill.label}
+              tone={sessionStatusPill.tone}
+              primaryActionLabel={sessionStatusPill.primaryActionLabel}
+              primaryActionDisabled={sessionStatusPill.disabled}
+              onPrimaryAction={handleSessionPrimaryAction}
+              onAbort={handleAbortSession}
+            />
           </div>
-        </section>
-      )}
+        ) : null}
+        <ViewportMask className="h-full">
+          {search.workspacePath ? (
+            <SettingsPanel
+              disabled={!search.workspacePath}
+              loading={controller.settingsLoading}
+              status={controller.settingsStatus}
+              effectiveContent={controller.settingsEffective}
+              layers={controller.settingsLayers}
+              selectedLayerId={controller.selectedLayerId}
+              layerContent={controller.layerDraft}
+              detailMode={adaptiveViewport.compact ? "sheet" : "split"}
+              onSelectLayer={(layerId) => {
+                controller.setSelectedLayerId(layerId);
+                controller.setLayerDraft("");
+              }}
+              onLayerContentChange={controller.setLayerDraft}
+              onRefreshLayers={() => {
+                void refreshSettingsLayers(search.workspacePath);
+              }}
+              onLoadLayer={() => {
+                if (!controller.selectedLayerId) {
+                  return;
+                }
+                void controller.loadSelectedLayer(search.workspacePath, controller.selectedLayerId);
+              }}
+              onSaveLayer={() => {
+                if (!controller.selectedLayerId) {
+                  return;
+                }
+                void controller.saveSelectedLayer(search.workspacePath, controller.selectedLayerId);
+              }}
+            />
+          ) : (
+            <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
+              <div className="space-y-3 text-center">
+                <AlertTriangle className="mx-auto h-5 w-5 text-amber-600" />
+                <p className="text-sm text-slate-600">Choose a workspace before editing settings.</p>
+              </div>
+            </section>
+          )}
+        </ViewportMask>
+      </div>
     </WorkspaceShellFrame>
   );
 };
