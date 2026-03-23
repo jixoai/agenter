@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the conversation-first presentation contract for the workspace Chat route.
+
 ## Requirements
+
 ### Requirement: Workspace Chat SHALL present a conversation-first session stage
 The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, and the shared AI input composer over cycle or kernel inspection details.
 
@@ -21,17 +23,22 @@ The WebUI SHALL render the workspace Chat route as a conversation-first stage th
 - **THEN** the divider stays visually secondary to the message bubbles
 
 ### Requirement: Workspace Chat SHALL expose one primary session action and one actionable status summary
-The WebUI SHALL expose exactly one primary session action inside the Chat route, and it SHALL summarize route-relevant runtime state into one actionable notice or passive status instead of stacking multiple competing technical statuses.
+The WebUI SHALL expose exactly one primary session action inside the Chat route, and it SHALL summarize route-relevant runtime state into one actionable notice or passive status instead of stacking multiple competing technical statuses. The primary session action SHALL be rendered through one compact route-local session status pill menu rather than through header-level action chrome.
 
 #### Scenario: Stopped session offers one clear recovery path
 - **WHEN** the active session is stopped
-- **THEN** the Chat toolbar shows one primary session control for starting the session
+- **THEN** the Chat route shows one route-local session status pill that exposes the start action
 - **THEN** the surrounding status copy explains the most relevant next step without simultaneously repeating multiple raw runtime states
 
 #### Scenario: Route summary prefers actionable guidance over vague fallback errors
 - **WHEN** the Chat route receives an unclassified or generic error condition
 - **THEN** the route renders a stable user-facing summary instead of the raw text `Unknown error`
 - **THEN** the summary either offers a recovery action or explains what part of the session failed in neutral language
+
+#### Scenario: Session controls do not expand the top header
+- **WHEN** the user opens a workspace Chat route with an active session
+- **THEN** the top header stays passive and compact
+- **THEN** start, stop, resume, and abort controls stay inside the route-local session status pill menu
 
 ### Requirement: Technical assistant facts SHALL stay available without dominating Chat
 The WebUI SHALL keep technical assistant facts and cycle metadata accessible for expert inspection, but those facts MUST NOT dominate the default Chat reading flow and MUST be hidden behind expert affordances such as per-message context menus or explicit navigation to Devtools.
@@ -45,6 +52,19 @@ The WebUI SHALL keep technical assistant facts and cycle metadata accessible for
 - **WHEN** the user opens a message-level expert action menu from Chat
 - **THEN** the menu can expose the related Devtools navigation or cycle reference
 - **THEN** the default transcript surface still avoids visible cycle terminology
+
+### Requirement: Composer helper content SHALL collapse before primary actions degrade
+The shared Chat composer SHALL use adaptive affordances so helper copy collapses into a secondary help affordance before primary actions lose their semantic prominence.
+
+#### Scenario: Helper hints collapse into a rich tooltip
+- **WHEN** the composer container becomes too narrow to keep all helper chips visible
+- **THEN** the helper content collapses into a `?` affordance that opens a rich tooltip or popover
+- **THEN** the send flow remains visible without helper text noise
+
+#### Scenario: Secondary attachment controls become icon-only when needed
+- **WHEN** the composer container remains narrow after helper collapse
+- **THEN** attachment and screenshot controls may hide their labels while keeping icon-only buttons
+- **THEN** the primary send action still remains clearly identifiable
 
 ### Requirement: Workspace Chat SHALL preserve long-session pagination and live turn continuity
 The WebUI SHALL keep one stable conversation viewport while prepending older persisted pages and appending optimistic or streamed turns for the active session.
@@ -64,3 +84,10 @@ The WebUI SHALL keep one stable conversation viewport while prepending older per
 - **THEN** those turns continue to show attachment metadata and previews in the same message-first conversation flow
 - **THEN** the presence of attachments does not force the route back to cycle-oriented rendering
 
+### Requirement: Workspace Chat SHALL virtualize long-lived transcripts
+The Chat route SHALL virtualize transcript rows regardless of history size thresholds so years-long sessions remain responsive while preserving prepend-anchor stability.
+
+#### Scenario: Very long history remains responsive
+- **WHEN** the session contains a very large transcript
+- **THEN** Chat renders the conversation through a virtualized list instead of mounting every row
+- **THEN** loading an older page keeps the visible anchor stable

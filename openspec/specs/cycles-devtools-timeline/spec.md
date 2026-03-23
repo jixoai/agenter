@@ -1,8 +1,10 @@
 # cycles-devtools-timeline Specification
 
 ## Purpose
-TBD - created by archiving change build-chatapp-assets-and-cycle-devtools. Update Purpose after archive.
+Define the cycle-oriented Devtools timeline contract for technical session inspection.
+
 ## Requirements
+
 ### Requirement: Devtools SHALL expose a live cycle timeline
 The WebUI SHALL expose the cycle-oriented Devtools surface as a live timeline that summarizes cycle state, timing, and model/tool activity while the session is running, but that surface MUST keep its typography, density, and color hierarchy visually subordinate to the main Chat route.
 
@@ -25,10 +27,14 @@ The cycle timeline SHALL keep the list compact and mount richer cycle detail onl
 - **THEN** the non-selected timeline rows remain lightweight
 
 ### Requirement: Long cycle history SHALL remain navigable
-The Devtools cycle timeline SHALL remain operable for long-running sessions by virtualizing the timeline list and preserving stable selection behavior.
+The Devtools cycle timeline SHALL remain operable for long-running sessions by virtualizing the timeline list, incrementally loading older pages, and preserving stable selection behavior.
 
 #### Scenario: Large cycle history keeps the panel responsive
 - **WHEN** the session contains many historical cycles
 - **THEN** the cycle timeline virtualizes the list instead of mounting every row at once
 - **THEN** selection and scrolling remain responsive
 
+#### Scenario: Older cycle pages preserve selection context
+- **WHEN** the user prepends older cycle history while inspecting a selected cycle
+- **THEN** the current selection remains stable
+- **THEN** the newly prepended rows do not reset the detail panel

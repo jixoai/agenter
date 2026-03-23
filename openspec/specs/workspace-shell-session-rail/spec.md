@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the workspace-shell running-session navigation contract for desktop and compact layouts.
+
 ## Requirements
+
 ### Requirement: Workspace shell SHALL expose running sessions through a secondary rail
 The WebUI SHALL expose running sessions through a secondary running-session navigation section inside the application sidebar on desktop-sized viewports, and that sidebar SHALL also own global application entry points such as `GlobalSettings`. Those global entries MUST remain visually separate from current workspace-local route controls.
 
@@ -30,5 +32,4 @@ The WebUI SHALL provide access to the same running sessions on compact layouts t
 #### Scenario: Mobile drawer avoids workspace-local duplication
 - **WHEN** the user opens the navigation drawer while already inside a workspace route
 - **THEN** the drawer shows only primary application navigation and running-session entry points
-- **THEN** the drawer does not repeat `Chat`, `Devtools`, `Settings`, or Start/Stop session actions that belong to the workspace shell or Chat route
-
+- **THEN** the drawer does not repeat `Chat`, `Devtools`, `Settings`, or Start/Stop session actions that belong to the unified top header or Chat route

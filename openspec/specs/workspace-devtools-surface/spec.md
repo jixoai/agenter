@@ -48,6 +48,14 @@ The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and
 - **THEN** only the active tab subscribes to its heavy runtime slices and derived view-models
 - **THEN** inactive tabs do not retain model/API stream work or hot list projections unnecessarily
 
+### Requirement: Devtools long-history panels SHALL use the shared reverse-time loading model
+Cycle, LoopBus, Terminal Activity, and Model history panels SHALL all expose the same older-page loading semantics instead of bespoke list contracts.
+
+#### Scenario: Panels share one older-page contract
+- **WHEN** the user loads older data in different Devtools panels
+- **THEN** each panel uses the same `hasMoreBefore` / `loadingOlder` semantics
+- **THEN** panel-specific rendering can change without redefining paging behavior
+
 ### Requirement: Workspace Devtools SHALL adapt cycle detail presentation by viewport class
 The WebUI SHALL present cycle inspection as a desktop-or-landscape split pane and as a portrait compact right-sheet detail flow. Devtools MUST keep the technical tab strip fixed in route-local chrome while the selected panel owns its own scrolling behavior.
 
