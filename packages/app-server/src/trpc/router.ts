@@ -6,6 +6,15 @@ import { settingsKindSchema } from "../realtime-types";
 import { t } from "./init";
 
 const sessionIdInput = z.object({ sessionId: z.string().min(1) });
+const reverseTimeCursorSchema = z.object({
+  beforeTimeMs: z.number().int().nonnegative(),
+  beforeId: z.number().int().positive(),
+});
+const reversePageInput = z.object({
+  sessionId: z.string().min(1),
+  before: reverseTimeCursorSchema.optional(),
+  limit: z.number().int().positive().max(500).optional(),
+});
 
 export const appRouter = t.router({
   session: t.router({
@@ -98,48 +107,11 @@ export const appRouter = t.router({
         ctx.kernel.sendChat(input.sessionId, input.text, input.assetIds ?? [], input.clientMessageId),
       ),
     list: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          afterId: z.number().int().nonnegative().optional(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listChatMessages(input.sessionId, input.afterId ?? 0, input.limit ?? 200),
-      })),
-    listBefore: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          beforeId: z.number().int().positive(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listChatMessagesBefore(input.sessionId, input.beforeId, input.limit ?? 200),
-      })),
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
     cycles: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listChatCycles(input.sessionId, input.limit ?? 120),
-      })),
-    cyclesBefore: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          beforeCycleId: z.number().int().positive(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listChatCyclesBefore(input.sessionId, input.beforeCycleId, input.limit ?? 120),
-      })),
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 })),
   }),
   draft: t.router({
     resolve: t.procedure
@@ -284,68 +256,14 @@ export const appRouter = t.router({
   runtime: t.router({
     snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
     loopbusStateLogs: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          afterId: z.number().int().nonnegative().optional(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listLoopbusStateLogs(input.sessionId, input.afterId ?? 0, input.limit ?? 200),
-      })),
-    loopbusStateLogsBefore: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          beforeId: z.number().int().positive(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listLoopbusStateLogsBefore(input.sessionId, input.beforeId, input.limit ?? 200),
-      })),
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageLoopbusStateLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
     loopbusTraces: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          afterId: z.number().int().nonnegative().optional(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listLoopbusTraces(input.sessionId, input.afterId ?? 0, input.limit ?? 200),
-      })),
-    loopbusTracesBefore: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          beforeId: z.number().int().positive(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listLoopbusTracesBefore(input.sessionId, input.beforeId, input.limit ?? 200),
-      })),
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageLoopbusTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
     modelCallsPage: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          afterId: z.number().int().nonnegative().optional(),
-          beforeId: z.number().int().positive().optional(),
-          limit: z.number().int().positive().max(500).optional(),
-        }),
-      )
-      .query(({ ctx, input }) => {
-        if (input.beforeId !== undefined) {
-          return {
-            items: ctx.kernel.listModelCallsBefore(input.sessionId, input.beforeId, input.limit ?? 200),
-          };
-        }
-        return {
-          items: ctx.kernel.listModelCalls(input.sessionId, input.afterId ?? 0, input.limit ?? 200),
-        };
-      }),
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
     modelDebug: t.procedure
       .input(
         z.object({
@@ -354,24 +272,20 @@ export const appRouter = t.router({
       )
       .query(async ({ ctx, input }) => await ctx.kernel.inspectModelDebug(input.sessionId)),
     apiCallsPage: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageApiCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+    terminalActivityPage: t.procedure
       .input(
-        z.object({
-          sessionId: z.string().min(1),
-          afterId: z.number().int().nonnegative().optional(),
-          beforeId: z.number().int().positive().optional(),
-          limit: z.number().int().positive().max(500).optional(),
+        reversePageInput.extend({
+          terminalId: z.string().min(1),
         }),
       )
-      .query(({ ctx, input }) => {
-        if (input.beforeId !== undefined) {
-          return {
-            items: ctx.kernel.listApiCallsBefore(input.sessionId, input.beforeId, input.limit ?? 200),
-          };
-        }
-        return {
-          items: ctx.kernel.listApiCalls(input.sessionId, input.afterId ?? 0, input.limit ?? 200),
-        };
-      }),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageTerminalActivity(input.sessionId, input.terminalId, {
+          before: input.before,
+          limit: input.limit ?? 120,
+        }),
+      ),
     events: t.procedure
       .input(
         z

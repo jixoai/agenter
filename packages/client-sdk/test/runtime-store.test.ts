@@ -4,6 +4,12 @@ import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
 import type { RuntimeSnapshot } from "../src/types";
 
+type ReversePageResult<T> = {
+  items: T[];
+  nextBefore?: { beforeTimeMs: number; beforeId: number } | null;
+  hasMoreBefore?: boolean;
+};
+
 const createSnapshot = (eventId: number): RuntimeSnapshot => ({
   version: 1,
   timestamp: Date.now(),
@@ -187,8 +193,22 @@ const createMockClient = (input: {
     assetIds: string[];
     clientMessageId: string;
   }) => Promise<{ ok: boolean; reason?: string }>;
-  chatListQuery?: (input: { sessionId: string; afterId?: number; limit?: number }) => Promise<{ items: unknown[] }>;
-  chatCyclesQuery?: (input: { sessionId: string; limit?: number }) => Promise<{ items: unknown[] }>;
+  chatListQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  chatCyclesQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  terminalActivityPageQuery?: (input: {
+    sessionId: string;
+    terminalId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
 }): AgenterClient => {
   return {
     trpc: {
@@ -208,19 +228,13 @@ const createMockClient = (input: {
           },
         },
         loopbusStateLogs: {
-          query: async () => ({ items: [] }),
-        },
-        loopbusStateLogsBefore: {
-          query: async () => ({ items: [] }),
+          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
         },
         loopbusTraces: {
-          query: async () => ({ items: [] }),
-        },
-        loopbusTracesBefore: {
-          query: async () => ({ items: [] }),
+          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
         },
         modelCallsPage: {
-          query: async () => ({ items: [] }),
+          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
         },
         modelDebug: {
           query: async () => ({
@@ -233,7 +247,18 @@ const createMockClient = (input: {
           }),
         },
         apiCallsPage: {
-          query: async () => ({ items: [] }),
+          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+        },
+        terminalActivityPage: {
+          query: async (payload: {
+            sessionId: string;
+            terminalId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.terminalActivityPageQuery
+              ? await input.terminalActivityPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         apiCalls: {
           subscribe: (
@@ -266,15 +291,25 @@ const createMockClient = (input: {
             input.chatSendMutate ? await input.chatSendMutate(payload) : { ok: true },
         },
         list: {
-          query: async (payload: { sessionId: string; afterId?: number; limit?: number }) =>
-            input.chatListQuery ? await input.chatListQuery(payload) : { items: [] },
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.chatListQuery
+              ? await input.chatListQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
-        listBefore: { query: async () => ({ items: [] }) },
         cycles: {
-          query: async (payload: { sessionId: string; limit?: number }) =>
-            input.chatCyclesQuery ? await input.chatCyclesQuery(payload) : { items: [] },
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.chatCyclesQuery
+              ? await input.chatCyclesQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
-        cyclesBefore: { query: async () => ({ items: [] }) },
       },
       draft: {
         resolve: {
@@ -1617,6 +1652,170 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().runtimes["i-1"]?.activeCycle).toBeNull();
     expect(store.getState().terminalReadsBySession["i-1"]).toEqual({});
     expect(store.getState().chatCyclesBySession["i-1"]?.map((cycle) => cycle.id)).toEqual(["cycle:12"]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given reverse-time chat pages When loading older history Then the store uses explicit cursors and prepends without duplicates", async () => {
+    const chatRequests: Array<{ before?: { beforeTimeMs: number; beforeId: number } }> = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(950),
+        chatListQuery: async (input) => {
+          chatRequests.push({ before: input.before });
+          if (!input.before) {
+            return {
+              items: [
+                {
+                  id: 11,
+                  sessionId: "i-1",
+                  messageId: "11",
+                  role: "user",
+                  channel: "user_input",
+                  content: "newer user",
+                  timestamp: 2_000,
+                  cycleId: 11,
+                  format: "markdown",
+                  tool: null,
+                  attachments: [],
+                },
+                {
+                  id: 12,
+                  sessionId: "i-1",
+                  messageId: "12",
+                  role: "assistant",
+                  channel: "to_user",
+                  content: "newer assistant",
+                  timestamp: 3_000,
+                  cycleId: 12,
+                  format: "markdown",
+                  tool: null,
+                  attachments: [],
+                },
+              ],
+              nextBefore: { beforeTimeMs: 2_000, beforeId: 11 },
+              hasMoreBefore: true,
+            };
+          }
+          return {
+            items: [
+              {
+                id: 9,
+                sessionId: "i-1",
+                messageId: "9",
+                role: "user",
+                channel: "user_input",
+                content: "older user",
+                timestamp: 1_000,
+                cycleId: 9,
+                format: "markdown",
+                tool: null,
+                attachments: [],
+              },
+              {
+                id: 10,
+                sessionId: "i-1",
+                messageId: "10",
+                role: "assistant",
+                channel: "to_user",
+                content: "older assistant",
+                timestamp: 2_000,
+                cycleId: 10,
+                format: "markdown",
+                tool: null,
+                attachments: [],
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    await store.loadChatMessages("i-1", 2);
+    const output = await store.loadMoreChatMessagesBefore("i-1", 2);
+
+    expect(chatRequests).toEqual([
+      { before: undefined },
+      { before: { beforeTimeMs: 2_000, beforeId: 11 } },
+    ]);
+    expect(store.getState().chatsBySession["i-1"]?.map((item) => item.id)).toEqual(["9", "10", "11", "12"]);
+    expect(output).toEqual({ items: 2, hasMore: false });
+    store.disconnect();
+  });
+
+  test("Scenario: Given terminal activity reverse pages When loading older rows Then the store keeps one scoped timeline per terminal", async () => {
+    const activityRequests: Array<{ before?: { beforeTimeMs: number; beforeId: number } }> = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(980),
+        terminalActivityPageQuery: async (input) => {
+          activityRequests.push({ before: input.before });
+          if (!input.before) {
+            return {
+              items: [
+                {
+                  id: 21,
+                  terminalId: "main",
+                  createdAt: 2_000,
+                  kind: "terminal_read",
+                  cycleId: 21,
+                  title: "read-21",
+                  content: "stdout",
+                },
+                {
+                  id: 22,
+                  terminalId: "main",
+                  createdAt: 3_000,
+                  kind: "message",
+                  cycleId: 22,
+                  title: "message-22",
+                  content: "assistant mentions main",
+                },
+              ],
+              nextBefore: { beforeTimeMs: 2_000, beforeId: 21 },
+              hasMoreBefore: true,
+            };
+          }
+          return {
+            items: [
+              {
+                id: 19,
+                terminalId: "main",
+                createdAt: 1_000,
+                kind: "terminal_write",
+                cycleId: 19,
+                title: "write-19",
+                content: "echo hi",
+              },
+              {
+                id: 20,
+                terminalId: "main",
+                createdAt: 2_000,
+                kind: "terminal_read",
+                cycleId: 20,
+                title: "read-20",
+                content: "older stdout",
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    await store.loadTerminalActivity("i-1", "main", 2);
+    const output = await store.loadMoreTerminalActivity("i-1", "main", 2);
+
+    expect(activityRequests).toEqual([
+      { before: undefined },
+      { before: { beforeTimeMs: 2_000, beforeId: 21 } },
+    ]);
+    expect(store.getState().terminalActivityBySession["i-1"]?.main?.map((item) => item.id)).toEqual([19, 20, 21, 22]);
+    expect(output).toEqual({ items: 2, hasMore: false });
     store.disconnect();
   });
 });

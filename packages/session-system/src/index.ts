@@ -2,8 +2,13 @@ export { SessionDb } from "./session-db";
 export type {
   ApiCallInsert,
   ApiCallRecord,
+  LoopbusStateLogInsert,
+  LoopbusStateLogRecord,
+  LoopbusStatePatchOperation,
   LoopbusTraceInsert,
   LoopbusTraceRecord,
+  ReversePage,
+  ReverseTimeCursor,
   SessionAssetInsert,
   SessionAssetKind,
   SessionAssetRecord,
@@ -21,4 +26,7 @@ export type {
   SessionHeadRecord,
   SessionModelCallInsert,
   SessionModelCallRecord,
+  TerminalActivityInsert,
+  TerminalActivityKind,
+  TerminalActivityRecord,
 } from "./types";

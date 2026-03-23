@@ -1,7 +1,11 @@
 export {
   SessionDb,
   type ApiCallRecord as SessionDbApiCallRecord,
+  type LoopbusStateLogRecord as SessionDbLoopbusStateLogRecord,
+  type ReversePage as SessionDbReversePage,
+  type ReverseTimeCursor as SessionDbReverseTimeCursor,
   type SessionBlockRecord as SessionDbChatMessageRecord,
+  type TerminalActivityRecord as SessionDbTerminalActivityRecord,
 } from "@agenter/session-system";
 export {
   TaskEngine,

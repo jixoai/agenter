@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { LoopBus, type LoopBusInput, type LoopBusPhase, type LoopBusWakeSource } from "../src/loop-bus";
+import {
+  LoopBus,
+  type LoopBusInput,
+  type LoopBusPhase,
+  type LoopBusResponse,
+  type LoopBusWakeSource,
+  type LoopChatMessage,
+} from "../src/loop-bus";
 
 const userInput: LoopBusInput = {
   name: "User",
@@ -14,6 +21,10 @@ const createInput = (text: string): LoopBusInput => ({
   ...userInput,
   text,
 });
+
+const resolveWake = (resolver: ((value: LoopBusWakeSource | void) => void) | null): void => {
+  resolver?.(undefined);
+};
 
 describe("Feature: loop bus state transitions", () => {
   test("Scenario: Given one committed input When a cycle runs Then phases follow the new fixed ledger flow", async () => {
@@ -251,7 +262,7 @@ describe("Feature: loop bus state transitions", () => {
       processor: {
         send: async (_messages, context) => {
           signalSeen = Boolean(context?.signal);
-          return await new Promise((_resolve, reject) => {
+          return await new Promise<void | LoopBusResponse<LoopChatMessage, string>>((_resolve, reject) => {
             context?.signal?.addEventListener(
               "abort",
               () => {
@@ -288,7 +299,7 @@ describe("Feature: loop bus state transitions", () => {
     }
 
     bus.stop();
-    releaseWait?.(undefined);
+    resolveWake(releaseWait);
     await Bun.sleep(20);
 
     expect(signalSeen).toBe(true);

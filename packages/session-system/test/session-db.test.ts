@@ -114,4 +114,107 @@ describe("Feature: session-system ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given reverse-time block pages with tied timestamps When paging older history Then the explicit cursor keeps oldest-to-newest order without duplicates", () => {
+    const db = createDb();
+    try {
+      const first = db.appendBlock({ createdAt: 1_000, role: "user", channel: "user_input", content: "first" });
+      const second = db.appendBlock({ createdAt: 2_000, role: "user", channel: "user_input", content: "second" });
+      const third = db.appendBlock({ createdAt: 2_000, role: "assistant", channel: "to_user", content: "third" });
+      const fourth = db.appendBlock({ createdAt: 3_000, role: "assistant", channel: "to_user", content: "fourth" });
+
+      const newestPage = db.listBlocksPage({ limit: 2 });
+      expect(newestPage.items.map((item) => item.id)).toEqual([third.id, fourth.id]);
+      expect(newestPage.nextBefore).toEqual({
+        beforeTimeMs: third.createdAt,
+        beforeId: third.id,
+      });
+      expect(newestPage.hasMoreBefore).toBe(true);
+
+      const olderPage = db.listBlocksPage({ before: newestPage.nextBefore ?? undefined, limit: 2 });
+      expect(olderPage.items.map((item) => item.id)).toEqual([first.id, second.id]);
+      expect(olderPage.nextBefore).toBeNull();
+      expect(olderPage.hasMoreBefore).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given persisted loopbus state logs and terminal activity When querying reverse pages Then each timeline stays server-backed and independently ordered", () => {
+    const db = createDb();
+    try {
+      const stateLog1 = db.appendLoopStateLog({
+        timestamp: 1_000,
+        stateVersion: 1,
+        event: "boot",
+        prevHash: null,
+        stateHash: "hash-1",
+        patch: [{ op: "add", path: "/phase", value: "waiting_commits" }],
+      });
+      const stateLog2 = db.appendLoopStateLog({
+        timestamp: 2_000,
+        stateVersion: 2,
+        event: "collect",
+        prevHash: "hash-1",
+        stateHash: "hash-2",
+        patch: [{ op: "replace", path: "/phase", value: "collecting_inputs" }],
+      });
+      const stateLog3 = db.appendLoopStateLog({
+        timestamp: 2_000,
+        stateVersion: 3,
+        event: "call-model",
+        prevHash: "hash-2",
+        stateHash: "hash-3",
+        patch: [{ op: "replace", path: "/phase", value: "calling_model" }],
+      });
+
+      db.appendTerminalActivity({
+        terminalId: "main",
+        createdAt: 1_000,
+        kind: "terminal_write",
+        title: "write-1",
+        content: "echo 1",
+      });
+      const activity2 = db.appendTerminalActivity({
+        terminalId: "main",
+        createdAt: 2_000,
+        kind: "terminal_read",
+        title: "read-2",
+        content: "stdout 2",
+      });
+      const activity3 = db.appendTerminalActivity({
+        terminalId: "main",
+        createdAt: 2_000,
+        kind: "message",
+        title: "message-3",
+        content: "assistant mentions main",
+      });
+
+      const logPage = db.listLoopStateLogsPage({ limit: 2 });
+      expect(logPage.items.map((item) => item.id)).toEqual([stateLog2.id, stateLog3.id]);
+      expect(logPage.nextBefore).toEqual({
+        beforeTimeMs: stateLog2.timestamp,
+        beforeId: stateLog2.id,
+      });
+
+      const olderLogPage = db.listLoopStateLogsPage({ before: logPage.nextBefore ?? undefined, limit: 2 });
+      expect(olderLogPage.items.map((item) => item.id)).toEqual([stateLog1.id]);
+      expect(olderLogPage.hasMoreBefore).toBe(false);
+
+      const activityPage = db.listTerminalActivityPage("main", { limit: 2 });
+      expect(activityPage.items.map((item) => item.id)).toEqual([activity2.id, activity3.id]);
+      expect(activityPage.nextBefore).toEqual({
+        beforeTimeMs: activity2.createdAt,
+        beforeId: activity2.id,
+      });
+
+      const olderActivityPage = db.listTerminalActivityPage("main", {
+        before: activityPage.nextBefore ?? undefined,
+        limit: 2,
+      });
+      expect(olderActivityPage.items.map((item) => item.title)).toEqual(["write-1"]);
+      expect(olderActivityPage.hasMoreBefore).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
 });

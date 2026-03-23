@@ -6,9 +6,14 @@ import {
   type SessionCollectedInput,
   type SessionCollectedInputPart,
   type ApiCallRecord as SessionDbApiCallRecord,
+  type LoopbusStateLogRecord as SessionDbLoopbusStateLogRecord,
+  type ReversePage as SessionDbReversePage,
+  type ReverseTimeCursor as SessionDbReverseTimeCursor,
   type SessionBlockRecord as SessionDbChatMessageRecord,
+  type SessionCycleRecord,
   type LoopbusTraceRecord as SessionDbLoopbusTraceRecord,
   type SessionModelCallRecord,
+  type TerminalActivityRecord as SessionDbTerminalActivityRecord,
 } from "@agenter/session-system";
 import { ResourceLoader } from "@agenter/settings";
 import {
@@ -40,7 +45,7 @@ import {
 } from "./chat-cycles";
 import type { LoopBusInput, LoopBusPhase, LoopBusWakeSource } from "./loop-bus";
 import type { LoopBusKernelSnapshot, LoopBusKernelState } from "./loopbus-kernel";
-import { createInitialLoopKernelState, hashLoopState } from "./loopbus-kernel";
+import { createInitialLoopKernelState, createLoopStatePatch, hashLoopState } from "./loopbus-kernel";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
@@ -76,6 +81,17 @@ const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice
 type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 type TerminalReadMode = "auto" | "diff" | "snapshot";
 type TerminalReadRepresentation = "diff" | "snapshot";
+
+const extractKnownTerminalIds = (value: string, terminalIds: Iterable<string>): string[] => {
+  const matches: string[] = [];
+  for (const terminalId of terminalIds) {
+    if (terminalId.length === 0 || !value.includes(terminalId)) {
+      continue;
+    }
+    matches.push(terminalId);
+  }
+  return matches;
+};
 
 const buildTerminalDiffPayload = (
   terminalId: string,
@@ -338,7 +354,7 @@ export interface RuntimeEventMap {
     markdown: string;
   };
   loopbusSnapshot: { snapshot: LoopBusKernelSnapshot };
-  loopbusStateLog: { entry: { id: number; event: string; stateVersion: number; timestamp: number } };
+  loopbusStateLog: { entry: SessionDbLoopbusStateLogRecord };
   loopbusTrace: { entry: SessionDbLoopbusTraceRecord };
   loopbusInputSignal: { kind: LoopInputKind; version: number; timestamp: number };
   modelCall: { entry: SessionModelCallRecord };
@@ -1079,6 +1095,19 @@ export class SessionRuntime {
               submitKey,
               submitGapMs,
             });
+            if (result.ok) {
+              this.appendTerminalActivity({
+                terminalId,
+                kind: "terminal_write",
+                cycleId: this.activeCycleId,
+                title: submit || submitKey ? "Terminal write + submit" : "Terminal write",
+                content: text,
+                detail: {
+                  submit,
+                  submitKey: submitKey ?? null,
+                },
+              });
+            }
             return { ok: result.ok, message: result.message };
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -1522,6 +1551,16 @@ export class SessionRuntime {
     return this.sessionDb.listBlocksAfter(afterId, limit);
   }
 
+  pageChatMessages(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionDbChatMessageRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listBlocksPage(input);
+  }
+
   listChatMessagesBefore(beforeId: number, limit = 200): Array<SessionDbChatMessageRecord> {
     if (!this.sessionDb) {
       return [];
@@ -1530,17 +1569,44 @@ export class SessionRuntime {
   }
 
   listLoopbusStateLogs(
-    _afterId = 0,
-    _limit = 200,
-  ): Array<{ id: number; event: string; stateVersion: number; timestamp: number }> {
-    return [];
+    afterId = 0,
+    limit = 200,
+  ): Array<SessionDbLoopbusStateLogRecord> {
+    if (!this.sessionDb) {
+      return [];
+    }
+    const page = this.sessionDb.listLoopStateLogsPage({ limit });
+    return page.items.filter((item) => item.id > afterId);
   }
 
   listLoopbusStateLogsBefore(
-    _beforeId: number,
-    _limit = 200,
-  ): Array<{ id: number; event: string; stateVersion: number; timestamp: number }> {
-    return [];
+    beforeId: number,
+    limit = 200,
+  ): Array<SessionDbLoopbusStateLogRecord> {
+    if (!this.sessionDb || beforeId <= 0) {
+      return [];
+    }
+    const before = this.sessionDb.getLoopStateLogById(beforeId);
+    if (!before) {
+      return [];
+    }
+    return this.sessionDb.listLoopStateLogsPage({
+      before: {
+        beforeTimeMs: before.timestamp,
+        beforeId: before.id,
+      },
+      limit,
+    }).items;
+  }
+
+  pageLoopbusStateLogs(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionDbLoopbusStateLogRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listLoopStateLogsPage(input);
   }
 
   listLoopbusTraces(afterId = 0, limit = 200): Array<SessionDbLoopbusTraceRecord> {
@@ -1555,6 +1621,59 @@ export class SessionRuntime {
       return [];
     }
     return this.sessionDb.listLoopTracesBefore(beforeId, limit);
+  }
+
+  pageLoopbusTraces(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionDbLoopbusTraceRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listLoopTracesPage(input);
+  }
+
+  pageModelCalls(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionModelCallRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listModelCallsPage(input);
+  }
+
+  pageApiCalls(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionDbApiCallRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listApiCallsPage(input);
+  }
+
+  pageCurrentBranchCycles(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionCycleRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listCurrentBranchCyclesPage(input);
+  }
+
+  pageTerminalActivity(
+    terminalId: string,
+    input?: {
+      before?: SessionDbReverseTimeCursor;
+      limit?: number;
+    },
+  ): SessionDbReversePage<SessionDbTerminalActivityRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.listTerminalActivityPage(terminalId, input);
   }
 
   listEditableKinds(): EditableKind[] {
@@ -1886,6 +2005,14 @@ export class SessionRuntime {
             }
             this.terminalReads[terminalId] = diffPayload;
             this.emit("terminalRead", { terminalId, result: diffPayload });
+            this.appendTerminalActivity({
+              terminalId,
+              kind: "terminal_read",
+              cycleId: this.activeCycleId,
+              title: "Terminal read",
+              content: JSON.stringify(diffPayload),
+              detail: diffPayload,
+            });
             return diffPayload;
           }
         }
@@ -1897,6 +2024,14 @@ export class SessionRuntime {
       }
       this.terminalReads[terminalId] = snapshotPayload;
       this.emit("terminalRead", { terminalId, result: snapshotPayload });
+      this.appendTerminalActivity({
+        terminalId,
+        kind: "terminal_read",
+        cycleId: this.activeCycleId,
+        title: "Terminal read",
+        content: JSON.stringify(snapshotPayload),
+        detail: snapshotPayload,
+      });
       return snapshotPayload;
     }
     const payload = await controlPlane.read(terminalId, input.mode, { remark: input.remark });
@@ -1906,6 +2041,14 @@ export class SessionRuntime {
     }
     this.terminalReads[terminalId] = payload;
     this.emit("terminalRead", { terminalId, result: payload });
+    this.appendTerminalActivity({
+      terminalId,
+      kind: "terminal_read",
+      cycleId: this.activeCycleId,
+      title: "Terminal read",
+      content: JSON.stringify(payload),
+      detail: payload,
+    });
     return payload;
   }
 
@@ -2544,6 +2687,7 @@ export class SessionRuntime {
         nextMessage.attachments.map((attachment) => attachment.assetId),
       );
     }
+    this.appendTerminalActivityForMessage(nextMessage, cycleId, channel);
     if (this.activeCycle && cycleId !== null && this.activeCycle.cycleId === cycleId && nextMessage.role === "assistant") {
       this.updateActiveCycle({
         appendOutput: nextMessage,
@@ -2563,6 +2707,58 @@ export class SessionRuntime {
       tool: record.tool,
       attachments: record.attachments.map((attachment) => toChatSessionAsset(this.options.sessionId, attachment)),
     };
+  }
+
+  private appendTerminalActivity(input: {
+    terminalId: string;
+    createdAt?: number;
+    kind: SessionDbTerminalActivityRecord["kind"];
+    cycleId?: number | null;
+    role?: SessionDbTerminalActivityRecord["role"];
+    channel?: SessionDbTerminalActivityRecord["channel"];
+    title: string;
+    content: string;
+    tool?: SessionDbTerminalActivityRecord["tool"];
+    detail?: unknown;
+  }): SessionDbTerminalActivityRecord | null {
+    if (!this.sessionDb) {
+      return null;
+    }
+    return this.sessionDb.appendTerminalActivity(input);
+  }
+
+  private appendTerminalActivityForMessage(
+    message: ChatMessage,
+    cycleId: number | null,
+    channel: SessionDbChatMessageRecord["channel"],
+  ): void {
+    const matches = extractKnownTerminalIds(message.content, this.terminals.keys());
+    if (matches.length === 0) {
+      return;
+    }
+    for (const terminalId of matches) {
+      this.appendTerminalActivity({
+        terminalId,
+        createdAt: message.timestamp,
+        kind: "message",
+        cycleId,
+        role: message.role,
+        channel,
+        title:
+          channel === "tool_call"
+            ? `Tool call · ${message.tool?.name ?? "tool"}`
+            : channel === "tool_result"
+              ? `Tool result · ${message.tool?.name ?? "tool"}`
+              : channel === "self_talk"
+                ? "Assistant internal note"
+                : "Assistant message",
+        content: message.content,
+        tool: message.tool,
+        detail: {
+          messageId: message.id,
+        },
+      });
+    }
   }
 
   private toCollectedInputParts(input: LoopBusInput): SessionCollectedInputPart[] {
@@ -2630,6 +2826,27 @@ export class SessionRuntime {
       },
       result: { kind: detectChatCycleKind(collectedInputs) },
     });
+    for (const collectedInput of collectedInputs) {
+      if (collectedInput.source !== "terminal" || !collectedInput.sourceId) {
+        continue;
+      }
+      const content = collectedInput.parts
+        .filter((part): part is Extract<SessionCollectedInputPart, { type: "text" }> => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
+      this.appendTerminalActivity({
+        terminalId: collectedInput.sourceId,
+        createdAt: cycle.createdAt,
+        kind: "cycle_input",
+        cycleId: cycle.id,
+        title: collectedInput.name,
+        content,
+        detail: {
+          meta: collectedInput.meta ?? {},
+          parts: collectedInput.parts,
+        },
+      });
+    }
     this.sessionDb.setHead(cycle.id);
     this.activeCycleId = cycle.id;
     this.activeModelCallId = null;
@@ -2669,11 +2886,25 @@ export class SessionRuntime {
       lastResponseAt: previous.lastResponseAt,
       lastMessageAt: previous.lastMessageAt,
     };
+    const previousHash = this.loopKernelSnapshot?.stateHash ?? null;
+    const nextHash = hashLoopState(next);
+    const patch = createLoopStatePatch(previous, next);
     this.loopKernelSnapshot = {
       timestamp: next.updatedAt,
-      stateHash: hashLoopState(next),
+      stateHash: nextHash,
       state: next,
     };
+    const entry = this.sessionDb?.appendLoopStateLog({
+      timestamp: next.updatedAt,
+      stateVersion: next.stateVersion,
+      event: input.phase,
+      prevHash: previousHash,
+      stateHash: nextHash,
+      patch,
+    });
+    if (entry) {
+      this.emit("loopbusStateLog", { entry });
+    }
     this.emit("loopbusSnapshot", { snapshot: this.loopKernelSnapshot });
   }
 

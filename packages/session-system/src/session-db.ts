@@ -6,8 +6,12 @@ import { Database } from "bun:sqlite";
 import type {
   ApiCallInsert,
   ApiCallRecord,
+  LoopbusStateLogInsert,
+  LoopbusStateLogRecord,
   LoopbusTraceInsert,
   LoopbusTraceRecord,
+  ReversePage,
+  ReverseTimeCursor,
   SessionAssetInsert,
   SessionAssetRecord,
   SessionBlockAssetRecord,
@@ -19,6 +23,8 @@ import type {
   SessionModelCallInsert,
   SessionModelCallRecord,
   SessionModelCallUpdate,
+  TerminalActivityInsert,
+  TerminalActivityRecord,
 } from "./types";
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
@@ -33,6 +39,33 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 };
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
+
+const resolvePageLimit = (limit: number | undefined, max = 1_000): number => Math.max(1, Math.min(limit ?? 200, max));
+
+const isBeforeCursor = (
+  input: { createdAt: number; id: number },
+  before: ReverseTimeCursor | undefined,
+): boolean =>
+  before === undefined ||
+  input.createdAt < before.beforeTimeMs ||
+  (input.createdAt === before.beforeTimeMs && input.id < before.beforeId);
+
+const buildNextCursor = <T extends { createdAt: number; id: number }>(
+  itemsDescending: T[],
+  hasMoreBefore: boolean,
+): ReverseTimeCursor | null => {
+  if (!hasMoreBefore || itemsDescending.length === 0) {
+    return null;
+  }
+  const oldest = itemsDescending.at(-1);
+  if (!oldest) {
+    return null;
+  }
+  return {
+    beforeTimeMs: oldest.createdAt,
+    beforeId: oldest.id,
+  };
+};
 
 export class SessionDb {
   private readonly db: Database;
@@ -204,6 +237,46 @@ export class SessionDb {
     return items.reverse();
   }
 
+  listCurrentBranchCyclesPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<SessionCycleRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const head = this.getHead().headCycleId;
+    if (head === null) {
+      return {
+        items: [],
+        nextBefore: null,
+        hasMoreBefore: false,
+      };
+    }
+
+    const itemsDescending: SessionCycleRecord[] = [];
+    let cursor: number | null = head;
+    while (cursor !== null) {
+      const row = this.getCycleById(cursor);
+      if (!row) {
+        break;
+      }
+      cursor = row.prevCycleId;
+      if (!isBeforeCursor({ createdAt: row.createdAt, id: row.id }, input?.before)) {
+        continue;
+      }
+      itemsDescending.push(row);
+      if (itemsDescending.length > safeLimit) {
+        break;
+      }
+    }
+
+    const hasMoreBefore = itemsDescending.length > safeLimit;
+    const visibleDescending = hasMoreBefore ? itemsDescending.slice(0, safeLimit) : itemsDescending;
+    return {
+      items: visibleDescending.slice().reverse(),
+      nextBefore: buildNextCursor(visibleDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
+  }
+
   appendModelCall(input: SessionModelCallInsert): SessionModelCallRecord {
     const createdAt = input.createdAt ?? Date.now();
     const status = input.status ?? (input.error ? "error" : input.response === undefined ? "running" : "done");
@@ -333,6 +406,44 @@ export class SessionDb {
       .all(beforeId, safeLimit) as Array<{ id: number }>;
     rows.reverse();
     return rows.map((row) => this.getModelCallById(row.id)).filter((row): row is SessionModelCallRecord => row !== null);
+  }
+
+  listModelCallsPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<SessionModelCallRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from model_call
+             where created_at < ? or (created_at = ? and id < ?)
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
+          id: number;
+        }>)
+      : (this.db
+          .query(
+            `select id
+             from model_call
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getModelCallById(row.id))
+      .filter((row): row is SessionModelCallRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
   }
 
   appendAsset(input: SessionAssetInsert): SessionAssetRecord {
@@ -530,6 +641,139 @@ export class SessionDb {
     return rows.map((row) => this.getBlockById(row.id)).filter((row): row is SessionBlockRecord => row !== null);
   }
 
+  listBlocksPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<SessionBlockRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from session_block
+             where created_at < ? or (created_at = ? and id < ?)
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
+          id: number;
+        }>)
+      : (this.db
+          .query(
+            `select id
+             from session_block
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getBlockById(row.id))
+      .filter((row): row is SessionBlockRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
+  }
+
+  appendLoopStateLog(input: LoopbusStateLogInsert): LoopbusStateLogRecord {
+    const result = this.db
+      .query(
+        `insert into loopbus_state_log (
+          timestamp,
+          state_version,
+          event,
+          prev_hash,
+          state_hash,
+          patch_json
+        ) values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(input.timestamp, input.stateVersion, input.event, input.prevHash, input.stateHash, toJson(input.patch));
+    const row = this.getLoopStateLogById(Number(result.lastInsertRowid));
+    if (!row) {
+      throw new Error("failed to load inserted loopbus_state_log");
+    }
+    return row;
+  }
+
+  getLoopStateLogById(id: number): LoopbusStateLogRecord | null {
+    const row = this.db
+      .query(
+        `select id, timestamp, state_version, event, prev_hash, state_hash, patch_json
+         from loopbus_state_log where id = ?`,
+      )
+      .get(id) as
+      | {
+          id: number;
+          timestamp: number;
+          state_version: number;
+          event: string;
+          prev_hash: string | null;
+          state_hash: string;
+          patch_json: string;
+        }
+      | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      timestamp: row.timestamp,
+      stateVersion: row.state_version,
+      event: row.event,
+      prevHash: row.prev_hash,
+      stateHash: row.state_hash,
+      patch: parseJson(row.patch_json, []),
+    };
+  }
+
+  listLoopStateLogsPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<LoopbusStateLogRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from loopbus_state_log
+             where timestamp < ? or (timestamp = ? and id < ?)
+             order by timestamp desc, id desc
+             limit ?`,
+          )
+          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
+          id: number;
+        }>)
+      : (this.db
+          .query(
+            `select id
+             from loopbus_state_log
+             order by timestamp desc, id desc
+             limit ?`,
+          )
+          .all(safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getLoopStateLogById(row.id))
+      .filter((row): row is LoopbusStateLogRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(
+        recordsDescending.map((record) => ({
+          ...record,
+          createdAt: record.timestamp,
+        })),
+        hasMoreBefore,
+      ),
+      hasMoreBefore,
+    };
+  }
+
   appendLoopTrace(input: LoopbusTraceInsert): LoopbusTraceRecord {
     const seq = this.nextSeq('loopbus_trace', 'cycle_id', input.cycleId);
     const result = this.db
@@ -611,6 +855,50 @@ export class SessionDb {
       .all(beforeId, safeLimit) as Array<{ id: number }>;
     rows.reverse();
     return rows.map((row) => this.getLoopTraceById(row.id)).filter((row): row is LoopbusTraceRecord => row !== null);
+  }
+
+  listLoopTracesPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<LoopbusTraceRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from loopbus_trace
+             where started_at < ? or (started_at = ? and id < ?)
+             order by started_at desc, id desc
+             limit ?`,
+          )
+          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
+          id: number;
+        }>)
+      : (this.db
+          .query(
+            `select id
+             from loopbus_trace
+             order by started_at desc, id desc
+             limit ?`,
+          )
+          .all(safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getLoopTraceById(row.id))
+      .filter((row): row is LoopbusTraceRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(
+        recordsDescending.map((record) => ({
+          ...record,
+          createdAt: record.startedAt,
+        })),
+        hasMoreBefore,
+      ),
+      hasMoreBefore,
+    };
   }
 
   appendApiCall(input: ApiCallInsert): ApiCallRecord {
@@ -695,6 +983,165 @@ export class SessionDb {
     return rows.map((row) => this.getApiCallById(row.id)).filter((row): row is ApiCallRecord => row !== null);
   }
 
+  listApiCallsPage(input?: {
+    before?: ReverseTimeCursor;
+    limit?: number;
+  }): ReversePage<ApiCallRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from api_call
+             where created_at < ? or (created_at = ? and id < ?)
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
+          id: number;
+        }>)
+      : (this.db
+          .query(
+            `select id
+             from api_call
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getApiCallById(row.id))
+      .filter((row): row is ApiCallRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
+  }
+
+  appendTerminalActivity(input: TerminalActivityInsert): TerminalActivityRecord {
+    const createdAt = input.createdAt ?? Date.now();
+    const result = this.db
+      .query(
+        `insert into terminal_activity (
+          terminal_id,
+          created_at,
+          kind,
+          cycle_id,
+          role,
+          channel,
+          title,
+          content,
+          tool_json,
+          detail_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.terminalId,
+        createdAt,
+        input.kind,
+        input.cycleId ?? null,
+        input.role ?? null,
+        input.channel ?? null,
+        input.title,
+        input.content,
+        input.tool === undefined ? null : toJson(input.tool),
+        input.detail === undefined ? null : toJson(input.detail),
+      );
+    const row = this.getTerminalActivityById(Number(result.lastInsertRowid));
+    if (!row) {
+      throw new Error("failed to load inserted terminal_activity");
+    }
+    return row;
+  }
+
+  getTerminalActivityById(id: number): TerminalActivityRecord | null {
+    const row = this.db
+      .query(
+        `select id, terminal_id, created_at, kind, cycle_id, role, channel, title, content, tool_json, detail_json
+         from terminal_activity where id = ?`,
+      )
+      .get(id) as
+      | {
+          id: number;
+          terminal_id: string;
+          created_at: number;
+          kind: TerminalActivityRecord["kind"];
+          cycle_id: number | null;
+          role: TerminalActivityRecord["role"] | null;
+          channel: TerminalActivityRecord["channel"] | null;
+          title: string;
+          content: string;
+          tool_json: string | null;
+          detail_json: string | null;
+        }
+      | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      terminalId: row.terminal_id,
+      createdAt: row.created_at,
+      kind: row.kind,
+      cycleId: row.cycle_id,
+      role: row.role ?? undefined,
+      channel: row.channel ?? undefined,
+      title: row.title,
+      content: row.content,
+      tool: row.tool_json ? parseJson(row.tool_json, undefined) : undefined,
+      detail: row.detail_json ? parseJson(row.detail_json, undefined) : undefined,
+    };
+  }
+
+  listTerminalActivityPage(
+    terminalId: string,
+    input?: {
+      before?: ReverseTimeCursor;
+      limit?: number;
+    },
+  ): ReversePage<TerminalActivityRecord> {
+    const safeLimit = resolvePageLimit(input?.limit);
+    const rows = input?.before
+      ? (this.db
+          .query(
+            `select id
+             from terminal_activity
+             where terminal_id = ? and (created_at < ? or (created_at = ? and id < ?))
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(
+            terminalId,
+            input.before.beforeTimeMs,
+            input.before.beforeTimeMs,
+            input.before.beforeId,
+            safeLimit + 1,
+          ) as Array<{ id: number }>)
+      : (this.db
+          .query(
+            `select id
+             from terminal_activity
+             where terminal_id = ?
+             order by created_at desc, id desc
+             limit ?`,
+          )
+          .all(terminalId, safeLimit + 1) as Array<{ id: number }>);
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
+    const recordsDescending = visibleRows
+      .map((row) => this.getTerminalActivityById(row.id))
+      .filter((row): row is TerminalActivityRecord => row !== null);
+    return {
+      items: recordsDescending.slice().reverse(),
+      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
+  }
+
   private nextSeq(table: 'session_cycle' | 'session_block' | 'loopbus_trace', scopeColumn?: 'cycle_id', scopeValue?: number): number {
     if (scopeColumn && scopeValue !== undefined) {
       const row = this.db
@@ -741,6 +1188,7 @@ export class SessionDb {
       );
 
       create index if not exists idx_session_cycle_prev on session_cycle(prev_cycle_id);
+      create index if not exists idx_session_cycle_created on session_cycle(created_at desc, id desc);
 
       create table if not exists model_call (
         id integer primary key autoincrement,
@@ -756,6 +1204,7 @@ export class SessionDb {
       );
 
       create index if not exists idx_model_call_cycle on model_call(cycle_id);
+      create index if not exists idx_model_call_created on model_call(created_at desc, id desc);
 
       create table if not exists session_block (
         id integer primary key autoincrement,
@@ -770,6 +1219,7 @@ export class SessionDb {
       );
 
       create index if not exists idx_session_block_cycle on session_block(cycle_id, id asc);
+      create index if not exists idx_session_block_created on session_block(created_at desc, id desc);
 
       create table if not exists session_asset (
         id text primary key,
@@ -791,6 +1241,18 @@ export class SessionDb {
       create index if not exists idx_session_block_asset_block on session_block_asset(block_id, seq asc);
       create index if not exists idx_session_block_asset_asset on session_block_asset(asset_id, block_id asc);
 
+      create table if not exists loopbus_state_log (
+        id integer primary key autoincrement,
+        timestamp integer not null,
+        state_version integer not null,
+        event text not null,
+        prev_hash text,
+        state_hash text not null,
+        patch_json text not null
+      );
+
+      create index if not exists idx_loopbus_state_log_timestamp on loopbus_state_log(timestamp desc, id desc);
+
       create table if not exists loopbus_trace (
         id integer primary key autoincrement,
         cycle_id integer not null,
@@ -803,6 +1265,7 @@ export class SessionDb {
       );
 
       create index if not exists idx_loopbus_trace_cycle on loopbus_trace(cycle_id, id asc);
+      create index if not exists idx_loopbus_trace_started on loopbus_trace(started_at desc, id desc);
 
       create table if not exists api_call (
         id integer primary key autoincrement,
@@ -814,6 +1277,23 @@ export class SessionDb {
       );
 
       create index if not exists idx_api_call_model_call on api_call(model_call_id, id asc);
+      create index if not exists idx_api_call_created on api_call(created_at desc, id desc);
+
+      create table if not exists terminal_activity (
+        id integer primary key autoincrement,
+        terminal_id text not null,
+        created_at integer not null,
+        kind text not null,
+        cycle_id integer,
+        role text,
+        channel text,
+        title text not null,
+        content text not null,
+        tool_json text,
+        detail_json text
+      );
+
+      create index if not exists idx_terminal_activity_terminal_created on terminal_activity(terminal_id, created_at desc, id desc);
     `);
 
     this.ensureColumn("model_call", "status", "alter table model_call add column status text not null default 'done'");

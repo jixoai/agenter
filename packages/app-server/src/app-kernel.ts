@@ -4,9 +4,15 @@ import { join, resolve } from "node:path";
 import { normalizeAvatarNickname } from "@agenter/avatar";
 import {
   SessionDb,
+  type ApiCallRecord,
+  type LoopbusStateLogRecord,
+  type ReversePage,
+  type ReverseTimeCursor,
   type SessionBlockRecord,
   type SessionCollectedInput,
   type SessionCycleRecord,
+  type SessionModelCallRecord,
+  type TerminalActivityRecord,
 } from "@agenter/session-system";
 import { collectClientMessageIds, toChatCycleId, type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
@@ -492,6 +498,25 @@ export class AppKernel {
     return this.readChatMessagesFromDb(session.sessionRoot, sessionId, afterId, limit);
   }
 
+  pageChatMessages(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<
+    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
+      attachments: ChatSessionAsset[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readChatMessagesPageFromDb(session.sessionRoot, sessionId, input);
+  }
+
   listChatMessagesBefore(
     sessionId: string,
     beforeId: number,
@@ -519,6 +544,18 @@ export class AppKernel {
       return [];
     }
     return this.readChatCyclesFromDb(session.sessionRoot, sessionId, limit);
+  }
+
+  pageChatCycles(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ChatCycle> {
+    this.sessions.refresh(this.workspaces.list());
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readChatCyclesPageFromDb(session.sessionRoot, sessionId, input);
   }
 
   listChatCyclesBefore(sessionId: string, beforeCycleId: number, limit = 120): ChatCycle[] {
@@ -948,6 +985,17 @@ export class AppKernel {
     return runtime.listCurrentBranchCycles(limit);
   }
 
+  pageCurrentBranchCycles(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionCycleRecord> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readCurrentBranchCyclesPageFromDb(session.sessionRoot, input);
+  }
+
   async rollbackSessionCycle(
     sessionId: string,
     cycleId: number,
@@ -984,6 +1032,17 @@ export class AppKernel {
     return runtime.listModelCalls(afterId, limit);
   }
 
+  pageModelCalls(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionModelCallRecord> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readModelCallsPageFromDb(session.sessionRoot, input);
+  }
+
   listModelCallsBefore(
     sessionId: string,
     beforeId: number,
@@ -1002,6 +1061,17 @@ export class AppKernel {
       return [];
     }
     return runtime.listApiCalls(afterId, limit);
+  }
+
+  pageApiCalls(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ApiCallRecord> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readApiCallsPageFromDb(session.sessionRoot, input);
   }
 
   listApiCallsBefore(
@@ -1028,6 +1098,17 @@ export class AppKernel {
     return runtime.listLoopbusStateLogs(afterId, limit);
   }
 
+  pageLoopbusStateLogs(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<LoopbusStateLogRecord> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readLoopbusStateLogsPageFromDb(session.sessionRoot, input);
+  }
+
   listLoopbusStateLogsBefore(
     sessionId: string,
     beforeId: number,
@@ -1052,6 +1133,17 @@ export class AppKernel {
     return runtime.listLoopbusTraces(afterId, limit);
   }
 
+  pageLoopbusTraces(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ReturnType<SessionRuntime["listLoopbusTraces"]>[number]> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readLoopbusTracesPageFromDb(session.sessionRoot, input);
+  }
+
   listLoopbusTracesBefore(
     sessionId: string,
     beforeId: number,
@@ -1062,6 +1154,18 @@ export class AppKernel {
       return [];
     }
     return runtime.listLoopbusTracesBefore(beforeId, limit);
+  }
+
+  pageTerminalActivity(
+    sessionId: string,
+    terminalId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<TerminalActivityRecord> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.readTerminalActivityPageFromDb(session.sessionRoot, terminalId, input);
   }
 
   listTasks(sessionId: string): { ok: boolean; tasks: ReturnType<SessionRuntime["snapshot"]>["tasks"] } {
@@ -1245,6 +1349,58 @@ export class AppKernel {
     }
   }
 
+  private readChatMessagesPageFromDb(
+    sessionRoot: string,
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<
+    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
+      attachments: ChatSessionAsset[];
+      sessionId: string;
+      messageId: string;
+      timestamp: number;
+    }
+  > {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+
+    const db = new SessionDb(dbPath);
+    try {
+      const page = db.listBlocksPage(input);
+      return {
+        items: page.items.map((item) => ({
+          ...item,
+          attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
+          sessionId,
+          messageId: `${item.id}`,
+          timestamp: item.createdAt,
+        })),
+        nextBefore: page.nextBefore,
+        hasMoreBefore: page.hasMoreBefore,
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  private readCurrentBranchCyclesPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionCycleRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listCurrentBranchCyclesPage(input);
+    } finally {
+      db.close();
+    }
+  }
+
   private async readPersistedModelDebug(session: SessionMeta): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
     const resolved = await resolveSessionConfig(session.cwd, { avatar: session.avatar });
     const dbPath = join(session.sessionRoot, "session.db");
@@ -1362,6 +1518,37 @@ export class AppKernel {
     }
   }
 
+  private readChatCyclesPageFromDb(
+    sessionRoot: string,
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ChatCycle> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const page = db.listCurrentBranchCyclesPage(input);
+      const cycleInputs = mergeLegacyCycleInputs(sessionId, page.items, db.listOrphanUserInputBlocks((input?.limit ?? 120) * 4));
+      return {
+        items: cycleInputs.map(({ cycle, inputs }) =>
+          toChatCycle({
+            sessionId,
+            cycle,
+            inputs,
+            outputs: db.listBlocksByCycleId(cycle.id),
+            modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
+          }),
+        ),
+        nextBefore: page.nextBefore,
+        hasMoreBefore: page.hasMoreBefore,
+      };
+    } finally {
+      db.close();
+    }
+  }
+
   private readChatCyclesBeforeFromDb(
     sessionRoot: string,
     sessionId: string,
@@ -1385,6 +1572,87 @@ export class AppKernel {
           modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
         }),
       );
+    } finally {
+      db.close();
+    }
+  }
+
+  private readLoopbusStateLogsPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<LoopbusStateLogRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listLoopStateLogsPage(input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readLoopbusTracesPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ReturnType<SessionRuntime["listLoopbusTraces"]>[number]> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listLoopTracesPage(input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readModelCallsPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionModelCallRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listModelCallsPage(input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readApiCallsPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<ApiCallRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listApiCallsPage(input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readTerminalActivityPageFromDb(
+    sessionRoot: string,
+    terminalId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<TerminalActivityRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listTerminalActivityPage(terminalId, input);
     } finally {
       db.close();
     }

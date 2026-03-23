@@ -3,6 +3,7 @@ import type {
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
+  HistoryPageCursor,
   ModelDebugOutput,
   NotificationSnapshotOutput,
   RuntimeChatCycle,
@@ -11,6 +12,7 @@ import type {
   RuntimeEvent,
   RuntimeSnapshotEntry,
   SessionEntry,
+  TerminalActivityItem,
   UploadedSessionAsset,
   WorkspacePathSearchOutput,
   WorkspaceSessionCounts,
@@ -36,6 +38,7 @@ const createInitialState = (): RuntimeClientState => ({
   loopbusTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
+  terminalActivityBySession: {},
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
@@ -44,6 +47,7 @@ const createInitialState = (): RuntimeClientState => ({
 type Listener = (state: RuntimeClientState) => void;
 type SubscriptionHandle = { unsubscribe: () => void };
 type ApiCallStreamHandle = { count: number; sub: SubscriptionHandle | null; cursor: number };
+type HistoryCursorValue = HistoryPageCursor | null;
 
 const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
   return [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -67,6 +71,13 @@ const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage)
     return left.timestamp - right.timestamp;
   }
   return left.id.localeCompare(right.id);
+};
+
+const compareHistoryCursor = (left: HistoryPageCursor, right: HistoryPageCursor): number => {
+  if (left.beforeTimeMs !== right.beforeTimeMs) {
+    return left.beforeTimeMs - right.beforeTimeMs;
+  }
+  return left.beforeId - right.beforeId;
 };
 
 const normalizeFocusedTerminalState = (input: {
@@ -110,13 +121,17 @@ export class RuntimeStore {
   private readonly loopbusTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
-  private readonly loopbusLogsBeforeCursorBySession = new Map<string, number>();
-  private readonly loopbusTracesBeforeCursorBySession = new Map<string, number>();
-  private readonly apiCallsBeforeCursorBySession = new Map<string, number>();
-  private readonly modelCallsBeforeCursorBySession = new Map<string, number>();
-  private readonly chatBeforeCursorBySession = new Map<string, number>();
-  private readonly chatCyclesBeforeCursorBySession = new Map<string, number>();
-  private readonly chatHydrationTasksBySession = new Map<string, Promise<void>>();
+  private readonly loopbusLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly loopbusTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly apiCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly modelCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly chatBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly chatCyclesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly terminalActivityBeforeCursorByKey = new Map<string, HistoryCursorValue>();
+  private readonly chatHydrationTasksBySession = new Map<
+    string,
+    Promise<{ messagesHasMore: boolean; cyclesHasMore: boolean }>
+  >();
   private accessTick = 0;
 
   constructor(private readonly client: AgenterClient) {}
@@ -255,6 +270,97 @@ export class RuntimeStore {
         return left.cycleId - right.cycleId;
       }
       return left.id.localeCompare(right.id);
+    });
+  }
+
+  private terminalActivityKey(sessionId: string, terminalId: string): string {
+    return `${sessionId}:${terminalId}`;
+  }
+
+  private toChatHistoryCursor(message: RuntimeChatMessage): HistoryPageCursor | null {
+    const numericId = Number(message.id);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+      return null;
+    }
+    return {
+      beforeTimeMs: message.timestamp,
+      beforeId: numericId,
+    };
+  }
+
+  private toCycleHistoryCursor(cycle: RuntimeChatCycle): HistoryPageCursor | null {
+    if (cycle.cycleId === null || cycle.cycleId <= 0) {
+      return null;
+    }
+    return {
+      beforeTimeMs: cycle.createdAt,
+      beforeId: cycle.cycleId,
+    };
+  }
+
+  private toRecordHistoryCursor(record: { id: number; createdAt: number }): HistoryPageCursor {
+    return {
+      beforeTimeMs: record.createdAt,
+      beforeId: record.id,
+    };
+  }
+
+  private toStartedAtHistoryCursor(record: { id: number; startedAt: number }): HistoryPageCursor {
+    return {
+      beforeTimeMs: record.startedAt,
+      beforeId: record.id,
+    };
+  }
+
+  private toTimestampHistoryCursor(record: { id: number; timestamp: number }): HistoryPageCursor {
+    return {
+      beforeTimeMs: record.timestamp,
+      beforeId: record.id,
+    };
+  }
+
+  private resolveBeforeCursor<T>(
+    cursorMap: Map<string, HistoryCursorValue>,
+    key: string,
+    current: T[],
+    resolveFromOldest: (item: T) => HistoryPageCursor | null,
+  ): HistoryCursorValue | undefined {
+    if (cursorMap.has(key)) {
+      return cursorMap.get(key) ?? null;
+    }
+    const oldest = current[0];
+    return oldest ? resolveFromOldest(oldest) : undefined;
+  }
+
+  private updateBeforeCursor(cursorMap: Map<string, HistoryCursorValue>, key: string, nextBefore: HistoryCursorValue): void {
+    cursorMap.set(key, nextBefore ?? null);
+  }
+
+  private mergeAscendingByCursor<T>(
+    current: T[],
+    incoming: T[],
+    resolveKey: (item: T) => string | number,
+    resolveCursor: (item: T) => HistoryPageCursor | null,
+  ): T[] {
+    const entries = new Map<string | number, T>();
+    for (const item of current) {
+      entries.set(resolveKey(item), item);
+    }
+    for (const item of incoming) {
+      entries.set(resolveKey(item), item);
+    }
+    return [...entries.values()].sort((left, right) => {
+      const leftCursor = resolveCursor(left);
+      const rightCursor = resolveCursor(right);
+      if (leftCursor && rightCursor) {
+        const byCursor = compareHistoryCursor(leftCursor, rightCursor);
+        if (byCursor !== 0) {
+          return byCursor;
+        }
+      }
+      const leftKey = resolveKey(left);
+      const rightKey = resolveKey(right);
+      return String(leftKey).localeCompare(String(rightKey));
     });
   }
 
@@ -453,6 +559,7 @@ export class RuntimeStore {
     this.modelCallsBeforeCursorBySession.clear();
     this.chatBeforeCursorBySession.clear();
     this.chatCyclesBeforeCursorBySession.clear();
+    this.terminalActivityBeforeCursorByKey.clear();
     this.setConnectionStatus("offline");
     this.emit();
     this.client.close();
@@ -634,6 +741,7 @@ export class RuntimeStore {
     delete this.state.loopbusTracesBySession[sessionId];
     delete this.state.apiCallsBySession[sessionId];
     delete this.state.modelCallsBySession[sessionId];
+    delete this.state.terminalActivityBySession[sessionId];
     delete this.state.apiCallRecordingBySession[sessionId];
     this.loopbusLogsAccessBySession.delete(sessionId);
     this.loopbusTracesAccessBySession.delete(sessionId);
@@ -645,6 +753,11 @@ export class RuntimeStore {
     this.modelCallsBeforeCursorBySession.delete(sessionId);
     this.chatBeforeCursorBySession.delete(sessionId);
     this.chatCyclesBeforeCursorBySession.delete(sessionId);
+    for (const key of [...this.terminalActivityBeforeCursorByKey.keys()]) {
+      if (key.startsWith(`${sessionId}:`)) {
+        this.terminalActivityBeforeCursorByKey.delete(key);
+      }
+    }
     this.emit();
     await this.listAllWorkspaces();
   }
@@ -891,14 +1004,10 @@ export class RuntimeStore {
   }
 
   async loadChatMessages(sessionId: string, limit = 120): Promise<void> {
-    const output = await this.client.trpc.chat.list.query({ sessionId, afterId: 0, limit });
+    const output = await this.client.trpc.chat.list.query({ sessionId, limit });
     const mapped = output.items.map((item) => this.toRuntimeChatMessage(item));
     this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], mapped);
-    if (output.items.length > 0) {
-      this.chatBeforeCursorBySession.set(sessionId, output.items[0].id);
-    } else {
-      this.chatBeforeCursorBySession.delete(sessionId);
-    }
+    this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, output.nextBefore);
     this.emit();
   }
 
@@ -909,18 +1018,14 @@ export class RuntimeStore {
       this.state.chatCyclesBySession[sessionId] ?? [],
       mapped,
     );
-    if (output.items.length > 0) {
-      this.chatCyclesBeforeCursorBySession.set(sessionId, output.items[0].cycleId ?? 0);
-    } else {
-      this.chatCyclesBeforeCursorBySession.delete(sessionId);
-    }
+    this.updateBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, output.nextBefore);
     this.emit();
   }
 
   async hydrateSessionHistory(
     sessionId: string,
     input?: { messageLimit?: number; cycleLimit?: number },
-  ): Promise<void> {
+  ): Promise<{ messagesHasMore: boolean; cyclesHasMore: boolean }> {
     const inFlight = this.chatHydrationTasksBySession.get(sessionId);
     if (inFlight) {
       return await inFlight;
@@ -928,7 +1033,7 @@ export class RuntimeStore {
 
     const task = (async () => {
       const [chatOutput, cyclesOutput] = await Promise.all([
-        this.client.trpc.chat.list.query({ sessionId, afterId: 0, limit: input?.messageLimit ?? 200 }),
+        this.client.trpc.chat.list.query({ sessionId, limit: input?.messageLimit ?? 200 }),
         this.client.trpc.chat.cycles.query({ sessionId, limit: input?.cycleLimit ?? 120 }),
       ]);
 
@@ -941,19 +1046,14 @@ export class RuntimeStore {
         mappedCycles,
       );
 
-      if (chatOutput.items.length > 0) {
-        this.chatBeforeCursorBySession.set(sessionId, chatOutput.items[0].id);
-      } else {
-        this.chatBeforeCursorBySession.delete(sessionId);
-      }
-
-      if (cyclesOutput.items.length > 0) {
-        this.chatCyclesBeforeCursorBySession.set(sessionId, cyclesOutput.items[0].cycleId ?? 0);
-      } else {
-        this.chatCyclesBeforeCursorBySession.delete(sessionId);
-      }
+      this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, chatOutput.nextBefore);
+      this.updateBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, cyclesOutput.nextBefore);
 
       this.emit();
+      return {
+        messagesHasMore: chatOutput.hasMoreBefore,
+        cyclesHasMore: cyclesOutput.hasMoreBefore,
+      };
     })().finally(() => {
       this.chatHydrationTasksBySession.delete(sessionId);
     });
@@ -964,42 +1064,55 @@ export class RuntimeStore {
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.chatsBySession[sessionId] ?? [];
-    const beforeId = this.chatBeforeCursorBySession.get(sessionId) ?? Number.MAX_SAFE_INTEGER;
-    if (!Number.isFinite(beforeId)) {
+    const before = this.resolveBeforeCursor(
+      this.chatBeforeCursorBySession,
+      sessionId,
+      current,
+      (message) => this.toChatHistoryCursor(message),
+    );
+    if (before === null) {
       return { items: 0, hasMore: false };
     }
-    const output = await this.client.trpc.chat.listBefore.query({ sessionId, beforeId, limit });
+    const output = await this.client.trpc.chat.list.query({ sessionId, before: before ?? undefined, limit });
     if (output.items.length === 0) {
+      this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, null);
       return { items: 0, hasMore: false };
     }
-
-    this.chatBeforeCursorBySession.set(sessionId, output.items[0].id);
+    this.updateBeforeCursor(this.chatBeforeCursorBySession, sessionId, output.nextBefore);
     const mapped = output.items.map((item) => this.toRuntimeChatMessage(item));
-    const known = new Set(current.map((item) => item.id));
-    const merged = [...mapped.filter((item) => !known.has(item.id)), ...current];
+    const merged = this.mergeChatMessages(current, mapped);
     this.state.chatsBySession[sessionId] = merged;
     this.emit();
-    return { items: mapped.length, hasMore: output.items.length >= limit };
+    return {
+      items: Math.max(0, merged.length - current.length),
+      hasMore: output.hasMoreBefore,
+    };
   }
 
   async loadMoreChatCyclesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.chatCyclesBySession[sessionId] ?? [];
-    const beforeCycleId = this.chatCyclesBeforeCursorBySession.get(sessionId) ?? Number.MAX_SAFE_INTEGER;
-    if (!Number.isFinite(beforeCycleId) || beforeCycleId <= 0) {
+    const before = this.resolveBeforeCursor(
+      this.chatCyclesBeforeCursorBySession,
+      sessionId,
+      current,
+      (cycle) => this.toCycleHistoryCursor(cycle),
+    );
+    if (before === null) {
       return { items: 0, hasMore: false };
     }
-    const output = await this.client.trpc.chat.cyclesBefore.query({ sessionId, beforeCycleId, limit });
+    const output = await this.client.trpc.chat.cycles.query({ sessionId, before: before ?? undefined, limit });
     if (output.items.length === 0) {
+      this.updateBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, null);
       return { items: 0, hasMore: false };
     }
-    this.chatCyclesBeforeCursorBySession.set(sessionId, output.items[0].cycleId ?? 0);
+    this.updateBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, output.nextBefore);
     const mapped = output.items.map((item) => this.toRuntimeChatCycle(item));
     const next = this.mergeChatCycles(current, mapped);
     this.state.chatCyclesBySession[sessionId] = next;
     this.emit();
     return {
       items: Math.max(0, next.length - current.length),
-      hasMore: output.items.length >= limit,
+      hasMore: output.hasMoreBefore,
     };
   }
 
@@ -1021,32 +1134,37 @@ export class RuntimeStore {
   ): Promise<{ logs: number; traces: number; hasMore: boolean }> {
     const currentLogs = this.state.loopbusStateLogsBySession[sessionId] ?? [];
     const currentTraces = this.state.loopbusTracesBySession[sessionId] ?? [];
-    const beforeLogId =
-      this.loopbusLogsBeforeCursorBySession.get(sessionId) ??
-      (currentLogs.length > 0 ? currentLogs[0].id : Number.MAX_SAFE_INTEGER);
-    const beforeTraceId =
-      this.loopbusTracesBeforeCursorBySession.get(sessionId) ??
-      (currentTraces.length > 0 ? currentTraces[0].id : Number.MAX_SAFE_INTEGER);
+    const beforeLog = this.resolveBeforeCursor(
+      this.loopbusLogsBeforeCursorBySession,
+      sessionId,
+      currentLogs,
+      (record) => this.toTimestampHistoryCursor(record),
+    );
+    const beforeTrace = this.resolveBeforeCursor(
+      this.loopbusTracesBeforeCursorBySession,
+      sessionId,
+      currentTraces,
+      (record) => this.toStartedAtHistoryCursor(record),
+    );
+    if (beforeLog === null && beforeTrace === null) {
+      return { logs: 0, traces: 0, hasMore: false };
+    }
 
     const [logs, traces] = await Promise.all([
-      this.client.trpc.runtime.loopbusStateLogsBefore.query({
+      this.client.trpc.runtime.loopbusStateLogs.query({
         sessionId,
-        beforeId: beforeLogId,
+        before: beforeLog ?? undefined,
         limit,
       }),
-      this.client.trpc.runtime.loopbusTracesBefore.query({
+      this.client.trpc.runtime.loopbusTraces.query({
         sessionId,
-        beforeId: beforeTraceId,
+        before: beforeTrace ?? undefined,
         limit,
       }),
     ]);
 
-    if (logs.items.length > 0) {
-      this.loopbusLogsBeforeCursorBySession.set(sessionId, logs.items[0].id);
-    }
-    if (traces.items.length > 0) {
-      this.loopbusTracesBeforeCursorBySession.set(sessionId, traces.items[0].id);
-    }
+    this.updateBeforeCursor(this.loopbusLogsBeforeCursorBySession, sessionId, logs.nextBefore);
+    this.updateBeforeCursor(this.loopbusTracesBeforeCursorBySession, sessionId, traces.nextBefore);
 
     const nextLogs = this.applyLruEntries(
       this.loopbusLogsAccessBySession,
@@ -1071,23 +1189,27 @@ export class RuntimeStore {
     return {
       logs: Math.max(0, addedLogs),
       traces: Math.max(0, addedTraces),
-      hasMore: logs.items.length >= limit || traces.items.length >= limit,
+      hasMore: logs.hasMoreBefore || traces.hasMoreBefore,
     };
   }
 
   async loadMoreModelCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.modelCallsBySession[sessionId] ?? [];
-    const beforeId =
-      this.modelCallsBeforeCursorBySession.get(sessionId) ??
-      (current.length > 0 ? current[0].id : Number.MAX_SAFE_INTEGER);
+    const before = this.resolveBeforeCursor(
+      this.modelCallsBeforeCursorBySession,
+      sessionId,
+      current,
+      (record) => this.toRecordHistoryCursor(record),
+    );
+    if (before === null) {
+      return { items: 0, hasMore: false };
+    }
     const output = await this.client.trpc.runtime.modelCallsPage.query({
       sessionId,
-      beforeId,
+      before: before ?? undefined,
       limit,
     });
-    if (output.items.length > 0) {
-      this.modelCallsBeforeCursorBySession.set(sessionId, output.items[0].id);
-    }
+    this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, output.nextBefore);
     const next = this.applyLruEntries(
       this.modelCallsAccessBySession,
       sessionId,
@@ -1099,23 +1221,27 @@ export class RuntimeStore {
     this.emit();
     return {
       items: Math.max(0, next.length - current.length),
-      hasMore: output.items.length >= limit,
+      hasMore: output.hasMoreBefore,
     };
   }
 
   async loadMoreApiCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.apiCallsBySession[sessionId] ?? [];
-    const beforeId =
-      this.apiCallsBeforeCursorBySession.get(sessionId) ??
-      (current.length > 0 ? current[0].id : Number.MAX_SAFE_INTEGER);
+    const before = this.resolveBeforeCursor(
+      this.apiCallsBeforeCursorBySession,
+      sessionId,
+      current,
+      (record) => this.toRecordHistoryCursor(record),
+    );
+    if (before === null) {
+      return { items: 0, hasMore: false };
+    }
     const output = await this.client.trpc.runtime.apiCallsPage.query({
       sessionId,
-      beforeId,
+      before: before ?? undefined,
       limit,
     });
-    if (output.items.length > 0) {
-      this.apiCallsBeforeCursorBySession.set(sessionId, output.items[0].id);
-    }
+    this.updateBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, output.nextBefore);
     const next = this.applyLruEntries(
       this.apiCallsAccessBySession,
       sessionId,
@@ -1127,7 +1253,74 @@ export class RuntimeStore {
     this.emit();
     return {
       items: Math.max(0, next.length - current.length),
-      hasMore: output.items.length >= limit,
+      hasMore: output.hasMoreBefore,
+    };
+  }
+
+  async loadTerminalActivity(
+    sessionId: string,
+    terminalId: string,
+    limit = 120,
+  ): Promise<{ items: number; hasMore: boolean }> {
+    const output = await this.client.trpc.runtime.terminalActivityPage.query({ sessionId, terminalId, limit });
+    const key = this.terminalActivityKey(sessionId, terminalId);
+    const current = this.state.terminalActivityBySession[sessionId]?.[terminalId] ?? [];
+    const next = this.mergeAscendingByCursor(
+      current,
+      output.items,
+      (item) => item.id,
+      (item) => this.toRecordHistoryCursor(item),
+    );
+    this.state.terminalActivityBySession[sessionId] = {
+      ...(this.state.terminalActivityBySession[sessionId] ?? {}),
+      [terminalId]: next,
+    };
+    this.updateBeforeCursor(this.terminalActivityBeforeCursorByKey, key, output.nextBefore);
+    this.emit();
+    return {
+      items: Math.max(0, next.length - current.length),
+      hasMore: output.hasMoreBefore,
+    };
+  }
+
+  async loadMoreTerminalActivity(
+    sessionId: string,
+    terminalId: string,
+    limit = 120,
+  ): Promise<{ items: number; hasMore: boolean }> {
+    const key = this.terminalActivityKey(sessionId, terminalId);
+    const current = this.state.terminalActivityBySession[sessionId]?.[terminalId] ?? [];
+    const before = this.resolveBeforeCursor(this.terminalActivityBeforeCursorByKey, key, current, (item) =>
+      this.toRecordHistoryCursor(item),
+    );
+    if (before === null) {
+      return { items: 0, hasMore: false };
+    }
+    const output = await this.client.trpc.runtime.terminalActivityPage.query({
+      sessionId,
+      terminalId,
+      before: before ?? undefined,
+      limit,
+    });
+    if (output.items.length === 0) {
+      this.updateBeforeCursor(this.terminalActivityBeforeCursorByKey, key, null);
+      return { items: 0, hasMore: false };
+    }
+    const next = this.mergeAscendingByCursor(
+      current,
+      output.items,
+      (item) => item.id,
+      (item) => this.toRecordHistoryCursor(item),
+    );
+    this.state.terminalActivityBySession[sessionId] = {
+      ...(this.state.terminalActivityBySession[sessionId] ?? {}),
+      [terminalId]: next,
+    };
+    this.updateBeforeCursor(this.terminalActivityBeforeCursorByKey, key, output.nextBefore);
+    this.emit();
+    return {
+      items: Math.max(0, next.length - current.length),
+      hasMore: output.hasMoreBefore,
     };
   }
 
@@ -1253,6 +1446,7 @@ export class RuntimeStore {
       delete this.state.loopbusTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
+      delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
       void this.listAllWorkspaces();
       return;
@@ -1591,6 +1785,7 @@ export class RuntimeStore {
     this.state.loopbusTracesBySession[sessionId] = this.state.loopbusTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
+    this.state.terminalActivityBySession[sessionId] = this.state.terminalActivityBySession[sessionId] ?? {};
     this.state.apiCallRecordingBySession[sessionId] = this.state.apiCallRecordingBySession[sessionId] ?? {
       enabled: false,
       refCount: 0,
@@ -1713,10 +1908,11 @@ export class RuntimeStore {
 
   private async hydrateLoopbusArtifacts(sessionId: string): Promise<void> {
     try {
-      const [logs, traces, modelCalls] = await Promise.all([
-        this.client.trpc.runtime.loopbusStateLogs.query({ sessionId, afterId: 0, limit: 200 }),
-        this.client.trpc.runtime.loopbusTraces.query({ sessionId, afterId: 0, limit: 200 }),
-        this.client.trpc.runtime.modelCallsPage.query({ sessionId, afterId: 0, limit: 200 }),
+      const [logs, traces, modelCalls, apiCalls] = await Promise.all([
+        this.client.trpc.runtime.loopbusStateLogs.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.loopbusTraces.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
       ]);
       this.state.loopbusStateLogsBySession[sessionId] = this.applyLruEntries(
         this.loopbusLogsAccessBySession,
@@ -1739,15 +1935,17 @@ export class RuntimeStore {
         modelCalls.items,
         LOOPBUS_LRU_LIMIT,
       );
-      if (logs.items.length > 0) {
-        this.loopbusLogsBeforeCursorBySession.set(sessionId, logs.items[0].id);
-      }
-      if (traces.items.length > 0) {
-        this.loopbusTracesBeforeCursorBySession.set(sessionId, traces.items[0].id);
-      }
-      if (modelCalls.items.length > 0) {
-        this.modelCallsBeforeCursorBySession.set(sessionId, modelCalls.items[0].id);
-      }
+      this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
+        this.apiCallsAccessBySession,
+        sessionId,
+        [],
+        apiCalls.items,
+        LOOPBUS_LRU_LIMIT,
+      );
+      this.updateBeforeCursor(this.loopbusLogsBeforeCursorBySession, sessionId, logs.nextBefore);
+      this.updateBeforeCursor(this.loopbusTracesBeforeCursorBySession, sessionId, traces.nextBefore);
+      this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, modelCalls.nextBefore);
+      this.updateBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, apiCalls.nextBefore);
       this.emit();
     } catch {
       // Keep local buffers unchanged on hydration failures.

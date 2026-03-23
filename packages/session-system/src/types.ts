@@ -24,6 +24,17 @@ export interface SessionHeadRecord {
   updatedAt: number;
 }
 
+export interface ReverseTimeCursor {
+  beforeTimeMs: number;
+  beforeId: number;
+}
+
+export interface ReversePage<T> {
+  items: T[];
+  nextBefore: ReverseTimeCursor | null;
+  hasMoreBefore: boolean;
+}
+
 export interface SessionCycleRecord {
   id: number;
   seq: number;
@@ -158,6 +169,36 @@ export interface LoopbusTraceInsert {
   detail?: Record<string, unknown>;
 }
 
+export type LoopbusStatePatchOperation =
+  | {
+      op: "add" | "replace";
+      path: string;
+      value?: unknown;
+    }
+  | {
+      op: "remove";
+      path: string;
+    };
+
+export interface LoopbusStateLogRecord {
+  id: number;
+  timestamp: number;
+  stateVersion: number;
+  event: string;
+  prevHash: string | null;
+  stateHash: string;
+  patch: LoopbusStatePatchOperation[];
+}
+
+export interface LoopbusStateLogInsert {
+  timestamp: number;
+  stateVersion: number;
+  event: string;
+  prevHash: string | null;
+  stateHash: string;
+  patch: LoopbusStatePatchOperation[];
+}
+
 export interface ApiCallRecord {
   id: number;
   modelCallId: number;
@@ -173,4 +214,33 @@ export interface ApiCallInsert {
   request: unknown;
   response?: unknown;
   error?: unknown;
+}
+
+export type TerminalActivityKind = "cycle_input" | "terminal_read" | "terminal_write" | "message";
+
+export interface TerminalActivityRecord {
+  id: number;
+  terminalId: string;
+  createdAt: number;
+  kind: TerminalActivityKind;
+  cycleId: number | null;
+  role?: SessionBlockRole;
+  channel?: SessionBlockChannel;
+  title: string;
+  content: string;
+  tool?: SessionBlockToolMeta;
+  detail?: unknown;
+}
+
+export interface TerminalActivityInsert {
+  terminalId: string;
+  createdAt?: number;
+  kind: TerminalActivityKind;
+  cycleId?: number | null;
+  role?: SessionBlockRole;
+  channel?: SessionBlockChannel;
+  title: string;
+  content: string;
+  tool?: SessionBlockToolMeta;
+  detail?: unknown;
 }
