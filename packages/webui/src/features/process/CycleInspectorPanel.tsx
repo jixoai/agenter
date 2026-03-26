@@ -1,4 +1,9 @@
-import type { RuntimeChatCycle } from "@agenter/client-sdk";
+import type {
+  ModelCallItem,
+  RuntimeAttentionState,
+  RuntimeChatCycle,
+  ObservabilityTraceItem as RuntimeTraceItem,
+} from "@agenter/client-sdk";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CircleAlert, CircleCheckBig, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,22 +15,33 @@ import { Sheet } from "../../components/ui/sheet";
 import { cn } from "../../lib/utils";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import type { LongListPagingState } from "../../shared/long-list-paging";
-import { formatCycleBadge, formatCycleTitle, getCycleStatusMeta, summarizeCycle } from "../chat/cycle-meta";
+import { EMPTY_RUNTIME_ATTENTION_STATE, type AttentionSelectionState } from "../attention/attention-view-model";
 import { CycleInspectorDetail } from "./CycleInspectorDetail";
+import {
+  buildCycleTimelineSummary,
+  formatCycleBadge,
+  formatCycleTitle,
+  getCycleStatusMeta,
+} from "./cycle-inspector-view-model";
 
 interface CycleInspectorPanelProps {
   cycles: RuntimeChatCycle[];
+  attention?: RuntimeAttentionState;
+  modelCalls?: ModelCallItem[];
+  traces?: RuntimeTraceItem[];
   loading?: boolean;
   selectedCycleId?: string | null;
   detailMode?: "split" | "sheet";
   pagingState?: LongListPagingState;
   onLoadMore?: () => void;
+  onOpenAttentionRef?: (selection: AttentionSelectionState) => void;
 }
 
 interface CycleTimelineItem {
   id: string;
   cycle: RuntimeChatCycle;
-  summary: string;
+  headline: string;
+  detail: string;
 }
 
 const TIMELINE_ROW_ESTIMATE = 96;
@@ -78,7 +94,10 @@ const TimelineItemButton = ({
               {item.cycle.kind}
             </Badge>
           </div>
-          <p className={cn("text-[11px] leading-5", selected ? "text-white/78" : "text-slate-500")}>{item.summary}</p>
+          <p className={cn("text-xs font-medium leading-5", selected ? "text-white/88" : "text-slate-700")}>
+            {item.headline}
+          </p>
+          <p className={cn("text-[11px] leading-5", selected ? "text-white/72" : "text-slate-500")}>{item.detail}</p>
         </div>
       </div>
     </button>
@@ -87,11 +106,15 @@ const TimelineItemButton = ({
 
 export const CycleInspectorPanel = ({
   cycles,
+  attention = EMPTY_RUNTIME_ATTENTION_STATE,
+  modelCalls = [],
+  traces = [],
   loading = false,
   selectedCycleId: preferredSelectedCycleId = null,
   detailMode = "split",
   pagingState,
   onLoadMore,
+  onOpenAttentionRef,
 }: CycleInspectorPanelProps) => {
   const initialLoading = loading || Boolean(pagingState?.loading && !pagingState.hydrated);
   const surfaceState = resolveAsyncSurfaceState({
@@ -106,14 +129,16 @@ export const CycleInspectorPanel = ({
     const next: CycleTimelineItem[] = [];
     for (let index = cycles.length - 1; index >= 0; index -= 1) {
       const cycle = cycles[index]!;
+      const summary = buildCycleTimelineSummary({ cycle, attention, modelCalls, traces });
       next.push({
         id: cycle.id,
         cycle,
-        summary: summarizeCycle(cycle),
+        headline: summary.headline,
+        detail: summary.detail,
       });
     }
     return next;
-  }, [cycles]);
+  }, [attention, cycles, modelCalls, traces]);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -168,7 +193,7 @@ export const CycleInspectorPanel = ({
         </div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[11px] text-slate-500">
-            Live cycle timeline, collected state, and assistant-side technical records.
+            Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained.
           </p>
           {pagingState || onLoadMore ? (
             <button
@@ -195,7 +220,7 @@ export const CycleInspectorPanel = ({
         emptyLoadingLabel="Loading cycle history..."
         loadingOverlayLabel="Refreshing cycles..."
         skeleton={<div className="h-full rounded-lg bg-slate-100" />}
-        empty={<p className="px-3 py-4 text-sm text-slate-500">No cycle inspection data yet.</p>}
+        empty={<p className="px-3 py-4 text-sm text-slate-500">No attention-linked cycle frames yet.</p>}
         className="flex-1"
       >
         <ViewportMask
@@ -244,12 +269,20 @@ export const CycleInspectorPanel = ({
             </ScrollViewport>
           </ViewportMask>
 
-          {showSplitDetail && selectedCycle ? <CycleInspectorDetail cycle={selectedCycle} /> : null}
+          {showSplitDetail && selectedCycle ? (
+            <CycleInspectorDetail
+              cycle={selectedCycle}
+              attention={attention}
+              modelCalls={modelCalls}
+              traces={traces}
+              onOpenAttentionRef={onOpenAttentionRef}
+            />
+          ) : null}
 
           {showSplitDetail && !selectedCycle ? (
             <section className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
               <p className="text-sm text-slate-500">
-                Select a cycle in the timeline to inspect collected inputs and assistant records.
+                Select a cycle to inspect attention motion, item mutations, delivered side effects, and runtime evidence.
               </p>
             </section>
           ) : null}
@@ -259,7 +292,13 @@ export const CycleInspectorPanel = ({
       {detailMode === "sheet" && selectedCycle ? (
         <Sheet open={detailOpen} onOpenChange={setDetailOpen} side="right" title={formatCycleTitle(selectedCycle)}>
           <div className="h-full min-h-[40dvh]">
-            <CycleInspectorDetail cycle={selectedCycle} />
+            <CycleInspectorDetail
+              cycle={selectedCycle}
+              attention={attention}
+              modelCalls={modelCalls}
+              traces={traces}
+              onOpenAttentionRef={onOpenAttentionRef}
+            />
           </div>
         </Sheet>
       ) : null}
