@@ -1,0 +1,44 @@
+# attention-runtime-kernel Specification
+
+## Purpose
+TBD - created by archiving change attention-kernel-runtime-vnext. Update Purpose after archive.
+## Requirements
+### Requirement: Runtime SHALL treat attention as the primary execution model
+The runtime SHALL normalize message, terminal, task, and future system activity into committed attention items before any cycle scheduling or model work starts.
+
+#### Scenario: Focused source activity becomes committed attention
+- **WHEN** a message source, focused terminal source, or future system source invalidates runtime work
+- **THEN** the runtime resolves that source into one or more context-bound attention drafts
+- **THEN** the runtime commits those items before evaluating whether a cycle should start
+
+#### Scenario: No committed attention delta means no cycle work
+- **WHEN** all invalidated sources resolve without creating or changing any attention item
+- **THEN** the runtime does not schedule a new model pass from that source activity alone
+- **THEN** it does not fabricate a flattened fallback input to force a cycle
+
+### Requirement: Runtime SHALL keep unresolved attention active across cycles
+Unresolved attention items SHALL remain queryable and eligible for later scheduling until their score vectors are reduced to zero or they are explicitly dismissed.
+
+#### Scenario: Partial progress keeps an item pending
+- **WHEN** a model pass patches an attention item but leaves one or more score entries above zero
+- **THEN** the item remains active in its attention context
+- **THEN** later runtime wakes can schedule follow-up work against the same item reference
+
+#### Scenario: Multiple contexts remain independently active
+- **WHEN** different systems commit unresolved attention into different contexts
+- **THEN** the runtime keeps those contexts independently queryable
+- **THEN** later cycles can select work from more than one active context without flattening them into one text fact list
+
+### Requirement: Runtime SHALL treat unresolved attention debt as an active scheduling obligation
+As long as one or more attention items still have `score >= 1`, the runtime SHALL keep re-scheduling follow-up work without requiring new external input, and it SHALL not treat plain-text-only model output as semantic completion.
+
+#### Scenario: Unresolved attention self-drives later model rounds
+- **WHEN** a session has active attention debt and no new user, terminal, or task input arrives
+- **THEN** the runtime self-wakes and re-collects the unresolved attention into a later model round
+- **THEN** the unresolved item remains active until a later attention mutation changes its score vector or state
+
+#### Scenario: Plain-text-only debt rounds do not fake completion
+- **WHEN** a model round was triggered only by unresolved attention debt and it emits no attention append/patch mutation
+- **THEN** the runtime does not treat that round as semantic completion for the unresolved item
+- **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless a message egress adapter later dispatches a committed attention outcome
+

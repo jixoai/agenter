@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the reusable ChatApp composition contract for the workspace Chat route.
-
 ## Requirements
-
 ### Requirement: Workspace Chat SHALL use a reusable ChatApp surface
 The WebUI SHALL provide a reusable ChatApp surface for workspace Chat that composes the message-bubble transcript viewport, avatar/icon rendering, attachment tray, preview affordances, restrained time dividers, per-message context menus, and the shared AI composer as independent project-local components.
 
@@ -68,3 +66,30 @@ The ChatApp composer SHALL support image paste, drag/drop, picker-based upload, 
 - **WHEN** the composer has pending local attachments or local compatibility notices
 - **THEN** the thinner composer status row summarizes that local state without displacing the action row
 - **THEN** the status row remains visually subordinate to the editor and send action
+
+### Requirement: ChatApp metadata disclosure SHALL honor channel access role
+The ChatApp metadata disclosure surface SHALL expose read-only channel facts for all valid roles and SHALL only expose metadata mutation or participant administration controls when the current channel access role is `admin`.
+
+#### Scenario: Non-admin viewer sees read-only metadata
+- **WHEN** a user opens the metadata disclosure with a `readonly` or `member` token
+- **THEN** the disclosure shows channel facts and participant information
+- **THEN** edit, participant-management, and token-management controls are hidden or disabled
+
+#### Scenario: Admin viewer can manage the channel
+- **WHEN** a user opens the metadata disclosure with an `admin` token
+- **THEN** the disclosure shows edit actions for title and participant management
+- **THEN** token issuance or revocation actions are available from the same disclosure flow
+
+### Requirement: ChatApp channel metadata SHALL use passive signal disclosure
+The ChatApp surface SHALL expose channel metadata through a passive signal disclosure aligned with the channel tabs instead of dedicating a full metadata row above the transcript.
+
+#### Scenario: Metadata opens from the tab row
+- **WHEN** the user needs to inspect chat-channel metadata such as title, identifier, or participant summary
+- **THEN** the Chat route shows a compact signal trigger adjacent to the channel tabs
+- **THEN** activating the trigger opens a secondary metadata surface without shrinking the transcript with an extra metadata bar
+
+#### Scenario: Desktop and compact layouts keep the same metadata affordance model
+- **WHEN** the Chat route is rendered on desktop or compact widths
+- **THEN** the metadata disclosure remains a compact signal trigger plus secondary surface in both layouts
+- **THEN** the route does not swap to a separate desktop-only metadata row or status bar
+

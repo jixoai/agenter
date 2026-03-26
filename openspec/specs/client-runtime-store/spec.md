@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the client-side runtime normalization and long-history paging contract.
-
 ## Requirements
-
 ### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
 The client runtime store SHALL treat `focusedTerminalIds` and terminal read representation metadata as first-class fields and SHALL not collapse them into legacy single-value assumptions.
 
@@ -30,3 +28,22 @@ The client runtime store SHALL maintain explicit reverse-time page state for eac
 - **WHEN** the client prepends an older history page for a session resource
 - **THEN** the merged list remains ordered from oldest to newest
 - **THEN** already-known items are not duplicated
+
+#### Scenario: Persisted history replaces equivalent runtime chat rows
+- **WHEN** `runtime.snapshot` already contains in-memory chat rows and `chat.list` later hydrates the same messages with persisted ids
+- **THEN** the client runtime store collapses those semantic duplicates into one row per message
+- **THEN** the persisted record wins over the in-memory runtime copy
+
+### Requirement: Client runtime store SHALL keep bounded windows for long-list resources
+The client runtime store SHALL maintain bounded in-memory windows for long-history resources and SHALL keep pagination state separate from the visible list projection.
+
+#### Scenario: Recent windows stay hydrated without loading full history
+- **WHEN** a route hydrates a long-history resource for the active session
+- **THEN** the store keeps only the configured recent window in memory by default
+- **THEN** older history remains available through explicit pagination state instead of implicit eager hydration
+
+#### Scenario: Loading older pages does not duplicate or unbound the resource window
+- **WHEN** the store prepends older pages for a long-history resource
+- **THEN** existing rows are not duplicated
+- **THEN** the resource window remains bounded according to the shared controller policy
+

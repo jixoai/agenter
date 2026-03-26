@@ -4,15 +4,15 @@
 TBD - created by archiving change propagate-terminal-contract-to-clients. Update Purpose after archive.
 ## Requirements
 ### Requirement: WebUI terminal and devtools surfaces SHALL consume the runtime terminal contract directly
-WebUI terminal-facing surfaces SHALL render from `focusedTerminalIds` and explicit terminal representation metadata instead of relying on legacy diff aliases or app-server-specific shims.
+WebUI terminal-facing surfaces SHALL render from `focusedTerminalIds` and explicit terminal representation metadata instead of relying on legacy diff aliases or app-server-specific shims, and the standalone workspace `Terminals` route SHALL reuse that same direct contract.
 
-#### Scenario: Terminal panel renders from focused terminal ids
-- **WHEN** the WebUI terminal panel receives runtime state with multiple focused terminal ids
-- **THEN** the panel derives its visible terminal selection from that set
-- **THEN** it does not require a legacy single-focus-only contract to function
+#### Scenario: Workspace terminals route renders from focused terminal ids
+- **WHEN** the user opens the workspace `Terminals` route
+- **THEN** the route reuses the terminal panel that derives its visible terminal selection from `focusedTerminalIds`
+- **THEN** it does not rely on a secondary Systems-only embedding path to function
 
-#### Scenario: Devtools distinguishes diff and snapshot reads
-- **WHEN** a terminal read result is rendered in Devtools
-- **THEN** the surface can distinguish diff vs snapshot output from explicit representation metadata
-- **THEN** the rendered affordance does not depend on legacy tool names such as `terminal_consumeDiff`
+#### Scenario: Standalone terminal route keeps activity inspection
+- **WHEN** the standalone terminal route renders terminal activity and latest read output
+- **THEN** it uses the existing session/terminal paging contract and representation metadata
+- **THEN** the route does not fork a second terminal activity model separate from the existing terminal atom
 

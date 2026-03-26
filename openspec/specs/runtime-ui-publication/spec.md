@@ -46,3 +46,32 @@ The runtime client SHALL merge persisted chat hydration, older-page pagination, 
 - **THEN** the merged chat state remains ordered from oldest to newest within that session
 - **THEN** the latest visible conversation rows stay available to the route while older rows are inserted
 
+### Requirement: Runtime publication SHALL expose diagnostics for selector churn
+The runtime client SHALL expose diagnostics metadata that lets performance tooling inspect why a hot slice is being republished.
+
+#### Scenario: Diagnostics identify repeated selector publication
+- **WHEN** a developer inspects runtime publication diagnostics for an active surface
+- **THEN** the system reports publication counts for the selected slice
+- **THEN** the reported diagnostics can distinguish steady-state idleness from hot republish churn
+
+### Requirement: Heavy runtime slices SHALL stay cold when their surfaces are inactive
+The runtime client SHALL avoid hydrating or republishing heavy route-local slices for surfaces that are not visible or not active.
+
+#### Scenario: Inactive technical tabs stay cold
+- **WHEN** a route exposes multiple heavy panels but only one panel is currently visible
+- **THEN** inactive panels do not subscribe to or hydrate their heavy runtime slices
+- **THEN** their data remains fetchable when the user explicitly activates that panel
+
+### Requirement: Runtime clients SHALL publish scheduler containment state
+The runtime client SHALL publish the session scheduler control state and wake metadata needed to explain why a session is running, waiting, backing off, blocked, paused, or aborted.
+
+#### Scenario: Waiting and backoff are observable without trace inference
+- **WHEN** a session runtime transitions into `waiting`, `backoff`, or `blocked`
+- **THEN** subscribed UI consumers receive the new control state together with `wakeCause`, `retryCount`, `blockedReason`, and `nextWakeAt` when available
+- **THEN** the UI can explain the containment state without reconstructing it from raw trace events
+
+#### Scenario: Progress metadata updates only when the control state changes
+- **WHEN** runtime facts update without changing the published scheduler containment state for a subscriber
+- **THEN** the runtime client does not republish a fresh containment object for that selector
+- **THEN** UI surfaces that inspect scheduler state remain eligible for render stability
+

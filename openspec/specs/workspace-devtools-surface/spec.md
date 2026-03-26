@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the dedicated technical inspection surface for workspace Devtools.
-
 ## Requirements
-
 ### Requirement: Workspace Devtools SHALL own technical session inspection
 The WebUI SHALL provide a dedicated Devtools route for technical session inspection, and that route SHALL own cycle-oriented, terminal-oriented, task-oriented, LoopBus-oriented, and model-oriented inspection details that are not part of the default Chat narrative. The cycle-oriented inspection surface SHALL be presented as a live timeline instead of a default accordion dump, and Devtools typography, color density, and tooltips SHALL remain optimized for compact technical reading.
 
@@ -20,15 +18,11 @@ The WebUI SHALL provide a dedicated Devtools route for technical session inspect
 ### Requirement: Devtools SHALL expose a cycle-oriented inspection view
 The WebUI SHALL expose a Devtools view that allows the user to inspect session cycles and related factual inputs or internal assistant records without requiring those facts to appear in the default Chat flow.
 
-#### Scenario: Cycle inspection shows collected facts and internal records
-- **WHEN** the active session contains persisted or active cycles
-- **THEN** Devtools exposes a cycle-oriented view that shows cycle identity and related factual inspection content such as collected inputs or internal assistant records
-- **THEN** those details remain available even though they are no longer the default structure of Chat
-
-#### Scenario: Large structured fact lists stay readable
-- **WHEN** a cycle fact contains a large structured payload such as dozens of attention items
-- **THEN** Devtools renders the payload as structured list items with a YAML-first preview instead of one markdown dump
-- **THEN** raw JSON remains available through the viewer menu for exact inspection
+#### Scenario: Multi-context attention facts preserve context ownership
+- **WHEN** a cycle fact contains an `attention-system-active` payload with multiple attention contexts
+- **THEN** Devtools renders a readable attention summary that reflects the multi-context payload instead of falling back to an opaque raw dump
+- **THEN** each rendered attention item preserves enough ownership metadata to show which context it came from
+- **THEN** structured inspection remains available for exact payload review
 
 ### Requirement: Devtools SHALL keep technical panels independently operable
 The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and its cycle, LoopBus, and model-facing panels SHALL remain independently operable within that route instead of relying on one oversized mixed-responsibility panel.
@@ -108,3 +102,4 @@ Tool call and tool result records for the same tool invocation SHALL render as o
 - **WHEN** a cycle contains a tool call followed by its result
 - **THEN** cycle detail renders one trace card with call and result sections
 - **THEN** the card status reflects `done` or `failed` based on the result
+

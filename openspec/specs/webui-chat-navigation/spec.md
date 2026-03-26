@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the WebUI navigation shell, workspace-scoped routes, and shared master-detail interaction model around Quick Start and Workspaces.
-
 ## Requirements
-
 ### Requirement: Quick Start is a primary application view
 The WebUI SHALL expose Quick Start as a dedicated primary view that is separate from Workspaces and the workspace shell, and it SHALL provide the current workspace controls and recent session entry points needed to start work immediately.
 
@@ -21,26 +19,16 @@ The WebUI SHALL expose Quick Start as a dedicated primary view that is separate 
 - **THEN** secondary provider details and helper hints are visually subordinate to the start flow
 
 ### Requirement: Workspace routes SHALL provide a scoped application shell
-The WebUI SHALL provide a workspace-scoped shell for `Chat`, `Devtools`, and `Settings`, and it SHALL provide a separate global `Settings` route for user-level settings and avatar management. The top header SHALL be one unified, passive, compact surface that keeps only navigation, location, passive state signals, workspace basename, and route switching visible, while route-local actions stay inside the route body.
+The WebUI SHALL provide a workspace-scoped shell for `Chats`, `Terminals`, `Devtools`, and `Settings`, and it SHALL provide a separate global `Settings` route for user-level settings and avatar management. The top header SHALL be one unified, passive, compact surface that keeps only navigation, location, passive state signals, workspace basename, and route switching visible, while route-local actions stay inside the route body.
 
 #### Scenario: Open a workspace shell route
 - **WHEN** the user enters a workspace-scoped route
-- **THEN** the page shows the current workspace context and the shell navigation for `Chat`, `Devtools`, and `Settings`
+- **THEN** the page shows the current workspace context and the shell navigation for `Chats`, `Terminals`, `Devtools`, and `Settings`
 - **THEN** the active route surface owns its own local notices and primary actions without pushing them into the top header
 - **THEN** the top header does not repeat the workspace path or route-local notices already rendered inside the workspace shell
 
-#### Scenario: Open global settings outside the workspace shell
-- **WHEN** the user activates the global settings entry from application chrome
-- **THEN** the application navigates to a dedicated global settings route
-- **THEN** the route is not rendered inside the workspace shell tabs
-
-#### Scenario: Header shows workspace basename while full path stays secondary
-- **WHEN** the user is inside a workspace route
-- **THEN** the top header shows the workspace basename as the primary workspace label
-- **THEN** the full workspace path is only available through a secondary affordance such as a tooltip or menu
-
 ### Requirement: Workspace shell chrome SHALL preserve a fixed hierarchy
-The WebUI SHALL preserve a fixed shell hierarchy where the left application sidebar owns the outermost navigation chrome, the main shell owns the unified top header and route region, and the workspace route surface owns route content plus route-local notices and actions. Adjacent shell layers MUST NOT repeat the same passive state as visible text if an icon signal or tooltip already owns that fact.
+The WebUI SHALL preserve a fixed shell hierarchy where the left application sidebar owns the outermost navigation chrome, the main shell owns the unified top header and route region, and the workspace route surface owns route content plus route-local notices and actions. Adjacent shell layers MUST NOT repeat the same passive state as visible text if an icon signal or tooltip already owns that fact, and desktop SHALL NOT introduce a second status trigger model that differs from compact layouts.
 
 #### Scenario: Workspace route content is not wrapped by duplicate padding stacks
 - **WHEN** a workspace route renders Chat, Devtools, or Settings content
@@ -51,6 +39,11 @@ The WebUI SHALL preserve a fixed shell hierarchy where the left application side
 - **WHEN** the shell renders connection or AI state in the top header
 - **THEN** those facts are expressed through compact signals with accessible tooltip-backed labels
 - **THEN** the header does not also repeat the same passive state as additional long text lines unless the signal itself is unavailable
+
+#### Scenario: Session status affordance stays consistent across viewports
+- **WHEN** the user opens Chat on desktop or mobile
+- **THEN** the session status trigger uses the same compact signal-driven model in both layouts
+- **THEN** the shell does not add a separate desktop-only pill or select trigger for the same status fact
 
 ### Requirement: The application SHALL provide stable primary and secondary session navigation
 The WebUI SHALL render a stable primary navigation that only exposes `Quick Start` and `Workspaces`, and it SHALL render running-session entry points through a secondary running-session section inside the application sidebar model instead of adding dynamic session shortcuts to the primary sidebar or header.
@@ -92,3 +85,4 @@ The WebUI SHALL expose the active session's primary run control through the Chat
 #### Scenario: Route-local notices stay in the Chat surface
 - **WHEN** the active Chat route has a local notice such as missing terminal configuration or a route-specific runtime warning
 - **THEN** the notice is rendered inside the Chat surface instead of the top header
+
