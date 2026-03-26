@@ -1,6 +1,6 @@
 import type { inferRouterOutputs } from "@trpc/server";
 
-import type { AppRouter, RuntimeEventEnvelope, RuntimeSnapshotPayload } from "@agenter/app-server";
+import type { AppRouter, RuntimeEventEnvelope, RuntimeSnapshotPayload, SessionRuntimeModelDebug } from "@agenter/app-server";
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
@@ -20,12 +20,22 @@ export type ChatListItem = ChatListOutput["items"][number];
 export type HistoryPageCursor = NonNullable<ChatListOutput["nextBefore"]>;
 export type ChatCyclesOutput = RouterOutputs["chat"]["cycles"];
 export type ChatCycleItem = ChatCyclesOutput["items"][number];
+export type MessageChannelListOutput = RouterOutputs["message"]["listChannels"];
+export type MessageChannelEntry = MessageChannelListOutput["items"][number];
+export type MessageChannelGrantsOutput = RouterOutputs["message"]["listChannelGrants"];
+export type MessageChannelGrantEntry = MessageChannelGrantsOutput["items"][number];
+export type MessageChannelGrantIssueOutput = RouterOutputs["message"]["issueChannelGrant"];
 export type AvatarCatalogOutput = RouterOutputs["avatar"]["list"];
 export type AvatarCatalogItem = AvatarCatalogOutput["items"][number];
-export type LoopbusStateLogOutput = RouterOutputs["runtime"]["loopbusStateLogs"];
-export type LoopbusStateLogItem = LoopbusStateLogOutput["items"][number];
-export type LoopbusTraceOutput = RouterOutputs["runtime"]["loopbusTraces"];
-export type LoopbusTraceItem = LoopbusTraceOutput["items"][number];
+export type SettingsLayersOutput = RouterOutputs["settings"]["layers"]["list"];
+export type SettingsLayerEntry = SettingsLayersOutput["layers"][number];
+export type SchedulerLogOutput = RouterOutputs["runtime"]["schedulerLogs"];
+export type SchedulerLogItem = SchedulerLogOutput["items"][number];
+export type AttentionStateOutput = RouterOutputs["runtime"]["attentionState"];
+export type AttentionQueryOutput = RouterOutputs["runtime"]["attentionQuery"];
+export type AttentionQueryItem = AttentionQueryOutput["items"][number];
+export type ObservabilityTraceOutput = RouterOutputs["runtime"]["observabilityTraces"];
+export type ObservabilityTraceItem = ObservabilityTraceOutput["items"][number];
 export type ModelCallsPageOutput = RouterOutputs["runtime"]["modelCallsPage"];
 export type ModelCallItem = ModelCallsPageOutput["items"][number];
 export type ApiCallsPageOutput = RouterOutputs["runtime"]["apiCallsPage"];
@@ -37,11 +47,33 @@ export type SessionNotificationItem = NotificationSnapshotOutput["items"][number
 export type RuntimeEvent = RuntimeEventEnvelope;
 export type RuntimeSnapshot = RuntimeSnapshotPayload;
 export type RuntimeSnapshotEntry = RuntimeSnapshot["runtimes"][string];
+export type RuntimeAttentionState = NonNullable<RuntimeSnapshotEntry["attention"]>;
+export type RuntimeSchedulerState = NonNullable<RuntimeSnapshotEntry["schedulerState"]>;
 export type RuntimeChatMessage = RuntimeSnapshotEntry["chatMessages"][number];
 export type RuntimeChatCycle = ChatCycleItem;
 export type WorkspaceSessionTab = "all" | "running" | "stopped" | "archive";
-export type ModelDebugOutput = RouterOutputs["runtime"]["modelDebug"];
+export type ModelDebugOutput = SessionRuntimeModelDebug;
 export type RuntimeConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline";
+
+export interface RuntimeSchedulerContainmentState {
+  runtimeStatus: RuntimeSchedulerState["runtimeStatus"];
+  waitingReason: RuntimeSchedulerState["waitingReason"];
+  nextAutoWakeAt: RuntimeSchedulerState["nextAutoWakeAt"];
+  backoffMs: RuntimeSchedulerState["backoffMs"];
+  retryCount: RuntimeSchedulerState["retryCount"];
+  blockedReason: RuntimeSchedulerState["blockedReason"];
+  lastProgressAt: RuntimeSchedulerState["lastProgressAt"];
+  lastError: RuntimeSchedulerState["lastError"];
+}
+
+export interface CachedResourceState<T> {
+  data: T;
+  loaded: boolean;
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+  refreshedAt: number | null;
+}
 
 export type UploadedSessionAssetKind = "image" | "video" | "file";
 
@@ -64,12 +96,14 @@ export interface RuntimeClientState {
   terminalSnapshotsBySession: Record<string, RuntimeSnapshotEntry["terminalSnapshots"]>;
   terminalReadsBySession: Record<string, RuntimeSnapshotEntry["terminalReads"]>;
   chatsBySession: Record<string, RuntimeSnapshotEntry["chatMessages"]>;
+  messageChannelsBySession: Record<string, CachedResourceState<MessageChannelEntry[]>>;
   chatCyclesBySession: Record<string, RuntimeChatCycle[]>;
+  attentionBySession?: Record<string, RuntimeAttentionState>;
   tasksBySession: Record<string, RuntimeSnapshotEntry["tasks"]>;
   recentWorkspaces: string[];
   workspaces: WorkspaceEntry[];
-  loopbusStateLogsBySession: Record<string, LoopbusStateLogItem[]>;
-  loopbusTracesBySession: Record<string, LoopbusTraceItem[]>;
+  schedulerLogsBySession: Record<string, SchedulerLogItem[]>;
+  observabilityTracesBySession: Record<string, ObservabilityTraceItem[]>;
   modelCallsBySession: Record<string, ModelCallItem[]>;
   apiCallsBySession: Record<string, ApiCallItem[]>;
   terminalActivityBySession: Record<string, Record<string, TerminalActivityItem[]>>;

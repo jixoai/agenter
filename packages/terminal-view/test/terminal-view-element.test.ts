@@ -178,6 +178,16 @@ class WebSocketMock {
   }
 }
 
+const waitForLifecycleFrame = async (): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+};
+
 describe("Feature: terminal-view WebComponent", () => {
   beforeEach(() => {
     mockTerminals.length = 0;
@@ -221,6 +231,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     document.body.append(element);
     await element.updateComplete;
+    await waitForLifecycleFrame();
     await element.updateComplete;
 
     const terminal = mockTerminals.at(-1);
@@ -263,6 +274,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     document.body.append(element);
     await element.updateComplete;
+    await waitForLifecycleFrame();
     await element.updateComplete;
 
     const socket = WebSocketMock.instances.at(-1);

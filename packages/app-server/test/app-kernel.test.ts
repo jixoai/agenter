@@ -162,7 +162,7 @@ describe("Feature: app kernel event replay", () => {
     expect(snapshot.sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
   });
 
-  test("Scenario: Given a running session When stop resume and abort are requested Then pause keeps runtime ownership while abort tears it down", async () => {
+  test("Scenario: Given a running session When stop resume and abort are requested Then stop keeps runtime ownership while abort tears it down", async () => {
     const kernel = createKernel();
     await kernel.start();
 
@@ -172,8 +172,8 @@ describe("Feature: app kernel event replay", () => {
     expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
 
     const paused = await kernel.stopSession(session.id);
-    expect(paused.status).toBe("paused");
-    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("paused");
+    expect(paused.status).toBe("stopped");
+    expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
 
     const resumed = await kernel.startSession(session.id);
@@ -206,6 +206,145 @@ describe("Feature: app kernel event replay", () => {
     const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
     expect(page.items[0]?.sessionId).toBe(session.id);
     expect(page.items[0]?.preview).toEqual({ firstUserMessage: null, latestMessages: [] });
+  });
+
+  test("Scenario: Given legacy internal failure bubbles in session history When listing workspace sessions Then preview only includes user-facing conversation text", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-preview-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: workspace, name: "preview-filter", autoStart: false });
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      db.appendBlock({
+        role: "user",
+        channel: "user_input",
+        content: "现在几点？",
+      });
+      db.appendBlock({
+        role: "assistant",
+        channel: "to_user",
+        content:
+          'agenter-ai call failed: openai-chat response failed after 1 attempt(s): 402 status code ({"error":{"message":"Insufficient Balance"}})',
+      });
+      db.appendBlock({
+        role: "assistant",
+        channel: "to_user",
+        content: "北京时间下午四点。",
+      });
+    } finally {
+      db.close();
+    }
+
+    const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
+
+    expect(page.items[0]?.preview).toEqual({
+      firstUserMessage: "现在几点？",
+      latestMessages: ["现在几点？", "北京时间下午四点。"],
+    });
+  });
+
+  test("Scenario: Given persisted multi-channel chat history When the kernel pages chat messages Then each block keeps the chat channel inferred from its cycle inputs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-chat-history-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: workspace, name: "chat-history", autoStart: false });
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      const mainCycle = db.appendCycle({
+        createdAt: 100,
+        wake: { source: "message" },
+        collectedInputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "main prompt" }],
+            meta: { chatId: "chat-main", createdAt: new Date(100).toISOString() },
+          },
+        ],
+        result: { kind: "model" },
+      });
+      db.appendBlock({
+        cycleId: mainCycle.id,
+        createdAt: 100,
+        role: "user",
+        channel: "user_input",
+        content: "main prompt",
+      });
+      db.appendBlock({
+        cycleId: mainCycle.id,
+        createdAt: 160,
+        role: "assistant",
+        channel: "to_user",
+        content: "main reply",
+      });
+
+      const relayCycle = db.appendCycle({
+        createdAt: 200,
+        wake: { source: "message" },
+        collectedInputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "relay prompt" }],
+            meta: { chatId: "chat-chat-2", createdAt: new Date(200).toISOString() },
+          },
+        ],
+        result: { kind: "model" },
+      });
+      db.appendBlock({
+        cycleId: relayCycle.id,
+        createdAt: 200,
+        role: "user",
+        channel: "user_input",
+        content: "relay prompt",
+      });
+      db.appendBlock({
+        cycleId: relayCycle.id,
+        createdAt: 260,
+        role: "assistant",
+        channel: "to_user",
+        content: "relay reply",
+      });
+
+      db.appendBlock({
+        createdAt: 320,
+        role: "user",
+        channel: "user_input",
+        content: "legacy fallback prompt",
+      });
+    } finally {
+      db.close();
+    }
+
+    const page = kernel.pageChatMessages(session.id, { limit: 16 });
+
+    expect(page.items.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
+      { content: "main prompt", chatId: "chat-main" },
+      { content: "main reply", chatId: "chat-main" },
+      { content: "relay prompt", chatId: "chat-chat-2" },
+      { content: "relay reply", chatId: "chat-chat-2" },
+      { content: "legacy fallback prompt", chatId: "chat-main" },
+    ]);
   });
 
   test("Scenario: Given invalid workspace directory When creating session Then kernel rejects the malformed path", async () => {
@@ -401,6 +540,8 @@ describe("Feature: app kernel event replay", () => {
       isDirectory: false,
     });
     expect(ignoredCompletions).toEqual([]);
+
+    await kernel.stop();
   });
 
   test("Scenario: Given uploaded session assets When sending chat and deleting the session Then attachments persist and the asset files follow the session lifecycle", async () => {

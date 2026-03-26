@@ -1,4 +1,4 @@
-import type { RuntimeSnapshot, SessionEntry } from "@agenter/client-sdk";
+import type { RuntimeSchedulerContainmentState, RuntimeSnapshot, SessionEntry } from "@agenter/client-sdk";
 import type { AsyncSurfaceState } from "../../components/ui/async-surface";
 import type { LongListPagingState } from "../../shared/long-list-paging";
 
@@ -6,9 +6,11 @@ import { isLikelyErrorNotice, normalizeUserNotice } from "../../shared/notice";
 
 export type SessionStatusTone = "neutral" | "active" | "warning" | "danger";
 
-type RouteSession = Pick<SessionEntry, "status">;
-type RouteRuntime = Pick<RuntimeSnapshot["runtimes"][string], "started" | "loopPhase" | "stage"> & {
+type RouteSession = Pick<SessionEntry, "status" | "lastError">;
+type RouteRuntime = Pick<RuntimeSnapshot["runtimes"][string], "started" | "schedulerPhase" | "stage"> & {
   terminalCount: number;
+  lastError: string | null;
+  scheduler: RuntimeSchedulerContainmentState | null;
 };
 
 export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRuntime): string => {
@@ -28,19 +30,28 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
     return "starting";
   }
   if (runtime?.started) {
-    if (runtime.loopPhase === "waiting_commits") {
+    if (runtime.scheduler?.runtimeStatus === "blocked") {
+      return "attention blocked";
+    }
+    if (runtime.scheduler?.runtimeStatus === "backoff") {
+      return "attention backoff";
+    }
+    if (runtime.scheduler?.runtimeStatus === "waiting" && runtime.scheduler.waitingReason === "attention_debt") {
+      return "attention pending";
+    }
+    if (runtime.schedulerPhase === "waiting_commits") {
       return "idle";
     }
-    if (runtime.loopPhase === "calling_model") {
+    if (runtime.schedulerPhase === "calling_model") {
       return "waiting model";
     }
-    if (runtime.loopPhase === "applying_outputs") {
+    if (runtime.schedulerPhase === "applying_outputs") {
       return "applying outputs";
     }
-    if (runtime.loopPhase === "collecting_inputs") {
+    if (runtime.schedulerPhase === "collecting_inputs") {
       return "syncing";
     }
-    if (runtime.loopPhase === "persisting_cycle") {
+    if (runtime.schedulerPhase === "persisting_cycle") {
       return "recording cycle";
     }
     if (runtime.stage === "observe") {
@@ -118,6 +129,35 @@ export const resolveSessionStatusPillState = (
       disabled: false,
     };
   }
+  if (runtime?.started) {
+    if (runtime.scheduler?.runtimeStatus === "blocked") {
+      return {
+        label: "Attention blocked",
+        tone: "warning",
+        primaryActionLabel: "Stop session",
+        primaryAction: "stop",
+        disabled: false,
+      };
+    }
+    if (runtime.scheduler?.runtimeStatus === "backoff") {
+      return {
+        label: "Attention retrying",
+        tone: "warning",
+        primaryActionLabel: "Stop session",
+        primaryAction: "stop",
+        disabled: false,
+      };
+    }
+    if (runtime.scheduler?.runtimeStatus === "waiting" && runtime.scheduler.waitingReason === "attention_debt") {
+      return {
+        label: "Attention pending",
+        tone: "active",
+        primaryActionLabel: "Stop session",
+        primaryAction: "stop",
+        disabled: false,
+      };
+    }
+  }
   if (runtime?.started || session.status === "running") {
     return {
       label: "Session running",
@@ -152,10 +192,40 @@ export const resolveChatRouteNotice = (input: {
     return null;
   }
 
+  if (input.runtime?.lastError && isLikelyErrorNotice(input.runtime.lastError)) {
+    return {
+      tone: "destructive",
+      message: normalizeUserNotice(input.runtime.lastError, "Something failed while preparing this session."),
+    };
+  }
+
+  if (input.runtime?.scheduler?.runtimeStatus === "blocked") {
+    return {
+      tone: "warning",
+      message: normalizeUserNotice(
+        input.runtime.scheduler.blockedReason ?? "",
+        "Attention work is blocked. Inspect Devtools for the unresolved cause.",
+      ),
+    };
+  }
+
+  if (input.runtime?.scheduler?.runtimeStatus === "backoff") {
+    return {
+      tone: "warning",
+      message:
+        input.runtime.scheduler.backoffMs && input.runtime.scheduler.backoffMs > 0
+          ? `Attention work is waiting to retry in ${input.runtime.scheduler.backoffMs} ms.`
+          : "Attention work is waiting to retry.",
+    };
+  }
+
   if (input.session.status === "error") {
     return {
       tone: "destructive",
-      message: "Session failed. Start it again to retry.",
+      message: normalizeUserNotice(
+        input.session.lastError ?? input.runtime?.lastError ?? "",
+        "Session failed. Start it again to retry.",
+      ),
     };
   }
 

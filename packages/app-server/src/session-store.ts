@@ -1,12 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import type { SessionTerminalOutcome, SessionTraceIdentity } from "@agenter/session-system";
+
 import { readSessionDocument, writeSessionDocument, type SessionDocument } from "./session-doc";
 
 export interface SessionCallRecord {
   id: string;
   timestamp: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   completedAt?: string;
   provider: string;
   model: string;
@@ -42,6 +44,8 @@ export interface SessionCallRecord {
     stack?: string;
     details?: unknown;
   };
+  trace?: SessionTraceIdentity;
+  outcome?: SessionTerminalOutcome;
 }
 
 export interface SessionStoreOptions {

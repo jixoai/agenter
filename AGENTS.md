@@ -171,9 +171,11 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **国际化单一真源**：业务层不硬编码文案；统一通过 i18n 包与配置加载。
 - **配置优先于硬编码**：模型、终端入口、提示词路径、策略等一律走 settings/prompt sources。
 - **架构做减法，算法做加法**：先保证路径直觉、最小可用，再增强算法与可观测性。
-- **循环系统哲学**：LoopBus 持续空转；仅在有效输入（用户输入、终端变更、待办任务）到来时触发 AI 调用。
+- **循环系统哲学**：LoopBus 持续存在；外部熵增（用户输入、终端变更、任务事件）与未收敛的 attention debt 都可以成为下一轮 AI 调用的合法唤醒源。
+- **Containment Law**：`score > 0` 表示义务仍然存在，不等于允许立即再次调用模型；重复等价失败或 no-progress 必须进入 `backoff` 或 `blocked`，直到新证据、定时回退到期或人工干预解除。
 - **LoopBus 等待模型**：统一使用 `waitCommitted(fromHash)` 等待各子系统输入；任一输入 resolved 后，固定再等 `loopWaitMs=300ms` 再 collect。
 - **Waiter 清理纪律**：`Promise.race` 的 losers 必须 reject/cancel，避免 listener / waiter 泄漏。
+- **Cancellation 必须共享信号**：stop/abort 不能只靠 timeout；model call、tool execution、plugin lifecycle 必须共享同一 `AbortSignal` 语义，并把 `stopped/aborted/cancelled` 作为显式事实持久化。
 - **Session DB 只存事实**：`session.db` 只落 `session_head/session_cycle/model_call/session_block/loopbus_trace/api_call` 这类事实，不落可推导 snapshot/state-log。
 - **多终端聚焦**：默认支持多 focused terminal；每个 focused terminal 都独立注入 terminal input，unfocused 仅保留 dirty 状态。
 - **Provider 请求纯度**：provider request body 只保留真实 HTTP/model 参数；`collectedInputs` 之类循环事实必须写入 `session_cycle`。
@@ -286,6 +288,17 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **padding 规则**：图标所在侧的 `padding-inline` 必须收紧到与 `padding-block` 同级，文字侧再保留较大的水平留白；该规则只在 affordance primitive 内实现，不在 feature 代码重复书写。
 - **业务代码禁手搓**：feature 层禁止再写 `inline-flex items-center gap-* px-* py-*` 来拼装图标+文字的按钮、badge、摘要条、列表操作项；一律复用统一 primitive。
 - **回归测试要求**：新增或改动 icon+text surface 时，至少补一个 unit 或 Storybook DOM contract，断言 `data-inline-affordance-layout` 与关键 spacing class。
+
+## 10.3) Async / Adaptive / Signal Primitive 契约（WebUI）
+
+- **`AsyncSurface` 只负责状态，不负责容器语义**：所有 fetch-driven list/panel 默认复用 `AsyncSurface`；它只表达 `empty-loading / empty-idle / ready-loading / ready-idle`，不得顺手接管滚动、裁剪、背景或 padding 所有权。
+- **首屏加载与空态必须分离**：首次加载时显示 loading copy / skeleton；已有数据刷新时保留内容，只显示克制的 refresh signal；禁止把首次加载伪装成空列表，也禁止刷新时清空已有内容。
+- **宽度自适应动作统一用 `AdaptiveIconButton`**：会在空间不足时折叠文字的 action，必须通过共享 primitive 实现；折叠前后语义、`aria-label`、`title`、tooltip、点击目标保持一致，业务层不要自己手搓 `ResizeObserver + icon/button`。
+- **icon-only 必须换成对称 padding**：文字折叠后，按钮的 inline spacing 必须切换到紧凑、对称、居中的 icon-only 模式；不能保留 label 态的大 padding 造成视觉偏移。
+- **被动信息统一用 `SurfaceSignalDisclosure`**：metadata、secondary status、低频说明默认走 signal + secondary surface；它们应挂在 tabs/tool rail 邻近区域，不得为次要信息再占一整行。
+- **`Tabs.trailing` 承载次级信号和次级动作**：tabs 右侧的 trailing 区域是被动 signal、metadata disclosure、低优先级 create action 的默认落点；不要再额外插入一层“tabs 之上/之下”的说明条。
+- **Session 状态入口只能有一个**：`SessionStatusPillMenu` 使用同一套 compact signal/menu 模型覆盖 desktop + mobile；状态入口放在 route top-edge/header trailing 的局部槽位，不得再复制一个 route-body pill、desktop select 或第二个状态条。
+- **primitive 先验收，再组装页面**：只要改到了 `AsyncSurface`、`AdaptiveIconButton`、`SurfaceSignalDisclosure`、`SessionStatusPillMenu` 这类叶子组件，必须先补/改对应 stories 和 DOM contract，再看 composite / route assembly。
 
 ## 11) shadcn/ui Skill 入口
 

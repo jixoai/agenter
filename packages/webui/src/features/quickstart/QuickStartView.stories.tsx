@@ -194,3 +194,19 @@ export const CompactViewportKeepsPrimaryEntryPath: Story = {
     await expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth + 1);
   },
 };
+
+export const LoadingDraftKeepsSubmissionDisabled: Story = {
+  args: {
+    workspacePath: "/repo/loading",
+    draftResolution: null,
+    recentSessions: [],
+    loadingDraft: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Resolving provider...")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Start" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Enter" })).toBeDisabled();
+  },
+};

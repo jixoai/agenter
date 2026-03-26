@@ -120,6 +120,9 @@ const isToolCallArgsChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, 
 const isToolCallEndChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "TOOL_CALL_END" }> =>
   chunk.type === "TOOL_CALL_END";
 
+const isRunErrorChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "RUN_ERROR" }> =>
+  chunk.type === "RUN_ERROR";
+
 export class ModelClient {
   private readonly textAdapter: AnyTextAdapter;
   private readonly summarizeAdapter: AnySummarizeAdapter | null;
@@ -263,6 +266,11 @@ export class ModelClient {
               finishReason,
               timestamp: chunk.timestamp,
             });
+            continue;
+          }
+          if (isRunErrorChunk(chunk)) {
+            const code = chunk.error.code ? ` [${chunk.error.code}]` : "";
+            throw new Error(`${chunk.error.message}${code}`);
           }
         }
 

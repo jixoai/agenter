@@ -7,7 +7,7 @@ const meta = {
   title: "Features/Shell/TopHeader",
   component: TopHeader,
   args: {
-    locationLabel: "Chat",
+    locationLabel: "Chats",
     showNavigationTrigger: false,
     connectionStatus: "connected",
     aiStatus: "working",
@@ -30,7 +30,7 @@ export const PassiveDesktopHeader: Story = {
     const canvas = within(canvasElement);
 
     await expect(canvas.getByText("agenter")).toBeInTheDocument();
-    await expect(canvas.getByText("Chat")).toBeInTheDocument();
+    await expect(canvas.getByText("Chats")).toBeInTheDocument();
     await expect(canvas.getByLabelText("Connected")).toBeInTheDocument();
     await expect(canvas.getByLabelText("AI working")).toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Open global settings" })).not.toBeInTheDocument();
@@ -73,10 +73,13 @@ export const WorkspaceHeaderKeepsTabsAndBasenameOnly: Story = {
     await expect(canvas.getByText("project-alpha")).toBeInTheDocument();
     await expect(canvas.queryByText("/repo/demo/project-alpha")).not.toBeInTheDocument();
     await expect(canvas.getByTitle("/repo/demo/project-alpha")).toBeInTheDocument();
-    await expect(canvas.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Chats" })).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Terminals" })).toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
 
+    await userEvent.click(canvas.getByRole("tab", { name: "Terminals" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Devtools" }));
+    await expect(args.workspace?.onNavigate).toHaveBeenNthCalledWith(1, "terminals");
     await expect(args.workspace?.onNavigate).toHaveBeenCalledWith("devtools");
     await expect(canvas.queryByRole("button", { name: "Global Settings" })).not.toBeInTheDocument();
   },

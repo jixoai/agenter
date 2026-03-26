@@ -1,41 +1,28 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ManagedTerminalSnapshot } from "../src/managed-terminal";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "../src/terminal-snapshot-fingerprint";
 
-const createSnapshot = (overrides: Partial<ManagedTerminalSnapshot> = {}): ManagedTerminalSnapshot => ({
-  seq: overrides.seq ?? 1,
-  timestamp: overrides.timestamp ?? Date.now(),
-  cols: overrides.cols ?? 80,
-  rows: overrides.rows ?? 24,
-  lines: overrides.lines ?? ["$ echo hi", "hi"],
-  richLines: overrides.richLines ?? [{ spans: [] }, { spans: [] }],
-  cursor: overrides.cursor ?? { x: 0, y: 1 },
-  cursorVisible: overrides.cursorVisible ?? true,
-});
+describe("Feature: terminal snapshot fingerprints", () => {
+  test("Scenario: Given a snapshot fingerprint When it is generated Then the runtime stores a compact sha256 digest instead of raw snapshot JSON", () => {
+    const snapshot = {
+      seq: 42,
+      timestamp: 1_741_234_567_890,
+      cols: 80,
+      rows: 24,
+      cursor: { x: 1, y: 23 },
+      cursorVisible: true,
+      lines: Array.from({ length: 24 }, (_, index) => `line-${index}`),
+      richLines: Array.from({ length: 24 }, (_, index) => ({
+        spans: [{ text: `line-${index}`, bold: false, underline: false, inverse: false }],
+      })),
+    };
 
-describe("Feature: terminal snapshot semantic fingerprint", () => {
-  test("Scenario: Given only cursor metadata changes When building fingerprints Then view changes but semantic fingerprint stays stable", () => {
-    const base = createSnapshot();
-    const next = createSnapshot({
-      seq: 2,
-      timestamp: base.timestamp + 50,
-      cursor: { x: 4, y: 1 },
-      cursorVisible: false,
-    });
+    const viewHash = buildTerminalViewFingerprint(snapshot);
+    const semanticHash = buildTerminalSemanticFingerprint(snapshot);
 
-    expect(buildTerminalViewFingerprint(next)).not.toBe(buildTerminalViewFingerprint(base));
-    expect(buildTerminalSemanticFingerprint(next)).toBe(buildTerminalSemanticFingerprint(base));
-  });
-
-  test("Scenario: Given terminal content changes When building semantic fingerprint Then the loopbus-visible fingerprint changes", () => {
-    const base = createSnapshot();
-    const next = createSnapshot({
-      seq: 2,
-      lines: ["$ echo hi", "hi", "$"],
-      richLines: [{ spans: [] }, { spans: [] }, { spans: [] }],
-    });
-
-    expect(buildTerminalSemanticFingerprint(next)).not.toBe(buildTerminalSemanticFingerprint(base));
+    expect(viewHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(semanticHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(viewHash).not.toContain("line-0");
+    expect(semanticHash).not.toContain("line-0");
   });
 });

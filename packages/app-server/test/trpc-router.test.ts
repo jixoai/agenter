@@ -111,4 +111,101 @@ describe("Feature: app-server trpc procedures", () => {
 
     await kernel.stop();
   });
+
+  test("Scenario: Given tokenized chat-channel routes When caller edits metadata and revokes grants Then channel access stays scoped to the issued token", async () => {
+    const root = makeTempDir();
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(createTrpcContext(kernel));
+
+    const created = await caller.session.create({
+      cwd: workspace,
+      name: "workspace",
+      autoStart: true,
+    });
+    const sessionId = created.session.id;
+
+    const listed = await caller.message.listChannels({ sessionId });
+    const channel = listed.items[0];
+    expect(channel?.accessRole).toBe("admin");
+    if (!channel) {
+      throw new Error("expected default chat channel");
+    }
+
+    const focused = await caller.message.focus({
+      sessionId,
+      op: "replace",
+      channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
+    });
+    expect(focused.items[0]?.focused).toBeTrue();
+
+    const updated = await caller.message.updateChannel({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      patch: {
+        title: "Lunch relay",
+        participants: [
+          { id: `avatar:${channel.owner}`, label: channel.owner, role: "avatar" },
+          { id: "user:kzf", label: "kzf", role: "user" },
+          { id: "user:gaubee", label: "gaubee", role: "user" },
+        ],
+      },
+    });
+    expect(updated.channel.title).toBe("Lunch relay");
+    expect(updated.channel.participants.map((participant) => participant.id)).toContain("user:gaubee");
+
+    const issued = await caller.message.issueChannelGrant({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      role: "readonly",
+      label: "Viewer",
+      participantId: "user:gaubee",
+    });
+    expect(issued.grant.accessRole).toBe("readonly");
+    expect(issued.grant.accessToken).toStartWith("msgtok_");
+
+    const grants = await caller.message.listChannelGrants({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+    });
+    expect(grants.items.map((grant) => grant.label)).toEqual(["Viewer"]);
+
+    const rejectedWrite = await caller.message.send({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: issued.grant.accessToken,
+      text: "blocked",
+    });
+    expect(rejectedWrite.ok).toBeFalse();
+    expect(rejectedWrite.reason).toBe("message channel member access required");
+
+    const revoked = await caller.message.revokeChannelGrant({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      grantId: issued.grant.grantId,
+    });
+    expect(revoked.ok).toBeTrue();
+
+    const rejectedAfterRevoke = await caller.message.send({
+      sessionId,
+      chatId: channel.chatId,
+      accessToken: issued.grant.accessToken,
+      text: "still blocked",
+    });
+    expect(rejectedAfterRevoke.ok).toBeFalse();
+    expect(rejectedAfterRevoke.reason).toBe("message channel access denied");
+
+    await kernel.stop();
+  });
 });

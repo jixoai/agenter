@@ -1,4 +1,4 @@
-import { Ellipsis, Eye } from "lucide-react";
+import { ChevronDown, Eye } from "lucide-react";
 import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -10,8 +10,6 @@ import {
   DropdownMenuItemIndicator,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
 
@@ -23,6 +21,14 @@ interface JsonViewerProps {
   className?: string;
   contentClassName?: string;
   menuLabel?: string;
+}
+
+interface ParsedYamlMappingLine {
+  indent: string;
+  dash: string;
+  key: string;
+  separator: string;
+  value: string;
 }
 
 const GLOBAL_MODE_STORAGE_KEY = "agenter:webui:json-viewer-mode";
@@ -196,17 +202,91 @@ const renderJsonLine = (line: string, index: number) => {
   );
 };
 
+export const parseYamlMappingLine = (line: string): ParsedYamlMappingLine | null => {
+  const indent = line.match(/^\s*/)?.[0] ?? "";
+  let remainder = line.slice(indent.length);
+  let dash = "";
+
+  if (remainder.startsWith("- ")) {
+    dash = "- ";
+    remainder = remainder.slice(2);
+  }
+
+  if (remainder.length === 0) {
+    return null;
+  }
+
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+
+  for (let index = 0; index < remainder.length; index += 1) {
+    const char = remainder[index]!;
+    if (inDouble) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inDouble = false;
+      }
+      continue;
+    }
+    if (inSingle) {
+      if (char === "'") {
+        inSingle = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (char === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (char !== ":") {
+      continue;
+    }
+
+    const after = remainder.slice(index + 1);
+    if (after.length > 0 && !/^\s/.test(after)) {
+      continue;
+    }
+
+    const key = remainder.slice(0, index).trimEnd();
+    if (key.length === 0) {
+      return null;
+    }
+
+    const whitespace = after.match(/^\s*/)?.[0] ?? "";
+    return {
+      indent,
+      dash,
+      key,
+      separator: `:${whitespace}`,
+      value: after.slice(whitespace.length),
+    };
+  }
+
+  return null;
+};
+
 const renderYamlLine = (line: string, index: number) => {
-  const keyMatch = line.match(/^(\s*)(-\s+)?([^:#\-][^:]*)(:\s*)(.*)$/);
+  const keyMatch = parseYamlMappingLine(line);
   if (keyMatch) {
-    const [, indent, dash = "", key, separator, remainder] = keyMatch;
     return (
       <div key={`yaml-${index}`} className="whitespace-pre">
-        <span>{indent}</span>
-        {dash ? <span className={JSON_PUNCTUATION_CLASS_NAME}>{dash}</span> : null}
-        <span className={JSON_KEY_CLASS_NAME}>{key}</span>
-        <span className={JSON_PUNCTUATION_CLASS_NAME}>{separator}</span>
-        {renderScalarFragment(remainder, true)}
+        <span>{keyMatch.indent}</span>
+        {keyMatch.dash ? <span className={JSON_PUNCTUATION_CLASS_NAME}>{keyMatch.dash}</span> : null}
+        <span className={JSON_KEY_CLASS_NAME}>{keyMatch.key}</span>
+        <span className={JSON_PUNCTUATION_CLASS_NAME}>{keyMatch.separator}</span>
+        {renderScalarFragment(keyMatch.value, true)}
       </div>
     );
   }
@@ -262,61 +342,83 @@ const JsonViewerComponent = ({
 }: JsonViewerProps) => {
   const globalMode = useGlobalJsonViewerMode();
   const [localMode, setLocalMode] = useState<JsonViewerMode | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const activeMode = resolveJsonViewerMode({ localMode, globalMode });
   const jsonText = useMemo(() => serializeJson(value), [value]);
   const yamlText = useMemo(() => serializeYaml(value), [value]);
   const rawJsonText = rawText ?? jsonText;
-  const renderedText = activeMode === "highlight-yaml" ? yamlText : activeMode === "fmt-highlight-json" ? jsonText : rawJsonText;
+  const renderedText =
+    activeMode === "highlight-yaml" ? yamlText : activeMode === "fmt-highlight-json" ? jsonText : rawJsonText;
 
   return (
-    <div className={cn("group relative rounded-xl border border-slate-200 bg-slate-50/85", className)}>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={menuLabel}
-          className="absolute top-2 right-2 z-10 h-7 w-7 rounded-md bg-white/92 opacity-0 shadow-xs ring-1 ring-slate-200 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"
-        >
-          <Ellipsis className="h-4 w-4" />
-        </DropdownMenuTrigger>
+    <div
+      className={cn("group relative rounded-xl border border-slate-200 bg-slate-50/85", className)}
+      data-json-viewer-mode={activeMode}
+    >
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2">
+          <DropdownMenuTrigger
+            aria-label={menuLabel}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenuOpen(true);
+            }}
+            className="h-auto rounded-full bg-white/88 px-2.5 py-1 text-[10px] tracking-[0.08em] text-slate-500 ring-1 ring-slate-200/80 transition-colors hover:bg-white focus-visible:bg-white data-[popup-open]:bg-white"
+          >
+            <Eye className="h-3 w-3" />
+            <span>{modeLabel(activeMode)}</span>
+            <ChevronDown
+              className={cn(
+                "h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+                menuOpen && "opacity-100",
+              )}
+            />
+          </DropdownMenuTrigger>
+        </div>
         <DropdownMenuContent className="min-w-64">
-          <DropdownMenuLabel>Current viewer</DropdownMenuLabel>
-          <DropdownMenuSubTrigger>{modeLabel(activeMode)}</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {JSON_VIEWER_MODE_OPTIONS.map((option) => (
-              <DropdownMenuItem key={`local-${option.mode}`} onClick={() => setLocalMode(option.mode)}>
-                <DropdownMenuItemIndicator className={cn(activeMode === option.mode ? "opacity-100" : "opacity-0")} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-slate-900">{option.label}</div>
-                  <div className="text-[11px] text-slate-500">{option.description}</div>
-                </div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
+          <DropdownMenuLabel>This viewer</DropdownMenuLabel>
+          {JSON_VIEWER_MODE_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={`local-${option.mode}`}
+              data-json-viewer-scope="local"
+              data-json-viewer-option={option.mode}
+              onClick={() => setLocalMode(option.mode)}
+            >
+              <DropdownMenuItemIndicator className={cn(activeMode === option.mode ? "opacity-100" : "opacity-0")} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-900">{option.label}</div>
+                <div className="text-[11px] text-slate-500">{option.description}</div>
+              </div>
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuSeparator />
           <DropdownMenuLabel>All JSON viewers</DropdownMenuLabel>
-          <DropdownMenuSubTrigger>{modeLabel(globalMode)}</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {JSON_VIEWER_MODE_OPTIONS.map((option) => (
-              <DropdownMenuItem key={`global-${option.mode}`} onClick={() => setGlobalJsonViewerMode(option.mode)}>
-                <DropdownMenuItemIndicator className={cn(globalMode === option.mode ? "opacity-100" : "opacity-0")} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-slate-900">{option.label}</div>
-                  <div className="text-[11px] text-slate-500">{option.description}</div>
-                </div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
+          {JSON_VIEWER_MODE_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={`global-${option.mode}`}
+              data-json-viewer-scope="global"
+              data-json-viewer-option={option.mode}
+              onClick={() => setGlobalJsonViewerMode(option.mode)}
+            >
+              <DropdownMenuItemIndicator className={cn(globalMode === option.mode ? "opacity-100" : "opacity-0")} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-900">{option.label}</div>
+                <div className="text-[11px] text-slate-500">{option.description}</div>
+              </div>
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className={cn("min-w-0 overflow-x-auto rounded-xl p-3 pr-10 typo-code text-[11px] leading-5", contentClassName)}>
-        <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-slate-500 ring-1 ring-slate-200/80">
-          <Eye className="h-3 w-3" />
-          <span>{modeLabel(activeMode)}</span>
-        </div>
+      <div
+        className={cn("typo-code min-w-0 overflow-x-auto rounded-b-xl px-3 py-2.5 text-[11px] leading-5", contentClassName)}
+      >
         {activeMode === "raw-text-json" ? (
-          <pre className="whitespace-pre-wrap break-words text-slate-700">{renderedText}</pre>
+          <pre className="break-words whitespace-pre-wrap text-slate-700">{renderedText}</pre>
         ) : (
-          <div className="whitespace-pre-wrap break-words text-slate-700">{renderHighlightedText(activeMode, renderedText)}</div>
+          <div className="break-words whitespace-pre-wrap text-slate-700">
+            {renderHighlightedText(activeMode, renderedText)}
+          </div>
         )}
       </div>
     </div>

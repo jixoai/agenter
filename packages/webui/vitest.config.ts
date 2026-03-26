@@ -7,6 +7,7 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       "@agenter/terminal-view",
+      "@agenter/web-chat-view",
       "@base-ui-components/react/tabs",
       "@base-ui-components/react/accordion",
       "@base-ui-components/react/dialog",

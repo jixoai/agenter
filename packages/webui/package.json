@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "pnpm run test:unit && pnpm run test:dom",
     "e2e": "bun ./test/e2e/run.ts",
     "storybook": "storybook dev --ci --no-open --port 6006",
     "storybook:build": "storybook build",
+    "pretest:dom": "node ./scripts/reset-vitest-browser-cache.mjs",
     "test:unit": "vitest run --config vitest.config.ts --project unit",
     "test:dom": "vitest run --config vitest.config.ts --project storybook"
   },
@@ -20,6 +21,7 @@
   "dependencies": {
     "@agenter/client-sdk": "workspace:*",
     "@agenter/terminal-view": "workspace:*",
+    "@agenter/web-chat-view": "workspace:*",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@base-ui-components/react": "^1.0.0-rc.0",
     "@codemirror/autocomplete": "^6.20.1",

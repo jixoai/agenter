@@ -30,6 +30,7 @@ export interface ModelCapabilities {
 
 export interface ChatMessage {
   id: string;
+  chatId?: string;
   role: "user" | "assistant";
   content: string;
   timestamp: number;

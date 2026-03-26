@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
+import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 
 export type SessionStatusTone = "neutral" | "active" | "warning" | "danger";
@@ -99,36 +100,40 @@ export const SessionStatusPillMenu = ({
   const statusIcon = resolveStatusIcon({ statusLabel, tone });
   const StatusIcon = statusIcon.Icon;
 
+  const trigger = (
+    <DropdownMenuTrigger
+      aria-label={`Session status: ${statusLabel}`}
+      title={statusLabel}
+      data-testid="session-status-pill-trigger"
+      className={cn(
+        triggerVariant === "icon"
+          ? "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border p-0 shadow-xs [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0"
+          : "max-w-full rounded-full border px-3 py-1.5 text-xs shadow-xs",
+        triggerVariant === "icon" ? ICON_TRIGGER_TONE_CLASS_NAME[tone] : TRIGGER_TONE_CLASS_NAME[tone],
+        className,
+      )}
+    >
+      {triggerVariant === "icon" ? (
+        <StatusIcon className={cn("h-4 w-4", statusIcon.iconClassName)} />
+      ) : (
+        <>
+          <ButtonLeadingVisual>
+            <span className={cn("h-2 w-2 rounded-full", DOT_TONE_CLASS_NAME[tone])} />
+          </ButtonLeadingVisual>
+          <ButtonLabel>
+            <span className="truncate font-medium">{statusLabel}</span>
+          </ButtonLabel>
+          <ButtonTrailingVisual>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </ButtonTrailingVisual>
+        </>
+      )}
+    </DropdownMenuTrigger>
+  );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={`Session status: ${statusLabel}`}
-        title={statusLabel}
-        data-testid="session-status-pill-trigger"
-        className={cn(
-          triggerVariant === "icon"
-            ? "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border p-0 shadow-xs [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0"
-            : "max-w-full rounded-full border px-3 py-1.5 text-xs shadow-xs",
-          triggerVariant === "icon" ? ICON_TRIGGER_TONE_CLASS_NAME[tone] : TRIGGER_TONE_CLASS_NAME[tone],
-          className,
-        )}
-      >
-        {triggerVariant === "icon" ? (
-          <StatusIcon className={cn("h-4 w-4", statusIcon.iconClassName)} />
-        ) : (
-          <>
-            <ButtonLeadingVisual>
-              <span className={cn("h-2 w-2 rounded-full", DOT_TONE_CLASS_NAME[tone])} />
-            </ButtonLeadingVisual>
-            <ButtonLabel>
-              <span className="truncate font-medium">{statusLabel}</span>
-            </ButtonLabel>
-            <ButtonTrailingVisual>
-              <ChevronDown className="h-3.5 w-3.5" />
-            </ButtonTrailingVisual>
-          </>
-        )}
-      </DropdownMenuTrigger>
+      {triggerVariant === "icon" ? <Tooltip content={statusLabel}>{trigger}</Tooltip> : trigger}
 
       <DropdownMenuContent align="start" className="min-w-64">
         <DropdownMenuLabel>Session actions</DropdownMenuLabel>

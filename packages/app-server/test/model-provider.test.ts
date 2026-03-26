@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { ModelClient, resolveApiEnvHint, resolveModelCapabilities } from "../src";
+import { ModelClient, ModelDecisionError, resolveApiEnvHint, resolveModelCapabilities } from "../src";
 
 describe("Feature: canonical model provider routing", () => {
   test("Scenario: Given a DeepSeek-compatible chat provider When resolving capabilities Then vendor overrides are applied on top of the standard", () => {
@@ -63,5 +63,45 @@ describe("Feature: canonical model provider routing", () => {
 
     expect(resolveApiEnvHint({ apiStandard: "openai-chat", vendor: "deepseek" })).toBe("DEEPSEEK_API_KEY");
     expect(response.text).toContain("DEEPSEEK_API_KEY");
+  });
+
+  test("Scenario: Given the provider returns RUN_ERROR When responding Then the client throws a model decision error instead of silently returning no-progress", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: { message: "Insufficient Balance", code: "invalid_request_error" } }), {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      });
+
+    try {
+      const client = new ModelClient({
+        providerId: "deepseek-main",
+        apiStandard: "openai-chat",
+        vendor: "deepseek",
+        model: "deepseek-chat",
+        apiKey: "sk-test",
+        baseUrl: "https://api.deepseek.com/v1",
+        temperature: 0,
+        maxRetries: 0,
+      });
+
+      await expect(
+        client.respondWithMeta({
+          systemPrompt: "You are helpful.",
+          messages: [],
+          tools: [],
+        }),
+      ).rejects.toBeInstanceOf(ModelDecisionError);
+
+      await expect(
+        client.respondWithMeta({
+          systemPrompt: "You are helpful.",
+          messages: [],
+          tools: [],
+        }),
+      ).rejects.toThrow("402 status code");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

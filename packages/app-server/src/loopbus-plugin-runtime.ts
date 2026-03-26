@@ -1,3 +1,9 @@
+import type {
+  AttentionCommit,
+  AttentionCommitHookResult,
+  AttentionContextState,
+} from "@agenter/attention-system";
+
 import type { AppServerLogger } from "./types";
 
 export type LoopBusPluginEnforce = "pre" | "post";
@@ -34,6 +40,10 @@ export interface AttentionDraft {
   from: string;
   score?: number;
   meta?: Record<string, unknown>;
+  supersedeActive?: {
+    systemId: string;
+    subjectId: string;
+  };
 }
 
 export interface LoopSourceAdapter {
@@ -46,6 +56,12 @@ export interface LoopSourceAdapter {
   ) => Promise<AttentionDraft[]> | AttentionDraft[];
 }
 
+export interface AttentionCommittedInput {
+  contextId: string;
+  context: AttentionContextState;
+  commit: AttentionCommit;
+}
+
 export interface LoopBusPluginApi {
   expose: <T>(id: string, value: T) => void;
   useExposed: <T>(id: string) => T | undefined;
@@ -55,6 +71,8 @@ export interface LoopBusPluginApi {
 
 export interface LoopBusHookContext {
   ref?: LoopSourceRef;
+  contextId?: string;
+  signal?: AbortSignal;
 }
 
 export interface LoopBusHookDescriptor<THandler> {
@@ -79,9 +97,14 @@ export type AttentionTransformHook = (
 ) => Promise<AttentionDraft[]> | AttentionDraft[];
 
 export type AttentionCommittedHook = (
-  drafts: AttentionDraft[],
+  input: AttentionCommittedInput,
   context: LoopBusHookContext,
-) => Promise<void> | void;
+) =>
+  | Promise<AttentionCommitHookResult | AttentionCommitHookResult[] | null | undefined>
+  | AttentionCommitHookResult
+  | AttentionCommitHookResult[]
+  | null
+  | undefined;
 
 export type CycleShouldStartResult =
   | boolean
@@ -97,6 +120,21 @@ export type CycleShouldStartHook = (
   context: LoopBusHookContext,
 ) => Promise<CycleShouldStartResult | null | undefined> | CycleShouldStartResult | null | undefined;
 
+export type CycleWillCallModelHook = (
+  input: { cycleId: string; signal: AbortSignal },
+  context: LoopBusHookContext,
+) => Promise<void> | void;
+
+export type CycleDidCallModelHook = (
+  input: { cycleId: string; signal: AbortSignal; result?: unknown },
+  context: LoopBusHookContext,
+) => Promise<void> | void;
+
+export type CycleDidAbortHook = (
+  input: { cycleId: string; signal: AbortSignal; reason?: unknown },
+  context: LoopBusHookContext,
+) => Promise<void> | void;
+
 export interface LoopBusPlugin {
   name: string;
   enforce?: LoopBusPluginEnforce;
@@ -105,6 +143,9 @@ export interface LoopBusPlugin {
   attentionTransform?: LoopBusHook<AttentionTransformHook>;
   attentionCommitted?: LoopBusHook<AttentionCommittedHook>;
   cycleShouldStart?: LoopBusHook<CycleShouldStartHook>;
+  cycleWillCallModel?: LoopBusHook<CycleWillCallModelHook>;
+  cycleDidCallModel?: LoopBusHook<CycleDidCallModelHook>;
+  cycleDidAbort?: LoopBusHook<CycleDidAbortHook>;
 }
 
 interface RegisteredHook<THandler> {
@@ -159,6 +200,9 @@ export class LoopBusPluginRuntime {
   private readonly attentionTransformHooks: RegisteredHook<AttentionTransformHook>[] = [];
   private readonly attentionCommittedHooks: RegisteredHook<AttentionCommittedHook>[] = [];
   private readonly cycleShouldStartHooks: RegisteredHook<CycleShouldStartHook>[] = [];
+  private readonly cycleWillCallModelHooks: RegisteredHook<CycleWillCallModelHook>[] = [];
+  private readonly cycleDidCallModelHooks: RegisteredHook<CycleDidCallModelHook>[] = [];
+  private readonly cycleDidAbortHooks: RegisteredHook<CycleDidAbortHook>[] = [];
 
   constructor(
     plugins: LoopBusPlugin[],
@@ -213,10 +257,14 @@ export class LoopBusPluginRuntime {
       }
     }
 
-    if (drafts.length > 0) {
-      await this.runParallel(this.attentionCommittedHooks, drafts, {});
-    }
     return drafts;
+  }
+
+  async notifyAttentionCommitted(
+    input: AttentionCommittedInput,
+    context: LoopBusHookContext = {},
+  ): Promise<AttentionCommitHookResult[]> {
+    return await this.runCollect(this.attentionCommittedHooks, input, context);
   }
 
   async shouldStartCycle(drafts: AttentionDraft[]): Promise<CycleShouldStartResult> {
@@ -232,12 +280,27 @@ export class LoopBusPluginRuntime {
 
   private readonly plugins: LoopBusPlugin[] = [];
 
+  async notifyCycleWillCallModel(input: { cycleId: string; signal: AbortSignal }): Promise<void> {
+    await this.runParallel(this.cycleWillCallModelHooks, input, { signal: input.signal });
+  }
+
+  async notifyCycleDidCallModel(input: { cycleId: string; signal: AbortSignal; result?: unknown }): Promise<void> {
+    await this.runParallel(this.cycleDidCallModelHooks, input, { signal: input.signal });
+  }
+
+  async notifyCycleDidAbort(input: { cycleId: string; signal: AbortSignal; reason?: unknown }): Promise<void> {
+    await this.runParallel(this.cycleDidAbortHooks, input, { signal: input.signal });
+  }
+
   private registerPlugin(plugin: LoopBusPlugin): void {
     this.plugins.push(plugin);
     this.registerHook(plugin.name, plugin.attentionWillLoad, this.attentionWillLoadHooks);
     this.registerHook(plugin.name, plugin.attentionTransform, this.attentionTransformHooks);
     this.registerHook(plugin.name, plugin.attentionCommitted, this.attentionCommittedHooks);
     this.registerHook(plugin.name, plugin.cycleShouldStart, this.cycleShouldStartHooks);
+    this.registerHook(plugin.name, plugin.cycleWillCallModel, this.cycleWillCallModelHooks);
+    this.registerHook(plugin.name, plugin.cycleDidCallModel, this.cycleDidCallModelHooks);
+    this.registerHook(plugin.name, plugin.cycleDidAbort, this.cycleDidAbortHooks);
   }
 
   private registerHook<THandler>(
@@ -323,6 +386,30 @@ export class LoopBusPluginRuntime {
         await hook.handler(input, context);
       }),
     );
+  }
+
+  private async runCollect<TInput, TResult>(
+    hooks: RegisteredHook<
+      (input: TInput, context: LoopBusHookContext) => Promise<TResult | TResult[] | null | undefined> | TResult | TResult[] | null | undefined
+    >[],
+    input: TInput,
+    context: LoopBusHookContext,
+  ): Promise<TResult[]> {
+    const results: TResult[] = [];
+    for (const hook of orderHooks(hooks)) {
+      if (!this.shouldRun(hook, context)) {
+        continue;
+      }
+      const output = await hook.handler(input, context);
+      if (Array.isArray(output)) {
+        results.push(...output);
+        continue;
+      }
+      if (output !== null && output !== undefined) {
+        results.push(output);
+      }
+    }
+    return results;
   }
 
   private async runFirst<TInput, TResult>(

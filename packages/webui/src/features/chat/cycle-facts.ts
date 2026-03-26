@@ -60,17 +60,16 @@ const summarizeTerminalFact = (value: string): { title: string; summary: string 
 const summarizeAttentionFact = (value: string): { title: string; summary: string } => {
   const parsed = safeJsonParse(value);
   if (!parsed || typeof parsed !== "object") {
-    return {
-      title: "Attention",
-      summary: "state update",
-    };
+    return { title: "Attention", summary: "state update" };
   }
   const record = parsed as Record<string, unknown>;
-  const count = typeof record.count === "number" ? record.count : null;
-  return {
-    title: "Attention",
-    summary: count === null ? "state update" : pluralize(count, "item"),
-  };
+  const contexts = Array.isArray(record.contexts) ? record.contexts : [];
+  const totalItems = contexts.reduce((sum: number, ctx: unknown) => {
+    const items = (ctx as Record<string, unknown>)?.items;
+    return sum + (Array.isArray(items) ? items.length : 0);
+  }, 0);
+  const title = contexts.length > 1 ? `Attention \u00b7 ${contexts.length} contexts` : "Attention";
+  return { title, summary: pluralize(totalItems, "item") };
 };
 
 const summarizeTaskFact = (value: string): { title: string; summary: string } => {
@@ -109,8 +108,13 @@ export const splitCycleInputs = (cycle: RuntimeChatCycle): {
         .join("\n");
       const parsed = safeJsonParse(text);
       const attentionItems =
-        input.source === "attention" && parsed && typeof parsed === "object" && Array.isArray((parsed as { items?: unknown[] }).items)
-          ? ((parsed as { items?: unknown[] }).items ?? [])
+        input.source === "attention" &&
+        parsed &&
+        typeof parsed === "object" &&
+        Array.isArray((parsed as { contexts?: unknown[] }).contexts)
+          ? (parsed as { contexts: Array<{ items?: unknown[]; contextId?: string; owner?: string }> }).contexts.flatMap(
+              (ctx) => (ctx.items ?? []).map((item) => ({ ...(item as object), _contextId: ctx.contextId, _owner: ctx.owner })),
+            )
           : [];
 
       const summary =

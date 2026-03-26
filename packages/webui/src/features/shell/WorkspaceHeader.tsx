@@ -4,7 +4,7 @@ import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import type { WorkspaceNavMode } from "./useAdaptiveViewport";
 
-type WorkspaceShellTab = "chat" | "devtools" | "settings";
+type WorkspaceShellTab = "chat" | "terminals" | "devtools" | "settings";
 
 interface WorkspaceHeaderProps {
   workspacePath: string;
@@ -16,7 +16,8 @@ interface WorkspaceHeaderProps {
 }
 
 const tabItems: TabItem[] = [
-  { id: "chat", label: "Chat" },
+  { id: "chat", label: "Chats" },
+  { id: "terminals", label: "Terminals" },
   { id: "devtools", label: "Devtools" },
   { id: "settings", label: "Settings" },
 ];
@@ -24,13 +25,16 @@ const tabItems: TabItem[] = [
 const basenamePath = (value: string): string => value.split(/[\\/]+/).filter(Boolean).at(-1) ?? value;
 
 const routeLabel = (tab: WorkspaceShellTab): string => {
+  if (tab === "terminals") {
+    return "Terminals";
+  }
   if (tab === "devtools") {
     return "Devtools";
   }
   if (tab === "settings") {
     return "Settings";
   }
-  return "Chat";
+  return "Chats";
 };
 
 export const WorkspaceHeader = memo(({

@@ -62,7 +62,8 @@ export const AdaptiveIconButton = ({
   const buttonNode = (
     <span
       ref={containerRef}
-      className={cn("relative flex max-w-full min-w-0", iconOnly && "justify-center", containerClassName)}
+      className={cn("relative inline-flex max-w-full min-w-0", !iconOnly && "flex", iconOnly && "justify-center", containerClassName)}
+      data-adaptive-icon-only={iconOnly ? "true" : "false"}
     >
       <span ref={labelRef} aria-hidden className="pointer-events-none invisible absolute whitespace-nowrap">
         {label}
@@ -71,7 +72,7 @@ export const AdaptiveIconButton = ({
         {...props}
         aria-label={label}
         title={title ?? label}
-        className={cn("w-full max-w-full min-w-0", className)}
+        className={cn(iconOnly ? "shrink-0" : "w-full max-w-full min-w-0", className)}
       >
         <ButtonLeadingVisual>
           <Icon className="h-3.5 w-3.5" />

@@ -60,12 +60,12 @@ export class AgentRuntime<TChatMessage extends LoopChatMessage = LoopChatMessage
     this.bus.start();
   }
 
-  stop(): void {
-    this.bus.stop();
+  async stop(reason?: unknown): Promise<void> {
+    await this.bus.stop(reason);
   }
 
-  pause(): void {
-    this.bus.pause();
+  pause(reason?: unknown): void {
+    this.bus.pause(reason);
   }
 
   resume(): void {

@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "test:real": "bun test test/real-loopbus.integration.test.ts",
+    "story:real": "bun run ./scripts/run-real-loopbus-story.ts"
   },
   "exports": {
     ".": "./src/index.ts"

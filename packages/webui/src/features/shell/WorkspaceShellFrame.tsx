@@ -4,7 +4,7 @@ import { ViewportMask } from "../../components/ui/overflow-surface";
 import { useShellLayout } from "./shell-layout-context";
 import { TopHeader } from "./TopHeader";
 
-type WorkspaceShellTab = "chat" | "devtools" | "settings";
+type WorkspaceShellTab = "chat" | "terminals" | "devtools" | "settings";
 
 interface WorkspaceShellFrameProps {
   workspacePath: string;
@@ -28,7 +28,15 @@ export const WorkspaceShellFrame = ({
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <TopHeader
-        locationLabel={activeTab === "devtools" ? "Devtools" : activeTab === "settings" ? "Settings" : "Chat"}
+        locationLabel={
+          activeTab === "terminals"
+            ? "Terminals"
+            : activeTab === "devtools"
+              ? "Devtools"
+              : activeTab === "settings"
+                ? "Settings"
+                : "Chats"
+        }
         showNavigationTrigger={shellLayout.showNavigationTrigger}
         connectionStatus={shellLayout.connectionStatus}
         aiStatus={shellLayout.aiStatus}

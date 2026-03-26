@@ -120,24 +120,39 @@ describe("Feature: session cycle ledger persistence", () => {
     });
     db.appendLoopTrace({
       cycleId: cycle.id,
-      step: "collect_inputs",
-      status: "ok",
+      traceId: "trace-1",
+      spanId: "span-1",
+      kind: "source.collect",
+      name: "collect_inputs",
+      status: "done",
       startedAt: 10,
       endedAt: 11,
-      detail: { inputs: 1 },
+      refs: [],
+      links: [],
+      events: [],
+      attributes: { inputs: 1 },
+      outcome: { code: "done" },
     });
     db.appendLoopTrace({
       cycleId: cycle.id,
-      step: "call_model",
-      status: "ok",
+      traceId: "trace-1",
+      spanId: "span-2",
+      parentSpanId: "span-1",
+      kind: "model.call",
+      name: "call_model",
+      status: "done",
       startedAt: 11,
       endedAt: 20,
-      detail: { provider: "openai-compatible" },
+      refs: [],
+      links: [],
+      events: [],
+      attributes: { provider: "openai-compatible" },
+      outcome: { code: "done" },
     });
 
     expect(db.listModelCallsAfter(0, 10).map((item) => item.id)).toEqual([call.id]);
     expect(db.listBlocksAfter(0, 10).map((item) => item.content)).toEqual(["hello", "hi"]);
-    expect(db.listLoopTracesAfter(0, 10).map((item) => item.step)).toEqual(["collect_inputs", "call_model"]);
+    expect(db.listLoopTracesAfter(0, 10).map((item) => item.name)).toEqual(["collect_inputs", "call_model"]);
     expect(db.listApiCallsAfter(0, 10)[0]?.modelCallId).toBe(call.id);
 
     db.close();
@@ -168,18 +183,23 @@ describe("Feature: session cycle ledger persistence", () => {
       provider: "openai-compatible",
       model: "deepseek-chat",
       request: { messages: [{ role: "user", content: "hello" }] },
+      trace: { traceId: "trace-2", spanId: "span-model-1", parentSpanId: null },
     });
 
     const done = db.updateModelCall(running.id, {
       status: "done",
       completedAt: 120,
       response: { assistant: { text: "hi" } },
+      trace: { traceId: "trace-2", spanId: "span-model-1", parentSpanId: null },
+      outcome: { code: "done" },
     });
 
     expect(done.id).toBe(running.id);
     expect(done.status).toBe("done");
     expect(done.completedAt).toBe(120);
     expect(done.response).toEqual({ assistant: { text: "hi" } });
+    expect(done.trace?.spanId).toBe("span-model-1");
+    expect(done.outcome?.code).toBe("done");
     expect(db.listModelCallsAfter(0, 10)).toEqual([done]);
 
     db.close();

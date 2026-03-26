@@ -105,9 +105,14 @@ const configBadgeVariant = (apiStandard: string | undefined): "secondary" | "war
   return "secondary";
 };
 
-const modelCallBadgeVariant = (status: "running" | "done" | "error" | undefined): "secondary" | "success" | "destructive" => {
+const modelCallBadgeVariant = (
+  status: "running" | "done" | "error" | "cancelled" | undefined,
+): "secondary" | "success" | "destructive" | "warning" => {
   if (status === "running") {
     return "secondary";
+  }
+  if (status === "cancelled") {
+    return "warning";
   }
   if (status === "error") {
     return "destructive";

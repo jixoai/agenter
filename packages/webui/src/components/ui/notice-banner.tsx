@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "../../lib/utils";
 
-const noticeBannerVariants = cva("rounded-2xl border px-3 py-2 text-sm", {
+const noticeBannerVariants = cva("rounded-2xl border px-3 py-2 text-sm leading-5 break-all whitespace-pre-wrap", {
   variants: {
     tone: {
       info: "border-sky-200 bg-sky-50 text-sky-800",

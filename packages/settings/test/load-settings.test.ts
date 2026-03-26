@@ -185,7 +185,7 @@ describe("@agenter/settings", () => {
       cwd: projectRoot,
     });
 
-    expect(loaded.settings.ai?.providers?.kimi).toEqual({
+    expect(loaded.settings.ai?.providers?.kimi).toMatchObject({
       apiStandard: "anthropic",
       vendor: "kimi",
       profile: "official",
@@ -196,6 +196,106 @@ describe("@agenter/settings", () => {
         "x-tenant": "alpha",
       },
     });
+  });
+
+  test("loadSettings infers compatible anthropic vendor from legacy kind baseUrl", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-legacy-kimi-"));
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "kimi",
+        providers: {
+          kimi: {
+            kind: "anthropic",
+            model: "kimi-k2.5",
+            apiKey: "test-kimi-key",
+            baseUrl: "https://api.kimi.com/coding/",
+          },
+        },
+      },
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+    });
+
+    expect(loaded.settings.ai?.providers?.kimi).toMatchObject({
+      apiStandard: "anthropic",
+      vendor: "kimi",
+      profile: "compatible",
+      model: "kimi-for-coding",
+      apiKey: "test-kimi-key",
+      baseUrl: "https://api.kimi.com/coding",
+    });
+  });
+
+  test("loadSettings keeps user activeProvider over project default while allowing local override", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-active-provider-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(homeDir, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "kimi",
+        providers: {
+          kimi: {
+            kind: "anthropic",
+            model: "kimi-k2.5",
+            apiKey: "test-kimi-key",
+            baseUrl: "https://api.kimi.com/coding/",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "default",
+        providers: {
+          default: {
+            kind: "deepseek",
+            model: "deepseek-chat",
+            apiKeyEnv: "DEEPSEEK_API_KEY",
+            baseUrl: "https://api.deepseek.com/v1",
+          },
+        },
+      },
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+      homeDir,
+    });
+
+    expect(loaded.settings.ai?.activeProvider).toBe("kimi");
+    expect(loaded.settings.ai?.providers?.default?.vendor).toBe("deepseek");
+    expect(loaded.settings.ai?.providers?.kimi?.vendor).toBe("kimi");
+
+    await writeJson(join(projectRoot, ".agenter", "settings.local.json"), {
+      ai: {
+        activeProvider: "local-kimi",
+        providers: {
+          "local-kimi": {
+            kind: "anthropic",
+            model: "kimi-k2.5",
+            apiKey: "local-kimi-key",
+            baseUrl: "https://api.kimi.com/coding/",
+          },
+        },
+      },
+    });
+
+    const localOverride = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+      homeDir,
+    });
+
+    expect(localOverride.settings.ai?.activeProvider).toBe("local-kimi");
+    expect(localOverride.settings.ai?.providers?.["local-kimi"]?.vendor).toBe("kimi");
   });
 
   test("resource loader resolves builtins, paths and custom protocol", async () => {

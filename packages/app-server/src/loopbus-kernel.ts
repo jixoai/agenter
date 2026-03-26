@@ -1,12 +1,21 @@
 import { createHash } from "node:crypto";
 
+import type {
+  SessionTerminalOutcome,
+  SessionTraceEvent,
+  SessionTraceLink,
+  SessionTraceRef,
+  SessionTraceStatus,
+} from "@agenter/session-system";
+
 import type { LoopBusPhase } from "./loop-bus";
 
 export interface LoopBusKernelState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   stateVersion: number;
   running: boolean;
   paused: boolean;
+  runtimeStatus: "idle" | "running" | "waiting" | "backoff" | "blocked" | "paused";
   phase: LoopBusPhase;
   gate: "open" | "waiting_input";
   queueSize: number;
@@ -17,6 +26,16 @@ export interface LoopBusKernelState {
   lastResponseAt: number | null;
   lastWakeAt: number | null;
   lastWakeSource: string | null;
+  lastWakeCause: string | null;
+  activeContextCount: number;
+  activeItemCount: number;
+  unresolvedScoreCount: number;
+  waitingReason: string | null;
+  nextAutoWakeAt: number | null;
+  backoffMs: number | null;
+  retryCount: number;
+  blockedReason: string | null;
+  lastProgressAt: number | null;
   lastError: string | null;
 }
 
@@ -47,16 +66,22 @@ export interface LoopBusStateLogEntry {
 }
 
 export interface LoopBusTraceEntry {
-  timestamp: number;
+  id?: number;
+  cycleId?: number;
+  seq?: number;
   traceId: string;
   spanId: string;
   parentSpanId: string | null;
+  kind: string;
   name: string;
-  startTime: number;
-  endTime: number;
-  durationMs: number;
-  status: "ok" | "error";
-  attributes: Record<string, string | number | boolean>;
+  startedAt: number;
+  endedAt: number;
+  status: SessionTraceStatus;
+  refs: SessionTraceRef[];
+  links: SessionTraceLink[];
+  events: SessionTraceEvent[];
+  attributes: Record<string, unknown>;
+  outcome?: SessionTerminalOutcome;
 }
 
 const sortObject = (value: unknown): unknown => {
@@ -127,10 +152,11 @@ export const createInitialLoopKernelState = (
   now: number,
   phase: LoopBusPhase = "waiting_commits",
 ): LoopBusKernelState => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   stateVersion: 0,
   running: false,
   paused: false,
+  runtimeStatus: "idle",
   phase,
   gate: "open",
   queueSize: 0,
@@ -141,5 +167,15 @@ export const createInitialLoopKernelState = (
   lastResponseAt: null,
   lastWakeAt: null,
   lastWakeSource: null,
+  lastWakeCause: null,
+  activeContextCount: 0,
+  activeItemCount: 0,
+  unresolvedScoreCount: 0,
+  waitingReason: null,
+  nextAutoWakeAt: null,
+  backoffMs: null,
+  retryCount: 0,
+  blockedReason: null,
+  lastProgressAt: null,
   lastError: null,
 });

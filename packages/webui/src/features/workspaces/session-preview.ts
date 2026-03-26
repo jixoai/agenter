@@ -1,4 +1,5 @@
 import type { RuntimeClientState, WorkspaceSessionEntry } from "@agenter/client-sdk";
+import { isInternalFailureMessage } from "../chat/internal-system-messages";
 
 type ChatMessage = RuntimeClientState["chatsBySession"][string][number];
 type WorkspaceSessionPreview = WorkspaceSessionEntry["preview"];
@@ -6,7 +7,7 @@ type WorkspaceSessionPreview = WorkspaceSessionEntry["preview"];
 export const deriveWorkspaceSessionPreview = (messages: ChatMessage[]): WorkspaceSessionPreview => {
   const firstUserMessage = messages.find((item) => item.role === "user")?.content.trim() || null;
   const latestMessages = messages
-    .filter((item) => item.role === "user" || item.channel === "to_user")
+    .filter((item) => (item.role === "user" || item.channel === "to_user") && !isInternalFailureMessage(item))
     .map((item) => item.content.trim())
     .filter((item) => item.length > 0)
     .slice(-3);

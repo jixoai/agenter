@@ -1,4 +1,13 @@
 import type { ChatSessionAsset } from "./types";
+import type {
+  SessionTerminalOutcome,
+  SessionTraceEvent,
+  SessionTraceLink,
+  SessionTraceRef,
+  SessionTraceStatus,
+} from "@agenter/session-system";
+
+import { createSpanId, createTraceEvent, createTraceId, mapAbortReasonToOutcome, toTerminalOutcomeFromError } from "./runtime-trace";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -12,7 +21,7 @@ export interface LoopBusMessage {
   name: string;
   role: "user" | "tool";
   type: "text";
-  source: "chat" | "terminal" | "tool" | "task" | "attention-system";
+  source: "chat" | "terminal" | "tool" | "task" | "attention";
   text: string;
   meta?: LoopBusMeta;
   attachments?: ChatSessionAsset[];
@@ -96,11 +105,19 @@ export type LoopBusWakeSource = "user" | "terminal" | "task" | "attention" | "un
 
 export interface LoopBusTraceEntry {
   cycleId: number;
-  step: string;
-  status: "ok" | "error";
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string | null;
+  kind: string;
+  name: string;
+  status: SessionTraceStatus;
   startedAt: number;
   endedAt: number;
-  detail: Record<string, unknown>;
+  refs: SessionTraceRef[];
+  links: SessionTraceLink[];
+  events: SessionTraceEvent[];
+  attributes: Record<string, unknown>;
+  outcome?: SessionTerminalOutcome;
 }
 
 interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
@@ -185,22 +202,23 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
     this.loopTask = this.run();
   }
 
-  stop(): void {
+  async stop(reason: unknown = "loopbus.stop"): Promise<void> {
     this.running = false;
     this.paused = false;
-    this.cycleAbortController?.abort("loopbus.stop");
+    this.cycleAbortController?.abort(reason);
     this.cycleAbortController = null;
     this.waitResume?.();
     this.waitResume = null;
-    void this.emitState("stopped");
+    await this.emitState("stopped");
+    await this.loopTask;
   }
 
-  pause(): void {
+  pause(reason: unknown = "loopbus.pause"): void {
     if (!this.running || this.paused) {
       return;
     }
     this.paused = true;
-    this.cycleAbortController?.abort("loopbus.pause");
+    this.cycleAbortController?.abort(reason);
     void this.emitState(this.phase);
   }
 
@@ -242,23 +260,40 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   }
 
   private async runCycle(): Promise<void> {
+    const traceId = createTraceId();
     const traces: Array<Omit<LoopBusTraceEntry, "cycleId">> = [];
     let wakeSource: LoopBusWakeSource = "unknown";
 
     try {
-      await this.trace(traces, "wait_commits", { phase: this.phase }, async () => {
+      await this.trace(
+        traces,
+        {
+          traceId,
+          kind: "scheduler.wait",
+          name: "wait_commits",
+          attributes: { phase: this.phase },
+        },
+        async () => {
         await this.emitState("waiting_commits");
         wakeSource = (await this.deps.waitForCommit()) ?? "unknown";
         this.lastWakeSource = wakeSource;
-      });
+        },
+      );
 
       if (!this.running) {
         return;
       }
 
-      const collected = await this.trace(traces, "collect_inputs", { wakeSource }, async () => {
-        return await this.collectInputsWithinWindow();
-      });
+      const collected = await this.trace(
+        traces,
+        {
+          traceId,
+          kind: "source.collect",
+          name: "collect_inputs",
+          attributes: { wakeSource },
+        },
+        async () => await this.collectInputsWithinWindow(),
+      );
 
       if (collected.length === 0) {
         this.deps.logger.log({
@@ -277,8 +312,12 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       this.cycle += 1;
       const { cycleId } = await this.trace(
         traces,
-        "persist_cycle",
-        { wakeSource, inputs: collected.length },
+        {
+          traceId,
+          kind: "cycle.persist",
+          name: "persist_cycle",
+          attributes: { wakeSource, inputs: collected.length },
+        },
         async () => {
           await this.emitState("persisting_cycle");
           return await this.deps.persistCycle({ wakeSource, inputs: collected });
@@ -289,12 +328,22 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
 
       const cycleAbortController = new AbortController();
       this.cycleAbortController = cycleAbortController;
-      const response = await this.traceWithCycle(cycleId, "call_model", { inputs: collected.length }, async () => {
-        await this.emitState("calling_model");
-        return await this.deps.processor.send(collected, {
-          signal: cycleAbortController.signal,
-        });
-      });
+      const response = await this.traceWithCycle(
+        cycleId,
+        {
+          traceId,
+          kind: "model.call",
+          name: "call_model",
+          attributes: { inputs: collected.length },
+        },
+        async () => {
+          await this.emitState("calling_model");
+          return await this.deps.processor.send(collected, {
+            signal: cycleAbortController.signal,
+          });
+        },
+        cycleAbortController.signal,
+      );
       if (this.cycleAbortController === cycleAbortController) {
         this.cycleAbortController = null;
       }
@@ -316,11 +365,15 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       const outputs = normalizeOutputs(response);
       await this.traceWithCycle(
         cycleId,
-        "apply_outputs",
         {
-          toUser: outputs.toUser.length,
-          toTerminal: outputs.toTerminal.length,
-          toTools: outputs.toTools.length,
+          traceId,
+          kind: "egress.apply",
+          name: "apply_outputs",
+          attributes: {
+            toUser: outputs.toUser.length,
+            toTerminal: outputs.toTerminal.length,
+            toTools: outputs.toTools.length,
+          },
         },
         async () => {
           await this.emitState("applying_outputs");
@@ -337,6 +390,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
             await this.deps.onTerminalDispatch?.(command, { cycleId });
           }
         },
+        cycleAbortController.signal,
       );
     } catch (error) {
       if (this.isAbortError(error)) {
@@ -358,11 +412,22 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       if (this.currentCycleId !== null) {
         await this.deps.onTrace?.({
           cycleId: this.currentCycleId,
-          step: "cycle_error",
+          traceId,
+          spanId: createSpanId(),
+          kind: "scheduler.error",
+          name: "cycle_error",
           status: "error",
           startedAt: Date.now(),
           endedAt: Date.now(),
-          detail: { message },
+          refs: [],
+          links: [],
+          events: [createTraceEvent("cycle.error", { status: "error", attributes: { message } })],
+          attributes: { message },
+          outcome: {
+            code: "error",
+            message,
+            error: { message },
+          },
         });
       }
     } finally {
@@ -412,31 +477,60 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
 
   private async trace<T>(
     bucket: Array<Omit<LoopBusTraceEntry, "cycleId">>,
-    step: string,
-    detail: Record<string, unknown>,
+    input: {
+      traceId: string;
+      kind: string;
+      name: string;
+      parentSpanId?: string | null;
+      refs?: SessionTraceRef[];
+      links?: SessionTraceLink[];
+      attributes?: Record<string, unknown>;
+    },
     run: () => Promise<T>,
   ): Promise<T> {
     const startedAt = Date.now();
+    const spanId = createSpanId();
+    const baseEntry = {
+      traceId: input.traceId,
+      spanId,
+      parentSpanId: input.parentSpanId,
+      kind: input.kind,
+      name: input.name,
+      refs: [...(input.refs ?? [])],
+      links: [...(input.links ?? [])],
+      attributes: { ...(input.attributes ?? {}) },
+    } satisfies Omit<LoopBusTraceEntry, "cycleId" | "status" | "startedAt" | "endedAt" | "events" | "outcome">;
     try {
       const value = await run();
       bucket.push({
-        step,
-        status: "ok",
+        ...baseEntry,
+        status: "done",
         startedAt,
         endedAt: Date.now(),
-        detail,
+        events: [createTraceEvent("span.finished", { status: "ok" })],
+        outcome: {
+          code: "done",
+        },
       });
       return value;
     } catch (error) {
+      const outcome = this.isAbortError(error) ? mapAbortReasonToOutcome(error) : toTerminalOutcomeFromError(error);
       bucket.push({
-        step,
-        status: "error",
+        ...baseEntry,
+        status: this.isAbortError(error) ? "cancelled" : "error",
         startedAt,
         endedAt: Date.now(),
-        detail: {
-          ...detail,
+        events: [
+          createTraceEvent("span.failed", {
+            status: "error",
+            attributes: { message: error instanceof Error ? error.message : String(error) },
+          }),
+        ],
+        attributes: {
+          ...baseEntry.attributes,
           message: error instanceof Error ? error.message : String(error),
         },
+        outcome,
       });
       throw error;
     }
@@ -444,33 +538,74 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
 
   private async traceWithCycle<T>(
     cycleId: number,
-    step: string,
-    detail: Record<string, unknown>,
+    input: {
+      traceId: string;
+      kind: string;
+      name: string;
+      parentSpanId?: string | null;
+      refs?: SessionTraceRef[];
+      links?: SessionTraceLink[];
+      attributes?: Record<string, unknown>;
+    },
     run: () => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     const startedAt = Date.now();
+    const spanId = createSpanId();
+    const baseEntry = {
+      cycleId,
+      traceId: input.traceId,
+      spanId,
+      parentSpanId: input.parentSpanId,
+      kind: input.kind,
+      name: input.name,
+      refs: [...(input.refs ?? [])],
+      links: [...(input.links ?? [])],
+      attributes: { ...(input.attributes ?? {}) },
+    } satisfies Omit<LoopBusTraceEntry, "status" | "startedAt" | "endedAt" | "events" | "outcome">;
+    await this.deps.onTrace?.({
+      ...baseEntry,
+      status: "running",
+      startedAt,
+      endedAt: startedAt,
+      events: [createTraceEvent("span.started", { status: "info" })],
+    });
     try {
       const value = await run();
       await this.deps.onTrace?.({
-        cycleId,
-        step,
-        status: "ok",
+        ...baseEntry,
+        status: "done",
         startedAt,
         endedAt: Date.now(),
-        detail,
+        events: [
+          createTraceEvent("span.started", { timestamp: startedAt, status: "info" }),
+          createTraceEvent("span.finished", { status: "ok" }),
+        ],
+        outcome: {
+          code: "done",
+        },
       });
       return value;
     } catch (error) {
+      const aborted = this.isAbortError(error);
+      const outcome = aborted ? mapAbortReasonToOutcome(signal?.reason ?? error) : toTerminalOutcomeFromError(error);
       await this.deps.onTrace?.({
-        cycleId,
-        step,
-        status: "error",
+        ...baseEntry,
+        status: aborted ? "cancelled" : "error",
         startedAt,
         endedAt: Date.now(),
-        detail: {
-          ...detail,
+        events: [
+          createTraceEvent("span.started", { timestamp: startedAt, status: "info" }),
+          createTraceEvent("span.failed", {
+            status: "error",
+            attributes: { message: error instanceof Error ? error.message : String(error) },
+          }),
+        ],
+        attributes: {
+          ...baseEntry.attributes,
           message: error instanceof Error ? error.message : String(error),
         },
+        outcome,
       });
       throw error;
     }

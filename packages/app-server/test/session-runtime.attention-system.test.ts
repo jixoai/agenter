@@ -4,27 +4,98 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AttentionSystem, type AttentionActiveContextMatch, type AttentionCommit, type AttentionCommitChange } from "@agenter/attention-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import { SessionRuntime } from "../src/session-runtime";
 
 interface RuntimeInternal {
   agent: { requestCompact: (reason?: string) => void } | null;
-  attentionEngine: {
-    list: () => Array<{ id: number; content?: string; from?: string }>;
-  };
+  attentionSystem: AttentionSystem;
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
+  collectAttentionInputs: () => LoopBusInput[] | undefined;
+  waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
+  notifyInput: (kind: "user" | "terminal" | "task" | "attention") => void;
   loopPluginRuntime: LoopBusPluginRuntime | null;
   createLoopPluginRuntime: () => Promise<LoopBusPluginRuntime>;
   createLoopPlugins: () => LoopBusPlugin[];
   flushPluginAttentionDrafts: () => Promise<boolean>;
   commitAttentionDrafts: (drafts: AttentionDraft[]) => Promise<boolean>;
+  persistCycle: (input: { wakeSource: "user" | "terminal" | "task" | "attention" | "unknown"; inputs: LoopBusInput[] }) => Promise<{ cycleId: number }>;
+  handleCommittedAttentionCommit: (
+    contextId: string,
+    commit: AttentionCommit,
+    input: { notifyLoop: boolean },
+  ) => Promise<void>;
+  handleModelCall: (record: {
+    id: string;
+    timestamp: number;
+    status: "running" | "done" | "error" | "cancelled";
+    completedAt?: number;
+    provider: string;
+    model: string;
+    request: unknown;
+    response?: unknown;
+    error?: unknown;
+    outcome?: {
+      code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+      message?: string;
+      retryable?: boolean;
+      error?: unknown;
+      reason?: string;
+    };
+  }) => Promise<void>;
+  upsertTraceRow: (input: {
+    cycleId: number;
+    traceId: string;
+    spanId: string;
+    parentSpanId?: string | null;
+    kind: string;
+    name: string;
+    status: "running" | "done" | "error" | "cancelled";
+    startedAt: number;
+    endedAt: number;
+    refs: Array<{ kind: string; ref: string }>;
+    links: Array<{ kind: string; traceId?: string; spanId?: string }>;
+    events: Array<{ id: string; name: string; timestamp: number }>;
+    attributes: Record<string, unknown>;
+    outcome?: {
+      code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+      message?: string;
+      retryable?: boolean;
+      error?: unknown;
+      reason?: string;
+    };
+  }) => unknown;
+  listLoopbusTracesByRef: (
+    ref: string,
+    limit?: number,
+  ) => Array<{
+    kind: string;
+    name: string;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome?: {
+      code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+    };
+  }>;
+  pageModelCalls: () => {
+    items: Array<{
+      id: number;
+      status: "running" | "done" | "error" | "cancelled";
+      outcome?: {
+        code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+      };
+    }>;
+  };
   readTerminalRepresentation: (
     terminalId: string,
     input: { mode: "auto" | "diff" | "snapshot"; remark: boolean },
   ) => Promise<{ kind: string; representation: string } | { ok: false; reason: string }>;
   config: {
-    terminals?: Record<string, { terminalId: string; cwd: string; command: string[]; commandLabel: string; gitLog?: false }>;
+    terminals?: Record<
+      string,
+      { terminalId: string; cwd: string; command: string[]; commandLabel: string; gitLog?: false | "normal" | "verbose" }
+    >;
   } | null;
   terminals: Map<
     string,
@@ -52,7 +123,125 @@ interface RuntimeInternal {
   terminalDirtyState: Record<string, boolean>;
   terminalLatestSeq: Record<string, number>;
   terminalReads: Record<string, { representation: string }>;
+  attentionDebtBackoffMs: number;
+  attentionContainment: Map<
+    string,
+    {
+      retryCount: number;
+      status: "backoff" | "blocked";
+      nextWakeAt: number | null;
+      blockedReason: string | null;
+    }
+  >;
+  dirtyAttentionContextIds: Set<string>;
+  resolveCycleReplyChatId: (inputs: LoopBusInput[]) => string | null;
 }
+
+interface RuntimeMessageEgressInternal extends RuntimeInternal {
+  agent: {
+    requestCompact: (reason?: string) => void;
+    deps: {
+      messageGateway?: {
+        send: (input: {
+          chatId: string;
+          content: string;
+          rootId?: string;
+          from?: string;
+          to?: string;
+        }) => Promise<{ ok: boolean; messageId: string }>;
+      };
+    };
+  } | null;
+  messageSystem: {
+    snapshot: (
+      chatId: string,
+      limit?: number,
+    ) => {
+      items: Array<{
+        content: string;
+        rootId?: string;
+        metadata?: Record<string, unknown>;
+      }>;
+    };
+  };
+}
+
+const getActiveMatches = (internal: RuntimeInternal): AttentionActiveContextMatch[] => internal.attentionSystem.listActiveContexts();
+
+const getActiveCommits = (internal: RuntimeInternal): AttentionCommit[] =>
+  getActiveMatches(internal).flatMap((match) => {
+    const activeHashes = new Set(
+      Object.entries(match.context.scoreMap)
+        .filter(([, score]) => score >= 1)
+        .map(([hash]) => hash),
+    );
+    return match.recentCommits.filter((commit) => Object.keys(commit.scores).some((hash) => activeHashes.has(hash)));
+  });
+
+const getActiveItems = (internal: RuntimeInternal) =>
+  getActiveCommits(internal).map((commit) => ({
+    id: commit.commitId,
+    title: commit.summary,
+    scores: commit.scores,
+    detail:
+      commit.change.type === "clean"
+        ? undefined
+        : {
+            kind: commit.change.type === "diff" ? ("patch" as const) : ("replace" as const),
+            value: commit.change.value,
+            format: commit.change.format,
+          },
+    meta: commit.meta,
+  }));
+
+const buildCommitChange = (
+  internal: RuntimeInternal,
+  contextId: string,
+  input: {
+    title: string;
+    detail?: { kind: "replace" | "patch"; value: string; format?: string };
+    preserveContext?: boolean;
+  },
+): AttentionCommitChange => {
+  if (input.detail) {
+    return {
+      type: input.detail.kind === "patch" ? "diff" : "update",
+      value: input.detail.value,
+      format: input.detail.format,
+    };
+  }
+  const state = internal.attentionSystem.getContext(contextId)?.getState();
+  if (input.preserveContext && state) {
+    return {
+      type: "update",
+      value: state.content,
+      format: state.contentFormat,
+    };
+  }
+  return {
+    type: "update",
+    value: input.title,
+    format: "text/plain",
+  };
+};
+
+const appendAttentionCommit = (
+  internal: RuntimeInternal,
+  contextId: string,
+  input: {
+    meta: Record<string, unknown>;
+    scores: Record<string, number>;
+    title: string;
+    detail?: { kind: "replace" | "patch"; value: string; format?: string };
+    preserveContext?: boolean;
+  },
+): AttentionCommit =>
+  internal.attentionSystem.commit(contextId, {
+    meta: input.meta,
+    scores: input.scores,
+    summary: input.title,
+    change: buildCommitChange(internal, contextId, input),
+  }).commit;
 
 const createRuntime = (): SessionRuntime => {
   const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-"));
@@ -66,26 +255,200 @@ const createRuntime = (): SessionRuntime => {
 };
 
 describe("Feature: session runtime attention-system loop inputs", () => {
-  test("Scenario: Given user chat is collected When collectLoopInputs runs Then attention facts ride in the same batch", async () => {
+  test("Scenario: Given plugin-backed user chat When collectLoopInputs runs Then the batch is attention-native without raw chat duplication", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     runtime.pushUserChat("Please continue the task");
 
     const firstRound = await internal.collectLoopInputs();
-    expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(true);
-    const attentionFacts = firstRound?.find((item) => item.source === "attention-system");
-    expect(attentionFacts).toBeDefined();
-    if (!attentionFacts) {
+    expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
+    const attentionInput = firstRound?.find((item) => item.source === "attention");
+    expect(attentionInput).toBeDefined();
+    if (!attentionInput) {
       return;
     }
 
-    const payload = JSON.parse(attentionFacts.text) as { kind: string; count: number };
-    expect(payload.kind).toBe("attention-system-list");
-    expect(payload.count).toBe(1);
+    expect(attentionInput.text).toContain("contextId:");
+    expect(attentionInput.text).toContain("Please continue the task");
+    expect(attentionInput.meta?.attentionContextId).toBe("ctx-chat-main");
+    expect(attentionInput.meta?.chatId).toBe("chat-main");
+    expect(attentionInput.meta?.chatFocused).toBe(true);
+    expect(typeof attentionInput.meta?.attentionHeadCommitId).toBe("string");
+    expect(internal.resolveCycleReplyChatId([attentionInput])).toBe("chat-main");
 
     const secondRound = await internal.collectLoopInputs();
     expect(secondRound).toBeUndefined();
+  });
+
+  test("Scenario: Given a non-default chat channel When plugin-backed attention is collected Then replies still route back to that originating channel", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    const channel = runtime.createMessageChannel({
+      kind: "direct",
+      title: "Chat 2",
+      focus: false,
+    });
+
+    runtime.sendMessageChannel({
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      text: "[lunch-relay] ask gaubee lunch",
+    });
+
+    const firstRound = await internal.collectLoopInputs();
+    const attentionInput = firstRound?.find((item) => item.source === "attention");
+    expect(attentionInput).toBeDefined();
+    if (!attentionInput) {
+      return;
+    }
+
+    expect(attentionInput.meta?.attentionContextId).toBe(`ctx-${channel.chatId}`);
+    expect(attentionInput.meta?.chatId).toBe(channel.chatId);
+    expect(attentionInput.meta?.chatFocused).toBe(false);
+    expect(internal.resolveCycleReplyChatId([attentionInput])).toBe(channel.chatId);
+  });
+
+  test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then only the newest dirty context is sent to the model in that round", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    internal.attentionSystem.createContext({ contextId: "ctx-terminal-iflow", owner: "avatar:tester" });
+    const terminalCommit = appendAttentionCommit(internal, "ctx-terminal-iflow", {
+      meta: {
+        author: "terminal:iflow",
+        source: "terminal",
+        systemId: "terminal",
+        subjectId: "iflow",
+      },
+      scores: { hash_terminal: 100 },
+      title: "Terminal iflow is waiting for auth",
+    });
+    await internal.handleCommittedAttentionCommit("ctx-terminal-iflow", terminalCommit, { notifyLoop: false });
+
+    runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
+
+    const firstRound = await internal.collectLoopInputs();
+    expect(firstRound?.map((item) => item.meta?.attentionContextId)).toEqual(["ctx-chat-main"]);
+
+    const secondRound = await internal.collectLoopInputs();
+    expect(secondRound?.map((item) => item.meta?.attentionContextId)).toEqual(["ctx-terminal-iflow"]);
+  });
+
+  test("Scenario: Given an attention round makes no progress When the final model call is recorded Then the affected context becomes blocked instead of being re-queued immediately", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    const chatCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "User",
+        source: "message",
+        systemId: "message",
+        subjectId: "chat-main",
+        chatId: "chat-main",
+        channelId: "chat-main",
+      },
+      scores: { hash_chat: 100 },
+      title: "Reply with exactly REAL-AI-OK",
+    });
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", chatCommit, { notifyLoop: false });
+
+    try {
+      const firstRound = await internal.collectLoopInputs();
+      const attentionInput = firstRound?.find((item) => item.source === "attention");
+      expect(attentionInput?.meta?.attentionContextId).toBe("ctx-chat-main");
+      if (!firstRound || !attentionInput) {
+        return;
+      }
+
+      await runtime.start();
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs: firstRound });
+      await internal.handleModelCall({
+        id: "call-no-progress",
+        timestamp: 100,
+        completedAt: 101,
+        status: "error",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+        error: { message: "attention round made no progress" },
+        outcome: {
+          code: "error",
+          reason: "attention.no_progress",
+          retryable: false,
+        },
+      });
+
+      expect(internal.dirtyAttentionContextIds.has("ctx-chat-main")).toBe(false);
+      expect(internal.attentionContainment.get("ctx-chat-main")).toMatchObject({
+        retryCount: 1,
+        status: "blocked",
+      });
+
+      const pendingWake = internal.waitForAnyInput();
+      const winner = await Promise.race([
+        pendingWake.then((kind) => ({ kind })),
+        new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), 30)),
+      ]);
+      expect(winner.kind).toBe("timeout");
+
+      internal.notifyInput("user");
+      expect(await pendingWake).toBe("user");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a runtime snapshot When chat bootstrap data is read Then message-channel descriptors are embedded alongside attention state", () => {
+    const runtime = createRuntime();
+    const channel = runtime.createMessageChannel({
+      kind: "direct",
+      title: "Chat 2",
+    });
+
+    const snapshot = runtime.snapshot();
+
+    expect(snapshot.messageChannels?.map((entry) => entry.chatId)).toEqual(["chat-main", channel.chatId]);
+    expect(snapshot.messageChannels?.find((entry) => entry.chatId === "chat-main")?.focused).toBe(true);
+    expect(snapshot.messageChannels?.find((entry) => entry.chatId === channel.chatId)?.contextId).toBe(`ctx-${channel.chatId}`);
+  });
+
+  test("Scenario: Given multiple active attention inputs from different chats When reply routing resolves Then the newest originating chat wins", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    expect(
+      internal.resolveCycleReplyChatId([
+        {
+          name: "Attention-ctx-chat-main",
+          role: "user",
+          type: "text",
+          source: "attention",
+          text: "main",
+          meta: {
+            chatId: "chat-main",
+            createdAt: "2026-03-24T10:00:00.000Z",
+          },
+        },
+        {
+          name: "Attention-ctx-chat-2",
+          role: "user",
+          type: "text",
+          source: "attention",
+          text: "chat-2",
+          meta: {
+            chatId: "chat-chat-2",
+            createdAt: "2026-03-24T10:00:05.000Z",
+          },
+        },
+      ]),
+    ).toBe("chat-chat-2");
   });
 
   test("Scenario: Given compact command When pushUserChat('/compact') Then compact is requested and attention records stay untouched", async () => {
@@ -102,7 +465,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     runtime.pushUserChat("/compact");
 
     expect(compactRequested).toBe(1);
-    expect(internal.attentionEngine.list()).toHaveLength(0);
+    expect(getActiveItems(internal)).toHaveLength(0);
 
     const outputs = await internal.collectLoopInputs();
     expect(outputs?.some((item) => item.source === "chat" && item.text === "/compact")).toBe(true);
@@ -111,14 +474,255 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a fresh user message While the previous cycle is still running Then attention remains invisible until the next collect batch", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     runtime.pushUserChat("What time is it?");
 
-    expect(internal.attentionEngine.list()).toHaveLength(0);
+    expect(getActiveItems(internal)).toHaveLength(0);
 
     const firstRound = await internal.collectLoopInputs();
-    expect(firstRound?.some((item) => item.source === "chat" && item.text === "What time is it?")).toBe(true);
-    expect(internal.attentionEngine.list()).toHaveLength(1);
+    expect(firstRound?.some((item) => item.source === "attention" && item.text.includes("What time is it?"))).toBe(
+      true,
+    );
+    expect(getActiveItems(internal)).toHaveLength(1);
+  });
+
+  test("Scenario: Given runtime-generated attention scores When semantic ingress commits Then score keys use short hash aliases instead of semantic labels", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    runtime.pushUserChat("Please continue the task");
+    await internal.collectLoopInputs();
+
+    const commit = getActiveCommits(internal)[0];
+    expect(commit).toBeDefined();
+    const scoreKeys = Object.keys(commit?.scores ?? {});
+    expect(scoreKeys.length).toBeGreaterThan(0);
+    expect(scoreKeys.every((key) => /^[0-9a-f]{6,64}$/.test(key))).toBe(true);
+    expect(scoreKeys.some((key) => key.includes(":"))).toBe(false);
+  });
+
+  test("Scenario: Given legacy terminal attention metadata When the runtime serializes attention for the model Then giant fingerprint blobs are compacted into short hash previews", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-terminal-iflow", owner: "avatar:tester" });
+    const hugeFingerprint = JSON.stringify({
+      cols: 80,
+      rows: 24,
+      lines: Array.from({ length: 24 }, () => " ".repeat(80)),
+      richLines: Array.from({ length: 24 }, () => ({
+        spans: [{ text: " ".repeat(80), bold: false, underline: false, inverse: false }],
+      })),
+    });
+    const commit = appendAttentionCommit(internal, "ctx-terminal-iflow", {
+      meta: {
+        author: "terminal:iflow",
+        source: "terminal",
+        terminalId: "iflow",
+        representation: "diff",
+        semanticHash: hugeFingerprint,
+        viewHash: hugeFingerprint,
+      },
+      scores: { abc123: 100 },
+      title: "Terminal iflow diff updated",
+      detail: {
+        kind: "patch",
+        value: "```diff\n+ ready\n```",
+        format: "text/markdown",
+      },
+    });
+    await internal.handleCommittedAttentionCommit("ctx-terminal-iflow", commit, { notifyLoop: false });
+
+    const batch = await internal.collectLoopInputs();
+    const attentionInput = batch?.find((entry) => entry.source === "attention");
+    expect(attentionInput).toBeDefined();
+    if (!attentionInput) {
+      return;
+    }
+
+    expect(attentionInput.text).toContain("sha256:");
+    expect(attentionInput.text).not.toContain("richLines");
+    expect(attentionInput.text.length).toBeLessThan(4_000);
+  });
+
+  test("Scenario: Given a resolved-only attention item When querying without minScore override Then score-zero rows stay filtered out", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+      },
+      scores: { a1b2c3: 0 },
+      title: "resolved reply",
+    });
+
+    expect(runtime.queryAttention({})).toHaveLength(0);
+    expect(runtime.queryAttention({ minScore: 0 })).toHaveLength(1);
+  });
+
+  test("Scenario: Given a later attention commit clears the same hash When runtime collects active debt Then the older unresolved item becomes history instead of active work", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "User",
+        source: "message",
+        systemId: "message",
+        subjectId: "msg-1",
+        channelId: "chat-main",
+      },
+      scores: { hash1: 100 },
+      title: "你好",
+    });
+    appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+      },
+      scores: { hash1: 0 },
+      title: "Respond to user greeting",
+      preserveContext: true,
+    });
+
+    expect(getActiveCommits(internal)).toHaveLength(0);
+    expect(runtime.queryAttention({})).toHaveLength(0);
+    expect(runtime.queryAttention({ minScore: 0 })).toHaveLength(2);
+  });
+
+  test("Scenario: Given unresolved attention debt When no new external input arrives Then the runtime self-wakes and re-collects attention", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+    internal.attentionDebtBackoffMs = 5;
+
+    runtime.pushUserChat("keep working until this is solved");
+    const firstBatch = await internal.collectLoopInputs();
+    expect(firstBatch?.some((item) => item.source === "attention")).toBe(true);
+
+    const wake = await internal.waitForAnyInput();
+    expect(wake).toBe("attention");
+
+    const secondBatch = await internal.collectLoopInputs();
+    expect(secondBatch?.some((item) => item.source === "attention")).toBe(true);
+  });
+
+  test("Scenario: Given repeated equivalent provider failures When containment is tracked Then the runtime backs off once and then blocks the context", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    runtime.pushUserChat("keep trying");
+    const firstBatch = await internal.collectLoopInputs();
+    const attentionInput = firstBatch?.find((item) => item.source === "attention");
+    expect(attentionInput?.meta?.attentionContextId).toBe("ctx-chat-main");
+    if (!firstBatch || !attentionInput || typeof attentionInput.meta?.attentionContextId !== "string") {
+      return;
+    }
+
+    await runtime.start();
+    await runtime.pause();
+    await internal.persistCycle({ wakeSource: "user", inputs: firstBatch });
+
+    await internal.handleModelCall({
+      id: "call-provider-error-1",
+      timestamp: 100,
+      completedAt: 101,
+      status: "error",
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [{ role: "user", content: attentionInput.text }] },
+      error: { name: "ProviderError", message: "upstream unavailable" },
+      outcome: {
+        code: "error",
+        reason: "provider.unavailable",
+        message: "upstream unavailable",
+        retryable: true,
+      },
+    });
+
+    const firstContainment = internal.attentionContainment.get("ctx-chat-main");
+    expect(firstContainment?.status).toBe("backoff");
+    expect(firstContainment?.retryCount).toBe(1);
+    if (firstContainment?.nextWakeAt !== null && firstContainment?.nextWakeAt !== undefined) {
+      firstContainment.nextWakeAt = Date.now() - 1;
+    }
+
+    expect(await internal.waitForAnyInput()).toBe("attention");
+    await internal.persistCycle({ wakeSource: "attention", inputs: [attentionInput] });
+
+    await internal.handleModelCall({
+      id: "call-provider-error-2",
+      timestamp: 200,
+      completedAt: 201,
+      status: "error",
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [{ role: "user", content: attentionInput.text }] },
+      error: { name: "ProviderError", message: "upstream unavailable" },
+      outcome: {
+        code: "error",
+        reason: "provider.unavailable",
+        message: "upstream unavailable",
+        retryable: true,
+      },
+    });
+
+    expect(internal.attentionContainment.get("ctx-chat-main")).toMatchObject({
+      status: "blocked",
+      retryCount: 2,
+    });
+
+    const pendingWake = internal.waitForAnyInput();
+    const winner = await Promise.race([
+      pendingWake.then((kind) => ({ kind })),
+      new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), 30)),
+    ]);
+    expect(winner.kind).toBe("timeout");
+
+    internal.notifyInput("user");
+    expect(await pendingWake).toBe("user");
+  });
+
+  test("Scenario: Given all attention scores are zero When no external input arrives Then the runtime does not self-wake again", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+    internal.attentionDebtBackoffMs = 5;
+
+    runtime.pushUserChat("resolve this and stay quiet after");
+    await internal.collectLoopInputs();
+
+    const [match] = getActiveMatches(internal);
+    expect(match).toBeDefined();
+    if (!match) {
+      return;
+    }
+    appendAttentionCommit(internal, match.contextId, {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+      },
+      scores: Object.fromEntries(Object.keys(match.context.scoreMap).map((key) => [key, 0])),
+      title: "resolve and stay quiet",
+      preserveContext: true,
+    });
+
+    const pendingWake = internal.waitForAnyInput();
+    const winner = await Promise.race([
+      pendingWake.then((kind) => ({ kind })),
+      new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), 30)),
+    ]);
+    expect(winner.kind).toBe("timeout");
+
+    internal.notifyInput("user");
+    expect(await pendingWake).toBe("user");
   });
 
   test("Scenario: Given legacy chat-system store When runtime starts Then files migrate to attention-system and records are restored", async () => {
@@ -156,14 +760,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     await runtime.start();
     const internal = runtime as unknown as RuntimeInternal;
-    expect(internal.attentionEngine.list()).toHaveLength(1);
+    expect(getActiveItems(internal)).toHaveLength(1);
     await runtime.stop();
 
     await access(join(nextDir, "state.json"));
     const migrated = JSON.parse(await readFile(join(nextDir, "state.json"), "utf8")) as {
-      records: Array<{ content: string }>;
+      version: number;
+      contexts: Array<{ commits: Array<{ summary: string }> }>;
     };
-    expect(migrated.records[0]?.content).toBe("legacy attention");
+    expect(migrated.version).toBe(4);
+    expect(migrated.contexts[0]?.commits[0]?.summary).toBe("legacy attention");
   });
 
   test("Scenario: Given a plugin runtime-backed user message When attention drafts flush Then the message is committed before cycle gating", async () => {
@@ -175,10 +781,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const changed = await internal.flushPluginAttentionDrafts();
     expect(changed).toBe(true);
-    const facts = internal.attentionEngine.list();
+    const facts = getActiveItems(internal);
     expect(facts).toHaveLength(1);
-    expect(facts[0]?.content).toBe("plugin-backed message");
-    expect(facts[0]?.from).toBe("User");
+    expect(facts[0]?.title).toBe("plugin-backed message");
+    expect(facts[0]?.meta.author).toBe("User");
   });
 
   test("Scenario: Given a focused terminal invalidation When plugin attention drafts flush Then terminal output is committed into attention", async () => {
@@ -228,10 +834,119 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const changed = await internal.flushPluginAttentionDrafts();
     expect(changed).toBe(true);
-    const facts = internal.attentionEngine.list();
+    const facts = getActiveItems(internal);
     expect(facts).toHaveLength(1);
-    expect(facts[0]?.from).toBe("terminal");
-    expect(facts[0]?.content).toContain('"kind":"terminal-snapshot"');
+    expect(facts[0]?.meta.author).toBe("terminal:iflow");
+    expect(facts[0]?.title).toBe("Terminal iflow: echo ready");
+    expect(facts[0]?.detail?.kind).toBe("replace");
+    expect(facts[0]?.detail?.format).toBe("text/markdown");
+    expect(facts[0]?.detail?.value).toContain("```yaml");
+    expect(facts[0]?.detail?.value).toContain("terminalId: iflow");
+    expect(facts[0]?.detail?.value).toContain("```text");
+  });
+
+  test("Scenario: Given a focused terminal snapshot with no semantic tail When plugin attention drafts flush Then the runtime does not create empty terminal attention debt", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.config = {
+      terminals: {
+        iflow: {
+          terminalId: "iflow",
+          cwd: "/tmp",
+          command: ["bash"],
+          commandLabel: "bash",
+        },
+      },
+    };
+    internal.terminals.set("iflow", {
+      isRunning: () => true,
+      getSnapshot: () => ({
+        seq: 8,
+        cols: 80,
+        rows: 24,
+        cursor: { x: 0, y: 0 },
+        lines: Array.from({ length: 24 }, () => ""),
+      }),
+      getStatus: () => "BUSY",
+      sliceDirty: async () => ({
+        ok: false,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+      }),
+    });
+    internal.focusedTerminalIds = ["iflow"];
+    internal.terminalDirtyState.iflow = true;
+    internal.terminalLatestSeq.iflow = 8;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+    internal.loopPluginRuntime.invalidate({
+      systemId: "terminal",
+      subjectId: "iflow",
+      reason: "semantic-change",
+      versionHint: 8,
+    });
+
+    const changed = await internal.flushPluginAttentionDrafts();
+    expect(changed).toBe(false);
+    expect(getActiveItems(internal)).toHaveLength(0);
+  });
+
+  test("Scenario: Given a focused terminal diff invalidation When plugin attention drafts flush Then the committed attention item keeps patch semantics for the context log", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.config = {
+      terminals: {
+        iflow: {
+          terminalId: "iflow",
+          cwd: "/tmp",
+          command: ["bash"],
+          commandLabel: "bash",
+          gitLog: "normal",
+        },
+      },
+    };
+    internal.terminals.set("iflow", {
+      isRunning: () => true,
+      getSnapshot: () => ({
+        seq: 12,
+        cols: 80,
+        rows: 24,
+        cursor: { x: 0, y: 23 },
+        lines: Array.from({ length: 24 }, (_, index) => `line-${index}`),
+      }),
+      getStatus: () => "IDLE",
+      sliceDirty: async () => ({
+        ok: true,
+        changed: true,
+        fromHash: "hash-old",
+        toHash: "hash-new",
+        diff: "@@ -1 +1 @@\n-prompt\n+after",
+        bytes: 28,
+      }),
+    });
+    internal.focusedTerminalIds = ["iflow"];
+    internal.terminalDirtyState.iflow = true;
+    internal.terminalLatestSeq.iflow = 12;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+    internal.loopPluginRuntime.invalidate({
+      systemId: "terminal",
+      subjectId: "iflow",
+      reason: "semantic-change",
+      versionHint: 12,
+    });
+
+    const changed = await internal.flushPluginAttentionDrafts();
+    expect(changed).toBe(true);
+
+    const facts = getActiveItems(internal);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.title).toBe("Terminal iflow diff updated");
+    expect(facts[0]?.detail?.kind).toBe("patch");
+    expect(facts[0]?.detail?.value).toContain("```diff");
   });
 
   test("Scenario: Given a focused terminal invalidation with unchanged semantic content When plugin drafts flush twice Then no duplicate attention delta is committed", async () => {
@@ -280,7 +995,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       versionHint: 8,
     });
     expect(await internal.flushPluginAttentionDrafts()).toBe(true);
-    expect(internal.attentionEngine.list()).toHaveLength(1);
+    expect(getActiveItems(internal)).toHaveLength(1);
 
     internal.terminalDirtyState.iflow = true;
     internal.loopPluginRuntime.invalidate({
@@ -290,7 +1005,93 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       versionHint: 8,
     });
     expect(await internal.flushPluginAttentionDrafts()).toBe(false);
-    expect(internal.attentionEngine.list()).toHaveLength(1);
+    expect(getActiveItems(internal)).toHaveLength(1);
+  });
+
+  test("Scenario: Given repeated focused terminal observations When a newer terminal draft commits Then older terminal debt is superseded", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      terminalSemanticFingerprint: Record<string, string | null | undefined>;
+      terminalViewFingerprint: Record<string, string | null | undefined>;
+    };
+
+    internal.config = {
+      terminals: {
+        iflow: {
+          terminalId: "iflow",
+          cwd: "/tmp",
+          command: ["bash"],
+          commandLabel: "bash",
+          gitLog: false,
+        },
+      },
+    };
+
+    let snapshot = {
+      seq: 8,
+      cols: 80,
+      rows: 24,
+      cursor: { x: 0, y: 23 },
+      lines: ["echo ready"],
+    };
+
+    internal.terminals.set("iflow", {
+      isRunning: () => true,
+      getSnapshot: () => snapshot,
+      getStatus: () => "IDLE",
+      sliceDirty: async () => ({
+        ok: true,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+      }),
+    });
+    internal.focusedTerminalIds = ["iflow"];
+    internal.terminalDirtyState.iflow = true;
+    internal.terminalLatestSeq.iflow = 8;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    internal.terminalSemanticFingerprint.iflow = "semantic-a";
+    internal.terminalViewFingerprint.iflow = "view-a";
+    internal.loopPluginRuntime.invalidate({
+      systemId: "terminal",
+      subjectId: "iflow",
+      reason: "semantic-change",
+      versionHint: 8,
+    });
+    expect(await internal.flushPluginAttentionDrafts()).toBe(true);
+    expect(getActiveItems(internal)).toHaveLength(1);
+
+    snapshot = {
+      ...snapshot,
+      seq: 9,
+      lines: ["echo changed"],
+    };
+    internal.terminalDirtyState.iflow = true;
+    internal.terminalLatestSeq.iflow = 9;
+    internal.terminalSemanticFingerprint.iflow = "semantic-b";
+    internal.terminalViewFingerprint.iflow = "view-b";
+    internal.loopPluginRuntime.invalidate({
+      systemId: "terminal",
+      subjectId: "iflow",
+      reason: "semantic-change",
+      versionHint: 9,
+    });
+
+    expect(await internal.flushPluginAttentionDrafts()).toBe(true);
+
+    const allTerminalItems = internal.attentionSystem.query({ minScore: 0, text: "Terminal iflow" });
+    expect(allTerminalItems).toHaveLength(3);
+    expect(getActiveMatches(internal)).toHaveLength(1);
+    expect(allTerminalItems.some((match) => Object.values(match.commit.scores).every((score) => score === 0))).toBe(true);
+    expect(
+      allTerminalItems.some(
+        (match) =>
+          match.commit.summary.includes("echo changed") && Object.values(match.commit.scores).some((score) => score >= 1),
+      ),
+    ).toBe(true);
   });
 
   test("Scenario: Given a terminal source invalidation without readable output When plugin drafts flush Then no attention delta is committed", async () => {
@@ -307,7 +1108,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const changed = await internal.flushPluginAttentionDrafts();
     expect(changed).toBe(false);
-    expect(internal.attentionEngine.list()).toHaveLength(0);
+    expect(getActiveItems(internal)).toHaveLength(0);
 
     const outputs = await internal.collectLoopInputs();
     expect(outputs).toBeUndefined();
@@ -411,7 +1212,571 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.commitAttentionDrafts(drafts);
     const decision = await pluginRuntime.shouldStartCycle(drafts);
 
-    expect(internal.attentionEngine.list()).toHaveLength(1);
+    expect(getActiveItems(internal)).toHaveLength(1);
     expect(decision).toEqual({ allow: false, reason: "policy-deferred" });
+  });
+
+  test("Scenario: Given attention refs and message egress When trace lookup runs Then causal spans expose model and dispatch links", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    const chatCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "User",
+        source: "message",
+        systemId: "message",
+        subjectId: "chat-main",
+        chatId: "chat-main",
+        channelId: "chat-main",
+      },
+      scores: { hash_chat_trace: 100 },
+      title: "Please ask gaubee about lunch",
+    });
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    const attentionInput = inputs?.find((item) => item.source === "attention");
+    expect(attentionInput).toBeDefined();
+    if (!inputs || !attentionInput) {
+      return;
+    }
+
+    const contextId = String(attentionInput.meta?.attentionContextId ?? "");
+    const commitId = String(attentionInput.meta?.attentionHeadCommitId ?? chatCommit.commitId);
+    expect(contextId).toBeTruthy();
+    expect(commitId).toBeTruthy();
+
+    await runtime.start();
+    await runtime.pause();
+    const { cycleId } = await internal.persistCycle({ wakeSource: "user", inputs });
+    internal.upsertTraceRow({
+      cycleId,
+      traceId: `trace-${cycleId}`,
+      spanId: `span-${cycleId}-model`,
+      parentSpanId: null,
+      kind: "model.call",
+      name: "call_model",
+      status: "running",
+      startedAt: 10,
+      endedAt: 10,
+      refs: [{ kind: "attention.commit", ref: `${contextId}:${commitId}` }],
+      links: [],
+      events: [],
+      attributes: { inputs: 1 },
+    });
+    await internal.handleModelCall({
+      id: "call-1",
+      timestamp: 11,
+      status: "running",
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [{ role: "user", content: "Please ask gaubee about lunch" }] },
+    });
+
+    const modelCallId = internal.pageModelCalls().items[0]?.id;
+    expect(modelCallId).toBeGreaterThan(0);
+
+    const replyCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+        replyTarget: {
+          systemId: "message",
+          subjectId: "chat-main",
+          channelId: "chat-main",
+          from: "tester",
+          to: "User",
+        },
+      },
+      scores: { "relay-hash": 0 },
+      title: "relay",
+      detail: {
+        kind: "replace",
+        value: "gaubee says fried rice",
+        format: "text/plain",
+      },
+    });
+
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", replyCommit, { notifyLoop: true });
+
+    const sourceTraceKinds = internal.listLoopbusTracesByRef(`${contextId}:${commitId}`).map((trace) => trace.kind);
+    expect(sourceTraceKinds).toContain("model.call");
+
+    const replyTraceKinds = internal
+      .listLoopbusTracesByRef(`ctx-chat-main:${replyCommit.commitId}`)
+      .map((trace) => trace.kind);
+    expect(replyTraceKinds).toContain("attention.hook");
+
+    const modelTraceKinds = internal.listLoopbusTracesByRef(String(modelCallId)).map((trace) => trace.kind);
+    expect(modelTraceKinds).toContain("model.call");
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given timeout stop and abort endings When lifecycle rows persist Then model and trace outcomes stay distinct", async () => {
+    const persistOutcome = async (input: {
+      finalStatus: "error" | "cancelled";
+      outcome: {
+        code: "timeout" | "stopped" | "aborted";
+        message: string;
+      };
+    }) => {
+      const runtime = createRuntime();
+      const internal = runtime as unknown as RuntimeInternal;
+
+      internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+      const chatCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+        meta: {
+          author: "User",
+          source: "message",
+          systemId: "message",
+          subjectId: "chat-main",
+          chatId: "chat-main",
+          channelId: "chat-main",
+        },
+        scores: { hash_lifecycle: 100 },
+        title: "Need a lifecycle outcome test",
+      });
+      await internal.handleCommittedAttentionCommit("ctx-chat-main", chatCommit, { notifyLoop: false });
+      const inputs = await internal.collectLoopInputs();
+      if (!inputs) {
+        throw new Error("expected collected inputs");
+      }
+      await runtime.start();
+      await runtime.pause();
+      const { cycleId } = await internal.persistCycle({ wakeSource: "user", inputs });
+      const traceId = `trace-${cycleId}`;
+      const spanId = `span-${cycleId}-model`;
+      internal.upsertTraceRow({
+        cycleId,
+        traceId,
+        spanId,
+        parentSpanId: null,
+        kind: "model.call",
+        name: "call_model",
+        status: "running",
+        startedAt: 10,
+        endedAt: 10,
+        refs: [],
+        links: [],
+        events: [],
+        attributes: {},
+      });
+      await internal.handleModelCall({
+        id: `call-${cycleId}`,
+        timestamp: 10,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: "Need a lifecycle outcome test" }] },
+      });
+
+      const modelCallId = internal.pageModelCalls().items[0]?.id;
+      if (!modelCallId) {
+        throw new Error("expected persisted model-call row");
+      }
+
+      await internal.handleModelCall({
+        id: `call-${cycleId}`,
+        timestamp: 12,
+        status: input.finalStatus,
+        completedAt: 12,
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: "Need a lifecycle outcome test" }] },
+        error:
+          input.finalStatus === "error"
+            ? {
+                message: input.outcome.message,
+              }
+            : undefined,
+        outcome: {
+          code: input.outcome.code,
+          message: input.outcome.message,
+        },
+      });
+      internal.upsertTraceRow({
+        cycleId,
+        traceId,
+        spanId,
+        parentSpanId: null,
+        kind: "model.call",
+        name: "call_model",
+        status: input.finalStatus,
+        startedAt: 10,
+        endedAt: 12,
+        refs: [],
+        links: [],
+        events: [],
+        attributes: {},
+        outcome: {
+          code: input.outcome.code,
+          message: input.outcome.message,
+        },
+      });
+
+      const persistedCall = internal.pageModelCalls().items[0];
+      const persistedTrace = internal.listLoopbusTracesByRef(String(modelCallId)).find((trace) => trace.kind === "model.call");
+
+      await runtime.stop();
+      return { persistedCall, persistedTrace };
+    };
+
+    const timeout = await persistOutcome({
+      finalStatus: "error",
+      outcome: {
+        code: "timeout",
+        message: "model call timed out after 120000ms",
+      },
+    });
+    const stopped = await persistOutcome({
+      finalStatus: "cancelled",
+      outcome: {
+        code: "stopped",
+        message: "session.stop",
+      },
+    });
+    const aborted = await persistOutcome({
+      finalStatus: "cancelled",
+      outcome: {
+        code: "aborted",
+        message: "session.abort",
+      },
+    });
+
+    expect(timeout.persistedCall?.status).toBe("error");
+    expect(timeout.persistedCall?.outcome?.code).toBe("timeout");
+    expect(timeout.persistedTrace?.outcome?.code).toBe("timeout");
+
+    expect(stopped.persistedCall?.status).toBe("cancelled");
+    expect(stopped.persistedCall?.outcome?.code).toBe("stopped");
+    expect(stopped.persistedTrace?.outcome?.code).toBe("stopped");
+
+    expect(aborted.persistedCall?.status).toBe("cancelled");
+    expect(aborted.persistedCall?.outcome?.code).toBe("aborted");
+    expect(aborted.persistedTrace?.outcome?.code).toBe("aborted");
+  });
+
+  test("Scenario: Given an idle runtime waiting for commits When abort is requested Then the loop wakes and teardown finishes promptly", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+
+    const abortPromise = runtime.abort().then(() => "aborted" as const);
+    const winner = await Promise.race([
+      abortPromise,
+      new Promise<"timeout">((resolve) =>
+        setTimeout(() => {
+          internal.notifyInput("attention");
+          resolve("timeout");
+        }, 200),
+      ),
+    ]);
+
+    expect(winner).toBe("aborted");
+    await abortPromise;
+    expect(runtime.isStarted()).toBe(false);
+  });
+
+  test("Scenario: Given a model-call provider error When the runtime records the failed call Then the loop snapshot retains lastError for route-level notice rendering", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    const chatCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "User",
+        source: "message",
+        systemId: "message",
+        subjectId: "chat-main",
+        chatId: "chat-main",
+        channelId: "chat-main",
+      },
+      scores: { hash_provider_error: 100 },
+      title: "Need provider error handling",
+    });
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    if (!inputs) {
+      throw new Error("expected collected inputs");
+    }
+
+    await runtime.start();
+    await runtime.pause();
+    const { cycleId } = await internal.persistCycle({ wakeSource: "user", inputs });
+    internal.upsertTraceRow({
+      cycleId,
+      traceId: `trace-${cycleId}`,
+      spanId: `span-${cycleId}-model`,
+      parentSpanId: null,
+      kind: "model.call",
+      name: "call_model",
+      status: "running",
+      startedAt: 10,
+      endedAt: 10,
+      refs: [],
+      links: [],
+      events: [],
+      attributes: {},
+    });
+    await internal.handleModelCall({
+      id: `call-${cycleId}`,
+      timestamp: 10,
+      status: "running",
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [{ role: "user", content: "Need provider error handling" }] },
+    });
+
+    const providerError =
+      'openai-chat response failed after 1 attempt(s): 402 status code ({"error":{"message":"Insufficient Balance"}})';
+    await internal.handleModelCall({
+      id: `call-${cycleId}`,
+      timestamp: 12,
+      status: "error",
+      completedAt: 12,
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [{ role: "user", content: "Need provider error handling" }] },
+      error: {
+        message: providerError,
+      },
+      outcome: {
+        code: "error",
+        message: providerError,
+      },
+    });
+
+    expect(runtime.snapshot().schedulerState?.lastError).toBe(providerError);
+  });
+
+  test("Scenario: Given a reply-targeted attention item When message egress succeeds Then runtime attention state records a delivered channel dispatch using the commit body instead of the internal summary", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    const commit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+        replyTarget: {
+          systemId: "message",
+          subjectId: "chat-main",
+          channelId: "chat-main",
+          from: "tester",
+          to: "User",
+        },
+      },
+      scores: { "reply-hash": 0 },
+      title: "internal planning note",
+      detail: {
+        kind: "replace",
+        value: "delivered reply",
+        format: "text/plain",
+      },
+    });
+
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", commit, { notifyLoop: false });
+
+    const snapshot = runtime.snapshot();
+    expect(snapshot.attention?.hooks.at(-1)?.status).toBe("delivered");
+    expect(snapshot.attention?.hooks.at(-1)?.systemId).toBe("message");
+    expect(snapshot.chatMessages.at(-1)?.content).toBe("delivered reply");
+    expect((internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot("chat-main", 10).items.at(-1)?.content).toBe(
+      "delivered reply",
+    );
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a message_send tool dispatch during an active cycle When chat-channel egress persists the assistant reply Then the transport snapshot keeps cycle metadata for Devtools navigation", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    internal.attentionSystem.createContext({ contextId: "ctx-chat-main", owner: "avatar:tester" });
+    const chatCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "User",
+        source: "message",
+        systemId: "message",
+        subjectId: "chat-main",
+        chatId: "chat-main",
+        channelId: "chat-main",
+      },
+      scores: { hash_message_send: 100 },
+      title: "Send the answer through the default chat channel",
+    });
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    if (!inputs) {
+      throw new Error("expected collected inputs");
+    }
+
+    await runtime.start();
+    await runtime.pause();
+    const { cycleId } = await internal.persistCycle({ wakeSource: "user", inputs });
+
+    const messageGateway = internal.agent?.deps.messageGateway;
+    if (!messageGateway) {
+      throw new Error("expected message gateway");
+    }
+    await messageGateway.send({
+      chatId: "chat-main",
+      content: "Delivered through message_send",
+    });
+
+    const message = internal.messageSystem.snapshot("chat-main", 10).items.at(-1);
+    expect(message?.content).toBe("Delivered through message_send");
+    expect(message?.rootId).toBe(String(cycleId));
+    expect(message?.metadata).toMatchObject({
+      channel: "to_user",
+      source: "message_send",
+      cycleId,
+    });
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a message_send dispatch already sent a visible reply When a later replyTarget commit targets the same chat and cycle Then the runtime suppresses the duplicate bridge message", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    await runtime.pause();
+    const { cycleId } = await internal.persistCycle({
+      wakeSource: "user",
+      inputs: [
+        {
+          source: "attention",
+          role: "user",
+          type: "text",
+          name: "Attention-ctx-chat-main",
+          text: "pending chat attention",
+          meta: {
+            attentionContextId: "ctx-chat-main",
+            chatId: "chat-main",
+          },
+        },
+      ],
+    });
+
+    const messageGateway = internal.agent?.deps.messageGateway;
+    if (!messageGateway) {
+      throw new Error("expected message gateway");
+    }
+    await messageGateway.send({
+      chatId: "chat-main",
+      content: "Delivered through message_send",
+    });
+
+    const duplicateCommit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+        replyTarget: {
+          systemId: "message",
+          subjectId: "chat-main",
+          channelId: "chat-main",
+          from: "tester",
+          to: "User",
+        },
+      },
+      scores: { "reply-hash": 0 },
+      title: "duplicate visible dispatch",
+      detail: {
+        kind: "replace",
+        value: "duplicate visible dispatch",
+        format: "text/plain",
+      },
+    });
+
+    const beforeMessages = internal.messageSystem.snapshot("chat-main", 10).items;
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", duplicateCommit, { notifyLoop: false });
+    const afterMessages = internal.messageSystem.snapshot("chat-main", 10).items;
+
+    expect(afterMessages).toHaveLength(beforeMessages.length);
+    expect(afterMessages.at(-1)?.content).toBe("Delivered through message_send");
+    expect(runtime.snapshot().attention?.hooks.at(-1)?.status).toBe("ignored");
+    expect(runtime.snapshot().attention?.hooks.at(-1)?.output).toMatchObject({
+      reason: "duplicate-visible-dispatch",
+      attentionContextId: "ctx-chat-main",
+      attentionCommitId: duplicateCommit.commitId,
+    });
+    expect(afterMessages.at(-1)?.metadata).toMatchObject({
+      source: "message_send",
+      cycleId,
+    });
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a visible assistant reply already exists with no newer user message When message_send repeats the same chat content Then the runtime reuses the existing message instead of appending a duplicate", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const gateway = internal.agent?.deps.messageGateway;
+    if (!gateway) {
+      throw new Error("message gateway missing");
+    }
+
+    const first = await gateway.send({
+      chatId: "chat-main",
+      content: "稍等，我去问一下。",
+      from: "tester",
+      to: "User",
+    });
+    const second = await gateway.send({
+      chatId: "chat-main",
+      content: "稍等，我去问一下。",
+      from: "tester",
+      to: "User",
+    });
+
+    const messages = internal.messageSystem.snapshot("chat-main", 10).items;
+    expect(messages.filter((message) => message.content === "稍等，我去问一下。")).toHaveLength(1);
+    expect(second.messageId).toBe(first.messageId);
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a reply-targeted attention item When message egress fails Then the failure stays in attention state and Chat stays quiet", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    const commit = appendAttentionCommit(internal, "ctx-chat-main", {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+        replyTarget: {
+          systemId: "message",
+          subjectId: "chat-missing",
+          channelId: "chat-missing",
+          from: "tester",
+          to: "User",
+        },
+      },
+      scores: { "reply-hash": 0 },
+      title: "failed reply",
+      detail: {
+        kind: "replace",
+        value: "failed reply",
+        format: "text/plain",
+      },
+    });
+
+    const beforeCount = runtime.snapshot().chatMessages.length;
+    await internal.handleCommittedAttentionCommit("ctx-chat-main", commit, { notifyLoop: false });
+
+    const snapshot = runtime.snapshot();
+    expect(snapshot.attention?.hooks.at(-1)?.status).toBe("failed");
+    expect(snapshot.attention?.hooks.at(-1)?.target).toEqual({
+      chatId: "chat-missing",
+    });
+    expect(snapshot.chatMessages).toHaveLength(beforeCount);
+
+    await runtime.stop();
   });
 });

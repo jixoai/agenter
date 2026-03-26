@@ -1,5 +1,5 @@
 import { composeStories } from "@storybook/react-vite";
-import { describe, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import * as stories from "../../src/features/terminal/TerminalPanel.stories";
 
@@ -7,10 +7,28 @@ const { EmbeddedSnapshotFallback, NarrowViewportSnapshotFallback } = composeStor
 
 describe("Feature: Storybook DOM contract for terminal panel", () => {
   test("Scenario: Given an embedded terminal story When rendering in the browser Then the standalone renderer host mounts with renderer-owned scrolling", async () => {
-    await EmbeddedSnapshotFallback.run();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await EmbeddedSnapshotFallback.run();
+    } finally {
+      const changeInUpdateWarnings = warnSpy.mock.calls.filter(([message]) =>
+        String(message).includes("change-in-update"),
+      );
+      warnSpy.mockRestore();
+      expect(changeInUpdateWarnings).toHaveLength(0);
+    }
   });
 
   test("Scenario: Given a narrow embedded terminal story When rendering in the browser Then the same renderer contract holds without reintroducing outer scrolling", async () => {
-    await NarrowViewportSnapshotFallback.run();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await NarrowViewportSnapshotFallback.run();
+    } finally {
+      const changeInUpdateWarnings = warnSpy.mock.calls.filter(([message]) =>
+        String(message).includes("change-in-update"),
+      );
+      warnSpy.mockRestore();
+      expect(changeInUpdateWarnings).toHaveLength(0);
+    }
   });
 });

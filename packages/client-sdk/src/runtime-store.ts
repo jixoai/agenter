@@ -1,18 +1,22 @@
 import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
+  AttentionQueryItem,
+  CachedResourceState,
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
   HistoryPageCursor,
-  ModelDebugOutput,
+  MessageChannelEntry,
+  MessageChannelGrantEntry,
   NotificationSnapshotOutput,
+  RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,
   RuntimeClientState,
   RuntimeEvent,
+  RuntimeSchedulerContainmentState,
   RuntimeSnapshotEntry,
   SessionEntry,
-  TerminalActivityItem,
   UploadedSessionAsset,
   WorkspacePathSearchOutput,
   WorkspaceSessionCounts,
@@ -30,12 +34,14 @@ const createInitialState = (): RuntimeClientState => ({
   terminalSnapshotsBySession: {},
   terminalReadsBySession: {},
   chatsBySession: {},
+  messageChannelsBySession: {},
   chatCyclesBySession: {},
+  attentionBySession: {},
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],
-  loopbusStateLogsBySession: {},
-  loopbusTracesBySession: {},
+  schedulerLogsBySession: {},
+  observabilityTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
   terminalActivityBySession: {},
@@ -48,6 +54,7 @@ type Listener = (state: RuntimeClientState) => void;
 type SubscriptionHandle = { unsubscribe: () => void };
 type ApiCallStreamHandle = { count: number; sub: SubscriptionHandle | null; cursor: number };
 type HistoryCursorValue = HistoryPageCursor | null;
+type SessionResourceHandle = { sessionId: string };
 
 const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
   return [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -64,6 +71,71 @@ const DEFAULT_MODEL_CAPABILITIES = {
   mcpCatalog: false,
 } as const;
 
+const createEmptyAttentionState = (): RuntimeAttentionState => ({
+  snapshot: { contexts: [] },
+  active: [],
+  cycleFrames: [],
+  hooks: [],
+});
+
+const cloneRuntimeAttentionState = (attention: RuntimeAttentionState): RuntimeAttentionState => ({
+  snapshot: {
+    contexts: attention.snapshot.contexts.map((context) => ({
+      ...context,
+      scoreMap: { ...context.scoreMap },
+      commits: context.commits.map((commit) => ({
+        ...commit,
+        parentCommitIds: [...commit.parentCommitIds],
+        meta: { ...commit.meta },
+        scores: { ...commit.scores },
+        change: { ...commit.change },
+      })),
+    })),
+  },
+  active: attention.active.map((match) => ({
+    contextId: match.contextId,
+    context: { ...match.context, scoreMap: { ...match.context.scoreMap } },
+    recentCommits: match.recentCommits.map((commit) => ({
+      ...commit,
+      parentCommitIds: [...commit.parentCommitIds],
+      meta: { ...commit.meta },
+      scores: { ...commit.scores },
+      change: { ...commit.change },
+    })),
+  })),
+  cycleFrames: attention.cycleFrames.map((frame) => ({
+    ...frame,
+    inputContextIds: [...frame.inputContextIds],
+    activeContextIds: [...frame.activeContextIds],
+    producedCommitRefs: frame.producedCommitRefs.map((ref) => ({ ...ref })),
+    modelCallIds: [...frame.modelCallIds],
+    hookIds: [...frame.hookIds],
+  })),
+  hooks: attention.hooks.map((record) => ({
+    ...record,
+    target: record.target ? { ...record.target } : undefined,
+    output: record.output ? { ...record.output } : undefined,
+  })),
+});
+
+const createCachedResourceState = <T>(data: T): CachedResourceState<T> => ({
+  data,
+  loaded: false,
+  loading: false,
+  refreshing: false,
+  error: null,
+  refreshedAt: null,
+});
+
+const createHydratedCachedResourceState = <T>(data: T): CachedResourceState<T> => ({
+  data,
+  loaded: true,
+  loading: false,
+  refreshing: false,
+  error: null,
+  refreshedAt: Date.now(),
+});
+
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
 
 const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
@@ -71,6 +143,44 @@ const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage)
     return left.timestamp - right.timestamp;
   }
   return left.id.localeCompare(right.id);
+};
+
+const sameChatAttachmentSet = (
+  left: RuntimeChatMessage["attachments"],
+  right: RuntimeChatMessage["attachments"],
+): boolean => {
+  if ((left?.length ?? 0) !== (right?.length ?? 0)) {
+    return false;
+  }
+  return (left ?? []).every((attachment, index) => {
+    const other = right?.[index];
+    return (
+      attachment.assetId === other?.assetId &&
+      attachment.kind === other?.kind &&
+      attachment.mimeType === other?.mimeType &&
+      attachment.name === other?.name &&
+      attachment.sizeBytes === other?.sizeBytes
+    );
+  });
+};
+
+const isPersistedChatMessageId = (messageId: string): boolean => /^\d+$/.test(messageId);
+
+const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessage): boolean => {
+  const leftFormat = left.format ?? "markdown";
+  const rightFormat = right.format ?? "markdown";
+  return (
+    left.chatId === right.chatId &&
+    left.role === right.role &&
+    (left.cycleId ?? null) === (right.cycleId ?? null) &&
+    left.channel === right.channel &&
+    leftFormat === rightFormat &&
+    left.content === right.content &&
+    left.timestamp === right.timestamp &&
+    left.tool?.name === right.tool?.name &&
+    left.tool?.ok === right.tool?.ok &&
+    sameChatAttachmentSet(left.attachments, right.attachments)
+  );
 };
 
 const compareHistoryCursor = (left: HistoryPageCursor, right: HistoryPageCursor): number => {
@@ -116,13 +226,15 @@ export class RuntimeStore {
   private reconnectAttempt = 0;
   private connecting = false;
   private shouldReconnect = false;
+  private readonly sessionResourceHandles = new Map<string, SessionResourceHandle>();
+  private readonly messageChannelRefreshTasks = new WeakMap<SessionResourceHandle, Promise<MessageChannelEntry[]>>();
   private readonly apiCallStreams = new Map<string, ApiCallStreamHandle>();
-  private readonly loopbusLogsAccessBySession = new Map<string, Map<number, number>>();
-  private readonly loopbusTracesAccessBySession = new Map<string, Map<number, number>>();
+  private readonly schedulerLogsAccessBySession = new Map<string, Map<number, number>>();
+  private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
-  private readonly loopbusLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
-  private readonly loopbusTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly schedulerLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly observabilityTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly apiCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly modelCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly chatBeforeCursorBySession = new Map<string, HistoryCursorValue>();
@@ -133,6 +245,7 @@ export class RuntimeStore {
     Promise<{ messagesHasMore: boolean; cyclesHasMore: boolean }>
   >();
   private accessTick = 0;
+  private connectSequence = 0;
 
   constructor(private readonly client: AgenterClient) {}
 
@@ -180,6 +293,7 @@ export class RuntimeStore {
   private toRuntimeChatMessage(item: ChatListItem): RuntimeChatMessage {
     return {
       id: item.messageId,
+      chatId: item.chatId,
       role: item.role,
       content: item.content,
       timestamp: item.timestamp,
@@ -206,7 +320,17 @@ export class RuntimeStore {
     for (const message of incoming) {
       entries.set(message.id, message);
     }
-    return [...entries.values()].sort(compareChatMessage);
+    const merged = [...entries.values()];
+    const persistedMessages = merged.filter((message) => isPersistedChatMessageId(message.id));
+
+    return merged
+      .filter((message) => {
+        if (isPersistedChatMessageId(message.id)) {
+          return true;
+        }
+        return !persistedMessages.some((persisted) => sameChatMessageRecord(persisted, message));
+      })
+      .sort(compareChatMessage);
   }
 
   private mergeChatCycles(current: RuntimeChatCycle[], incoming: RuntimeChatCycle[]): RuntimeChatCycle[] {
@@ -273,6 +397,89 @@ export class RuntimeStore {
     });
   }
 
+  private ensureSessionResourceHandle(sessionId: string): SessionResourceHandle {
+    const existing = this.sessionResourceHandles.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+    const handle = { sessionId };
+    this.sessionResourceHandles.set(sessionId, handle);
+    return handle;
+  }
+
+  private releaseSessionResourceHandle(sessionId: string): void {
+    this.sessionResourceHandles.delete(sessionId);
+  }
+
+  private ensureMessageChannelsState(sessionId: string): CachedResourceState<MessageChannelEntry[]> {
+    return this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
+  }
+
+  private setMessageChannelsState(
+    sessionId: string,
+    updater: (current: CachedResourceState<MessageChannelEntry[]>) => CachedResourceState<MessageChannelEntry[]>,
+  ): CachedResourceState<MessageChannelEntry[]> {
+    const next = updater(this.ensureMessageChannelsState(sessionId));
+    this.state.messageChannelsBySession[sessionId] = next;
+    return next;
+  }
+
+  private async refreshMessageChannelsInternal(
+    sessionId: string,
+    input: { force?: boolean } = {},
+  ): Promise<MessageChannelEntry[]> {
+    const handle = this.ensureSessionResourceHandle(sessionId);
+    const current = this.ensureMessageChannelsState(sessionId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.messageChannelRefreshTasks.get(handle);
+    if (inflight) {
+      return await inflight;
+    }
+
+    this.setMessageChannelsState(sessionId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.message.listChannels
+      .query({ sessionId })
+      .then((output) => {
+        this.setMessageChannelsState(sessionId, (resource) => ({
+          ...resource,
+          data: output.items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return output.items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setMessageChannelsState(sessionId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        this.messageChannelRefreshTasks.delete(handle);
+      });
+
+    this.messageChannelRefreshTasks.set(handle, task);
+    return await task;
+  }
+
   private terminalActivityKey(sessionId: string, terminalId: string): string {
     return `${sessionId}:${terminalId}`;
   }
@@ -332,7 +539,11 @@ export class RuntimeStore {
     return oldest ? resolveFromOldest(oldest) : undefined;
   }
 
-  private updateBeforeCursor(cursorMap: Map<string, HistoryCursorValue>, key: string, nextBefore: HistoryCursorValue): void {
+  private updateBeforeCursor(
+    cursorMap: Map<string, HistoryCursorValue>,
+    key: string,
+    nextBefore: HistoryCursorValue,
+  ): void {
     cursorMap.set(key, nextBefore ?? null);
   }
 
@@ -416,6 +627,7 @@ export class RuntimeStore {
       terminalReads: runtime.terminalReads ?? {},
       chatMessages: runtime.chatMessages.map((message) => this.normalizeRuntimeChatMessage(message)),
       activeCycle: runtime.activeCycle ? this.normalizeRuntimeChatCycle(runtime.activeCycle) : null,
+      attention: runtime.attention ? cloneRuntimeAttentionState(runtime.attention) : createEmptyAttentionState(),
       modelCapabilities: runtime.modelCapabilities ?? DEFAULT_MODEL_CAPABILITIES,
     };
   }
@@ -520,6 +732,31 @@ export class RuntimeStore {
     return this.state;
   }
 
+  getRuntime(sessionId: string): RuntimeSnapshotEntry | null {
+    return this.state.runtimes[sessionId] ?? null;
+  }
+
+  getSchedulerState(sessionId: string): RuntimeSnapshotEntry["schedulerState"] | null {
+    return this.getRuntime(sessionId)?.schedulerState ?? null;
+  }
+
+  getSchedulerContainment(sessionId: string): RuntimeSchedulerContainmentState | null {
+    const scheduler = this.getSchedulerState(sessionId);
+    if (!scheduler) {
+      return null;
+    }
+    return {
+      runtimeStatus: scheduler.runtimeStatus,
+      waitingReason: scheduler.waitingReason,
+      nextAutoWakeAt: scheduler.nextAutoWakeAt,
+      backoffMs: scheduler.backoffMs,
+      retryCount: scheduler.retryCount,
+      blockedReason: scheduler.blockedReason,
+      lastProgressAt: scheduler.lastProgressAt,
+      lastError: scheduler.lastError,
+    };
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -549,17 +786,18 @@ export class RuntimeStore {
       stream.sub?.unsubscribe();
     }
     this.apiCallStreams.clear();
-    this.loopbusLogsAccessBySession.clear();
-    this.loopbusTracesAccessBySession.clear();
+    this.schedulerLogsAccessBySession.clear();
+    this.observabilityTracesAccessBySession.clear();
     this.apiCallsAccessBySession.clear();
     this.modelCallsAccessBySession.clear();
-    this.loopbusLogsBeforeCursorBySession.clear();
-    this.loopbusTracesBeforeCursorBySession.clear();
+    this.schedulerLogsBeforeCursorBySession.clear();
+    this.observabilityTracesBeforeCursorBySession.clear();
     this.apiCallsBeforeCursorBySession.clear();
     this.modelCallsBeforeCursorBySession.clear();
     this.chatBeforeCursorBySession.clear();
     this.chatCyclesBeforeCursorBySession.clear();
     this.terminalActivityBeforeCursorByKey.clear();
+    this.sessionResourceHandles.clear();
     this.setConnectionStatus("offline");
     this.emit();
     this.client.close();
@@ -583,11 +821,12 @@ export class RuntimeStore {
     }
 
     try {
+      const connectSequence = ++this.connectSequence;
       const previousState = this.state;
-      const snapshot = await this.client.trpc.runtime.snapshot.query();
-      const recentWorkspaces = await this.client.trpc.workspace.recent.query({ limit: 8 });
-      const workspaces = await this.client.trpc.workspace.listAll.query();
-      const notifications = await this.client.trpc.notification.snapshot.query();
+      const [snapshot, recentWorkspaces] = await Promise.all([
+        this.client.trpc.runtime.snapshot.query(),
+        this.client.trpc.workspace.recent.query({ limit: 8 }),
+      ]);
       const runtimes = Object.fromEntries(
         Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
           sessionId,
@@ -612,25 +851,40 @@ export class RuntimeStore {
         chatsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.chatMessages ?? []]),
         ),
+        messageChannelsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId, runtime]) => [
+            sessionId,
+            runtime.messageChannels
+              ? createHydratedCachedResourceState(runtime.messageChannels)
+              : (previousState.messageChannelsBySession[sessionId] ??
+                createCachedResourceState<MessageChannelEntry[]>([])),
+          ]),
+        ),
         chatCyclesBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [
             sessionId,
             runtime.activeCycle ? [runtime.activeCycle] : [],
           ]),
         ),
+        attentionBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId, runtime]) => [
+            sessionId,
+            runtime.attention ?? createEmptyAttentionState(),
+          ]),
+        ),
         tasksBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.tasks ?? []]),
         ),
-        loopbusStateLogsBySession: Object.fromEntries(
+        schedulerLogsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId]) => [
             sessionId,
-            previousState.loopbusStateLogsBySession[sessionId] ?? [],
+            previousState.schedulerLogsBySession[sessionId] ?? [],
           ]),
         ),
-        loopbusTracesBySession: Object.fromEntries(
+        observabilityTracesBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId]) => [
             sessionId,
-            previousState.loopbusTracesBySession[sessionId] ?? [],
+            previousState.observabilityTracesBySession[sessionId] ?? [],
           ]),
         ),
         apiCallsBySession: Object.fromEntries(
@@ -645,9 +899,9 @@ export class RuntimeStore {
         apiCallRecordingBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.apiCallRecording]),
         ),
-        workspaces: workspaces.items,
-        notifications: notifications.items,
-        unreadBySession: notifications.unreadBySession,
+        workspaces: previousState.workspaces,
+        notifications: previousState.notifications,
+        unreadBySession: previousState.unreadBySession,
       };
       this.setConnectionStatus("connected");
       for (const session of this.state.sessions) {
@@ -661,6 +915,60 @@ export class RuntimeStore {
       this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
       this.restoreRetainedApiCallStreams();
       this.emit();
+
+      const scheduleSecondaryChrome = (run: () => void) => {
+        setTimeout(() => {
+          if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+            return;
+          }
+          run();
+        }, 0);
+      };
+
+      scheduleSecondaryChrome(() => {
+        void this.client.trpc.workspace.listAll
+          .query()
+          .then((workspaces) => {
+            if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+              return;
+            }
+            this.state.workspaces = workspaces.items;
+            this.emit();
+          })
+          .catch(() => {
+            // Keep the last known workspace chrome until the next refresh succeeds.
+          });
+      });
+
+      scheduleSecondaryChrome(() => {
+        void this.client.trpc.workspace.recent
+          .query({ limit: 8 })
+          .then((recent) => {
+            if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+              return;
+            }
+            this.state.recentWorkspaces = recent.items;
+            this.emit();
+          })
+          .catch(() => {
+            // Keep the last known recent workspace chrome until the next refresh succeeds.
+          });
+      });
+
+      scheduleSecondaryChrome(() => {
+        void this.client.trpc.notification.snapshot
+          .query()
+          .then((notifications) => {
+            if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+              return;
+            }
+            this.applyNotificationSnapshot(notifications);
+            this.emit();
+          })
+          .catch(() => {
+            // Keep the last known notification snapshot until the next refresh succeeds.
+          });
+      });
     } catch {
       this.handleTransportLoss("error");
     } finally {
@@ -723,32 +1031,37 @@ export class RuntimeStore {
   async abortSession(sessionId: string): Promise<void> {
     const result = await this.client.trpc.session.abort.mutate({ sessionId });
     this.upsertSession(result.session);
+    delete this.state.messageChannelsBySession[sessionId];
+    this.releaseSessionResourceHandle(sessionId);
     await this.hydrateRuntime(sessionId);
     await this.listAllWorkspaces();
   }
 
   async deleteSession(sessionId: string): Promise<void> {
     await this.client.trpc.session.delete.mutate({ sessionId });
+    this.state.attentionBySession ??= {};
     this.state.sessions = this.state.sessions.filter((item) => item.id !== sessionId);
     delete this.state.runtimes[sessionId];
     delete this.state.activityBySession[sessionId];
     delete this.state.terminalSnapshotsBySession[sessionId];
     delete this.state.terminalReadsBySession[sessionId];
     delete this.state.chatsBySession[sessionId];
+    delete this.state.messageChannelsBySession[sessionId];
     delete this.state.chatCyclesBySession[sessionId];
+    delete this.state.attentionBySession[sessionId];
     delete this.state.tasksBySession[sessionId];
-    delete this.state.loopbusStateLogsBySession[sessionId];
-    delete this.state.loopbusTracesBySession[sessionId];
+    delete this.state.schedulerLogsBySession[sessionId];
+    delete this.state.observabilityTracesBySession[sessionId];
     delete this.state.apiCallsBySession[sessionId];
     delete this.state.modelCallsBySession[sessionId];
     delete this.state.terminalActivityBySession[sessionId];
     delete this.state.apiCallRecordingBySession[sessionId];
-    this.loopbusLogsAccessBySession.delete(sessionId);
-    this.loopbusTracesAccessBySession.delete(sessionId);
+    this.schedulerLogsAccessBySession.delete(sessionId);
+    this.observabilityTracesAccessBySession.delete(sessionId);
     this.apiCallsAccessBySession.delete(sessionId);
     this.modelCallsAccessBySession.delete(sessionId);
-    this.loopbusLogsBeforeCursorBySession.delete(sessionId);
-    this.loopbusTracesBeforeCursorBySession.delete(sessionId);
+    this.schedulerLogsBeforeCursorBySession.delete(sessionId);
+    this.observabilityTracesBeforeCursorBySession.delete(sessionId);
     this.apiCallsBeforeCursorBySession.delete(sessionId);
     this.modelCallsBeforeCursorBySession.delete(sessionId);
     this.chatBeforeCursorBySession.delete(sessionId);
@@ -758,6 +1071,7 @@ export class RuntimeStore {
         this.terminalActivityBeforeCursorByKey.delete(key);
       }
     }
+    this.releaseSessionResourceHandle(sessionId);
     this.emit();
     await this.listAllWorkspaces();
   }
@@ -765,10 +1079,14 @@ export class RuntimeStore {
   async archiveSession(sessionId: string): Promise<void> {
     const result = await this.client.trpc.session.archive.mutate({ sessionId });
     this.upsertSession(result.session);
+    this.state.attentionBySession ??= {};
     delete this.state.runtimes[sessionId];
     delete this.state.activityBySession[sessionId];
     delete this.state.terminalSnapshotsBySession[sessionId];
     delete this.state.terminalReadsBySession[sessionId];
+    delete this.state.messageChannelsBySession[sessionId];
+    delete this.state.attentionBySession[sessionId];
+    this.releaseSessionResourceHandle(sessionId);
     await this.listAllWorkspaces();
   }
 
@@ -793,8 +1111,24 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.listSessions.query(input);
   }
 
-  async inspectModelDebug(sessionId: string): Promise<ModelDebugOutput> {
-    return await this.client.trpc.runtime.modelDebug.query({ sessionId });
+  async inspectAttentionState(sessionId: string): Promise<RuntimeAttentionState> {
+    return await this.client.trpc.runtime.attentionState.query({ sessionId });
+  }
+
+  async queryAttention(input: {
+    sessionId: string;
+    contextId?: string;
+    hash?: string;
+    depth?: number;
+    author?: string;
+    source?: string;
+    text?: string;
+    offset?: number;
+    limit?: number;
+    minScore?: number;
+  }): Promise<AttentionQueryItem[]> {
+    const output = await this.client.trpc.runtime.attentionQuery.query(input);
+    return output.items;
   }
 
   async resolveDraft(input: { cwd: string; avatar?: string }): Promise<DraftResolutionOutput> {
@@ -900,6 +1234,138 @@ export class RuntimeStore {
     }
   }
 
+  async ensureMessageChannels(sessionId: string): Promise<MessageChannelEntry[]> {
+    return await this.refreshMessageChannelsInternal(sessionId, { force: false });
+  }
+
+  async refreshMessageChannels(sessionId: string): Promise<MessageChannelEntry[]> {
+    return await this.refreshMessageChannelsInternal(sessionId, { force: true });
+  }
+
+  async listMessageChannels(sessionId: string): Promise<MessageChannelEntry[]> {
+    return await this.refreshMessageChannels(sessionId);
+  }
+
+  async createMessageChannel(input: {
+    sessionId: string;
+    kind: "direct" | "room";
+    title?: string;
+    focus?: boolean;
+  }): Promise<MessageChannelEntry> {
+    const output = await this.client.trpc.message.createChannel.mutate(input);
+    this.setMessageChannelsState(input.sessionId, (resource) => ({
+      ...resource,
+      data: resource.data.some((item) => item.chatId === output.channel.chatId)
+        ? resource.data.map((item) => (item.chatId === output.channel.chatId ? output.channel : item))
+        : [...resource.data, output.channel],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    return output.channel;
+  }
+
+  async focusMessageChannels(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }): Promise<MessageChannelEntry[]> {
+    const output = await this.client.trpc.message.focus.mutate(input);
+    this.setMessageChannelsState(input.sessionId, (resource) => ({
+      ...resource,
+      data: output.items,
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    return output.items;
+  }
+
+  async sendMessageChannel(
+    input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      text: string;
+      assetIds?: string[];
+    },
+    attachments: UploadedSessionAsset[] = [],
+  ): Promise<void> {
+    const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const result = await this.client.trpc.message.send.mutate({
+      sessionId: input.sessionId,
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      text: input.text,
+      assetIds: input.assetIds,
+      clientMessageId,
+    });
+    if (!result.ok) {
+      throw new Error(result.reason ?? "message send failed");
+    }
+    void attachments;
+  }
+
+  async updateMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+    };
+  }): Promise<MessageChannelEntry> {
+    const output = await this.client.trpc.message.updateChannel.mutate(input);
+    this.setMessageChannelsState(input.sessionId, (resource) => ({
+      ...resource,
+      data: resource.data.map((item) => (item.chatId === output.channel.chatId ? output.channel : item)),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    return output.channel;
+  }
+
+  async listMessageChannelGrants(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }): Promise<MessageChannelGrantEntry[]> {
+    const output = await this.client.trpc.message.listChannelGrants.query(input);
+    return output.items;
+  }
+
+  async issueMessageChannelGrant(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId?: string;
+  }) {
+    const output = await this.client.trpc.message.issueChannelGrant.mutate(input);
+    return output.grant;
+  }
+
+  async revokeMessageChannelGrant(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    grantId: string;
+  }): Promise<{ ok: boolean }> {
+    return await this.client.trpc.message.revokeChannelGrant.mutate(input);
+  }
+
   async readSettings(sessionId: string, kind: "settings" | "agenter" | "system" | "template" | "contract") {
     return await this.client.trpc.settings.read.query({ sessionId, kind });
   }
@@ -941,16 +1407,17 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.save.mutate(input);
   }
 
-  async setChatVisibility(input: { sessionId: string; visible: boolean; focused: boolean }) {
+  async setChatVisibility(input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }) {
     const snapshot = await this.client.trpc.notification.setChatVisibility.mutate(input);
     this.applyNotificationSnapshot(snapshot);
     this.emit();
     return snapshot;
   }
 
-  async consumeNotifications(input: { sessionId: string; upToMessageId?: string | null }) {
+  async consumeNotifications(input: { sessionId: string; chatId?: string; upToMessageId?: string | null }) {
     const snapshot = await this.client.trpc.notification.consume.mutate({
       sessionId: input.sessionId,
+      chatId: input.chatId,
       upToMessageId: input.upToMessageId ?? undefined,
     });
     this.applyNotificationSnapshot(snapshot);
@@ -1040,7 +1507,10 @@ export class RuntimeStore {
       const mappedMessages = chatOutput.items.map((item) => this.toRuntimeChatMessage(item));
       const mappedCycles = cyclesOutput.items.map((item) => this.toRuntimeChatCycle(item));
 
-      this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], mappedMessages);
+      this.state.chatsBySession[sessionId] = this.mergeChatMessages(
+        this.state.chatsBySession[sessionId] ?? [],
+        mappedMessages,
+      );
       this.state.chatCyclesBySession[sessionId] = this.mergeChatCycles(
         this.state.chatCyclesBySession[sessionId] ?? [],
         mappedCycles,
@@ -1064,11 +1534,8 @@ export class RuntimeStore {
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.chatsBySession[sessionId] ?? [];
-    const before = this.resolveBeforeCursor(
-      this.chatBeforeCursorBySession,
-      sessionId,
-      current,
-      (message) => this.toChatHistoryCursor(message),
+    const before = this.resolveBeforeCursor(this.chatBeforeCursorBySession, sessionId, current, (message) =>
+      this.toChatHistoryCursor(message),
     );
     if (before === null) {
       return { items: 0, hasMore: false };
@@ -1091,11 +1558,8 @@ export class RuntimeStore {
 
   async loadMoreChatCyclesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.chatCyclesBySession[sessionId] ?? [];
-    const before = this.resolveBeforeCursor(
-      this.chatCyclesBeforeCursorBySession,
-      sessionId,
-      current,
-      (cycle) => this.toCycleHistoryCursor(cycle),
+    const before = this.resolveBeforeCursor(this.chatCyclesBeforeCursorBySession, sessionId, current, (cycle) =>
+      this.toCycleHistoryCursor(cycle),
     );
     if (before === null) {
       return { items: 0, hasMore: false };
@@ -1128,20 +1592,20 @@ export class RuntimeStore {
     return await this.client.trpc.fs.validateDirectory.query({ path });
   }
 
-  async loadMoreLoopbusTimeline(
+  async loadMoreObservabilityTimeline(
     sessionId: string,
     limit = 120,
   ): Promise<{ logs: number; traces: number; hasMore: boolean }> {
-    const currentLogs = this.state.loopbusStateLogsBySession[sessionId] ?? [];
-    const currentTraces = this.state.loopbusTracesBySession[sessionId] ?? [];
+    const currentLogs = this.state.schedulerLogsBySession[sessionId] ?? [];
+    const currentTraces = this.state.observabilityTracesBySession[sessionId] ?? [];
     const beforeLog = this.resolveBeforeCursor(
-      this.loopbusLogsBeforeCursorBySession,
+      this.schedulerLogsBeforeCursorBySession,
       sessionId,
       currentLogs,
       (record) => this.toTimestampHistoryCursor(record),
     );
     const beforeTrace = this.resolveBeforeCursor(
-      this.loopbusTracesBeforeCursorBySession,
+      this.observabilityTracesBeforeCursorBySession,
       sessionId,
       currentTraces,
       (record) => this.toStartedAtHistoryCursor(record),
@@ -1151,37 +1615,37 @@ export class RuntimeStore {
     }
 
     const [logs, traces] = await Promise.all([
-      this.client.trpc.runtime.loopbusStateLogs.query({
+      this.client.trpc.runtime.schedulerLogs.query({
         sessionId,
         before: beforeLog ?? undefined,
         limit,
       }),
-      this.client.trpc.runtime.loopbusTraces.query({
+      this.client.trpc.runtime.observabilityTraces.query({
         sessionId,
         before: beforeTrace ?? undefined,
         limit,
       }),
     ]);
 
-    this.updateBeforeCursor(this.loopbusLogsBeforeCursorBySession, sessionId, logs.nextBefore);
-    this.updateBeforeCursor(this.loopbusTracesBeforeCursorBySession, sessionId, traces.nextBefore);
+    this.updateBeforeCursor(this.schedulerLogsBeforeCursorBySession, sessionId, logs.nextBefore);
+    this.updateBeforeCursor(this.observabilityTracesBeforeCursorBySession, sessionId, traces.nextBefore);
 
     const nextLogs = this.applyLruEntries(
-      this.loopbusLogsAccessBySession,
+      this.schedulerLogsAccessBySession,
       sessionId,
       currentLogs,
       logs.items,
       LOOPBUS_LRU_LIMIT,
     );
     const nextTraces = this.applyLruEntries(
-      this.loopbusTracesAccessBySession,
+      this.observabilityTracesAccessBySession,
       sessionId,
       currentTraces,
       traces.items,
       LOOPBUS_LRU_LIMIT,
     );
-    this.state.loopbusStateLogsBySession[sessionId] = nextLogs;
-    this.state.loopbusTracesBySession[sessionId] = nextTraces;
+    this.state.schedulerLogsBySession[sessionId] = nextLogs;
+    this.state.observabilityTracesBySession[sessionId] = nextTraces;
     this.emit();
 
     const addedLogs = nextLogs.length - currentLogs.length;
@@ -1195,11 +1659,8 @@ export class RuntimeStore {
 
   async loadMoreModelCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.modelCallsBySession[sessionId] ?? [];
-    const before = this.resolveBeforeCursor(
-      this.modelCallsBeforeCursorBySession,
-      sessionId,
-      current,
-      (record) => this.toRecordHistoryCursor(record),
+    const before = this.resolveBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, current, (record) =>
+      this.toRecordHistoryCursor(record),
     );
     if (before === null) {
       return { items: 0, hasMore: false };
@@ -1227,11 +1688,8 @@ export class RuntimeStore {
 
   async loadMoreApiCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.apiCallsBySession[sessionId] ?? [];
-    const before = this.resolveBeforeCursor(
-      this.apiCallsBeforeCursorBySession,
-      sessionId,
-      current,
-      (record) => this.toRecordHistoryCursor(record),
+    const before = this.resolveBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, current, (record) =>
+      this.toRecordHistoryCursor(record),
     );
     if (before === null) {
       return { items: 0, hasMore: false };
@@ -1440,14 +1898,16 @@ export class RuntimeStore {
       delete this.state.terminalSnapshotsBySession[payload.sessionId];
       delete this.state.terminalReadsBySession[payload.sessionId];
       delete this.state.chatsBySession[payload.sessionId];
+      delete this.state.messageChannelsBySession[payload.sessionId];
       delete this.state.chatCyclesBySession[payload.sessionId];
       delete this.state.tasksBySession[payload.sessionId];
-      delete this.state.loopbusStateLogsBySession[payload.sessionId];
-      delete this.state.loopbusTracesBySession[payload.sessionId];
+      delete this.state.schedulerLogsBySession[payload.sessionId];
+      delete this.state.observabilityTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
       delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
+      this.releaseSessionResourceHandle(payload.sessionId);
       void this.listAllWorkspaces();
       return;
     }
@@ -1461,10 +1921,9 @@ export class RuntimeStore {
         return;
       }
       const message = this.normalizeRuntimeChatMessage(payload.message);
-      this.state.chatsBySession[sessionId] = this.mergeChatMessages(
-        this.state.chatsBySession[sessionId] ?? [],
-        [message],
-      ).slice(-200);
+      this.state.chatsBySession[sessionId] = this.mergeChatMessages(this.state.chatsBySession[sessionId] ?? [], [
+        message,
+      ]).slice(-200);
       return;
     }
 
@@ -1489,13 +1948,14 @@ export class RuntimeStore {
       event.type === "task.deleted" ||
       event.type === "task.triggered" ||
       event.type === "task.source.changed" ||
-      event.type === "runtime.loopbus.snapshot" ||
-      event.type === "runtime.loopbus.stateLog" ||
-      event.type === "runtime.loopbus.trace" ||
-      event.type === "runtime.loopbus.inputSignal" ||
+      event.type === "runtime.scheduler.snapshot" ||
+      event.type === "runtime.scheduler.log" ||
+      event.type === "runtime.observability.trace" ||
+      event.type === "runtime.scheduler.signal" ||
       event.type === "runtime.modelCall" ||
       event.type === "runtime.apiCall" ||
       event.type === "runtime.apiRecording" ||
+      event.type === "runtime.attention" ||
       event.type === "runtime.cycle.updated"
     ) {
       const sessionId = event.sessionId;
@@ -1513,19 +1973,16 @@ export class RuntimeStore {
       }
       runtime = {
         ...runtime,
-        terminals: [...runtime.terminals],
-        terminalReads: { ...(runtime.terminalReads ?? {}) },
-        loopInputSignals: { ...runtime.loopInputSignals },
       };
       this.state.runtimes[sessionId] = runtime;
       if (event.type === "runtime.phase") {
-        runtime.loopPhase = (event.payload as { phase: typeof runtime.loopPhase }).phase;
+        runtime.schedulerPhase = (event.payload as { phase: typeof runtime.schedulerPhase }).phase;
         this.state.activityBySession[sessionId] =
-          runtime.loopPhase === "waiting_commits" && runtime.stage === "idle" ? "idle" : "active";
+          runtime.schedulerPhase === "waiting_commits" && runtime.stage === "idle" ? "idle" : "active";
       } else if (event.type === "runtime.stage") {
         runtime.stage = (event.payload as { stage: typeof runtime.stage }).stage;
         this.state.activityBySession[sessionId] =
-          runtime.loopPhase === "waiting_commits" && runtime.stage === "idle" ? "idle" : "active";
+          runtime.schedulerPhase === "waiting_commits" && runtime.stage === "idle" ? "idle" : "active";
       } else if (event.type === "runtime.focusedTerminal") {
         const payload = event.payload as { terminalId?: string | null; terminalIds?: string[] };
         const focused = normalizeFocusedTerminalState({
@@ -1592,27 +2049,35 @@ export class RuntimeStore {
         const payload = event.payload as { key: string };
         const current = this.state.tasksBySession[sessionId] ?? [];
         this.state.tasksBySession[sessionId] = current.filter((item) => item.key !== payload.key);
-      } else if (event.type === "runtime.loopbus.snapshot") {
+      } else if (event.type === "runtime.error") {
+        const payload = event.payload as { message: string };
+        runtime.schedulerState = runtime.schedulerState
+          ? {
+              ...runtime.schedulerState,
+              lastError: payload.message,
+            }
+          : runtime.schedulerState;
+      } else if (event.type === "runtime.scheduler.snapshot") {
         const payload = event.payload as {
           snapshot: {
-            state: typeof runtime.loopKernelState;
+            state: typeof runtime.schedulerState;
           };
         };
-        runtime.loopKernelState = payload.snapshot.state;
-      } else if (event.type === "runtime.loopbus.inputSignal") {
+        runtime.schedulerState = payload.snapshot.state;
+      } else if (event.type === "runtime.scheduler.signal") {
         const payload = event.payload as {
           kind: "user" | "terminal" | "task" | "attention";
           version: number;
           timestamp: number;
         };
-        runtime.loopInputSignals = {
-          ...runtime.loopInputSignals,
+        runtime.schedulerSignals = {
+          ...runtime.schedulerSignals,
           [payload.kind]: {
             version: payload.version,
             timestamp: payload.timestamp,
           },
         };
-      } else if (event.type === "runtime.loopbus.stateLog") {
+      } else if (event.type === "runtime.scheduler.log") {
         const payload = event.payload as {
           entry: {
             id: number;
@@ -1624,30 +2089,57 @@ export class RuntimeStore {
             patch: Array<{ op: "add" | "replace" | "remove"; path: string; value?: unknown }>;
           };
         };
-        const current = this.state.loopbusStateLogsBySession[sessionId] ?? [];
-        this.state.loopbusStateLogsBySession[sessionId] = this.applyLruEntries(
-          this.loopbusLogsAccessBySession,
+        const current = this.state.schedulerLogsBySession[sessionId] ?? [];
+        this.state.schedulerLogsBySession[sessionId] = this.applyLruEntries(
+          this.schedulerLogsAccessBySession,
           sessionId,
           current,
           [payload.entry],
           LOOPBUS_LRU_LIMIT,
         );
-      } else if (event.type === "runtime.loopbus.trace") {
+      } else if (event.type === "runtime.observability.trace") {
         const payload = event.payload as {
           entry: {
             id: number;
             cycleId: number;
             seq: number;
-            step: string;
-            status: "ok" | "error" | "running";
+            traceId: string;
+            spanId: string;
+            parentSpanId?: string | null;
+            kind: string;
+            name: string;
+            status: "running" | "done" | "error" | "cancelled";
             startedAt: number;
             endedAt: number;
-            detail: Record<string, unknown>;
+            refs: Array<{ kind: string; ref: string; label?: string; attributes?: Record<string, unknown> }>;
+            links: Array<{
+              kind: string;
+              traceId?: string;
+              spanId?: string;
+              ref?: { kind: string; ref: string; label?: string; attributes?: Record<string, unknown> };
+              attributes?: Record<string, unknown>;
+            }>;
+            events: Array<{
+              id: string;
+              name: string;
+              timestamp: number;
+              status?: "info" | "ok" | "error";
+              refs?: Array<{ kind: string; ref: string; label?: string; attributes?: Record<string, unknown> }>;
+              attributes?: Record<string, unknown>;
+            }>;
+            attributes: Record<string, unknown>;
+            outcome?: {
+              code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+              message?: string;
+              retryable?: boolean;
+              error?: unknown;
+              reason?: string;
+            };
           };
         };
-        const current = this.state.loopbusTracesBySession[sessionId] ?? [];
-        this.state.loopbusTracesBySession[sessionId] = this.applyLruEntries(
-          this.loopbusTracesAccessBySession,
+        const current = this.state.observabilityTracesBySession[sessionId] ?? [];
+        this.state.observabilityTracesBySession[sessionId] = this.applyLruEntries(
+          this.observabilityTracesAccessBySession,
           sessionId,
           current,
           [payload.entry],
@@ -1659,13 +2151,25 @@ export class RuntimeStore {
             id: number;
             cycleId: number;
             createdAt: number;
-            status: "running" | "done" | "error";
+            status: "running" | "done" | "error" | "cancelled";
             completedAt?: number;
             provider: string;
             model: string;
             request: unknown;
             response?: unknown;
             error?: unknown;
+            trace?: {
+              traceId: string;
+              spanId: string;
+              parentSpanId?: string | null;
+            };
+            outcome?: {
+              code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
+              message?: string;
+              retryable?: boolean;
+              error?: unknown;
+              reason?: string;
+            };
           };
         };
         const current = this.state.modelCallsBySession[sessionId] ?? [];
@@ -1701,6 +2205,11 @@ export class RuntimeStore {
       } else if (event.type === "runtime.apiRecording") {
         const payload = event.payload as { enabled: boolean; refCount: number };
         this.state.apiCallRecordingBySession[sessionId] = payload;
+      } else if (event.type === "runtime.attention") {
+        const payload = cloneRuntimeAttentionState(event.payload as RuntimeAttentionState);
+        runtime.attention = payload;
+        this.state.attentionBySession ??= {};
+        this.state.attentionBySession[sessionId] = payload;
       } else if (event.type === "runtime.cycle.updated") {
         const payload = event.payload as { cycle: RuntimeChatCycle | null };
         if (!payload.cycle) {
@@ -1745,13 +2254,17 @@ export class RuntimeStore {
     });
   }
 
-  private ensureRuntimeScaffold(sessionId: string, status?: "stopped" | "paused" | "starting" | "running" | "error"): void {
+  private ensureRuntimeScaffold(
+    sessionId: string,
+    status?: "stopped" | "paused" | "starting" | "running" | "error",
+  ): void {
+    this.state.attentionBySession ??= {};
     if (!this.state.runtimes[sessionId]) {
       this.state.runtimes[sessionId] = {
         sessionId,
         started: status === "running" || status === "starting" || status === "paused",
         activityState: "idle",
-        loopPhase: "waiting_commits",
+        schedulerPhase: "waiting_commits",
         stage: "idle",
         focusedTerminalId: "",
         focusedTerminalIds: [],
@@ -1760,8 +2273,11 @@ export class RuntimeStore {
         terminalReads: {},
         tasks: [],
         terminals: [],
-        loopKernelState: null,
-        loopInputSignals: {
+        schedulerState: null,
+        attention: {
+          ...createEmptyAttentionState(),
+        },
+        schedulerSignals: {
           user: { version: 0, timestamp: null },
           terminal: { version: 0, timestamp: null },
           task: { version: 0, timestamp: null },
@@ -1779,10 +2295,16 @@ export class RuntimeStore {
     this.state.terminalSnapshotsBySession[sessionId] = this.state.terminalSnapshotsBySession[sessionId] ?? {};
     this.state.terminalReadsBySession[sessionId] = this.state.terminalReadsBySession[sessionId] ?? {};
     this.state.chatsBySession[sessionId] = this.state.chatsBySession[sessionId] ?? [];
+    this.state.messageChannelsBySession[sessionId] =
+      this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
     this.state.chatCyclesBySession[sessionId] = this.state.chatCyclesBySession[sessionId] ?? [];
+    this.state.attentionBySession[sessionId] =
+      this.state.attentionBySession[sessionId] ??
+      this.state.runtimes[sessionId]?.attention ??
+      createEmptyAttentionState();
     this.state.tasksBySession[sessionId] = this.state.tasksBySession[sessionId] ?? [];
-    this.state.loopbusStateLogsBySession[sessionId] = this.state.loopbusStateLogsBySession[sessionId] ?? [];
-    this.state.loopbusTracesBySession[sessionId] = this.state.loopbusTracesBySession[sessionId] ?? [];
+    this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
+    this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.terminalActivityBySession[sessionId] = this.state.terminalActivityBySession[sessionId] ?? {};
@@ -1792,11 +2314,20 @@ export class RuntimeStore {
     };
   }
 
-  private clearRuntimeState(sessionId: string, status?: "stopped" | "paused" | "starting" | "running" | "error"): void {
+  private clearRuntimeState(
+    sessionId: string,
+    status?: "stopped" | "paused" | "starting" | "running" | "error",
+    attention?: RuntimeAttentionState,
+  ): void {
+    this.state.attentionBySession ??= {};
     delete this.state.runtimes[sessionId];
     this.state.activityBySession[sessionId] = "idle";
     this.state.terminalSnapshotsBySession[sessionId] = {};
     this.state.terminalReadsBySession[sessionId] = {};
+    this.state.messageChannelsBySession[sessionId] =
+      this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
+    this.state.attentionBySession[sessionId] =
+      attention ?? this.state.attentionBySession[sessionId] ?? createEmptyAttentionState();
     this.state.tasksBySession[sessionId] = [];
     this.state.apiCallRecordingBySession[sessionId] = {
       enabled: false,
@@ -1807,6 +2338,7 @@ export class RuntimeStore {
       this.state.runtimes[sessionId]!.started = status === "paused";
       this.state.runtimes[sessionId]!.activityState = "idle";
       this.state.runtimes[sessionId]!.activeCycle = null;
+      this.state.runtimes[sessionId]!.attention = this.state.attentionBySession[sessionId];
       this.state.runtimes[sessionId]!.terminals = [];
       this.state.runtimes[sessionId]!.terminalReads = {};
       this.state.runtimes[sessionId]!.terminalSnapshots = {};
@@ -1875,12 +2407,15 @@ export class RuntimeStore {
 
   private async hydrateRuntime(sessionId: string): Promise<void> {
     const snapshot = await this.client.trpc.runtime.snapshot.query();
+    this.state.attentionBySession ??= {};
     const runtime = snapshot.runtimes[sessionId];
     if (!runtime) {
       const session = this.state.sessions.find((item) => item.id === sessionId);
-      this.clearRuntimeState(sessionId, session?.status);
+      const persistedAttention = session ? await this.inspectAttentionState(sessionId) : createEmptyAttentionState();
+      this.clearRuntimeState(sessionId, session?.status, persistedAttention);
       this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
       this.emit();
+      await this.hydrateObservabilityArtifacts(sessionId);
       return;
     }
     const normalizedRuntime = this.normalizeRuntimeEntry(runtime);
@@ -1892,37 +2427,41 @@ export class RuntimeStore {
       this.state.chatsBySession[sessionId] ?? [],
       normalizedRuntime.chatMessages ?? [],
     );
+    this.state.messageChannelsBySession[sessionId] = normalizedRuntime.messageChannels
+      ? createHydratedCachedResourceState(normalizedRuntime.messageChannels)
+      : (this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]));
     this.state.chatCyclesBySession[sessionId] = normalizedRuntime.activeCycle
       ? this.mergeChatCycles(this.state.chatCyclesBySession[sessionId] ?? [], [normalizedRuntime.activeCycle])
       : (this.state.chatCyclesBySession[sessionId] ?? []);
+    this.state.attentionBySession[sessionId] = normalizedRuntime.attention ?? createEmptyAttentionState();
     this.state.tasksBySession[sessionId] = normalizedRuntime.tasks ?? [];
-    this.state.loopbusStateLogsBySession[sessionId] = this.state.loopbusStateLogsBySession[sessionId] ?? [];
-    this.state.loopbusTracesBySession[sessionId] = this.state.loopbusTracesBySession[sessionId] ?? [];
+    this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
+    this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.apiCallRecordingBySession[sessionId] = runtime.apiCallRecording;
     this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
     this.emit();
-    await this.hydrateLoopbusArtifacts(sessionId);
+    await this.hydrateObservabilityArtifacts(sessionId);
   }
 
-  private async hydrateLoopbusArtifacts(sessionId: string): Promise<void> {
+  private async hydrateObservabilityArtifacts(sessionId: string): Promise<void> {
     try {
       const [logs, traces, modelCalls, apiCalls] = await Promise.all([
-        this.client.trpc.runtime.loopbusStateLogs.query({ sessionId, limit: 200 }),
-        this.client.trpc.runtime.loopbusTraces.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
       ]);
-      this.state.loopbusStateLogsBySession[sessionId] = this.applyLruEntries(
-        this.loopbusLogsAccessBySession,
+      this.state.schedulerLogsBySession[sessionId] = this.applyLruEntries(
+        this.schedulerLogsAccessBySession,
         sessionId,
         [],
         logs.items,
         LOOPBUS_LRU_LIMIT,
       );
-      this.state.loopbusTracesBySession[sessionId] = this.applyLruEntries(
-        this.loopbusTracesAccessBySession,
+      this.state.observabilityTracesBySession[sessionId] = this.applyLruEntries(
+        this.observabilityTracesAccessBySession,
         sessionId,
         [],
         traces.items,
@@ -1942,8 +2481,8 @@ export class RuntimeStore {
         apiCalls.items,
         LOOPBUS_LRU_LIMIT,
       );
-      this.updateBeforeCursor(this.loopbusLogsBeforeCursorBySession, sessionId, logs.nextBefore);
-      this.updateBeforeCursor(this.loopbusTracesBeforeCursorBySession, sessionId, traces.nextBefore);
+      this.updateBeforeCursor(this.schedulerLogsBeforeCursorBySession, sessionId, logs.nextBefore);
+      this.updateBeforeCursor(this.observabilityTracesBeforeCursorBySession, sessionId, traces.nextBefore);
       this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, modelCalls.nextBefore);
       this.updateBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, apiCalls.nextBefore);
       this.emit();

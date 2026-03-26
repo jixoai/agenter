@@ -1,10 +1,11 @@
-import type { RuntimeClientState, RuntimeSnapshot, SessionEntry } from "@agenter/client-sdk";
+import type { RuntimeClientState, RuntimeSchedulerContainmentState, RuntimeSnapshot, SessionEntry } from "@agenter/client-sdk";
 
 export interface SessionChromeState {
   id: string;
   name: string;
   cwd: string;
   status: SessionEntry["status"];
+  lastError?: string;
   avatar: string;
 }
 
@@ -15,13 +16,15 @@ export interface WorkspaceChromeState {
 
 export interface HeaderRuntimeState {
   started: boolean;
-  loopPhase: RuntimeSnapshot["runtimes"][string]["loopPhase"];
+  schedulerPhase: RuntimeSnapshot["runtimes"][string]["schedulerPhase"];
+  scheduler: RuntimeSchedulerContainmentState | null;
 }
 
 export interface ChatRuntimeState extends HeaderRuntimeState {
   stage: RuntimeSnapshot["runtimes"][string]["stage"];
   terminalCount: number;
   imageInput: boolean;
+  lastError: string | null;
 }
 
 export interface RunningSessionState {
@@ -47,6 +50,7 @@ export const selectSessionChromeState =
       name: session.name,
       cwd: session.cwd,
       status: session.status,
+      lastError: session.lastError,
       avatar: session.avatar,
     };
   };
@@ -66,6 +70,7 @@ export const equalSessionChromeState = (
     left.name === right.name &&
     left.cwd === right.cwd &&
     left.status === right.status &&
+    left.lastError === right.lastError &&
     left.avatar === right.avatar
   );
 };
@@ -108,7 +113,19 @@ export const selectHeaderRuntimeState =
     }
     return {
       started: runtime.started,
-      loopPhase: runtime.loopPhase,
+      schedulerPhase: runtime.schedulerPhase,
+      scheduler: runtime.schedulerState
+        ? {
+            runtimeStatus: runtime.schedulerState.runtimeStatus,
+            waitingReason: runtime.schedulerState.waitingReason,
+            nextAutoWakeAt: runtime.schedulerState.nextAutoWakeAt,
+            backoffMs: runtime.schedulerState.backoffMs,
+            retryCount: runtime.schedulerState.retryCount,
+            blockedReason: runtime.schedulerState.blockedReason,
+            lastProgressAt: runtime.schedulerState.lastProgressAt,
+            lastError: runtime.schedulerState.lastError,
+          }
+        : null,
     };
   };
 
@@ -122,7 +139,17 @@ export const equalHeaderRuntimeState = (
   if (!left || !right) {
     return false;
   }
-  return left.started === right.started && left.loopPhase === right.loopPhase;
+  return (
+    left.started === right.started &&
+    left.schedulerPhase === right.schedulerPhase &&
+    left.scheduler?.runtimeStatus === right.scheduler?.runtimeStatus &&
+    left.scheduler?.waitingReason === right.scheduler?.waitingReason &&
+    left.scheduler?.backoffMs === right.scheduler?.backoffMs &&
+    left.scheduler?.retryCount === right.scheduler?.retryCount &&
+    left.scheduler?.blockedReason === right.scheduler?.blockedReason &&
+    left.scheduler?.lastProgressAt === right.scheduler?.lastProgressAt &&
+    left.scheduler?.lastError === right.scheduler?.lastError
+  );
 };
 
 export const selectChatRuntimeState =
@@ -137,10 +164,23 @@ export const selectChatRuntimeState =
     }
     return {
       started: runtime.started,
-      loopPhase: runtime.loopPhase,
+      schedulerPhase: runtime.schedulerPhase,
+      scheduler: runtime.schedulerState
+        ? {
+            runtimeStatus: runtime.schedulerState.runtimeStatus,
+            waitingReason: runtime.schedulerState.waitingReason,
+            nextAutoWakeAt: runtime.schedulerState.nextAutoWakeAt,
+            backoffMs: runtime.schedulerState.backoffMs,
+            retryCount: runtime.schedulerState.retryCount,
+            blockedReason: runtime.schedulerState.blockedReason,
+            lastProgressAt: runtime.schedulerState.lastProgressAt,
+            lastError: runtime.schedulerState.lastError,
+          }
+        : null,
       stage: runtime.stage,
       terminalCount: runtime.terminals.length,
       imageInput: runtime.modelCapabilities.imageInput,
+      lastError: runtime.schedulerState?.lastError ?? null,
     };
   };
 
@@ -156,10 +196,18 @@ export const equalChatRuntimeState = (
   }
   return (
     left.started === right.started &&
-    left.loopPhase === right.loopPhase &&
+    left.schedulerPhase === right.schedulerPhase &&
+    left.scheduler?.runtimeStatus === right.scheduler?.runtimeStatus &&
+    left.scheduler?.waitingReason === right.scheduler?.waitingReason &&
+    left.scheduler?.backoffMs === right.scheduler?.backoffMs &&
+    left.scheduler?.retryCount === right.scheduler?.retryCount &&
+    left.scheduler?.blockedReason === right.scheduler?.blockedReason &&
+    left.scheduler?.lastProgressAt === right.scheduler?.lastProgressAt &&
+    left.scheduler?.lastError === right.scheduler?.lastError &&
     left.stage === right.stage &&
     left.terminalCount === right.terminalCount &&
-    left.imageInput === right.imageInput
+    left.imageInput === right.imageInput &&
+    left.lastError === right.lastError
   );
 };
 

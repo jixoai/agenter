@@ -36,6 +36,7 @@ export const QuickStartView = ({
   onResumeSession,
 }: QuickStartViewProps) => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const workspaceReady = workspacePath.trim().length > 0 && workspacePath !== "." && draftResolution !== null;
   const providerLabel = draftResolution
     ? [
         draftResolution.provider.vendor ?? draftResolution.provider.providerId,
@@ -49,9 +50,11 @@ export const QuickStartView = ({
       : "Provider unavailable";
 
   const imageInputCompatible = draftResolution?.modelCapabilities.imageInput ?? false;
-  const inputPlaceholder = imageInputCompatible
-    ? "Describe the task, use @ to reference files, or paste images..."
-    : "Describe the task and use @ to reference files...";
+  const inputPlaceholder = !workspaceReady
+    ? "Choose a workspace before starting a session..."
+    : imageInputCompatible
+      ? "Describe the task, use @ to reference files, or paste images..."
+      : "Describe the task and use @ to reference files...";
   const recentLoadingShell = (
     <div className="space-y-3">
       {Array.from({ length: 3 }, (_, index) => (
@@ -85,7 +88,7 @@ export const QuickStartView = ({
                 <Button
                   variant="secondary"
                   onClick={onEnterWorkspace}
-                  disabled={starting}
+                  disabled={starting || !workspaceReady}
                   title="Enter workspace without a first message"
                 >
                   <ButtonLeadingVisual>
@@ -99,7 +102,7 @@ export const QuickStartView = ({
             <div className="mt-4">
               <AIInput
                 workspacePath={workspacePath}
-                disabled={starting || loadingDraft}
+                disabled={starting || loadingDraft || !workspaceReady}
                 imageEnabled
                 imageCompatible={imageInputCompatible}
                 submitLabel="Start"

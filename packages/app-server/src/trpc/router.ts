@@ -15,6 +15,10 @@ const reversePageInput = z.object({
   before: reverseTimeCursorSchema.optional(),
   limit: z.number().int().positive().max(500).optional(),
 });
+const channelAccessInput = z.object({
+  chatId: z.string().min(1),
+  accessToken: z.string().min(1),
+});
 
 export const appRouter = t.router({
   session: t.router({
@@ -113,6 +117,123 @@ export const appRouter = t.router({
       .input(reversePageInput)
       .query(({ ctx, input }) => ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 })),
   }),
+  message: t.router({
+    listChannels: t.procedure
+      .input(sessionIdInput)
+      .query(({ ctx, input }) => ({ items: ctx.kernel.listMessageChannels(input.sessionId) })),
+    createChannel: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          kind: z.enum(["direct", "room"]),
+          title: z.string().trim().min(1).optional(),
+          focus: z.boolean().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.createMessageChannel({
+          sessionId: input.sessionId,
+          kind: input.kind,
+          title: input.title,
+          focus: input.focus,
+        }),
+      })),
+    focus: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          op: z.enum(["add", "remove", "replace", "clear"]),
+          channels: z.array(channelAccessInput).default([]),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        items: ctx.kernel.focusMessageChannels({
+          sessionId: input.sessionId,
+          op: input.op,
+          channels: input.channels,
+        }),
+      })),
+    send: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          text: z.string().min(1),
+          assetIds: z.array(z.string().min(1)).optional(),
+          clientMessageId: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.sendMessageChannel({
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          text: input.text,
+          assetIds: input.assetIds,
+          clientMessageId: input.clientMessageId,
+        }),
+      ),
+    updateChannel: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          patch: z.object({
+            title: z.string().trim().min(1).optional(),
+            participants: z
+              .array(
+                z.object({
+                  id: z.string().min(1),
+                  label: z.string().trim().min(1).optional(),
+                  role: z.enum(["avatar", "user", "system"]).optional(),
+                }),
+              )
+              .optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
+          }),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.updateMessageChannel(input),
+      })),
+    listChannelGrants: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listMessageChannelGrants(input),
+      })),
+    issueChannelGrant: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          role: z.enum(["admin", "member", "readonly"]),
+          label: z.string().trim().min(1).optional(),
+          participantId: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        grant: ctx.kernel.issueMessageChannelGrant(input),
+      })),
+    revokeChannelGrant: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          grantId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.revokeMessageChannelGrant(input)),
+  }),
   draft: t.router({
     resolve: t.procedure
       .input(
@@ -201,6 +322,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           sessionId: z.string().min(1),
+          chatId: z.string().min(1).optional(),
           visible: z.boolean(),
           focused: z.boolean(),
         }),
@@ -210,6 +332,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           sessionId: z.string().min(1),
+          chatId: z.string().min(1).optional(),
           upToMessageId: z.string().min(1).optional(),
         }),
       )
@@ -255,22 +378,57 @@ export const appRouter = t.router({
   }),
   runtime: t.router({
     snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
-    loopbusStateLogs: t.procedure
-      .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageLoopbusStateLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
-    loopbusTraces: t.procedure
-      .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageLoopbusTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
-    modelCallsPage: t.procedure
-      .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
-    modelDebug: t.procedure
+    attentionState: t.procedure
+      .input(sessionIdInput)
+      .query(async ({ ctx, input }) => await ctx.kernel.inspectAttentionState(input.sessionId)),
+    attentionQuery: t.procedure
       .input(
         z.object({
           sessionId: z.string().min(1),
+          contextId: z.string().optional(),
+          hash: z.string().optional(),
+          depth: z.number().int().min(0).max(8).optional(),
+          author: z.string().optional(),
+          source: z.string().optional(),
+          text: z.string().optional(),
+          offset: z.number().int().min(0).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+          minScore: z.number().int().min(0).max(100).optional(),
         }),
       )
-      .query(async ({ ctx, input }) => await ctx.kernel.inspectModelDebug(input.sessionId)),
+      .query(async ({ ctx, input }) => ({
+        items: await ctx.kernel.queryAttention(input.sessionId, {
+          contextId: input.contextId,
+          hash: input.hash,
+          depth: input.depth,
+          author: input.author,
+          source: input.source,
+          text: input.text,
+          offset: input.offset,
+          limit: input.limit,
+          minScore: input.minScore,
+        }),
+      })),
+    schedulerLogs: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageSchedulerLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+    observabilityTraces: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageObservabilityTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+    observabilityTraceLookup: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          ref: z.string().min(1),
+          limit: z.number().int().min(1).max(500).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listObservabilityTracesByRef(input.sessionId, input.ref, input.limit ?? 200),
+      })),
+    modelCallsPage: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) => ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
     apiCallsPage: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) => ctx.kernel.pageApiCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),

@@ -7,7 +7,13 @@ import { deepMerge } from "./merge";
 import { ResourceLoader } from "./resource-loader";
 import { settingsSchema } from "./schema";
 import { settingsSource } from "./source";
-import type { AgenterSettings, LoadSettingsOptions, LoadedSettings, SettingsSourceInput } from "./types";
+import type {
+  AgenterSettings,
+  BuiltinSettingsSource,
+  LoadSettingsOptions,
+  LoadedSettings,
+  SettingsSourceInput,
+} from "./types";
 
 const defaultSettings = (): AgenterSettings => ({
   settingsSource: ["user", "project", "local"],
@@ -141,6 +147,38 @@ const classifyMissingResource = (errorMessage: string): boolean => {
 
 const isLocalPath = (value: string): boolean => value.startsWith("/") || value.startsWith("~");
 
+const readActiveProvider = (settings: AgenterSettings | undefined): string | undefined => {
+  const value = settings?.ai?.activeProvider?.trim();
+  return value && value.length > 0 ? value : undefined;
+};
+
+const resolveAiSelection = (
+  settings: AgenterSettings,
+  layers: Partial<Record<BuiltinSettingsSource, AgenterSettings>>,
+): AgenterSettings => {
+  if (!settings.ai) {
+    return settings;
+  }
+
+  const activeProvider =
+    readActiveProvider(layers.local) ??
+    readActiveProvider(layers.user) ??
+    readActiveProvider(layers.project) ??
+    readActiveProvider(settings);
+
+  if (!activeProvider || activeProvider === settings.ai.activeProvider) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    ai: {
+      ...settings.ai,
+      activeProvider,
+    },
+  };
+};
+
 export const loadSettings = async (options: LoadSettingsOptions): Promise<LoadedSettings> => {
   const homeDir = options.homeDir ?? homedir();
   const loader =
@@ -169,6 +207,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
   const meta: LoadedSettings["meta"] = {
     sources: [],
   };
+  const parsedBuiltinLayers: Partial<Record<BuiltinSettingsSource, AgenterSettings>> = {};
 
   let activeAvatar = options.avatar?.trim() || settings.avatar || defaultAvatarNickname();
   const appliedAvatarLayers = new Set<string>();
@@ -191,6 +230,9 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     try {
       const text = await loader.readText(source.uri, { forSettings: true });
       const layer = parseJsonText(text);
+      if (source.kind === "builtin" && source.builtin) {
+        parsedBuiltinLayers[source.builtin] = layer;
+      }
       settings = deepMerge(settings, layer);
       if (!options.avatar && settings.avatar?.trim()) {
         activeAvatar = settings.avatar.trim();
@@ -213,6 +255,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
   }
 
   settings.avatar = options.avatar?.trim() || activeAvatar;
+  settings = resolveAiSelection(settings, parsedBuiltinLayers);
   settings = normalizeSettingsPaths(settings, options.projectRoot, homeDir);
   settings = settingsSchema.parse(settings) as AgenterSettings;
   return {

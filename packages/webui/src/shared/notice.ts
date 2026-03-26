@@ -11,6 +11,21 @@ const normalizeNetworkNotice = (value: string): string | null => {
   return null;
 };
 
+const extractProviderErrorMessage = (value: string): string | null => {
+  const match = value.match(/\((\{.*\})\)\s*$/);
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(match[1]) as { error?: { message?: unknown } };
+    return typeof parsed.error?.message === "string" && parsed.error.message.trim().length > 0
+      ? parsed.error.message.trim()
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 export const normalizeUserNotice = (value: string, fallback: string): string => {
   const networkNotice = normalizeNetworkNotice(value);
   if (networkNotice) {
@@ -19,6 +34,10 @@ export const normalizeUserNotice = (value: string, fallback: string): string => 
   const trimmed = value.trim();
   if (UNKNOWN_NOTICE_VALUES.has(normalizeNoticeKey(trimmed))) {
     return fallback;
+  }
+  const providerErrorMessage = extractProviderErrorMessage(trimmed);
+  if (providerErrorMessage && /(response failed|status code)/i.test(trimmed)) {
+    return `Provider request failed: ${providerErrorMessage}`;
   }
   return trimmed.length > 0 ? trimmed : fallback;
 };

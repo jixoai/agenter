@@ -1,7 +1,25 @@
 import { accessSync, existsSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import {
+  AttentionStore,
+  AttentionSystem,
+  type AttentionCommitMatch,
+  type AttentionCycleFrame,
+  type AttentionHookRecord,
+  type AttentionQueryInput,
+} from "@agenter/attention-system";
 import { normalizeAvatarNickname } from "@agenter/avatar";
+import {
+  MessageControlPlane,
+  type MessageChannelGrantRecord,
+  type MessageChannelKind,
+  type MessageChannelPatchInput,
+  type MessageControlPlaneEntry,
+  type MessageFocusOp,
+  type MessageIssueGrantInput,
+  type MessageIssuedGrant,
+} from "@agenter/message-system";
 import {
   SessionDb,
   type ApiCallRecord,
@@ -40,6 +58,7 @@ import {
 } from "./realtime-types";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { SessionNotificationRegistry, type SessionNotificationSnapshot } from "./session-notifications";
+import { DEFAULT_MESSAGE_CHAT_ID, resolveCollectedInputsChatId, resolveSessionBlockChatId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
@@ -53,6 +72,8 @@ import {
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 
 const now = (): number => Date.now();
+const DEFAULT_MESSAGE_CHAT_TITLE = "Chat";
+const INTERNAL_FAILURE_PREFIXES = ["agenter-ai call failed:", "agenter-ai 调用失败:", "agenter-ai 调用失败："];
 
 const hashNumericLabel = (value: string): string => {
   let hash = 0;
@@ -61,6 +82,25 @@ const hashNumericLabel = (value: string): string => {
   }
   return String(hash).padStart(2, "0");
 };
+
+const createFallbackMessageChannel = (session: SessionMeta): MessageControlPlaneEntry => ({
+  chatId: DEFAULT_MESSAGE_CHAT_ID,
+  kind: "direct",
+  title: DEFAULT_MESSAGE_CHAT_TITLE,
+  owner: session.avatar,
+  contextId: `ctx-${DEFAULT_MESSAGE_CHAT_ID}`,
+  participants: [
+    { id: `avatar:${session.avatar}`, label: session.avatar, role: "avatar" },
+    { id: "user", label: "User", role: "user" },
+  ],
+  metadata: { builtIn: true },
+  createdAt: Date.parse(session.createdAt) || Date.now(),
+  updatedAt: Date.parse(session.updatedAt) || Date.now(),
+  focused: true,
+  accessRole: "readonly",
+  accessToken: "",
+  transportUrl: undefined,
+});
 
 const parseGitOwnerFromUrl = (raw: string): string | null => {
   const value = raw.trim().replace(/\.git$/, "");
@@ -78,6 +118,9 @@ const parseGitOwnerFromUrl = (raw: string): string | null => {
   }
   return null;
 };
+
+const isInternalFailurePreviewText = (content: string): boolean =>
+  INTERNAL_FAILURE_PREFIXES.some((prefix) => content.trim().startsWith(prefix));
 
 const resolveWorkspaceGroup = (workspacePath: string): string => {
   const gitConfigPath = join(workspacePath, ".git", "config");
@@ -117,8 +160,9 @@ const resolveWorkspaceGroup = (workspacePath: string): string => {
 
 const isRunningSession = (status: SessionMeta["status"]): boolean => status === "running" || status === "starting";
 
-const toChatMessage = (sessionId: string, block: SessionBlockRecord): ChatMessage => ({
+const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = DEFAULT_MESSAGE_CHAT_ID): ChatMessage => ({
   id: `${block.id}`,
+  chatId,
   role: block.role,
   content: block.content,
   timestamp: block.createdAt,
@@ -146,7 +190,9 @@ const toChatCycle = (input: {
   status: "done",
   clientMessageIds: collectClientMessageIds(input.inputs),
   inputs: structuredClone(input.inputs),
-  outputs: input.outputs.map((block) => toChatMessage(input.sessionId, block)),
+  outputs: input.outputs.map((block) =>
+    toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, DEFAULT_MESSAGE_CHAT_ID)),
+  ),
   liveMessages: [],
   streaming: null,
   modelCallId: input.modelCallId,
@@ -332,6 +378,7 @@ export class AppKernel {
   private readonly notifications = new SessionNotificationRegistry();
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
   private eventSeq = 0;
+  private sessionsCatalogLoaded = false;
 
   constructor(private readonly options: AppKernelOptions = {}) {
     this.sessions = new SessionCatalog({
@@ -345,15 +392,23 @@ export class AppKernel {
     if (this.options.initialWorkspace) {
       this.workspaces.add(this.options.initialWorkspace);
     }
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
   }
 
   async stop(): Promise<void> {
     for (const runtime of this.runtimes.values()) {
-      await runtime.stop();
+      await runtime.abort();
     }
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
+  }
+
+  private ensureSessionCatalogLoaded(): void {
+    if (this.sessionsCatalogLoaded) {
+      return;
+    }
+    this.sessions.refresh(this.workspaces.list());
+    this.sessionsCatalogLoaded = true;
   }
 
   getSnapshot(): RuntimeSnapshotPayload {
@@ -385,7 +440,7 @@ export class AppKernel {
   }
 
   listSessions(): SessionMeta[] {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     return this.sessions.list();
   }
 
@@ -394,7 +449,7 @@ export class AppKernel {
   }
 
   listAllWorkspaces(): WorkspaceListItem[] {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const byWorkspace = new Map<string, SessionMeta[]>();
     for (const session of this.sessions.list()) {
       const list = byWorkspace.get(session.cwd) ?? [];
@@ -427,7 +482,7 @@ export class AppKernel {
     const workspacePath = resolve(input.path);
     const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 50), 200));
     const cursor = Math.max(0, Math.floor(input.cursor ?? 0));
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const favoriteIds = new Set(this.workspaces.favoriteSessionIds());
     const workspaceSessions = this.sessions.list().filter((session) => session.cwd === workspacePath);
     const counts = countWorkspaceSessions(workspaceSessions);
@@ -490,7 +545,7 @@ export class AppKernel {
       timestamp: number;
     }
   > {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return [];
@@ -509,7 +564,7 @@ export class AppKernel {
       timestamp: number;
     }
   > {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
@@ -529,7 +584,7 @@ export class AppKernel {
       timestamp: number;
     }
   > {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return [];
@@ -538,7 +593,7 @@ export class AppKernel {
   }
 
   listChatCycles(sessionId: string, limit = 120): ChatCycle[] {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return [];
@@ -550,7 +605,7 @@ export class AppKernel {
     sessionId: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
   ): ReversePage<ChatCycle> {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
@@ -559,7 +614,7 @@ export class AppKernel {
   }
 
   listChatCyclesBefore(sessionId: string, beforeCycleId: number, limit = 120): ChatCycle[] {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return [];
@@ -684,7 +739,7 @@ export class AppKernel {
   async deleteSession(sessionId: string): Promise<{ removed: boolean }> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      await runtime.stop();
+      await runtime.abort();
       this.detachRuntime(sessionId);
     }
     this.workspaces.removeSessionFavorite(sessionId);
@@ -772,11 +827,11 @@ export class AppKernel {
   async stopSession(sessionId: string): Promise<SessionMeta> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      await runtime.pause();
+      await runtime.stop();
     }
-    const paused = this.sessions.update(sessionId, { status: "paused", lastError: undefined });
-    this.emit("session.updated", { session: paused }, sessionId);
-    return paused;
+    const stopped = this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
+    this.emit("session.updated", { session: stopped }, sessionId);
+    return stopped;
   }
 
   async abortSession(sessionId: string): Promise<SessionMeta> {
@@ -797,6 +852,143 @@ export class AppKernel {
     }
     const ok = runtime.focusTerminal(terminalId);
     return { ok };
+  }
+
+  listMessageChannels(sessionId: string): MessageControlPlaneEntry[] {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.listMessageChannels();
+    }
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    const dbPath = join(session.sessionRoot, "message-system", "chat.db");
+    if (!existsSync(dbPath)) {
+      return [createFallbackMessageChannel(session)];
+    }
+    const plane = new MessageControlPlane({ dbPath });
+    try {
+      const channels = plane.listChannels();
+      return channels.length > 0 ? channels : [createFallbackMessageChannel(session)];
+    } finally {
+      plane.close();
+    }
+  }
+
+  createMessageChannel(input: {
+    sessionId: string;
+    kind: MessageChannelKind;
+    title?: string;
+    focus?: boolean;
+  }): MessageControlPlaneEntry {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.createMessageChannel({
+      kind: input.kind,
+      title: input.title,
+      focus: input.focus,
+    });
+  }
+
+  focusMessageChannels(input: {
+    sessionId: string;
+    op: MessageFocusOp;
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }): MessageControlPlaneEntry[] {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.focusMessageChannels({ op: input.op, channels: input.channels });
+  }
+
+  updateMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    patch: MessageChannelPatchInput;
+  }): MessageControlPlaneEntry {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.updateMessageChannel({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      patch: input.patch,
+    });
+  }
+
+  listMessageChannelGrants(input: { sessionId: string; chatId: string; accessToken: string }): MessageChannelGrantRecord[] {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.listMessageChannelGrants({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+    });
+  }
+
+  issueMessageChannelGrant(
+    input: { sessionId: string; chatId: string; accessToken: string } & MessageIssueGrantInput,
+  ): MessageIssuedGrant {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.issueMessageChannelGrant({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      role: input.role,
+      label: input.label,
+      participantId: input.participantId,
+    });
+  }
+
+  revokeMessageChannelGrant(input: { sessionId: string; chatId: string; accessToken: string; grantId: string }): { ok: boolean } {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.revokeMessageChannelGrant({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      grantId: input.grantId,
+    });
+  }
+
+  async sendMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      runtime.sendMessageChannel({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        text: input.text,
+        assetIds: input.assetIds,
+        clientMessageId: input.clientMessageId,
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async sendChat(
@@ -841,7 +1033,7 @@ export class AppKernel {
       };
     }
 
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return null;
@@ -885,7 +1077,7 @@ export class AppKernel {
     | { kind: "file"; filePath: string; mimeType: string; sizeBytes: number }
     | { kind: "generated"; svg: string; mimeType: "image/svg+xml" }
     | null {
-    this.sessions.refresh(this.workspaces.list());
+    this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
       return null;
@@ -1098,7 +1290,7 @@ export class AppKernel {
     return runtime.listLoopbusStateLogs(afterId, limit);
   }
 
-  pageLoopbusStateLogs(
+  pageSchedulerLogs(
     sessionId: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
   ): ReversePage<LoopbusStateLogRecord> {
@@ -1133,7 +1325,7 @@ export class AppKernel {
     return runtime.listLoopbusTraces(afterId, limit);
   }
 
-  pageLoopbusTraces(
+  pageObservabilityTraces(
     sessionId: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
   ): ReversePage<ReturnType<SessionRuntime["listLoopbusTraces"]>[number]> {
@@ -1142,6 +1334,31 @@ export class AppKernel {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
     return this.readLoopbusTracesPageFromDb(session.sessionRoot, input);
+  }
+
+  listObservabilityTracesByRef(
+    sessionId: string,
+    ref: string,
+    limit = 200,
+  ): Array<ReturnType<SessionRuntime["listLoopbusTraces"]>[number]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.listLoopbusTracesByRef(ref, limit);
+    }
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    const dbPath = join(session.sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return [];
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.listLoopTracesByRef(ref, limit);
+    } finally {
+      db.close();
+    }
   }
 
   listLoopbusTracesBefore(
@@ -1166,6 +1383,52 @@ export class AppKernel {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
     return this.readTerminalActivityPageFromDb(session.sessionRoot, terminalId, input);
+  }
+
+  async inspectAttentionState(sessionId: string): Promise<ReturnType<SessionRuntime["inspectAttentionState"]>> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.inspectAttentionState();
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    return await this.readPersistedAttentionState(session);
+  }
+
+  async queryAttention(
+    sessionId: string,
+    input: AttentionQueryInput,
+  ): Promise<AttentionCommitMatch[]> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.queryAttention(input);
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    const attention = await this.readPersistedAttentionState(session);
+    return AttentionSystem.fromSnapshot(attention.snapshot).query(input);
+  }
+
+  async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.inspectModelDebug();
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    return await this.readPersistedModelDebug(session);
   }
 
   listTasks(sessionId: string): { ok: boolean; tasks: ReturnType<SessionRuntime["snapshot"]>["tasks"] } {
@@ -1193,20 +1456,6 @@ export class AppKernel {
       return { ok: false };
     }
     return runtime.emitTaskEvent(input);
-  }
-
-  async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
-    const runtime = this.runtimes.get(sessionId);
-    if (runtime) {
-      return runtime.inspectModelDebug();
-    }
-
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`session not found: ${sessionId}`);
-    }
-
-    return await this.readPersistedModelDebug(session);
   }
 
   async readSettings(input: {
@@ -1250,13 +1499,13 @@ export class AppKernel {
     return this.notifications.snapshot();
   }
 
-  setChatVisibility(input: { sessionId: string; visible: boolean; focused: boolean }): SessionNotificationSnapshot {
+  setChatVisibility(input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }): SessionNotificationSnapshot {
     const snapshot = this.notifications.setChatVisibility(input) ?? this.notifications.snapshot();
     this.emit("notification.updated", { snapshot }, input.sessionId);
     return snapshot;
   }
 
-  consumeNotifications(input: { sessionId: string; upToMessageId?: string | null }): SessionNotificationSnapshot {
+  consumeNotifications(input: { sessionId: string; chatId?: string; upToMessageId?: string | null }): SessionNotificationSnapshot {
     const snapshot = this.notifications.consume(input) ?? this.notifications.snapshot();
     this.emit("notification.updated", { snapshot }, input.sessionId);
     return snapshot;
@@ -1300,7 +1549,10 @@ export class AppKernel {
 
       const firstUser = messages.find((item) => item.role === "user");
       const latestMessages = messages
-        .filter((item) => item.role === "user" || item.channel === "to_user")
+        .filter(
+          (item) =>
+            (item.role === "user" || item.channel === "to_user") && !isInternalFailurePreviewText(item.content),
+        )
         .slice(-3)
         .map((item) => item.content.trim())
         .filter((item) => item.length > 0);
@@ -1337,8 +1589,26 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
+      const cycleChatIds = new Map<number, string>();
+      const resolveBlockChatId = (item: SessionBlockRecord): string => {
+        if (item.cycleId === null) {
+          return DEFAULT_MESSAGE_CHAT_ID;
+        }
+        const cached = cycleChatIds.get(item.cycleId);
+        if (cached) {
+          return cached;
+        }
+        const chatId = resolveSessionBlockChatId({
+          block: item,
+          getCycleById: (cycleId) => db.getCycleById(cycleId),
+          fallback: DEFAULT_MESSAGE_CHAT_ID,
+        });
+        cycleChatIds.set(item.cycleId, chatId);
+        return chatId;
+      };
       return db.listBlocksAfter(afterId, limit).map((item) => ({
         ...item,
+        chatId: resolveBlockChatId(item),
         attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
         sessionId,
         messageId: `${item.id}`,
@@ -1369,9 +1639,27 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       const page = db.listBlocksPage(input);
+      const cycleChatIds = new Map<number, string>();
+      const resolveBlockChatId = (item: SessionBlockRecord): string => {
+        if (item.cycleId === null) {
+          return DEFAULT_MESSAGE_CHAT_ID;
+        }
+        const cached = cycleChatIds.get(item.cycleId);
+        if (cached) {
+          return cached;
+        }
+        const chatId = resolveSessionBlockChatId({
+          block: item,
+          getCycleById: (cycleId) => db.getCycleById(cycleId),
+          fallback: DEFAULT_MESSAGE_CHAT_ID,
+        });
+        cycleChatIds.set(item.cycleId, chatId);
+        return chatId;
+      };
       return {
         items: page.items.map((item) => ({
           ...item,
+          chatId: resolveBlockChatId(item),
           attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
           sessionId,
           messageId: `${item.id}`,
@@ -1399,6 +1687,47 @@ export class AppKernel {
     } finally {
       db.close();
     }
+  }
+
+  private async readPersistedAttentionState(
+    session: SessionMeta,
+  ): Promise<ReturnType<SessionRuntime["inspectAttentionState"]>> {
+    const attentionStore = new AttentionStore(join(session.sessionRoot, "attention-system"));
+    const snapshot = await attentionStore.load();
+    const attentionSystem = AttentionSystem.fromSnapshot(snapshot);
+    const cycleFrames: AttentionCycleFrame[] = [];
+    const hooks: AttentionHookRecord[] = [];
+    const dbPath = join(session.sessionRoot, "session.db");
+
+    if (existsSync(dbPath)) {
+      const db = new SessionDb(dbPath);
+      try {
+        for (const cycle of db.listCurrentBranchCycles(200)) {
+          const frame = cycle.extendsRecord.attentionCycleFrame;
+          if (frame && typeof frame === "object") {
+            cycleFrames.push(frame as AttentionCycleFrame);
+          }
+          const records = cycle.extendsRecord.attentionHooks;
+          if (!Array.isArray(records)) {
+            continue;
+          }
+          for (const record of records) {
+            if (record && typeof record === "object") {
+              hooks.push(record as AttentionHookRecord);
+            }
+          }
+        }
+      } finally {
+        db.close();
+      }
+    }
+
+    return {
+      snapshot,
+      active: attentionSystem.listActiveContexts(),
+      cycleFrames,
+      hooks,
+    };
   }
 
   private async readPersistedModelDebug(session: SessionMeta): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
@@ -1711,17 +2040,17 @@ export class AppKernel {
       case "taskSourceChanged":
         this.emit("task.source.changed", event.payload, sessionId, event.timestamp);
         return;
-      case "loopbusSnapshot":
-        this.emit("runtime.loopbus.snapshot", event.payload, sessionId, event.timestamp);
+      case "schedulerSnapshot":
+        this.emit("runtime.scheduler.snapshot", event.payload, sessionId, event.timestamp);
         return;
-      case "loopbusStateLog":
-        this.emit("runtime.loopbus.stateLog", event.payload, sessionId, event.timestamp);
+      case "schedulerLog":
+        this.emit("runtime.scheduler.log", event.payload, sessionId, event.timestamp);
         return;
-      case "loopbusTrace":
-        this.emit("runtime.loopbus.trace", event.payload, sessionId, event.timestamp);
+      case "observabilityTrace":
+        this.emit("runtime.observability.trace", event.payload, sessionId, event.timestamp);
         return;
-      case "loopbusInputSignal":
-        this.emit("runtime.loopbus.inputSignal", event.payload, sessionId, event.timestamp);
+      case "schedulerSignal":
+        this.emit("runtime.scheduler.signal", event.payload, sessionId, event.timestamp);
         return;
       case "modelCall":
         this.emit("runtime.modelCall", event.payload, sessionId, event.timestamp);
@@ -1731,6 +2060,9 @@ export class AppKernel {
         return;
       case "apiRecording":
         this.emit("runtime.apiRecording", event.payload, sessionId, event.timestamp);
+        return;
+      case "attentionUpdated":
+        this.emit("runtime.attention", event.payload, sessionId, event.timestamp);
         return;
       case "cycleUpdated":
         this.emit("runtime.cycle.updated", event.payload, sessionId, event.timestamp);

@@ -2,7 +2,6 @@ import {
   createAgenterClient,
   createRuntimeStore,
   type DraftResolutionOutput,
-  type ModelDebugOutput,
   type WorkspaceSessionCounts,
   type WorkspaceSessionEntry,
   type WorkspaceSessionTab,
@@ -10,23 +9,19 @@ import {
 import { RouterProvider } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  AppControllerContext,
-  type AppController,
-  useRuntimeStoreSelector,
-} from "./app-context";
+import { AppControllerContext, useRuntimeStoreSelector, type AppController } from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
 import { type SettingsLayerItem } from "./features/settings/SettingsPanel";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
-import { displayNoticeFromError } from "./shared/notice";
 import {
   DEFAULT_LONG_LIST_PAGING_STATE,
   resolveLongListPagingKey,
   type LongListPagingInput,
   type LongListPagingState,
 } from "./shared/long-list-paging";
+import { displayNoticeFromError } from "./shared/notice";
 import { defaultWsUrl } from "./shared/ws-url";
 
 interface AppProps {
@@ -95,21 +90,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [layerMtimeMs, setLayerMtimeMs] = useState(0);
   const [settingsStatus, setSettingsStatus] = useState("idle");
   const [longListPagingByKey, setLongListPagingByKey] = useState<Record<string, LongListPagingState>>({});
-  const [modelDebug, setModelDebug] = useState<ModelDebugOutput | null>(null);
-  const [modelDebugLoading, setModelDebugLoading] = useState(false);
-  const [modelDebugError, setModelDebugError] = useState<string | null>(null);
-  const [modelDebugSessionId, setModelDebugSessionId] = useState<string | null>(null);
-
   const workspaceSessionsRequestRef = useRef(0);
-  const modelDebugRequestRef = useRef(0);
-  const modelDebugSessionIdRef = useRef<string | null>(null);
   const workspaceSelectionRef = useRef<{ path: string | null; tab: WorkspaceSessionTab } | null>(null);
+  const quickstartRecentSessionsSyncKeyRef = useRef<string | null>(null);
   const seenNotificationIdsRef = useRef<string[]>([]);
   const rasterizedSessionIconIdsRef = useRef(new Set<string>());
   const longListPagingByKeyRef = useRef<Record<string, LongListPagingState>>({});
+  const settingsCatalogWorkspaceRef = useRef<string | null>(null);
+  const settingsCatalogLoadedRef = useRef(false);
 
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
   const store = useMemo(() => createRuntimeStore(client), [client]);
+  const storeLifecycleRef = useRef<{ store: typeof store; mounts: number } | null>(null);
   const runtimeSessions = useRuntimeStoreSelector(store, (state) => state.sessions);
   const runtimeRecentWorkspaces = useRuntimeStoreSelector(store, (state) => state.recentWorkspaces);
   const runtimeWorkspaces = useRuntimeStoreSelector(store, (state) => state.workspaces);
@@ -122,28 +114,25 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     longListPagingByKeyRef.current = longListPagingByKey;
   }, [longListPagingByKey]);
 
-  const patchLongListPagingState = useCallback(
-    (input: LongListPagingInput, patch: Partial<LongListPagingState>) => {
-      const key = resolveLongListPagingKey(input);
-      setLongListPagingByKey((prev) => {
-        const current = prev[key] ?? DEFAULT_LONG_LIST_PAGING_STATE;
-        const next = { ...current, ...patch };
-        if (
-          current.hydrated === next.hydrated &&
-          current.hasMore === next.hasMore &&
-          current.loading === next.loading &&
-          current.loadingOlder === next.loadingOlder
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [key]: next,
-        };
-      });
-    },
-    [],
-  );
+  const patchLongListPagingState = useCallback((input: LongListPagingInput, patch: Partial<LongListPagingState>) => {
+    const key = resolveLongListPagingKey(input);
+    setLongListPagingByKey((prev) => {
+      const current = prev[key] ?? DEFAULT_LONG_LIST_PAGING_STATE;
+      const next = { ...current, ...patch };
+      if (
+        current.hydrated === next.hydrated &&
+        current.hasMore === next.hasMore &&
+        current.loading === next.loading &&
+        current.loadingOlder === next.loadingOlder
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [key]: next,
+      };
+    });
+  }, []);
 
   const getLongListPagingState = useCallback((input: LongListPagingInput): LongListPagingState => {
     return longListPagingByKeyRef.current[resolveLongListPagingKey(input)] ?? DEFAULT_LONG_LIST_PAGING_STATE;
@@ -194,10 +183,10 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     (sessionId: string) => {
       const state = store.getState();
       patchLongListPagingState(
-        { resource: "loopbus-trace", sessionId },
+        { resource: "observability-trace", sessionId },
         {
           hydrated: true,
-          hasMore: (state.loopbusTracesBySession[sessionId]?.length ?? 0) >= 200,
+          hasMore: (state.observabilityTracesBySession[sessionId]?.length ?? 0) >= 200,
         },
       );
       patchLongListPagingState(
@@ -271,22 +260,69 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [store],
   );
 
+  const quickstartRecentSessionStructureKey = useMemo(() => {
+    if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
+      return null;
+    }
+    return runtimeSessions
+      .filter((session) => session.cwd === quickstartWorkspacePath)
+      .map((session) =>
+        [
+          session.id,
+          session.cwd,
+          session.name,
+          session.avatar,
+          session.status,
+          session.storageState,
+          session.createdAt,
+        ].join(":"),
+      )
+      .sort()
+      .join("|");
+  }, [quickstartWorkspacePath, runtimeSessions]);
+
   useEffect(() => {
+    if (!storeLifecycleRef.current || storeLifecycleRef.current.store !== store) {
+      storeLifecycleRef.current?.store.disconnect();
+      storeLifecycleRef.current = { store, mounts: 0 };
+    }
+    const lifecycle = storeLifecycleRef.current;
+    lifecycle.mounts += 1;
+
     void store.connect().catch((error) => {
       setError(error);
     });
 
     return () => {
-      store.disconnect();
+      const current = storeLifecycleRef.current;
+      if (!current || current.store !== store) {
+        store.disconnect();
+        return;
+      }
+      current.mounts = Math.max(0, current.mounts - 1);
+      queueMicrotask(() => {
+        const latest = storeLifecycleRef.current;
+        if (!latest || latest.store !== store) {
+          store.disconnect();
+          return;
+        }
+        if (latest.mounts === 0) {
+          latest.store.disconnect();
+        }
+      });
     };
   }, [setError, store]);
 
   useEffect(() => {
-    if (runtimeRecentWorkspaces.length === 0) {
+    const fallbackWorkspace =
+      runtimeRecentWorkspaces[0] ??
+      runtimeWorkspaces.find((workspace) => !workspace.missing)?.path ??
+      runtimeWorkspaces[0]?.path;
+    if (!fallbackWorkspace) {
       return;
     }
-    setQuickstartWorkspacePath((prev) => (prev === "." ? runtimeRecentWorkspaces[0]! : prev));
-  }, [runtimeRecentWorkspaces]);
+    setQuickstartWorkspacePath((prev) => (prev === "." ? fallbackWorkspace : prev));
+  }, [runtimeRecentWorkspaces, runtimeWorkspaces]);
 
   useEffect(() => {
     const pending = runtimeSessions.filter(
@@ -318,10 +354,12 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
       setQuickstartDraft(null);
       setQuickstartRecentSessions([]);
+      quickstartRecentSessionsSyncKeyRef.current = null;
       return;
     }
 
     let cancelled = false;
+    quickstartRecentSessionsSyncKeyRef.current = null;
     setQuickstartDraftLoading(true);
 
     void Promise.all([
@@ -355,17 +393,22 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   }, [quickstartWorkspacePath, setError, store]);
 
   useEffect(() => {
-    if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
+    if (!quickstartWorkspacePath || quickstartWorkspacePath === "." || quickstartRecentSessionStructureKey === null) {
       return;
     }
-    const relevantChanged = runtimeSessions.some((session) => session.cwd === quickstartWorkspacePath);
-    if (!relevantChanged) {
+    const nextSyncKey = `${quickstartWorkspacePath}::${quickstartRecentSessionStructureKey}`;
+    if (quickstartRecentSessionsSyncKeyRef.current === null) {
+      quickstartRecentSessionsSyncKeyRef.current = nextSyncKey;
       return;
     }
+    if (quickstartRecentSessionsSyncKeyRef.current === nextSyncKey) {
+      return;
+    }
+    quickstartRecentSessionsSyncKeyRef.current = nextSyncKey;
     void loadQuickstartRecentSessions(quickstartWorkspacePath).catch(() => {
       // keep stale cards until next refresh
     });
-  }, [loadQuickstartRecentSessions, quickstartWorkspacePath, runtimeSessions]);
+  }, [loadQuickstartRecentSessions, quickstartRecentSessionStructureKey, quickstartWorkspacePath]);
 
   const resetWorkspaceSessionsState = useCallback(() => {
     setWorkspaceSessions([]);
@@ -522,6 +565,30 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [store],
   );
 
+  const sendChannelMessagePayload = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      payload: { text: string; assets: File[] };
+    }): Promise<void> => {
+      const uploaded =
+        input.payload.assets.length > 0 ? await store.uploadSessionAssets(input.sessionId, input.payload.assets) : [];
+      await store.sendMessageChannel(
+        {
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          text: input.payload.text,
+          assetIds: uploaded.map((item) => item.assetId),
+        },
+        uploaded,
+      );
+      setNotice("");
+    },
+    [store],
+  );
+
   const createWorkspaceSession = useCallback(
     async (workspacePath: string): Promise<string | null> => {
       try {
@@ -532,7 +599,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         await store.listRecentWorkspaces(8);
         await store.listAllWorkspaces();
         await loadQuickstartRecentSessions(workspacePath);
-        await hydrateSessionLongLists(session.id);
+        primeRuntimeLongLists(session.id);
         setNotice("");
         return session.id;
       } catch (error) {
@@ -540,7 +607,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         return null;
       }
     },
-    [loadQuickstartRecentSessions, setError, store],
+    [loadQuickstartRecentSessions, primeRuntimeLongLists, setError, store],
   );
 
   const quickstartSubmit = useCallback(
@@ -581,13 +648,13 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           setQuickstartWorkspacePath(workspacePath);
         }
         setSelectedWorkspaceSessionId(sessionId);
-        await hydrateSessionLongLists(sessionId);
+        primeRuntimeLongLists(sessionId);
         setNotice("");
       } catch (error) {
         setError(error);
       }
     },
-    [hydrateSessionLongLists, setError, store],
+    [primeRuntimeLongLists, setError, store],
   );
 
   const startSession = useCallback(
@@ -652,6 +719,138 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [sendSessionChatPayload, setError],
   );
 
+  const ensureMessageChannels = useCallback(
+    async (sessionId: string): Promise<void> => {
+      try {
+        await store.ensureMessageChannels(sessionId);
+      } catch (error) {
+        setError(error);
+      }
+    },
+    [setError, store],
+  );
+
+  const listMessageChannels = useCallback(
+    async (sessionId: string) => {
+      try {
+        return await store.listMessageChannels(sessionId);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const createMessageChannel = useCallback(
+    async (input: { sessionId: string; kind: "direct" | "room"; title?: string; focus?: boolean }) => {
+      try {
+        return await store.createMessageChannel(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const focusMessageChannels = useCallback(
+    async (input: {
+      sessionId: string;
+      op: "add" | "remove" | "replace" | "clear";
+      channels: Array<{ chatId: string; accessToken: string }>;
+    }) => {
+      try {
+        return await store.focusMessageChannels(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const sendMessageChannel = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      payload: { text: string; assets: File[] };
+    }): Promise<void> => {
+      try {
+        await sendChannelMessagePayload(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [sendChannelMessagePayload, setError],
+  );
+
+  const updateMessageChannel = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      patch: {
+        title?: string;
+        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        metadata?: Record<string, unknown>;
+      };
+    }) => {
+      try {
+        return await store.updateMessageChannel(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listMessageChannelGrants = useCallback(
+    async (input: { sessionId: string; chatId: string; accessToken: string }) => {
+      try {
+        return await store.listMessageChannelGrants(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const issueMessageChannelGrant = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      role: "admin" | "member" | "readonly";
+      label?: string;
+      participantId?: string;
+    }) => {
+      try {
+        return await store.issueMessageChannelGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const revokeMessageChannelGrant = useCallback(
+    async (input: { sessionId: string; chatId: string; accessToken: string; grantId: string }) => {
+      try {
+        return await store.revokeMessageChannelGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
   const loadMoreChatCycles = useCallback(
     async (sessionId: string): Promise<void> => {
       await runLongListLoad({
@@ -679,11 +878,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const loadMoreTrace = useCallback(
     async (sessionId: string): Promise<void> => {
       await runLongListLoad({
-        resource: "loopbus-trace",
+        resource: "observability-trace",
         sessionId,
         older: true,
         run: async () => {
-          const output = await store.loadMoreLoopbusTimeline(sessionId, 120);
+          const output = await store.loadMoreObservabilityTimeline(sessionId, 120);
           return { hasMore: output.hasMore };
         },
       });
@@ -698,18 +897,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         sessionId,
         older: true,
         run: () => store.loadMoreModelCalls(sessionId, 120),
-      });
-    },
-    [runLongListLoad, store],
-  );
-
-  const loadMoreApi = useCallback(
-    async (sessionId: string): Promise<void> => {
-      await runLongListLoad({
-        resource: "api-calls",
-        sessionId,
-        older: true,
-        run: () => store.loadMoreApiCalls(sessionId, 120),
       });
     },
     [runLongListLoad, store],
@@ -738,40 +925,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       });
     },
     [runLongListLoad, store],
-  );
-
-  const refreshModelDebug = useCallback(
-    async (sessionId: string): Promise<void> => {
-      const requestId = ++modelDebugRequestRef.current;
-      if (modelDebugSessionIdRef.current !== sessionId) {
-        modelDebugSessionIdRef.current = sessionId;
-        setModelDebugSessionId(sessionId);
-        setModelDebug(null);
-      }
-      setModelDebugLoading(true);
-      setModelDebugError(null);
-      try {
-        const output = await store.inspectModelDebug(sessionId);
-        if (requestId !== modelDebugRequestRef.current) {
-          return;
-        }
-        modelDebugSessionIdRef.current = sessionId;
-        setModelDebugSessionId(sessionId);
-        setModelDebug(output);
-      } catch (error) {
-        if (requestId !== modelDebugRequestRef.current) {
-          return;
-        }
-        modelDebugSessionIdRef.current = sessionId;
-        setModelDebugSessionId(sessionId);
-        setModelDebugError(error instanceof Error ? error.message : String(error));
-      } finally {
-        if (requestId === modelDebugRequestRef.current) {
-          setModelDebugLoading(false);
-        }
-      }
-    },
-    [store],
   );
 
   const toggleWorkspaceFavorite = useCallback(
@@ -905,7 +1058,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   ]);
 
   const refreshSettingsLayers = useCallback(
-    async (workspacePath: string): Promise<void> => {
+    async (workspacePath: string, force = true): Promise<void> => {
+      const sameWorkspace = settingsCatalogWorkspaceRef.current === workspacePath;
+      if (!force && sameWorkspace && settingsCatalogLoadedRef.current) {
+        return;
+      }
       setSettingsLoading(true);
       try {
         const data = await store.listSettingsLayers(workspacePath);
@@ -914,14 +1071,25 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         setSelectedLayerId((prev) =>
           data.layers.some((item) => item.layerId === prev) ? prev : (data.layers[0]?.layerId ?? null),
         );
+        settingsCatalogWorkspaceRef.current = workspacePath;
+        settingsCatalogLoadedRef.current = true;
         setSettingsStatus("layers refreshed");
       } catch (error) {
+        settingsCatalogWorkspaceRef.current = workspacePath;
+        settingsCatalogLoadedRef.current = false;
         setError(error);
       } finally {
         setSettingsLoading(false);
       }
     },
     [setError, store],
+  );
+
+  const ensureSettingsLayers = useCallback(
+    async (workspacePath: string): Promise<void> => {
+      await refreshSettingsLayers(workspacePath, false);
+    },
+    [refreshSettingsLayers],
   );
 
   const loadSelectedLayer = useCallback(
@@ -975,7 +1143,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const setChatVisibility = useCallback(
-    async (input: { sessionId: string; visible: boolean; focused: boolean }): Promise<void> => {
+    async (input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }): Promise<void> => {
       try {
         await store.setChatVisibility(input);
       } catch (error) {
@@ -986,7 +1154,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const consumeNotifications = useCallback(
-    async (input: { sessionId: string; upToMessageId?: string | null }): Promise<void> => {
+    async (input: { sessionId: string; chatId?: string; upToMessageId?: string | null }): Promise<void> => {
       try {
         await store.consumeNotifications(input);
       } catch (error) {
@@ -1003,7 +1171,23 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [hydrateSessionLongLists],
   );
 
-  const retainApiCallStream = useCallback((sessionId: string) => store.retainApiCallStream(sessionId), [store]);
+  const queryAttention = useCallback(
+    async (input: {
+      sessionId: string;
+      contextId?: string;
+      hash?: string;
+      depth?: number;
+      author?: string;
+      source?: string;
+      text?: string;
+      offset?: number;
+      limit?: number;
+      minScore?: number;
+    }) => {
+      return await store.queryAttention(input);
+    },
+    [store],
+  );
 
   const listDirectories = useCallback(
     async (input?: { path?: string; includeHidden?: boolean }) => await store.listDirectories(input),
@@ -1042,10 +1226,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       layerDraft,
       setLayerDraft,
       settingsStatus,
-      modelDebug,
-      modelDebugSessionId,
-      modelDebugLoading,
-      modelDebugError,
       getLongListPagingState,
       searchWorkspacePaths,
       createWorkspaceSession,
@@ -1057,14 +1237,21 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       abortSession,
       deleteSession,
       sendChat,
+      ensureMessageChannels,
+      listMessageChannels,
+      createMessageChannel,
+      focusMessageChannels,
+      sendMessageChannel,
+      updateMessageChannel,
+      listMessageChannelGrants,
+      issueMessageChannelGrant,
+      revokeMessageChannelGrant,
       loadMoreChatMessages,
       loadMoreChatCycles,
       loadMoreTrace,
       loadMoreModel,
-      loadMoreApi,
       loadTerminalActivity,
       loadMoreTerminalActivity,
-      refreshModelDebug,
       toggleWorkspaceFavorite,
       deleteWorkspace,
       cleanMissingWorkspaces,
@@ -1074,13 +1261,14 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       restoreWorkspaceSession,
       deleteWorkspaceSession,
       loadMoreWorkspaceSessions,
+      ensureSettingsLayers,
       refreshSettingsLayers,
       loadSelectedLayer,
       saveSelectedLayer,
       setChatVisibility,
       consumeNotifications,
       hydrateSession,
-      retainApiCallStream,
+      queryAttention,
       listDirectories,
       validateDirectory,
     }),
@@ -1093,12 +1281,17 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       deleteWorkspace,
       deleteWorkspaceSession,
       enterWorkspace,
+      ensureMessageChannels,
+      ensureSettingsLayers,
+      focusMessageChannels,
       getLongListPagingState,
       hydrateSession,
+      issueMessageChannelGrant,
       layerDraft,
+      listMessageChannelGrants,
       loadMoreChatCycles,
       loadMoreChatMessages,
-      loadMoreApi,
+      listMessageChannels,
       loadMoreTerminalActivity,
       loadTerminalActivity,
       loadMoreModel,
@@ -1106,23 +1299,22 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       loadMoreWorkspaceSessions,
       loadSelectedLayer,
       listDirectories,
-      modelDebug,
-      modelDebugError,
-      modelDebugLoading,
-      modelDebugSessionId,
       notice,
       quickstartBusy,
       quickstartDraft,
       quickstartDraftLoading,
       quickstartRecentSessions,
       quickstartSubmit,
+      queryAttention,
       quickstartWorkspacePath,
-      refreshModelDebug,
       refreshSettingsLayers,
-      retainApiCallStream,
       restoreWorkspaceSession,
       resumeSession,
       saveSelectedLayer,
+      createMessageChannel,
+      updateMessageChannel,
+      revokeMessageChannelGrant,
+      sendMessageChannel,
       searchWorkspacePaths,
       selectedLayerId,
       selectedWorkspacePath,

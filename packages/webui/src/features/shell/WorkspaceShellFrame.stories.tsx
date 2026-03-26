@@ -9,11 +9,11 @@ const renderFrame = (narrow = false) => {
   return (args: {
     workspacePath: string;
     workspaceMissing?: boolean;
-    activeTab: "chat" | "devtools" | "settings";
-    onNavigate: (tab: "chat" | "devtools" | "settings") => void;
+    activeTab: "chat" | "terminals" | "devtools" | "settings";
+    onNavigate: (tab: "chat" | "terminals" | "devtools" | "settings") => void;
     children: ReactNode;
   }) => {
-    const [activeTab, setActiveTab] = useState<"chat" | "devtools" | "settings">(args.activeTab);
+    const [activeTab, setActiveTab] = useState<"chat" | "terminals" | "devtools" | "settings">(args.activeTab);
 
     return (
       <ShellLayoutProvider
@@ -68,15 +68,18 @@ export const SwitchTabsWithinUnifiedTopHeader: Story = {
 
     await expect(canvas.getByText("project-alpha")).toBeInTheDocument();
     await expect(canvas.queryByText("/repo/demo/project-alpha")).not.toBeInTheDocument();
-    await expect(canvas.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Chats" })).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Terminals" })).toBeInTheDocument();
 
+    await userEvent.click(canvas.getByRole("tab", { name: "Terminals" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Devtools" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Settings" }));
-    await userEvent.click(canvas.getByRole("tab", { name: "Chat" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Chats" }));
 
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "devtools");
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "settings");
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(3, "chat");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "terminals");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "devtools");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(3, "settings");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(4, "chat");
   },
 };
 
@@ -89,13 +92,15 @@ export const CompactShellStillKeepsTopTabs: Story = {
     await expect(canvas.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
     await expect(canvas.queryByTestId("workspace-basename-chip")).not.toBeInTheDocument();
     await expect(canvas.getByLabelText("Workspace /repo/demo/project-alpha")).toBeInTheDocument();
-    await expect(canvas.getByRole("tab", { name: "Chat" })).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Chats" })).toBeInTheDocument();
     await expect(shell.scrollWidth).toBeLessThanOrEqual(shell.clientWidth + 1);
 
+    await userEvent.click(canvas.getByRole("tab", { name: "Terminals" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Devtools" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Settings" }));
 
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "devtools");
-    await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "settings");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(1, "terminals");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(2, "devtools");
+    await expect(args.onNavigate).toHaveBeenNthCalledWith(3, "settings");
   },
 };

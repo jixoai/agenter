@@ -11,7 +11,7 @@ const fixture = createRealSessionHistoryFixture({ turns: 10, unreadCount: 2 });
 
 type ChatRouteAssemblyStoryArgs = {
   workspacePath: string;
-  activeTab: "chat" | "devtools" | "settings";
+  activeTab: "chat" | "terminals" | "devtools" | "settings";
 };
 
 const buildRouteStory =
@@ -34,16 +34,14 @@ const buildRouteStory =
           activeTab={args.activeTab}
           onNavigate={() => undefined}
           headerStatusSlot={
-            input.compact ? (
-              <SessionStatusPillMenu
-                triggerVariant="icon"
-                statusLabel="Session running"
-                tone="active"
-                primaryActionLabel="Stop session"
-                onPrimaryAction={() => undefined}
-                onAbort={() => undefined}
-              />
-            ) : null
+            <SessionStatusPillMenu
+              triggerVariant="icon"
+              statusLabel="Session running"
+              tone="active"
+              primaryActionLabel="Stop session"
+              onPrimaryAction={() => undefined}
+              onAbort={() => undefined}
+            />
           }
         >
           <ChatPanel
@@ -52,17 +50,6 @@ const buildRouteStory =
             cycles={[]}
             aiStatus="idle"
             sessionStateLabel="Session running"
-            statusSlot={
-              input.compact ? null : (
-                <SessionStatusPillMenu
-                  statusLabel="Session running"
-                  tone="active"
-                  primaryActionLabel="Stop session"
-                  onPrimaryAction={() => undefined}
-                  onAbort={() => undefined}
-                />
-              )
-            }
             disabled={false}
             imageEnabled
             imageCompatible
@@ -99,8 +86,8 @@ export const DesktopRouteKeepsPassiveHeaderAndRouteLocalStatus: Story = {
     const actionBar = canvas.getByTestId("composer-action-bar");
     const statusBar = canvas.getByTestId("composer-status-bar");
 
-    await expect(within(header).queryByRole("button", { name: /Session status:/i })).not.toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Session status: Session running" })).toBeInTheDocument();
+    await expect(within(header).getByRole("button", { name: "Session status: Session running" })).toBeInTheDocument();
+    await expect(canvas.getAllByRole("button", { name: "Session status: Session running" })).toHaveLength(1);
     await expect(canvas.getByTestId("workspace-basename-chip")).toHaveTextContent("project-alpha");
     await expect(canvas.getByTestId("workspace-basename-chip")).toHaveAttribute("title", "/repo/demo/project-alpha");
     await expect(within(attachButton).getByText("Attach")).toBeInTheDocument();

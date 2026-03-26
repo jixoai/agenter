@@ -207,12 +207,36 @@
         "react": "^19.0.0",
       },
     },
+    "packages/web-chat-view": {
+      "name": "@agenter/web-chat-view",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agenter/message-system": "workspace:*",
+        "@codemirror/lang-markdown": "^6.5.0",
+        "@codemirror/language-data": "^6.5.1",
+        "@codemirror/view": "^6.38.8",
+        "@tanstack/react-virtual": "^3.13.12",
+        "@uiw/react-codemirror": "^4.25.3",
+        "lucide-react": "^0.544.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      "devDependencies": {
+        "@testing-library/react": "^16.3.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "jsdom": "^26.1.0",
+        "typescript": "latest",
+        "vitest": "^3.2.4",
+      },
+    },
     "packages/webui": {
       "name": "@agenter/webui",
       "version": "0.0.0",
       "dependencies": {
         "@agenter/client-sdk": "workspace:*",
         "@agenter/terminal-view": "workspace:*",
+        "@agenter/web-chat-view": "workspace:*",
         "@base-ui-components/react": "^1.0.0-rc.0",
         "@codemirror/autocomplete": "^6.20.1",
         "@codemirror/lang-markdown": "^6.5.0",
@@ -296,6 +320,8 @@
     "@agenter/terminal-view": ["@agenter/terminal-view@workspace:packages/terminal-view"],
 
     "@agenter/tui": ["@agenter/tui@workspace:packages/tui"],
+
+    "@agenter/web-chat-view": ["@agenter/web-chat-view@workspace:packages/web-chat-view"],
 
     "@agenter/webui": ["@agenter/webui@workspace:packages/webui"],
 

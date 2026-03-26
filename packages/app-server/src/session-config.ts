@@ -139,12 +139,15 @@ export const resolveSessionConfig = async (
   cwd: string,
   options: {
     avatar?: string;
+    homeDir?: string;
   } = {},
 ): Promise<ResolvedSessionConfig> => {
+  const homeDir = options.homeDir ?? homedir();
   const loaded = await loadSettings({
     projectRoot: cwd,
     cwd,
     avatar: options.avatar,
+    homeDir,
   });
   const settings = loaded.settings;
   const terminalSettings = settings.terminal ?? {};
@@ -195,7 +198,7 @@ export const resolveSessionConfig = async (
   const avatar = resolveAvatarSources({
     nickname: settings.avatar,
     projectRoot: cwd,
-    homeDir: homedir(),
+    homeDir,
   });
   const avatarPromptPaths = resolveAvatarPromptPaths(avatar);
   const promptRoot = prompt.rootDir ? toAbsolute(prompt.rootDir, cwd) : avatar.sources.at(-1)?.path;
@@ -249,7 +252,7 @@ export const resolveSessionConfig = async (
     bootTerminals,
     tasks: {
       sources: settings.tasks?.sources ?? [
-        { name: "user", path: resolve(homedir(), ".agenter", "tasks") },
+        { name: "user", path: resolve(homeDir, ".agenter", "tasks") },
         { name: "workspace", path: resolve(agentCwd, ".agenter", "tasks") },
       ],
     },

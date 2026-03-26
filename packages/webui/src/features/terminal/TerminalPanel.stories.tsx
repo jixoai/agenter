@@ -9,7 +9,7 @@ const runtime = {
   sessionId: "session-1",
   started: true,
   activityState: "active",
-  loopPhase: "waiting_commits",
+  schedulerPhase: "waiting_commits",
   stage: "act",
   focusedTerminalId: "iflow",
   focusedTerminalIds: ["iflow"],
@@ -28,8 +28,8 @@ const runtime = {
     },
   ],
   tasks: [],
-  loopKernelState: null,
-  loopInputSignals: {
+  schedulerState: null,
+  schedulerSignals: {
     user: { version: 0, timestamp: null },
     terminal: { version: 1, timestamp: null },
     task: { version: 0, timestamp: null },

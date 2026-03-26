@@ -14,12 +14,15 @@ describe("Feature: chat route status resolution", () => {
         notice: "Unknown error",
         session: {
           status: "running",
+          lastError: undefined,
         },
         runtime: {
           started: true,
           terminalCount: 1,
-          loopPhase: "waiting_commits",
+          schedulerPhase: "waiting_commits",
           stage: "idle",
+          lastError: null,
+          scheduler: null,
         },
       }),
     ).toEqual({
@@ -31,6 +34,7 @@ describe("Feature: chat route status resolution", () => {
   test("Scenario: Given a stopped session When resolving the route pill and activity state Then the chat surface offers one start action", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
+      lastError: undefined,
     };
 
     expect(phaseToStatus(session, undefined)).toBe("stopped");
@@ -46,12 +50,15 @@ describe("Feature: chat route status resolution", () => {
   test("Scenario: Given a paused session When resolving the route pill and notice Then the chat surface offers resume while avoiding duplicated warning banners", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "paused",
+      lastError: undefined,
     };
     const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
       started: true,
       terminalCount: 1,
-      loopPhase: "waiting_commits",
+      schedulerPhase: "waiting_commits",
       stage: "idle",
+      lastError: null,
+      scheduler: null,
     };
 
     expect(phaseToStatus(session, runtime)).toBe("paused");
@@ -74,12 +81,15 @@ describe("Feature: chat route status resolution", () => {
   test("Scenario: Given a stale started runtime after stop When resolving the pill notice and activity Then stopped semantics win over runtime leftovers", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "stopped",
+      lastError: undefined,
     };
     const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
       started: true,
       terminalCount: 1,
-      loopPhase: "calling_model",
+      schedulerPhase: "calling_model",
       stage: "act",
+      lastError: null,
+      scheduler: null,
     };
 
     expect(phaseToStatus(session, runtime)).toBe("stopped");
@@ -97,6 +107,29 @@ describe("Feature: chat route status resolution", () => {
         runtime,
       }),
     ).toBeNull();
+  });
+
+  test("Scenario: Given the runtime reports a provider failure When resolving the route notice Then the UI surfaces the concrete backend error instead of a generic no-progress state", () => {
+    expect(
+      resolveChatRouteNotice({
+        notice: "",
+        session: {
+          status: "running",
+          lastError: undefined,
+        },
+        runtime: {
+          started: true,
+          terminalCount: 1,
+          schedulerPhase: "waiting_commits",
+          stage: "idle",
+          lastError: "402 status code ({\"error\":{\"message\":\"Insufficient Balance\"}})",
+          scheduler: null,
+        },
+      }),
+    ).toEqual({
+      tone: "destructive",
+      message: "Provider request failed: Insufficient Balance",
+    });
   });
 
   test("Scenario: Given chat hydration states When resolving the conversation surface Then empty-loading and ready-loading only appear during initial history hydration", () => {
@@ -135,5 +168,79 @@ describe("Feature: chat route status resolution", () => {
         cyclePaging: { hydrated: false, hasMore: true, loading: true, loadingOlder: false },
       }),
     ).toBe("empty-idle");
+  });
+
+  test("Scenario: Given unresolved attention debt in backoff When resolving route status Then the UI stays explicit about retry instead of looking idle", () => {
+    const session: Parameters<typeof phaseToStatus>[0] = {
+      status: "running",
+      lastError: undefined,
+    };
+    const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
+      started: true,
+      terminalCount: 1,
+      schedulerPhase: "waiting_commits",
+      stage: "idle",
+      lastError: null,
+      scheduler: {
+        runtimeStatus: "backoff",
+        waitingReason: "attention_backoff",
+        nextAutoWakeAt: Date.now() + 600,
+        backoffMs: 600,
+        retryCount: 2,
+        blockedReason: null,
+        lastProgressAt: Date.now() - 1_000,
+        lastError: null,
+      },
+    };
+
+    expect(phaseToStatus(session, runtime)).toBe("attention backoff");
+    expect(resolveSessionStatusPillState(session, runtime)).toEqual({
+      label: "Attention retrying",
+      tone: "warning",
+      primaryActionLabel: "Stop session",
+      primaryAction: "stop",
+      disabled: false,
+    });
+    expect(resolveChatRouteNotice({ notice: "", session, runtime })).toEqual({
+      tone: "warning",
+      message: "Attention work is waiting to retry in 600 ms.",
+    });
+  });
+
+  test("Scenario: Given unresolved attention debt is blocked When resolving route status Then the UI shows the blocked cause instead of idle completion", () => {
+    const session: Parameters<typeof phaseToStatus>[0] = {
+      status: "running",
+      lastError: undefined,
+    };
+    const runtime: NonNullable<Parameters<typeof phaseToStatus>[1]> = {
+      started: true,
+      terminalCount: 1,
+      schedulerPhase: "waiting_commits",
+      stage: "idle",
+      lastError: null,
+      scheduler: {
+        runtimeStatus: "blocked",
+        waitingReason: "blocked",
+        nextAutoWakeAt: null,
+        backoffMs: null,
+        retryCount: 3,
+        blockedReason: "Provider request failed: Missing API key",
+        lastProgressAt: Date.now() - 5_000,
+        lastError: null,
+      },
+    };
+
+    expect(phaseToStatus(session, runtime)).toBe("attention blocked");
+    expect(resolveSessionStatusPillState(session, runtime)).toEqual({
+      label: "Attention blocked",
+      tone: "warning",
+      primaryActionLabel: "Stop session",
+      primaryAction: "stop",
+      disabled: false,
+    });
+    expect(resolveChatRouteNotice({ notice: "", session, runtime })).toEqual({
+      tone: "warning",
+      message: "Provider request failed: Missing API key",
+    });
   });
 });

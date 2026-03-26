@@ -107,6 +107,21 @@ const inferVendorFromBaseUrl = (baseUrl: string | undefined): string | undefined
   return undefined;
 };
 
+const normalizeModelForBaseUrl = (model: string, baseUrl: string | undefined): string => {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl)?.toLowerCase();
+  const normalizedModel = model.trim();
+  if (!normalizedBaseUrl) {
+    return normalizedModel;
+  }
+  if (
+    normalizedBaseUrl.includes("api.kimi.com/coding") &&
+    (normalizedModel === "kimi-k2" || normalizedModel === "kimi-k2.5")
+  ) {
+    return "kimi-for-coding";
+  }
+  return normalizedModel;
+};
+
 const withSharedFields = (
   input: AiProviderSharedFields,
   patch: Pick<AiProviderSettings, "apiStandard" | "vendor"> & Partial<AiProviderSettings>,
@@ -115,7 +130,7 @@ const withSharedFields = (
   vendor: patch.vendor,
   profile: patch.profile,
   extensions: patch.extensions,
-  model: input.model,
+  model: normalizeModelForBaseUrl(input.model, input.baseUrl),
   apiKey: input.apiKey,
   apiKeyEnv: input.apiKeyEnv,
   baseUrl: normalizeBaseUrl(input.baseUrl),
@@ -141,8 +156,14 @@ export const normalizeAiProviderSettings = (input: AiProviderInputSettings): AiP
       return withSharedFields(input, { apiStandard: "openai-chat", vendor: "deepseek" });
     case "openai":
       return withSharedFields(input, { apiStandard: "openai-responses", vendor: "openai" });
-    case "anthropic":
-      return withSharedFields(input, { apiStandard: "anthropic", vendor: "anthropic" });
+    case "anthropic": {
+      const vendor = inferVendorFromBaseUrl(input.baseUrl) ?? "anthropic";
+      return withSharedFields(input, {
+        apiStandard: "anthropic",
+        vendor,
+        profile: vendor === "anthropic" ? undefined : "compatible",
+      });
+    }
     case "gemini":
       return withSharedFields(input, { apiStandard: "gemini", vendor: "google" });
     case "grok":
@@ -171,4 +192,3 @@ export const normalizeAiProviderSettings = (input: AiProviderInputSettings): AiP
 export const aiProviderSchema = z
   .union([canonicalAiProviderSchema, legacyAiProviderSchema])
   .transform((input) => normalizeAiProviderSettings(input));
-

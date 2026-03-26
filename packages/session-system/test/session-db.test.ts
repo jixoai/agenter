@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -71,6 +72,95 @@ describe("Feature: session-system ledger persistence", () => {
       expect(db.getModelCallByCycleId(cycle.id)?.id).toBe(model.id);
       expect(db.listApiCallsByModelCall(model.id).map((item) => item.id)).toEqual([api.id]);
       expect(db.getBlockById(block2.id)?.tool).toEqual({ name: "terminal_read", ok: true });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given multiple model attempts for the same cycle When the ledger persists them Then cycle lookup returns the newest attempt instead of crashing", () => {
+    const db = createDb();
+    try {
+      const cycle = db.appendCycle({ result: { step: "collect" } });
+      const first = db.appendModelCall({
+        cycleId: cycle.id,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        request: { attempt: 1 },
+        error: { message: "attention.no_progress" },
+        status: "error",
+      });
+      const second = db.appendModelCall({
+        cycleId: cycle.id,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        request: { attempt: 2 },
+        response: { ok: true },
+        status: "done",
+      });
+
+      expect(db.listModelCalls().map((item) => item.id)).toEqual([first.id, second.id]);
+      expect(db.getModelCallByCycleId(cycle.id)?.id).toBe(second.id);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given a legacy session db with unique cycle-bound model calls When the db migrates Then retry attempts for one cycle become legal", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agenter-session-db-legacy-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "session.db");
+    const legacy = new Database(filePath, { create: true, strict: true });
+    legacy.exec(`
+      create table session_head (
+        id integer primary key check (id = 1),
+        head_cycle_id integer,
+        updated_at integer not null
+      );
+      insert into session_head (id, head_cycle_id, updated_at) values (1, null, 0);
+      create table session_cycle (
+        id integer primary key autoincrement,
+        seq integer not null unique,
+        prev_cycle_id integer,
+        created_at integer not null,
+        wake_json text not null,
+        collected_inputs_json text not null,
+        extends_json text not null,
+        result_json text not null
+      );
+      create table model_call (
+        id integer primary key autoincrement,
+        cycle_id integer not null unique,
+        created_at integer not null,
+        status text not null default 'done',
+        completed_at integer,
+        provider text not null,
+        model text not null,
+        request_json text not null,
+        response_json text,
+        error_json text,
+        trace_json text,
+        outcome_json text
+      );
+      insert into session_cycle (seq, prev_cycle_id, created_at, wake_json, collected_inputs_json, extends_json, result_json)
+      values (1, null, 1000, '{}', '[]', '{}', '{}');
+      insert into model_call (cycle_id, created_at, status, completed_at, provider, model, request_json, response_json, error_json, trace_json, outcome_json)
+      values (1, 1000, 'error', null, 'deepseek', 'deepseek-chat', '{"attempt":1}', null, '{"message":"first"}', null, null);
+    `);
+    legacy.close();
+
+    const db = new SessionDb(filePath);
+    try {
+      const second = db.appendModelCall({
+        cycleId: 1,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        request: { attempt: 2 },
+        response: { ok: true },
+        status: "done",
+      });
+      expect(second.id).toBeGreaterThan(1);
+      expect(db.getModelCallByCycleId(1)?.id).toBe(second.id);
+      expect(db.listModelCalls().map((item) => item.cycleId)).toEqual([1, 1]);
     } finally {
       db.close();
     }

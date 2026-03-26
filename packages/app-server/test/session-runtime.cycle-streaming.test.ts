@@ -76,7 +76,7 @@ describe("Feature: session runtime live cycle projection", () => {
     internal.handleAssistantStreamUpdate({
       kind: "tool_call",
       toolCallId: "tool-1",
-      toolName: "attention_update",
+      toolName: "attention_item_patch",
       argsText: '{"content":"Streaming reply',
       timestamp: 12,
     });
@@ -89,7 +89,7 @@ describe("Feature: session runtime live cycle projection", () => {
     internal.handleAssistantStreamUpdate({
       kind: "tool_result",
       toolCallId: "tool-1",
-      toolName: "attention_update",
+      toolName: "attention_item_patch",
       ok: true,
       result: { ok: true, id: 7 },
       timestamp: 13,

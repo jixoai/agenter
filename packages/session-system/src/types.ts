@@ -1,3 +1,12 @@
+import type {
+  SessionTerminalOutcome,
+  SessionTraceEvent,
+  SessionTraceIdentity,
+  SessionTraceLink,
+  SessionTraceRef,
+  SessionTraceStatus,
+} from "./trace-types";
+
 export type SessionCollectedInputPart =
   | { type: "text"; text: string }
   | {
@@ -55,17 +64,26 @@ export interface SessionCycleInsert {
   result?: Record<string, unknown>;
 }
 
+export interface SessionCycleUpdate {
+  wake?: Record<string, unknown>;
+  collectedInputs?: SessionCollectedInput[];
+  extendsRecord?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+}
+
 export interface SessionModelCallRecord {
   id: number;
   cycleId: number;
   createdAt: number;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   completedAt?: number;
   provider: string;
   model: string;
   request: unknown;
   response?: unknown;
   error?: unknown;
+  trace?: SessionTraceIdentity;
+  outcome?: SessionTerminalOutcome;
 }
 
 export interface SessionModelCallInsert {
@@ -78,6 +96,8 @@ export interface SessionModelCallInsert {
   request: unknown;
   response?: unknown;
   error?: unknown;
+  trace?: SessionTraceIdentity;
+  outcome?: SessionTerminalOutcome;
 }
 
 export interface SessionModelCallUpdate {
@@ -85,6 +105,8 @@ export interface SessionModelCallUpdate {
   completedAt?: number | null;
   response?: unknown;
   error?: unknown;
+  trace?: SessionTraceIdentity;
+  outcome?: SessionTerminalOutcome;
 }
 
 export type SessionAssetKind = "image" | "video" | "file";
@@ -147,26 +169,53 @@ export interface SessionBlockInsert {
   tool?: SessionBlockToolMeta;
 }
 
-export type LoopbusTraceStatus = "ok" | "error" | "running";
+export type LoopbusTraceStatus = SessionTraceStatus;
 
 export interface LoopbusTraceRecord {
   id: number;
   cycleId: number;
   seq: number;
-  step: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string | null;
+  kind: string;
+  name: string;
   status: LoopbusTraceStatus;
   startedAt: number;
   endedAt: number;
-  detail: Record<string, unknown>;
+  refs: SessionTraceRef[];
+  links: SessionTraceLink[];
+  events: SessionTraceEvent[];
+  attributes: Record<string, unknown>;
+  outcome?: SessionTerminalOutcome;
 }
 
 export interface LoopbusTraceInsert {
   cycleId: number;
-  step: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string | null;
+  kind: string;
+  name: string;
   status: LoopbusTraceStatus;
   startedAt: number;
   endedAt: number;
-  detail?: Record<string, unknown>;
+  refs?: SessionTraceRef[];
+  links?: SessionTraceLink[];
+  events?: SessionTraceEvent[];
+  attributes?: Record<string, unknown>;
+  outcome?: SessionTerminalOutcome;
+}
+
+export interface LoopbusTraceUpdate {
+  parentSpanId?: string | null;
+  status?: LoopbusTraceStatus;
+  endedAt?: number;
+  refs?: SessionTraceRef[];
+  links?: SessionTraceLink[];
+  events?: SessionTraceEvent[];
+  attributes?: Record<string, unknown>;
+  outcome?: SessionTerminalOutcome;
 }
 
 export type LoopbusStatePatchOperation =

@@ -1,5 +1,16 @@
 export { SessionDb } from "./session-db";
 export type {
+  SessionTerminalOutcome,
+  SessionTerminalOutcomeCode,
+  SessionTraceEvent,
+  SessionTraceEventStatus,
+  SessionTraceIdentity,
+  SessionTraceLink,
+  SessionTraceRef,
+  SessionTraceRefKind,
+  SessionTraceStatus,
+} from "./trace-types";
+export type {
   ApiCallInsert,
   ApiCallRecord,
   LoopbusStateLogInsert,
@@ -7,6 +18,7 @@ export type {
   LoopbusStatePatchOperation,
   LoopbusTraceInsert,
   LoopbusTraceRecord,
+  LoopbusTraceUpdate,
   ReversePage,
   ReverseTimeCursor,
   SessionAssetInsert,
@@ -23,6 +35,7 @@ export type {
   SessionCollectedInputPart,
   SessionCycleInsert,
   SessionCycleRecord,
+  SessionCycleUpdate,
   SessionHeadRecord,
   SessionModelCallInsert,
   SessionModelCallRecord,

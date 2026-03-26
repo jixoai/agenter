@@ -400,6 +400,23 @@ export class TerminalViewElement extends LitElement {
   private stageHeight = 0;
   private screenWidth = 0;
   private screenHeight = 0;
+  private firstUpdateFramePending = false;
+
+  private scheduleAfterUpdate(callback: () => void): void {
+    const run = () => {
+      if (!this.isConnected) {
+        return;
+      }
+      callback();
+    };
+
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => run());
+      return;
+    }
+
+    setTimeout(run, 0);
+  }
 
   createRenderRoot(): this {
     return this;
@@ -426,16 +443,36 @@ export class TerminalViewElement extends LitElement {
   }
 
   firstUpdated(): void {
-    this.ensureTerminal();
-    this.observeStage();
+    if (this.firstUpdateFramePending) {
+      return;
+    }
+    // Terminal bootstrap measures the xterm screen and stage, and those paths
+    // can request a follow-up update. Defer them out of Lit's first update
+    // commit so Storybook/browser rendering stays free of change-in-update warnings.
+    this.firstUpdateFramePending = true;
+    this.scheduleAfterUpdate(() => {
+      this.firstUpdateFramePending = false;
+      this.ensureTerminal();
+      this.observeStage();
+    });
   }
 
   updated(changed: Map<string, unknown>): void {
     if (changed.has("snapshot")) {
-      this.hydrateSnapshot(this.snapshot, "prop");
+      queueMicrotask(() => {
+        if (!this.isConnected) {
+          return;
+        }
+        this.hydrateSnapshot(this.snapshot, "prop");
+      });
     }
     if (changed.has("transportUrl") && !changed.has("snapshot")) {
-      this.syncSocket();
+      queueMicrotask(() => {
+        if (!this.isConnected) {
+          return;
+        }
+        this.syncSocket();
+      });
     }
   }
 
@@ -741,6 +778,7 @@ export class TerminalViewElement extends LitElement {
     this.screenHeight = roundedHeight;
     this.requestUpdate();
   }
+
 }
 
 export const defineTerminalView = (): void => {

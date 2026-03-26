@@ -1,241 +1,94 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  LoopBusPluginRuntime,
-  type AttentionDraft,
-  type LoopBusPlugin,
-  type LoopSourceReadResult,
-  type LoopSourceRef,
-} from "../src/loopbus-plugin-runtime";
+import { AttentionSystem } from "@agenter/attention-system";
 
-const createReadResult = (content: string): LoopSourceReadResult => ({
-  kind: "snapshot",
-  content,
-  bytes: content.length,
-  fromHash: null,
-  toHash: String(content.length),
-});
+import { LoopBusPluginRuntime, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 
-describe("Feature: LoopBus plugin runtime", () => {
-  test("Scenario: Given sequential-waterfall hooks When reading invalidated attention Then each hook receives the previous result", async () => {
-    const observed: string[] = [];
+describe("Feature: loopbus-attention-output-pipeline", () => {
+  test("Scenario: Given two attention committed hooks When runtime notifies a commit Then structured hook results are collected in order", async () => {
+    const calls: string[] = [];
     const plugins: LoopBusPlugin[] = [
       {
-        name: "source",
-        setup(api) {
-          api.registerSource({
+        name: "first-hook",
+        attentionCommitted: async () => {
+          calls.push("first");
+          return {
+            hookId: "first-hook",
             systemId: "message",
-            match: (ref) => ref.systemId === "message",
-            read: async () => createReadResult("base"),
-            toAttentionDrafts: async (_result, request) => [
-              {
-                sourceRef: request.ref,
-                content: "base",
-                from: "message",
-              },
-            ],
-          });
-        },
-        attentionWillLoad: {
-          order: "pre",
-          handler(request) {
-            observed.push("will:pre");
-            return { ...request, mode: "snapshot" };
-          },
+            status: "ignored",
+          };
         },
       },
       {
-        name: "transform-a",
-        attentionTransform(drafts) {
-          observed.push(`transform-a:${drafts[0]?.content ?? ""}`);
-          return drafts.map((draft) => ({ ...draft, content: `${draft.content}:a` }));
-        },
-      },
-      {
-        name: "transform-b",
-        attentionTransform: {
-          order: "post",
-          handler(drafts) {
-            observed.push(`transform-b:${drafts[0]?.content ?? ""}`);
-            return drafts.map((draft) => ({ ...draft, content: `${draft.content}:b` }));
-          },
+        name: "second-hook",
+        attentionCommitted: async () => {
+          calls.push("second");
+          return {
+            hookId: "second-hook",
+            systemId: "message",
+            status: "delivered",
+            target: { chatId: "chat-kzf" },
+          };
         },
       },
     ];
+
     const runtime = new LoopBusPluginRuntime(plugins);
     await runtime.setup();
 
-    runtime.invalidate({
-      systemId: "message",
-      subjectId: "message-system",
-      reason: "message-committed",
+    const system = new AttentionSystem();
+    system.createContext({ contextId: "ctx-1", owner: "jane" });
+    const { context, commit } = system.commit("ctx-1", {
+      meta: { author: "avatar:jane", source: "attention", replyTarget: { systemId: "message", subjectId: "chat-kzf" } },
+      scores: { hash1: 0 },
+      summary: "reply",
+      change: { type: "update", value: "reply", format: "text/plain" },
     });
 
-    const drafts = await runtime.readInvalidatedAttentionDrafts();
-    expect(drafts).toEqual<AttentionDraft[]>([
+    const results = await runtime.notifyAttentionCommitted({ contextId: "ctx-1", context, commit }, { contextId: "ctx-1" });
+    expect(results).toEqual([
       {
-        sourceRef: {
-          systemId: "message",
-          subjectId: "message-system",
-          reason: "message-committed",
-        },
-        content: "base:a:b",
-        from: "message",
+        hookId: "first-hook",
+        systemId: "message",
+        status: "ignored",
+      },
+      {
+        hookId: "second-hook",
+        systemId: "message",
+        status: "delivered",
+        target: { chatId: "chat-kzf" },
       },
     ]);
-    expect(observed).toEqual(["will:pre", "transform-a:base", "transform-b:base:a"]);
+    expect(calls).toEqual(["first", "second"]);
   });
 
-  test("Scenario: Given first hooks When deciding cycle start Then the first authoritative result wins", async () => {
-    const calls: string[] = [];
+  test("Scenario: Given lifecycle hooks When notify methods run Then abort signal is shared with plugins", async () => {
+    const received: Array<{ hook: string; aborted: boolean }> = [];
+    const controller = new AbortController();
     const runtime = new LoopBusPluginRuntime([
       {
-        name: "first-a",
-        cycleShouldStart() {
-          calls.push("a");
-          return null;
+        name: "lifecycle-observer",
+        cycleWillCallModel: async ({ signal }) => {
+          received.push({ hook: "will", aborted: signal.aborted });
         },
-      },
-      {
-        name: "first-b",
-        cycleShouldStart() {
-          calls.push("b");
-          return { allow: false, reason: "deferred" };
+        cycleDidCallModel: async ({ signal }) => {
+          received.push({ hook: "did", aborted: signal.aborted });
         },
-      },
-      {
-        name: "first-c",
-        cycleShouldStart() {
-          calls.push("c");
-          return { allow: true };
+        cycleDidAbort: async ({ signal }) => {
+          received.push({ hook: "abort", aborted: signal.aborted });
         },
       },
     ]);
-    await runtime.setup();
 
-    const result = await runtime.shouldStartCycle([
-      {
-        sourceRef: {
-          systemId: "message",
-          subjectId: "message-system",
-          reason: "message-committed",
-        },
-        content: "hello",
-        from: "user",
-      },
+    await runtime.notifyCycleWillCallModel({ cycleId: "cycle-1", signal: controller.signal });
+    await runtime.notifyCycleDidCallModel({ cycleId: "cycle-1", signal: controller.signal, result: { ok: true } });
+    controller.abort("stop");
+    await runtime.notifyCycleDidAbort({ cycleId: "cycle-1", signal: controller.signal, reason: "stop" });
+
+    expect(received).toEqual([
+      { hook: "will", aborted: false },
+      { hook: "did", aborted: false },
+      { hook: "abort", aborted: true },
     ]);
-
-    expect(result).toEqual({ allow: false, reason: "deferred" });
-    expect(calls).toEqual(["a", "b"]);
-  });
-
-  test("Scenario: Given parallel attentionCommitted hooks When drafts are committed Then every hook runs for the same batch", async () => {
-    const calls: string[] = [];
-    const runtime = new LoopBusPluginRuntime([
-      {
-        name: "source",
-        setup(api) {
-          api.registerSource({
-            systemId: "message",
-            match: (ref) => ref.systemId === "message",
-            read: async () => createReadResult("hello"),
-            toAttentionDrafts: async (_result, request) => [
-              {
-                sourceRef: request.ref,
-                content: "hello",
-                from: "message",
-              },
-            ],
-          });
-        },
-      },
-      {
-        name: "commit-a",
-        attentionCommitted(drafts) {
-          calls.push(`a:${drafts.length}`);
-        },
-      },
-      {
-        name: "commit-b",
-        attentionCommitted(drafts) {
-          calls.push(`b:${drafts.length}`);
-        },
-      },
-    ]);
-    await runtime.setup();
-
-    runtime.invalidate({
-      systemId: "message",
-      subjectId: "parallel-check",
-      reason: "message-committed",
-    });
-
-    const drafts = await runtime.readInvalidatedAttentionDrafts();
-    expect(drafts).toHaveLength(1);
-    expect(calls.sort()).toEqual(["a:1", "b:1"]);
-  });
-
-  test("Scenario: Given exposed services and invalidations When plugins setup Then services are shared and invalidations are coalesced by subject", async () => {
-    const refs: LoopSourceRef[] = [];
-    const runtime = new LoopBusPluginRuntime([
-      {
-        name: "service-owner",
-        setup(api) {
-          api.expose("terminal.focus", {
-            record(ref: LoopSourceRef) {
-              refs.push(ref);
-            },
-          });
-          api.registerSource({
-            systemId: "terminal",
-            match: (ref) => ref.systemId === "terminal",
-            read: async (request) => createReadResult(request.ref.subjectId),
-            toAttentionDrafts: async (result, request) => [
-              {
-                sourceRef: request.ref,
-                content: result.content,
-                from: "terminal",
-              },
-            ],
-          });
-        },
-      },
-      {
-        name: "service-user",
-        setup(api) {
-          const service = api.useExposed<{ record: (ref: LoopSourceRef) => void }>("terminal.focus");
-          service?.record({
-            systemId: "terminal",
-            subjectId: "iflow",
-            reason: "focus-replaced",
-          });
-          api.invalidate({
-            systemId: "terminal",
-            subjectId: "iflow",
-            reason: "semantic-change",
-            versionHint: 1,
-          });
-          api.invalidate({
-            systemId: "terminal",
-            subjectId: "iflow",
-            reason: "semantic-change",
-            versionHint: 2,
-          });
-        },
-      },
-    ]);
-    await runtime.setup();
-
-    const drafts = await runtime.readInvalidatedAttentionDrafts();
-    expect(refs).toEqual([
-      {
-        systemId: "terminal",
-        subjectId: "iflow",
-        reason: "focus-replaced",
-      },
-    ]);
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0]?.content).toBe("iflow");
-    expect(drafts[0]?.sourceRef.versionHint).toBe(2);
   });
 });

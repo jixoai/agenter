@@ -9,7 +9,7 @@ import { surfaceToneClassName } from "../../components/ui/surface";
 import { IconAction } from "./IconAction";
 import { StatusSignal } from "./StatusSignal";
 
-type WorkspaceShellTab = "chat" | "devtools" | "settings";
+type WorkspaceShellTab = "chat" | "terminals" | "devtools" | "settings";
 
 interface TopHeaderProps {
   locationLabel: string;
@@ -27,7 +27,8 @@ interface TopHeaderProps {
 }
 
 const TAB_ITEMS: TabItem[] = [
-  { id: "chat", label: "Chat" },
+  { id: "chat", label: "Chats" },
+  { id: "terminals", label: "Terminals" },
   { id: "devtools", label: "Devtools" },
   { id: "settings", label: "Settings" },
 ];
@@ -102,7 +103,9 @@ export const TopHeader = memo(
         if (!workspace) {
           return;
         }
-        workspace.onNavigate(value === "devtools" || value === "settings" ? value : "chat");
+        workspace.onNavigate(
+          value === "terminals" || value === "devtools" || value === "settings" ? value : "chat",
+        );
       },
       [workspace],
     );
@@ -165,7 +168,7 @@ export const TopHeader = memo(
             </div>
 
             <div className={cn("flex items-center gap-1.5", compactChrome && "gap-1")}>
-              {compactChrome && routeStatusSlot ? routeStatusSlot : null}
+              {routeStatusSlot}
               <StatusSignal
                 label={transport.label}
                 icon={transport.icon}
@@ -178,7 +181,12 @@ export const TopHeader = memo(
 
           {workspace ? (
             <div className="border-t border-slate-200/70 pt-2">
-              <Tabs items={TAB_ITEMS} value={workspace.activeTab} onValueChange={handleWorkspaceTabChange} />
+              <Tabs
+                items={TAB_ITEMS}
+                value={workspace.activeTab}
+                ariaLabel="Workspace routes"
+                onValueChange={handleWorkspaceTabChange}
+              />
             </div>
           ) : null}
         </div>

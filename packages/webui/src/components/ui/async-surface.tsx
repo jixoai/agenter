@@ -35,7 +35,7 @@ export const AsyncSurface = ({
 }: AsyncSurfaceProps) => {
   if (state === "empty-loading") {
     return (
-      <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>
+      <div className={cn("flex basis-0 min-w-0 flex-col", className)} data-async-surface-state={state}>
         {skeleton ?? (
           <div className="flex h-full items-center justify-center px-4 py-6 text-sm text-slate-500">{emptyLoadingLabel}</div>
         )}
@@ -47,11 +47,18 @@ export const AsyncSurface = ({
   }
 
   if (state === "empty-idle") {
-    return <div className={cn("flex basis-0 flex-col overflow-hidden", className)}>{empty}</div>;
+    return (
+      <div className={cn("flex basis-0 min-w-0 flex-col", className)} data-async-surface-state={state}>
+        {empty}
+      </div>
+    );
   }
 
   return (
-    <div className={cn("relative grid basis-0 grid-rows-[minmax(0,1fr)] overflow-hidden", className)}>
+    <div
+      className={cn("relative grid basis-0 min-w-0 grid-rows-[minmax(0,1fr)]", className)}
+      data-async-surface-state={state}
+    >
       {viewportClassName ? <div className={viewportClassName}>{children}</div> : children}
       {state === "ready-loading" ? (
         <div className="pointer-events-none absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/92 px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur">

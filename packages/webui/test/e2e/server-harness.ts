@@ -1,20 +1,254 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { AppKernel } from "@agenter/app-server";
+import { parse as parseYaml } from "yaml";
 
+import {
+  canProxyRealModelConfig,
+  resolveRealModelConfig,
+  startCachedRealModelProxy,
+  type RealModelConfig,
+} from "../../../app-server/test-support/real-model-cache";
+import { SessionDb } from "../../../session-system/src/session-db";
 import { startTrpcServer } from "../../../cli/src/trpc-server";
 import { E2E_FIXTURE_PATH } from "./fixture-path";
 
 const DEFAULT_HOST = "127.0.0.1";
 const MOCK_REPLY = "PLAYWRIGHT-MOCK-REPLY";
 
+interface MockChatRequestMessage {
+  role?: string;
+  content?: string | Array<{ type?: string; text?: string }>;
+}
+
+interface MockChatRequestBody {
+  messages?: MockChatRequestMessage[];
+}
+
+interface MockAttentionContextDocument {
+  contextId?: string;
+  context?: {
+    contextId?: string;
+    owner?: string;
+    content?: string;
+    scoreMap?: Record<string, number>;
+    headCommitId?: string | null;
+  };
+  recentCommits?: Array<{
+    summary?: string;
+    meta?: {
+      source?: string;
+      chatId?: string;
+      channelId?: string | null;
+      content?: string;
+    };
+  }>;
+}
+
+const parseChatRequestBody = (body: string): MockChatRequestBody | null => {
+  try {
+    return JSON.parse(body) as MockChatRequestBody;
+  } catch {
+    return null;
+  }
+};
+
+const flattenMessageContent = (content: MockChatRequestMessage["content"]): string => {
+  if (typeof content === "string") {
+    return content;
+  }
+  return (content ?? []).map((part) => (part?.type === "text" ? part.text ?? "" : "")).join("");
+};
+
+const extractAttentionContexts = (body: string): MockAttentionContextDocument[] => {
+  const parsed = parseChatRequestBody(body);
+  if (!parsed?.messages?.length) {
+    return [];
+  }
+  const docs: MockAttentionContextDocument[] = [];
+  for (const message of parsed.messages) {
+    if (message.role !== "user") {
+      continue;
+    }
+    const text = flattenMessageContent(message.content);
+    for (const match of text.matchAll(/```yaml\+attention_context\n([\s\S]*?)```/g)) {
+      const source = match[1]?.trim();
+      if (!source) {
+        continue;
+      }
+      try {
+        docs.push(parseYaml(source) as MockAttentionContextDocument);
+      } catch {
+        // ignore malformed blocks in the mock harness
+      }
+    }
+  }
+  return docs;
+};
+
+const requestContainsToolRound = (body: string): boolean =>
+  parseChatRequestBody(body)?.messages?.some((message) => message.role === "tool") ?? false;
+
+const hasPositiveScores = (scoreMap: Record<string, number> | undefined): boolean =>
+  Object.values(scoreMap ?? {}).some((value) => Number.isFinite(value) && value > 0);
+
+const zeroScores = (scoreMap: Record<string, number> | undefined): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(scoreMap ?? {})
+      .filter(([, value]) => Number.isFinite(value) && value > 0)
+      .map(([hash]) => [hash, 0]),
+  );
+
+const resolvePromptFromContext = (context: MockAttentionContextDocument): string | null => {
+  const recentMessage = [...(context.recentCommits ?? [])]
+    .reverse()
+    .find((commit) => commit.meta?.source === "message" && typeof commit.meta.content === "string");
+  return recentMessage?.meta?.content ?? context.context?.content ?? context.recentCommits?.at(-1)?.summary ?? null;
+};
+
+const resolveMockReply = (prompt: string | null): string => {
+  if (!prompt) {
+    return MOCK_REPLY;
+  }
+  if (prompt.includes("[lunch-return]")) {
+    return "gaubee 说中午吃蛋炒饭。";
+  }
+  if (prompt.includes("[lunch-relay]")) {
+    return "中午吃蛋炒饭。";
+  }
+  if (prompt.includes("[lunch-main]")) {
+    return "稍等，我去问一下。";
+  }
+  if (prompt.includes("gaubee在吗？问他中午吃什么")) {
+    return "稍等，我去问一下。";
+  }
+  if (prompt.includes("在吗？kzf 问你中午吃什么")) {
+    return "中午吃蛋炒饭。";
+  }
+  if (prompt.includes("转达给 kzf") || prompt.includes("转达给kzf")) {
+    return "gaubee 说中午吃蛋炒饭。";
+  }
+  return MOCK_REPLY;
+};
+
+const resolveChatId = (context: MockAttentionContextDocument): string | null => {
+  const recent = [...(context.recentCommits ?? [])].reverse();
+  for (const commit of recent) {
+    const chatId = commit.meta?.chatId ?? commit.meta?.channelId ?? null;
+    if (chatId) {
+      return chatId;
+    }
+  }
+  const contextId = context.context?.contextId ?? context.contextId ?? "";
+  return contextId.startsWith("ctx-chat-") ? `chat-${contextId.slice("ctx-chat-".length)}` : null;
+};
+
+const createMockToolCall = (id: string, name: string, input: unknown) => ({
+  id,
+  type: "function" as const,
+  function: {
+    name,
+    arguments: JSON.stringify(input),
+  },
+});
+
+const buildMockToolCalls = (body: string) => {
+  if (requestContainsToolRound(body)) {
+    return [];
+  }
+
+  const contexts = extractAttentionContexts(body).filter((context) => hasPositiveScores(context.context?.scoreMap));
+  if (contexts.length === 0) {
+    return [];
+  }
+
+  const toolCalls: Array<ReturnType<typeof createMockToolCall>> = [];
+
+  for (const context of contexts) {
+    const contextId = context.context?.contextId ?? context.contextId;
+    if (!contextId) {
+      continue;
+    }
+
+    const parentCommitIds = context.context?.headCommitId ? [context.context.headCommitId] : [];
+    const scores = zeroScores(context.context?.scoreMap);
+    if (Object.keys(scores).length === 0) {
+      continue;
+    }
+
+    if (contextId.startsWith("ctx-chat-")) {
+      const prompt = resolvePromptFromContext(context);
+      const reply = resolveMockReply(prompt);
+      const chatId = resolveChatId(context);
+      if (chatId) {
+        toolCalls.push(
+          createMockToolCall(`call-message-send-${chatId}`, "message_send", {
+            chatId,
+            content: reply,
+          }),
+        );
+      }
+      toolCalls.push(
+        createMockToolCall(`call-attention-commit-${contextId}`, "attention_commit", {
+          contextId,
+          parentCommitIds,
+          meta: {
+            author: "assistant",
+            source: "attention",
+            systemId: "message",
+            subjectId: chatId ?? contextId,
+            channelId: chatId ?? undefined,
+          },
+          scores,
+          summary: `Resolved ${contextId}`,
+          change: {
+            type: "update",
+            value: reply,
+            format: "text/plain",
+          },
+          stage: "done",
+          done: true,
+        }),
+      );
+      continue;
+    }
+
+    const systemId = contextId.startsWith("ctx-terminal-") ? "terminal" : "attention";
+    const subjectId = contextId.startsWith("ctx-terminal-") ? contextId.slice("ctx-terminal-".length) : contextId;
+    toolCalls.push(
+      createMockToolCall(`call-attention-commit-${contextId}`, "attention_commit", {
+        contextId,
+        parentCommitIds,
+        meta: {
+          author: "assistant",
+          source: "attention",
+          systemId,
+          subjectId,
+        },
+        scores,
+        summary: `Resolved ${contextId}`,
+        change: {
+          type: "update",
+          value: context.context?.content ?? `Resolved ${contextId}`,
+          format: "text/plain",
+        },
+        stage: "observe",
+        done: false,
+      }),
+    );
+  }
+
+  return toolCalls;
+};
+
 export interface E2EServerHarness {
   baseUrl: string;
   mockReply: string;
+  modelMode: "mock" | "real";
   stop: () => Promise<void>;
 }
 
@@ -47,18 +281,6 @@ const waitForHttpServer = async (url: string, timeoutMs = 30_000): Promise<void>
     await Bun.sleep(200);
   }
   throw new Error(`server did not become ready: ${url}`);
-};
-
-const waitForValue = async <T>(read: () => T | null, timeoutMs = 30_000): Promise<T> => {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const value = read();
-    if (value !== null) {
-      return value;
-    }
-    await Bun.sleep(150);
-  }
-  throw new Error("timed out while waiting for seeded long-history session");
 };
 
 const findFreePort = async (host: string): Promise<number> =>
@@ -105,7 +327,8 @@ const allocatePorts = async (host: string): Promise<HarnessPorts> => {
 const createMockModelServer = async (host: string, modelPort: number) => {
   const server = createHttpServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
-      await readRequestBody(request);
+      const body = await readRequestBody(request);
+      const toolCalls = buildMockToolCalls(body);
       response.statusCode = 200;
       response.setHeader("content-type", "application/json; charset=utf-8");
       response.end(
@@ -113,10 +336,12 @@ const createMockModelServer = async (host: string, modelPort: number) => {
           id: "mock-chat-completion",
           choices: [
             {
-              finish_reason: "stop",
+              finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
               message: {
                 role: "assistant",
-                content: MOCK_REPLY,
+                content: "",
+                reasoning_content: toolCalls.length > 0 ? "Resolve attention by dispatching the reply and clearing scores." : "",
+                tool_calls: toolCalls,
               },
             },
           ],
@@ -142,6 +367,83 @@ const createMockModelServer = async (host: string, modelPort: number) => {
   return server;
 };
 
+interface ModelServerHarness {
+  mode: "mock" | "real";
+  provider: {
+    apiStandard: RealModelConfig["apiStandard"];
+    vendor: string;
+    model: string;
+    apiKey: string;
+    baseUrl: string;
+    profile?: string;
+    headers?: Record<string, string>;
+  };
+  stop: () => Promise<void>;
+}
+
+const startModelServerHarness = async (host: string, modelPort: number): Promise<ModelServerHarness> => {
+  const realConfig = resolveRealModelConfig(resolve(import.meta.dir, "../../../.."));
+  if (realConfig && canProxyRealModelConfig(realConfig)) {
+    const realProxy = await startCachedRealModelProxy({
+      host,
+      port: modelPort,
+      config: realConfig,
+    });
+    return {
+      mode: "real",
+      provider: {
+        apiStandard: realProxy.config.apiStandard,
+        vendor: realProxy.config.vendor,
+        model: realProxy.config.model,
+        apiKey: "local-cache",
+        baseUrl: `http://${host}:${modelPort}`,
+        profile: realProxy.config.profile,
+        headers: realProxy.config.headers,
+      },
+      stop: realProxy.stop,
+    };
+  }
+
+  if (realConfig) {
+    return {
+      mode: "real",
+      provider: {
+        apiStandard: realConfig.apiStandard,
+        vendor: realConfig.vendor,
+        model: realConfig.model,
+        apiKey: realConfig.apiKey,
+        baseUrl: realConfig.baseUrl,
+        profile: realConfig.profile,
+        headers: realConfig.headers,
+      },
+      stop: async () => {},
+    };
+  }
+
+  const server = await createMockModelServer(host, modelPort);
+  return {
+    mode: "mock",
+    provider: {
+      apiStandard: "openai-chat",
+      vendor: "mock",
+      model: "mock-chat",
+      apiKey: "test-key",
+      baseUrl: `http://${host}:${modelPort}`,
+    },
+    stop: async () => {
+      await new Promise<void>((resolveStop, rejectStop) => {
+        server.close((error) => {
+          if (error) {
+            rejectStop(error);
+            return;
+          }
+          resolveStop();
+        });
+      });
+    },
+  };
+};
+
 const startWebDevServer = async (ports: HarnessPorts): Promise<Subprocess> => {
   const proc = Bun.spawn({
     cmd: [Bun.which("bun") ?? process.execPath, "run", "dev", "--host", ports.host, "--port", String(ports.webPort)],
@@ -158,7 +460,10 @@ const startWebDevServer = async (ports: HarnessPorts): Promise<Subprocess> => {
   return proc;
 };
 
-const createWorkspaceFixture = async (ports: HarnessPorts): Promise<{
+const createWorkspaceFixture = async (
+  ports: HarnessPorts,
+  modelProvider: ModelServerHarness["provider"],
+): Promise<{
   root: string;
   workspacePath: string;
   attachmentPath: string;
@@ -178,14 +483,16 @@ const createWorkspaceFixture = async (ports: HarnessPorts): Promise<{
     JSON.stringify(
       {
         ai: {
-          activeProvider: "mock-openai-chat",
+          activeProvider: "e2e-openai-chat",
           providers: {
-            "mock-openai-chat": {
-              apiStandard: "openai-chat",
-              vendor: "mock",
-              model: "mock-chat",
-              apiKey: "test-key",
-              baseUrl: `http://${ports.host}:${ports.modelPort}`,
+            "e2e-openai-chat": {
+              apiStandard: modelProvider.apiStandard,
+              vendor: modelProvider.vendor,
+              profile: modelProvider.profile,
+              headers: modelProvider.headers,
+              model: modelProvider.model,
+              apiKey: modelProvider.apiKey,
+              baseUrl: modelProvider.baseUrl,
             },
           },
         },
@@ -223,14 +530,14 @@ const createWorkspaceFixture = async (ports: HarnessPorts): Promise<{
   };
 };
 
-const seedRealHistorySession = async (
+const seedPersistedHistorySession = async (
   kernel: AppKernel,
-  input: { workspacePath: string; attachmentPath: string },
+  input: { workspacePath: string; attachmentPath: string; turns?: number },
 ): Promise<{ sessionId: string; sessionName: string; turns: number }> => {
-  const turns = 14;
+  const turns = input.turns ?? 14;
   const session = await kernel.createSession({
     cwd: input.workspacePath,
-    name: "Real history fixture",
+    name: "Persisted history fixture",
   });
   const assetBytes = new Uint8Array(await readFile(input.attachmentPath));
   const [attachment] = await kernel.uploadSessionAssets(session.id, [
@@ -241,20 +548,66 @@ const seedRealHistorySession = async (
     },
   ]);
 
-  for (let turn = 1; turn <= turns; turn += 1) {
-    const result = await kernel.sendChat(
-      session.id,
-      `History prompt ${turn}: confirm the long persisted conversation turn ${turn}.`,
-      turn === 1 && attachment ? [attachment.assetId] : [],
-    );
-    if (!result.ok) {
-      throw new Error(result.reason ?? `failed to seed turn ${turn}`);
+  const db = new SessionDb(join(session.sessionRoot, "session.db"));
+  try {
+    const baseTimestamp = Date.now() - turns * 120_000;
+    let prevCycleId: number | null = null;
+    let headCycleId: number | null = null;
+
+    for (let turn = 1; turn <= turns; turn += 1) {
+      const cycleTimestamp = baseTimestamp + (turn - 1) * 120_000;
+      const prompt = `History prompt ${turn}: confirm the long persisted conversation turn ${turn}.`;
+      const reply = `History reply ${turn}: completed the visible conversation turn ${turn}.`;
+      const cycle = db.appendCycle({
+        prevCycleId,
+        createdAt: cycleTimestamp,
+        wake: { source: "e2e-history" },
+        collectedInputs: [
+          {
+            source: "message",
+            sourceId: `history-user-${turn}`,
+            role: "user",
+            name: "History prompt",
+            parts: [{ type: "text", text: prompt }],
+            meta: {
+              chatId: "chat-main",
+            },
+          },
+        ],
+        extendsRecord: {
+          seededBy: "playwright",
+        },
+        result: {
+          status: "done",
+        },
+      });
+      prevCycleId = cycle.id;
+      headCycleId = cycle.id;
+
+      const userBlock = db.appendBlock({
+        cycleId: cycle.id,
+        createdAt: cycleTimestamp,
+        role: "user",
+        channel: "user_input",
+        format: "markdown",
+        content: prompt,
+      });
+      if (turn === 1 && attachment) {
+        db.linkBlockAssets(userBlock.id, [attachment.assetId]);
+      }
+      db.appendBlock({
+        cycleId: cycle.id,
+        createdAt: cycleTimestamp + 60_000,
+        role: "assistant",
+        channel: "to_user",
+        format: "markdown",
+        content: reply,
+      });
     }
 
-    await waitForValue(() => {
-      const items = kernel.listChatMessages(session.id, 0, turns * 4);
-      return items.length >= turn * 2 ? items : null;
-    });
+    db.setHead(headCycleId, baseTimestamp + turns * 120_000);
+  } finally {
+    db.close();
   }
 
   return {
@@ -266,8 +619,8 @@ const seedRealHistorySession = async (
 
 export const startE2EServerHarness = async (host = process.env.PLAYWRIGHT_WEB_HOST ?? DEFAULT_HOST): Promise<E2EServerHarness> => {
   const ports = await allocatePorts(host);
-  const fixture = await createWorkspaceFixture(ports);
-  const modelServer = await createMockModelServer(ports.host, ports.modelPort);
+  const modelServer = await startModelServerHarness(ports.host, ports.modelPort);
+  const fixture = await createWorkspaceFixture(ports, modelServer.provider);
   const trpc = await startTrpcServer({
     host: ports.host,
     port: ports.trpcPort,
@@ -275,9 +628,10 @@ export const startE2EServerHarness = async (host = process.env.PLAYWRIGHT_WEB_HO
     globalSessionRoot: fixture.globalSessionRoot,
     workspacesPath: fixture.workspacesPath,
   });
-  const historySession = await seedRealHistorySession(trpc.kernel, {
+  const historySession = await seedPersistedHistorySession(trpc.kernel, {
     workspacePath: fixture.workspacePath,
     attachmentPath: fixture.attachmentPath,
+    turns: 14,
   });
   await writeFile(
     E2E_FIXTURE_PATH,
@@ -286,6 +640,7 @@ export const startE2EServerHarness = async (host = process.env.PLAYWRIGHT_WEB_HO
         workspacePath: fixture.workspacePath,
         attachmentPath: fixture.attachmentPath,
         mockReply: MOCK_REPLY,
+        modelMode: modelServer.mode,
         historySessionId: historySession.sessionId,
         historySessionName: historySession.sessionName,
         historyTurns: historySession.turns,
@@ -299,19 +654,12 @@ export const startE2EServerHarness = async (host = process.env.PLAYWRIGHT_WEB_HO
   return {
     baseUrl: `http://${ports.host}:${ports.webPort}`,
     mockReply: MOCK_REPLY,
+    modelMode: modelServer.mode,
     stop: async () => {
       webDev.kill();
       await webDev.exited;
       await trpc.stop();
-      await new Promise<void>((resolve, reject) => {
-        modelServer.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await modelServer.stop();
       await rm(fixture.root, { recursive: true, force: true });
       await rm(E2E_FIXTURE_PATH, { force: true });
     },

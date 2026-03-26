@@ -145,6 +145,7 @@ export {
 export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 export {
   SessionRuntime,
+  type SessionRuntimeAttentionState,
   type RuntimeEvent,
   type RuntimeEventMap,
   type SessionRuntimeModelDebug,

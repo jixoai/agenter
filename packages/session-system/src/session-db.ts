@@ -10,6 +10,7 @@ import type {
   LoopbusStateLogRecord,
   LoopbusTraceInsert,
   LoopbusTraceRecord,
+  LoopbusTraceUpdate,
   ReversePage,
   ReverseTimeCursor,
   SessionAssetInsert,
@@ -19,6 +20,7 @@ import type {
   SessionBlockRecord,
   SessionCycleInsert,
   SessionCycleRecord,
+  SessionCycleUpdate,
   SessionHeadRecord,
   SessionModelCallInsert,
   SessionModelCallRecord,
@@ -26,6 +28,7 @@ import type {
   TerminalActivityInsert,
   TerminalActivityRecord,
 } from "./types";
+import { decodeLoopTraceRow, encodeLoopTraceRow, mergeLoopTraceRecord, type StoredLoopTraceRow } from "./trace-row";
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -164,6 +167,34 @@ export class SessionDb {
     };
   }
 
+  updateCycle(id: number, input: SessionCycleUpdate): SessionCycleRecord {
+    const current = this.getCycleById(id);
+    if (!current) {
+      throw new Error(`cycle not found: ${id}`);
+    }
+    this.db
+      .query(
+        `update session_cycle
+         set wake_json = ?,
+             collected_inputs_json = ?,
+             extends_json = ?,
+             result_json = ?
+         where id = ?`,
+      )
+      .run(
+        toJson(input.wake ?? current.wake),
+        toJson(input.collectedInputs ?? current.collectedInputs),
+        toJson(input.extendsRecord ?? current.extendsRecord),
+        toJson(input.result ?? current.result),
+        id,
+      );
+    const record = this.getCycleById(id);
+    if (!record) {
+      throw new Error("failed to load updated cycle");
+    }
+    return record;
+  }
+
   listCycles(limit = 200): SessionCycleRecord[] {
     const safeLimit = Math.max(1, Math.min(limit, 1_000));
     const rows = this.db
@@ -291,8 +322,10 @@ export class SessionDb {
           model,
           request_json,
           response_json,
-          error_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          error_json,
+          trace_json,
+          outcome_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.cycleId,
@@ -304,6 +337,8 @@ export class SessionDb {
         toJson(input.request),
         input.response === undefined ? null : toJson(input.response),
         input.error === undefined ? null : toJson(input.error),
+        input.trace === undefined ? null : toJson(input.trace),
+        input.outcome === undefined ? null : toJson(input.outcome),
       );
     const row = this.getModelCallById(Number(result.lastInsertRowid));
     if (!row) {
@@ -315,7 +350,7 @@ export class SessionDb {
   getModelCallById(id: number): SessionModelCallRecord | null {
     const row = this.db
       .query(
-        `select id, cycle_id, created_at, status, completed_at, provider, model, request_json, response_json, error_json
+        `select id, cycle_id, created_at, status, completed_at, provider, model, request_json, response_json, error_json, trace_json, outcome_json
          from model_call where id = ?`,
       )
       .get(id) as
@@ -330,6 +365,8 @@ export class SessionDb {
           request_json: string;
           response_json: string | null;
           error_json: string | null;
+          trace_json: string | null;
+          outcome_json: string | null;
         }
       | null;
     if (!row) {
@@ -346,6 +383,8 @@ export class SessionDb {
       request: parseJson(row.request_json, null),
       response: row.response_json ? parseJson(row.response_json, null) : undefined,
       error: row.error_json ? parseJson(row.error_json, null) : undefined,
+      trace: row.trace_json ? parseJson(row.trace_json, null) ?? undefined : undefined,
+      outcome: row.outcome_json ? parseJson(row.outcome_json, null) ?? undefined : undefined,
     };
   }
 
@@ -356,7 +395,9 @@ export class SessionDb {
          set status = coalesce(?, status),
              completed_at = ?,
              response_json = ?,
-             error_json = ?
+             error_json = ?,
+             trace_json = ?,
+             outcome_json = ?
          where id = ?`,
       )
       .run(
@@ -364,6 +405,8 @@ export class SessionDb {
         input.completedAt ?? null,
         input.response === undefined ? null : toJson(input.response),
         input.error === undefined ? null : toJson(input.error),
+        input.trace === undefined ? null : toJson(input.trace),
+        input.outcome === undefined ? null : toJson(input.outcome),
         id,
       );
     const row = this.getModelCallById(id);
@@ -375,7 +418,7 @@ export class SessionDb {
 
   getModelCallByCycleId(cycleId: number): SessionModelCallRecord | null {
     const row = this.db
-      .query(`select id from model_call where cycle_id = ? limit 1`)
+      .query(`select id from model_call where cycle_id = ? order by id desc limit 1`)
       .get(cycleId) as { id: number } | null;
     return row ? this.getModelCallById(row.id) : null;
   }
@@ -776,6 +819,7 @@ export class SessionDb {
 
   appendLoopTrace(input: LoopbusTraceInsert): LoopbusTraceRecord {
     const seq = this.nextSeq('loopbus_trace', 'cycle_id', input.cycleId);
+    const encoded = encodeLoopTraceRow(input);
     const result = this.db
       .query(
         `insert into loopbus_trace (
@@ -788,10 +832,34 @@ export class SessionDb {
           detail_json
         ) values (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.cycleId, seq, input.step, input.status, input.startedAt, input.endedAt, toJson(input.detail ?? {}));
+      .run(input.cycleId, seq, encoded.step, input.status, input.startedAt, input.endedAt, encoded.detailJson);
     const row = this.getLoopTraceById(Number(result.lastInsertRowid));
     if (!row) {
       throw new Error('failed to load inserted loopbus_trace');
+    }
+    return row;
+  }
+
+  updateLoopTrace(id: number, input: LoopbusTraceUpdate): LoopbusTraceRecord {
+    const current = this.getLoopTraceById(id);
+    if (!current) {
+      throw new Error("failed to load current loopbus_trace");
+    }
+    const next = mergeLoopTraceRecord(current, input);
+    const encoded = encodeLoopTraceRow(next);
+    this.db
+      .query(
+        `update loopbus_trace
+         set step = ?,
+             status = ?,
+             ended_at = ?,
+             detail_json = ?
+         where id = ?`,
+      )
+      .run(encoded.step, next.status, next.endedAt, encoded.detailJson, id);
+    const row = this.getLoopTraceById(id);
+    if (!row) {
+      throw new Error("failed to load updated loopbus_trace");
     }
     return row;
   }
@@ -802,31 +870,11 @@ export class SessionDb {
         `select id, cycle_id, seq, step, status, started_at, ended_at, detail_json
          from loopbus_trace where id = ?`,
       )
-      .get(id) as
-      | {
-          id: number;
-          cycle_id: number;
-          seq: number;
-          step: string;
-          status: LoopbusTraceRecord['status'];
-          started_at: number;
-          ended_at: number;
-          detail_json: string;
-        }
-      | null;
+      .get(id) as StoredLoopTraceRow | null;
     if (!row) {
       return null;
     }
-    return {
-      id: row.id,
-      cycleId: row.cycle_id,
-      seq: row.seq,
-      step: row.step,
-      status: row.status,
-      startedAt: row.started_at,
-      endedAt: row.ended_at,
-      detail: parseJson(row.detail_json, {}),
-    };
+    return decodeLoopTraceRow(row);
   }
 
   listLoopTracesByCycle(cycleId: number, afterId = 0, limit = 200): LoopbusTraceRecord[] {
@@ -843,6 +891,30 @@ export class SessionDb {
       .query(`select id from loopbus_trace where id > ? order by id asc limit ?`)
       .all(afterId, safeLimit) as Array<{ id: number }>;
     return rows.map((row) => this.getLoopTraceById(row.id)).filter((row): row is LoopbusTraceRecord => row !== null);
+  }
+
+  listLoopTracesByRef(ref: string, limit = 200): LoopbusTraceRecord[] {
+    const safeLimit = Math.max(1, Math.min(limit, 1_000));
+    const rows = this.db
+      .query(`select id from loopbus_trace order by started_at desc, id desc`)
+      .all() as Array<{ id: number }>;
+    const matchedDescending: LoopbusTraceRecord[] = [];
+    for (const row of rows) {
+      const record = this.getLoopTraceById(row.id);
+      if (!record) {
+        continue;
+      }
+      if (
+        record.refs.some((item) => item.ref === ref) ||
+        record.links.some((item) => item.ref?.ref === ref)
+      ) {
+        matchedDescending.push(record);
+      }
+      if (matchedDescending.length >= safeLimit) {
+        break;
+      }
+    }
+    return matchedDescending.reverse();
   }
 
   listLoopTracesBefore(beforeId: number, limit = 200): LoopbusTraceRecord[] {
@@ -1192,7 +1264,7 @@ export class SessionDb {
 
       create table if not exists model_call (
         id integer primary key autoincrement,
-        cycle_id integer not null unique,
+        cycle_id integer not null,
         created_at integer not null,
         status text not null default 'done',
         completed_at integer,
@@ -1200,7 +1272,9 @@ export class SessionDb {
         model text not null,
         request_json text not null,
         response_json text,
-        error_json text
+        error_json text,
+        trace_json text,
+        outcome_json text
       );
 
       create index if not exists idx_model_call_cycle on model_call(cycle_id);
@@ -1298,6 +1372,9 @@ export class SessionDb {
 
     this.ensureColumn("model_call", "status", "alter table model_call add column status text not null default 'done'");
     this.ensureColumn("model_call", "completed_at", "alter table model_call add column completed_at integer");
+    this.ensureColumn("model_call", "trace_json", "alter table model_call add column trace_json text");
+    this.ensureColumn("model_call", "outcome_json", "alter table model_call add column outcome_json text");
+    this.ensureModelCallCycleMultiplicity();
     this.db.query(`update model_call set status = 'done' where status is null or status = ''`).run();
   }
 
@@ -1307,5 +1384,67 @@ export class SessionDb {
       return;
     }
     this.db.exec(ddl);
+  }
+
+  private ensureModelCallCycleMultiplicity(): void {
+    const row = this.db
+      .query(`select sql from sqlite_master where type = 'table' and name = 'model_call'`)
+      .get() as { sql: string | null } | null;
+    const sql = row?.sql ?? "";
+    if (!/cycle_id\s+integer\s+not\s+null\s+unique/i.test(sql)) {
+      return;
+    }
+
+    this.db.exec(`
+      begin;
+      create table model_call_v2 (
+        id integer primary key autoincrement,
+        cycle_id integer not null,
+        created_at integer not null,
+        status text not null default 'done',
+        completed_at integer,
+        provider text not null,
+        model text not null,
+        request_json text not null,
+        response_json text,
+        error_json text,
+        trace_json text,
+        outcome_json text
+      );
+      insert into model_call_v2 (
+        id,
+        cycle_id,
+        created_at,
+        status,
+        completed_at,
+        provider,
+        model,
+        request_json,
+        response_json,
+        error_json,
+        trace_json,
+        outcome_json
+      )
+      select
+        id,
+        cycle_id,
+        created_at,
+        status,
+        completed_at,
+        provider,
+        model,
+        request_json,
+        response_json,
+        error_json,
+        trace_json,
+        outcome_json
+      from model_call
+      order by id asc;
+      drop table model_call;
+      alter table model_call_v2 rename to model_call;
+      create index if not exists idx_model_call_cycle on model_call(cycle_id);
+      create index if not exists idx_model_call_created on model_call(created_at desc, id desc);
+      commit;
+    `);
   }
 }

@@ -88,4 +88,22 @@ describe("Feature: workspace path search", () => {
       rmSync(workspace, { recursive: true, force: true });
     }
   });
+
+  test("Scenario: Given a workspace deleted during lookup When searching paths Then the index degrades to an empty result instead of throwing", () => {
+    const workspace = createTempWorkspace();
+    const index = new WorkspacePathSearchIndex();
+    try {
+      mkdirSync(join(workspace, "src"), { recursive: true });
+      writeFileSync(join(workspace, "src", "index.ts"), "export const demo = true;\n", "utf8");
+
+      expect(index.search({ cwd: workspace, query: "@src", limit: 10 })[0]?.path).toBe("src/");
+
+      rmSync(workspace, { recursive: true, force: true });
+
+      expect(index.search({ cwd: workspace, query: "@src", limit: 10 })).toEqual([]);
+      expect(index.search({ cwd: workspace, query: "@src/", limit: 10 })).toEqual([]);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
 });

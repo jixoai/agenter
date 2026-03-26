@@ -1,7 +1,7 @@
 export type LongListResource =
   | "chat"
   | "cycles"
-  | "loopbus-trace"
+  | "observability-trace"
   | "model-calls"
   | "api-calls"
   | "terminal-activity";

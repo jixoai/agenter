@@ -5,6 +5,8 @@ import { DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../.
 import { cn } from "../../lib/utils";
 import type { ProjectedConversationMessage } from "./chat-projection";
 
+type ChatMessageActionInput = Pick<ProjectedConversationMessage, "content" | "role" | "cycleId">;
+
 export const markdownToPlainText = (value: string): string =>
   value
     .replace(/```[^\n]*\n?/g, "")
@@ -24,7 +26,7 @@ const copyToClipboard = async (value: string): Promise<void> => {
 };
 
 interface ChatMessageActionsProps {
-  message: ProjectedConversationMessage;
+  message: ChatMessageActionInput;
   onOpenDevtools?: (cycleId: number) => void;
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }

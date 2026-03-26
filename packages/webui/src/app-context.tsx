@@ -1,6 +1,8 @@
 import type {
+  AttentionQueryItem,
   DraftResolutionOutput,
-  ModelDebugOutput,
+  MessageChannelEntry,
+  MessageChannelGrantEntry,
   RuntimeClientState,
   RuntimeStore,
   WorkspaceSessionCounts,
@@ -42,10 +44,6 @@ export interface AppController {
   layerDraft: string;
   setLayerDraft: (content: string) => void;
   settingsStatus: string;
-  modelDebug: ModelDebugOutput | null;
-  modelDebugSessionId: string | null;
-  modelDebugLoading: boolean;
-  modelDebugError: string | null;
   getLongListPagingState: (input: LongListPagingInput) => LongListPagingState;
   searchWorkspacePaths: (input: { cwd: string; query: string; limit?: number }) => Promise<AIInputSuggestion[]>;
   createWorkspaceSession: (workspacePath: string) => Promise<string | null>;
@@ -57,14 +55,70 @@ export interface AppController {
   abortSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   sendChat: (sessionId: string, payload: { text: string; assets: File[] }) => Promise<void>;
+  ensureMessageChannels: (sessionId: string) => Promise<void>;
+  listMessageChannels: (sessionId: string) => Promise<MessageChannelEntry[]>;
+  createMessageChannel: (input: {
+    sessionId: string;
+    kind: "direct" | "room";
+    title?: string;
+    focus?: boolean;
+  }) => Promise<MessageChannelEntry>;
+  focusMessageChannels: (input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }) => Promise<MessageChannelEntry[]>;
+  sendMessageChannel: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    payload: { text: string; assets: File[] };
+  }) => Promise<void>;
+  updateMessageChannel: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+    };
+  }) => Promise<MessageChannelEntry>;
+  listMessageChannelGrants: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }) => Promise<MessageChannelGrantEntry[]>;
+  issueMessageChannelGrant: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId?: string;
+  }) => Promise<{
+    grantId: string;
+    chatId: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId?: string;
+    createdAt: number;
+    accessRole: "admin" | "member" | "readonly";
+    accessToken: string;
+    transportUrl?: string;
+  }>;
+  revokeMessageChannelGrant: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    grantId: string;
+  }) => Promise<{ ok: boolean }>;
   loadMoreChatMessages: (sessionId: string) => Promise<void>;
   loadMoreChatCycles: (sessionId: string) => Promise<void>;
   loadMoreTrace: (sessionId: string) => Promise<void>;
   loadMoreModel: (sessionId: string) => Promise<void>;
-  loadMoreApi: (sessionId: string) => Promise<void>;
   loadTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
   loadMoreTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
-  refreshModelDebug: (sessionId: string) => Promise<void>;
   toggleWorkspaceFavorite: (path: string) => Promise<void>;
   deleteWorkspace: (path: string) => Promise<void>;
   cleanMissingWorkspaces: () => Promise<void>;
@@ -74,13 +128,30 @@ export interface AppController {
   restoreWorkspaceSession: (sessionId: string) => Promise<void>;
   deleteWorkspaceSession: (sessionId: string) => Promise<void>;
   loadMoreWorkspaceSessions: () => Promise<void>;
+  ensureSettingsLayers: (workspacePath: string) => Promise<void>;
   refreshSettingsLayers: (workspacePath: string) => Promise<void>;
   loadSelectedLayer: (workspacePath: string, layerId: string) => Promise<void>;
   saveSelectedLayer: (workspacePath: string, layerId: string) => Promise<void>;
-  setChatVisibility: (input: { sessionId: string; visible: boolean; focused: boolean }) => Promise<void>;
-  consumeNotifications: (input: { sessionId: string; upToMessageId?: string | null }) => Promise<void>;
+  setChatVisibility: (input: {
+    sessionId: string;
+    chatId?: string;
+    visible: boolean;
+    focused: boolean;
+  }) => Promise<void>;
+  consumeNotifications: (input: { sessionId: string; chatId?: string; upToMessageId?: string | null }) => Promise<void>;
   hydrateSession: (sessionId: string) => Promise<void>;
-  retainApiCallStream: (sessionId: string) => () => void;
+  queryAttention: (input: {
+    sessionId: string;
+    contextId?: string;
+    hash?: string;
+    depth?: number;
+    author?: string;
+    source?: string;
+    text?: string;
+    offset?: number;
+    limit?: number;
+    minScore?: number;
+  }) => Promise<AttentionQueryItem[]>;
   listDirectories: (input?: {
     path?: string;
     includeHidden?: boolean;

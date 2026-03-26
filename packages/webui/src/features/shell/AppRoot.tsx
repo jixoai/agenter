@@ -6,6 +6,7 @@ import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { cn } from "../../lib/utils";
+import { buildSessionDevtoolsSearch } from "../attention/attention-devtools-route";
 import { SidebarNav, SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
 import { TopHeader } from "./TopHeader";
 import {
@@ -20,7 +21,19 @@ import {
 import { ShellLayoutProvider } from "./shell-layout-context";
 import { useAdaptiveViewport } from "./useAdaptiveViewport";
 
+const SESSION_DEVTOOLS_PATH_RE = /^\/session\/([^/]+)\/devtools$/;
+
+const extractSessionIdFromPath = (pathname: string): string | undefined => {
+  const match = SESSION_DEVTOOLS_PATH_RE.exec(pathname);
+  return match?.[1];
+};
+
+const isSessionDevtoolsPath = (pathname: string): boolean => SESSION_DEVTOOLS_PATH_RE.test(pathname);
+
 const routeLabelFromPath = (pathname: string): string => {
+  if (isSessionDevtoolsPath(pathname)) {
+    return "Devtools";
+  }
   if (pathname.startsWith("/workspace/")) {
     return "Workspace";
   }
@@ -30,8 +43,11 @@ const routeLabelFromPath = (pathname: string): string => {
   if (pathname === "/settings") {
     return "Settings";
   }
+  if (pathname === "/workspace/terminals") {
+    return "Terminals";
+  }
   if (pathname === "/workspace/chat") {
-    return "Chat";
+    return "Chats";
   }
   if (pathname === "/workspace/devtools") {
     return "Devtools";
@@ -42,24 +58,24 @@ const routeLabelFromPath = (pathname: string): string => {
   return "Quick Start";
 };
 
-const resolveWorkspaceTarget = (
-  pathname: string,
-): "/workspace/chat" | "/workspace/devtools" | "/workspace/settings" => {
-  if (pathname === "/workspace/devtools") {
-    return "/workspace/devtools";
-  }
-  if (pathname === "/workspace/settings") {
-    return "/workspace/settings";
-  }
-  return "/workspace/chat";
-};
-
 const resolveHeaderAiStatus = (
   routeSession: { status: string } | null,
-  routeRuntime?: { started: boolean; loopPhase: string } | null,
+  routeRuntime?:
+    | {
+        started: boolean;
+        schedulerPhase: string;
+        scheduler?: { runtimeStatus: string; unresolvedScoreCount?: number } | null;
+      }
+    | null,
 ): string | null => {
   if (routeRuntime?.started) {
-    return routeRuntime.loopPhase === "waiting_commits" ? "ready" : "working";
+    if (routeRuntime.scheduler?.runtimeStatus === "blocked") {
+      return "attention";
+    }
+    if (routeRuntime.scheduler?.runtimeStatus === "backoff" || routeRuntime.scheduler?.runtimeStatus === "waiting") {
+      return "working";
+    }
+    return routeRuntime.schedulerPhase === "waiting_commits" ? "ready" : "working";
   }
   if (routeSession?.status === "error") {
     return "attention";
@@ -85,7 +101,7 @@ export const AppRoot = () => {
 
   const searchParams =
     typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-  const routeSessionId = searchParams.get("sessionId") ?? undefined;
+  const routeSessionId = extractSessionIdFromPath(location.pathname) ?? searchParams.get("sessionId") ?? undefined;
   const routeSession = useRuntimeSelector(selectSessionChromeState(routeSessionId), equalSessionChromeState);
   const routeRuntime = useRuntimeSelector(selectHeaderRuntimeState(routeSessionId), equalHeaderRuntimeState);
   const runningSessionStates = useRuntimeSelector(selectRunningSessionsState, equalRunningSessionsState);
@@ -131,8 +147,6 @@ export const AppRoot = () => {
   );
 
   const runningSessions = useMemo<RunningSessionNavItem[]>(() => {
-    const targetRoute = resolveWorkspaceTarget(location.pathname);
-
     return runningSessionStates
       .map((session) => ({
         sessionId: session.sessionId,
@@ -143,9 +157,24 @@ export const AppRoot = () => {
         unreadCount: session.unreadCount,
         status: session.status,
         onSelect: () => {
+          if (isSessionDevtoolsPath(location.pathname)) {
+            void navigate({
+              to: "/session/$sessionId/devtools",
+              params: { sessionId: session.sessionId },
+              search: buildSessionDevtoolsSearch({ panel: "attention" }),
+            });
+            setMobileSidebarOpen(false);
+            return;
+          }
+          const targetRoute =
+            location.pathname === "/workspace/terminals"
+              ? "/workspace/terminals"
+              : location.pathname === "/workspace/settings"
+                ? "/workspace/settings"
+                : "/workspace/chat";
           void navigate({
             to: targetRoute,
-            search: { workspacePath: session.workspacePath, sessionId: session.sessionId },
+            search: { workspacePath: session.workspacePath, sessionId: session.sessionId, chatId: undefined },
           });
           setMobileSidebarOpen(false);
         },
@@ -163,7 +192,7 @@ export const AppRoot = () => {
 
   const showGlobalNotice =
     controller.notice.length > 0 && (location.pathname === "/" || location.pathname === "/workspaces");
-  const isWorkspaceRoute = location.pathname.startsWith("/workspace/");
+  const isWorkspaceRoute = location.pathname.startsWith("/workspace/") || isSessionDevtoolsPath(location.pathname);
   const showSidebarRail = adaptiveViewport.globalNavMode === "rail";
   const showDrawerTrigger = adaptiveViewport.globalNavMode === "drawer";
   const headerAiStatus = resolveHeaderAiStatus(routeSession, routeRuntime);

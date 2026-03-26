@@ -33,8 +33,8 @@ export const Sheet = ({ open, onOpenChange, title, side, children }: SheetProps)
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="data-[ending-style]:animate-out data-[starting-style]:animate-in fixed inset-0 z-40 bg-slate-900/55" />
-        <DialogPrimitive.Popup className={cn(sheetVariants({ side }))}>
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-40 bg-slate-900/55 data-[closed]:invisible data-[closed]:pointer-events-none data-[ending-style]:animate-out data-[starting-style]:animate-in" />
+        <DialogPrimitive.Popup className={cn(sheetVariants({ side }), "data-[closed]:invisible data-[closed]:pointer-events-none")}>
           <header className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
             <DialogPrimitive.Title className="typo-title-3 text-slate-900">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Close
