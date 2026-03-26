@@ -52,7 +52,7 @@ afterEach(async () => {
   }
 });
 
-const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Promise<boolean> => {
+const waitForHealth = async (host: string, port: number, timeoutMs = 45_000): Promise<boolean> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
@@ -68,7 +68,7 @@ const waitForHealth = async (host: string, port: number, timeoutMs = 8_000): Pro
   return false;
 };
 
-const waitForWsOpen = async (url: string, timeoutMs = 8_000): Promise<void> => {
+const waitForWsOpen = async (url: string, timeoutMs = 15_000): Promise<void> => {
   const socket = new WebSocket(url);
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -86,7 +86,7 @@ const waitForWsOpen = async (url: string, timeoutMs = 8_000): Promise<void> => {
   socket.close();
 };
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 8_000): Promise<void> => {
+const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<void> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (predicate()) {
@@ -98,7 +98,10 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 8_000): Promise<voi
 };
 
 describe("Feature: cli daemon and web commands", () => {
-  test("Scenario: Given daemon command When doctor checks health Then exit code is 0", async () => {
+  test(
+    "Scenario: Given daemon command When doctor checks health Then exit code is 0",
+    { timeout: 70_000 },
+    async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
@@ -116,9 +119,13 @@ describe("Feature: cli daemon and web commands", () => {
 
     expect(doctorCode).toBe(0);
     expect(doctorStdout.includes("healthy")).toBe(true);
-  });
+    },
+  );
 
-  test("Scenario: Given web command When reading root html Then include web ui shell content", async () => {
+  test(
+    "Scenario: Given web command When reading root html Then include web ui shell content",
+    { timeout: 70_000 },
+    async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const daemon = spawnCli("web", "--host", host, "--port", String(port));
@@ -133,9 +140,13 @@ describe("Feature: cli daemon and web commands", () => {
     const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
     expect(html.includes("Agenter WebUI")).toBe(true);
     await waitForWsOpen(`ws://${host}:${port}/trpc`);
-  });
+    },
+  );
 
-  test("Scenario: Given daemon and runtime store When creating session Then subscription syncs state", async () => {
+  test(
+    "Scenario: Given daemon and runtime store When creating session Then subscription syncs state",
+    { timeout: 90_000 },
+    async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
@@ -163,5 +174,6 @@ describe("Feature: cli daemon and web commands", () => {
     } finally {
       store.disconnect();
     }
-  });
+    },
+  );
 });

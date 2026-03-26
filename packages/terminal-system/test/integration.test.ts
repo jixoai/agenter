@@ -59,24 +59,28 @@ test("AgenticTerminal exposes structured snapshots", async () => {
   });
 
   let seen = 0;
-  let latestText = "";
   const stopStructured = terminal.onStructured((snapshot) => {
     seen += 1;
-    const line = snapshot.richLines.find((item) => item.spans.length > 0);
-    latestText = line?.spans.map((span) => span.text).join("") ?? latestText;
   });
 
   terminal.start();
-  await Bun.sleep(180);
+  await waitUntil(
+    () =>
+      terminal
+        .getLatestStructured()
+        .richLines.some((line) => line.spans.map((span) => span.text).join("").toLowerCase().includes("structured")),
+    2200,
+  );
   await terminal.forceCommit();
 
   const latest = terminal.getLatestStructured();
+  const structuredText = latest.richLines.map((line) => line.spans.map((span) => span.text).join("")).join("\n").toLowerCase();
   expect(seen).toBeGreaterThan(0);
   expect(latest.seq).toBeGreaterThan(0);
   expect(latest.status === "BUSY" || latest.status === "IDLE").toBe(true);
   expect(latest.rows).toBe(10);
   expect(latest.cols).toBe(80);
-  expect(latestText.toLowerCase()).toContain("structured");
+  expect(structuredText).toContain("structured");
 
   stopStructured();
   const workspace = terminal.workspace;

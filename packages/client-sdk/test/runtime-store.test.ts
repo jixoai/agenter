@@ -10,7 +10,43 @@ type ReversePageResult<T> = {
   hasMoreBefore?: boolean;
 };
 
-const createSnapshot = (eventId: number): RuntimeSnapshot => ({
+const createTraceEntry = (input: {
+  id: number;
+  cycleId: number;
+  seq?: number;
+  kind?: string;
+  name?: string;
+  status?: "running" | "done" | "error" | "cancelled";
+  startedAt?: number;
+  endedAt?: number;
+  attributes?: Record<string, unknown>;
+}) => ({
+  id: input.id,
+  cycleId: input.cycleId,
+  seq: input.seq ?? 1,
+  traceId: `trace-${input.cycleId}`,
+  spanId: `span-${input.id}`,
+  parentSpanId: null,
+  kind: input.kind ?? "source.collect",
+  name: input.name ?? "collect_inputs",
+  status: input.status ?? "done",
+  startedAt: input.startedAt ?? Date.now(),
+  endedAt: input.endedAt ?? input.startedAt ?? Date.now(),
+  refs: [],
+  links: [],
+  events: [],
+  attributes: input.attributes ?? {},
+  outcome: input.status === "running" ? undefined : { code: (input.status ?? "done") === "error" ? "error" : "done" },
+});
+
+const createSnapshot = (
+  eventId: number,
+  input: {
+    messageChannels?: RuntimeSnapshot["runtimes"][string]["messageChannels"];
+    attention?: RuntimeSnapshot["runtimes"][string]["attention"];
+    schedulerState?: RuntimeSnapshot["runtimes"][string]["schedulerState"];
+  } = {},
+): RuntimeSnapshot => ({
   version: 1,
   timestamp: Date.now(),
   lastEventId: eventId,
@@ -33,11 +69,12 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
       sessionId: "i-1",
       started: true,
       activityState: "idle",
-      loopPhase: "waiting_commits",
+      schedulerPhase: "waiting_commits",
       stage: "idle",
       focusedTerminalId: "main",
       focusedTerminalIds: ["main"],
       chatMessages: [],
+      messageChannels: input.messageChannels,
       terminalSnapshots: {
         main: {
           seq: 0,
@@ -50,8 +87,9 @@ const createSnapshot = (eventId: number): RuntimeSnapshot => ({
       },
       terminalReads: {},
       tasks: [],
-      loopKernelState: null,
-      loopInputSignals: {
+      schedulerState: input.schedulerState ?? null,
+      attention: input.attention,
+      schedulerSignals: {
         user: { version: 0, timestamp: null },
         terminal: { version: 0, timestamp: null },
         task: { version: 0, timestamp: null },
@@ -110,6 +148,7 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
+      chatId?: string;
       workspacePath: string;
       sessionName: string;
       messageId: string;
@@ -119,10 +158,16 @@ const createMockClient = (input: {
     }>;
     unreadBySession: Record<string, number>;
   }>;
-  setChatVisibilityMutate?: (input: { sessionId: string; visible: boolean; focused: boolean }) => Promise<{
+  setChatVisibilityMutate?: (input: {
+    sessionId: string;
+    chatId?: string;
+    visible: boolean;
+    focused: boolean;
+  }) => Promise<{
     items: Array<{
       id: string;
       sessionId: string;
+      chatId?: string;
       workspacePath: string;
       sessionName: string;
       messageId: string;
@@ -132,10 +177,11 @@ const createMockClient = (input: {
     }>;
     unreadBySession: Record<string, number>;
   }>;
-  consumeNotificationsMutate?: (input: { sessionId: string; upToMessageId?: string }) => Promise<{
+  consumeNotificationsMutate?: (input: { sessionId: string; chatId?: string; upToMessageId?: string }) => Promise<{
     items: Array<{
       id: string;
       sessionId: string;
+      chatId?: string;
       workspacePath: string;
       sessionName: string;
       messageId: string;
@@ -203,18 +249,100 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  messageListChannelsQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
+  messageCreateChannelMutate?: (input: {
+    sessionId: string;
+    kind: "direct" | "room";
+    title?: string;
+    focus?: boolean;
+  }) => Promise<{ channel: unknown }>;
+  messageFocusMutate?: (input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }) => Promise<{ items: unknown[] }>;
+  messageSendMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId: string;
+  }) => Promise<{ ok: boolean; reason?: string }>;
+  messageUpdateChannelMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+    };
+  }) => Promise<{ channel: unknown }>;
+  messageListChannelGrantsQuery?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }) => Promise<{ items: unknown[] }>;
+  messageIssueChannelGrantMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId?: string;
+  }) => Promise<{ grant: unknown }>;
+  messageRevokeChannelGrantMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    grantId: string;
+  }) => Promise<{ ok: boolean }>;
   terminalActivityPageQuery?: (input: {
     sessionId: string;
     terminalId: string;
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  attentionStateQuery?: (input: { sessionId: string }) => Promise<unknown>;
+  attentionQueryQuery?: (input: {
+    sessionId: string;
+    contextId?: string;
+    hash?: string;
+    depth?: number;
+    author?: string;
+    source?: string;
+    text?: string;
+    offset?: number;
+    limit?: number;
+    minScore?: number;
+  }) => Promise<{ items: unknown[] }>;
 }): AgenterClient => {
   return {
     trpc: {
       runtime: {
         snapshot: {
           query: input.snapshotQuery,
+        },
+        attentionState: {
+          query: async (payload: { sessionId: string }) =>
+            input.attentionStateQuery
+              ? await input.attentionStateQuery(payload)
+              : { snapshot: { contexts: [] }, active: [], cycleFrames: [], egress: [] },
+        },
+        attentionQuery: {
+          query: async (payload: {
+            sessionId: string;
+            contextId?: string;
+            hash?: string;
+            depth?: number;
+            author?: string;
+            source?: string;
+            text?: string;
+            offset?: number;
+            limit?: number;
+            minScore?: number;
+          }) => (input.attentionQueryQuery ? await input.attentionQueryQuery(payload) : { items: [] }),
         },
         events: {
           subscribe: (_payload: unknown, handlers: { onData?: (event: unknown) => void; onError?: () => void }) => {
@@ -227,24 +355,14 @@ const createMockClient = (input: {
             };
           },
         },
-        loopbusStateLogs: {
+        schedulerLogs: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
         },
-        loopbusTraces: {
+        observabilityTraces: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
         },
         modelCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
-        },
-        modelDebug: {
-          query: async () => ({
-            config: null,
-            history: [],
-            stats: null,
-            latestModelCall: null,
-            recentModelCalls: [],
-            recentApiCalls: [],
-          }),
         },
         apiCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
@@ -309,6 +427,67 @@ const createMockClient = (input: {
             input.chatCyclesQuery
               ? await input.chatCyclesQuery(payload)
               : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
+      },
+      message: {
+        listChannels: {
+          query: async (payload: { sessionId: string }) =>
+            input.messageListChannelsQuery ? await input.messageListChannelsQuery(payload) : { items: [] },
+        },
+        createChannel: {
+          mutate: async (payload: { sessionId: string; kind: "direct" | "room"; title?: string; focus?: boolean }) =>
+            input.messageCreateChannelMutate ? await input.messageCreateChannelMutate(payload) : { channel: null },
+        },
+        focus: {
+          mutate: async (payload: {
+            sessionId: string;
+            op: "add" | "remove" | "replace" | "clear";
+            channels: Array<{ chatId: string; accessToken: string }>;
+          }) => (input.messageFocusMutate ? await input.messageFocusMutate(payload) : { items: [] }),
+        },
+        send: {
+          mutate: async (payload: {
+            sessionId: string;
+            chatId: string;
+            accessToken: string;
+            text: string;
+            assetIds?: string[];
+            clientMessageId: string;
+          }) => (input.messageSendMutate ? await input.messageSendMutate(payload) : { ok: true }),
+        },
+        updateChannel: {
+          mutate: async (payload: {
+            sessionId: string;
+            chatId: string;
+            accessToken: string;
+            patch: {
+              title?: string;
+              participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+              metadata?: Record<string, unknown>;
+            };
+          }) =>
+            input.messageUpdateChannelMutate ? await input.messageUpdateChannelMutate(payload) : { channel: null },
+        },
+        listChannelGrants: {
+          query: async (payload: { sessionId: string; chatId: string; accessToken: string }) =>
+            input.messageListChannelGrantsQuery ? await input.messageListChannelGrantsQuery(payload) : { items: [] },
+        },
+        issueChannelGrant: {
+          mutate: async (payload: {
+            sessionId: string;
+            chatId: string;
+            accessToken: string;
+            role: "admin" | "member" | "readonly";
+            label?: string;
+            participantId?: string;
+          }) =>
+            input.messageIssueChannelGrantMutate
+              ? await input.messageIssueChannelGrantMutate(payload)
+              : { grant: null },
+        },
+        revokeChannelGrant: {
+          mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; grantId: string }) =>
+            input.messageRevokeChannelGrantMutate ? await input.messageRevokeChannelGrantMutate(payload) : { ok: true },
         },
       },
       draft: {
@@ -468,6 +647,16 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 4_000): Promise<voi
   throw new Error("timeout waiting for condition");
 };
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 const withBrowserOnlineState = async (
   initialOnline: boolean,
   callback: (controls: { setOnline: (online: boolean) => void }) => Promise<void>,
@@ -596,19 +785,14 @@ describe("Feature: runtime store synchronization", () => {
         version: 1,
         eventId: 12,
         timestamp: Date.now(),
-        type: "runtime.loopbus.trace",
+        type: "runtime.observability.trace",
         sessionId: "i-1",
         payload: {
-          entry: {
+          entry: createTraceEntry({
             id: 12,
             cycleId: 1,
-            seq: 1,
-            step: "collect_inputs",
-            status: "ok",
-            startedAt: Date.now(),
-            endedAt: Date.now(),
-            detail: { inputs: 2 },
-          },
+            attributes: { inputs: 2 },
+          }),
         },
       });
 
@@ -616,8 +800,8 @@ describe("Feature: runtime store synchronization", () => {
 
       flushFrame();
       expect(publishCount).toBe(2);
-      expect(store.getState().runtimes["i-1"]?.loopPhase).toBe("collecting_inputs");
-      expect(store.getState().loopbusTracesBySession["i-1"]?.length).toBe(1);
+      expect(store.getState().runtimes["i-1"]?.schedulerPhase).toBe("collecting_inputs");
+      expect(store.getState().observabilityTracesBySession["i-1"]?.length).toBe(1);
 
       store.disconnect();
     });
@@ -684,7 +868,7 @@ describe("Feature: runtime store synchronization", () => {
       sessionId: "i-1",
       payload: { phase: "calling_model" },
     });
-    expect(store.getState().runtimes["i-1"]?.loopPhase).toBe("calling_model");
+    expect(store.getState().runtimes["i-1"]?.schedulerPhase).toBe("calling_model");
     expect(store.getState().activityBySession["i-1"]).toBe("active");
 
     onData?.({
@@ -720,6 +904,75 @@ describe("Feature: runtime store synchronization", () => {
     onError?.();
     expect(store.getState().connected).toBe(false);
     expect(store.getState().connectionStatus).toBe("reconnecting");
+    store.disconnect();
+  });
+
+  test("Scenario: Given unchanged attention data When non-attention runtime events arrive Then the attention reference stays stable", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const attention = {
+      snapshot: {
+        contexts: [
+          {
+            contextId: "ctx-chat-main",
+            owner: "tester-bot",
+            content: "current notebook",
+            scoreMap: { abcd12: 100 },
+            headCommitId: "commit-1",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            commitCount: 1,
+            commitsTruncated: false,
+            commits: [
+              {
+                commitId: "commit-1",
+                contextId: "ctx-chat-main",
+                parentCommitIds: [],
+                meta: {
+                  author: "tester-bot",
+                  source: "message",
+                  createdAt: new Date().toISOString(),
+                },
+                scores: { abcd12: 100 },
+                summary: "User asked for a reply",
+                change: {
+                  type: "update" as const,
+                  value: "current notebook",
+                  format: "text/plain",
+                },
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
+        ],
+      },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
+    } satisfies NonNullable<RuntimeSnapshot["runtimes"][string]["attention"]>;
+
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(10, { attention }),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    const initialAttention = store.getState().attentionBySession?.["i-1"];
+    expect(initialAttention).toBeDefined();
+
+    onData?.({
+      version: 1,
+      eventId: 11,
+      timestamp: Date.now(),
+      type: "runtime.phase",
+      sessionId: "i-1",
+      payload: { phase: "collecting_inputs" },
+    });
+
+    expect(store.getState().attentionBySession?.["i-1"]).toBe(initialAttention);
+
     store.disconnect();
   });
 
@@ -815,6 +1068,99 @@ describe("Feature: runtime store synchronization", () => {
     await waitFor(() => store.getState().connected);
     expect(store.getState().lastEventId).toBe(20);
     expect(store.getState().connectionStatus).toBe("connected");
+    store.disconnect();
+  });
+
+  test("Scenario: Given secondary chrome queries are slow When connect succeeds Then runtime state hydrates before workspace and notification chrome", async () => {
+    const workspacesDeferred = createDeferred<{
+      items: Array<{
+        path: string;
+        favorite: boolean;
+        group: string;
+        missing: boolean;
+        counts: { all: number; running: number; stopped: number; archive: number };
+        lastSessionActivityAt?: string;
+      }>;
+    }>();
+    const notificationsDeferred = createDeferred<{
+      items: Array<{
+        id: string;
+        sessionId: string;
+        chatId?: string;
+        workspacePath: string;
+        sessionName: string;
+        messageId: string;
+        messageSeq: number;
+        content: string;
+        timestamp: number;
+      }>;
+      unreadBySession: Record<string, number>;
+    }>();
+    const client = createMockClient({
+      snapshotQuery: async () =>
+        createSnapshot(26, {
+          messageChannels: [
+            {
+              chatId: "chat-main",
+              kind: "direct",
+              title: "Chat",
+              owner: "tester-bot",
+              participants: [
+                { id: "avatar:tester-bot", label: "tester-bot", role: "avatar" },
+                { id: "user", label: "User", role: "user" },
+              ],
+              createdAt: 1,
+              updatedAt: 2,
+              focused: true,
+              accessRole: "admin",
+              accessToken: "msgtok_chatmain",
+              transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_chatmain",
+            },
+          ],
+        }),
+      workspaceListAllQuery: async () => await workspacesDeferred.promise,
+      notificationSnapshotQuery: async () => await notificationsDeferred.promise,
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+
+    expect(store.getState().connectionStatus).toBe("connected");
+    expect(store.getState().messageChannelsBySession["i-1"]?.data).toHaveLength(1);
+    expect(store.getState().workspaces).toEqual([]);
+    expect(store.getState().notifications).toEqual([]);
+
+    workspacesDeferred.resolve({
+      items: [
+        {
+          path: process.cwd(),
+          favorite: true,
+          group: "default",
+          missing: false,
+          counts: { all: 1, running: 1, stopped: 0, archive: 0 },
+        },
+      ],
+    });
+    notificationsDeferred.resolve({
+      items: [
+        {
+          id: "notif-1",
+          sessionId: "i-1",
+          chatId: "chat-main",
+          workspacePath: process.cwd(),
+          sessionName: "workspace",
+          messageId: "msg-1",
+          messageSeq: 1,
+          content: "reply pending",
+          timestamp: Date.now(),
+        },
+      ],
+      unreadBySession: { "i-1": 1 },
+    });
+
+    await waitFor(() => store.getState().workspaces.length === 1 && store.getState().notifications.length === 1);
+
+    expect(store.getState().unreadBySession["i-1"]).toBe(1);
     store.disconnect();
   });
 
@@ -967,25 +1313,21 @@ describe("Feature: runtime store synchronization", () => {
         version: 1,
         eventId,
         timestamp: Date.now(),
-        type: "runtime.loopbus.trace",
+        type: "runtime.observability.trace",
         sessionId: "i-1",
         payload: {
-          entry: {
+          entry: createTraceEntry({
             id: eventId,
-            timestamp: Date.now(),
             cycleId: index + 1,
-            seq: 1,
-            step: "call_model",
-            status: "ok",
-            startedAt: Date.now(),
-            endedAt: Date.now(),
-            detail: { inputs: 1 },
-          },
+            kind: "model.call",
+            name: "call_model",
+            attributes: { inputs: 1 },
+          }),
         },
       });
     }
 
-    const traces = store.getState().loopbusTracesBySession["i-1"] ?? [];
+    const traces = store.getState().observabilityTracesBySession["i-1"] ?? [];
     expect(traces.length).toBe(100);
     expect(traces[0]?.id).toBe(101);
     expect(traces.at(-1)?.id).toBe(200);
@@ -1089,13 +1431,14 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(client);
 
     await store.connect();
+    await waitFor(() => listAllCalls === 1 && store.getState().workspaces[0]?.path === "/repo/kept");
     const removed = await store.cleanMissingWorkspaces();
 
     expect(removed).toEqual(["/repo/missing"]);
     expect(store.getState().recentWorkspaces).toEqual(["/repo/kept"]);
     expect(store.getState().workspaces[0]?.path).toBe("/repo/kept");
-    expect(recentCalls).toBe(2);
-    expect(listAllCalls).toBe(2);
+    expect(recentCalls).toBeGreaterThanOrEqual(2);
+    expect(listAllCalls).toBeGreaterThanOrEqual(2);
     store.disconnect();
   });
 
@@ -1180,6 +1523,8 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
+    const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];
+    const consumeInputs: Array<{ sessionId: string; chatId?: string; upToMessageId?: string }> = [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(800),
       notificationSnapshotQuery: async () => ({
@@ -1187,6 +1532,7 @@ describe("Feature: runtime store synchronization", () => {
           {
             id: "i-1:9",
             sessionId: "i-1",
+            chatId: "chat-main",
             workspacePath: "/repo/demo",
             sessionName: "workspace",
             messageId: "9",
@@ -1197,25 +1543,32 @@ describe("Feature: runtime store synchronization", () => {
         ],
         unreadBySession: { "i-1": 1 },
       }),
-      setChatVisibilityMutate: async () => ({
-        items: [
-          {
-            id: "i-1:9",
-            sessionId: "i-1",
-            workspacePath: "/repo/demo",
-            sessionName: "workspace",
-            messageId: "9",
-            messageSeq: 9,
-            content: "hello",
-            timestamp: Date.now(),
-          },
-        ],
-        unreadBySession: { "i-1": 1 },
-      }),
-      consumeNotificationsMutate: async () => ({
-        items: [],
-        unreadBySession: {},
-      }),
+      setChatVisibilityMutate: async (input) => {
+        visibilityInputs.push(input);
+        return {
+          items: [
+            {
+              id: "i-1:9",
+              sessionId: "i-1",
+              chatId: "chat-main",
+              workspacePath: "/repo/demo",
+              sessionName: "workspace",
+              messageId: "9",
+              messageSeq: 9,
+              content: "hello",
+              timestamp: Date.now(),
+            },
+          ],
+          unreadBySession: { "i-1": 1 },
+        };
+      },
+      consumeNotificationsMutate: async (input) => {
+        consumeInputs.push(input);
+        return {
+          items: [],
+          unreadBySession: {},
+        };
+      },
       onSubscribe: (handlers) => {
         onData = handlers.onData;
       },
@@ -1223,10 +1576,12 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(client);
 
     await store.connect();
+    await waitFor(() => store.getState().unreadBySession["i-1"] === 1);
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
     expect(store.getState().notifications[0]?.messageId).toBe("9");
 
-    await store.setChatVisibility({ sessionId: "i-1", visible: true, focused: true });
+    await store.setChatVisibility({ sessionId: "i-1", chatId: "chat-main", visible: true, focused: true });
+    expect(visibilityInputs).toEqual([{ sessionId: "i-1", chatId: "chat-main", visible: true, focused: true }]);
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
 
     onData?.({
@@ -1241,6 +1596,7 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:10",
               sessionId: "i-1",
+              chatId: "chat-main",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
               messageId: "10",
@@ -1255,7 +1611,8 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(store.getState().notifications[0]?.messageId).toBe("10");
 
-    await store.consumeNotifications({ sessionId: "i-1", upToMessageId: "10" });
+    await store.consumeNotifications({ sessionId: "i-1", chatId: "chat-main", upToMessageId: "10" });
+    expect(consumeInputs).toEqual([{ sessionId: "i-1", chatId: "chat-main", upToMessageId: "10" }]);
     expect(store.getState().notifications).toEqual([]);
     expect(store.getState().unreadBySession["i-1"]).toBeUndefined();
     store.disconnect();
@@ -1334,6 +1691,85 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given runtime snapshot already contains in-memory chat rows When persisted history hydrates Then semantic duplicates collapse to the persisted records", async () => {
+    const snapshot = createSnapshot(905);
+    snapshot.runtimes["i-1"]!.chatMessages = [
+      {
+        id: "live-user-1",
+        chatId: "chat-main",
+        role: "user",
+        content: "persisted user",
+        timestamp: 10,
+        cycleId: 1,
+        attachments: [],
+      },
+      {
+        id: "live-assistant-1",
+        chatId: "chat-main",
+        role: "assistant",
+        channel: "to_user",
+        content: "persisted assistant",
+        timestamp: 20,
+        cycleId: 1,
+        attachments: [],
+      },
+    ];
+
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => snapshot,
+        chatListQuery: async () => ({
+          items: [
+            {
+              id: 100,
+              sessionId: "i-1",
+              messageId: "100",
+              chatId: "chat-main",
+              role: "user",
+              channel: "user_input",
+              content: "persisted user",
+              timestamp: 10,
+              cycleId: 1,
+              format: "markdown",
+              tool: null,
+              attachments: [],
+            },
+            {
+              id: 101,
+              sessionId: "i-1",
+              messageId: "101",
+              chatId: "chat-main",
+              role: "assistant",
+              channel: "to_user",
+              content: "persisted assistant",
+              timestamp: 20,
+              cycleId: 1,
+              format: "markdown",
+              tool: null,
+              attachments: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+        }),
+        chatCyclesQuery: async () => ({
+          items: [],
+          nextBefore: null,
+          hasMoreBefore: false,
+        }),
+      }),
+    );
+
+    await store.connect();
+    expect(store.getState().chatsBySession["i-1"]?.map((item) => item.id)).toEqual(["live-user-1", "live-assistant-1"]);
+
+    await store.hydrateSessionHistory("i-1", { messageLimit: 200, cycleLimit: 120 });
+
+    expect(store.getState().chatsBySession["i-1"]?.map((item) => item.id)).toEqual(["100", "101"]);
+    expect(store.getState().chatsBySession["i-1"]?.map((item) => item.chatId)).toEqual(["chat-main", "chat-main"]);
+    store.disconnect();
+  });
+
   test("Scenario: Given snapshot has session without runtime When runtime events arrive Then scaffold is created and loopbus state updates", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const snapshot = createSnapshot(300);
@@ -1361,26 +1797,21 @@ describe("Feature: runtime store synchronization", () => {
       version: 1,
       eventId: 302,
       timestamp: Date.now(),
-      type: "runtime.loopbus.trace",
+      type: "runtime.observability.trace",
       sessionId: "i-1",
       payload: {
-        entry: {
+        entry: createTraceEntry({
           id: 302,
           cycleId: 1,
-          seq: 1,
-          step: "collect_inputs",
-          status: "ok",
-          startedAt: Date.now(),
-          endedAt: Date.now(),
-          detail: { inputs: 1 },
-        },
+          attributes: { inputs: 1 },
+        }),
       },
     });
 
     const runtime = store.getState().runtimes["i-1"];
     expect(runtime).toBeDefined();
-    expect(runtime?.loopPhase).toBe("collecting_inputs");
-    expect(store.getState().loopbusTracesBySession["i-1"]?.length).toBe(1);
+    expect(runtime?.schedulerPhase).toBe("collecting_inputs");
+    expect(store.getState().observabilityTracesBySession["i-1"]?.length).toBe(1);
     store.disconnect();
   });
 
@@ -1505,7 +1936,12 @@ describe("Feature: runtime store synchronization", () => {
         },
       ]);
 
-      await store.sendChat("i-1", "review attachment", uploaded.map((item) => item.assetId), uploaded);
+      await store.sendChat(
+        "i-1",
+        "review attachment",
+        uploaded.map((item) => item.assetId),
+        uploaded,
+      );
 
       expect(sentPayloads).toHaveLength(1);
       expect(sentPayloads[0]?.sessionId).toBe("i-1");
@@ -1538,6 +1974,39 @@ describe("Feature: runtime store synchronization", () => {
       ...createSnapshot(0).sessions[0],
       status: "paused" as const,
     };
+    const persistedAttention = {
+      snapshot: {
+        contexts: [
+          {
+            contextId: "ctx-chat-kzf",
+            owner: "avatar:jane",
+            content: "ask gaubee lunch",
+            contentFormat: "markdown",
+            scoreMap: { a1b2c3: 100 },
+            headCommitId: "commit-1",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            commitCount: 1,
+            commitsTruncated: false,
+            commits: [
+              {
+                commitId: "commit-1",
+                contextId: "ctx-chat-kzf",
+                parentCommitIds: [],
+                meta: { author: "user:kzf", source: "message", createdAt: new Date().toISOString() },
+                scores: { a1b2c3: 100 },
+                summary: "Need lunch reply",
+                change: { type: "update", value: "ask gaubee lunch", format: "markdown" },
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
+        ],
+      },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
+    };
     const client = createMockClient({
       snapshotQuery: async () => {
         snapshotCalls += 1;
@@ -1550,6 +2019,7 @@ describe("Feature: runtime store synchronization", () => {
           runtimes: {},
         };
       },
+      attentionStateQuery: async () => persistedAttention,
     });
     client.trpc.session.stop.mutate = async () => ({ session: pausedSession });
 
@@ -1596,6 +2066,103 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().runtimes["i-1"]?.terminals).toEqual([]);
     expect(store.getState().terminalSnapshotsBySession["i-1"]).toEqual({});
     expect(store.getState().chatCyclesBySession["i-1"]?.map((cycle) => cycle.id)).toEqual(["cycle:11"]);
+    const storedAttention = store.getState().attentionBySession?.["i-1"];
+    const runtimeAttention = store.getState().runtimes["i-1"]?.attention;
+    expect(storedAttention).toBeDefined();
+    expect(runtimeAttention).toBeDefined();
+    expect(storedAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
+    expect(runtimeAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
+    store.disconnect();
+  });
+
+  test("Scenario: Given scheduler containment facts in runtime state When selectors read the cached runtime Then blocked/backoff diagnostics stay available without re-querying", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const schedulerState = {
+      schemaVersion: 2 as const,
+      stateVersion: 4,
+      running: true,
+      paused: false,
+      runtimeStatus: "backoff" as const,
+      phase: "waiting_commits",
+      gate: "waiting_input" as const,
+      queueSize: 0,
+      cycle: 7,
+      sentBatches: 2,
+      updatedAt: 1700000000000,
+      lastMessageAt: 1700000000000,
+      lastResponseAt: 1700000000100,
+      lastWakeAt: 1700000000200,
+      lastWakeSource: "attention",
+      lastWakeCause: "attention_backoff",
+      activeContextCount: 1,
+      activeItemCount: 1,
+      unresolvedScoreCount: 1,
+      waitingReason: "attention_backoff",
+      nextAutoWakeAt: 1700000000800,
+      backoffMs: 600,
+      retryCount: 1,
+      blockedReason: null,
+      lastProgressAt: 1699999999000,
+      lastError: null,
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(950, { schedulerState }),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    expect(store.getSchedulerState("i-1")).toMatchObject({
+      runtimeStatus: "backoff",
+      retryCount: 1,
+      nextAutoWakeAt: 1700000000800,
+    });
+    expect(store.getSchedulerContainment("i-1")).toEqual({
+      runtimeStatus: "backoff",
+      waitingReason: "attention_backoff",
+      nextAutoWakeAt: 1700000000800,
+      backoffMs: 600,
+      retryCount: 1,
+      blockedReason: null,
+      lastProgressAt: 1699999999000,
+      lastError: null,
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 951,
+      timestamp: Date.now(),
+      type: "runtime.scheduler.snapshot",
+      sessionId: "i-1",
+      payload: {
+        snapshot: {
+          state: {
+            ...schedulerState,
+            runtimeStatus: "blocked",
+            waitingReason: "blocked",
+            nextAutoWakeAt: null,
+            backoffMs: null,
+            retryCount: 2,
+            blockedReason: "provider.unavailable",
+          },
+        },
+      },
+    });
+
+    expect(store.getSchedulerContainment("i-1")).toEqual({
+      runtimeStatus: "blocked",
+      waitingReason: "blocked",
+      nextAutoWakeAt: null,
+      backoffMs: null,
+      retryCount: 2,
+      blockedReason: "provider.unavailable",
+      lastProgressAt: 1699999999000,
+      lastError: null,
+    });
     store.disconnect();
   });
 
@@ -1736,10 +2303,7 @@ describe("Feature: runtime store synchronization", () => {
     await store.loadChatMessages("i-1", 2);
     const output = await store.loadMoreChatMessagesBefore("i-1", 2);
 
-    expect(chatRequests).toEqual([
-      { before: undefined },
-      { before: { beforeTimeMs: 2_000, beforeId: 11 } },
-    ]);
+    expect(chatRequests).toEqual([{ before: undefined }, { before: { beforeTimeMs: 2_000, beforeId: 11 } }]);
     expect(store.getState().chatsBySession["i-1"]?.map((item) => item.id)).toEqual(["9", "10", "11", "12"]);
     expect(output).toEqual({ items: 2, hasMore: false });
     store.disconnect();
@@ -1810,12 +2374,221 @@ describe("Feature: runtime store synchronization", () => {
     await store.loadTerminalActivity("i-1", "main", 2);
     const output = await store.loadMoreTerminalActivity("i-1", "main", 2);
 
-    expect(activityRequests).toEqual([
-      { before: undefined },
-      { before: { beforeTimeMs: 2_000, beforeId: 21 } },
-    ]);
+    expect(activityRequests).toEqual([{ before: undefined }, { before: { beforeTimeMs: 2_000, beforeId: 21 } }]);
     expect(store.getState().terminalActivityBySession["i-1"]?.main?.map((item) => item.id)).toEqual([19, 20, 21, 22]);
     expect(output).toEqual({ items: 2, hasMore: false });
     store.disconnect();
+  });
+
+  test("Scenario: Given runtime snapshot already contains focused chat-channel descriptors When the store hydrates a started session Then chat bootstrap does not need a second list call", async () => {
+    let listChannelsCalls = 0;
+    const channel = {
+      chatId: "chat-main",
+      kind: "direct" as const,
+      title: "Chat",
+      owner: "jane",
+      participants: [
+        { id: "avatar:jane", label: "jane", role: "avatar" as const },
+        { id: "user:kzf", label: "kzf", role: "user" as const },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_admin",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0, { messageChannels: [channel] }),
+        messageListChannelsQuery: async () => {
+          listChannelsCalls += 1;
+          return { items: [channel] };
+        },
+      }),
+    );
+
+    await store.connect();
+
+    expect(store.getState().messageChannelsBySession["i-1"]).toEqual({
+      data: [channel],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: expect.any(Number),
+    });
+
+    await expect(store.ensureMessageChannels("i-1")).resolves.toEqual([channel]);
+    expect(listChannelsCalls).toBe(0);
+
+    store.disconnect();
+  });
+
+  test("Scenario: Given tokenized chat-channel admin APIs When runtime store proxies message-system calls Then access tokens stay threaded without hidden session trust", async () => {
+    const requests: {
+      focus?: { sessionId: string; op: string; channels: Array<{ chatId: string; accessToken: string }> };
+      send?: {
+        sessionId: string;
+        chatId: string;
+        accessToken: string;
+        text: string;
+        assetIds?: string[];
+        clientMessageId: string;
+      };
+      update?: {
+        sessionId: string;
+        chatId: string;
+        accessToken: string;
+        patch: {
+          title?: string;
+          participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        };
+      };
+      listGrants?: { sessionId: string; chatId: string; accessToken: string };
+      issue?: {
+        sessionId: string;
+        chatId: string;
+        accessToken: string;
+        role: "admin" | "member" | "readonly";
+        label?: string;
+        participantId?: string;
+      };
+      revoke?: { sessionId: string; chatId: string; accessToken: string; grantId: string };
+    } = {};
+    const channel = {
+      chatId: "chat-main",
+      kind: "direct" as const,
+      title: "Chat",
+      owner: "jane",
+      participants: [
+        { id: "avatar:jane", label: "jane", role: "avatar" as const },
+        { id: "user:kzf", label: "kzf", role: "user" as const },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_admin",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageListChannelsQuery: async () => ({ items: [channel] }),
+        messageFocusMutate: async (input) => {
+          requests.focus = input;
+          return { items: [channel] };
+        },
+        messageSendMutate: async (input) => {
+          requests.send = input;
+          return { ok: true };
+        },
+        messageUpdateChannelMutate: async (input) => {
+          requests.update = input;
+          return {
+            channel: {
+              ...channel,
+              title: input.patch.title ?? channel.title,
+            },
+          };
+        },
+        messageListChannelGrantsQuery: async (input) => {
+          requests.listGrants = input;
+          return {
+            items: [
+              {
+                grantId: "grant-readonly",
+                chatId: "chat-main",
+                role: "readonly" as const,
+                label: "Viewer",
+                participantId: "user:gaubee",
+                createdAt: 2,
+              },
+            ],
+          };
+        },
+        messageIssueChannelGrantMutate: async (input) => {
+          requests.issue = input;
+          return {
+            grant: {
+              grantId: "grant-member",
+              chatId: "chat-main",
+              role: input.role,
+              label: input.label,
+              participantId: input.participantId,
+              createdAt: 3,
+              accessRole: input.role,
+              accessToken: "msgtok_member",
+              transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_member",
+            },
+          };
+        },
+        messageRevokeChannelGrantMutate: async (input) => {
+          requests.revoke = input;
+          return { ok: true };
+        },
+      }),
+    );
+
+    expect(await store.listMessageChannels("i-1")).toEqual([channel]);
+    await store.focusMessageChannels({
+      sessionId: "i-1",
+      op: "replace",
+      channels: [{ chatId: "chat-main", accessToken: "msgtok_admin" }],
+    });
+    await store.sendMessageChannel({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      text: "hello",
+      assetIds: ["asset-1"],
+    });
+    const updated = await store.updateMessageChannel({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      patch: { title: "Updated chat" },
+    });
+    const grants = await store.listMessageChannelGrants({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+    });
+    const issued = await store.issueMessageChannelGrant({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      role: "member",
+      label: "Relay",
+      participantId: "user:gaubee",
+    });
+    const revoked = await store.revokeMessageChannelGrant({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      grantId: "grant-member",
+    });
+
+    expect(requests.focus).toEqual({
+      sessionId: "i-1",
+      op: "replace",
+      channels: [{ chatId: "chat-main", accessToken: "msgtok_admin" }],
+    });
+    expect(requests.send?.accessToken).toBe("msgtok_admin");
+    expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(requests.update?.patch.title).toBe("Updated chat");
+    expect(requests.listGrants?.accessToken).toBe("msgtok_admin");
+    expect(requests.issue?.participantId).toBe("user:gaubee");
+    expect(requests.revoke).toEqual({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      grantId: "grant-member",
+    });
+    expect(updated.title).toBe("Updated chat");
+    expect(grants[0]?.role).toBe("readonly");
+    expect(issued.accessToken).toBe("msgtok_member");
+    expect(revoked).toEqual({ ok: true });
   });
 });

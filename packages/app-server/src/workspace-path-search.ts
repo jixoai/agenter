@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, type Dirent, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export interface WorkspacePathSearchItem {
@@ -27,6 +27,11 @@ interface GitWorkspaceContext {
 }
 
 const INDEX_TTL_MS = 30_000;
+
+const isMissingWorkspaceError = (error: unknown): boolean =>
+  error instanceof Error &&
+  "code" in error &&
+  (error.code === "ENOENT" || error.code === "ENOTDIR");
 
 const normalizeRelativePath = (value: string): string => value.split(sep).join("/");
 
@@ -188,7 +193,16 @@ const loadWorkspaceFilePathsByWalk = (workspacePath: string): string[] => {
     if (!current) {
       continue;
     }
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingWorkspaceError(error)) {
+        continue;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
       if (entry.name === ".git") {
         continue;
       }
@@ -222,9 +236,16 @@ const loadWorkspaceFilePaths = (workspacePath: string): string[] => {
 };
 
 const loadWorkspacePathIndex = (workspacePath: string): WorkspacePathIndexEntry[] => {
-  const filePaths = uniqueBy(loadWorkspaceFilePaths(workspacePath), (item) => item).sort((left, right) =>
-    left.localeCompare(right),
-  );
+  let discoveredPaths: string[];
+  try {
+    discoveredPaths = loadWorkspaceFilePaths(workspacePath);
+  } catch (error) {
+    if (isMissingWorkspaceError(error)) {
+      return [];
+    }
+    throw error;
+  }
+  const filePaths = uniqueBy(discoveredPaths, (item) => item).sort((left, right) => left.localeCompare(right));
 
   const directorySet = new Set<string>();
   for (const filePath of filePaths) {
@@ -285,7 +306,17 @@ const loadDirectAddressEntries = (workspacePath: string, query: string): Workspa
   }
 
   const normalizedLeafQuery = leafQuery.toLowerCase();
-  return readdirSync(parentAbsolutePath, { withFileTypes: true })
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(parentAbsolutePath, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingWorkspaceError(error)) {
+      return [];
+    }
+    throw error;
+  }
+
+  return entries
     .filter((entry) => entry.name !== ".git")
     .filter((entry) => normalizedLeafQuery.length === 0 || entry.name.toLowerCase().startsWith(normalizedLeafQuery))
     .flatMap((entry) => {
@@ -368,12 +399,13 @@ export class WorkspacePathSearchIndex {
   }
 
   private getEntries(workspacePath: string): WorkspacePathIndexEntry[] {
+    if (!existsSync(workspacePath) || !statSync(workspacePath).isDirectory()) {
+      this.cache.delete(workspacePath);
+      return [];
+    }
     const cached = this.cache.get(workspacePath);
     if (cached && Date.now() - cached.builtAt <= INDEX_TTL_MS) {
       return cached.entries;
-    }
-    if (!existsSync(workspacePath) || !statSync(workspacePath).isDirectory()) {
-      return [];
     }
     const entries = loadWorkspacePathIndex(workspacePath);
     this.cache.set(workspacePath, {

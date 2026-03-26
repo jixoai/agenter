@@ -1,8 +1,4 @@
-import {
-  AttentionEngine,
-  type AttentionQueryInput,
-  type AttentionUpdateInput,
-} from "@agenter/attention-system";
+import { AttentionSystem, type AttentionCommitToolInput, type AttentionQueryInput } from "@agenter/attention-system";
 import { ResourceLoader } from "@agenter/settings";
 import type {
   TerminalControlPlaneConfig,
@@ -53,6 +49,7 @@ const HELP_MAX_CHARS = 8_192;
 const STATUS_BAR_HEIGHT = 6;
 const DEBUG_PANEL_HEIGHT = 14;
 const LARGE_DIFF_BYTES = 16_000;
+const DEMO_ATTENTION_CONTEXT_ID = "ctx-demo-main";
 
 type DemoWakeSource = Exclude<LoopBusWakeSource, "unknown">;
 
@@ -95,7 +92,7 @@ const classifyInputWakeSource = (input: LoopBusInput): DemoWakeSource => {
   if (input.source === "task") {
     return "task";
   }
-  if (input.source === "attention-system") {
+  if (input.source === "attention") {
     return "attention";
   }
   return "user";
@@ -424,7 +421,10 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const stageRef = useRef<TaskStage>("idle");
   const processStateRef = useRef<"stopped" | "running">("stopped");
   const taskEngineRef = useRef(new TaskEngine());
-  const attentionEngineRef = useRef(new AttentionEngine());
+  const attentionSystemRef = useRef<AttentionSystem>(new AttentionSystem());
+  if (!attentionSystemRef.current.getContext(DEMO_ATTENTION_CONTEXT_ID)) {
+    attentionSystemRef.current.createContext({ contextId: DEMO_ATTENTION_CONTEXT_ID, owner: "demo" });
+  }
   const terminalConfigRef = useRef<TerminalControlPlaneConfig>({
     defaults: {
       cols: 80,
@@ -931,15 +931,10 @@ export const App = ({ runtimeConfig }: AppProps) => {
 
   const attentionGateway = useMemo(
     () => ({
-      list: () => attentionEngineRef.current.list(),
-      add: async (input: { content: string; from: string; score?: number; remark?: string }) =>
-        attentionEngineRef.current.add(input),
-      remark: async (input: { id: number; score?: number; remark?: string }) =>
-        attentionEngineRef.current.remark(input),
-      query: async (input: AttentionQueryInput) =>
-        attentionEngineRef.current.query(input),
-      update: async (input: AttentionUpdateInput) =>
-        attentionEngineRef.current.update(input),
+      listContexts: () => attentionSystemRef.current.listContexts(),
+      listActive: () => attentionSystemRef.current.listActiveContexts(),
+      query: async (input: AttentionQueryInput) => attentionSystemRef.current.query(input),
+      commit: async (input: AttentionCommitToolInput) => attentionSystemRef.current.commit(input.contextId, input).commit,
     }),
     [],
   );
@@ -1353,10 +1348,11 @@ export const App = ({ runtimeConfig }: AppProps) => {
     setInput("");
     chatInputRef.current?.clear();
     if (value !== "/compact") {
-      attentionEngineRef.current.add({
-        content: value,
-        from: "user",
-        score: 100,
+      attentionSystemRef.current.commit(DEMO_ATTENTION_CONTEXT_ID, {
+        summary: value,
+        meta: { author: "user", source: "chat" },
+        scores: { "demo-user-input": 100 },
+        change: { type: "update", value },
       });
     }
 

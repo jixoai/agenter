@@ -1,11 +1,14 @@
 import type {
-  AttentionAddInput,
+  AttentionActiveContextMatch,
+  AttentionCommit,
+  AttentionCommitChange,
+  AttentionCommitMeta,
+  AttentionCommitToolInput,
+  AttentionContextDescriptor,
+  AttentionCommitMatch,
   AttentionQueryInput,
-  AttentionRecord,
-  AttentionRemarkInput,
-  AttentionUpdateInput,
-  AttentionUpdateResult,
 } from "@agenter/attention-system";
+import type { SessionTerminalOutcome } from "@agenter/session-system";
 import { mdxToMd } from "@agenter/mdx2md";
 import type {
   TaskCreateInput,
@@ -29,10 +32,12 @@ import { z } from "zod";
 import type { LoopBusMessage, LoopBusResponse } from "./loop-bus";
 import type { AssistantStreamUpdate, ModelClient, TextOnlyModelMessage } from "./model-client";
 import { ModelDecisionError } from "./model-client";
+import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import type { PromptStore } from "./prompt-store";
 import { createRuntimeText } from "./runtime-text";
 import type { SessionStore } from "./session-store";
 import type { AppServerLogger, ChatMessage, ChatSessionAsset, TaskEvent, TaskStage } from "./types";
+import { mapAbortReasonToOutcome, toTerminalOutcomeFromError } from "./runtime-trace";
 
 interface TerminalDescriptor {
   terminalId: string;
@@ -104,11 +109,20 @@ interface TaskGateway {
 }
 
 interface AttentionGateway {
-  list: () => AttentionRecord[];
-  add: (input: AttentionAddInput) => Promise<AttentionRecord> | AttentionRecord;
-  remark: (input: AttentionRemarkInput) => Promise<AttentionRecord | undefined> | AttentionRecord | undefined;
-  query: (input: AttentionQueryInput) => Promise<AttentionRecord[]> | AttentionRecord[];
-  update: (input: AttentionUpdateInput) => Promise<AttentionUpdateResult> | AttentionUpdateResult;
+  listContexts: () => AttentionContextDescriptor[];
+  listActive: () => AttentionActiveContextMatch[];
+  query: (input: AttentionQueryInput) => Promise<AttentionCommitMatch[]> | AttentionCommitMatch[];
+  commit: (input: AttentionCommitToolInput) => Promise<AttentionCommit> | AttentionCommit;
+}
+
+interface MessageGateway {
+  send: (input: {
+    chatId: string;
+    content: string;
+    rootId?: string;
+    from?: string;
+    to?: string;
+  }) => Promise<{ ok: boolean; messageId: string }> | { ok: boolean; messageId: string };
 }
 
 interface ResolvedImageAttachmentSource {
@@ -125,6 +139,7 @@ interface AgentDeps {
   terminalGateway: TerminalGateway;
   taskGateway: TaskGateway;
   attentionGateway: AttentionGateway;
+  messageGateway?: MessageGateway;
   sessionStore?: SessionStore;
   resolveImageAttachment?: (
     attachment: ChatSessionAsset,
@@ -137,7 +152,7 @@ interface AgentDeps {
 export interface AgentModelCallRecord {
   id: string;
   timestamp: number;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   completedAt?: number;
   provider: string;
   model: string;
@@ -173,6 +188,7 @@ export interface AgentModelCallRecord {
     stack?: string;
     details?: unknown;
   };
+  outcome?: SessionTerminalOutcome;
 }
 
 interface ActiveTask {
@@ -189,14 +205,13 @@ interface ToolTraceEntry {
 }
 
 interface AttentionUpdateCall {
-  id: number;
+  contextId: string;
+  commitId: string;
   text: string;
-  from: string;
-  score: number;
-  remark: string;
+  author: string;
+  scores: Record<string, number>;
   done: boolean;
   stage?: TaskStage;
-  relationships?: Array<{ id: number; score?: number; remark?: string }>;
 }
 
 interface AssistantFact {
@@ -226,6 +241,7 @@ const MAX_TERMINAL_DIFF_CHARS = 6_000;
 const MAX_TERMINAL_SNAPSHOT_LINES = 16;
 const ENABLE_AGENT_TOOLS = true;
 const DEFAULT_MODEL_CALL_TIMEOUT_MS = 120_000;
+const MAX_ATTENTION_NO_PROGRESS_ATTEMPTS = 2;
 
 const safeJsonParse = (input: string): unknown => {
   try {
@@ -241,6 +257,9 @@ const isAbortError = (error: unknown): boolean =>
     : error instanceof Error
       ? error.name === "AbortError" || error.message === "This operation was aborted"
       : false;
+
+const createAbortError = (reason?: unknown): DOMException =>
+  new DOMException(typeof reason === "string" && reason.length > 0 ? reason : "This operation was aborted", "AbortError");
 
 const formatTimestamp = (value: number): string => new Date(value).toISOString();
 
@@ -354,6 +373,163 @@ const inferStageFromToolTrace = (trace: ToolTraceEntry[]): TaskStage => {
   return "decide";
 };
 
+const roundHasAttentionInput = (messages: readonly LoopBusMessage[]): boolean =>
+  messages.some((message) => message.source === "attention");
+
+const isAttentionMutationTool = (toolName: string): boolean =>
+  toolName === "attention_commit";
+
+const readRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const readStringField = (value: unknown, key: string): string | undefined => {
+  const record = readRecord(value);
+  const raw = record?.[key];
+  return typeof raw === "string" && raw.length > 0 ? raw : undefined;
+};
+
+const readNumericRecord = (value: unknown): Record<string, number> => {
+  const record = readRecord(value);
+  if (!record) {
+    return {};
+  }
+  const scores: Record<string, number> = {};
+  for (const [key, score] of Object.entries(record)) {
+    if (typeof score === "number" && Number.isFinite(score)) {
+      scores[key] = score;
+    }
+  }
+  return scores;
+};
+
+const contextIdToChatId = (contextId: string | undefined): string | undefined => {
+  if (!contextId) {
+    return undefined;
+  }
+  if (contextId.startsWith("ctx-chat-") || contextId.startsWith("ctx-room-")) {
+    return contextId.slice(4);
+  }
+  return undefined;
+};
+
+const readReplyTargetChatId = (value: unknown): string | undefined => {
+  const replyTarget = readRecord(value);
+  if (replyTarget?.systemId !== "message") {
+    return undefined;
+  }
+  return readStringField(replyTarget, "channelId") ?? readStringField(replyTarget, "subjectId");
+};
+
+const readAttentionCommitChatId = (input: unknown): string | undefined => {
+  const record = readRecord(input);
+  const meta = readRecord(record?.meta);
+  if (meta?.systemId === "message") {
+    return readStringField(meta, "channelId") ?? readStringField(meta, "subjectId") ?? contextIdToChatId(readStringField(record, "contextId"));
+  }
+  return contextIdToChatId(readStringField(record, "contextId"));
+};
+
+const attentionCommitResolvesWork = (input: unknown): boolean => {
+  const record = readRecord(input);
+  if (record?.done === true) {
+    return true;
+  }
+  const scores = readNumericRecord(record?.scores);
+  return Object.keys(scores).length > 0 && Object.values(scores).every((value) => value <= 0);
+};
+
+const collectRequiredMessageDispatchChatIds = (messages: readonly LoopBusMessage[]): string[] => {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (message.source !== "attention") {
+      continue;
+    }
+    const chatId = typeof message.meta?.chatId === "string" ? message.meta.chatId : undefined;
+    const chatFocused = typeof message.meta?.chatFocused === "boolean" ? message.meta.chatFocused : true;
+    if (chatId && chatFocused) {
+      ids.add(chatId);
+    }
+  }
+  return [...ids];
+};
+
+const collectMessageDispatchChatIds = (toolTrace: readonly ToolTraceEntry[]): Set<string> => {
+  const ids = new Set<string>();
+  for (const entry of toolTrace) {
+    if (entry.tool === "message_send") {
+      const chatId = readStringField(entry.input, "chatId");
+      if (chatId) {
+        ids.add(chatId);
+      }
+      continue;
+    }
+    if (entry.tool !== "attention_commit") {
+      continue;
+    }
+    const replyChatId = readReplyTargetChatId(readRecord(readRecord(entry.input)?.meta)?.replyTarget);
+    if (replyChatId) {
+      ids.add(replyChatId);
+    }
+  }
+  return ids;
+};
+
+const findMissingMessageDispatchChatIds = (
+  messages: readonly LoopBusMessage[],
+  toolTrace: readonly ToolTraceEntry[],
+): string[] => {
+  const requiredChatIds = new Set(collectRequiredMessageDispatchChatIds(messages));
+  if (requiredChatIds.size === 0) {
+    return [];
+  }
+  const dispatchedChatIds = collectMessageDispatchChatIds(toolTrace);
+  const missing = new Set<string>();
+  for (const entry of toolTrace) {
+    if (entry.tool !== "attention_commit" || !attentionCommitResolvesWork(entry.input)) {
+      continue;
+    }
+    const chatId = readAttentionCommitChatId(entry.input);
+    if (!chatId || !requiredChatIds.has(chatId) || dispatchedChatIds.has(chatId)) {
+      continue;
+    }
+    missing.add(chatId);
+  }
+  return [...missing];
+};
+
+const buildAttentionNoProgressReminder = (attempt: number): TextOnlyModelMessage => ({
+  role: "user",
+  content: [
+    toTextPart(
+      [
+        `attention_round_retry: ${attempt}`,
+        "The previous attention round made no progress.",
+        "Every attention round must end with an attention_commit.",
+        "Tool calls without an attention commit are still incomplete.",
+        "If the work is complete, commit the relevant scores to 0.",
+        "Do not reply with plain text only.",
+      ].join("\n"),
+    ),
+  ],
+});
+
+const buildAttentionMessageDispatchReminder = (attempt: number, chatIds: string[]): TextOnlyModelMessage => ({
+  role: "user",
+  content: [
+    toTextPart(
+      [
+        `attention_round_retry: ${attempt}`,
+        "The previous attention round resolved chat-backed work without dispatching the visible reply.",
+        `Missing visible dispatch target(s): ${chatIds.join(", ")}`,
+        "Before setting a chat-backed attention score to 0, you must either:",
+        "- call message_send to the target chat channel, or",
+        "- set attention_commit.meta.replyTarget for that chat channel.",
+        "attention_commit alone does not count as a user-visible reply.",
+      ].join("\n"),
+    ),
+  ],
+});
+
 export class AgenterAI {
   private eventListeners: Array<(event: TaskEvent) => void> = [];
   private statsListeners: Array<(stats: AgentRuntimeStats) => void> = [];
@@ -462,7 +638,7 @@ export class AgenterAI {
     }
 
     const taskId = this.activeTask.id;
-    await this.pushIncomingBatchToHistory(orderedMessages);
+    const incomingHistoryMessage = await this.pushIncomingBatchToHistory(orderedMessages);
     await this.maybeCompactHistory(taskId);
 
     const promptSnapshot = this.deps.promptStore.getSnapshot();
@@ -477,172 +653,298 @@ export class AgenterAI {
         RESPONSE_CONTRACT: contract,
       },
     });
-    const toolTrace: ToolTraceEntry[] = [];
-    const attentionUpdates: AttentionUpdateCall[] = [];
-    const tools = ENABLE_AGENT_TOOLS
-      ? this.buildTools(taskId, toolTrace, {
-          onAttentionUpdate: (update) => {
-            attentionUpdates.push(update);
-          },
-        })
-      : [];
+    const attentionRound = roundHasAttentionInput(orderedMessages);
+    const baseHistorySnapshot = attentionRound ? [incomingHistoryMessage] : [...this.history];
+    const maxAttempts = attentionRound ? MAX_ATTENTION_NO_PROGRESS_ATTEMPTS : 1;
+    let attempt = 0;
+    let retryReminder: TextOnlyModelMessage | null = null;
 
-    const callId = createId();
-    const historySnapshot = [...this.history];
-    const contextChars = systemPrompt.length + JSON.stringify(historySnapshot).length;
-    this.stats.lastContextChars = contextChars;
-    this.stats.totalContextChars += contextChars;
-    this.emitStats();
-    const requestRecord = {
-      systemPrompt,
-      messages: historySnapshot,
-      tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
-      meta: {
-        taskId,
-        loopCount: this.stats.loops,
-        historySize: historySnapshot.length,
-      },
-    } satisfies AgentModelCallRecord["request"];
-    const callRecordBase = {
-      id: callId,
-      timestamp: Date.now(),
-      provider: this.deps.modelClient.getMeta().provider,
-      model: this.deps.modelClient.getMeta().model,
-      request: requestRecord,
-    } as const;
-    this.persistModelCall({
-      ...callRecordBase,
-      status: "running",
-    });
-
-    try {
-      const response = await this.withModelCallTimeout({
-        signal: context?.signal,
-        run: (abortController) =>
-          this.deps.modelClient.respondWithMeta({
-            systemPrompt,
-            messages: historySnapshot,
-            tools,
-            abortController,
-            onUpdate: async (update) => {
-              await this.deps.onAssistantStream?.(update);
+    while (attempt < maxAttempts) {
+      const toolTrace: ToolTraceEntry[] = [];
+      const attentionUpdates: AttentionUpdateCall[] = [];
+      const tools = ENABLE_AGENT_TOOLS
+        ? this.buildTools(taskId, toolTrace, {
+            onAttentionUpdate: (update) => {
+              attentionUpdates.push(update);
             },
-          }),
-      });
-      const normalizedResponseText = response.text.trim();
-      const decisionToUser = normalizedResponseText.length > 0 ? [normalizedResponseText] : [];
-
-      const completedAt = Date.now();
-      this.persistModelCall({
-        ...callRecordBase,
-        status: "done",
-        completedAt,
-        response: {
-          decision: {
-            stage: attentionUpdates[attentionUpdates.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace),
-            done: attentionUpdates.some((item) => item.done),
-            toUser: decisionToUser,
-          },
-          usage: response.usage,
-          toolTrace,
-          assistant: {
-            thinking: response.thinking,
-            text: response.text,
-            finishReason: response.finishReason ?? null,
-          },
-        },
-      });
-
-      this.stats.apiCalls += 1;
-      if (response.usage?.promptTokens !== undefined) {
-        this.stats.lastPromptTokens = response.usage.promptTokens;
-        this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
-        const compactConfig = this.deps.modelClient.getCompactConfig();
-        if (
-          compactConfig.maxToken &&
-          compactConfig.compactThreshold &&
-          response.usage.promptTokens >= Math.floor(compactConfig.maxToken * compactConfig.compactThreshold)
-        ) {
-          this.compactPending = true;
-        }
-      }
+          }, context?.signal)
+        : [];
+      const historySnapshot = retryReminder ? [...baseHistorySnapshot, retryReminder] : baseHistorySnapshot;
+      const contextChars = systemPrompt.length + JSON.stringify(historySnapshot).length;
+      this.stats.lastContextChars = contextChars;
+      this.stats.totalContextChars += contextChars;
       this.emitStats();
 
-      const assistantFacts = this.buildAssistantFacts({
-        thinking: response.thinking,
-        text: response.text,
-        toolTrace,
-        attentionUpdates,
-      });
-      this.pushAssistantTurnToHistory(assistantFacts);
-
-      const stage = attentionUpdates[attentionUpdates.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
-      const done = attentionUpdates.some((item) => item.done) || stage === "done";
-      const toUserMessages = this.composeAssistantMessages(assistantFacts);
-      const summary = this.resolveTaskSummary({
-        stage,
-        done,
-        attentionUpdates,
-        text: response.text,
-        thinking: response.thinking,
-      });
-
-      this.emitTask(taskId, stage, summary);
-      if (done) {
-        this.activeTask = null;
-      }
-
-      return {
-        taskId,
-        stage,
-        done,
-        summary,
-        outputs: {
-          toUser: toUserMessages,
-          toTerminal: [],
-          toTools: [],
+      const callId = createId();
+      const requestRecord = {
+        systemPrompt,
+        messages: historySnapshot,
+        tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
+        meta: {
+          taskId,
+          loopCount: this.stats.loops,
+          historySize: historySnapshot.length,
+          attempt: attempt + 1,
         },
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const name = error instanceof Error ? error.name : "Error";
-      const stack = error instanceof Error ? error.stack : undefined;
-      const aborted = isAbortError(error);
-      const details =
-        aborted
-          ? { canceled: true }
-          : error instanceof ModelDecisionError
-            ? { retried: true }
-            : message.includes("timed out after")
-              ? { timeout: true }
-              : undefined;
-      this.persistModelCall({
+      } satisfies AgentModelCallRecord["request"];
+      const callRecordBase = {
+        id: callId,
+        timestamp: Date.now(),
+        provider: this.deps.modelClient.getMeta().provider,
+        model: this.deps.modelClient.getMeta().model,
+        request: requestRecord,
+      } as const;
+      await this.persistModelCall({
         ...callRecordBase,
-        status: "error",
-        completedAt: Date.now(),
-        response: {
+        status: "running",
+      });
+
+      try {
+        const response = await this.withModelCallTimeout({
+          signal: context?.signal,
+          run: (abortController) =>
+            this.deps.modelClient.respondWithMeta({
+              systemPrompt,
+              messages: historySnapshot,
+              tools,
+              abortController,
+              onUpdate: async (update) => {
+                await this.deps.onAssistantStream?.(update);
+              },
+            }),
+        });
+
+        this.stats.apiCalls += 1;
+        if (response.usage?.promptTokens !== undefined) {
+          this.stats.lastPromptTokens = response.usage.promptTokens;
+          this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
+          const compactConfig = this.deps.modelClient.getCompactConfig();
+          if (
+            compactConfig.maxToken &&
+            compactConfig.compactThreshold &&
+            response.usage.promptTokens >= Math.floor(compactConfig.maxToken * compactConfig.compactThreshold)
+          ) {
+            this.compactPending = true;
+          }
+        }
+        this.emitStats();
+
+        const normalizedResponseText = response.text.trim();
+        const attentionMutation = attentionUpdates.length > 0;
+        const invalidAttentionNoProgress = attentionRound && !attentionMutation;
+        const missingMessageDispatchChatIds = attentionRound ? findMissingMessageDispatchChatIds(orderedMessages, toolTrace) : [];
+        const invalidAttentionMessageDispatch = attentionRound && missingMessageDispatchChatIds.length > 0;
+        const suppressUserFacingReply = attentionRound || attentionMutation;
+        const discardAssistantFacts = invalidAttentionNoProgress || invalidAttentionMessageDispatch;
+        const decisionToUser =
+          normalizedResponseText.length > 0 && !suppressUserFacingReply ? [normalizedResponseText] : [];
+        const stage = attentionUpdates[attentionUpdates.length - 1]?.stage ?? inferStageFromToolTrace(toolTrace);
+        const done = attentionUpdates.some((item) => item.done) || stage === "done";
+        const completedAt = Date.now();
+
+        if (invalidAttentionNoProgress || invalidAttentionMessageDispatch) {
+          const reason = invalidAttentionMessageDispatch ? "attention.missing_message_dispatch" : "attention.no_progress";
+          const message = invalidAttentionMessageDispatch
+            ? `attention round resolved chat-backed work without visible dispatch: ${missingMessageDispatchChatIds.join(", ")}`
+            : "attention round made no progress";
+          const retryable = attempt + 1 < maxAttempts;
+          retryReminder = invalidAttentionMessageDispatch
+            ? buildAttentionMessageDispatchReminder(attempt + 1, missingMessageDispatchChatIds)
+            : buildAttentionNoProgressReminder(attempt + 1);
+          await this.persistModelCall({
+            ...callRecordBase,
+            status: "error",
+            completedAt,
+            outcome: {
+              code: "error",
+              message,
+              reason,
+              retryable,
+            },
+            response: {
+              decision: {
+                stage,
+                done: false,
+                toUser: [],
+              },
+              usage: response.usage,
+              toolTrace,
+              assistant: {
+                thinking: response.thinking,
+                text: response.text,
+                finishReason: response.finishReason ?? null,
+              },
+            },
+            error: {
+              message,
+              name: "AttentionNoProgressError",
+              details: {
+                attempt: attempt + 1,
+                retrying: retryable,
+              },
+            },
+          });
+          this.compactPending = true;
+
+          if (retryable) {
+            attempt += 1;
+            continue;
+          }
+
+          const summary = this.resolveTaskSummary({
+            stage,
+            done: false,
+            attentionUpdates,
+            text: "",
+            thinking: response.thinking,
+          });
+          this.emitTask(taskId, stage, summary);
+          return {
+            taskId,
+            stage,
+            done: false,
+            summary,
+            outputs: {
+              toUser: [],
+              toTerminal: [],
+              toTools: [],
+            },
+          };
+        }
+
+        await this.persistModelCall({
+          ...callRecordBase,
+          status: "done",
+          completedAt,
+          outcome: {
+            code: "done",
+          },
+          response: {
+            decision: {
+              stage,
+              done,
+              toUser: decisionToUser,
+            },
+            usage: response.usage,
+            toolTrace,
+            assistant: {
+              thinking: response.thinking,
+              text: response.text,
+              finishReason: response.finishReason ?? null,
+            },
+          },
+        });
+
+        const assistantFacts = this.buildAssistantFacts({
+          thinking: response.thinking,
+          text: response.text,
           toolTrace,
-        },
-        error: { message, name, stack, details },
-      });
-      this.activeTask = null;
-      if (aborted) {
-        throw error;
+          attentionUpdates,
+        });
+        const publishedAssistantFacts = this.selectPublishedAssistantFacts(assistantFacts, {
+          suppressUserFacingReply,
+          discardAll: discardAssistantFacts,
+        });
+        this.pushAssistantTurnToHistory(
+          this.selectPublishedAssistantFacts(assistantFacts, {
+            suppressUserFacingReply: suppressUserFacingReply || discardAssistantFacts,
+            discardAll: discardAssistantFacts,
+          }),
+        );
+
+        const summary = this.resolveTaskSummary({
+          stage,
+          done,
+          attentionUpdates,
+          text: suppressUserFacingReply || discardAssistantFacts ? "" : response.text,
+          thinking: response.thinking,
+        });
+
+        this.emitTask(taskId, stage, summary);
+        if (done) {
+          this.activeTask = null;
+        }
+
+        return {
+          taskId,
+          stage,
+          done,
+          summary,
+          outputs: {
+            toUser: this.composeAssistantMessages(publishedAssistantFacts),
+            toTerminal: [],
+            toTools: [],
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const name = error instanceof Error ? error.name : "Error";
+        const stack = error instanceof Error ? error.stack : undefined;
+        const aborted = isAbortError(error);
+        const timeout = message.includes("timed out after");
+        const outcome =
+          aborted
+            ? mapAbortReasonToOutcome(context?.signal?.reason ?? error)
+            : timeout
+              ? {
+                  code: "timeout" as const,
+                  message,
+                  reason: "model.timeout",
+                  retryable: true,
+                  error: error instanceof Error ? { name, message, stack } : error,
+                }
+              : toTerminalOutcomeFromError(error);
+        const details =
+          aborted
+            ? { canceled: true }
+            : error instanceof ModelDecisionError
+              ? { retried: true }
+              : timeout
+                ? { timeout: true }
+                : undefined;
+        await this.persistModelCall({
+          ...callRecordBase,
+          status: aborted ? "cancelled" : "error",
+          completedAt: Date.now(),
+          outcome,
+          response: {
+            toolTrace,
+          },
+          error: { message, name, stack, details },
+        });
+        this.activeTask = null;
+        if (aborted) {
+          throw error;
+        }
+        this.deps.logger.log({
+          channel: "error",
+          level: "error",
+          message: `agenter-ai failed: ${message}`,
+        });
+        const summary = this.runtimeText.t("ai.call_failed", { message });
+        const failureFacts: AssistantFact[] = [
+          {
+            content: summary,
+            channel: "to_user",
+            format: "markdown",
+          },
+        ];
+        this.pushAssistantTurnToHistory(failureFacts);
+        return {
+          taskId,
+          stage: "error",
+          done: true,
+          summary,
+          outputs: {
+            toUser: this.composeAssistantMessages(failureFacts),
+            toTerminal: [],
+            toTools: [],
+          },
+        };
       }
-      this.deps.logger.log({
-        channel: "error",
-        level: "error",
-        message: `agenter-ai failed: ${message}`,
-      });
-      const user = this.createAssistantMessage(this.runtimeText.t("ai.call_failed", { message }));
-      return {
-        taskId,
-        stage: "error",
-        done: true,
-        summary: user.content,
-        outputs: { toUser: [user], toTerminal: [], toTools: [] },
-      };
     }
+
+    return;
   }
 
   private buildAssistantFacts(input: {
@@ -708,6 +1010,22 @@ export class AgenterAI {
     return result;
   }
 
+  private selectPublishedAssistantFacts(
+    facts: readonly AssistantFact[],
+    input: {
+      suppressUserFacingReply: boolean;
+      discardAll?: boolean;
+    },
+  ): AssistantFact[] {
+    if (input.discardAll) {
+      return [];
+    }
+    if (!input.suppressUserFacingReply) {
+      return [...facts];
+    }
+    return facts.filter((fact) => fact.channel !== "to_user");
+  }
+
   private composeAssistantMessages(facts: readonly AssistantFact[]): ChatMessage[] {
     return facts.map((fact) =>
       this.createAssistantMessage(fact.content, {
@@ -718,16 +1036,16 @@ export class AgenterAI {
     );
   }
 
-  private persistModelCall(record: AgentModelCallRecord): void {
+  private async persistModelCall(record: AgentModelCallRecord): Promise<void> {
     this.deps.sessionStore?.appendCall({
       ...record,
       timestamp: new Date(record.timestamp).toISOString(),
       completedAt: record.completedAt ? new Date(record.completedAt).toISOString() : undefined,
     });
-    void this.deps.onModelCall?.(record);
+    await this.deps.onModelCall?.(record);
   }
 
-  private async pushIncomingBatchToHistory(messages: LoopBusMessage[]): Promise<void> {
+  private async pushIncomingBatchToHistory(messages: LoopBusMessage[]): Promise<TextOnlyModelMessage> {
     const rendered = await Promise.all(messages.map((message) => this.formatUserMessage(message)));
     const content: ContentPart[] = [];
     rendered.forEach((parts, index) => {
@@ -736,11 +1054,13 @@ export class AgenterAI {
       }
       content.push(...parts);
     });
-    this.history.push({
+    const historyMessage: TextOnlyModelMessage = {
       role: "user",
       content,
-    });
+    };
+    this.history.push(historyMessage);
     this.trimHistory();
+    return historyMessage;
   }
 
   private pushAssistantTurnToHistory(facts: readonly AssistantFact[]): void {
@@ -763,7 +1083,7 @@ export class AgenterAI {
     if (!this.compactPending || this.history.length < minimumHistory) {
       return;
     }
-    const attentionFacts = this.deps.attentionGateway.list();
+    const attentionFacts = this.deps.attentionGateway.listActive();
     const historyText = this.history
       .map((item, index) => {
         const content = historyContentToText(item.content);
@@ -775,12 +1095,22 @@ export class AgenterAI {
       attentionFacts.length === 0
         ? historyText
         : `${historyText}\n\n# attention_system\n${JSON.stringify(
-            attentionFacts.map((item) => ({
-              id: item.id,
-              from: item.from,
-              score: item.score,
-              remark: item.remark,
-              content: item.content,
+            attentionFacts.map((match) => ({
+              contextId: match.contextId,
+              context: {
+                owner: match.context.owner,
+                headCommitId: match.context.headCommitId,
+                scoreMap: match.context.scoreMap,
+                content: match.context.content,
+              },
+              recentCommits: match.recentCommits.map((commit) => ({
+                commitId: commit.commitId,
+                author: commit.meta.author,
+                source: commit.meta.source,
+                scores: commit.scores,
+                summary: commit.summary,
+                change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
+              })),
             })),
           )}`;
     const compact = await this.deps.modelClient.summarizeText(compactInput);
@@ -852,8 +1182,8 @@ export class AgenterAI {
     if (message.source === "task") {
       return [toTextPart([header, mdFence("yaml", message.text)].join("\n\n"))];
     }
-    if (message.source === "attention-system") {
-      return [toTextPart([header, await this.formatAttentionSystemMessage(message.text)].join("\n\n"))];
+    if (message.source === "attention") {
+      return [toTextPart([header, message.text].join("\n\n"))];
     }
 
     const metaYaml = toYaml({
@@ -862,36 +1192,6 @@ export class AgenterAI {
       ...(message.meta ?? {}),
     });
     return [toTextPart([header, mdFence("yaml", metaYaml), mdFence("text", message.text)].join("\n\n"))];
-  }
-
-  private async formatAttentionSystemMessage(text: string): Promise<string> {
-    const parsed = safeJsonParse(text);
-    if (!parsed || typeof parsed !== "object") {
-      return mdFence("text", text);
-    }
-    const payload = parsed as Record<string, unknown>;
-    if (payload.kind !== "attention-system-list" || !Array.isArray(payload.items)) {
-      return mdFence("yaml", toYaml(payload));
-    }
-    const items = payload.items
-      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-      .map((item) => ({
-        id: item.id ?? null,
-        from: item.from ?? "unknown",
-        score: item.score ?? 0,
-        remark: item.remark ?? "",
-        content: item.content ?? "",
-      }));
-    const markdown = items
-      .map(
-        (item) =>
-          `- [#${item.id}] (${item.from}) score=${item.score} remark=${JSON.stringify(item.remark)}\n  ${String(item.content)}`,
-      )
-      .join("\n");
-    return [
-      mdFence("yaml", toYaml({ kind: "attention-system-list", count: items.length })),
-      mdFence("markdown", markdown),
-    ].join("\n\n");
   }
 
   private async formatTerminalMessage(text: string): Promise<string> {
@@ -1039,7 +1339,14 @@ export class AgenterAI {
     hooks: {
       onAttentionUpdate: (update: AttentionUpdateCall) => void;
     },
+    signal?: AbortSignal,
   ): Tool[] {
+    const throwIfAborted = (): void => {
+      if (signal?.aborted) {
+        throw createAbortError(signal.reason);
+      }
+    };
+
     const traceTool = async <TInput extends unknown, TOutput extends unknown>(
       toolName: string,
       input: TInput,
@@ -1047,7 +1354,9 @@ export class AgenterAI {
     ): Promise<TOutput> => {
       const timestamp = new Date().toISOString();
       try {
+        throwIfAborted();
         const output = await handler();
+        throwIfAborted();
         trace.push({
           tool: toolName,
           input,
@@ -1067,199 +1376,196 @@ export class AgenterAI {
       }
     };
 
-    const attentionListTool = toolDefinition({
-      name: "attention_list",
-      description: this.runtimeText.t("tool.attention_list.description"),
+    const attentionCommitMetaSchema = z.object({
+      author: z.string().min(1),
+      source: z.string().min(1),
+      systemId: z.string().optional(),
+      subjectId: z.string().optional(),
+      channelId: z.string().optional(),
+      replyTarget: z
+        .object({
+          systemId: z.string().min(1),
+          subjectId: z.string().min(1),
+          channelId: z.string().optional(),
+          rootId: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+        })
+        .passthrough()
+        .optional(),
+      tags: z.array(z.string()).optional(),
+      createdAt: z.string().optional(),
+    }).passthrough();
+
+    const attentionCommitChangeSchema = z.discriminatedUnion("type", [
+      z.object({
+        type: z.literal("update"),
+        value: z.string(),
+        format: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal("diff"),
+        value: z.string(),
+        format: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal("clean"),
+      }),
+    ]);
+
+    const attentionMatchSchema = z.object({
+      contextId: z.string(),
+      context: z.object({
+        contextId: z.string(),
+        owner: z.string(),
+        content: z.string(),
+        contentFormat: z.string().optional(),
+        scoreMap: z.record(z.string(), z.number()),
+        headCommitId: z.string().nullable(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+      }),
+      commit: z.object({
+        commitId: z.string(),
+        contextId: z.string(),
+        parentCommitIds: z.array(z.string()),
+        meta: attentionCommitMetaSchema,
+        scores: z.record(z.string(), z.number()),
+        summary: z.string(),
+        change: attentionCommitChangeSchema,
+        createdAt: z.string(),
+      }),
+    });
+
+    const attentionContextListTool = toolDefinition({
+      name: "attention_context_list",
+      description: this.runtimeText.t("tool.attention_context_list.description"),
       outputSchema: z.object({
-        items: z.array(
+        contexts: z.array(
           z.object({
-            id: z.number().int(),
-            content: z.string(),
-            from: z.string(),
-            score: z.number().int(),
-            remark: z.string(),
+            contextId: z.string(),
+            owner: z.string(),
+            headCommitId: z.string().nullable(),
+            unresolvedScoreCount: z.number(),
             updatedAt: z.string(),
           }),
         ),
       }),
     }).server(async () =>
-      traceTool("attention_list", {}, async () => ({
-        items: this.deps.attentionGateway.list(),
+      traceTool("attention_context_list", {}, async () => ({
+        contexts: this.deps.attentionGateway.listContexts(),
       })),
     );
-
-    const attentionAddTool = toolDefinition({
-      name: "attention_add",
-      description: this.runtimeText.t("tool.attention_add.description"),
-      inputSchema: z.object({
-        content: z.string().min(1),
-        from: z.string().min(1),
-        score: z.number().int().min(0).max(100).optional(),
-        remark: z.string().optional(),
-      }),
-      outputSchema: z.object({
-        id: z.number().int(),
-      }),
-    }).server(async (rawInput) => {
-      const input = z
-        .object({
-          content: z.string().min(1),
-          from: z.string().min(1),
-          score: z.number().int().min(0).max(100).optional(),
-          remark: z.string().optional(),
-        })
-        .parse(rawInput);
-      return traceTool("attention_add", input, async () => {
-        const record = await this.deps.attentionGateway.add(input);
-        return { id: record.id };
-      });
-    });
-
-    const attentionRemarkTool = toolDefinition({
-      name: "attention_remark",
-      description: this.runtimeText.t("tool.attention_remark.description"),
-      inputSchema: z.object({
-        id: z.number().int(),
-        score: z.number().int().min(0).max(100).optional(),
-        remark: z.string().optional(),
-      }),
-      outputSchema: z.object({
-        ok: z.boolean(),
-        updated: z
-          .object({
-            id: z.number().int(),
-            score: z.number().int(),
-            remark: z.string(),
-          })
-          .nullable(),
-      }),
-    }).server(async (rawInput) => {
-      const input = z
-        .object({
-          id: z.number().int(),
-          score: z.number().int().min(0).max(100).optional(),
-          remark: z.string().optional(),
-        })
-        .parse(rawInput);
-      return traceTool("attention_remark", input, async () => {
-        const updated = await this.deps.attentionGateway.remark(input);
-        return {
-          ok: Boolean(updated),
-          updated: updated
-            ? {
-                id: updated.id,
-                score: updated.score,
-                remark: updated.remark,
-              }
-            : null,
-        };
-      });
-    });
 
     const attentionQueryTool = toolDefinition({
       name: "attention_query",
       description: this.runtimeText.t("tool.attention_query.description"),
       inputSchema: z.object({
+        contextId: z.string().optional(),
+        hash: z.string().optional(),
+        depth: z.number().int().min(0).max(8).optional(),
+        author: z.string().optional(),
+        source: z.string().optional(),
+        text: z.string().optional(),
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional(),
-        query: z.string().optional(),
         minScore: z.number().int().min(0).max(100).optional(),
       }),
       outputSchema: z.object({
-        items: z.array(
-          z.object({
-            id: z.number().int(),
-            content: z.string(),
-            from: z.string(),
-            score: z.number().int(),
-            remark: z.string(),
-            updatedAt: z.string(),
-          }),
-        ),
+        items: z.array(attentionMatchSchema),
       }),
     }).server(async (rawInput) => {
       const input = z
         .object({
+          contextId: z.string().optional(),
+          hash: z.string().optional(),
+          depth: z.number().int().min(0).max(8).optional(),
+          author: z.string().optional(),
+          source: z.string().optional(),
+          text: z.string().optional(),
           offset: z.number().int().min(0).optional(),
           limit: z.number().int().min(1).max(200).optional(),
-          query: z.string().optional(),
           minScore: z.number().int().min(0).max(100).optional(),
         })
         .parse(rawInput);
       return traceTool("attention_query", input, async () => ({
-        items: await this.deps.attentionGateway.query(input),
+        items: (await this.deps.attentionGateway.query(input)).map(projectAttentionCommitMatchForModel),
       }));
     });
 
-    const attentionUpdateTool = toolDefinition({
-      name: "attention_update",
-      description: this.runtimeText.t("tool.attention_update.description"),
-      inputSchema: z
-        .object({
-          content: z.string().min(1).optional(),
-          text: z.string().min(1).optional(),
-          from: z.string().optional(),
-          score: z.number().int().min(0).max(100).optional(),
-          relationships: z
-            .array(
-              z.object({
-                id: z.number().int(),
-                score: z.number().int().min(0).max(100).optional(),
-                remark: z.string().optional(),
-              }),
-            )
-            .optional(),
-          done: z.boolean().optional(),
-          stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
-        })
-        .refine((value) => Boolean(value.content || value.text), {
-          message: "content is required",
-        }),
-      outputSchema: z.object({ ok: z.boolean(), id: z.number().int() }),
+    const attentionCommitTool = toolDefinition({
+      name: "attention_commit",
+      description: this.runtimeText.t("tool.attention_commit.description"),
+      inputSchema: z.object({
+        contextId: z.string().min(1),
+        parentCommitIds: z.array(z.string()).optional(),
+        meta: attentionCommitMetaSchema,
+        scores: z.record(z.string(), z.number()).optional(),
+        summary: z.string().min(1),
+        change: attentionCommitChangeSchema,
+        done: z.boolean().optional(),
+        stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
+      }),
+      outputSchema: z.object({
+        ok: z.boolean(),
+        commitId: z.string(),
+      }),
     }).server(async (rawInput) => {
       const input = z
         .object({
-          content: z.string().min(1).optional(),
-          text: z.string().min(1).optional(),
-          from: z.string().optional(),
-          score: z.number().int().min(0).max(100).optional(),
-          relationships: z
-            .array(
-              z.object({
-                id: z.number().int(),
-                score: z.number().int().min(0).max(100).optional(),
-                remark: z.string().optional(),
-              }),
-            )
-            .optional(),
+          contextId: z.string().min(1),
+          parentCommitIds: z.array(z.string()).optional(),
+          meta: attentionCommitMetaSchema,
+          scores: z.record(z.string(), z.number()).optional(),
+          summary: z.string().min(1),
+          change: attentionCommitChangeSchema,
           done: z.boolean().optional(),
           stage: z.enum(["plan", "act", "observe", "decide", "done"]).optional(),
         })
-        .refine((value) => Boolean(value.content || value.text), {
-          message: "content is required",
-        })
         .parse(rawInput);
-      const content = input.content ?? input.text ?? "";
-      return traceTool("attention_update", input, async () => {
-        const result = await this.deps.attentionGateway.update({
-          content,
-          from: input.from,
-          score: input.score,
-          relationships: input.relationships,
-        });
+      return traceTool("attention_commit", input, async () => {
+        const commit = await this.deps.attentionGateway.commit(input);
         hooks.onAttentionUpdate({
-          id: result.record.id,
-          text: result.record.content,
-          from: result.record.from,
-          score: result.record.score,
-          remark: result.record.remark,
+          contextId: input.contextId,
+          commitId: commit.commitId,
+          text: commit.summary,
+          author: commit.meta.author,
+          scores: commit.scores,
           done: input.done ?? false,
           stage: input.stage,
-          relationships: input.relationships,
         });
-        return { ok: true, id: result.record.id };
+        return { ok: true, commitId: commit.commitId };
       });
     });
+
+    const messageSendTool = this.deps.messageGateway
+      ? toolDefinition({
+          name: "message_send",
+          description: this.runtimeText.t("tool.message_send.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            content: z.string().min(1),
+            rootId: z.string().optional(),
+            from: z.string().optional(),
+            to: z.string().optional(),
+          }),
+          outputSchema: z.object({
+            ok: z.boolean(),
+            messageId: z.string(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              content: z.string().min(1),
+              rootId: z.string().optional(),
+              from: z.string().optional(),
+              to: z.string().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_send", input, async () => await this.deps.messageGateway!.send(input));
+        })
+      : null;
 
     const terminalProcessProfileSchema = z.object({
       command: z.array(z.string()).optional(),
@@ -1665,11 +1971,10 @@ export class AgenterAI {
     });
 
     const tools: Tool[] = [
-      attentionListTool,
-      attentionAddTool,
-      attentionRemarkTool,
+      attentionContextListTool,
       attentionQueryTool,
-      attentionUpdateTool,
+      attentionCommitTool,
+      ...(messageSendTool ? [messageSendTool] : []),
       listTool,
       createTool,
       focusTool,
