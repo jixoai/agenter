@@ -1,4 +1,5 @@
 import type {
+  ModelCallDeltaItem,
   ModelCallItem,
   RuntimeAttentionState,
   RuntimeChatCycle,
@@ -28,6 +29,7 @@ interface CycleInspectorPanelProps {
   cycles: RuntimeChatCycle[];
   attention?: RuntimeAttentionState;
   modelCalls?: ModelCallItem[];
+  modelCallDeltas?: ModelCallDeltaItem[];
   traces?: RuntimeTraceItem[];
   loading?: boolean;
   selectedCycleId?: string | null;
@@ -108,6 +110,7 @@ export const CycleInspectorPanel = ({
   cycles,
   attention = EMPTY_RUNTIME_ATTENTION_STATE,
   modelCalls = [],
+  modelCallDeltas = [],
   traces = [],
   loading = false,
   selectedCycleId: preferredSelectedCycleId = null,
@@ -274,6 +277,7 @@ export const CycleInspectorPanel = ({
               cycle={selectedCycle}
               attention={attention}
               modelCalls={modelCalls}
+              modelCallDeltas={modelCallDeltas}
               traces={traces}
               onOpenAttentionRef={onOpenAttentionRef}
             />
@@ -296,6 +300,7 @@ export const CycleInspectorPanel = ({
               cycle={selectedCycle}
               attention={attention}
               modelCalls={modelCalls}
+              modelCallDeltas={modelCallDeltas}
               traces={traces}
               onOpenAttentionRef={onOpenAttentionRef}
             />

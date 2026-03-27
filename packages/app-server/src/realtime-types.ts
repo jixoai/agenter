@@ -39,6 +39,7 @@ export type RuntimeEventType =
   | "runtime.observability.trace"
   | "runtime.scheduler.signal"
   | "runtime.modelCall"
+  | "runtime.modelCall.delta"
   | "runtime.apiCall"
   | "runtime.apiRecording"
   | "runtime.attention"

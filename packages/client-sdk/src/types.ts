@@ -40,6 +40,16 @@ export type ObservabilityTraceOutput = RouterOutputs["runtime"]["observabilityTr
 export type ObservabilityTraceItem = ObservabilityTraceOutput["items"][number];
 export type ModelCallsPageOutput = RouterOutputs["runtime"]["modelCallsPage"];
 export type ModelCallItem = ModelCallsPageOutput["items"][number];
+export type ModelCallDeltaKind = "assistant_draft" | "tool_call" | "tool_result" | "run_finished";
+export interface ModelCallDeltaItem {
+  id: number;
+  seq: number;
+  modelCallId: number;
+  cycleId: number;
+  timestamp: number;
+  kind: ModelCallDeltaKind;
+  data: unknown;
+}
 export type ApiCallsPageOutput = RouterOutputs["runtime"]["apiCallsPage"];
 export type ApiCallItem = ApiCallsPageOutput["items"][number];
 export type TerminalActivityOutput = RouterOutputs["runtime"]["terminalActivityPage"];
@@ -107,6 +117,7 @@ export interface RuntimeClientState {
   schedulerLogsBySession: Record<string, SchedulerLogItem[]>;
   observabilityTracesBySession: Record<string, ObservabilityTraceItem[]>;
   modelCallsBySession: Record<string, ModelCallItem[]>;
+  modelCallDeltasBySession?: Record<string, ModelCallDeltaItem[]>;
   apiCallsBySession: Record<string, ApiCallItem[]>;
   terminalActivityBySession: Record<string, Record<string, TerminalActivityItem[]>>;
   apiCallRecordingBySession: Record<string, { enabled: boolean; refCount: number }>;

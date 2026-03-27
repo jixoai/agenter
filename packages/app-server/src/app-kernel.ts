@@ -2162,6 +2162,9 @@ export class AppKernel {
       case "modelCall":
         this.emit("runtime.modelCall", event.payload, sessionId, event.timestamp);
         return;
+      case "modelCallDelta":
+        this.emit("runtime.modelCall.delta", event.payload, sessionId, event.timestamp);
+        return;
       case "apiCall":
         this.emit("runtime.apiCall", event.payload, sessionId, event.timestamp);
         return;

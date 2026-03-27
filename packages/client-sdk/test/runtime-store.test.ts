@@ -1403,6 +1403,206 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given model-call delta events When duplicate ids and incremental deltas arrive Then the store merges by id while preserving ordered timeline", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(320),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 321,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 1,
+          seq: 1,
+          modelCallId: 11,
+          cycleId: 4,
+          timestamp: 100,
+          kind: "assistant_draft",
+          data: { content: "draft v1" },
+        },
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 322,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 1,
+          seq: 1,
+          modelCallId: 11,
+          cycleId: 4,
+          timestamp: 101,
+          kind: "assistant_draft",
+          data: { content: "draft v2" },
+        },
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 323,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 2,
+          seq: 2,
+          modelCallId: 11,
+          cycleId: 4,
+          timestamp: 102,
+          kind: "tool_call",
+          data: { toolName: "terminal_read", toolCallId: "call-1" },
+        },
+      },
+    });
+
+    expect(store.getState().modelCallDeltasBySession?.["i-1"]).toEqual([
+      {
+        id: 1,
+        seq: 1,
+        modelCallId: 11,
+        cycleId: 4,
+        timestamp: 101,
+        kind: "assistant_draft",
+        data: { content: "draft v2" },
+      },
+      {
+        id: 2,
+        seq: 2,
+        modelCallId: 11,
+        cycleId: 4,
+        timestamp: 102,
+        kind: "tool_call",
+        data: { toolName: "terminal_read", toolCallId: "call-1" },
+      },
+    ]);
+
+    store.disconnect();
+  });
+
+  test("Scenario: Given high-volume model-call deltas When runtime streams beyond limit Then the store keeps only LRU 400 items", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(340),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+
+    for (let index = 0; index < 450; index += 1) {
+      const id = index + 1;
+      onData?.({
+        version: 1,
+        eventId: 341 + index,
+        timestamp: Date.now(),
+        type: "runtime.modelCall.delta",
+        sessionId: "i-1",
+        payload: {
+          entry: {
+            id,
+            seq: id,
+            modelCallId: 77,
+            cycleId: 31,
+            timestamp: 10_000 + id,
+            kind: "assistant_draft",
+            data: { content: `draft-${id}` },
+          },
+        },
+      });
+    }
+
+    const deltas = store.getState().modelCallDeltasBySession?.["i-1"] ?? [];
+    expect(deltas).toHaveLength(400);
+    expect(deltas[0]?.id).toBe(51);
+    expect(deltas.at(-1)?.id).toBe(450);
+
+    store.disconnect();
+  });
+
+  test("Scenario: Given model-call deltas in memory When session is deleted by API or event Then delta cache is cleared", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(360),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    onData?.({
+      version: 1,
+      eventId: 361,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 1,
+          seq: 1,
+          modelCallId: 9,
+          cycleId: 3,
+          timestamp: 100,
+          kind: "assistant_draft",
+          data: { content: "draft" },
+        },
+      },
+    });
+    expect(store.getState().modelCallDeltasBySession?.["i-1"]?.length).toBe(1);
+
+    await store.deleteSession("i-1");
+    expect(store.getState().modelCallDeltasBySession?.["i-1"]).toBeUndefined();
+
+    await store.connect();
+    onData?.({
+      version: 1,
+      eventId: 362,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 2,
+          seq: 2,
+          modelCallId: 10,
+          cycleId: 4,
+          timestamp: 101,
+          kind: "assistant_draft",
+          data: { content: "draft-again" },
+        },
+      },
+    });
+    expect(store.getState().modelCallDeltasBySession?.["i-1"]?.length).toBe(1);
+
+    onData?.({
+      version: 1,
+      eventId: 363,
+      timestamp: Date.now(),
+      type: "session.deleted",
+      payload: { sessionId: "i-1" },
+    });
+    expect(store.getState().modelCallDeltasBySession?.["i-1"]).toBeUndefined();
+
+    store.disconnect();
+  });
+
   test("Scenario: Given missing workspaces When cleaning them Then store refreshes workspace state", async () => {
     let recentCalls = 0;
     let listAllCalls = 0;

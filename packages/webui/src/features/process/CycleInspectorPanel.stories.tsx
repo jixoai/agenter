@@ -1,4 +1,10 @@
-import type { ModelCallItem, RuntimeAttentionState, RuntimeChatCycle, ObservabilityTraceItem } from "@agenter/client-sdk";
+import type {
+  ModelCallDeltaItem,
+  ModelCallItem,
+  RuntimeAttentionState,
+  RuntimeChatCycle,
+  ObservabilityTraceItem,
+} from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, userEvent, within } from "storybook/test";
@@ -220,7 +226,14 @@ const modelCalls: ModelCallItem[] = [
     status: "done",
     provider: "openai-compatible",
     model: "deepseek-chat",
-    request: { prompt: "inspect terminal" },
+    request: {
+      systemPrompt: "You are a concise debugging assistant.",
+      messages: [
+        { role: "user", content: "Please inspect the terminal diff." },
+        { role: "assistant", content: "Working on it." },
+      ],
+      tools: [{ name: "terminal_read", description: "Read terminal output" }],
+    },
     response: { ok: true },
     outcome: { code: "done" },
   },
@@ -231,7 +244,37 @@ const modelCalls: ModelCallItem[] = [
     status: "running",
     provider: "openai-compatible",
     model: "deepseek-chat",
-    request: { prompt: "continue" },
+    request: {
+      systemPrompt: "Continue from attention debt.",
+      messages: [{ role: "user", content: "Continue tracing." }],
+      tools: [{ name: "terminal_read", description: "Read terminal output" }],
+    },
+  },
+];
+
+const modelCallDeltas: ModelCallDeltaItem[] = [
+  {
+    id: 1,
+    seq: 1,
+    modelCallId: 13,
+    cycleId: 12,
+    timestamp: 15,
+    kind: "assistant_draft",
+    data: { content: "Still tracing the remaining answer debt..." },
+  },
+  {
+    id: 2,
+    seq: 2,
+    modelCallId: 13,
+    cycleId: 12,
+    timestamp: 16,
+    kind: "tool_call",
+    data: {
+      toolCallId: "tool-continue-1",
+      toolName: "terminal_read",
+      input: { terminalId: "iflow", mode: "diff" },
+      argsText: "{\"terminalId\":\"iflow\",\"mode\":\"diff\"}",
+    },
   },
 ];
 
@@ -262,6 +305,7 @@ const meta = {
     cycles: baseCycles,
     attention: baseAttention,
     modelCalls,
+    modelCallDeltas,
     traces,
     loading: false,
     selectedCycleId: "cycle:11",
@@ -288,13 +332,19 @@ type Story = StoryObj<typeof meta>;
 export const CycleDetailsStayInDevtools: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const maybeOpenPanel = canvas.queryByRole("button", { name: /Open Panel/i });
+    const panelRoot = maybeOpenPanel ? within(document.body) : canvas;
+    if (maybeOpenPanel) {
+      await userEvent.click(maybeOpenPanel);
+    }
 
     await expect(canvas.getByText("Cycles")).toBeInTheDocument();
-    await expect(canvas.getByText(/Cycle story/i)).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("tab", { name: /Effects/i }));
-    await expect(canvas.getByText(/Visible delivery/i)).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("tab", { name: /Evidence/i }));
-    await expect((await canvas.findAllByText(/terminal_read/i)).length).toBeGreaterThan(0);
+    await expect(canvas.getByText(/Model conversation/i)).toBeInTheDocument();
+    await expect(canvas.getByText(/Please inspect the terminal diff/i)).toBeInTheDocument();
+    await userEvent.click(await panelRoot.findByRole("tab", { name: /Config/i }));
+    await expect(await panelRoot.findByText(/System prompt/i)).toBeInTheDocument();
+    await userEvent.click(await panelRoot.findByRole("tab", { name: /Stats/i }));
+    await expect(await panelRoot.findByText(/Delta distribution/i)).toBeInTheDocument();
   },
 };
 
@@ -307,6 +357,7 @@ export const StreamingCycleState: Story = {
 
     await expect(canvas.getByRole("button", { name: /Cycle 12/i })).toBeInTheDocument();
     await expect(await canvas.findByText(/Still tracing the remaining answer debt/i)).toBeInTheDocument();
+    await expect(await canvas.findByText(/terminal_read/i)).toBeInTheDocument();
   },
 };
 
@@ -321,17 +372,22 @@ export const CompactCycleDetailSheet: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: /Cycle 11/i }));
     await expect(await documentCanvas.findByRole("dialog")).toBeInTheDocument();
-    await expect(await documentCanvas.findByRole("tab", { name: /Commits/i })).toBeInTheDocument();
+    await expect(await documentCanvas.findByText(/Model conversation/i)).toBeInTheDocument();
   },
 };
 
 export const MultiContextAttentionRefsStayReadable: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const maybeOpenPanel = canvas.queryByRole("button", { name: /Open Panel/i });
+    const panelRoot = maybeOpenPanel ? within(document.body) : canvas;
+    if (maybeOpenPanel) {
+      await userEvent.click(maybeOpenPanel);
+    }
 
-    await userEvent.click(canvas.getByRole("tab", { name: /Contexts/i }));
-    await expect(canvas.getByText("ctx-terminal-iflow")).toBeInTheDocument();
-    await expect(canvas.getByText("ctx-chat-kzf")).toBeInTheDocument();
+    await userEvent.click(await panelRoot.findByRole("tab", { name: /Attention I\/O/i }));
+    await expect((await panelRoot.findAllByText(/ctx-terminal-iflow/i)).length).toBeGreaterThan(0);
+    await expect((await panelRoot.findAllByText(/ctx-chat-kzf/i)).length).toBeGreaterThan(0);
   },
 };
 

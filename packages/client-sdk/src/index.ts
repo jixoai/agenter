@@ -17,6 +17,8 @@ export type {
   MessageChannelGrantIssueOutput,
   MessageChannelGrantsOutput,
   ModelCallItem,
+  ModelCallDeltaItem,
+  ModelCallDeltaKind,
   ModelDebugOutput,
   NotificationSnapshotOutput,
   ObservabilityTraceItem,

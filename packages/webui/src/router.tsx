@@ -67,6 +67,7 @@ const EMPTY_CYCLES: never[] = [];
 const EMPTY_LOGS: never[] = [];
 const EMPTY_TRACES: never[] = [];
 const EMPTY_MODEL_CALLS: never[] = [];
+const EMPTY_MODEL_CALL_DELTAS: never[] = [];
 const EMPTY_API_CALLS: never[] = [];
 const EMPTY_API_CALL_RECORDING = { enabled: false, refCount: 0 } as const;
 const EMPTY_ATTENTION = EMPTY_RUNTIME_ATTENTION_STATE;
@@ -242,6 +243,9 @@ const DevtoolsCyclesSurface = ({
   const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
   const attention = useRuntimeSelector((state) => state.attentionBySession?.[sessionId] ?? EMPTY_ATTENTION);
   const modelCalls = useRuntimeSelector((state) => state.modelCallsBySession[sessionId] ?? EMPTY_MODEL_CALLS);
+  const modelCallDeltas = useRuntimeSelector(
+    (state) => state.modelCallDeltasBySession?.[sessionId] ?? EMPTY_MODEL_CALL_DELTAS,
+  );
   const runtimeTraces = useRuntimeSelector((state) => state.observabilityTracesBySession[sessionId] ?? EMPTY_TRACES);
   const pagingState = controller.getLongListPagingState({ resource: "cycles", sessionId });
   return (
@@ -249,6 +253,7 @@ const DevtoolsCyclesSurface = ({
       cycles={cycles}
       attention={attention}
       modelCalls={modelCalls}
+      modelCallDeltas={modelCallDeltas}
       traces={runtimeTraces}
       loading={loading}
       selectedCycleId={selectedCycleId}

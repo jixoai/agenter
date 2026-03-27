@@ -44,6 +44,7 @@ const createInitialState = (): RuntimeClientState => ({
   observabilityTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
+  modelCallDeltasBySession: {},
   terminalActivityBySession: {},
   apiCallRecordingBySession: {},
   notifications: [],
@@ -61,6 +62,7 @@ const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
 };
 
 const LOOPBUS_LRU_LIMIT = 100;
+const MODEL_CALL_DELTA_LRU_LIMIT = 400;
 const DEFAULT_MODEL_CAPABILITIES = {
   streaming: false,
   tools: false,
@@ -263,6 +265,7 @@ export class RuntimeStore {
   private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
+  private readonly modelCallDeltasAccessBySession = new Map<string, Map<number, number>>();
   private readonly schedulerLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly observabilityTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly apiCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
@@ -820,6 +823,7 @@ export class RuntimeStore {
     this.observabilityTracesAccessBySession.clear();
     this.apiCallsAccessBySession.clear();
     this.modelCallsAccessBySession.clear();
+    this.modelCallDeltasAccessBySession.clear();
     this.schedulerLogsBeforeCursorBySession.clear();
     this.observabilityTracesBeforeCursorBySession.clear();
     this.apiCallsBeforeCursorBySession.clear();
@@ -924,6 +928,12 @@ export class RuntimeStore {
           Object.entries(runtimes).map(([sessionId]) => [
             sessionId,
             previousState.modelCallsBySession[sessionId] ?? [],
+          ]),
+        ),
+        modelCallDeltasBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [
+            sessionId,
+            previousState.modelCallDeltasBySession?.[sessionId] ?? [],
           ]),
         ),
         apiCallRecordingBySession: Object.fromEntries(
@@ -1084,12 +1094,14 @@ export class RuntimeStore {
     delete this.state.observabilityTracesBySession[sessionId];
     delete this.state.apiCallsBySession[sessionId];
     delete this.state.modelCallsBySession[sessionId];
+    delete this.state.modelCallDeltasBySession?.[sessionId];
     delete this.state.terminalActivityBySession[sessionId];
     delete this.state.apiCallRecordingBySession[sessionId];
     this.schedulerLogsAccessBySession.delete(sessionId);
     this.observabilityTracesAccessBySession.delete(sessionId);
     this.apiCallsAccessBySession.delete(sessionId);
     this.modelCallsAccessBySession.delete(sessionId);
+    this.modelCallDeltasAccessBySession.delete(sessionId);
     this.schedulerLogsBeforeCursorBySession.delete(sessionId);
     this.observabilityTracesBeforeCursorBySession.delete(sessionId);
     this.apiCallsBeforeCursorBySession.delete(sessionId);
@@ -1997,8 +2009,10 @@ export class RuntimeStore {
       delete this.state.observabilityTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
+      delete this.state.modelCallDeltasBySession?.[payload.sessionId];
       delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
+      this.modelCallDeltasAccessBySession.delete(payload.sessionId);
       this.releaseSessionResourceHandle(payload.sessionId);
       void this.listAllWorkspaces();
       return;
@@ -2045,6 +2059,7 @@ export class RuntimeStore {
       event.type === "runtime.observability.trace" ||
       event.type === "runtime.scheduler.signal" ||
       event.type === "runtime.modelCall" ||
+      event.type === "runtime.modelCall.delta" ||
       event.type === "runtime.apiCall" ||
       event.type === "runtime.apiRecording" ||
       event.type === "runtime.attention" ||
@@ -2272,6 +2287,27 @@ export class RuntimeStore {
           [payload.entry],
           LOOPBUS_LRU_LIMIT,
         );
+      } else if (event.type === "runtime.modelCall.delta") {
+        const payload = event.payload as {
+          entry: {
+            id: number;
+            seq: number;
+            modelCallId: number;
+            cycleId: number;
+            timestamp: number;
+            kind: "assistant_draft" | "tool_call" | "tool_result" | "run_finished";
+            data: unknown;
+          };
+        };
+        this.state.modelCallDeltasBySession ??= {};
+        const current = this.state.modelCallDeltasBySession[sessionId] ?? [];
+        this.state.modelCallDeltasBySession[sessionId] = this.applyLruEntries(
+          this.modelCallDeltasAccessBySession,
+          sessionId,
+          current,
+          [payload.entry],
+          MODEL_CALL_DELTA_LRU_LIMIT,
+        );
       } else if (event.type === "runtime.apiCall") {
         const payload = event.payload as {
           entry: {
@@ -2399,6 +2435,8 @@ export class RuntimeStore {
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
+    this.state.modelCallDeltasBySession ??= {};
+    this.state.modelCallDeltasBySession[sessionId] = this.state.modelCallDeltasBySession[sessionId] ?? [];
     this.state.terminalActivityBySession[sessionId] = this.state.terminalActivityBySession[sessionId] ?? {};
     this.state.apiCallRecordingBySession[sessionId] = this.state.apiCallRecordingBySession[sessionId] ?? {
       enabled: false,

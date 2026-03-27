@@ -645,6 +645,18 @@ export interface SessionRuntimeAttentionState {
   hooks: AttentionHookRecord[];
 }
 
+export type ModelCallDeltaKind = "assistant_draft" | "tool_call" | "tool_result" | "run_finished";
+
+export interface SessionModelCallDeltaRecord {
+  id: number;
+  seq: number;
+  modelCallId: number;
+  cycleId: number;
+  timestamp: number;
+  kind: ModelCallDeltaKind;
+  data: unknown;
+}
+
 export interface RuntimeEventMap {
   phase: { phase: LoopBusPhase };
   stage: { stage: TaskStage };
@@ -669,6 +681,7 @@ export interface RuntimeEventMap {
   observabilityTrace: { entry: SessionDbLoopbusTraceRecord };
   schedulerSignal: { kind: LoopInputKind; version: number; timestamp: number };
   modelCall: { entry: SessionModelCallRecord };
+  modelCallDelta: { entry: SessionModelCallDeltaRecord };
   apiCall: { entry: SessionDbApiCallRecord };
   apiRecording: { enabled: boolean; refCount: number };
   cycleUpdated: { cycle: ChatCycle | null };
@@ -804,6 +817,7 @@ export class SessionRuntime {
   private loopKernelSnapshot: LoopBusKernelSnapshot | null = null;
   private activeCycleId: number | null = null;
   private activeModelCallId: number | null = null;
+  private modelCallDeltaSeq = 0;
   private readonly pendingTraceSpans: PendingTraceSpan[] = [];
   private readonly traceRowIdBySpanId = new Map<string, number>();
   private readonly runningTraceRowsByName = new Map<string, SessionDbLoopbusTraceRecord>();
@@ -5105,16 +5119,69 @@ export class SessionRuntime {
     }
   }
 
+  private resolveCurrentModelCallId(): number | null {
+    return this.activeModelCallId ?? this.activeCycle?.modelCallId ?? null;
+  }
+
+  private emitModelCallDelta(input: {
+    timestamp: number;
+    kind: ModelCallDeltaKind;
+    data: unknown;
+    modelCallId?: number | null;
+  }): void {
+    if (this.activeCycleId === null) {
+      return;
+    }
+    const modelCallId = input.modelCallId ?? this.resolveCurrentModelCallId();
+    if (modelCallId === null) {
+      return;
+    }
+    this.modelCallDeltaSeq += 1;
+    const entry: SessionModelCallDeltaRecord = {
+      id: this.modelCallDeltaSeq,
+      seq: this.modelCallDeltaSeq,
+      modelCallId,
+      cycleId: this.activeCycleId,
+      timestamp: input.timestamp,
+      kind: input.kind,
+      data: input.data,
+    };
+    this.emit("modelCallDelta", { entry });
+  }
+
   private handleAssistantStreamUpdate(input: AssistantStreamUpdate): void {
     if (!this.activeCycle) {
       return;
     }
     switch (input.kind) {
       case "draft":
+        this.updateActiveCycle({
+          status: "streaming",
+          streaming: {
+            content: input.content,
+          },
+        });
+        this.emitModelCallDelta({
+          timestamp: input.timestamp,
+          kind: "assistant_draft",
+          data: {
+            content: input.content,
+            usage: input.usage,
+            finishReason: input.finishReason ?? null,
+          },
+        });
         return;
       case "run_finished":
         this.updateActiveCycle({
           status: this.activeCycle.status === "error" ? "error" : "applying",
+        });
+        this.emitModelCallDelta({
+          timestamp: input.timestamp,
+          kind: "run_finished",
+          data: {
+            usage: input.usage,
+            finishReason: input.finishReason ?? null,
+          },
         });
         return;
       case "tool_call": {
@@ -5145,6 +5212,16 @@ export class SessionRuntime {
                 rawText: typeof input.argsText === "string" ? input.argsText : undefined,
               },
             },
+          },
+        });
+        this.emitModelCallDelta({
+          timestamp: input.timestamp,
+          kind: "tool_call",
+          data: {
+            toolCallId: input.toolCallId,
+            toolName: input.toolName,
+            argsText: input.argsText,
+            input: input.input ?? callValue,
           },
         });
         return;
@@ -5185,6 +5262,17 @@ export class SessionRuntime {
               },
               ...(errorText ? { error: errorText } : {}),
             },
+          },
+        });
+        this.emitModelCallDelta({
+          timestamp: input.timestamp,
+          kind: "tool_result",
+          data: {
+            toolCallId: input.toolCallId,
+            toolName: input.toolName,
+            ok: input.ok,
+            result: input.result,
+            error: errorText ?? null,
           },
         });
         return;
