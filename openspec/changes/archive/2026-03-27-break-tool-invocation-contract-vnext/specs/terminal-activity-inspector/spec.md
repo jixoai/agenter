@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Terminal activity SHALL render tool lifecycle entries via the shared invocation card
 Tool lifecycle rows in terminal activity SHALL use structured invocation metadata from persisted runtime records, using `channel: tool` as the canonical source.

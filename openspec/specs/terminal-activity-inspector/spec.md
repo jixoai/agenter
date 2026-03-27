@@ -1,9 +1,7 @@
 ## Purpose
 
 Define terminal-id-centered activity inspection surfaces.
-
 ## Requirements
-
 ### Requirement: Terminal pages SHALL expose terminal-id-centered activity inspection
 The terminal page SHALL let users inspect runtime facts related to the selected terminal id, including terminal reads/writes and other related tool or attention records that reference that terminal.
 
@@ -19,3 +17,12 @@ The terminal activity inspector SHALL load terminal facts through a server-backe
 - **WHEN** the user requests older activity for a terminal with a long history
 - **THEN** the inspector prepends the older rows in chronological order
 - **THEN** the current visible context remains stable while loading
+
+### Requirement: Terminal activity SHALL render tool lifecycle entries via the shared invocation card
+Tool lifecycle rows in terminal activity SHALL use structured invocation metadata from persisted runtime records, using `channel: tool` as the canonical source.
+
+#### Scenario: Terminal tool activity renders directly from invocation payload
+- **WHEN** a terminal activity row contains tool lifecycle data
+- **THEN** terminal activity renders one invocation card from the row's structured tool metadata
+- **THEN** lifecycle status includes `waiting/running/success/failed/cancelled` without markdown parsing
+

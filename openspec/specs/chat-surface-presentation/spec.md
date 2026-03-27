@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the conversation-first presentation contract for the workspace Chat route.
-
 ## Requirements
-
 ### Requirement: Workspace Chat SHALL present a conversation-first session stage
 The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, and the shared AI input composer over cycle or kernel inspection details.
 
@@ -41,17 +39,12 @@ The WebUI SHALL expose exactly one primary session action inside the Chat route,
 - **THEN** start, stop, resume, and abort controls stay inside the route-local session status pill menu
 
 ### Requirement: Technical assistant facts SHALL stay available without dominating Chat
-The WebUI SHALL keep technical assistant facts and cycle metadata accessible for expert inspection, but those facts MUST NOT dominate the default Chat reading flow and MUST be hidden behind expert affordances such as per-message context menus or explicit navigation to Devtools.
+Technical tool lifecycle messages SHALL use `channel: tool` and remain excluded from the default Chat conversation stream.
 
-#### Scenario: Internal assistant channels are not rendered as the primary chat narrative
-- **WHEN** a session contains internal assistant facts such as attention updates, tool-call payloads, or collected-input summaries
-- **THEN** those facts are not rendered as the primary human-facing conversation narrative in Chat
-- **THEN** the user-facing conversation still remains available in chronological order
-
-#### Scenario: Expert cycle access remains contextual
-- **WHEN** the user opens a message-level expert action menu from Chat
-- **THEN** the menu can expose the related Devtools navigation or cycle reference
-- **THEN** the default transcript surface still avoids visible cycle terminology
+#### Scenario: Tool lifecycle is hidden from Chat narrative
+- **WHEN** runtime emits assistant messages with `channel: tool`
+- **THEN** Chat conversation projection excludes those rows from the user-facing transcript
+- **THEN** tool lifecycle remains inspectable in Devtools and terminal technical panels
 
 ### Requirement: Composer helper content SHALL collapse before primary actions degrade
 The shared Chat composer SHALL use adaptive affordances so helper copy collapses into a secondary help affordance before primary actions lose their semantic prominence.
@@ -91,3 +84,4 @@ The Chat route SHALL virtualize transcript rows regardless of history size thres
 - **WHEN** the session contains a very large transcript
 - **THEN** Chat renders the conversation through a virtualized list instead of mounting every row
 - **THEN** loading an older page keeps the visible anchor stable
+
