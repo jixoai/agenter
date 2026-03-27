@@ -6,15 +6,10 @@ import type {
   ObservabilityTraceItem as RuntimeTraceItem,
 } from "@agenter/client-sdk";
 import {
-  Bot,
   CircleAlert,
   CircleCheckBig,
-  GitCommitHorizontal,
   LoaderCircle,
   PanelRightOpen,
-  Sparkles,
-  UserRound,
-  Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -25,13 +20,11 @@ import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { Tabs } from "../../components/ui/tabs";
-import { ToolInvocationCard } from "../../components/ui/tool-invocation-card";
 import { cn } from "../../lib/utils";
 import {
   EMPTY_RUNTIME_ATTENTION_STATE,
   type AttentionSelectionState,
 } from "../attention/attention-view-model";
-import { resolveChatMessagePresentation } from "../chat/chat-contract";
 import { useCompactViewport } from "../shell/useCompactViewport";
 import {
   buildCycleModelCallWorkbench,
@@ -48,7 +41,7 @@ interface CycleInspectorDetailProps {
   onOpenAttentionRef?: (selection: AttentionSelectionState) => void;
 }
 
-type InspectorTab = "config" | "attention" | "stats";
+type InspectorTab = "config" | "attention";
 
 const statusIcon = (cycle: RuntimeChatCycle) => {
   if (cycle.status === "error") {
@@ -60,75 +53,30 @@ const statusIcon = (cycle: RuntimeChatCycle) => {
   return <CircleCheckBig className="h-4 w-4 text-emerald-600" />;
 };
 
-const formatTime = (value: number): string =>
-  new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-const sourceLabel = (source: ModelCallConversationRow["source"]): string => {
-  if (source === "request") {
-    return "request";
-  }
-  if (source === "delta") {
-    return "stream";
-  }
-  return "runtime";
-};
-
-const ConversationMessageRow = ({ row }: { row: Extract<ModelCallConversationRow, { kind: "user" | "assistant" }> }) => {
-  const align = row.kind === "user" ? "end" : "start";
-  const presentation = resolveChatMessagePresentation({
-    role: row.kind,
-    channel: row.kind === "assistant" ? "to_user" : undefined,
-  });
-  const leading = row.kind === "user" ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />;
-
+const ConversationMessageRow = ({ row }: { row: ModelCallConversationRow }) => {
   return (
-    <div className={cn("flex", align === "end" ? "justify-end" : "justify-start")} data-chat-align={align}>
-      <article
-        className={cn(
-          "max-w-[min(100%,44rem)] rounded-2xl px-3 py-3",
-          presentation.bubbleClassName,
-        )}
-      >
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] opacity-85">
-          <span className="inline-flex items-center gap-1 font-medium">
-            {leading}
-            {row.kind === "user" ? "User" : "Assistant"}
-          </span>
-          <span>{formatTime(row.timestamp)}</span>
-          <Badge variant="secondary" className="bg-white/20 text-current">
-            {sourceLabel(row.source)}
-          </Badge>
-        </div>
+    <article className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+        <Badge variant={row.lane === "output" ? "default" : "secondary"}>{row.lane}</Badge>
+        <Badge variant="secondary">{row.role}</Badge>
+        <span>{row.label}</span>
+        <span>#{row.index + 1}</span>
+      </div>
+      {row.format === "markdown" ? (
         <MarkdownDocument
-          value={row.content}
+          value={row.content ?? ""}
           mode="preview"
-          usage="chat"
-          surface={presentation.markdownSurface}
-          syntaxTone={presentation.syntaxTone}
+          usage="inspector"
+          surface="muted"
+          syntaxTone="accented"
           density="compact"
           padding="none"
-          className="text-[13px]"
+          className="text-[13px] text-slate-800"
         />
-      </article>
-    </div>
-  );
-};
-
-const ConversationToolRow = ({ row }: { row: Extract<ModelCallConversationRow, { kind: "tool" }> }) => {
-  return (
-    <div className="flex justify-start" data-chat-align="start">
-      <article className="max-w-[min(100%,44rem)] rounded-2xl border border-slate-200 bg-white px-3 py-3">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-          <span className="inline-flex items-center gap-1 font-medium text-slate-700">
-            <Wrench className="h-3.5 w-3.5" />
-            Tool
-          </span>
-          <span>{formatTime(row.timestamp)}</span>
-          <Badge variant="secondary">{sourceLabel(row.source)}</Badge>
-        </div>
-        <ToolInvocationCard invocation={row.invocation} className="bg-white" />
-      </article>
-    </div>
+      ) : (
+        <JSONViewer value={row.payload ?? null} />
+      )}
+    </article>
   );
 };
 
@@ -173,21 +121,14 @@ const InspectorTabsPanel = ({
   onTabChange,
   workbench,
   detailModel,
-  traces,
   onOpenAttentionRef,
 }: {
   tab: InspectorTab;
   onTabChange: (next: InspectorTab) => void;
   workbench: ReturnType<typeof buildCycleModelCallWorkbench>;
   detailModel: ReturnType<typeof buildCycleInspectorDetail>;
-  traces: RuntimeTraceItem[];
   onOpenAttentionRef?: (selection: AttentionSelectionState) => void;
 }) => {
-  const deltaKinds = workbench.deltas.reduce<Record<string, number>>((acc, entry) => {
-    acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
-    return acc;
-  }, {});
-
   return (
     <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-3 py-3">
@@ -195,7 +136,6 @@ const InspectorTabsPanel = ({
           items={[
             { id: "config", label: "Config" },
             { id: "attention", label: "Attention I/O" },
-            { id: "stats", label: "Stats" },
           ]}
           value={tab}
           onValueChange={(value) => onTabChange(value as InspectorTab)}
@@ -208,17 +148,12 @@ const InspectorTabsPanel = ({
           {tab === "config" ? (
             <>
               <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <h4 className="text-sm font-semibold text-slate-900">Model call envelope</h4>
+                <h4 className="text-sm font-semibold text-slate-900">Model call</h4>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                   <Badge variant="secondary">#{workbench.modelCall?.id ?? "-"}</Badge>
                   <Badge variant="secondary">{workbench.modelCall?.provider ?? "provider: n/a"}</Badge>
                   <Badge variant="secondary">{workbench.modelCall?.model ?? "model: n/a"}</Badge>
                   <Badge variant="secondary">{workbench.modelCall?.status ?? "status: n/a"}</Badge>
-                </div>
-                <div className="mt-3 space-y-2 text-xs text-slate-600">
-                  <p>request messages: {workbench.conversation.filter((row) => row.source === "request").length}</p>
-                  <p>tools declared: {workbench.config.tools.length}</p>
-                  <p>stream deltas: {workbench.deltas.length}</p>
                 </div>
               </article>
 
@@ -240,17 +175,18 @@ const InspectorTabsPanel = ({
               </article>
 
               <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <h4 className="text-sm font-semibold text-slate-900">Tools config</h4>
+                <h4 className="text-sm font-semibold text-slate-900">Payload</h4>
                 <div className="mt-2">
-                  <JSONViewer value={workbench.config.tools} />
-                </div>
-              </article>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <h4 className="text-sm font-semibold text-slate-900">Request / response</h4>
-                <div className="mt-2 space-y-3">
-                  <JSONViewer value={{ request: workbench.config.request, requestMeta: workbench.config.requestMeta }} />
-                  <JSONViewer value={{ response: workbench.config.response, error: workbench.config.error }} />
+                  <JSONViewer
+                    value={{
+                      request: workbench.config.request,
+                      requestMeta: workbench.config.requestMeta,
+                      tools: workbench.config.tools,
+                      response: workbench.config.response,
+                      error: workbench.config.error,
+                      outcome: workbench.modelCall?.outcome ?? null,
+                    }}
+                  />
                 </div>
               </article>
             </>
@@ -318,50 +254,6 @@ const InspectorTabsPanel = ({
               </article>
             </>
           ) : null}
-
-          {tab === "stats" ? (
-            <>
-              <div className="grid gap-2">
-                <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">Conversation rows</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{workbench.conversation.length}</p>
-                </article>
-                <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">Attention contexts</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{detailModel.metrics.contextCount}</p>
-                </article>
-                <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">Remaining debt</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{detailModel.metrics.remainingActiveCount}</p>
-                </article>
-                <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">Runtime traces</p>
-                  <p className="mt-1 text-xl font-semibold text-slate-900">{traces.length}</p>
-                </article>
-              </div>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <h4 className="text-sm font-semibold text-slate-900">Delta distribution</h4>
-                <div className="mt-2">
-                  <JSONViewer value={deltaKinds} />
-                </div>
-              </article>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <h4 className="text-sm font-semibold text-slate-900">Model call outcome</h4>
-                <div className="mt-2">
-                  <JSONViewer
-                    value={{
-                      outcome: workbench.modelCall?.outcome ?? null,
-                      createdAt: workbench.modelCall?.createdAt ?? null,
-                      completedAt: workbench.modelCall?.completedAt ?? null,
-                      status: workbench.modelCall?.status ?? null,
-                    }}
-                  />
-                </div>
-              </article>
-            </>
-          ) : null}
         </div>
       </ScrollViewport>
     </section>
@@ -404,8 +296,6 @@ export const CycleInspectorDetail = ({
               {statusIcon(cycle)}
               <span>{formatCycleTitle(cycle)}</span>
             </div>
-            <Badge variant="secondary">{cycle.kind}</Badge>
-            <Badge variant="secondary">{detailModel.metrics.wakeSource}</Badge>
             <Badge variant="secondary">model #{workbench.modelCall?.id ?? "-"}</Badge>
           </div>
 
@@ -423,28 +313,19 @@ export const CycleInspectorDetail = ({
       <div className={cn("grid h-full gap-3 p-3", compact ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]")}>
         <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50">
           <div className="border-b border-slate-200 px-3 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>
-              <Badge variant="secondary">{workbench.conversation.length} rows</Badge>
-              <Badge variant="secondary">{workbench.deltas.length} deltas</Badge>
-            </div>
+            <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>
             <p className="mt-1 text-xs text-slate-500">
-              Conversation-first lens: inspect user/assistant/tool progression before drilling into configuration and attention internals.
+              Objective timeline from ModelCall request and response.
             </p>
           </div>
 
           <ScrollViewport className="h-full px-3 py-3" data-testid="cycle-modelcall-conversation">
             <div className="space-y-3">
               {workbench.conversation.length > 0 ? (
-                workbench.conversation.map((row) => {
-                  if (row.kind === "tool") {
-                    return <ConversationToolRow key={row.key} row={row} />;
-                  }
-                  return <ConversationMessageRow key={row.key} row={row} />;
-                })
+                workbench.conversation.map((row) => <ConversationMessageRow key={row.key} row={row} />)
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                  No model-call conversation rows captured yet for this cycle.
+                  No model-call messages captured for this cycle.
                 </div>
               )}
             </div>
@@ -457,7 +338,6 @@ export const CycleInspectorDetail = ({
             onTabChange={setInspectorTab}
             workbench={workbench}
             detailModel={detailModel}
-            traces={traces}
             onOpenAttentionRef={onOpenAttentionRef}
           />
         ) : null}
@@ -465,23 +345,12 @@ export const CycleInspectorDetail = ({
 
       {compact ? (
         <Sheet open={inspectorSheetOpen} onOpenChange={setInspectorSheetOpen} side="right" title="Cycle Inspector Panel">
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1">
-              <Sparkles className="h-3.5 w-3.5" />
-              Config / Attention I/O / Stats
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <GitCommitHorizontal className="h-3.5 w-3.5" />
-              Cycle {cycle.cycleId ?? "pending"}
-            </span>
-          </div>
           <div className="h-full min-h-[42dvh]">
             <InspectorTabsPanel
               tab={inspectorTab}
               onTabChange={setInspectorTab}
               workbench={workbench}
               detailModel={detailModel}
-              traces={traces}
               onOpenAttentionRef={onOpenAttentionRef}
             />
           </div>

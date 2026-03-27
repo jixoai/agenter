@@ -234,7 +234,54 @@ const modelCalls: ModelCallItem[] = [
       ],
       tools: [{ name: "terminal_read", description: "Read terminal output" }],
     },
-    response: { ok: true },
+    response: {
+      decision: {
+        stage: "answer",
+        done: true,
+        toUser: ["The retry burst comes from the deploy watcher retry loop."],
+      },
+      usage: {
+        promptTokens: 321,
+        completionTokens: 74,
+        totalTokens: 395,
+      },
+      assistant: {
+        thinking: "Need one terminal read, then summarize the root cause directly.",
+        text: "The retry burst comes from the deploy watcher retry loop.",
+        finishReason: "stop",
+      },
+      toolTrace: [
+        {
+          invocationId: "terminal-read-11",
+          tool: "terminal_read",
+          input: { terminalId: "iflow" },
+          output: {
+            terminalId: "iflow",
+            kind: "diff",
+            seq: 18,
+            cols: 120,
+            rows: 30,
+          },
+          startedAt: 12,
+          finishedAt: 12,
+        },
+        {
+          invocationId: "media-gen-11",
+          tool: "media_generate",
+          input: { prompt: "visualize retry burst timeline", formats: ["image", "audio", "video", "file"] },
+          output: {
+            assets: [
+              { kind: "image", url: "image://retry-burst.webp" },
+              { kind: "audio", url: "audio://retry-burst.mp3" },
+              { kind: "video", url: "video://retry-burst.mp4" },
+              { kind: "file", url: "file://retry-burst-report.md" },
+            ],
+          },
+          startedAt: 12,
+          finishedAt: 13,
+        },
+      ],
+    },
     outcome: { code: "done" },
   },
   {
@@ -341,10 +388,10 @@ export const CycleDetailsStayInDevtools: Story = {
     await expect(canvas.getByText("Cycles")).toBeInTheDocument();
     await expect(canvas.getByText(/Model conversation/i)).toBeInTheDocument();
     await expect(canvas.getByText(/Please inspect the terminal diff/i)).toBeInTheDocument();
+    await expect(canvas.getByText(/The retry burst comes from the deploy watcher retry loop/i)).toBeInTheDocument();
+    await expect(canvas.getByText(/image:\/\/retry-burst.webp/i)).toBeInTheDocument();
     await userEvent.click(await panelRoot.findByRole("tab", { name: /Config/i }));
     await expect(await panelRoot.findByText(/System prompt/i)).toBeInTheDocument();
-    await userEvent.click(await panelRoot.findByRole("tab", { name: /Stats/i }));
-    await expect(await panelRoot.findByText(/Delta distribution/i)).toBeInTheDocument();
   },
 };
 
@@ -356,8 +403,7 @@ export const StreamingCycleState: Story = {
     const canvas = within(canvasElement);
 
     await expect(canvas.getByRole("button", { name: /Cycle 12/i })).toBeInTheDocument();
-    await expect(await canvas.findByText(/Still tracing the remaining answer debt/i)).toBeInTheDocument();
-    await expect(await canvas.findByText(/terminal_read/i)).toBeInTheDocument();
+    await expect(await canvas.findByText(/Continue tracing/i)).toBeInTheDocument();
   },
 };
 

@@ -4,25 +4,20 @@ import type {
   RuntimeChatCycle,
 } from "@agenter/client-sdk";
 
-import type { ToolInvocationView } from "../../components/ui/tool-invocation-card";
+export type ModelCallConversationLane = "input" | "output";
+export type ModelCallConversationFormat = "markdown" | "json";
 
-export type ConversationRowSource = "request" | "cycle" | "delta";
-
-export type ModelCallConversationRow =
-  | {
-      key: string;
-      kind: "user" | "assistant";
-      source: ConversationRowSource;
-      timestamp: number;
-      content: string;
-    }
-  | {
-      key: string;
-      kind: "tool";
-      source: "cycle" | "delta";
-      timestamp: number;
-      invocation: ToolInvocationView;
-    };
+export interface ModelCallConversationRow {
+  key: string;
+  index: number;
+  lane: ModelCallConversationLane;
+  role: string;
+  label: string;
+  format: ModelCallConversationFormat;
+  content?: string;
+  payload?: unknown;
+  timestamp?: number;
+}
 
 export interface CycleModelCallWorkbench {
   modelCall: ModelCallItem | null;
@@ -40,6 +35,22 @@ export interface CycleModelCallWorkbench {
 
 type LooseRecord = Record<string, unknown>;
 
+interface ConversationBuilder {
+  rows: ModelCallConversationRow[];
+  nextIndex: number;
+  seenAssistantTexts: Set<string>;
+  seenToolInvocationIds: Set<string>;
+}
+
+interface DeltaSnapshot {
+  seq: number;
+  timestamp: number;
+  data: LooseRecord | null;
+}
+
+const hasOwn = (record: LooseRecord, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(record, key);
+
 const asRecord = (value: unknown): LooseRecord | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -51,50 +62,159 @@ const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [
 
 const asString = (value: unknown): string => (typeof value === "string" ? value : "");
 
-const asBoolean = (value: unknown): boolean | null => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  return null;
-};
+const normalizeText = (value: string): string => value.trim();
 
-const toText = (value: unknown): string => {
+const splitMessageContent = (value: unknown): { text: string; structured: unknown[] } => {
   if (typeof value === "string") {
-    return value;
+    return { text: value, structured: [] };
   }
-  if (!Array.isArray(value)) {
-    return "";
+
+  if (value === null || value === undefined) {
+    return { text: "", structured: [] };
   }
-  const chunks: string[] = [];
-  for (const part of value) {
+
+  const textParts: string[] = [];
+  const structuredParts: unknown[] = [];
+
+  const collectPart = (part: unknown): void => {
     if (typeof part === "string") {
-      if (part.trim().length > 0) {
-        chunks.push(part);
-      }
-      continue;
+      textParts.push(part);
+      return;
     }
+
     const record = asRecord(part);
     if (!record) {
-      continue;
+      structuredParts.push(part);
+      return;
     }
-    const directText = asString(record.text);
-    if (directText.trim().length > 0) {
-      chunks.push(directText);
-      continue;
+
+    const directText = asString(record.text).trim();
+    if (directText.length > 0) {
+      textParts.push(directText);
+      return;
     }
-    const contentText = asString(record.content);
-    if (contentText.trim().length > 0) {
-      chunks.push(contentText);
+
+    const contentText = asString(record.content).trim();
+    if (contentText.length > 0) {
+      textParts.push(contentText);
+      return;
     }
+
+    structuredParts.push(part);
+  };
+
+  if (Array.isArray(value)) {
+    for (const part of value) {
+      collectPart(part);
+    }
+  } else {
+    collectPart(value);
   }
-  return chunks.join("\n");
+
+  return {
+    text: textParts.join("\n").trim(),
+    structured: structuredParts,
+  };
 };
 
-const normalizeTimestamp = (value: unknown, fallback: number): number => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+const createBuilder = (): ConversationBuilder => ({
+  rows: [],
+  nextIndex: 0,
+  seenAssistantTexts: new Set<string>(),
+  seenToolInvocationIds: new Set<string>(),
+});
+
+const pushMarkdownRow = (
+  builder: ConversationBuilder,
+  input: {
+    key: string;
+    lane: ModelCallConversationLane;
+    role: string;
+    label: string;
+    content: string;
+    timestamp?: number;
+  },
+): void => {
+  builder.rows.push({
+    key: input.key,
+    index: builder.nextIndex,
+    lane: input.lane,
+    role: input.role,
+    label: input.label,
+    format: "markdown",
+    content: input.content,
+    timestamp: input.timestamp,
+  });
+  builder.nextIndex += 1;
+};
+
+const pushJsonRow = (
+  builder: ConversationBuilder,
+  input: {
+    key: string;
+    lane: ModelCallConversationLane;
+    role: string;
+    label: string;
+    payload: unknown;
+    timestamp?: number;
+  },
+): void => {
+  builder.rows.push({
+    key: input.key,
+    index: builder.nextIndex,
+    lane: input.lane,
+    role: input.role,
+    label: input.label,
+    format: "json",
+    payload: input.payload,
+    timestamp: input.timestamp,
+  });
+  builder.nextIndex += 1;
+};
+
+const pushMessageContentRows = (
+  builder: ConversationBuilder,
+  input: {
+    keyPrefix: string;
+    lane: ModelCallConversationLane;
+    role: string;
+    label: string;
+    content: unknown;
+    timestamp?: number;
+    markAssistantText?: boolean;
+    skipSeenAssistantText?: boolean;
+  },
+): void => {
+  const { text, structured } = splitMessageContent(input.content);
+  const normalized = normalizeText(text);
+
+  if (normalized.length > 0) {
+    const alreadySeen = builder.seenAssistantTexts.has(normalized);
+    if (!(input.skipSeenAssistantText && alreadySeen)) {
+      pushMarkdownRow(builder, {
+        key: `${input.keyPrefix}:text`,
+        lane: input.lane,
+        role: input.role,
+        label: input.label,
+        content: text,
+        timestamp: input.timestamp,
+      });
+    }
+    if (input.markAssistantText) {
+      builder.seenAssistantTexts.add(normalized);
+    }
   }
-  return fallback;
+
+  if (structured.length > 0) {
+    pushJsonRow(builder, {
+      key: `${input.keyPrefix}:payload`,
+      lane: input.lane,
+      role: input.role,
+      label: `${input.label} payload`,
+      payload: structured.length === 1 ? structured[0] : structured,
+      timestamp: input.timestamp,
+    });
+  }
 };
 
 const findCycleModelCall = (cycle: RuntimeChatCycle, modelCalls: ModelCallItem[]): ModelCallItem | null => {
@@ -104,13 +224,17 @@ const findCycleModelCall = (cycle: RuntimeChatCycle, modelCalls: ModelCallItem[]
       return byId;
     }
   }
-  if (cycle.cycleId !== null) {
-    const byCycle = modelCalls.find((entry) => entry.cycleId === cycle.cycleId);
-    if (byCycle) {
-      return byCycle;
-    }
+
+  if (cycle.cycleId === null) {
+    return null;
   }
-  return null;
+
+  const candidates = modelCalls.filter((entry) => entry.cycleId === cycle.cycleId);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.reduce((latest, current) => (current.id > latest.id ? current : latest));
 };
 
 const resolveCycleDeltas = (
@@ -132,160 +256,314 @@ const resolveCycleDeltas = (
     .sort((left, right) => left.seq - right.seq);
 };
 
-const buildRequestRows = (request: LooseRecord | null, baseTimestamp: number): ModelCallConversationRow[] => {
+const appendRequestRows = (builder: ConversationBuilder, request: LooseRecord | null): void => {
   if (!request) {
-    return [];
+    return;
   }
-  const rows: ModelCallConversationRow[] = [];
-  const messages = asArray(request.messages);
-  messages.forEach((entry, index) => {
+
+  asArray(request.messages).forEach((entry, index) => {
     const record = asRecord(entry);
-    if (!record) {
-      return;
-    }
-    const role = asString(record.role);
-    if (role !== "user" && role !== "assistant") {
-      return;
-    }
-    const content = toText(record.content);
-    if (content.trim().length === 0) {
-      return;
-    }
-    rows.push({
-      key: `request:${index}:${role}`,
-      kind: role,
-      source: "request",
-      timestamp: baseTimestamp - 1_000 + index,
+    const role = asString(record?.role) || "unknown";
+    const content = record ? record.content : entry;
+
+    pushMessageContentRows(builder, {
+      keyPrefix: `request:${index}:${role}`,
+      lane: "input",
+      role,
+      label: `message #${index + 1}`,
       content,
     });
   });
-  return rows;
 };
 
-const buildFallbackCycleInputRows = (cycle: RuntimeChatCycle, baseTimestamp: number): ModelCallConversationRow[] => {
-  return cycle.inputs
-    .filter((input) => input.source === "message" && input.role === "user")
-    .map((input, index) => ({
-      key: `cycle-input:${cycle.id}:${index}`,
-      kind: "user" as const,
-      source: "cycle" as const,
-      timestamp: baseTimestamp - 500 + index,
-      content: input.parts
-        .filter((part): part is Extract<(typeof input.parts)[number], { type: "text" }> => part.type === "text")
-        .map((part) => part.text)
-        .join("\n"),
-    }))
-    .filter((entry) => entry.content.trim().length > 0);
+const appendResponseRows = (builder: ConversationBuilder, response: LooseRecord | null): void => {
+  if (!response) {
+    return;
+  }
+
+  const assistant = asRecord(response.assistant);
+  const assistantThinking = asString(assistant?.thinking).trim();
+  if (assistantThinking.length > 0) {
+    pushMarkdownRow(builder, {
+      key: "response:assistant:thinking",
+      lane: "output",
+      role: "assistant",
+      label: "assistant thinking",
+      content: assistantThinking,
+    });
+  }
+
+  const assistantText = asString(assistant?.text).trim();
+  if (assistantText.length > 0) {
+    pushMessageContentRows(builder, {
+      keyPrefix: "response:assistant:text",
+      lane: "output",
+      role: "assistant",
+      label: "assistant response",
+      content: assistantText,
+      markAssistantText: true,
+    });
+  }
+
+  asArray(response.toolTrace).forEach((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      pushJsonRow(builder, {
+        key: `response:tool:${index}:payload`,
+        lane: "output",
+        role: "tool",
+        label: `tool trace #${index + 1}`,
+        payload: entry,
+      });
+      return;
+    }
+
+    const invocationId = asString(record.invocationId) || `tool-${index + 1}`;
+    const toolName = asString(record.tool) || "tool";
+    builder.seenToolInvocationIds.add(invocationId);
+
+    if (hasOwn(record, "input")) {
+      pushJsonRow(builder, {
+        key: `response:tool:${invocationId}:call`,
+        lane: "output",
+        role: "tool",
+        label: `tool call · ${toolName}`,
+        payload: {
+          invocationId,
+          tool: toolName,
+          input: record.input,
+          startedAt: record.startedAt,
+        },
+      });
+    }
+
+    if (hasOwn(record, "output") || hasOwn(record, "error")) {
+      pushJsonRow(builder, {
+        key: `response:tool:${invocationId}:result`,
+        lane: "output",
+        role: "tool",
+        label: `tool result · ${toolName}`,
+        payload: {
+          invocationId,
+          tool: toolName,
+          output: record.output,
+          error: record.error,
+          finishedAt: record.finishedAt,
+        },
+      });
+    }
+  });
+
+  const decision = asRecord(response.decision);
+  if (decision) {
+    asArray(decision.toUser).forEach((entry, index) => {
+      pushMessageContentRows(builder, {
+        keyPrefix: `response:decision:toUser:${index}`,
+        lane: "output",
+        role: "assistant",
+        label: `decision to user #${index + 1}`,
+        content: entry,
+        skipSeenAssistantText: true,
+      });
+    });
+
+    const decisionMeta: LooseRecord = {};
+    for (const [key, value] of Object.entries(decision)) {
+      if (key === "toUser") {
+        continue;
+      }
+      decisionMeta[key] = value;
+    }
+
+    if (Object.keys(decisionMeta).length > 0) {
+      pushJsonRow(builder, {
+        key: "response:decision:meta",
+        lane: "output",
+        role: "assistant",
+        label: "decision meta",
+        payload: decisionMeta,
+      });
+    }
+  }
+
+  const responseMeta: LooseRecord = {};
+  for (const [key, value] of Object.entries(response)) {
+    if (key === "assistant" || key === "toolTrace" || key === "decision") {
+      continue;
+    }
+    responseMeta[key] = value;
+  }
+
+  if (Object.keys(responseMeta).length > 0) {
+    pushJsonRow(builder, {
+      key: "response:meta",
+      lane: "output",
+      role: "assistant",
+      label: "response meta",
+      payload: responseMeta,
+    });
+  }
 };
 
-const buildToolRows = (
-  cycle: RuntimeChatCycle,
+const appendDeltaRows = (
+  builder: ConversationBuilder,
   deltas: ModelCallDeltaItem[],
-): ModelCallConversationRow[] => {
-  const byInvocation = new Map<string, Extract<ModelCallConversationRow, { kind: "tool" }>>();
+  input: { hasResponse: boolean },
+): void => {
+  let latestDraft: { seq: number; timestamp: number; content: string } | null = null;
+  let latestRunFinished: DeltaSnapshot | null = null;
+  const toolCalls = new Map<string, DeltaSnapshot>();
+  const toolResults = new Map<string, DeltaSnapshot>();
 
   for (const delta of deltas) {
     const data = asRecord(delta.data);
-    if (!data || (delta.kind !== "tool_call" && delta.kind !== "tool_result")) {
+
+    if (delta.kind === "assistant_draft") {
+      const content = asString(data?.content).trim();
+      if (content.length > 0) {
+        latestDraft = {
+          seq: delta.seq,
+          timestamp: delta.timestamp,
+          content,
+        };
+      }
       continue;
     }
-    const invocationId = asString(data.toolCallId) || `delta-tool-${delta.id}`;
-    const previous = byInvocation.get(invocationId);
-    const toolName = asString(data.toolName) || previous?.invocation.toolName || "tool";
-    const ok = asBoolean(data.ok);
-    const nextStatus =
-      delta.kind === "tool_call"
-        ? "running"
-        : ok === false
-          ? "failed"
-          : ok === true
-            ? "success"
-            : previous?.invocation.status ?? "running";
 
-    byInvocation.set(invocationId, {
-      key: `delta-tool:${invocationId}`,
-      kind: "tool",
-      source: "delta",
-      timestamp: normalizeTimestamp(delta.timestamp, Date.now()),
-      invocation: {
-        invocationId,
-        toolName,
-        status: nextStatus,
-        startedAt: previous?.invocation.startedAt ?? normalizeTimestamp(delta.timestamp, Date.now()),
-        finishedAt: delta.kind === "tool_result" ? normalizeTimestamp(delta.timestamp, Date.now()) : previous?.invocation.finishedAt,
-        call:
-          delta.kind === "tool_call" || previous?.invocation.call
-            ? {
-                value: delta.kind === "tool_call" ? data.input ?? data.args ?? previous?.invocation.call?.value ?? null : previous?.invocation.call?.value ?? null,
-                rawText: delta.kind === "tool_call" ? asString(data.argsText) || undefined : previous?.invocation.call?.rawText,
-              }
-            : null,
-        result:
-          delta.kind === "tool_result" || previous?.invocation.result
-            ? {
-                value: delta.kind === "tool_result" ? data.result ?? null : previous?.invocation.result?.value ?? null,
-              }
-            : null,
-        error: delta.kind === "tool_result" ? asString(data.error) || null : previous?.invocation.error ?? null,
-      },
-    });
-  }
-
-  for (const message of [...cycle.outputs, ...cycle.liveMessages]) {
-    if (!message.tool) {
+    if (delta.kind === "run_finished") {
+      latestRunFinished = {
+        seq: delta.seq,
+        timestamp: delta.timestamp,
+        data,
+      };
       continue;
     }
-    byInvocation.set(message.tool.invocationId, {
-      key: `cycle-tool:${message.tool.invocationId}`,
-      kind: "tool",
-      source: "cycle",
-      timestamp: normalizeTimestamp(message.timestamp, Date.now()),
-      invocation: {
-        invocationId: message.tool.invocationId,
-        toolName: message.tool.name,
-        status: message.tool.status,
-        startedAt: message.tool.startedAt,
-        finishedAt: message.tool.finishedAt,
-        call: message.tool.call ?? null,
-        result: message.tool.result ?? null,
-        error: message.tool.error ?? null,
-      },
-    });
-  }
 
-  return [...byInvocation.values()].sort((left, right) => left.timestamp - right.timestamp);
-};
-
-const buildAssistantRows = (
-  cycle: RuntimeChatCycle,
-  deltas: ModelCallDeltaItem[],
-): ModelCallConversationRow[] => {
-  const rows: ModelCallConversationRow[] = [];
-  for (const message of [...cycle.outputs, ...cycle.liveMessages]) {
-    if (message.role !== "assistant" || message.channel !== "to_user" || message.content.trim().length === 0) {
+    if (delta.kind === "tool_call") {
+      const toolCallId = asString(data?.toolCallId) || `delta-tool-call:${delta.seq}`;
+      toolCalls.set(toolCallId, {
+        seq: delta.seq,
+        timestamp: delta.timestamp,
+        data,
+      });
       continue;
     }
-    rows.push({
-      key: `assistant:${message.id}`,
-      kind: "assistant",
-      source: "cycle",
-      timestamp: normalizeTimestamp(message.timestamp, Date.now()),
-      content: message.content,
+
+    if (delta.kind === "tool_result") {
+      const toolCallId = asString(data?.toolCallId) || `delta-tool-result:${delta.seq}`;
+      toolResults.set(toolCallId, {
+        seq: delta.seq,
+        timestamp: delta.timestamp,
+        data,
+      });
+    }
+  }
+
+  const timeline: Array<
+    | { kind: "draft"; seq: number; timestamp: number; content: string }
+    | { kind: "tool_call"; seq: number; timestamp: number; toolCallId: string; data: LooseRecord | null }
+    | { kind: "tool_result"; seq: number; timestamp: number; toolCallId: string; data: LooseRecord | null }
+    | { kind: "run_finished"; seq: number; timestamp: number; data: LooseRecord | null }
+  > = [];
+
+  if (latestDraft) {
+    timeline.push({
+      kind: "draft",
+      seq: latestDraft.seq,
+      timestamp: latestDraft.timestamp,
+      content: latestDraft.content,
     });
   }
-  const latestDraft = [...deltas].reverse().find((entry) => entry.kind === "assistant_draft");
-  const latestDraftContent = asString(asRecord(latestDraft?.data)?.content);
-  const latestAssistant = rows.at(-1)?.content.trim();
-  if (latestDraft && latestDraftContent.trim().length > 0 && latestAssistant !== latestDraftContent.trim()) {
-    rows.push({
-      key: `assistant-draft:${latestDraft.id}`,
-      kind: "assistant",
-      source: "delta",
-      timestamp: normalizeTimestamp(latestDraft.timestamp, Date.now()),
-      content: latestDraftContent,
+
+  for (const [toolCallId, snapshot] of toolCalls.entries()) {
+    timeline.push({
+      kind: "tool_call",
+      seq: snapshot.seq,
+      timestamp: snapshot.timestamp,
+      toolCallId,
+      data: snapshot.data,
     });
   }
-  return rows;
+
+  for (const [toolCallId, snapshot] of toolResults.entries()) {
+    timeline.push({
+      kind: "tool_result",
+      seq: snapshot.seq,
+      timestamp: snapshot.timestamp,
+      toolCallId,
+      data: snapshot.data,
+    });
+  }
+
+  if (latestRunFinished && !input.hasResponse) {
+    timeline.push({
+      kind: "run_finished",
+      seq: latestRunFinished.seq,
+      timestamp: latestRunFinished.timestamp,
+      data: latestRunFinished.data,
+    });
+  }
+
+  timeline
+    .slice()
+    .sort((left, right) => left.seq - right.seq)
+    .forEach((entry) => {
+      if (entry.kind === "draft") {
+        const normalized = normalizeText(entry.content);
+        if (normalized.length > 0 && !builder.seenAssistantTexts.has(normalized)) {
+          pushMarkdownRow(builder, {
+            key: `delta:draft:${entry.seq}`,
+            lane: "output",
+            role: "assistant",
+            label: "assistant draft",
+            content: entry.content,
+            timestamp: entry.timestamp,
+          });
+        }
+        return;
+      }
+
+      if (entry.kind === "tool_call") {
+        if (builder.seenToolInvocationIds.has(entry.toolCallId)) {
+          return;
+        }
+        const toolName = asString(entry.data?.toolName) || "tool";
+        pushJsonRow(builder, {
+          key: `delta:tool_call:${entry.toolCallId}:${entry.seq}`,
+          lane: "output",
+          role: "tool",
+          label: `tool call · ${toolName}`,
+          payload: entry.data ?? { toolCallId: entry.toolCallId },
+          timestamp: entry.timestamp,
+        });
+        return;
+      }
+
+      if (entry.kind === "tool_result") {
+        if (builder.seenToolInvocationIds.has(entry.toolCallId)) {
+          return;
+        }
+        const toolName = asString(entry.data?.toolName) || "tool";
+        pushJsonRow(builder, {
+          key: `delta:tool_result:${entry.toolCallId}:${entry.seq}`,
+          lane: "output",
+          role: "tool",
+          label: `tool result · ${toolName}`,
+          payload: entry.data ?? { toolCallId: entry.toolCallId },
+          timestamp: entry.timestamp,
+        });
+        return;
+      }
+
+      pushJsonRow(builder, {
+        key: `delta:run_finished:${entry.seq}`,
+        lane: "output",
+        role: "assistant",
+        label: "run finished",
+        payload: entry.data ?? {},
+        timestamp: entry.timestamp,
+      });
+    });
 };
 
 export const buildCycleModelCallWorkbench = (input: {
@@ -295,32 +573,20 @@ export const buildCycleModelCallWorkbench = (input: {
 }): CycleModelCallWorkbench => {
   const modelCall = findCycleModelCall(input.cycle, input.modelCalls);
   const request = asRecord(modelCall?.request);
-  const baseTimestamp = normalizeTimestamp(modelCall?.createdAt ?? input.cycle.createdAt, Date.now());
+  const response = asRecord(modelCall?.response);
   const deltas = resolveCycleDeltas(input.cycle, modelCall, input.modelCallDeltas);
-  const requestRows = buildRequestRows(request, baseTimestamp);
-  const cycleInputRows = requestRows.some((entry) => entry.kind === "user") ? [] : buildFallbackCycleInputRows(input.cycle, baseTimestamp);
-  const toolRows = buildToolRows(input.cycle, deltas);
-  const assistantRows = buildAssistantRows(input.cycle, deltas);
-  const conversation = [...requestRows, ...cycleInputRows, ...toolRows, ...assistantRows].sort(
-    (left, right) => left.timestamp - right.timestamp,
-  );
 
-  const systemPrompt = [
-    asString(request?.systemPrompt),
-    ...asArray(request?.messages)
-      .map((message) => asRecord(message))
-      .filter((message): message is LooseRecord => message !== null && asString(message.role) === "system")
-      .map((message) => toText(message.content)),
-  ]
-    .join("\n\n")
-    .trim();
+  const builder = createBuilder();
+  appendRequestRows(builder, request);
+  appendResponseRows(builder, response);
+  appendDeltaRows(builder, deltas, { hasResponse: response !== null });
 
   return {
     modelCall,
     deltas,
-    conversation,
+    conversation: builder.rows,
     config: {
-      systemPrompt,
+      systemPrompt: asString(request?.systemPrompt),
       request: modelCall?.request ?? null,
       requestMeta: asRecord(request?.meta) ?? {},
       tools: asArray(request?.tools),

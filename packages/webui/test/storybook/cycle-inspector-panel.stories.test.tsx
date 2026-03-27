@@ -10,11 +10,11 @@ const { MultiContextAttentionRefsStayReadable } = composeStories(stories);
 const { LoadingCycleHistory } = composeStories(stories);
 
 describe("Feature: Storybook DOM contract for cycle inspection", () => {
-  test("Scenario: Given the Devtools cycle workbench When switching right-panel tabs Then conversation-first flow and model config stay inspectable", async () => {
+  test("Scenario: Given the Devtools cycle workbench When switching right-panel tabs Then model-call input and output stay inspectable", async () => {
     await CycleDetailsStayInDevtools.run();
   });
 
-  test("Scenario: Given a streaming cycle story When selected in the browser Then draft and tool-call deltas stay visible in the conversation lane", async () => {
+  test("Scenario: Given a running cycle story When selected in the browser Then the conversation lane stays within model-call timeline data", async () => {
     await StreamingCycleState.run();
   });
 
