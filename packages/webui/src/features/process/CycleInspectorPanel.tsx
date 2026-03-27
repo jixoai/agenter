@@ -228,7 +228,7 @@ export const CycleInspectorPanel = ({
       >
         <ViewportMask
           className={cn(
-            "grid h-full gap-3 p-3",
+            "grid h-full grid-rows-[minmax(0,1fr)] gap-3 p-3",
             showSplitDetail ? "lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]" : "",
           )}
         >
@@ -273,22 +273,26 @@ export const CycleInspectorPanel = ({
           </ViewportMask>
 
           {showSplitDetail && selectedCycle ? (
-            <CycleInspectorDetail
-              cycle={selectedCycle}
-              attention={attention}
-              modelCalls={modelCalls}
-              modelCallDeltas={modelCallDeltas}
-              traces={traces}
-              onOpenAttentionRef={onOpenAttentionRef}
-            />
+            <ViewportMask className="h-full">
+              <CycleInspectorDetail
+                cycle={selectedCycle}
+                attention={attention}
+                modelCalls={modelCalls}
+                modelCallDeltas={modelCallDeltas}
+                traces={traces}
+                onOpenAttentionRef={onOpenAttentionRef}
+              />
+            </ViewportMask>
           ) : null}
 
           {showSplitDetail && !selectedCycle ? (
-            <section className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
-              <p className="text-sm text-slate-500">
-                Select a cycle to inspect attention motion, item mutations, delivered side effects, and runtime evidence.
-              </p>
-            </section>
+            <ViewportMask className="h-full">
+              <section className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
+                <p className="text-sm text-slate-500">
+                  Select a cycle to inspect attention motion, item mutations, delivered side effects, and runtime evidence.
+                </p>
+              </section>
+            </ViewportMask>
           ) : null}
         </ViewportMask>
       </AsyncSurface>

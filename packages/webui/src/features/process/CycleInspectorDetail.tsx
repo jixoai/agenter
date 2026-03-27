@@ -310,7 +310,12 @@ export const CycleInspectorDetail = ({
         </div>
       </header>
 
-      <div className={cn("grid h-full gap-3 p-3", compact ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]")}>
+      <div
+        className={cn(
+          "grid h-full grid-rows-[minmax(0,1fr)] gap-3 p-3",
+          compact ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]",
+        )}
+      >
         <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50">
           <div className="border-b border-slate-200 px-3 py-3">
             <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>

@@ -7,7 +7,7 @@ import type {
 } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 
 import type { AttentionSelectionState } from "../attention/attention-view-model";
 import { CycleInspectorPanel } from "./CycleInspectorPanel";
@@ -419,6 +419,10 @@ export const CompactCycleDetailSheet: Story = {
     await userEvent.click(canvas.getByRole("button", { name: /Cycle 11/i }));
     await expect(await documentCanvas.findByRole("dialog")).toBeInTheDocument();
     await expect(await documentCanvas.findByText(/Model conversation/i)).toBeInTheDocument();
+    await userEvent.click(await documentCanvas.findByTestId("sheet-backdrop"));
+    await waitFor(() => {
+      expect(documentCanvas.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   },
 };
 
