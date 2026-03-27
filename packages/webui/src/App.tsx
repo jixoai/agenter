@@ -1411,8 +1411,10 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const hydrateSession = useCallback(
     async (sessionId: string): Promise<void> => {
       await hydrateSessionLongLists(sessionId);
+      await store.hydrateSessionArtifacts(sessionId);
+      primeRuntimeLongLists(sessionId);
     },
-    [hydrateSessionLongLists],
+    [hydrateSessionLongLists, primeRuntimeLongLists, store],
   );
 
   const queryAttention = useCallback(
