@@ -197,6 +197,7 @@ export const CycleInspectorPanel = ({
         </div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <HelpHint
+            helpId="cycle-inspector:overview"
             textContext="Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained."
             content="Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained."
           />

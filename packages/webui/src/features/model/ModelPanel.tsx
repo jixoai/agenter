@@ -129,12 +129,22 @@ const Field = ({ label, value }: { label: string; value: string }) => (
   </label>
 );
 
-const SectionTitle = ({ title, description, badge }: { title: string; description: string; badge?: string }) => (
+const SectionTitle = ({
+  title,
+  description,
+  helpId,
+  badge,
+}: {
+  title: string;
+  description: string;
+  helpId: string;
+  badge?: string;
+}) => (
   <div className="flex flex-wrap items-start justify-between gap-3">
     <div className="space-y-1">
       <div className="flex items-center gap-2">
         <CardTitle>{title}</CardTitle>
-        <HelpHint textContext={`${title}\n${description}`} content={description} />
+        <HelpHint helpId={helpId} textContext={`${title}\n${description}`} content={description} />
       </div>
       <CardDescription className="sr-only">{description}</CardDescription>
     </div>
@@ -365,6 +375,7 @@ export const ModelPanel = ({
                       <SectionTitle
                         title="Provider"
                         description="Resolved provider configuration used by the active session runtime."
+                        helpId="model-panel:overview:provider"
                       />
                     </CardHeader>
                     <CardContent className="grid gap-3 pt-0 md:grid-cols-2">
@@ -394,6 +405,7 @@ export const ModelPanel = ({
                       <SectionTitle
                         title="Current context"
                         description="Runtime counters retained for the next provider turn."
+                        helpId="model-panel:overview:current-context"
                         badge={String(historyMessages.length)}
                       />
                     </CardHeader>
@@ -408,6 +420,7 @@ export const ModelPanel = ({
                     <SectionTitle
                       title="Latest summary"
                       description="Latest model envelope, useful for checking whether the runtime is pointing at the right provider and cycle."
+                      helpId="model-panel:overview:latest-summary"
                       badge={latestCall ? String(latestModelCall?.id ?? "") : undefined}
                     />
                   </CardHeader>
@@ -443,6 +456,7 @@ export const ModelPanel = ({
                           <SectionTitle
                             title="Latest model request"
                             description="Latest request envelope, prompt text, and request messages."
+                            helpId="model-panel:latest:request"
                             badge={String(latestModelCall?.id ?? "")}
                           />
                         </CardHeader>
@@ -505,6 +519,7 @@ export const ModelPanel = ({
                           <SectionTitle
                             title="Latest model result"
                             description="Response and error bodies captured for the latest call."
+                            helpId="model-panel:latest:result"
                             badge={String(latestModelCall?.id ?? "")}
                           />
                         </CardHeader>
@@ -521,6 +536,7 @@ export const ModelPanel = ({
                           <SectionTitle
                             title="AI tools"
                             description="Tool declarations attached to the latest request."
+                            helpId="model-panel:latest:tools"
                             badge={String(latestTools.length)}
                           />
                         </CardHeader>
@@ -574,6 +590,7 @@ export const ModelPanel = ({
                       <SectionTitle
                         title="Current context"
                         description="Messages currently retained for the next model turn."
+                        helpId="model-panel:history:context"
                         badge={String(historyMessages.length)}
                       />
                     </CardHeader>
@@ -619,6 +636,7 @@ export const ModelPanel = ({
                       <SectionTitle
                         title="Recent model calls"
                         description="Recent call envelopes, useful when inspecting loops or retries."
+                        helpId="model-panel:history:calls"
                         badge={String(recentModelCalls.length)}
                       />
                     </CardHeader>
@@ -670,6 +688,7 @@ export const ModelPanel = ({
                   <SectionTitle
                     title="Recorded HTTP"
                     description="Full request and response bodies captured by optional HTTP recording."
+                    helpId="model-panel:transport:recorded-http"
                     badge={String(httpRecords.length)}
                   />
                 </CardHeader>

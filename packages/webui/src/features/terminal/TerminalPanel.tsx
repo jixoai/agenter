@@ -343,6 +343,7 @@ export const TerminalPanel = ({
                 {cols}x{rows}
               </Badge>
               <HelpHint
+                helpId="terminal-panel:fit-cover"
                 textContext="fit keeps PTY geometry container-driven; cover only changes presentation."
                 content="fit keeps PTY geometry container-driven; cover only changes presentation."
               />

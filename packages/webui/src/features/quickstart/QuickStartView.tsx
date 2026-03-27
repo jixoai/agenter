@@ -194,6 +194,7 @@ export const QuickStartView = ({
                 <div className="flex items-center gap-2">
                   <h2 className="typo-title-2 text-slate-900">Quick Start</h2>
                   <HelpHint
+                    helpId="quickstart:overview"
                     textContext="Choose a workspace, then start a new session with one prompt."
                     content="Choose a workspace, then start a new session with one prompt."
                   />

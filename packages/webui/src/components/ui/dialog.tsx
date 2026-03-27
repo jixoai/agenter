@@ -9,12 +9,13 @@ interface DialogProps {
   open: boolean;
   title: string;
   description?: string;
+  descriptionHelpId?: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
 }
 
-export const Dialog = ({ open, title, description, onClose, children, footer }: DialogProps) => {
+export const Dialog = ({ open, title, description, descriptionHelpId, onClose, children, footer }: DialogProps) => {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogPrimitive.Portal>
@@ -24,7 +25,14 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <DialogPrimitive.Title className="typo-title-3 text-slate-900">{title}</DialogPrimitive.Title>
-                {description ? <HelpHint textContext={`${title}\n${description}`} content={description} ariaLabel="Dialog help" /> : null}
+                {description ? (
+                  <HelpHint
+                    helpId={descriptionHelpId}
+                    textContext={`${title}\n${description}`}
+                    content={description}
+                    ariaLabel="Dialog help"
+                  />
+                ) : null}
               </div>
               {description ? <DialogPrimitive.Description className="sr-only">{description}</DialogPrimitive.Description> : null}
             </div>

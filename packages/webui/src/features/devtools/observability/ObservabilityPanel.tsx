@@ -105,6 +105,7 @@ export const ObservabilityPanel = ({
           <div className="flex items-center gap-2">
             <h2 className="typo-title-3 text-slate-900">Observability</h2>
             <HelpHint
+              helpId="observability:overview"
               textContext="Context events, scheduler state, and transport records for the attention-driven runtime."
               content={`Context events, scheduler state, and transport records for the attention-driven runtime. Stage: ${stage}.`}
             />

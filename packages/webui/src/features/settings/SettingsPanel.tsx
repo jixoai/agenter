@@ -20,6 +20,7 @@ interface SettingsPanelProps {
   status: string;
   title?: string;
   description?: string;
+  descriptionHelpId?: string;
   effective: SettingsEffectiveGraph;
   layers: SettingsLayerItem[];
   selectedLayerId: string | null;
@@ -72,6 +73,7 @@ export const SettingsPanel = ({
   status,
   title = "Settings",
   description = "Merged settings stay read-only. Each source layer remains editable independently.",
+  descriptionHelpId,
   effective,
   layers,
   selectedLayerId,
@@ -191,7 +193,13 @@ export const SettingsPanel = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h2 className="typo-title-3 text-slate-900">{title}</h2>
-          {description ? <HelpHint textContext={`${title}\n${description}`} content={description} /> : null}
+          {description ? (
+            <HelpHint
+              helpId={descriptionHelpId ?? "settings-panel:overview"}
+              textContext={`${title}\n${description}`}
+              content={description}
+            />
+          ) : null}
         </div>
         <Badge variant="secondary" className="max-w-[48ch] truncate">
           {status}

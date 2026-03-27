@@ -35,6 +35,7 @@ export const HelpHint = ({
   const [dismissed, setDismissed] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
   const skipNextOpenChangeRef = useRef(false);
+  const suppressOpenUntilRef = useRef(0);
   const identity = useMemo(() => ({ helpId, textContext }), [helpId, textContext]);
 
   useEffect(() => {
@@ -62,6 +63,9 @@ export const HelpHint = ({
   }
 
   const handleOpenChange = (next: boolean) => {
+    if (next && Date.now() < suppressOpenUntilRef.current) {
+      return;
+    }
     if (skipNextOpenChangeRef.current) {
       skipNextOpenChangeRef.current = false;
       return;
@@ -78,6 +82,9 @@ export const HelpHint = ({
     event.stopPropagation();
     if (dismissed === false) {
       skipNextOpenChangeRef.current = true;
+      // On touch devices tooltip libraries may emit a follow-up open event after trigger click.
+      // Keep a short suppression window so "dismiss on click" stays deterministic.
+      suppressOpenUntilRef.current = Date.now() + 480;
       setDismissed(true);
       setOpen(false);
       void dismissHelpHint(identity);

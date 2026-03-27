@@ -260,6 +260,7 @@ export const TerminalActivityPanel = ({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="typo-title-3 text-slate-900">Activity</h3>
             <HelpHint
+              helpId="terminal-activity:overview"
               textContext="Server-backed terminal activity scoped by session and terminal id."
               content="Server-backed terminal activity scoped by session and terminal id."
             />

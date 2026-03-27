@@ -111,6 +111,7 @@ export const ComposerStatusBar = ({
 
         <HelpHint
           ariaLabel="Composer help"
+          helpId="composer:shortcuts"
           textContext={`composer-help:${helpContext}`}
           content={
             <div className="space-y-1.5">

@@ -322,6 +322,7 @@ export const CycleInspectorDetail = ({
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>
               <HelpHint
+                helpId="cycle-inspector:model-conversation"
                 textContext="Objective timeline from ModelCall request and response."
                 content="Objective timeline from ModelCall request and response."
               />

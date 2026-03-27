@@ -82,6 +82,7 @@ export const GlobalSettingsPanel = ({
           status={saving ? "Saving..." : status}
           title="Global Settings"
           description="Global user settings share the same source/view workbench. Avatar catalog management stays in the Avatars tab."
+          descriptionHelpId="settings:global:overview"
           effective={effective}
           layers={layers}
           selectedLayerId={selectedLayerId}

@@ -125,6 +125,7 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="typo-title-3 text-slate-900">Messages</h3>
               <HelpHint
+                helpId="systems-panel:messages-overview"
                 textContext="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
                 content="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
               />
@@ -242,6 +243,7 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="typo-title-3 text-slate-900">Systems</h2>
             <HelpHint
+              helpId="systems-panel:overview"
               textContext="Message, terminal, and task systems are side-effect boundaries around the attention kernel."
               content="Message, terminal, and task systems are side-effect boundaries around the attention kernel."
             />

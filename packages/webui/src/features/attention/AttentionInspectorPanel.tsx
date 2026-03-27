@@ -335,6 +335,7 @@ export const AttentionInspectorPanel = ({
           <div className="flex items-center gap-2">
             <h2 className="typo-title-3 text-slate-900">Attention</h2>
             <HelpHint
+              helpId="attention-panel:overview"
               textContext="Context is the notebook. Items are the immutable commit log that drives the notebook toward score zero."
               content="Context is the notebook. Items are the immutable commit log that drives the notebook toward score zero."
             />
@@ -448,6 +449,7 @@ export const AttentionInspectorPanel = ({
                           <div className="mt-1 flex items-center gap-2">
                             <h3 className="text-base font-semibold text-slate-950">{contextSnapshot.context.contextId}</h3>
                             <HelpHint
+                              helpId="attention-panel:context-state"
                               textContext="One attention context is one notebook. The head commit is the latest mutation; the notebook body is the current merged state."
                               content="One attention context is one notebook. The head commit is the latest mutation; the notebook body is the current merged state."
                             />
@@ -508,6 +510,7 @@ export const AttentionInspectorPanel = ({
                         <div className="flex items-center gap-2">
                           <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Scores</h4>
                           <HelpHint
+                            helpId="attention-panel:context-scores"
                             textContext="Scores are the cross-context lookup graph. Click a hash to traverse related commits."
                             content="Scores are the cross-context lookup graph. Click a hash to traverse related commits."
                           />
@@ -649,6 +652,7 @@ export const AttentionInspectorPanel = ({
                           <div className="mt-1 flex items-center gap-2">
                             <h3 className="text-base font-semibold text-slate-950">{selectedCommit.summary}</h3>
                             <HelpHint
+                              helpId="attention-panel:commit-summary"
                               textContext="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
                               content="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
                             />
@@ -664,6 +668,7 @@ export const AttentionInspectorPanel = ({
                                 Change
                               </h4>
                               <HelpHint
+                                helpId="attention-panel:change"
                                 textContext="This payload is the concrete mutation applied to the notebook state."
                                 content="This payload is the concrete mutation applied to the notebook state."
                               />
@@ -683,6 +688,7 @@ export const AttentionInspectorPanel = ({
                                 Scores
                               </h4>
                               <HelpHint
+                                helpId="attention-panel:scores"
                                 textContext="Scores are the lookup edges that connect this commit to related work."
                                 content="Scores are the lookup edges that connect this commit to related work."
                               />
@@ -704,6 +710,7 @@ export const AttentionInspectorPanel = ({
                                 Metadata
                               </h4>
                               <HelpHint
+                                helpId="attention-panel:metadata"
                                 textContext="Metadata explains who emitted the commit and where the mutation belongs."
                                 content="Metadata explains who emitted the commit and where the mutation belongs."
                               />
