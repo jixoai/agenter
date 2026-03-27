@@ -14,3 +14,9 @@
 - [x] 3.1 Remove panel-local duplicated tool rendering branches that become dead after adoption.
 - [x] 3.2 Add/update Storybook DOM + unit coverage for shared invocation states and panel integration.
 - [x] 3.3 Run WebUI verification (`typecheck`, relevant unit tests, relevant DOM tests).
+
+## 4. Terminal activity parity fixes
+
+- [x] 4.1 Ensure terminal activity tool rows always render through `ToolInvocationCard`, including legacy yaml-fence tool payload rows.
+- [x] 4.2 Ensure empty invocation input payloads are omitted from the card instead of rendering `""`.
+- [x] 4.3 Add focused unit + Storybook checks for the empty-input omission behavior and terminal activity fallback mapping.

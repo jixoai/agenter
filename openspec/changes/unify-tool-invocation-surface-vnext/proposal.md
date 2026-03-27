@@ -8,6 +8,8 @@ Tool call data is currently rendered with multiple ad-hoc components (`Assistant
 - Normalize tool lifecycle records into one view model (`call`, `status`, optional `result`, optional `error`).
 - Reuse `JSONViewer` for call/result payload visualization with YAML-first default.
 - Remove panel-specific tool-rendering duplication in Devtools, Terminal Activity, and Model inspection surfaces.
+- Normalize legacy terminal activity yaml tool fences into the same invocation card contract.
+- Hide empty call payloads (for example `""`) instead of rendering meaningless blank JSON blocks.
 - Keep Chat transcript out of this contract (Chat remains message-first, not tooling-first).
 
 ## Capabilities

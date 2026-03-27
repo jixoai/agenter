@@ -12,7 +12,7 @@ Tool invocation rendering is split across chat markdown, cycle execution cards, 
 
 **Non-Goals**
 - Rebuild provider-side raw protocol dumps.
-- Introduce markdown-tool parsing in new surfaces.
+- Introduce a new markdown-tool protocol.
 - Preserve legacy panel-local tool card variants.
 
 ## Decisions
@@ -49,7 +49,7 @@ No panel can render tool invocation payloads with custom markdown blocks anymore
 Each panel converts its local source to `ToolInvocationView`:
 
 - Cycle detail: pair `tool_call` / `tool_result`
-- Terminal activity: map tool-related activity rows
+- Terminal activity: map tool-related activity rows (including legacy yaml tool fences as backward-compatible read-only parsing)
 - Model panel: map invocation-like transport/tool execution facts
 
 Adapters stay local; rendering stays shared.
@@ -58,6 +58,7 @@ Adapters stay local; rendering stays shared.
 
 - Some historical rows may have incomplete call/result payloads. Shared card must support partial records.
 - Model panel data may not always represent executable invocations. Adapters should only map true invocation records.
+- Empty-string payloads should be treated as absent to avoid noisy `"\"\""` previews.
 
 ## Migration Plan
 
