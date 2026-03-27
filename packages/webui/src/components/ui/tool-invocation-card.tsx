@@ -85,7 +85,22 @@ const PayloadSection = ({
   </section>
 );
 
+const hasVisiblePayload = (payload: ToolInvocationPayloadView | null | undefined): payload is ToolInvocationPayloadView => {
+  if (!payload) {
+    return false;
+  }
+  if (typeof payload.rawText === "string" && payload.rawText.trim().length > 0) {
+    return true;
+  }
+  if (typeof payload.value === "string") {
+    return payload.value.trim().length > 0;
+  }
+  return payload.value !== undefined && payload.value !== null;
+};
+
 export const ToolInvocationCard = ({ invocation, className = "" }: ToolInvocationCardProps) => {
+  const visibleCall = hasVisiblePayload(invocation.call) ? invocation.call : null;
+  const visibleResult = hasVisiblePayload(invocation.result) ? invocation.result : null;
   return (
     <article className={`space-y-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 ${className}`.trim()}>
       <header className="flex flex-wrap items-center gap-2">
@@ -106,8 +121,8 @@ export const ToolInvocationCard = ({ invocation, className = "" }: ToolInvocatio
       ) : null}
 
       <div className="space-y-2">
-        {invocation.call ? <PayloadSection label="Call" payload={invocation.call} /> : null}
-        {invocation.result ? <PayloadSection label="Result" payload={invocation.result} /> : null}
+        {visibleCall ? <PayloadSection label="Call" payload={visibleCall} /> : null}
+        {visibleResult ? <PayloadSection label="Result" payload={visibleResult} /> : null}
       </div>
     </article>
   );

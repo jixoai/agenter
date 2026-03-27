@@ -1,5 +1,5 @@
 import type { RuntimeClientState } from "@agenter/client-sdk";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@agenter/terminal-view", () => {
@@ -112,6 +112,29 @@ const terminalActivityByTerminal = {
       title: "terminal_read",
       content: "stdout for iflow",
     },
+    {
+      id: 23,
+      terminalId: "iflow",
+      createdAt: 10,
+      kind: "message" as const,
+      cycleId: 8,
+      role: "assistant" as const,
+      channel: "tool" as const,
+      title: "legacy tool invocation",
+      content: [
+        "```yaml",
+        "invocationId: legacy-1",
+        "tool: terminal_get_config",
+        "status: success",
+        "startedAt: 2026-03-27T12:00:00.000Z",
+        "finishedAt: 2026-03-27T12:00:01.000Z",
+        "call: \"\"",
+        "result:",
+        "  transport:",
+        "    port: 43001",
+        "```",
+      ].join("\n"),
+    },
   ],
   "other-terminal": [
     {
@@ -179,6 +202,9 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.getByText("Activity")).toBeInTheDocument();
     expect(screen.getByText("Latest terminal_read result")).toBeInTheDocument();
     expect(screen.getAllByText("terminal_read").length).toBeGreaterThan(0);
+    expect(screen.getByText("terminal_get_config")).toBeInTheDocument();
+    expect(screen.queryByText("Call")).not.toBeInTheDocument();
+    expect(screen.getByText("Result")).toBeInTheDocument();
     expect(screen.queryByText("other-terminal")).not.toBeInTheDocument();
     expect(container.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
     expect(container.querySelector('[data-terminal-activity-scroll-owner="inspector"]')).not.toBeNull();
@@ -262,5 +288,45 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
 
     expect(terminalView.terminalId).toBe("iflow");
     expect(screen.queryByText("/repo/stale")).not.toBeInTheDocument();
+  });
+
+  test("Scenario: Given terminal lifecycle callbacks reject admin actions When create focus and delete run Then the panel surfaces action errors without throwing", async () => {
+    const onCreateTerminal = vi.fn(async () => ({ ok: false, message: "create denied", terminal: undefined }));
+    const onFocusTerminals = vi.fn(async () => ({ ok: false, message: "focus denied", focusedTerminalIds: [] }));
+    const onDeleteTerminal = vi.fn(async () => ({ ok: false, message: "delete denied" }));
+
+    render(
+      <TerminalPanel
+        sessionId="session-1"
+        runtime={runtime}
+        snapshots={snapshots}
+        terminalReads={terminalReads}
+        terminalActivityByTerminal={terminalActivityByTerminal}
+        getTerminalActivityPagingState={getTerminalActivityPagingState}
+        onLoadTerminalActivity={async () => {}}
+        onLoadMoreTerminalActivity={async () => {}}
+        onCreateTerminal={onCreateTerminal}
+        onFocusTerminals={onFocusTerminals}
+        onDeleteTerminal={onDeleteTerminal}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    await screen.findByText("focus denied");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByText("delete denied");
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create terminal" });
+    fireEvent.change(within(dialog).getByLabelText("Terminal ID"), {
+      target: { value: "lint-terminal" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create terminal" }));
+    await screen.findByText("create denied");
+
+    expect(onCreateTerminal).toHaveBeenCalledTimes(1);
+    expect(onFocusTerminals).toHaveBeenCalledTimes(1);
+    expect(onDeleteTerminal).toHaveBeenCalledTimes(1);
   });
 });

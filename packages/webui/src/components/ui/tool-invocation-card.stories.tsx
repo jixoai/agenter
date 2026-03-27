@@ -87,3 +87,20 @@ export const Waiting: Story = {
     },
   },
 };
+
+export const EmptyCallOmitted: Story = {
+  args: {
+    invocation: {
+      ...baseInvocation,
+      status: "success",
+      call: {
+        value: "",
+      },
+      result: {
+        value: {
+          ok: true,
+        },
+      },
+    },
+  },
+};

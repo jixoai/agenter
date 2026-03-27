@@ -11,6 +11,7 @@ import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surfa
 import { ToolInvocationCard, type ToolInvocationView } from "../../components/ui/tool-invocation-card";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
+import { parseToolPayload } from "../chat/tool-payload";
 
 interface TerminalActivityPanelProps {
   terminalId: string;
@@ -29,9 +30,91 @@ const renderTerminalRead = (terminalRead: NonNullable<TerminalActivityPanelProps
   return ["```json", JSON.stringify(terminalRead, null, 2), "```"].join("\n");
 };
 
-const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
-  if (item.kind !== "message" || item.channel !== "tool" || !item.tool) {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readString = (value: Record<string, unknown>, key: string): string | undefined => {
+  const candidate = value[key];
+  return typeof candidate === "string" ? candidate : undefined;
+};
+
+const parseTimestampMs = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const toStatus = (value: unknown, ok: unknown): ToolInvocationView["status"] => {
+  if (value === "waiting" || value === "running" || value === "success" || value === "failed" || value === "cancelled") {
+    return value;
+  }
+  if (ok === true) {
+    return "success";
+  }
+  if (ok === false) {
+    return "failed";
+  }
+  return "waiting";
+};
+
+const toPayload = (value: unknown): ToolInvocationView["call"] => {
+  if (value === undefined) {
+    return undefined;
+  }
+  return {
+    value,
+    ...(typeof value === "string" ? { rawText: value } : {}),
+  };
+};
+
+const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvocationView | null => {
+  if (item.kind !== "message" || item.channel !== "tool") {
     return null;
+  }
+  const parsed = parseToolPayload(item.content, item.title);
+  if (!isRecord(parsed.data)) {
+    return null;
+  }
+  const payload = parsed.data;
+  const hasToolFields =
+    "tool" in payload ||
+    "invocationId" in payload ||
+    "status" in payload ||
+    "call" in payload ||
+    "result" in payload ||
+    "input" in payload ||
+    "output" in payload ||
+    "error" in payload;
+  if (!hasToolFields) {
+    return null;
+  }
+  const callValue = "call" in payload ? payload.call : "input" in payload ? payload.input : undefined;
+  const resultValue = "result" in payload ? payload.result : "output" in payload ? payload.output : undefined;
+  const startedAt = parseTimestampMs(payload.startedAt) ?? parseTimestampMs(payload.timestamp) ?? item.createdAt;
+  const finishedAt = parseTimestampMs(payload.finishedAt);
+  return {
+    invocationId: readString(payload, "invocationId") ?? `terminal-activity-${item.id}`,
+    toolName: parsed.toolName,
+    status: toStatus(payload.status, payload.ok),
+    startedAt,
+    finishedAt,
+    call: toPayload(callValue),
+    result: toPayload(resultValue),
+    error: readString(payload, "error"),
+  };
+};
+
+const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
+  if (item.kind !== "message" || item.channel !== "tool") {
+    return null;
+  }
+  if (!item.tool) {
+    return toInvocationFromLegacyToolContent(item);
   }
   return {
     invocationId: item.tool.invocationId,
