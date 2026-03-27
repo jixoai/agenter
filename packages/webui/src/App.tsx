@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppControllerContext, useRuntimeStoreSelector, type AppController } from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
-import { type SettingsLayerItem } from "./features/settings/SettingsPanel";
+import { type SettingsEffectiveGraph, type SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
 import {
@@ -65,6 +65,15 @@ const workspaceSessionListEquals = (left: WorkspaceSessionEntry[], right: Worksp
   return left.every((entry, index) => workspaceSessionEntryEquals(entry, right[index]!));
 };
 
+const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
+  content: "{}\n",
+  value: {},
+  schema: {
+    type: "object",
+  },
+  provenance: {},
+};
+
 export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [router] = useState(() => createAppRouter());
   const [notice, setNotice] = useState("");
@@ -83,7 +92,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [workspaceSessionsLoading, setWorkspaceSessionsLoading] = useState(false);
   const [workspaceSessionsLoadingMore, setWorkspaceSessionsLoadingMore] = useState(false);
   const [settingsLayers, setSettingsLayers] = useState<SettingsLayerItem[]>([]);
-  const [settingsEffective, setSettingsEffective] = useState("{}");
+  const [settingsEffective, setSettingsEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [layerDraft, setLayerDraft] = useState("");
@@ -1065,12 +1074,19 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       }
       setSettingsLoading(true);
       try {
-        const data = await store.listSettingsLayers(workspacePath);
+        const data = await store.listScopedSettings({
+          scope: "workspace",
+          workspacePath,
+        });
         setSettingsLayers(data.layers);
-        setSettingsEffective(data.effective.content);
+        setSettingsEffective(data.effective);
         setSelectedLayerId((prev) =>
           data.layers.some((item) => item.layerId === prev) ? prev : (data.layers[0]?.layerId ?? null),
         );
+        if (data.layers.length === 0) {
+          setLayerDraft("");
+          setLayerMtimeMs(0);
+        }
         settingsCatalogWorkspaceRef.current = workspacePath;
         settingsCatalogLoadedRef.current = true;
         setSettingsStatus("layers refreshed");
@@ -1096,7 +1112,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (workspacePath: string, layerId: string): Promise<void> => {
       setSettingsLoading(true);
       try {
-        const file = await store.readSettingsLayer(workspacePath, layerId);
+        const file = await store.readScopedSettingsLayer({
+          scope: "workspace",
+          workspacePath,
+          layerId,
+        });
         setLayerDraft(file.content);
         setLayerMtimeMs(file.mtimeMs);
         setSettingsStatus(`loaded: ${file.path}`);
@@ -1113,7 +1133,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (workspacePath: string, layerId: string): Promise<void> => {
       setSettingsLoading(true);
       try {
-        const result = await store.saveSettingsLayer({
+        const result = await store.saveScopedSettingsLayer({
+          scope: "workspace",
           workspacePath,
           layerId,
           content: layerDraft,
@@ -1130,7 +1151,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           return;
         }
         setLayerMtimeMs(result.file.mtimeMs);
-        setSettingsEffective(result.effective.content);
+        setSettingsEffective(result.effective);
         setSettingsStatus(`saved: ${result.file.path}`);
         await refreshSettingsLayers(workspacePath);
       } catch (error) {

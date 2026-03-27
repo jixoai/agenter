@@ -298,6 +298,75 @@ describe("@agenter/settings", () => {
     expect(localOverride.settings.ai?.providers?.["local-kimi"]?.vendor).toBe("kimi");
   });
 
+  test("loadSettings emits cascade provenance and schema graph", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-settings-graph-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(homeDir, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "kimi",
+        providers: {
+          kimi: {
+            kind: "anthropic",
+            model: "kimi-k2.5",
+            apiKey: "test-kimi-key",
+            baseUrl: "https://api.kimi.com/coding/",
+          },
+        },
+      },
+    });
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      lang: "ja",
+      ai: {
+        activeProvider: "default",
+        providers: {
+          default: {
+            kind: "deepseek",
+            model: "deepseek-chat",
+            apiKeyEnv: "DEEPSEEK_API_KEY",
+            baseUrl: "https://api.deepseek.com/v1",
+          },
+        },
+      },
+      tasks: {
+        sources: [{ name: "repo", path: "./task-space" }],
+      },
+    });
+
+    const loaded = await loadSettings({
+      projectRoot,
+      cwd: projectRoot,
+      homeDir,
+    });
+
+    expect(loaded.graph.schema.type).toBe("object");
+    expect(loaded.graph.layers.length).toBeGreaterThan(0);
+    expect(loaded.graph.effective.content.trim().length).toBeGreaterThan(0);
+
+    const langTrace = loaded.graph.provenance["/lang"];
+    expect(langTrace).toBeDefined();
+    expect(langTrace?.origins.some((origin) => origin.kind === "file" && origin.sourceId === "project")).toBe(true);
+
+    const activeProviderTrace = loaded.graph.provenance["/ai/activeProvider"];
+    expect(activeProviderTrace).toBeDefined();
+    expect(
+      activeProviderTrace?.origins.some(
+        (origin) => origin.kind === "derived" && origin.sourceId === "derived:ai-selection",
+      ),
+    ).toBe(true);
+
+    const taskPathTrace = loaded.graph.provenance["/tasks/sources/0/path"];
+    expect(taskPathTrace).toBeDefined();
+    expect(
+      taskPathTrace?.origins.some(
+        (origin) => origin.kind === "derived" && origin.sourceId === "derived:path-normalization",
+      ),
+    ).toBe(true);
+    expect(loaded.settings.tasks?.sources?.[0]?.path).toBe(resolve(projectRoot, "./task-space"));
+  });
+
   test("resource loader resolves builtins, paths and custom protocol", async () => {
     const loader = new ResourceLoader({
       context: {

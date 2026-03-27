@@ -12,7 +12,7 @@ import type {
 import { createContext, useContext, useRef, useSyncExternalStore } from "react";
 
 import type { AIInputSuggestion } from "./features/chat/AIInput";
-import type { SettingsLayerItem } from "./features/settings/SettingsPanel";
+import type { SettingsEffectiveGraph, SettingsLayerItem } from "./features/settings/settings-graph-types";
 import type { LongListPagingInput, LongListPagingState } from "./shared/long-list-paging";
 
 export interface AppController {
@@ -37,7 +37,7 @@ export interface AppController {
   workspaceSessionsLoading: boolean;
   workspaceSessionsLoadingMore: boolean;
   settingsLayers: SettingsLayerItem[];
-  settingsEffective: string;
+  settingsEffective: SettingsEffectiveGraph;
   settingsLoading: boolean;
   selectedLayerId: string | null;
   setSelectedLayerId: (layerId: string | null) => void;

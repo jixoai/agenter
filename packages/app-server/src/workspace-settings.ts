@@ -1,9 +1,10 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-import { loadSettings } from "@agenter/settings";
+import {
+  listScopedSettingsGraph,
+  readScopedSettingsLayer,
+  saveScopedSettingsLayer,
+  type ScopedSettingsLayerFileResult,
+  type ScopedSettingsLayerSnapshot,
+} from "./settings-scope";
 
 export interface SettingsLayerSnapshot {
   layerId: string;
@@ -28,90 +29,36 @@ export interface SettingsLayerFileResult {
   mtimeMs: number;
 }
 
-const isEditableLayerPath = (path: string): boolean => {
-  if (isAbsolute(path) || path.startsWith("~/")) {
-    return true;
-  }
-  if (path.startsWith("file://")) {
-    return true;
-  }
-  return !/^[a-z][a-z0-9+.-]*:\/\//i.test(path);
-};
+const toLegacyLayer = (layer: ScopedSettingsLayerSnapshot): SettingsLayerSnapshot => ({
+  layerId: layer.layerId,
+  sourceId: layer.sourceId,
+  path: layer.path,
+  exists: layer.exists,
+  editable: layer.editable,
+  readonlyReason: layer.readonlyReason,
+});
 
-const resolveLayerFilePath = (workspacePath: string, path: string): string | null => {
-  if (isAbsolute(path)) {
-    return path;
-  }
-  if (path.startsWith("~/")) {
-    return join(homedir(), path.slice(2));
-  }
-  if (path.startsWith("file://")) {
-    try {
-      return fileURLToPath(path);
-    } catch {
-      return null;
-    }
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
-    return null;
-  }
-  return resolve(workspacePath, path);
-};
-
-const readLayerFile = async (workspacePath: string, layer: SettingsLayerSnapshot): Promise<SettingsLayerFileResult> => {
-  const filePath = resolveLayerFilePath(workspacePath, layer.path);
-  if (!filePath) {
-    return {
-      layer,
-      path: layer.path,
-      content: "",
-      mtimeMs: 0,
-    };
-  }
-  try {
-    const [content, info] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
-    return {
-      layer,
-      path: filePath,
-      content,
-      mtimeMs: info.mtimeMs,
-    };
-  } catch {
-    return {
-      layer,
-      path: filePath,
-      content: "",
-      mtimeMs: 0,
-    };
-  }
-};
+const toLegacyFile = (file: ScopedSettingsLayerFileResult): SettingsLayerFileResult => ({
+  layer: toLegacyLayer(file.layer),
+  path: file.path,
+  content: file.content,
+  mtimeMs: file.mtimeMs,
+});
 
 export const listWorkspaceSettingsLayers = async (input: {
   workspacePath: string;
   avatar?: string;
 }): Promise<SettingsLayersResult> => {
-  const workspacePath = resolve(input.workspacePath);
-  const loaded = await loadSettings({
-    projectRoot: workspacePath,
-    cwd: workspacePath,
+  const graph = await listScopedSettingsGraph({
+    scope: "workspace",
+    workspacePath: input.workspacePath,
     avatar: input.avatar,
   });
-
   return {
     effective: {
-      content: JSON.stringify(loaded.settings, null, 2),
+      content: graph.effective.content,
     },
-    layers: loaded.meta.sources.map((source, index) => {
-      const editable = isEditableLayerPath(source.path);
-      return {
-        layerId: `${index}:${source.id}`,
-        sourceId: source.id,
-        path: source.path,
-        exists: source.exists,
-        editable,
-        readonlyReason: editable ? undefined : "remote settings source",
-      };
-    }),
+    layers: graph.layers.map(toLegacyLayer),
   };
 };
 
@@ -120,12 +67,14 @@ export const readWorkspaceSettingsLayer = async (input: {
   layerId: string;
   avatar?: string;
 }): Promise<SettingsLayerFileResult> => {
-  const layers = await listWorkspaceSettingsLayers(input);
-  const layer = layers.layers.find((item) => item.layerId === input.layerId);
-  if (!layer) {
-    throw new Error(`settings layer not found: ${input.layerId}`);
-  }
-  return await readLayerFile(resolve(input.workspacePath), layer);
+  return toLegacyFile(
+    await readScopedSettingsLayer({
+      scope: "workspace",
+      workspacePath: input.workspacePath,
+      layerId: input.layerId,
+      avatar: input.avatar,
+    }),
+  );
 };
 
 export const saveWorkspaceSettingsLayer = async (input: {
@@ -147,46 +96,29 @@ export const saveWorkspaceSettingsLayer = async (input: {
     }
   | { ok: false; reason: "readonly"; message: string }
 > => {
-  const workspacePath = resolve(input.workspacePath);
-  const layers = await listWorkspaceSettingsLayers({
-    workspacePath,
+  const saved = await saveScopedSettingsLayer({
+    scope: "workspace",
+    workspacePath: input.workspacePath,
+    layerId: input.layerId,
+    content: input.content,
+    baseMtimeMs: input.baseMtimeMs,
     avatar: input.avatar,
   });
-  const layer = layers.layers.find((item) => item.layerId === input.layerId);
-  if (!layer) {
-    throw new Error(`settings layer not found: ${input.layerId}`);
-  }
-  if (!layer.editable) {
-    return {
-      ok: false,
-      reason: "readonly",
-      message: layer.readonlyReason ?? "readonly settings source",
-    };
-  }
-
-  const current = await readLayerFile(workspacePath, layer);
-  if (Math.abs(current.mtimeMs - input.baseMtimeMs) > 0.5) {
+  if (!saved.ok) {
+    if (saved.reason === "readonly") {
+      return saved;
+    }
     return {
       ok: false,
       reason: "conflict",
-      latest: current,
+      latest: toLegacyFile(saved.latest),
     };
   }
-
-  await mkdir(dirname(current.path), { recursive: true });
-  await writeFile(current.path, input.content, "utf8");
-
-  const file = await readLayerFile(workspacePath, layer);
-  const effective = await listWorkspaceSettingsLayers({
-    workspacePath,
-    avatar: input.avatar,
-  });
-
   return {
     ok: true,
-    file,
+    file: toLegacyFile(saved.file),
     effective: {
-      content: effective.effective.content,
+      content: saved.effective.content,
     },
   };
 };

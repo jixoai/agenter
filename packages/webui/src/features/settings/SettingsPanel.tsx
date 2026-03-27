@@ -3,35 +3,23 @@ import { useEffect, useMemo, useState } from "react";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
-
-export interface SettingsLayerItem {
-  layerId: string;
-  sourceId: string;
-  path: string;
-  exists: boolean;
-  editable: boolean;
-  readonlyReason?: string;
-}
-
-export interface SettingsLayerFile {
-  layer: SettingsLayerItem;
-  path: string;
-  content: string;
-  mtimeMs: number;
-}
+import { SettingsSchemaView } from "./SettingsSchemaView";
+import type { SettingsEffectiveGraph, SettingsLayerItem, SettingsPointerJumpTarget } from "./settings-graph-types";
+import { toPrettyJson, tryParseJson } from "./settings-json-pointer";
 
 interface SettingsPanelProps {
   disabled: boolean;
   loading: boolean;
   status: string;
-  effectiveContent: string;
+  title?: string;
+  description?: string;
+  effective: SettingsEffectiveGraph;
   layers: SettingsLayerItem[];
   selectedLayerId: string | null;
   layerContent: string;
@@ -39,69 +27,27 @@ interface SettingsPanelProps {
   onSelectLayer: (layerId: string) => void;
   onLayerContentChange: (content: string) => void;
   onRefreshLayers: () => void;
-  onLoadLayer: () => void;
+  onLoadLayer: (layerId: string) => void;
   onSaveLayer: () => void;
 }
 
-const SETTINGS_TABS: TabItem[] = [
+const MAIN_TABS: TabItem[] = [
   { id: "effective", label: "Effective" },
   { id: "layers", label: "Layer Sources" },
 ];
 
-const layerTypeLabel = (sourceId: string): string => {
-  if (sourceId === "user") {
-    return "user";
-  }
-  if (sourceId === "project") {
-    return "project";
-  }
-  if (sourceId === "local") {
-    return "local";
-  }
-  return "source";
-};
+const VIEW_TABS: TabItem[] = [
+  { id: "source", label: "Source" },
+  { id: "view", label: "View" },
+];
 
-const tryParseJson = (input: string): Record<string, unknown> | null => {
-  try {
-    const parsed = JSON.parse(input);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // ignored
-  }
-  return null;
-};
+const layerTone = (layer: SettingsLayerItem): "success" | "warning" => (layer.editable ? "success" : "warning");
 
-const readPathString = (root: Record<string, unknown>, path: string[]): string => {
-  let cursor: unknown = root;
-  for (const token of path) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
-      return "";
-    }
-    cursor = (cursor as Record<string, unknown>)[token];
+const layerBadgeLabel = (layer: SettingsLayerItem): string => {
+  if (layer.kind === "avatar") {
+    return "avatar";
   }
-  return typeof cursor === "string" ? cursor : "";
-};
-
-const writePathString = (root: Record<string, unknown>, path: string[], value: string): Record<string, unknown> => {
-  const cloned = structuredClone(root);
-  let cursor: Record<string, unknown> = cloned;
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const key = path[index];
-    const next = cursor[key];
-    if (!next || typeof next !== "object" || Array.isArray(next)) {
-      cursor[key] = {};
-    }
-    cursor = cursor[key] as Record<string, unknown>;
-  }
-  const last = path[path.length - 1];
-  if (value.trim().length === 0) {
-    delete cursor[last];
-  } else {
-    cursor[last] = value;
-  }
-  return cloned;
+  return layer.sourceId;
 };
 
 const LoadingShell = () => (
@@ -123,7 +69,9 @@ export const SettingsPanel = ({
   disabled,
   loading,
   status,
-  effectiveContent,
+  title = "Settings",
+  description = "Merged settings stay read-only. Each source layer remains editable independently.",
+  effective,
   layers,
   selectedLayerId,
   layerContent,
@@ -135,30 +83,22 @@ export const SettingsPanel = ({
   onSaveLayer,
 }: SettingsPanelProps) => {
   const [activeTab, setActiveTab] = useState<"effective" | "layers">("effective");
+  const [effectiveViewMode, setEffectiveViewMode] = useState<"source" | "view">("source");
+  const [layerViewMode, setLayerViewMode] = useState<"source" | "view">("source");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [focusedLayerPointer, setFocusedLayerPointer] = useState<string | null>(null);
+
   const selectedLayer = useMemo(
     () => layers.find((item) => item.layerId === selectedLayerId) ?? null,
     [layers, selectedLayerId],
   );
-  const editableJson = useMemo(() => tryParseJson(layerContent), [layerContent]);
-  const showSplitDetail = detailMode === "split";
-
-  const selectLayer = (layerId: string) => {
-    onSelectLayer(layerId);
-    if (detailMode === "sheet") {
-      setDetailOpen(true);
-    }
-  };
-
-  const patchVisualField = (path: string[], value: string) => {
-    if (!editableJson) {
-      return;
-    }
-    const patched = writePathString(editableJson, path, value);
-    onLayerContentChange(`${JSON.stringify(patched, null, 2)}\n`);
-  };
-
+  const effectiveContent = typeof effective?.content === "string" ? effective.content : "";
+  const effectiveSchema = effective?.schema ?? {};
+  const effectiveProvenance = effective?.provenance ?? {};
+  const layerDraftJson = useMemo(() => tryParseJson(layerContent), [layerContent]);
+  const effectiveValue = useMemo(() => effective?.value ?? tryParseJson(effectiveContent) ?? {}, [effective?.value, effectiveContent]);
   const hasData = activeTab === "effective" ? effectiveContent.trim().length > 0 : layers.length > 0;
+  const splitDetail = detailMode === "split";
 
   useEffect(() => {
     if (activeTab !== "layers" || detailMode !== "sheet") {
@@ -170,66 +110,78 @@ export const SettingsPanel = ({
     }
   }, [activeTab, detailMode, selectedLayerId]);
 
-  const layerEditor = (
-    <section className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-2 rounded-xl border border-slate-200 p-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="typo-emphasis text-xs text-slate-700">Layer editor</p>
-          <p className="max-w-[60ch] truncate text-[11px] text-slate-500">
-            {selectedLayer?.path ?? "Select a source layer"}
-          </p>
+  const openLayer = (layerId: string) => {
+    onSelectLayer(layerId);
+    onLoadLayer(layerId);
+    if (detailMode === "sheet") {
+      setDetailOpen(true);
+    }
+  };
+
+  const jumpToLayer = (target: SettingsPointerJumpTarget) => {
+    if (!layers.some((layer) => layer.layerId === target.layerId)) {
+      return;
+    }
+    setActiveTab("layers");
+    setLayerViewMode("view");
+    setFocusedLayerPointer(target.pointer);
+    openLayer(target.layerId);
+  };
+
+  const layerDetail = (
+    <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-2 rounded-xl border border-slate-200 p-2">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <p className="typo-emphasis text-xs text-slate-700">Layer Detail</p>
+          <p className="truncate text-[11px] text-slate-500">{selectedLayer?.path ?? "Select a source layer"}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={onLoadLayer} disabled={disabled || !selectedLayerId}>
-            Load
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              if (!selectedLayerId) {
+                return;
+              }
+              onLoadLayer(selectedLayerId);
+            }}
+            disabled={disabled || !selectedLayerId}
+          >
+            Reload
           </Button>
           <Button size="sm" onClick={onSaveLayer} disabled={disabled || !selectedLayer?.editable}>
             Save
           </Button>
         </div>
-      </div>
-      <Textarea
-        value={layerContent}
-        onChange={(event) => onLayerContentChange(event.target.value)}
-        placeholder="Select a layer and load content"
-        readOnly={!selectedLayer?.editable}
-        className="h-full resize-none font-mono text-xs"
-      />
-      {selectedLayer?.editable ? (
-        <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
-          <p className="typo-emphasis text-xs text-slate-700">Quick fields</p>
-          {editableJson ? (
-            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-[11px] text-slate-600">lang</span>
-                <Input
-                  value={readPathString(editableJson, ["lang"])}
-                  onChange={(event) => patchVisualField(["lang"], event.target.value)}
-                  placeholder="en"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[11px] text-slate-600">ai.activeProvider</span>
-                <Input
-                  value={readPathString(editableJson, ["ai", "activeProvider"])}
-                  onChange={(event) => patchVisualField(["ai", "activeProvider"], event.target.value)}
-                  placeholder="default"
-                />
-              </label>
-              <label className="space-y-1 lg:col-span-2">
-                <span className="text-[11px] text-slate-600">terminal.outputRoot</span>
-                <Input
-                  value={readPathString(editableJson, ["terminal", "outputRoot"])}
-                  onChange={(event) => patchVisualField(["terminal", "outputRoot"], event.target.value)}
-                  placeholder="./tmp"
-                />
-              </label>
-            </div>
+      </header>
+
+      <Tabs items={VIEW_TABS} value={layerViewMode} onValueChange={(value) => setLayerViewMode(value as "source" | "view")} />
+
+      {layerViewMode === "source" ? (
+        <Textarea
+          value={layerContent}
+          onChange={(event) => onLayerContentChange(event.target.value)}
+          placeholder="Select a layer and load content"
+          readOnly={!selectedLayer?.editable}
+          className="h-full resize-none font-mono text-xs"
+        />
+      ) : (
+        <ScrollViewport data-testid="settings-layer-view-viewport" className="h-full pr-1">
+          {layerDraftJson ? (
+            <SettingsSchemaView
+              schema={effectiveSchema}
+              value={layerDraftJson}
+              mode={selectedLayer?.editable ? "editable" : "readonly"}
+              focusPointer={focusedLayerPointer}
+              onValueChange={(nextValue) => onLayerContentChange(toPrettyJson(nextValue))}
+            />
           ) : (
-            <p className="text-[11px] text-slate-500">Visual fields require valid JSON content in the editor.</p>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Layer source is not valid JSON. Switch to `Source` to fix it, then return to `View`.
+            </div>
           )}
-        </section>
-      ) : null}
+        </ScrollViewport>
+      )}
     </section>
   );
 
@@ -237,55 +189,75 @@ export const SettingsPanel = ({
     <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white/96 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="typo-title-3 text-slate-900">Settings</h2>
-          <p className="text-xs text-slate-500">Merged settings stay read-only. Each source layer remains editable independently.</p>
+          <h2 className="typo-title-3 text-slate-900">{title}</h2>
+          <p className="text-xs text-slate-500">{description}</p>
         </div>
         <Badge variant="secondary" className="max-w-[48ch] truncate">
           {status}
         </Badge>
       </div>
 
-      <Tabs items={SETTINGS_TABS} value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} />
+      <Tabs items={MAIN_TABS} value={activeTab} onValueChange={(value) => setActiveTab(value as "effective" | "layers")} />
 
       <AsyncSurface
         state={resolveAsyncSurfaceState({ loading, hasData })}
-        loadingOverlayLabel={activeTab === "effective" ? "Refreshing settings..." : "Refreshing layers..."}
+        loadingOverlayLabel={activeTab === "effective" ? "Refreshing settings..." : "Refreshing layer sources..."}
         skeleton={<LoadingShell />}
         empty={
           <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 px-4 text-sm text-slate-500">
-            {activeTab === "effective" ? "No merged settings available yet." : "No settings sources discovered for this workspace."}
+            {activeTab === "effective" ? "No merged settings available yet." : "No settings layers discovered."}
           </div>
         }
         className="h-full"
       >
         {activeTab === "effective" ? (
-          <div className="h-full">
-            <Textarea value={effectiveContent} readOnly className="h-full resize-none font-mono text-xs" />
-          </div>
+          <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2">
+            <Tabs
+              items={VIEW_TABS}
+              value={effectiveViewMode}
+              onValueChange={(value) => setEffectiveViewMode(value as "source" | "view")}
+            />
+            {effectiveViewMode === "source" ? (
+              <Textarea value={effectiveContent} readOnly className="h-full resize-none font-mono text-xs" />
+            ) : (
+              <ScrollViewport data-testid="settings-effective-view-viewport" className="h-full pr-1">
+                <SettingsSchemaView
+                  schema={effectiveSchema}
+                  value={effectiveValue}
+                  mode="readonly"
+                  provenance={effectiveProvenance}
+                  onJumpToSource={jumpToLayer}
+                />
+              </ScrollViewport>
+            )}
+          </section>
         ) : (
-          <div className={cn("grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3", showSplitDetail ? "xl:grid-cols-[320px_minmax(0,1fr)]" : "")}>
-            <section className="grid grid-rows-[auto_minmax(0,1fr)] rounded-xl border border-slate-200 bg-slate-50 p-2">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="typo-emphasis text-xs text-slate-700">Sources</p>
+          <div className={cn("grid h-full grid-cols-1 gap-3", splitDetail ? "grid-rows-[minmax(180px,40%)_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]")}>
+            <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-xl border border-slate-200 bg-slate-50 p-2">
+              <header className="mb-2 flex items-center justify-between gap-2">
+                <p className="typo-emphasis text-xs text-slate-700">Layer Files</p>
                 <Button size="sm" variant="secondary" onClick={onRefreshLayers} disabled={disabled}>
                   Refresh
                 </Button>
-              </div>
-              <ScrollViewport data-testid="settings-sources-scroll-viewport" className="h-full space-y-1">
+              </header>
+              <ScrollViewport data-testid="settings-sources-scroll-viewport" className="h-full space-y-1 pr-1">
                 {layers.map((layer) => (
                   <button
                     key={layer.layerId}
                     type="button"
-                    onClick={() => selectLayer(layer.layerId)}
+                    onClick={() => {
+                      setFocusedLayerPointer(null);
+                      openLayer(layer.layerId);
+                    }}
                     className={
                       layer.layerId === selectedLayerId
                         ? "w-full rounded-md border border-teal-300 bg-teal-50 px-2 py-2 text-left"
                         : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-100"
                     }
                   >
-                    <div className="mb-1 flex items-center gap-1">
-                      <Badge variant="secondary">{layerTypeLabel(layer.sourceId)}</Badge>
-                      {layer.editable ? <Badge variant="success">editable</Badge> : <Badge variant="warning">readonly</Badge>}
+                    <div className="mb-1 flex flex-wrap items-center gap-1">
+                      <Badge variant="secondary">{layerBadgeLabel(layer)}</Badge>
+                      <Badge variant={layerTone(layer)}>{layer.editable ? "editable" : "readonly"}</Badge>
                     </div>
                     <p className="line-clamp-2 text-[11px] break-all text-slate-700">{layer.path}</p>
                     {!layer.editable && layer.readonlyReason ? (
@@ -295,20 +267,14 @@ export const SettingsPanel = ({
                 ))}
               </ScrollViewport>
             </section>
-
-            {showSplitDetail ? layerEditor : null}
+            {splitDetail ? layerDetail : null}
           </div>
         )}
       </AsyncSurface>
 
       {detailMode === "sheet" && activeTab === "layers" ? (
-        <Sheet
-          open={detailOpen}
-          onOpenChange={setDetailOpen}
-          side="right"
-          title={selectedLayer ? "Layer editor" : "Layer source"}
-        >
-          <div className="h-full min-h-[40dvh]">{layerEditor}</div>
+        <Sheet open={detailOpen} onOpenChange={setDetailOpen} side="right" title={selectedLayer ? "Layer Detail" : "Layer Sources"}>
+          <div className="h-full min-h-[45dvh]">{layerDetail}</div>
         </Sheet>
       ) : null}
     </section>

@@ -1457,6 +1457,10 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.list.query({ workspacePath });
   }
 
+  async listScopedSettings(input: { scope: "workspace" | "global"; workspacePath?: string }) {
+    return await this.client.trpc.settings.scope.list.query(input);
+  }
+
   async readGlobalSettings() {
     return await this.client.trpc.settings.global.read.query();
   }
@@ -1477,8 +1481,22 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.read.query({ workspacePath, layerId });
   }
 
+  async readScopedSettingsLayer(input: { scope: "workspace" | "global"; workspacePath?: string; layerId: string }) {
+    return await this.client.trpc.settings.scope.read.query(input);
+  }
+
   async saveSettingsLayer(input: { workspacePath: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await this.client.trpc.settings.layers.save.mutate(input);
+  }
+
+  async saveScopedSettingsLayer(input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    layerId: string;
+    content: string;
+    baseMtimeMs: number;
+  }) {
+    return await this.client.trpc.settings.scope.save.mutate(input);
   }
 
   async setChatVisibility(input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }) {

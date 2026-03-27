@@ -2,7 +2,15 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { defaultAvatarNickname, resolveAvatarLayerSettingsPath } from "@agenter/avatar";
+import { toJSONSchema } from "zod";
 
+import {
+  collectChangedPointers,
+  collectNodePointers,
+  createLayerId,
+  recordLayerProvenance,
+  toProvenanceObject,
+} from "./cascade-graph";
 import { deepMerge } from "./merge";
 import { ResourceLoader } from "./resource-loader";
 import { settingsSchema } from "./schema";
@@ -12,6 +20,8 @@ import type {
   BuiltinSettingsSource,
   LoadSettingsOptions,
   LoadedSettings,
+  SettingsGraphLayer,
+  SettingsProvenanceEntry,
   SettingsSourceInput,
 } from "./types";
 
@@ -191,8 +201,116 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
       },
     });
   let settings = defaultSettings();
+  const graphLayers: SettingsGraphLayer[] = [];
+  const provenance = new Map<string, SettingsProvenanceEntry>();
+  let graphLayerIndex = 0;
+
+  const pushLayer = (input: Omit<SettingsGraphLayer, "layerId">): SettingsGraphLayer => {
+    const layer: SettingsGraphLayer = {
+      ...input,
+      layerId: createLayerId(input.kind, input.sourceId, graphLayerIndex),
+    };
+    graphLayerIndex += 1;
+    graphLayers.push(layer);
+    return layer;
+  };
+
+  const applyMergedLayer = (patch: AgenterSettings, layer: SettingsGraphLayer, note?: string): void => {
+    const before = settings;
+    settings = deepMerge(settings, patch);
+    const pointers = collectChangedPointers(before, settings);
+    if (pointers.length === 0) {
+      return;
+    }
+    recordLayerProvenance({
+      provenance,
+      pointers,
+      after: settings,
+      layer,
+      note,
+    });
+  };
+
+  const applyDirectMutation = (next: AgenterSettings, layer: SettingsGraphLayer, note?: string): void => {
+    const before = settings;
+    settings = next;
+    const pointers = collectChangedPointers(before, settings);
+    if (pointers.length === 0) {
+      return;
+    }
+    recordLayerProvenance({
+      provenance,
+      pointers,
+      after: settings,
+      layer,
+      note,
+    });
+  };
+
+  const applyDerivedTransform = (input: {
+    sourceId: string;
+    path: string;
+    note: string;
+    transform: (value: AgenterSettings) => AgenterSettings;
+  }): void => {
+    const before = settings;
+    const after = input.transform(settings);
+    const pointers = collectChangedPointers(before, after);
+    settings = after;
+    if (pointers.length === 0) {
+      return;
+    }
+    const layer = pushLayer({
+      sourceId: input.sourceId,
+      kind: "derived",
+      path: input.path,
+      exists: true,
+      note: input.note,
+    });
+    recordLayerProvenance({
+      provenance,
+      pointers,
+      after: settings,
+      layer,
+      note: input.note,
+    });
+  };
+
+  const defaultLayer = pushLayer({
+    sourceId: "default",
+    kind: "default",
+    path: "builtin:default",
+    exists: true,
+    note: "default settings",
+  });
+  recordLayerProvenance({
+    provenance,
+    pointers: collectNodePointers(settings),
+    after: settings,
+    layer: defaultLayer,
+    note: defaultLayer.note,
+  });
+
+  const avatarOverride = options.avatar?.trim();
+  const avatarOverrideLayer = avatarOverride
+    ? pushLayer({
+        sourceId: "input-avatar",
+        kind: "derived",
+        path: "derived:input-avatar-override",
+        exists: true,
+        note: "loadSettings avatar override",
+      })
+    : null;
+
   if (options.avatar?.trim()) {
-    settings.avatar = options.avatar.trim();
+    applyDirectMutation(
+      {
+        ...settings,
+        avatar: options.avatar.trim(),
+      },
+      avatarOverrideLayer ?? defaultLayer,
+      "apply avatar override from loadSettings input",
+    );
   }
 
   const inputSources: SettingsSourceInput[] = options.sources ??
@@ -201,8 +319,8 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     projectRoot: options.projectRoot,
     cwd: options.cwd,
     homeDir,
-    loader,
-  });
+      loader,
+    });
 
   const meta: LoadedSettings["meta"] = {
     sources: [],
@@ -219,9 +337,32 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
         try {
           const avatarText = await loader.readText(avatarLayerPath);
           const avatarLayer = parseJsonText(avatarText);
-          settings = deepMerge(settings, avatarLayer);
+          const layer = pushLayer({
+            sourceId: `avatar:${source.id}`,
+            kind: "avatar",
+            path: avatarLayerPath,
+            exists: true,
+            note: `avatar layer for ${source.id}`,
+          });
+          applyMergedLayer(avatarLayer, layer, layer.note);
+          if (avatarOverride && settings.avatar !== avatarOverride) {
+            applyDirectMutation(
+              {
+                ...settings,
+                avatar: avatarOverride,
+              },
+              avatarOverrideLayer ?? layer,
+              "re-apply avatar override after avatar layer merge",
+            );
+          }
         } catch {
-          // Avatar layer is optional for each source.
+          pushLayer({
+            sourceId: `avatar:${source.id}`,
+            kind: "avatar",
+            path: avatarLayerPath,
+            exists: false,
+            note: `avatar layer missing for ${source.id}`,
+          });
         }
         appliedAvatarLayers.add(avatarLayerPath);
       }
@@ -230,14 +371,30 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     try {
       const text = await loader.readText(source.uri, { forSettings: true });
       const layer = parseJsonText(text);
+      const graphLayer = pushLayer({
+        sourceId: source.id,
+        kind: "file",
+        path: source.path,
+        exists: true,
+      });
       if (source.kind === "builtin" && source.builtin) {
         parsedBuiltinLayers[source.builtin] = layer;
       }
-      settings = deepMerge(settings, layer);
+      applyMergedLayer(layer, graphLayer, `settings layer ${source.id}`);
       if (!options.avatar && settings.avatar?.trim()) {
         activeAvatar = settings.avatar.trim();
       }
-      settings.avatar = options.avatar?.trim() || activeAvatar;
+      const nextAvatar = avatarOverride ?? activeAvatar;
+      if (nextAvatar && settings.avatar !== nextAvatar) {
+        applyDirectMutation(
+          {
+            ...settings,
+            avatar: nextAvatar,
+          },
+          avatarOverrideLayer ?? graphLayer,
+          "align active avatar after layer merge",
+        );
+      }
       meta.sources.push({
         id: source.id,
         path: source.path,
@@ -245,21 +402,70 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const exists = !classifyMissingResource(message);
+      pushLayer({
+        sourceId: source.id,
+        kind: "file",
+        path: source.path,
+        exists,
+        note: message,
+      });
       meta.sources.push({
         id: source.id,
         path: source.path,
-        exists: !classifyMissingResource(message),
+        exists,
         error: message,
       });
     }
   }
 
-  settings.avatar = options.avatar?.trim() || activeAvatar;
-  settings = resolveAiSelection(settings, parsedBuiltinLayers);
-  settings = normalizeSettingsPaths(settings, options.projectRoot, homeDir);
-  settings = settingsSchema.parse(settings) as AgenterSettings;
+  const finalAvatar = avatarOverride ?? activeAvatar;
+  if (finalAvatar && settings.avatar !== finalAvatar) {
+    applyDirectMutation(
+      {
+        ...settings,
+        avatar: finalAvatar,
+      },
+      avatarOverrideLayer ?? defaultLayer,
+      "align final avatar",
+    );
+  }
+
+  applyDerivedTransform({
+    sourceId: "derived:ai-selection",
+    path: "derived:resolve-ai-selection",
+    note: "resolve active provider precedence",
+    transform: (value) => resolveAiSelection(value, parsedBuiltinLayers),
+  });
+
+  applyDerivedTransform({
+    sourceId: "derived:path-normalization",
+    path: "derived:normalize-settings-paths",
+    note: "normalize relative settings paths",
+    transform: (value) => normalizeSettingsPaths(value, options.projectRoot, homeDir),
+  });
+
+  applyDerivedTransform({
+    sourceId: "derived:schema-parse",
+    path: "derived:schema-parse",
+    note: "apply zod schema normalization",
+    transform: (value) => settingsSchema.parse(value) as AgenterSettings,
+  });
+
+  const schema = toJSONSchema(settingsSchema, { unrepresentable: "any" }) as Record<string, unknown>;
+  const effectiveContent = `${JSON.stringify(settings, null, 2)}\n`;
+
   return {
     settings,
+    graph: {
+      effective: {
+        value: settings,
+        content: effectiveContent,
+      },
+      layers: graphLayers,
+      provenance: toProvenanceObject(provenance),
+      schema,
+    },
     meta,
   };
 };

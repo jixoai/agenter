@@ -27,6 +27,48 @@ export interface TaskSettings {
   }>;
 }
 
+export type SettingsGraphLayerKind = "default" | "file" | "avatar" | "derived";
+
+export interface SettingsGraphLayer {
+  layerId: string;
+  sourceId: string;
+  kind: SettingsGraphLayerKind;
+  path: string;
+  exists: boolean;
+  note?: string;
+}
+
+export interface SettingsProvenanceOrigin {
+  layerId: string;
+  sourceId: string;
+  kind: SettingsGraphLayerKind;
+  path: string;
+  pointer: string;
+  value: unknown;
+  note?: string;
+}
+
+export interface SettingsPointerJumpTarget {
+  layerId: string;
+  pointer: string;
+}
+
+export interface SettingsProvenanceEntry {
+  pointer: string;
+  origins: SettingsProvenanceOrigin[];
+  jumpTarget?: SettingsPointerJumpTarget;
+}
+
+export interface SettingsGraph {
+  effective: {
+    value: AgenterSettings;
+    content: string;
+  };
+  layers: SettingsGraphLayer[];
+  provenance: Record<string, SettingsProvenanceEntry>;
+  schema: Record<string, unknown>;
+}
+
 export interface TerminalPresetSettings {
   command: string[];
   cwd?: string;
@@ -96,6 +138,7 @@ export interface AgenterSettings {
 
 export interface LoadedSettings {
   settings: AgenterSettings;
+  graph: SettingsGraph;
   meta: {
     sources: Array<{
       id: string;

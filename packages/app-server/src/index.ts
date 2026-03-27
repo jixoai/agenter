@@ -154,6 +154,15 @@ export {
 export { SessionStore, type SessionCallRecord } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
 export {
+  listScopedSettingsGraph,
+  readScopedSettingsLayer,
+  saveScopedSettingsLayer,
+  type ScopedSettingsGraphResult,
+  type ScopedSettingsLayerFileResult,
+  type ScopedSettingsLayerSnapshot,
+  type SettingsScope,
+} from "./settings-scope";
+export {
   listWorkspaceSettingsLayers,
   readWorkspaceSettingsLayer,
   saveWorkspaceSettingsLayer,

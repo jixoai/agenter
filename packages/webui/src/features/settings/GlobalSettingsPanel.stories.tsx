@@ -4,6 +4,7 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import { useState } from "react";
 
 import { GlobalSettingsPanel } from "./GlobalSettingsPanel";
+import type { SettingsEffectiveGraph, SettingsLayerItem } from "./settings-graph-types";
 
 const avatarSvgUrl = (fill: string) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -19,9 +20,69 @@ const baseAvatars: AvatarCatalogItem[] = [
   {
     nickname: "nova",
     active: false,
-    iconUrl: avatarSvgUrl("#7c3aed"),
+    iconUrl: avatarSvgUrl("#ea580c"),
   },
 ];
+
+const globalEffectiveValue = {
+  avatar: "jon",
+  lang: "en",
+};
+
+const globalEffective: SettingsEffectiveGraph = {
+  content: `${JSON.stringify(globalEffectiveValue, null, 2)}\n`,
+  value: globalEffectiveValue,
+  schema: {
+    type: "object",
+    properties: {
+      avatar: { type: "string" },
+      lang: { type: "string" },
+    },
+  },
+  provenance: {
+    "/avatar": {
+      pointer: "/avatar",
+      origins: [
+        {
+          layerId: "global:user",
+          sourceId: "user",
+          kind: "file",
+          path: "~/.agenter/settings.json",
+          pointer: "/avatar",
+          value: "jon",
+        },
+      ],
+      jumpTarget: {
+        layerId: "global:user",
+        pointer: "/avatar",
+      },
+    },
+  },
+};
+
+const settingsLayers: SettingsLayerItem[] = [
+  {
+    layerId: "global:user",
+    sourceId: "user",
+    kind: "file",
+    path: "~/.agenter/settings.json",
+    exists: true,
+    editable: true,
+  },
+  {
+    layerId: "global:avatar",
+    sourceId: "avatar:user",
+    kind: "avatar",
+    path: "~/.agenter/avatar/jon/settings.json",
+    exists: true,
+    editable: true,
+  },
+];
+
+const layerContentById: Record<string, string> = {
+  "global:user": '{\n  "avatar": "jon",\n  "lang": "en"\n}\n',
+  "global:avatar": '{\n  "lang": "en"\n}\n',
+};
 
 const meta = {
   title: "Features/Settings/GlobalSettingsPanel",
@@ -30,47 +91,81 @@ const meta = {
     loading: false,
     saving: false,
     status: "Loaded 2 avatars",
-    settingsContent: '{\n  "avatar": "jon"\n}\n',
+    effective: globalEffective,
+    layers: settingsLayers,
+    selectedLayerId: "global:user",
+    layerContent: layerContentById["global:user"],
     avatars: baseAvatars,
     activeAvatar: "jon",
-    onSettingsContentChange: fn(),
-    onSaveSettings: fn(),
+    onSelectLayer: fn(),
+    onLayerContentChange: fn(),
+    onRefreshLayers: fn(),
+    onLoadLayer: fn(),
+    onSaveLayer: fn(),
     onCreateAvatar: fn(async () => undefined),
     onUploadAvatarIcon: fn(async () => undefined),
   },
   render: (args) => {
-    const [settingsContent, setSettingsContent] = useState(args.settingsContent);
+    const [layerContent, setLayerContent] = useState(args.layerContent);
+    const [selectedLayerId, setSelectedLayerId] = useState<string | null>(args.selectedLayerId);
     const [avatars, setAvatars] = useState(args.avatars);
     const [activeAvatar, setActiveAvatar] = useState(args.activeAvatar);
+    const [effective, setEffective] = useState(args.effective);
 
-    const syncActiveAvatar = (content: string) => {
+    const syncAvatarFromContent = (content: string) => {
       try {
         const parsed = JSON.parse(content) as { avatar?: unknown };
-        if (typeof parsed.avatar === "string" && parsed.avatar.trim().length > 0) {
-          setActiveAvatar(parsed.avatar);
-          setAvatars((current) =>
-            current.map((avatar) => ({
-              ...avatar,
-              active: avatar.nickname === parsed.avatar,
-            })),
-          );
+        if (typeof parsed.avatar !== "string") {
+          return;
         }
+        setActiveAvatar(parsed.avatar);
+        setAvatars((current) =>
+          current.map((avatar) => ({
+            ...avatar,
+            active: avatar.nickname === parsed.avatar,
+          })),
+        );
+        setEffective((current) => ({
+          ...current,
+          value: {
+            ...(current.value as Record<string, unknown>),
+            avatar: parsed.avatar,
+          },
+          content: `${JSON.stringify(
+            {
+              ...(current.value as Record<string, unknown>),
+              avatar: parsed.avatar,
+            },
+            null,
+            2,
+          )}\n`,
+        }));
       } catch {
-        // keep current state when draft JSON is temporarily invalid
+        // keep stale state until JSON becomes valid again
       }
     };
 
     return (
-      <div className="h-[760px] p-6">
+      <div className="h-[860px] p-6">
         <GlobalSettingsPanel
           {...args}
-          settingsContent={settingsContent}
+          effective={effective}
+          selectedLayerId={selectedLayerId}
+          layerContent={layerContent}
           avatars={avatars}
           activeAvatar={activeAvatar}
-          onSettingsContentChange={(content) => {
-            setSettingsContent(content);
-            syncActiveAvatar(content);
-            args.onSettingsContentChange(content);
+          onSelectLayer={(layerId) => {
+            setSelectedLayerId(layerId);
+            args.onSelectLayer(layerId);
+          }}
+          onLoadLayer={(layerId) => {
+            setLayerContent(layerContentById[layerId] ?? "{}\n");
+            args.onLoadLayer(layerId);
+          }}
+          onLayerContentChange={(content) => {
+            setLayerContent(content);
+            syncAvatarFromContent(content);
+            args.onLayerContentChange(content);
           }}
           onCreateAvatar={async (nickname) => {
             const normalized = nickname.trim();
@@ -82,7 +177,7 @@ const meta = {
               {
                 nickname: normalized,
                 active: false,
-                iconUrl: avatarSvgUrl("#ea580c"),
+                iconUrl: avatarSvgUrl("#4f46e5"),
               },
             ]);
             await args.onCreateAvatar(normalized);
@@ -97,22 +192,36 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+export const UserSettingsWorkbenchView: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("tab", { name: "View" }));
+    await userEvent.click(canvas.getByRole("button", { name: /settings\.json/i }));
+
+    await expect(args.onSelectLayer).toHaveBeenCalledWith("global:user");
+    await expect(args.onLoadLayer).toHaveBeenCalledWith("global:user");
+  },
+};
+
 export const ManageAvatarCatalog: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
 
     await userEvent.click(canvas.getByRole("tab", { name: "Avatars" }));
-    await expect(canvas.getByRole("img", { name: "jon" })).toBeInTheDocument();
     await userEvent.type(canvas.getByPlaceholderText("new-avatar"), "nova-ops");
     await userEvent.click(canvas.getByRole("button", { name: "Create avatar" }));
-
     await expect(args.onCreateAvatar).toHaveBeenCalledWith("nova-ops");
     await expect(canvas.getByText("nova-ops")).toBeInTheDocument();
 
-    const cards = canvas.getAllByRole("button", { name: "Set active" });
-    await userEvent.click(cards.at(-1)!);
-    await userEvent.click(canvas.getByRole("tab", { name: "User Settings" }));
+    const setActiveButtons = canvas.getAllByRole("button", { name: "Set active" });
+    await userEvent.click(setActiveButtons.at(-1)!);
 
-    await expect(canvas.getByRole("textbox")).toHaveValue('{\n  "avatar": "nova-ops"\n}\n');
+    await userEvent.click(canvas.getByRole("tab", { name: "User Settings" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Layer Sources" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Source" }));
+
+    await expect(args.onLayerContentChange).toHaveBeenCalled();
+    const sourceField = canvas.getByPlaceholderText("Select a layer and load content") as HTMLTextAreaElement;
+    await expect(sourceField.value.includes('"avatar": "nova-ops"')).toBe(true);
   },
 };

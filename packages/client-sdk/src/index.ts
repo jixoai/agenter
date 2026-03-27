@@ -30,6 +30,8 @@ export type {
   RuntimeSchedulerState,
   RuntimeSnapshot,
   RuntimeSnapshotEntry,
+  ScopedSettingsLayerEntry,
+  ScopedSettingsOutput,
   SessionEntry,
   SessionNotificationItem,
   SettingsLayerEntry,

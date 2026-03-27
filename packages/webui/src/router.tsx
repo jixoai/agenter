@@ -26,6 +26,7 @@ import { QuickStartView } from "./features/quickstart/QuickStartView";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
 import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
+import type { SettingsEffectiveGraph, SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { AppRoot } from "./features/shell/AppRoot";
 import { SessionStatusPillMenu } from "./features/shell/SessionStatusPillMenu";
 import { WorkspaceShellFrame } from "./features/shell/WorkspaceShellFrame";
@@ -69,6 +70,14 @@ const EMPTY_MODEL_CALLS: never[] = [];
 const EMPTY_API_CALLS: never[] = [];
 const EMPTY_API_CALL_RECORDING = { enabled: false, refCount: 0 } as const;
 const EMPTY_ATTENTION = EMPTY_RUNTIME_ATTENTION_STATE;
+const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
+  content: "{}\n",
+  value: {},
+  schema: {
+    type: "object",
+  },
+  provenance: {},
+};
 
 const readSearchString = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
@@ -1329,7 +1338,7 @@ const WorkspaceSettingsRouteView = () => {
               disabled={!search.workspacePath}
               loading={controller.settingsLoading}
               status={controller.settingsStatus}
-              effectiveContent={controller.settingsEffective}
+              effective={controller.settingsEffective}
               layers={controller.settingsLayers}
               selectedLayerId={controller.selectedLayerId}
               layerContent={controller.layerDraft}
@@ -1342,11 +1351,8 @@ const WorkspaceSettingsRouteView = () => {
               onRefreshLayers={() => {
                 void refreshSettingsLayers(search.workspacePath);
               }}
-              onLoadLayer={() => {
-                if (!controller.selectedLayerId) {
-                  return;
-                }
-                void controller.loadSelectedLayer(search.workspacePath, controller.selectedLayerId);
+              onLoadLayer={(layerId) => {
+                void controller.loadSelectedLayer(search.workspacePath, layerId);
               }}
               onSaveLayer={() => {
                 if (!controller.selectedLayerId) {
@@ -1372,25 +1378,67 @@ const WorkspaceSettingsRouteView = () => {
 const GlobalSettingsRouteView = () => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
+  const adaptiveViewport = useAdaptiveViewport();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("idle");
-  const [content, setContent] = useState("{}\n");
-  const [mtimeMs, setMtimeMs] = useState(0);
+  const [effective, setEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
+  const [layers, setLayers] = useState<SettingsLayerItem[]>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [layerDraft, setLayerDraft] = useState("{}\n");
+  const [layerMtimeMs, setLayerMtimeMs] = useState(0);
   const [avatars, setAvatars] = useState<Array<{ nickname: string; active: boolean; iconUrl: string }>>([]);
   const [activeAvatar, setActiveAvatar] = useState("");
+
+  const loadLayer = async (layerId: string) => {
+    setLoading(true);
+    try {
+      const file = await controller.runtimeStore.readScopedSettingsLayer({
+        scope: "global",
+        layerId,
+      });
+      setLayerDraft(file.content);
+      setLayerMtimeMs(file.mtimeMs);
+      setStatus(`loaded: ${file.path}`);
+    } catch (error) {
+      controller.setNotice(String(error instanceof Error ? error.message : error));
+      setStatus("load failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectPreferredLayer = (items: SettingsLayerItem[], previous: string | null): string | null => {
+    if (previous && items.some((layer) => layer.layerId === previous)) {
+      return previous;
+    }
+    return items.find((layer) => layer.editable)?.layerId ?? items[0]?.layerId ?? null;
+  };
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const [settingsFile, avatarCatalog] = await Promise.all([
-        controller.runtimeStore.readGlobalSettings(),
+      const [settingsScope, avatarCatalog] = await Promise.all([
+        controller.runtimeStore.listScopedSettings({ scope: "global" }),
         controller.runtimeStore.listAvatarCatalog(),
       ]);
-      setContent(settingsFile.content);
-      setMtimeMs(settingsFile.mtimeMs);
+      setEffective(settingsScope.effective);
+      setLayers(settingsScope.layers);
       setAvatars(avatarCatalog.items);
       setActiveAvatar(avatarCatalog.activeAvatar);
+      const nextLayerId = selectPreferredLayer(settingsScope.layers, selectedLayerId);
+      setSelectedLayerId(nextLayerId);
+      if (nextLayerId) {
+        const file = await controller.runtimeStore.readScopedSettingsLayer({
+          scope: "global",
+          layerId: nextLayerId,
+        });
+        setLayerDraft(file.content);
+        setLayerMtimeMs(file.mtimeMs);
+      } else {
+        setLayerDraft("{}\n");
+        setLayerMtimeMs(0);
+      }
       setStatus(`Loaded ${avatarCatalog.items.length} avatars`);
     } catch (error) {
       controller.setNotice(String(error instanceof Error ? error.message : error));
@@ -1413,23 +1461,49 @@ const GlobalSettingsRouteView = () => {
         loading={loading}
         saving={saving}
         status={status}
-        settingsContent={content}
+        detailMode={adaptiveViewport.compact ? "sheet" : "split"}
+        effective={effective}
+        layers={layers}
+        selectedLayerId={selectedLayerId}
+        layerContent={layerDraft}
         avatars={avatars}
         activeAvatar={activeAvatar}
-        onSettingsContentChange={setContent}
-        onSaveSettings={() => {
+        onSelectLayer={(layerId) => {
+          setSelectedLayerId(layerId);
+        }}
+        onLayerContentChange={setLayerDraft}
+        onRefreshLayers={() => {
+          void refresh();
+        }}
+        onLoadLayer={(layerId) => {
+          void loadLayer(layerId);
+        }}
+        onSaveLayer={() => {
+          if (!selectedLayerId) {
+            return;
+          }
           setSaving(true);
           void controller.runtimeStore
-            .saveGlobalSettings({ content, baseMtimeMs: mtimeMs })
+            .saveScopedSettingsLayer({
+              scope: "global",
+              layerId: selectedLayerId,
+              content: layerDraft,
+              baseMtimeMs: layerMtimeMs,
+            })
             .then((result) => {
               if (!result.ok) {
-                setContent(result.latest.content);
-                setMtimeMs(result.latest.mtimeMs);
-                setStatus("save conflict");
+                if (result.reason === "conflict") {
+                  setLayerDraft(result.latest.content);
+                  setLayerMtimeMs(result.latest.mtimeMs);
+                  setStatus("save conflict");
+                  return;
+                }
+                setStatus(result.message);
                 return;
               }
-              setContent(result.file.content);
-              setMtimeMs(result.file.mtimeMs);
+              setLayerDraft(result.file.content);
+              setLayerMtimeMs(result.file.mtimeMs);
+              setEffective(result.effective);
               setStatus("saved");
               return refresh();
             })

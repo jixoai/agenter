@@ -62,6 +62,12 @@ import { DEFAULT_MESSAGE_CHAT_ID, resolveCollectedInputsChatId, resolveSessionBl
 import { resolveSessionConfig } from "./session-config";
 import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
+import {
+  listScopedSettingsGraph,
+  readScopedSettingsLayer,
+  saveScopedSettingsLayer,
+  type SettingsScope,
+} from "./settings-scope";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities } from "./types";
 import { WorkspacePathSearchIndex } from "./workspace-path-search";
 import {
@@ -1547,6 +1553,13 @@ export class AppKernel {
     return await listWorkspaceSettingsLayers({ workspacePath });
   }
 
+  async listSettingsScope(input: {
+    scope: SettingsScope;
+    workspacePath?: string;
+  }) {
+    return await listScopedSettingsGraph(input);
+  }
+
   async readGlobalSettings() {
     return await readGlobalSettingsFile();
   }
@@ -1562,6 +1575,14 @@ export class AppKernel {
     return await readWorkspaceSettingsLayer(input);
   }
 
+  async readSettingsScopeLayer(input: {
+    scope: SettingsScope;
+    workspacePath?: string;
+    layerId: string;
+  }) {
+    return await readScopedSettingsLayer(input);
+  }
+
   async saveSettingsLayer(input: {
     workspacePath: string;
     layerId: string;
@@ -1569,6 +1590,16 @@ export class AppKernel {
     baseMtimeMs: number;
   }) {
     return await saveWorkspaceSettingsLayer(input);
+  }
+
+  async saveSettingsScopeLayer(input: {
+    scope: SettingsScope;
+    workspacePath?: string;
+    layerId: string;
+    content: string;
+    baseMtimeMs: number;
+  }) {
+    return await saveScopedSettingsLayer(input);
   }
 
   getNotificationSnapshot(): SessionNotificationSnapshot {

@@ -319,6 +319,36 @@ export const appRouter = t.router({
         )
         .mutation(async ({ ctx, input }) => await ctx.kernel.saveGlobalSettings(input)),
     }),
+    scope: t.router({
+      list: t.procedure
+        .input(
+          z.object({
+            scope: z.enum(["workspace", "global"]),
+            workspacePath: z.string().min(1).optional(),
+          }),
+        )
+        .query(async ({ ctx, input }) => await ctx.kernel.listSettingsScope(input)),
+      read: t.procedure
+        .input(
+          z.object({
+            scope: z.enum(["workspace", "global"]),
+            workspacePath: z.string().min(1).optional(),
+            layerId: z.string().min(1),
+          }),
+        )
+        .query(async ({ ctx, input }) => await ctx.kernel.readSettingsScopeLayer(input)),
+      save: t.procedure
+        .input(
+          z.object({
+            scope: z.enum(["workspace", "global"]),
+            workspacePath: z.string().min(1).optional(),
+            layerId: z.string().min(1),
+            content: z.string(),
+            baseMtimeMs: z.number().nonnegative(),
+          }),
+        )
+        .mutation(async ({ ctx, input }) => await ctx.kernel.saveSettingsScopeLayer(input)),
+    }),
     read: t.procedure
       .input(
         z.object({
