@@ -300,6 +300,7 @@ const saveSettingsLayerMock = vi.fn(async () => ({
 const setChatVisibilityMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
 const consumeNotificationsMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
 const hydrateSessionHistoryMock = vi.fn(async () => ({ messagesHasMore: false, cyclesHasMore: false }));
+const hydrateSessionArtifactsMock = vi.fn(async () => {});
 const loadChatMessagesMock = vi.fn(async () => {});
 const loadChatCyclesMock = vi.fn(async () => {});
 const sessionIconUrlMock = vi.fn((sessionId: string) => `/media/sessions/${sessionId}/icon`);
@@ -414,6 +415,7 @@ vi.mock("@agenter/client-sdk", () => ({
     uploadSessionIcon: uploadSessionIconMock,
     uploadAvatarIcon: uploadAvatarIconMock,
     hydrateSessionHistory: hydrateSessionHistoryMock,
+    hydrateSessionArtifacts: hydrateSessionArtifactsMock,
     loadChatMessages: loadChatMessagesMock,
     loadChatCycles: loadChatCyclesMock,
     loadMoreChatMessagesBefore: async () => ({ items: 0, hasMore: false }),
@@ -474,6 +476,7 @@ beforeEach(() => {
   setChatVisibilityMock.mockClear();
   consumeNotificationsMock.mockClear();
   hydrateSessionHistoryMock.mockClear();
+  hydrateSessionArtifactsMock.mockClear();
   loadChatMessagesMock.mockClear();
   loadChatCyclesMock.mockClear();
   sessionIconUrlMock.mockClear();
