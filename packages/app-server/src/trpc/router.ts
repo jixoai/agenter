@@ -19,6 +19,27 @@ const channelAccessInput = z.object({
   chatId: z.string().min(1),
   accessToken: z.string().min(1),
 });
+const messageErrorPayloadSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  code: z.string().trim().min(1).optional(),
+  detail: z.string().trim().min(1).optional(),
+});
+const messageInteractiveFieldSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  placeholder: z.string().optional(),
+  required: z.boolean().optional(),
+  multiline: z.boolean().optional(),
+  initialValue: z.string().optional(),
+});
+const messageInteractivePayloadSchema = z.object({
+  version: z.literal("v1"),
+  kind: z.literal("form"),
+  title: z.string().trim().min(1),
+  description: z.string().trim().min(1).optional(),
+  submitLabel: z.string().trim().min(1).optional(),
+  fields: z.array(messageInteractiveFieldSchema).min(1),
+});
 
 export const appRouter = t.router({
   session: t.router({
@@ -171,6 +192,48 @@ export const appRouter = t.router({
           accessToken: input.accessToken,
           text: input.text,
           assetIds: input.assetIds,
+          clientMessageId: input.clientMessageId,
+        }),
+      ),
+    sendError: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          content: z.string().trim().min(1),
+          error: messageErrorPayloadSchema,
+          clientMessageId: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.sendMessageChannelError({
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          content: input.content,
+          error: input.error,
+          clientMessageId: input.clientMessageId,
+        }),
+      ),
+    sendInteractive: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          content: z.string().trim().min(1),
+          interactive: messageInteractivePayloadSchema,
+          clientMessageId: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.sendMessageChannelInteractive({
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          content: input.content,
+          interactive: input.interactive,
           clientMessageId: input.clientMessageId,
         }),
       ),

@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { LoaderCircle, MessageSquareText } from "lucide-react";
+import { CircleAlert, LoaderCircle, MessageSquareText } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -78,18 +78,131 @@ const isAssistantMessage = (channel: WebChatChannel | null, message: WebChatMess
   return message.from === channel.owner || message.from === `avatar:${channel.owner}`;
 };
 
-const DefaultMessageRow = ({ channel, message }: { channel: WebChatChannel; message: WebChatMessage }) => {
+const buildInteractiveText = (
+  message: WebChatMessage,
+  fields: Record<string, string>,
+  fieldLabels: Record<string, string>,
+): string => {
+  const summaryLines = Object.entries(fields)
+    .map(([id, value]) => {
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return null;
+      }
+      return `${fieldLabels[id] ?? id}: ${normalized}`;
+    })
+    .filter((value): value is string => value !== null);
+  if (summaryLines.length === 0) {
+    return message.content;
+  }
+  return `${message.content}\n${summaryLines.join("\n")}`;
+};
+
+const DefaultMessageRow = ({
+  channel,
+  message,
+  onSubmitInteractive,
+}: {
+  channel: WebChatChannel;
+  message: WebChatMessage;
+  onSubmitInteractive: (text: string) => Promise<void>;
+}) => {
   const assistant = isAssistantMessage(channel, message);
+  const interactive = message.kind === "interactive" ? message.payload?.interactive : undefined;
+  const [interactiveDraft, setInteractiveDraft] = useState<Record<string, string>>({});
+  const [interactiveSubmitting, setInteractiveSubmitting] = useState(false);
+
+  const handleInteractiveSubmit = async () => {
+    if (!interactive || interactiveSubmitting) {
+      return;
+    }
+    const labels = Object.fromEntries(interactive.fields.map((field) => [field.id, field.label]));
+    setInteractiveSubmitting(true);
+    try {
+      await onSubmitInteractive(buildInteractiveText(message, interactiveDraft, labels));
+    } finally {
+      setInteractiveSubmitting(false);
+    }
+  };
+
   return (
     <div className={`flex w-full py-1.5 ${assistant ? "justify-start" : "justify-end"}`}>
       <article
-        className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-[13px] shadow-xs md:max-w-[44rem] ${assistant ? "bg-white text-slate-800 ring-1 ring-slate-200" : "bg-slate-900 text-white"}`}
+        className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-[13px] shadow-xs md:max-w-[44rem] ${
+          message.kind === "error"
+            ? "border border-rose-200 bg-rose-50 text-rose-900"
+            : assistant
+              ? "bg-white text-slate-800 ring-1 ring-slate-200"
+              : "bg-slate-900 text-white"
+        }`}
       >
         <div className={`mb-1 flex items-center gap-2 text-[11px] ${assistant ? "text-slate-500" : "text-white/70"}`}>
           <span className="truncate font-medium">{message.from}</span>
           <span>{formatTimestamp(message.createdAt)}</span>
         </div>
-        {message.content.trim().length > 0 ? <p className="whitespace-pre-wrap break-words">{message.content}</p> : null}
+        {message.kind === "error" ? (
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1 text-xs font-medium text-rose-700">
+              <CircleAlert className="h-3.5 w-3.5" />
+              {message.payload?.error?.title ?? "Error"}
+            </div>
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            {message.payload?.error?.detail ? (
+              <p className="whitespace-pre-wrap break-words text-xs text-rose-700">{message.payload.error.detail}</p>
+            ) : null}
+          </div>
+        ) : message.kind === "interactive" && interactive ? (
+          <div className="space-y-2.5">
+            <p className="font-medium text-slate-900">{interactive.title}</p>
+            {interactive.description ? <p className="text-xs text-slate-600">{interactive.description}</p> : null}
+            <div className="space-y-2">
+              {interactive.fields.map((field) => {
+                const value = interactiveDraft[field.id] ?? field.initialValue ?? "";
+                return (
+                  <label key={field.id} className="block space-y-1 text-xs text-slate-700">
+                    <span className="font-medium">{field.label}</span>
+                    {field.multiline ? (
+                      <textarea
+                        value={value}
+                        placeholder={field.placeholder}
+                        onChange={(event) =>
+                          setInteractiveDraft((current) => ({
+                            ...current,
+                            [field.id]: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                        rows={3}
+                      />
+                    ) : (
+                      <input
+                        value={value}
+                        placeholder={field.placeholder}
+                        onChange={(event) =>
+                          setInteractiveDraft((current) => ({
+                            ...current,
+                            [field.id]: event.target.value,
+                          }))
+                        }
+                        className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                      />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-50"
+              onClick={handleInteractiveSubmit}
+              disabled={interactiveSubmitting}
+            >
+              {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
+            </button>
+          </div>
+        ) : message.content.trim().length > 0 ? (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        ) : null}
         {(message.attachments?.length ?? 0) > 0 ? (
           <ul className={`mt-2 space-y-1 text-[11px] ${assistant ? "text-slate-500" : "text-white/75"}`}>
             {message.attachments?.map((attachment) => (
@@ -342,7 +455,12 @@ export const WebChatView = ({
 
   const renderRow = (message: WebChatMessage, index: number, style?: CSSProperties) => {
     const assistant = isAssistantMessage(channel, message);
-    const content = renderMessage ? renderMessage({ channel: channel!, message, isAssistant: assistant }) : <DefaultMessageRow channel={channel!} message={message} />;
+    const handleInteractiveSubmit = async (text: string): Promise<void> => {
+      await handleSubmit({ text, assets: [] });
+    };
+    const content = renderMessage
+      ? renderMessage({ channel: channel!, message, isAssistant: assistant, onSubmitInteractive: handleInteractiveSubmit })
+      : <DefaultMessageRow channel={channel!} message={message} onSubmitInteractive={handleInteractiveSubmit} />;
     return (
       <section
         key={message.messageId}

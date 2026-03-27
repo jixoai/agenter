@@ -21,7 +21,9 @@ import {
   type MessageChannelKind,
   type MessageChannelPatchInput,
   type MessageControlPlaneEntry,
+  type MessageErrorPayload,
   type MessageFocusOp,
+  type MessageInteractivePayload,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
   type MessageRecord,
@@ -1045,7 +1047,7 @@ export class SessionRuntime {
   }
 
   private isInboundMessage(message: MessageRecord): boolean {
-    return this.resolveMessageRole(message) === "user";
+    return message.kind === "text" && this.resolveMessageRole(message) === "user";
   }
 
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
@@ -1084,6 +1086,8 @@ export class SessionRuntime {
       chatId: message.chatId,
       role,
       content: message.content,
+      messageKind: message.kind,
+      messagePayload: message.payload,
       timestamp: message.createdAt,
       cycleId:
         typeof metadata.cycleId === "number" && Number.isInteger(metadata.cycleId) ? metadata.cycleId : undefined,
@@ -3408,6 +3412,7 @@ export class SessionRuntime {
       messageId: input.clientMessageId,
       from: "User",
       to: channel.owner,
+      kind: "text",
       content: input.text,
       attachments: attachments.map((attachment) => ({
         assetId: attachment.assetId,
@@ -3418,6 +3423,64 @@ export class SessionRuntime {
         url: attachment.url,
       })),
       metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
+    });
+  }
+
+  sendMessageChannelError(input: {
+    chatId: string;
+    accessToken: string;
+    content: string;
+    error: MessageErrorPayload;
+    clientMessageId?: string;
+  }): void {
+    const channel = this.messageSystem.getChannel(input.chatId);
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    this.messageSystem.sendErrorAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      messageId: input.clientMessageId,
+      from: this.getAvatarName(),
+      to: channel.owner,
+      kind: "error",
+      content: input.content,
+      payload: {
+        error: input.error,
+      },
+      metadata: {
+        source: "admin_error",
+        ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+      },
+    });
+  }
+
+  sendMessageChannelInteractive(input: {
+    chatId: string;
+    accessToken: string;
+    content: string;
+    interactive: MessageInteractivePayload;
+    clientMessageId?: string;
+  }): void {
+    const channel = this.messageSystem.getChannel(input.chatId);
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    this.messageSystem.sendInteractiveAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      messageId: input.clientMessageId,
+      from: this.getAvatarName(),
+      to: channel.owner,
+      kind: "interactive",
+      content: input.content,
+      payload: {
+        interactive: input.interactive,
+      },
+      metadata: {
+        source: "interactive",
+        ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+      },
     });
   }
 

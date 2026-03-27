@@ -24,6 +24,8 @@ export interface MessageParticipant {
   role?: "avatar" | "user" | "system";
 }
 
+export type MessageKind = "text" | "error" | "interactive";
+
 export type MessageAttachmentKind = "image" | "video" | "file";
 
 export interface MessageAttachment {
@@ -33,6 +35,35 @@ export interface MessageAttachment {
   mimeType: string;
   sizeBytes: number;
   url: string;
+}
+
+export interface MessageErrorPayload {
+  title?: string;
+  code?: string;
+  detail?: string;
+}
+
+export interface MessageInteractiveField {
+  id: string;
+  label: string;
+  placeholder?: string;
+  required?: boolean;
+  multiline?: boolean;
+  initialValue?: string;
+}
+
+export interface MessageInteractivePayload {
+  version: "v1";
+  kind: "form";
+  title: string;
+  description?: string;
+  submitLabel?: string;
+  fields: MessageInteractiveField[];
+}
+
+export interface MessagePayload {
+  error?: MessageErrorPayload;
+  interactive?: MessageInteractivePayload;
 }
 
 export interface MessageChannelRecord {
@@ -71,10 +102,12 @@ export interface MessageRecord {
   rootId?: string;
   from: string;
   to?: string;
+  kind: MessageKind;
   content: string;
   createdAt: number;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
+  payload?: MessagePayload;
 }
 
 export interface ReverseTimeCursor {
@@ -123,10 +156,12 @@ export interface MessageAppendInput {
   rootId?: string;
   from: string;
   to?: string;
+  kind?: MessageKind;
   content: string;
   createdAt?: number;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
+  payload?: MessagePayload;
 }
 
 export interface MessageAuthorizedReadInput {

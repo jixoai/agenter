@@ -43,7 +43,7 @@ const transcriptByChatId: Record<string, string> = {
   "room-team": "Team room: terminal and message channels now share the same control plane.",
 };
 
-type SocketMode = "snapshot" | "loading" | "error";
+type SocketMode = "snapshot" | "loading" | "error" | "typed";
 
 class StorySocket implements WebChatSocketLike {
   static readonly OPEN = 1;
@@ -68,6 +68,64 @@ class StorySocket implements WebChatSocketLike {
       }
       this.readyState = StorySocket.OPEN;
       this.emit("open", new Event("open"));
+      const typedItems =
+        this.mode === "typed" && this.channel.chatId === "chat-jane"
+          ? [
+              {
+                rowId: 1,
+                messageId: "typed-interactive-1",
+                chatId: this.channel.chatId,
+                rootId: "7",
+                from: this.channel.owner,
+                to: "kzf",
+                kind: "interactive",
+                content: "Please submit your lunch choice.",
+                createdAt: 100,
+                metadata: {},
+                attachments: [],
+                payload: {
+                  interactive: {
+                    version: "v1",
+                    kind: "form",
+                    title: "Lunch poll",
+                    submitLabel: "Reply",
+                    fields: [{ id: "choice", label: "Choice", initialValue: "fried rice" }],
+                  },
+                },
+              },
+              {
+                rowId: 2,
+                messageId: "typed-error-2",
+                chatId: this.channel.chatId,
+                from: this.channel.owner,
+                kind: "error",
+                content: "Provider timeout",
+                createdAt: 101,
+                metadata: {},
+                attachments: [],
+                payload: {
+                  error: {
+                    title: "Runtime error",
+                    detail: "Retry later",
+                  },
+                },
+              },
+            ]
+          : [
+              {
+                rowId: this.channel.chatId === "chat-jane" ? 1 : 2,
+                messageId: this.channel.chatId === "chat-jane" ? "1" : "2",
+                chatId: this.channel.chatId,
+                rootId: this.channel.chatId === "chat-jane" ? "7" : undefined,
+                from: this.channel.owner,
+                kind: "text",
+                content: transcriptByChatId[this.channel.chatId],
+                createdAt: this.channel.chatId === "chat-jane" ? 100 : 200,
+                metadata: {},
+                attachments: [],
+                payload: undefined,
+              },
+            ];
       this.emit(
         "message",
         new MessageEvent("message", {
@@ -76,19 +134,7 @@ class StorySocket implements WebChatSocketLike {
             chatId: this.channel.chatId,
             snapshot: {
               channel: this.channel,
-              items: [
-                {
-                  rowId: this.channel.chatId === "chat-jane" ? 1 : 2,
-                  messageId: this.channel.chatId === "chat-jane" ? "1" : "2",
-                  chatId: this.channel.chatId,
-                  rootId: this.channel.chatId === "chat-jane" ? "7" : undefined,
-                  from: this.channel.owner,
-                  content: transcriptByChatId[this.channel.chatId],
-                  createdAt: this.channel.chatId === "chat-jane" ? 100 : 200,
-                  metadata: {},
-                  attachments: [],
-                },
-              ],
+              items: typedItems,
               nextBefore: null,
               hasMoreBefore: false,
               headVersion: this.channel.chatId,
@@ -145,6 +191,7 @@ const SurfaceStory = ({
   channelsLoading = false,
   channelsError = null,
   socketMode = "snapshot",
+  onSendMessage = fn(async () => undefined),
   onOpenDevtools = fn(),
 }: {
   compact: boolean;
@@ -152,6 +199,7 @@ const SurfaceStory = ({
   channelsLoading?: boolean;
   channelsError?: string | null;
   socketMode?: SocketMode;
+  onSendMessage?: (input: { channel: MessageChannelEntry; payload: { text: string; assets: File[] } }) => Promise<void>;
   onOpenDevtools?: (cycleId: number) => void;
 }) => {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(items[0]?.chatId ?? null);
@@ -173,7 +221,7 @@ const SurfaceStory = ({
         imageCompatible={false}
         onSelectChannel={setSelectedChatId}
         onCreateChannel={fn()}
-        onSendMessage={async () => undefined}
+        onSendMessage={onSendMessage}
         onSearchPaths={async () => []}
         socketFactory={socketFactory}
         onOpenDevtools={onOpenDevtools}
@@ -315,5 +363,29 @@ export const TransportErrorSurface: Story = {
       expect(canvasElement.textContent).toContain("Failed to refresh chat channels.");
     });
     await expect(await canvas.findByText("chat transport failed")).toBeInTheDocument();
+  },
+};
+
+export const TypedRowsRenderAndInteractiveSubmit: Story = {
+  args: {
+    onSendMessage: fn(async () => undefined),
+  },
+  render: (args) => (
+    <SurfaceStory
+      compact={false}
+      socketMode="typed"
+      onSendMessage={args.onSendMessage}
+      onOpenDevtools={args.onOpenDevtools}
+    />
+  ),
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(await canvas.findByText("Lunch poll")).toBeInTheDocument();
+    await expect(await canvas.findByText("Runtime error")).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Reply" }));
+    await waitFor(() => {
+      expect(args.onSendMessage).toHaveBeenCalledTimes(1);
+    });
   },
 };

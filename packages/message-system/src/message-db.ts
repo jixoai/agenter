@@ -7,6 +7,8 @@ import type {
   MessageAppendInput,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
+  MessageKind,
+  MessagePayload,
   MessageChannelRecord,
   MessageCreateInput,
   MessageIssueGrantInput,
@@ -29,6 +31,28 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
+
+const normalizeMessageKind = (value: string | null): MessageKind => {
+  if (value === "error" || value === "interactive") {
+    return value;
+  }
+  return "text";
+};
+
+const parseMessagePayload = (kind: MessageKind, raw: string | null): MessagePayload | undefined => {
+  const parsed = parseJson<Record<string, unknown>>(raw, {});
+  if (kind === "error" && parsed.error && typeof parsed.error === "object") {
+    return {
+      error: parsed.error as MessagePayload["error"],
+    };
+  }
+  if (kind === "interactive" && parsed.interactive && typeof parsed.interactive === "object") {
+    return {
+      interactive: parsed.interactive as MessagePayload["interactive"],
+    };
+  }
+  return undefined;
+};
 
 const buildNextCursor = <T extends { createdAt: number; rowId: number }>(
   itemsDescending: T[],
@@ -99,11 +123,14 @@ const mapMessage = (row: {
   root_id: string | null;
   from_id: string;
   to_id: string | null;
+  kind: string | null;
   content: string;
   created_at: number;
   metadata_json: string | null;
   attachments_json: string | null;
+  payload_json: string | null;
 }): MessageRecord => ({
+  kind: normalizeMessageKind(row.kind),
   rowId: row.row_id,
   messageId: row.message_id,
   chatId: row.chat_id,
@@ -114,6 +141,7 @@ const mapMessage = (row: {
   createdAt: row.created_at,
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
   attachments: parseJson(row.attachments_json, []),
+  payload: parseMessagePayload(normalizeMessageKind(row.kind), row.payload_json),
 });
 
 export class MessageDb {
@@ -300,11 +328,12 @@ export class MessageDb {
 
   appendMessage(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
+    const kind = input.kind ?? "text";
     const result = this.db
       .query(
         `insert into chat_message (
-          message_id, chat_id, root_id, from_id, to_id, content, created_at, metadata_json, attachments_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.messageId ?? createId(),
@@ -312,16 +341,18 @@ export class MessageDb {
         input.rootId ?? null,
         input.from,
         input.to ?? null,
+        kind,
         input.content,
         createdAt,
         toJson(input.metadata ?? {}),
         toJson(input.attachments ?? []),
+        toJson(input.payload ?? {}),
       );
     this.touchChannel(input.chatId, createdAt);
     const rowId = Number(result.lastInsertRowid);
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, content, created_at, metadata_json, attachments_json
+        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
          from chat_message where id = ?`,
       )
       .get(rowId) as Parameters<typeof mapMessage>[0] | null;
@@ -336,7 +367,7 @@ export class MessageDb {
     const before = input.before ?? undefined;
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, content, created_at, metadata_json, attachments_json
+        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and (
@@ -411,10 +442,12 @@ export class MessageDb {
         root_id text,
         from_id text not null,
         to_id text,
+        kind text not null default 'text',
         content text not null,
         created_at integer not null,
         metadata_json text,
         attachments_json text,
+        payload_json text,
         foreign key(chat_id) references chat_channel(chat_id) on delete cascade
       );
 
@@ -422,5 +455,17 @@ export class MessageDb {
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
       create index if not exists idx_chat_message_chat_created on chat_message(chat_id, created_at desc, id desc);
     `);
+
+    const messageColumns = this.db
+      .query(`pragma table_info(chat_message)`)
+      .all() as Array<{ name: string }>;
+    const hasKindColumn = messageColumns.some((column) => column.name === "kind");
+    if (!hasKindColumn) {
+      this.db.exec(`alter table chat_message add column kind text not null default 'text';`);
+    }
+    const hasPayloadColumn = messageColumns.some((column) => column.name === "payload_json");
+    if (!hasPayloadColumn) {
+      this.db.exec(`alter table chat_message add column payload_json text;`);
+    }
   }
 }

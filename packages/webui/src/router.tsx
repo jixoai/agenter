@@ -126,6 +126,29 @@ const toBootstrapChannelMessages = (
     chatId?: string;
     role: "user" | "assistant";
     content: string;
+    messageKind?: "text" | "error" | "interactive";
+    messagePayload?: {
+      error?: {
+        title?: string;
+        code?: string;
+        detail?: string;
+      };
+      interactive?: {
+        version: "v1";
+        kind: "form";
+        title: string;
+        description?: string;
+        submitLabel?: string;
+        fields: Array<{
+          id: string;
+          label: string;
+          placeholder?: string;
+          required?: boolean;
+          multiline?: boolean;
+          initialValue?: string;
+        }>;
+      };
+    };
     timestamp: number;
     cycleId?: number | null;
     channel?: "to_user" | "self_talk" | "tool_call" | "tool_result";
@@ -162,6 +185,7 @@ const toBootstrapChannelMessages = (
       chatId: channel.chatId,
       from: message.role === "assistant" ? channel.owner : "User",
       to: message.role === "assistant" ? undefined : channel.owner,
+      kind: message.messageKind ?? "text",
       content: message.content,
       createdAt: message.timestamp,
       metadata: {
@@ -170,6 +194,7 @@ const toBootstrapChannelMessages = (
         ...(message.cycleId != null ? { cycleId: message.cycleId } : {}),
       },
       attachments: message.attachments?.map((attachment) => ({ ...attachment })),
+      payload: message.messagePayload,
     }));
 };
 

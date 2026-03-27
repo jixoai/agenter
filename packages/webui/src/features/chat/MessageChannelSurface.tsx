@@ -142,6 +142,7 @@ export const MessageChannelSurface = ({
       assistantAvatarLabel={assistantAvatarLabel}
       userAvatarLabel={userAvatarLabel}
       onOpenDevtools={onOpenDevtools}
+      onSubmitInteractive={input.onSubmitInteractive}
     />
   );
 

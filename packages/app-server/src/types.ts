@@ -1,4 +1,5 @@
 import type { SessionAssetKind } from "@agenter/session-system";
+import type { MessageKind, MessagePayload } from "@agenter/message-system";
 
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
@@ -33,6 +34,8 @@ export interface ChatMessage {
   chatId?: string;
   role: "user" | "assistant";
   content: string;
+  messageKind?: MessageKind;
+  messagePayload?: MessagePayload;
   timestamp: number;
   cycleId?: number | null;
   channel?: "to_user" | "self_talk" | "tool_call" | "tool_result";

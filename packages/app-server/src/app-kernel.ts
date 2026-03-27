@@ -991,6 +991,82 @@ export class AppKernel {
     }
   }
 
+  async sendMessageChannelError(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    content: string;
+    error: {
+      title?: string;
+      code?: string;
+      detail?: string;
+    };
+    clientMessageId?: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      runtime.sendMessageChannelError({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        content: input.content,
+        error: input.error,
+        clientMessageId: input.clientMessageId,
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async sendMessageChannelInteractive(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    content: string;
+    interactive: {
+      version: "v1";
+      kind: "form";
+      title: string;
+      description?: string;
+      submitLabel?: string;
+      fields: Array<{
+        id: string;
+        label: string;
+        placeholder?: string;
+        required?: boolean;
+        multiline?: boolean;
+        initialValue?: string;
+      }>;
+    };
+    clientMessageId?: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      runtime.sendMessageChannelInteractive({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        content: input.content,
+        interactive: input.interactive,
+        clientMessageId: input.clientMessageId,
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async sendChat(
     sessionId: string,
     text: string,

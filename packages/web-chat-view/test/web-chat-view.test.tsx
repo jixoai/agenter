@@ -313,6 +313,114 @@ describe("Feature: web-chat-view package", () => {
     });
   });
 
+  test("Scenario: Given interactive and error channel rows When users interact Then interactive submit sends a normal text message while error cards stay visible", async () => {
+    render(
+      <div style={{ height: 520 }}>
+        <WebChatView
+          socketFactory={socketFactory}
+          channel={{
+            chatId: "chat-main",
+            kind: "direct",
+            title: "Chat",
+            owner: "jane",
+            participants: [
+              { id: "avatar:jane", label: "jane", role: "avatar" },
+              { id: "user", label: "User", role: "user" },
+            ],
+            createdAt: 1,
+            updatedAt: 1,
+            focused: true,
+            accessRole: "admin",
+            accessToken: "msgtok_admin",
+            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+          }}
+          renderComposer={() => <button type="button">Host composer</button>}
+        />
+      </div>,
+    );
+
+    await waitFor(() => {
+      expect(WebSocketMock.instances).toHaveLength(1);
+    });
+    const socket = WebSocketMock.instances[0]!;
+    socket.open();
+    socket.message(
+      JSON.stringify({
+        type: "snapshot",
+        chatId: "chat-main",
+        snapshot: {
+          channel: {
+            chatId: "chat-main",
+            kind: "direct",
+            title: "Chat",
+            owner: "jane",
+            participants: [
+              { id: "avatar:jane", label: "jane", role: "avatar" },
+              { id: "user", label: "User", role: "user" },
+            ],
+            createdAt: 1,
+            updatedAt: 1,
+            focused: true,
+            accessRole: "admin",
+            accessToken: "msgtok_admin",
+            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+          },
+          items: [
+            {
+              rowId: 1,
+              messageId: "interactive-1",
+              chatId: "chat-main",
+              from: "jane",
+              to: "User",
+              kind: "interactive",
+              content: "Reply with lunch choice",
+              createdAt: 10,
+              metadata: {},
+              attachments: [],
+              payload: {
+                interactive: {
+                  version: "v1",
+                  kind: "form",
+                  title: "Lunch poll",
+                  submitLabel: "Send",
+                  fields: [{ id: "choice", label: "Choice", initialValue: "fried rice" }],
+                },
+              },
+            },
+            {
+              rowId: 2,
+              messageId: "error-1",
+              chatId: "chat-main",
+              from: "jane",
+              kind: "error",
+              content: "Provider timeout",
+              createdAt: 20,
+              metadata: {},
+              attachments: [],
+              payload: {
+                error: {
+                  title: "Runtime error",
+                  detail: "Retry later",
+                },
+              },
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "2",
+        },
+      }),
+    );
+
+    await expect(screen.findByText("Lunch poll")).resolves.toBeTruthy();
+    await expect(screen.findByText("Runtime error")).resolves.toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(socket.sent.some((entry) => entry.includes('"type":"send"'))).toBe(true);
+    });
+  });
+
   test("Scenario: Given bootstrap messages exist before the transport snapshot arrives When the view is still connecting Then the conversation stays visible instead of collapsing to a blank loading state", async () => {
     render(
       <div style={{ height: 520 }}>
@@ -341,6 +449,7 @@ describe("Feature: web-chat-view package", () => {
               chatId: "chat-main",
               from: "User",
               to: "jane",
+              kind: "text",
               content: "bootstrap message",
               createdAt: 100,
               metadata: {},
@@ -384,6 +493,7 @@ describe("Feature: web-chat-view package", () => {
               chatId: "chat-main",
               from: "User",
               to: "jane",
+              kind: "text",
               content: "bootstrap prompt",
               createdAt: 100,
               metadata: { channel: "user_input", format: "markdown", cycleId: 7 },
@@ -394,6 +504,7 @@ describe("Feature: web-chat-view package", () => {
               messageId: "102",
               chatId: "chat-main",
               from: "jane",
+              kind: "text",
               content: "bootstrap reply",
               createdAt: 200,
               metadata: { channel: "to_user", format: "markdown", cycleId: 7 },

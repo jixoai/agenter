@@ -201,6 +201,24 @@ export class MessageControlPlane {
   }
 
   sendAuthorized(input: MessageAuthorizedWriteInput): MessageRecord {
+    if (input.kind === "error") {
+      if (!input.payload?.error) {
+        throw new Error("message channel error payload required");
+      }
+      return this.sendErrorAuthorized({
+        ...input,
+        payload: { error: input.payload.error },
+      });
+    }
+    if (input.kind === "interactive") {
+      if (!input.payload?.interactive) {
+        throw new Error("message channel interactive payload required");
+      }
+      return this.sendInteractiveAuthorized({
+        ...input,
+        payload: { interactive: input.payload.interactive },
+      });
+    }
     this.requireAccess(input.chatId, input.accessToken, "member");
     return this.send({
       chatId: input.chatId,
@@ -208,10 +226,62 @@ export class MessageControlPlane {
       rootId: input.rootId,
       from: input.from,
       to: input.to,
+      kind: input.kind,
       content: input.content,
       createdAt: input.createdAt,
       metadata: input.metadata,
       attachments: input.attachments,
+      payload: input.payload,
+    });
+  }
+
+  sendErrorAuthorized(
+    input: MessageAuthorizedWriteInput & {
+      payload: NonNullable<MessageAuthorizedWriteInput["payload"]> & {
+        error: NonNullable<NonNullable<MessageAuthorizedWriteInput["payload"]>["error"]>;
+      };
+    },
+  ): MessageRecord {
+    this.requireAccess(input.chatId, input.accessToken, "admin");
+    return this.send({
+      chatId: input.chatId,
+      messageId: input.messageId,
+      rootId: input.rootId,
+      from: input.from,
+      to: input.to,
+      kind: "error",
+      content: input.content,
+      createdAt: input.createdAt,
+      metadata: input.metadata,
+      attachments: input.attachments,
+      payload: {
+        error: input.payload.error,
+      },
+    });
+  }
+
+  sendInteractiveAuthorized(
+    input: MessageAuthorizedWriteInput & {
+      payload: NonNullable<MessageAuthorizedWriteInput["payload"]> & {
+        interactive: NonNullable<NonNullable<MessageAuthorizedWriteInput["payload"]>["interactive"]>;
+      };
+    },
+  ): MessageRecord {
+    this.requireAccess(input.chatId, input.accessToken, "member");
+    return this.send({
+      chatId: input.chatId,
+      messageId: input.messageId,
+      rootId: input.rootId,
+      from: input.from,
+      to: input.to,
+      kind: "interactive",
+      content: input.content,
+      createdAt: input.createdAt,
+      metadata: input.metadata,
+      attachments: input.attachments,
+      payload: {
+        interactive: input.payload.interactive,
+      },
     });
   }
 

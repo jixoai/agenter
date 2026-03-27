@@ -11,6 +11,7 @@ const {
   LoadingChannelCollection,
   RefreshingChannelCollection,
   TransportErrorSurface,
+  TypedRowsRenderAndInteractiveSubmit,
 } = composeStories(stories);
 
 describe("Feature: Storybook DOM contract for message channel surface", () => {
@@ -25,5 +26,9 @@ describe("Feature: Storybook DOM contract for message channel surface", () => {
     await LoadingChannelCollection.run();
     await RefreshingChannelCollection.run();
     await TransportErrorSurface.run();
+  });
+
+  test("Scenario: Given typed channel rows When interactive and error cards render Then interactive submit flows through channel send", async () => {
+    await TypedRowsRenderAndInteractiveSubmit.run();
   });
 });

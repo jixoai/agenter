@@ -28,6 +28,7 @@ export interface WebChatMessageRenderInput {
   channel: WebChatChannel;
   message: WebChatMessage;
   isAssistant: boolean;
+  onSubmitInteractive: (text: string) => Promise<void>;
 }
 
 export interface WebChatNotice {

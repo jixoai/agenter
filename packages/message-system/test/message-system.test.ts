@@ -120,6 +120,56 @@ describe("Feature: message-chat-control-plane", () => {
       content: "member message",
     });
     expect(sent.content).toBe("member message");
+    const interactive = plane.sendAuthorized({
+      chatId: channel.chatId,
+      accessToken: member.accessToken,
+      from: "user:kzf",
+      kind: "interactive",
+      content: "Please fill this form",
+      payload: {
+        interactive: {
+          version: "v1",
+          kind: "form",
+          title: "Lunch poll",
+          fields: [{ id: "choice", label: "What to eat?" }],
+        },
+      },
+    });
+    expect(interactive.kind).toBe("interactive");
+    expect(interactive.payload?.interactive?.title).toBe("Lunch poll");
+
+    expect(() =>
+      plane.sendAuthorized({
+        chatId: channel.chatId,
+        accessToken: member.accessToken,
+        from: "system",
+        kind: "error",
+        content: "forbidden",
+        payload: {
+          error: {
+            title: "forbidden",
+          },
+        },
+      }),
+    ).toThrow("message channel admin access required");
+
+    const adminError = plane.sendErrorAuthorized({
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      from: "system",
+      kind: "error",
+      content: "runtime unavailable",
+      payload: {
+        error: {
+          title: "Runtime error",
+          code: "E_RUNTIME",
+          detail: "provider timeout",
+        },
+      },
+    });
+    expect(adminError.kind).toBe("error");
+    expect(adminError.payload?.error?.code).toBe("E_RUNTIME");
+
     expect(() =>
       plane.updateChannelAuthorized({
         chatId: channel.chatId,
@@ -142,6 +192,9 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(updated.title).toBe("Lunch relay");
     expect(updated.participants.map((participant) => participant.id)).toContain("user:gaubee");
+
+    const recent = plane.queryMessages({ chatId: channel.chatId, limit: 4 }).items;
+    expect(recent.map((item) => item.kind)).toEqual(["text", "interactive", "error"]);
 
     const grants = plane.listChannelGrantsAuthorized({
       chatId: channel.chatId,

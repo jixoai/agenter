@@ -1312,6 +1312,50 @@ export class RuntimeStore {
     void attachments;
   }
 
+  async sendMessageChannelError(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    content: string;
+    error: {
+      title?: string;
+      code?: string;
+      detail?: string;
+    };
+  }): Promise<void> {
+    const result = await this.client.trpc.message.sendError.mutate(input);
+    if (!result.ok) {
+      throw new Error(result.reason ?? "message error send failed");
+    }
+  }
+
+  async sendMessageChannelInteractive(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    content: string;
+    interactive: {
+      version: "v1";
+      kind: "form";
+      title: string;
+      description?: string;
+      submitLabel?: string;
+      fields: Array<{
+        id: string;
+        label: string;
+        placeholder?: string;
+        required?: boolean;
+        multiline?: boolean;
+        initialValue?: string;
+      }>;
+    };
+  }): Promise<void> {
+    const result = await this.client.trpc.message.sendInteractive.mutate(input);
+    if (!result.ok) {
+      throw new Error(result.reason ?? "message interactive send failed");
+    }
+  }
+
   async updateMessageChannel(input: {
     sessionId: string;
     chatId: string;
