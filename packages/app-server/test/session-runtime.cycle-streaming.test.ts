@@ -84,7 +84,9 @@ describe("Feature: session runtime live cycle projection", () => {
     let activeCycle = runtime.snapshot().activeCycle;
     expect(activeCycle?.streaming).toBeNull();
     expect(activeCycle?.liveMessages).toHaveLength(1);
-    expect(activeCycle?.liveMessages[0]?.channel).toBe("tool_call");
+    expect(activeCycle?.liveMessages[0]?.channel).toBe("tool");
+    expect(activeCycle?.liveMessages[0]?.tool?.invocationId).toBe("tool-1");
+    expect(activeCycle?.liveMessages[0]?.tool?.status).toBe("running");
 
     internal.handleAssistantStreamUpdate({
       kind: "tool_result",
@@ -96,8 +98,9 @@ describe("Feature: session runtime live cycle projection", () => {
     });
 
     activeCycle = runtime.snapshot().activeCycle;
-    expect(activeCycle?.liveMessages).toHaveLength(2);
-    expect(activeCycle?.liveMessages[1]?.channel).toBe("tool_result");
+    expect(activeCycle?.liveMessages).toHaveLength(1);
+    expect(activeCycle?.liveMessages[0]?.channel).toBe("tool");
+    expect(activeCycle?.liveMessages[0]?.tool?.status).toBe("success");
     expect(activeCycle?.status).toBe("streaming");
   });
 });

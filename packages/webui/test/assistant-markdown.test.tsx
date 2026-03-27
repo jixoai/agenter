@@ -39,16 +39,17 @@ describe("Feature: assistant markdown tool traces", () => {
     expect(screen.getByText("terminal-snapshot")).toBeInTheDocument();
   });
 
-  test("Scenario: Given a fenced tool_result message When rendering Then the accordion header keeps the tool meta compact until expanded", () => {
+  test("Scenario: Given a tool channel markdown message without structured trace When rendering Then the content stays as raw markdown text", () => {
     render(
       <AssistantMarkdown
-        channel="tool_result"
-        tool={{ name: "terminal_read", ok: true }}
+        channel="tool"
+        tool={{ name: "terminal_read", status: "success", invocationId: "call-terminal-read" }}
         content={[
-          "```yaml+tool_result",
+          "```yaml",
+          "invocationId: call-terminal-read",
           "tool: terminal_read",
-          "ok: true",
-          "output:",
+          "status: success",
+          "result:",
           "  kind: terminal-snapshot",
           "  terminalId: iflow",
           "  seq: 30",
@@ -60,14 +61,8 @@ describe("Feature: assistant markdown tool traces", () => {
       />,
     );
 
-    expect(screen.getByText("terminal_read")).toBeInTheDocument();
-    expect(screen.getByText("iflow · terminal-snapshot · #30 · 80x24")).toBeInTheDocument();
-    expect(screen.queryByText("timestamp")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /terminal_read/i }));
-
-    expect(screen.getByText("timestamp")).toBeInTheDocument();
-    expect(screen.getByText("2026-03-06T07:12:43.406Z")).toBeInTheDocument();
+    expect(screen.getByText(/```yaml/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /terminal_read/i })).not.toBeInTheDocument();
   });
 
   test("Scenario: Given self-talk content When rendering Then UI keeps the raw body without injecting an extra self-talk label", () => {

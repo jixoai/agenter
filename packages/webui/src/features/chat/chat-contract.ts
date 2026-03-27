@@ -1,7 +1,7 @@
 import type { MarkdownDocumentSurface, MarkdownDocumentSyntaxTone } from "../../components/markdown/MarkdownDocument";
 
 export type ChatRenderRole = "user" | "assistant";
-export type ChatRenderChannel = "to_user" | "self_talk" | "tool_call" | "tool_result" | undefined;
+export type ChatRenderChannel = "to_user" | "self_talk" | "tool" | undefined;
 
 export interface ChatMessagePresentation {
   bubbleClassName: string;

@@ -57,9 +57,25 @@ describe("Feature: session-system ledger persistence", () => {
       const block2 = db.appendBlock({
         cycleId: cycle.id,
         role: "assistant",
-        channel: "tool_result",
+        channel: "tool",
         content: "```yaml\nok: true\n```",
-        tool: { name: "terminal_read", ok: true },
+        tool: {
+          invocationId: "call-terminal-read",
+          name: "terminal_read",
+          status: "success",
+          startedAt: cycle.createdAt,
+          finishedAt: cycle.createdAt + 1,
+          call: {
+            value: {
+              terminalId: "iflow",
+            },
+          },
+          result: {
+            value: {
+              ok: true,
+            },
+          },
+        },
       });
       const api = db.appendApiCall({
         modelCallId: model.id,
@@ -71,7 +87,11 @@ describe("Feature: session-system ledger persistence", () => {
       expect(db.listBlocksBefore(block2.id + 1).map((item) => item.id)).toEqual([block1.id, block2.id]);
       expect(db.getModelCallByCycleId(cycle.id)?.id).toBe(model.id);
       expect(db.listApiCallsByModelCall(model.id).map((item) => item.id)).toEqual([api.id]);
-      expect(db.getBlockById(block2.id)?.tool).toEqual({ name: "terminal_read", ok: true });
+      expect(db.getBlockById(block2.id)?.tool).toMatchObject({
+        invocationId: "call-terminal-read",
+        name: "terminal_read",
+        status: "success",
+      });
     } finally {
       db.close();
     }

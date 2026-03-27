@@ -65,11 +65,17 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  channel?: "to_user" | "self_talk" | "tool_call" | "tool_result";
+  channel?: "to_user" | "self_talk" | "tool";
   format?: "plain" | "markdown";
   tool?: {
+    invocationId?: string;
     name: string;
-    ok?: boolean;
+    status?: "waiting" | "running" | "success" | "failed" | "cancelled";
+    startedAt?: number;
+    finishedAt?: number;
+    call?: { value: unknown; rawText?: string };
+    result?: { value: unknown; rawText?: string };
+    error?: string;
   };
 }
 

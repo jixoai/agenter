@@ -151,7 +151,7 @@ const toBootstrapChannelMessages = (
     };
     timestamp: number;
     cycleId?: number | null;
-    channel?: "to_user" | "self_talk" | "tool_call" | "tool_result";
+    channel?: "to_user" | "self_talk" | "tool";
     format?: "plain" | "markdown";
     attachments?: Array<{
       assetId: string;

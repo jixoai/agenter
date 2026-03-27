@@ -7,12 +7,11 @@ interface AssistantMarkdownProps {
   message: ChatMessage;
 }
 
-type ToolFenceKind = "tool_call" | "tool_result";
-
 interface ParsedToolFence {
-  kind: ToolFenceKind;
+  kind: "tool";
   lang: string;
   body: string;
+  status: string;
   summary: string;
 }
 
@@ -25,22 +24,20 @@ const parseToolFence = (content: string): ParsedToolFence | null => {
   }
   const lang = match[1].trim().toLowerCase();
   const body = match[2].trim();
-  const kind = lang.endsWith("+tool_call") ? "tool_call" : lang.endsWith("+tool_result") ? "tool_result" : null;
-  if (!kind) {
+  if (!lang.includes("yaml")) {
     return null;
   }
 
   const toolNameMatch = /^tool:\s*(.+)$/m.exec(body);
   const toolName = toolNameMatch?.[1]?.trim() || "unknown";
-  const statusMatch = /^ok:\s*(.+)$/m.exec(body);
-  const okText = statusMatch?.[1]?.trim();
-  const statusText =
-    kind === "tool_result" ? ` ${okText === "true" ? "ok" : okText === "false" ? "failed" : "result"}` : "";
+  const statusMatch = /^status:\s*(.+)$/m.exec(body);
+  const status = statusMatch?.[1]?.trim().toLowerCase() || "running";
   return {
-    kind,
+    kind: "tool",
     lang,
     body,
-    summary: `${kind === "tool_call" ? "tool call" : "tool result"}: ${toolName}${statusText}`,
+    status,
+    summary: `tool: ${toolName} ${status}`,
   };
 };
 
@@ -53,7 +50,7 @@ export const AssistantMarkdown = ({ message }: AssistantMarkdownProps) => {
 
   const [expanded, setExpanded] = useState(false);
   const parsed = useMemo(() => parseToolFence(message.content), [message.content]);
-  const headerColor = message.channel === "tool_result" ? "magenta" : "cyan";
+  const headerColor = parsed?.status === "failed" ? "magenta" : "cyan";
 
   if (parsed) {
     return (

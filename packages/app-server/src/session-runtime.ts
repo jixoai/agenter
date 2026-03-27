@@ -449,33 +449,27 @@ const toYaml = (value: unknown, indent = 0): string => {
 
 const mdFence = (lang: string, content: string): string => `\`\`\`${lang}\n${content.replace(/\u0000/g, "")}\n\`\`\``;
 
-const buildLiveToolCallMarkdown = (toolName: string, input: unknown, timestamp: number): string =>
+const buildToolInvocationMarkdown = (invocation: {
+  invocationId: string;
+  name: string;
+  status: "waiting" | "running" | "success" | "failed" | "cancelled";
+  startedAt: number;
+  finishedAt?: number;
+  call?: unknown;
+  result?: unknown;
+  error?: string;
+}): string =>
   mdFence(
-    "yaml+tool_call",
+    "yaml",
     toYaml({
-      tool: toolName,
-      input,
-      timestamp: new Date(timestamp).toISOString(),
-    }),
-  );
-
-const buildLiveToolResultMarkdown = (
-  toolName: string,
-  input: {
-    ok: boolean;
-    output?: unknown;
-    error?: string | null;
-    timestamp: number;
-  },
-): string =>
-  mdFence(
-    "yaml+tool_result",
-    toYaml({
-      tool: toolName,
-      ok: input.ok,
-      output: input.output ?? null,
-      error: input.error ?? null,
-      timestamp: new Date(input.timestamp).toISOString(),
+      invocationId: invocation.invocationId,
+      tool: invocation.name,
+      status: invocation.status,
+      startedAt: new Date(invocation.startedAt).toISOString(),
+      finishedAt: invocation.finishedAt ? new Date(invocation.finishedAt).toISOString() : null,
+      call: invocation.call ?? null,
+      result: invocation.result ?? null,
+      error: invocation.error ?? null,
     }),
   );
 
@@ -4697,6 +4691,43 @@ export class SessionRuntime {
     if (!this.activeCycle) {
       return;
     }
+    if (status === "error" && this.activeCycle.liveMessages.length > 0) {
+      const cancelledAt = Date.now();
+      const liveMessages = [...this.activeCycle.liveMessages];
+      for (const message of liveMessages) {
+        if (message.channel !== "tool" || !message.tool) {
+          continue;
+        }
+        if (message.tool.status !== "running" && message.tool.status !== "waiting") {
+          continue;
+        }
+        this.recordChatMessage(
+          {
+            ...message,
+            id: `${message.id}:cancelled`,
+            timestamp: cancelledAt,
+            tool: {
+              ...message.tool,
+              status: "cancelled",
+              finishedAt: cancelledAt,
+              error: message.tool.error ?? "cancelled by session stop",
+            },
+            content: buildToolInvocationMarkdown({
+              invocationId: message.tool.invocationId,
+              name: message.tool.name,
+              status: "cancelled",
+              startedAt: message.tool.startedAt,
+              finishedAt: cancelledAt,
+              call: message.tool.call?.value,
+              result: message.tool.result?.value,
+              error: message.tool.error ?? "cancelled by session stop",
+            }),
+          },
+          this.activeCycle.cycleId,
+          "tool",
+        );
+      }
+    }
     if (this.activeCycle.cycleId !== null) {
       this.cycleReplyChatIds.delete(this.activeCycle.cycleId);
     }
@@ -4717,7 +4748,13 @@ export class SessionRuntime {
       ...message,
       cycleId: message.cycleId ?? cycleId,
       attachments: message.attachments?.map((attachment) => ({ ...attachment })),
-      tool: message.tool ? { ...message.tool } : undefined,
+      tool: message.tool
+        ? {
+            ...message.tool,
+            call: message.tool.call ? { ...message.tool.call } : undefined,
+            result: message.tool.result ? { ...message.tool.result } : undefined,
+          }
+        : undefined,
     };
     this.chatMessages.push(nextMessage);
     this.trimChat();
@@ -4806,13 +4843,11 @@ export class SessionRuntime {
         role: message.role,
         channel,
         title:
-          channel === "tool_call"
-            ? `Tool call · ${message.tool?.name ?? "tool"}`
-            : channel === "tool_result"
-              ? `Tool result · ${message.tool?.name ?? "tool"}`
-              : channel === "self_talk"
-                ? "Assistant internal note"
-                : "Assistant message",
+          channel === "tool"
+            ? `Tool · ${message.tool?.name ?? "tool"}`
+            : channel === "self_talk"
+              ? "Assistant internal note"
+              : "Assistant message",
         content: message.content,
         tool: message.tool,
         detail: {
@@ -5083,39 +5118,77 @@ export class SessionRuntime {
         });
         return;
       case "tool_call": {
+        const invocationId = input.toolCallId;
+        const callValue = input.input ?? input.argsText;
         this.updateActiveCycle({
           status: "streaming",
           upsertLiveMessage: {
-            id: `live-tool-call:${input.toolCallId}`,
+            id: `live-tool:${invocationId}`,
             role: "assistant",
-            content: buildLiveToolCallMarkdown(input.toolName, input.input ?? input.argsText, input.timestamp),
+            content: buildToolInvocationMarkdown({
+              invocationId,
+              name: input.toolName,
+              status: "running",
+              startedAt: input.timestamp,
+              call: callValue,
+            }),
             timestamp: input.timestamp,
-            channel: "tool_call",
+            channel: "tool",
             format: "markdown",
-            tool: { name: input.toolName },
+            tool: {
+              invocationId,
+              name: input.toolName,
+              status: "running",
+              startedAt: input.timestamp,
+              call: {
+                value: callValue,
+                rawText: typeof input.argsText === "string" ? input.argsText : undefined,
+              },
+            },
           },
         });
         return;
       }
-      case "tool_result":
+      case "tool_result": {
+        const invocationId = input.toolCallId;
+        const liveMessage = this.activeCycle.liveMessages.find((message) => message.id === `live-tool:${invocationId}`);
+        const call = liveMessage?.tool?.call;
+        const startedAt = liveMessage?.tool?.startedAt ?? input.timestamp;
+        const errorText = typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined;
         this.updateActiveCycle({
           status: "streaming",
           upsertLiveMessage: {
-            id: `live-tool-result:${input.toolCallId}`,
+            id: `live-tool:${invocationId}`,
             role: "assistant",
-            content: buildLiveToolResultMarkdown(input.toolName, {
-              ok: input.ok,
-              output: input.result,
-              error: input.error ?? null,
-              timestamp: input.timestamp,
+            content: buildToolInvocationMarkdown({
+              invocationId,
+              name: input.toolName,
+              status: input.ok ? "success" : "failed",
+              startedAt,
+              finishedAt: input.timestamp,
+              call: call?.value,
+              result: input.result,
+              error: errorText,
             }),
             timestamp: input.timestamp,
-            channel: "tool_result",
+            channel: "tool",
             format: "markdown",
-            tool: { name: input.toolName, ok: input.ok },
+            tool: {
+              invocationId,
+              name: input.toolName,
+              status: input.ok ? "success" : "failed",
+              startedAt,
+              finishedAt: input.timestamp,
+              ...(call ? { call } : {}),
+              result: {
+                value: input.result ?? null,
+              },
+              ...(errorText ? { error: errorText } : {}),
+            },
           },
         });
         return;
+      }
     }
   }
 
@@ -5254,8 +5327,8 @@ export class SessionRuntime {
           kind: "tool.call",
           name: tool.tool,
           status: tool.error ? "error" : "done",
-          startedAt: Date.parse(tool.timestamp) || record.timestamp,
-          endedAt: Date.parse(tool.timestamp) || record.timestamp,
+          startedAt: Number.isFinite(tool.startedAt) ? tool.startedAt : record.timestamp,
+          endedAt: Number.isFinite(tool.finishedAt) ? tool.finishedAt : record.timestamp,
           refs: mergeTraceRefs(this.buildCycleTraceRefs(this.activeCycleId), [toModelCallTraceRef(modelCall.id)]),
           links: [
             {

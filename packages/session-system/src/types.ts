@@ -138,12 +138,25 @@ export interface SessionBlockAssetRecord {
 }
 
 export type SessionBlockRole = "user" | "assistant";
-export type SessionBlockChannel = "to_user" | "self_talk" | "tool_call" | "tool_result" | "user_input";
+export type SessionBlockChannel = "to_user" | "self_talk" | "tool" | "user_input";
 export type SessionBlockFormat = "plain" | "markdown";
 
+export type ToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
+
+export interface SessionBlockToolPayload {
+  value: unknown;
+  rawText?: string;
+}
+
 export interface SessionBlockToolMeta {
+  invocationId: string;
   name: string;
-  ok?: boolean;
+  status: ToolInvocationStatus;
+  startedAt: number;
+  finishedAt?: number;
+  call?: SessionBlockToolPayload;
+  result?: SessionBlockToolPayload;
+  error?: string;
 }
 
 export interface SessionBlockRecord {

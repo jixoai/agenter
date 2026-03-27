@@ -11,7 +11,6 @@ import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surfa
 import { ToolInvocationCard, type ToolInvocationView } from "../../components/ui/tool-invocation-card";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
-import { parseToolPayload } from "../chat/tool-payload";
 
 interface TerminalActivityPanelProps {
   terminalId: string;
@@ -31,31 +30,29 @@ const renderTerminalRead = (terminalRead: NonNullable<TerminalActivityPanelProps
 };
 
 const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
-  if (item.kind !== "message" || (item.channel !== "tool_call" && item.channel !== "tool_result")) {
+  if (item.kind !== "message" || item.channel !== "tool" || !item.tool) {
     return null;
   }
-  const parsed = parseToolPayload(item.content, item.tool?.name);
-  const payload = {
-    value: parsed.data ?? parsed.body,
-    rawText: parsed.body,
+  return {
+    invocationId: item.tool.invocationId,
+    toolName: item.tool.name,
+    status: item.tool.status,
+    startedAt: item.tool.startedAt,
+    finishedAt: item.tool.finishedAt,
+    call: item.tool.call
+      ? {
+          value: item.tool.call.value,
+          rawText: item.tool.call.rawText,
+        }
+      : undefined,
+    result: item.tool.result
+      ? {
+          value: item.tool.result.value,
+          rawText: item.tool.result.rawText,
+        }
+      : undefined,
+    error: item.tool.error,
   };
-  const invocation: ToolInvocationView = {
-    invocationId: `terminal-activity:${item.id}`,
-    toolName: parsed.toolName,
-    status: item.channel === "tool_result" ? (item.tool?.ok === false ? "failed" : "success") : "running",
-    startedAt: item.createdAt,
-    ...(item.channel === "tool_call" ? { call: payload } : { result: payload, finishedAt: item.createdAt }),
-  };
-  if (item.channel === "tool_result" && item.tool?.ok === false) {
-    const error =
-      typeof parsed.data === "object" && parsed.data !== null && typeof (parsed.data as { error?: unknown }).error === "string"
-        ? (parsed.data as { error: string }).error
-        : null;
-    if (error && error.trim().length > 0) {
-      invocation.error = error.trim();
-    }
-  }
-  return invocation;
 };
 
 const renderActivityBody = (item: TerminalActivityItem) => {

@@ -9,7 +9,7 @@
 ## 2. Message Contract
 
 - `content` is the single source of truth for a chat block.
-- `channel` only describes semantics (`to_user`, `self_talk`, `tool_call`, `tool_result`).
+- `channel` only describes semantics (`to_user`, `self_talk`, `tool`).
 - View-only labels, badges, and grouping stay in the UI projection layer.
 
 ## 3. Markdown Contract
@@ -22,8 +22,8 @@
 
 ## 4. Tool Fence Contract
 
-- Only fenced blocks with `yaml+tool_call` or `yaml+tool_result` are eligible for structured tool rendering.
-- Schema-valid tool fences may be upgraded into tool accordions.
+- Structured tool lifecycle rendering is driven by the `tool` payload contract, not by Markdown fence suffixes.
+- YAML fences are optional presentation only; schema-valid structured tool payloads may be upgraded into tool accordions.
 - Invalid tool fences fall back to a normal code block without semantic rewriting.
 
 ## 5. Chat Surface Contract

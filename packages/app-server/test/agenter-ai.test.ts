@@ -1251,7 +1251,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(replay.join("\n\n")).not.toContain("### Tool activity");
   });
 
-  test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed history preserves factual order and raw tool fences", async () => {
+  test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed history preserves factual order and merged tool invocation fences", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "inspect terminal and report back", from: "user", score: 100 });
@@ -1334,16 +1334,16 @@ describe("Feature: AgenterAI behavior", () => {
     await ai.send([createUserMessage("second turn")]);
 
     const replay = extractAssistantReplay(seenInputs[1]);
-    expect(replay).toHaveLength(5);
+    expect(replay).toHaveLength(3);
     expect(replay[0]).toBe("Observation: terminal focused");
-    expect(replay[1]).toContain("```yaml+tool_call");
+    expect(replay[1]).toContain("```yaml");
+    expect(replay[1]).toContain("invocationId:");
+    expect(replay[1]).toContain("status: success");
     expect(replay[1]).toContain("tool: terminal_read");
-    expect(replay[2]).toContain("```yaml+tool_result");
-    expect(replay[2]).toContain("tool: terminal_read");
-    expect(replay[3]).toContain("```yaml+tool_call");
-    expect(replay[3]).toContain("tool: attention_commit");
-    expect(replay[4]).toContain("```yaml+tool_result");
-    expect(replay[4]).toContain("tool: attention_commit");
+    expect(replay[2]).toContain("```yaml");
+    expect(replay[2]).toContain("invocationId:");
+    expect(replay[2]).toContain("status: success");
+    expect(replay[2]).toContain("tool: attention_commit");
   });
 
   test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes attention_system and attention item patching still clears records", async () => {

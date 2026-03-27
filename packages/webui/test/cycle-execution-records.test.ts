@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { normalizeCycleExecutionRecords } from "../src/features/process/cycle-execution-records";
 
 describe("Feature: cycle execution records", () => {
-  test("Scenario: Given tool call and result messages When execution records are normalized Then they collapse into one tool invocation card model", () => {
+  test("Scenario: Given a structured tool invocation message When execution records are normalized Then they map directly to one tool invocation card model", () => {
     const records = normalizeCycleExecutionRecords({
       id: "cycle:11",
       cycleId: 11,
@@ -16,41 +16,38 @@ describe("Feature: cycle execution records", () => {
       inputs: [],
       outputs: [
         {
-          id: "tool-call-11",
+          id: "tool-11",
           role: "assistant",
-          channel: "tool_call",
+          channel: "tool",
           content: [
-            "```yaml+tool_call",
-            'tool: terminal_read',
-            'timestamp: "2026-03-24T09:00:12.000Z"',
-            "input:",
-            "  terminalId: iflow",
-            "```",
-          ].join("\n"),
-          timestamp: 12,
-          cycleId: 11,
-          tool: { name: "terminal_read" },
-        },
-        {
-          id: "tool-result-11",
-          role: "assistant",
-          channel: "tool_result",
-          content: [
-            "```yaml+tool_result",
-            'tool: terminal_read',
-            'timestamp: "2026-03-24T09:00:12.000Z"',
-            "ok: true",
-            "output:",
-            "  terminalId: iflow",
-            "  kind: diff",
-            "  seq: 18",
-            "  cols: 120",
-            "  rows: 30",
+            "```yaml",
+            "tool: terminal_read",
+            "status: success",
             "```",
           ].join("\n"),
           timestamp: 13,
           cycleId: 11,
-          tool: { name: "terminal_read", ok: true },
+          tool: {
+            invocationId: "terminal-read-11",
+            name: "terminal_read",
+            status: "success",
+            startedAt: 12,
+            finishedAt: 13,
+            call: {
+              value: {
+                terminalId: "iflow",
+              },
+            },
+            result: {
+              value: {
+                terminalId: "iflow",
+                kind: "diff",
+                seq: 18,
+                cols: 120,
+                rows: 30,
+              },
+            },
+          },
         },
         {
           id: "self-talk-11",
@@ -77,8 +74,8 @@ describe("Feature: cycle execution records", () => {
     if (records[0]?.kind !== "tool-invocation") {
       throw new Error("expected tool invocation record");
     }
-    expect(records[0].invocation.call?.rawText).toContain("tool: terminal_read");
-    expect(records[0].invocation.result?.rawText).toContain("tool: terminal_read");
+    expect(records[0].invocation.call?.value).toMatchObject({ terminalId: "iflow" });
+    expect(records[0].invocation.result?.value).toMatchObject({ terminalId: "iflow", kind: "diff" });
     expect(records[1]).toMatchObject({
       kind: "message",
       message: {

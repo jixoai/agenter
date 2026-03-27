@@ -164,6 +164,37 @@ const sameChatAttachmentSet = (
   });
 };
 
+type RuntimeToolPayload = NonNullable<RuntimeChatMessage["tool"]>["call"];
+
+const sameToolPayload = (left: RuntimeToolPayload, right: RuntimeToolPayload): boolean => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return left.rawText === right.rawText && JSON.stringify(left.value) === JSON.stringify(right.value);
+};
+
+const sameChatToolInvocation = (left: RuntimeChatMessage["tool"], right: RuntimeChatMessage["tool"]): boolean => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    left.invocationId === right.invocationId &&
+    left.name === right.name &&
+    left.status === right.status &&
+    left.startedAt === right.startedAt &&
+    left.finishedAt === right.finishedAt &&
+    left.error === right.error &&
+    sameToolPayload(left.call, right.call) &&
+    sameToolPayload(left.result, right.result)
+  );
+};
+
 const isPersistedChatMessageId = (messageId: string): boolean => /^\d+$/.test(messageId);
 
 const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessage): boolean => {
@@ -177,8 +208,7 @@ const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessa
     leftFormat === rightFormat &&
     left.content === right.content &&
     left.timestamp === right.timestamp &&
-    left.tool?.name === right.tool?.name &&
-    left.tool?.ok === right.tool?.ok &&
+    sameChatToolInvocation(left.tool, right.tool) &&
     sameChatAttachmentSet(left.attachments, right.attachments)
   );
 };

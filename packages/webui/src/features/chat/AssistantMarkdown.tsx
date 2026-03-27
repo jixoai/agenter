@@ -11,18 +11,19 @@ import {
   InlineAffordanceTrailingVisual,
 } from "../../components/ui/inline-affordance";
 import { resolveChatMessagePresentation } from "./chat-contract";
-import { buildToolMeta, parseToolPayload } from "./tool-payload";
+import { parseToolPayload } from "./tool-payload";
 import { ToolStructuredView } from "./tool-structured-view";
 
-type AssistantChannel = "to_user" | "self_talk" | "tool_call" | "tool_result" | undefined;
+type AssistantChannel = "to_user" | "self_talk" | "tool" | undefined;
 type ToolTraceStatus = "calling" | "done" | "failed";
 
 interface AssistantMarkdownProps {
   content: string;
   channel?: AssistantChannel;
   tool?: {
+    invocationId?: string;
     name?: string;
-    ok?: boolean;
+    status?: "waiting" | "running" | "success" | "failed" | "cancelled";
   };
   toolTrace?: {
     id: string;
@@ -35,7 +36,9 @@ interface AssistantMarkdownProps {
 }
 
 const toolDescriptorEqual = (left: AssistantMarkdownProps["tool"], right: AssistantMarkdownProps["tool"]): boolean => {
-  return left?.name === right?.name && left?.ok === right?.ok;
+  return (
+    left?.invocationId === right?.invocationId && left?.name === right?.name && left?.status === right?.status
+  );
 };
 
 const toolTraceEqual = (
@@ -50,18 +53,6 @@ const toolTraceEqual = (
     left?.callContent === right?.callContent &&
     left?.resultContent === right?.resultContent
   );
-};
-
-const parseToolNameFromBody = (content: string): string | null => {
-  const match = content.match(/tool:\s*([^\n]+)/i);
-  return match?.[1]?.trim() ?? null;
-};
-
-const normalizeToolName = (input: string | null | undefined): string => {
-  if (!input) {
-    return "tool";
-  }
-  return input.trim();
 };
 
 const statusIcon = (status: ToolTraceStatus) => {
@@ -174,12 +165,8 @@ const AssistantText = memo(({ content, channel }: { content: string; channel?: A
 });
 AssistantText.displayName = "AssistantText";
 
-const AssistantMarkdownComponent = ({ content, channel, tool, toolTrace }: AssistantMarkdownProps) => {
+const AssistantMarkdownComponent = ({ content, channel, toolTrace }: AssistantMarkdownProps) => {
   const normalized = useMemo(() => content.trim(), [content]);
-  const parsedToolMessage = useMemo(
-    () => (channel === "tool_call" || channel === "tool_result" ? parseToolPayload(normalized, tool?.name) : null),
-    [channel, normalized, tool?.name],
-  );
 
   if (toolTrace) {
     return <ToolTraceBlock toolTrace={toolTrace} />;
@@ -187,27 +174,6 @@ const AssistantMarkdownComponent = ({ content, channel, tool, toolTrace }: Assis
 
   if (normalized.length === 0) {
     return null;
-  }
-
-  if (channel === "tool_call" || channel === "tool_result") {
-    const parsed = parsedToolMessage;
-    if (!parsed) {
-      return null;
-    }
-    const status: ToolTraceStatus = channel === "tool_result" ? (tool?.ok === false ? "failed" : "done") : "calling";
-    const toolName = normalizeToolName(tool?.name ?? parseToolNameFromBody(normalized) ?? parsed.toolName);
-    return (
-      <ToolTraceBlock
-        toolTrace={{
-          id: `${channel}-${toolName}`,
-          toolName,
-          status,
-          meta: buildToolMeta(parsed),
-          callContent: channel === "tool_call" ? parsed.body : undefined,
-          resultContent: channel === "tool_result" ? parsed.body : undefined,
-        }}
-      />
-    );
   }
 
   return (

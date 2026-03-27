@@ -1,6 +1,6 @@
 import { parse } from "yaml";
 
-export type ToolFenceLanguage = "yaml+tool_call" | "yaml+tool_result";
+export type ToolFenceLanguage = "yaml";
 
 export interface ParsedToolPayload {
   language: ToolFenceLanguage | null;
@@ -25,8 +25,8 @@ const unwrapFence = (content: string): { language: ToolFenceLanguage | null; bod
   const match = normalized.match(FENCE_PATTERN);
   const language = match?.groups?.lang?.trim();
   const body = match?.groups?.body?.trim() ?? normalized;
-  if (language === "yaml+tool_call" || language === "yaml+tool_result") {
-    return { language, body };
+  if (typeof language === "string" && language.toLowerCase().startsWith("yaml")) {
+    return { language: "yaml", body };
   }
   return { language: null, body };
 };

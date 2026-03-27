@@ -31,11 +31,13 @@ export interface SessionCallRecord {
       finishReason?: string | null;
     };
     toolTrace?: Array<{
+      invocationId: string;
       tool: string;
       input: unknown;
       output?: unknown;
       error?: string;
-      timestamp: string;
+      startedAt: number;
+      finishedAt: number;
     }>;
   };
   error?: {

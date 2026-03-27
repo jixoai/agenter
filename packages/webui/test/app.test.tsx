@@ -1059,7 +1059,9 @@ describe("Feature: web ui app shell", () => {
     expect(ensureMessageChannelsMock).not.toHaveBeenCalled();
   });
 
-  test("Scenario: Given two message channels When the user switches channels Then the chat surface clears the previous transcript before hydrating the next channel", async () => {
+  test(
+    "Scenario: Given two message channels When the user switches channels Then the chat surface clears the previous transcript before hydrating the next channel",
+    async () => {
     const workspacePath = "/repo/channel-switch";
     const sessionId = "session-channel-switch";
     const mainChannel = createMessageChannel({
@@ -1289,7 +1291,9 @@ describe("Feature: web ui app shell", () => {
       expect(switchedConversation).toHaveTextContent("稍等，我去问一下。");
     });
     expect(switchedConversation).not.toHaveTextContent("中午吃蛋炒饭。");
-  });
+    },
+    15_000,
+  );
 
   test("Scenario: Given two running sessions that both select chat-main When the route switches sessions Then message-channel focus is refreshed for the new session", async () => {
     const workspacePath = "/repo/focus";

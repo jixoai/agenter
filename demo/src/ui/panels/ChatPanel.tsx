@@ -23,53 +23,26 @@ const TEXTAREA_KEY_BINDINGS = [
 type DisplayItem =
   | { kind: "message"; message: ChatMessage }
   | {
-      kind: "tool_pair";
+      kind: "tool";
       id: string;
       toolName: string;
-      ok: boolean | null;
-      callMessage: ChatMessage | null;
-      resultMessage: ChatMessage | null;
+      status: "waiting" | "running" | "success" | "failed" | "cancelled";
+      message: ChatMessage;
     };
 
 const buildDisplayItems = (messages: ChatMessage[]): DisplayItem[] => {
   const items: DisplayItem[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const current = messages[index];
-    if (!current) {
+  for (const current of messages) {
+    if (!current || current.content.trim().length === 0) {
       continue;
     }
-    if (current.channel === "tool_call") {
-      const next = messages[index + 1];
-      if (next?.channel === "tool_result" && next.tool?.name === current.tool?.name) {
-        items.push({
-          kind: "tool_pair",
-          id: `${current.id}:${next.id}`,
-          toolName: current.tool?.name ?? "unknown",
-          ok: next.tool?.ok ?? null,
-          callMessage: current,
-          resultMessage: next,
-        });
-        index += 1;
-        continue;
-      }
+    if (current.channel === "tool") {
       items.push({
-        kind: "tool_pair",
+        kind: "tool",
         id: current.id,
         toolName: current.tool?.name ?? "unknown",
-        ok: null,
-        callMessage: current,
-        resultMessage: null,
-      });
-      continue;
-    }
-    if (current.channel === "tool_result") {
-      items.push({
-        kind: "tool_pair",
-        id: current.id,
-        toolName: current.tool?.name ?? "unknown",
-        ok: current.tool?.ok ?? null,
-        callMessage: null,
-        resultMessage: current,
+        status: current.tool?.status ?? "running",
+        message: current,
       });
       continue;
     }
@@ -88,7 +61,9 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
   const [expandedToolIds, setExpandedToolIds] = useState<Record<string, boolean>>({});
   const [spinnerTick, setSpinnerTick] = useState(0);
 
-  const hasPendingTool = displayItems.some((item) => item.kind === "tool_pair" && item.ok === null);
+  const hasPendingTool = displayItems.some(
+    (item) => item.kind === "tool" && (item.status === "waiting" || item.status === "running"),
+  );
 
   useEffect(() => {
     if (!hasPendingTool) {
@@ -107,12 +82,6 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
     if (item.channel === "self_talk") {
       return "black";
     }
-    if (item.channel === "tool_call") {
-      return "black";
-    }
-    if (item.channel === "tool_result") {
-      return "black";
-    }
     return undefined;
   };
 
@@ -120,10 +89,7 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
     if (item.role === "user") {
       return "white";
     }
-    if (item.channel === "tool_call") {
-      return "white";
-    }
-    if (item.channel === "tool_result" || item.channel === "self_talk") {
+    if (item.channel === "self_talk") {
       return "white";
     }
     return "green";
@@ -135,12 +101,6 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
     }
     if (item.channel === "self_talk") {
       return "🧠 self-talk";
-    }
-    if (item.channel === "tool_call") {
-      return "assistant · tool-call";
-    }
-    if (item.channel === "tool_result") {
-      return "assistant · tool-result";
     }
     return "🤖 assistant";
   };
@@ -163,16 +123,27 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
             <text fg="gray">(no messages)</text>
           ) : (
             displayItems.map((item) => {
-              if (item.kind === "tool_pair") {
+              if (item.kind === "tool") {
                 const expanded = expandedToolIds[item.id] === true;
-                const statusIcon =
-                  item.ok === true
+                const isPending = item.status === "waiting" || item.status === "running";
+                const statusIcon = isPending
+                  ? SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
+                  : item.status === "success"
                     ? "✅"
-                    : item.ok === false
+                    : item.status === "failed"
                       ? "❌"
-                      : SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length];
-                const statusText = item.ok === true ? "ok" : item.ok === false ? "failed" : "running";
-                const statusFg = item.ok === true ? "green" : item.ok === false ? "red" : "yellow";
+                      : item.status === "cancelled"
+                        ? "⏹"
+                        : "•";
+                const statusText =
+                  item.status === "success"
+                    ? "success"
+                    : item.status === "failed"
+                      ? "failed"
+                      : item.status === "cancelled"
+                        ? "cancelled"
+                        : item.status;
+                const statusFg = isPending ? "yellow" : item.status === "success" ? "green" : "red";
                 return (
                   <box key={item.id} marginTop={0} width="100%" flexDirection="column">
                     <box
@@ -196,8 +167,7 @@ export const ChatPanel = ({ messages, aiStatus, inputRef, onInputChange, onSubmi
                     </box>
                     {expanded ? (
                       <box flexDirection="column" maxWidth="78%" alignSelf="flex-start" padding={0} marginTop={1}>
-                        {item.callMessage ? <AssistantMarkdown message={item.callMessage} /> : null}
-                        {item.resultMessage ? <AssistantMarkdown message={item.resultMessage} /> : null}
+                        <AssistantMarkdown message={item.message} />
                       </box>
                     ) : null}
                   </box>

@@ -43,11 +43,17 @@ const buildCycle = (id: string, cycleId: number): RuntimeChatCycle => ({
     {
       id: `${id}-tool`,
       role: "assistant",
-      channel: "tool_call",
-      content: "```yaml+tool_call\ntool: terminal_read\n```",
+      channel: "tool",
+      content: "```yaml\ntool: terminal_read\nstatus: success\n```",
       timestamp: cycleId + 1,
       cycleId,
-      tool: { name: "terminal_read" },
+      tool: {
+        invocationId: `${id}-terminal-read`,
+        name: "terminal_read",
+        status: "success",
+        startedAt: 1700000000000,
+        finishedAt: 1700000000100,
+      },
     },
   ],
   liveMessages: [],
@@ -65,7 +71,7 @@ describe("Feature: conversation projection", () => {
       "hello from persisted history",
       "reply from persisted history",
     ]);
-    expect(messageRows.some((row) => row.message.channel === "tool_call")).toBe(false);
+    expect(messageRows.some((row) => row.message.channel === "tool")).toBe(false);
   });
 
   test("Scenario: Given an optimistic pending cycle When projecting rows Then the pending user turn stays visible until persisted history arrives", () => {

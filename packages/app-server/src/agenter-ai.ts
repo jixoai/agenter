@@ -175,11 +175,13 @@ export interface AgentModelCallRecord {
       finishReason?: string | null;
     };
     toolTrace?: Array<{
+      invocationId: string;
       tool: string;
       input: unknown;
       output?: unknown;
       error?: string;
-      timestamp: string;
+      startedAt: number;
+      finishedAt: number;
     }>;
   };
   error?: {
@@ -197,11 +199,13 @@ interface ActiveTask {
 }
 
 interface ToolTraceEntry {
+  invocationId: string;
   tool: string;
   input: unknown;
   output?: unknown;
   error?: string;
-  timestamp: string;
+  startedAt: number;
+  finishedAt: number;
 }
 
 interface AttentionUpdateCall {
@@ -344,6 +348,21 @@ const mdFence = (lang: string, content: string): string => {
   const normalized = content.replace(/\u0000/g, "");
   return `\`\`\`${lang}\n${normalized}\n\`\`\``;
 };
+
+const buildToolInvocationContent = (trace: ToolTraceEntry): string =>
+  mdFence(
+    "yaml",
+    toYaml({
+      invocationId: trace.invocationId,
+      tool: trace.tool,
+      status: trace.error ? "failed" : "success",
+      startedAt: new Date(trace.startedAt).toISOString(),
+      finishedAt: new Date(trace.finishedAt).toISOString(),
+      input: trace.input,
+      output: trace.output ?? null,
+      error: trace.error ?? null,
+    }),
+  );
 
 const compactSnapshotTail = (tail: string): string => {
   const trimmed = tail.split(/\r?\n/g).map((line) => line.replace(/\s+$/g, ""));
@@ -975,36 +994,28 @@ export class AgenterAI {
 
     for (const tool of input.toolTrace) {
       result.push({
-        content: mdFence(
-          "yaml+tool_call",
-          toYaml({
-            tool: tool.tool,
-            input: tool.input,
-            timestamp: tool.timestamp,
-          }),
-        ),
-        channel: "tool_call",
+        content: buildToolInvocationContent(tool),
+        channel: "tool",
         format: "markdown",
-        tool: { name: tool.tool },
+        tool: {
+          invocationId: tool.invocationId,
+          name: tool.tool,
+          status: tool.error === undefined ? "success" : "failed",
+          startedAt: tool.startedAt,
+          finishedAt: tool.finishedAt,
+          call: {
+            value: tool.input,
+          },
+          ...(tool.output !== undefined
+            ? {
+                result: {
+                  value: tool.output,
+                },
+              }
+            : {}),
+          ...(tool.error !== undefined ? { error: tool.error } : {}),
+        },
       });
-
-      if (tool.output !== undefined || tool.error !== undefined) {
-        result.push({
-          content: mdFence(
-            "yaml+tool_result",
-            toYaml({
-              tool: tool.tool,
-              ok: tool.error === undefined,
-              output: tool.output ?? null,
-              error: tool.error ?? null,
-              timestamp: tool.timestamp,
-            }),
-          ),
-          channel: "tool_result",
-          format: "markdown",
-          tool: { name: tool.tool, ok: tool.error === undefined },
-        });
-      }
     }
 
     return result;
@@ -1352,25 +1363,32 @@ export class AgenterAI {
       input: TInput,
       handler: () => Promise<TOutput>,
     ): Promise<TOutput> => {
-      const timestamp = new Date().toISOString();
+      const invocationId = `${toolName}:${createId()}`;
+      const startedAt = Date.now();
       try {
         throwIfAborted();
         const output = await handler();
         throwIfAborted();
+        const finishedAt = Date.now();
         trace.push({
+          invocationId,
           tool: toolName,
           input,
           output,
-          timestamp,
+          startedAt,
+          finishedAt,
         });
         return output;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const finishedAt = Date.now();
         trace.push({
+          invocationId,
           tool: toolName,
           input,
           error: message,
-          timestamp,
+          startedAt,
+          finishedAt,
         });
         throw error;
       }

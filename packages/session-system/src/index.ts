@@ -31,6 +31,7 @@ export type {
   SessionBlockRecord,
   SessionBlockRole,
   SessionBlockToolMeta,
+  SessionBlockToolPayload,
   SessionCollectedInput,
   SessionCollectedInputPart,
   SessionCycleInsert,
@@ -42,4 +43,5 @@ export type {
   TerminalActivityInsert,
   TerminalActivityKind,
   TerminalActivityRecord,
+  ToolInvocationStatus,
 } from "./types";
