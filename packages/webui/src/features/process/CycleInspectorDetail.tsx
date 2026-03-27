@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
@@ -318,10 +319,13 @@ export const CycleInspectorDetail = ({
       >
         <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50">
           <div className="border-b border-slate-200 px-3 py-3">
-            <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>
-            <p className="mt-1 text-xs text-slate-500">
-              Objective timeline from ModelCall request and response.
-            </p>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-slate-900">Model conversation</h4>
+              <HelpHint
+                textContext="Objective timeline from ModelCall request and response."
+                content="Objective timeline from ModelCall request and response."
+              />
+            </div>
           </div>
 
           <ScrollViewport className="h-full px-3 py-3" data-testid="cycle-modelcall-conversation">

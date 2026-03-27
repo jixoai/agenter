@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
 import { AIInput, type AIInputSuggestion, type AIInputSubmitPayload } from "../chat/AIInput";
@@ -190,8 +191,13 @@ export const QuickStartView = ({
               </div>
 
               <div className="space-y-2">
-                <h2 className="typo-title-2 text-slate-900">Quick Start</h2>
-                <p className="text-sm text-slate-600">Choose a workspace, then start a new session with one prompt.</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="typo-title-2 text-slate-900">Quick Start</h2>
+                  <HelpHint
+                    textContext="Choose a workspace, then start a new session with one prompt."
+                    content="Choose a workspace, then start a new session with one prompt."
+                  />
+                </div>
               </div>
 
               {activeTerminals.length > 0 ? (

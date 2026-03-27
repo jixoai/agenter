@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -188,9 +189,9 @@ export const SettingsPanel = ({
   return (
     <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white/96 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
+        <div className="flex items-center gap-2">
           <h2 className="typo-title-3 text-slate-900">{title}</h2>
-          <p className="text-xs text-slate-500">{description}</p>
+          {description ? <HelpHint textContext={`${title}\n${description}`} content={description} /> : null}
         </div>
         <Badge variant="secondary" className="max-w-[48ch] truncate">
           {status}

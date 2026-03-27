@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppController, useRuntimeSelector } from "../../app-context";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
+import { HelpHint } from "../../components/ui/help-hint";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { Tabs } from "../../components/ui/tabs";
@@ -123,6 +124,10 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
           <div className="border-b border-slate-200 px-3 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="typo-title-3 text-slate-900">Messages</h3>
+              <HelpHint
+                textContext="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
+                content="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
+              />
               <Badge variant="secondary">{channels.length} channels</Badge>
               {channels.filter((entry) => entry.focused).length > 0 ? (
                 <Badge className="bg-emerald-100 text-emerald-700">
@@ -130,9 +135,6 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
                 </Badge>
               ) : null}
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Chat channels are message-system instances. Only message egress that lands here becomes visible to users.
-            </p>
             {channelsError ? <p className="mt-2 text-xs text-rose-700">{channelsError}</p> : null}
           </div>
           <ScrollViewport className="h-full px-2 py-2">
@@ -239,12 +241,13 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="typo-title-3 text-slate-900">Systems</h2>
+            <HelpHint
+              textContext="Message, terminal, and task systems are side-effect boundaries around the attention kernel."
+              content="Message, terminal, and task systems are side-effect boundaries around the attention kernel."
+            />
             <Badge variant="secondary">{channels.length} channels</Badge>
             <Badge variant="secondary">{tasks.length} tasks</Badge>
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">
-            Message, terminal, and task systems are side-effect boundaries around the attention kernel.
-          </p>
         </div>
       </div>
 

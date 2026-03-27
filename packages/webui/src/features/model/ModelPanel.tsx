@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "..
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { HelpHint } from "../../components/ui/help-hint";
 import { Input } from "../../components/ui/input";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { PasswordInput } from "../../components/ui/password-input";
@@ -131,8 +132,11 @@ const Field = ({ label, value }: { label: string; value: string }) => (
 const SectionTitle = ({ title, description, badge }: { title: string; description: string; badge?: string }) => (
   <div className="flex flex-wrap items-start justify-between gap-3">
     <div className="space-y-1">
-      <CardTitle>{title}</CardTitle>
-      <CardDescription>{description}</CardDescription>
+      <div className="flex items-center gap-2">
+        <CardTitle>{title}</CardTitle>
+        <HelpHint textContext={`${title}\n${description}`} content={description} />
+      </div>
+      <CardDescription className="sr-only">{description}</CardDescription>
     </div>
     {badge ? <Badge variant="secondary">{badge}</Badge> : null}
   </div>

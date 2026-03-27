@@ -3,6 +3,7 @@ import { FileCode2, GitCommitHorizontal, GitMerge, Link2, Orbit, Search, Sparkle
 import { useEffect, useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
+import { HelpHint } from "../../components/ui/help-hint";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Tabs } from "../../components/ui/tabs";
@@ -331,10 +332,13 @@ export const AttentionInspectorPanel = ({
     <section className={cn("grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-xl bg-white p-3 shadow-xs", className)}>
       <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="typo-title-3 text-slate-900">Attention</h2>
-          <p className="text-[11px] text-slate-500">
-            Context is the notebook. Items are the immutable commit log that drives the notebook toward score zero.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="typo-title-3 text-slate-900">Attention</h2>
+            <HelpHint
+              textContext="Context is the notebook. Items are the immutable commit log that drives the notebook toward score zero."
+              content="Context is the notebook. Items are the immutable commit log that drives the notebook toward score zero."
+            />
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <span className={badgeClassName}>
@@ -441,13 +445,13 @@ export const AttentionInspectorPanel = ({
                           <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
                             Context state
                           </div>
-                          <h3 className="mt-1 text-base font-semibold text-slate-950">
-                            {contextSnapshot.context.contextId}
-                          </h3>
-                          <p className="mt-1 text-sm text-slate-600">
-                            One attention context is one notebook. The head commit is the latest mutation; the notebook
-                            body is the current merged state.
-                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <h3 className="text-base font-semibold text-slate-950">{contextSnapshot.context.contextId}</h3>
+                            <HelpHint
+                              textContext="One attention context is one notebook. The head commit is the latest mutation; the notebook body is the current merged state."
+                              content="One attention context is one notebook. The head commit is the latest mutation; the notebook body is the current merged state."
+                            />
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           <span className={badgeClassName}>{contextSnapshot.context.owner}</span>
@@ -501,11 +505,12 @@ export const AttentionInspectorPanel = ({
 
                     <section className={cn(surfaceClassName, "space-y-3 p-3")}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
+                        <div className="flex items-center gap-2">
                           <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Scores</h4>
-                          <p className="mt-1 text-sm text-slate-600">
-                            Scores are the cross-context lookup graph. Click a hash to traverse related commits.
-                          </p>
+                          <HelpHint
+                            textContext="Scores are the cross-context lookup graph. Click a hash to traverse related commits."
+                            content="Scores are the cross-context lookup graph. Click a hash to traverse related commits."
+                          />
                         </div>
                         {contextSnapshot.scoreSummary?.text ? (
                           <span className="text-[11px] text-slate-500">{contextSnapshot.scoreSummary.text}</span>
@@ -641,24 +646,27 @@ export const AttentionInspectorPanel = ({
                           <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
                             Commit summary
                           </div>
-                          <h3 className="mt-1 text-base font-semibold text-slate-950">{selectedCommit.summary}</h3>
-                          <p className="mt-1 text-sm text-slate-600">
-                            Each item is one immutable attention commit: metadata, scores, summary, and a context
-                            mutation.
-                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <h3 className="text-base font-semibold text-slate-950">{selectedCommit.summary}</h3>
+                            <HelpHint
+                              textContext="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
+                              content="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
+                            />
+                          </div>
                         </div>
                       </section>
 
                       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]">
                         <section className={cn(surfaceClassName, "space-y-3 p-3")}>
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
+                            <div className="flex items-center gap-2">
                               <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
                                 Change
                               </h4>
-                              <p className="mt-1 text-sm text-slate-600">
-                                This payload is the concrete mutation applied to the notebook state.
-                              </p>
+                              <HelpHint
+                                textContext="This payload is the concrete mutation applied to the notebook state."
+                                content="This payload is the concrete mutation applied to the notebook state."
+                              />
                             </div>
                             <span className="text-[11px] text-slate-500">{selectedCommit.change.type}</span>
                           </div>
@@ -670,13 +678,14 @@ export const AttentionInspectorPanel = ({
 
                         <div className="space-y-3">
                           <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                            <div>
+                            <div className="flex items-center gap-2">
                               <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
                                 Scores
                               </h4>
-                              <p className="mt-1 text-sm text-slate-600">
-                                Scores are the lookup edges that connect this commit to related work.
-                              </p>
+                              <HelpHint
+                                textContext="Scores are the lookup edges that connect this commit to related work."
+                                content="Scores are the lookup edges that connect this commit to related work."
+                              />
                             </div>
                             {renderScoreButtons({
                               scores: selectedCommit.scores,
@@ -690,13 +699,14 @@ export const AttentionInspectorPanel = ({
                           </section>
 
                           <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                            <div>
+                            <div className="flex items-center gap-2">
                               <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
                                 Metadata
                               </h4>
-                              <p className="mt-1 text-sm text-slate-600">
-                                Metadata explains who emitted the commit and where the mutation belongs.
-                              </p>
+                              <HelpHint
+                                textContext="Metadata explains who emitted the commit and where the mutation belongs."
+                                content="Metadata explains who emitted the commit and where the mutation belongs."
+                              />
                             </div>
                             <JSONViewer value={selectedCommit.meta} />
                           </section>

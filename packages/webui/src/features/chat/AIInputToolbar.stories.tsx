@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useRef } from "react";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
+import { __clearHelpHintPersistenceForTests } from "../../components/ui/help-hint-store";
 import { AIInputToolbar } from "./AIInputToolbar";
 
 type AIInputToolbarStoryArgs = {
@@ -50,7 +51,9 @@ export const WideToolbarKeepsLabelsAndHints: Story = {
   args: {},
   render: renderToolbar("w-[720px]"),
   play: async ({ canvasElement }) => {
+    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
+    const portal = within(document.body);
     const actionBar = canvas.getByTestId("composer-action-bar");
     const leadingGroup = canvas.getByTestId("composer-action-leading");
     const primaryAction = canvas.getByTestId("composer-action-primary");
@@ -77,9 +80,12 @@ export const WideToolbarKeepsLabelsAndHints: Story = {
     await expect(within(attachButton).getByText("Attach")).toBeInTheDocument();
     await expect(within(screenshotButton).getByText("Screenshot")).toBeInTheDocument();
     await expect(within(statusBar).getByText("Attachments ready")).toBeInTheDocument();
-    await expect(within(statusBar).getByText("path")).toBeInTheDocument();
-    await expect(within(statusBar).getByText("newline")).toBeInTheDocument();
-    await expect(canvas.queryByRole("button", { name: "Composer help" })).not.toBeInTheDocument();
+    const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
+    await expect(helpTrigger).toHaveTextContent("?");
+    await waitFor(() => {
+      expect(portal.getByText("path")).toBeVisible();
+      expect(portal.getByText("newline")).toBeVisible();
+    });
     await expect(statusBar.getBoundingClientRect().height).toBeLessThan(36);
   },
 };
@@ -88,6 +94,7 @@ export const CompactToolbarCollapsesHelpAndSecondaryLabels: Story = {
   args: {},
   render: renderToolbar("w-[320px]"),
   play: async ({ canvasElement }) => {
+    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
     const actionBar = canvas.getByTestId("composer-action-bar");
@@ -104,9 +111,6 @@ export const CompactToolbarCollapsesHelpAndSecondaryLabels: Story = {
     });
 
     await expect(canvas.getByTestId("composer-local-status")).toHaveTextContent("Attachments ready");
-    await expect(
-      canvas.queryAllByText("path").some((node) => node instanceof HTMLElement && node.offsetParent !== null),
-    ).toBe(false);
     const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
     await expect(helpTrigger).toHaveTextContent("?");
     await expect(helpTrigger.querySelector("svg")).toBeNull();
@@ -122,8 +126,6 @@ export const CompactToolbarCollapsesHelpAndSecondaryLabels: Story = {
       );
     });
 
-    await userEvent.click(helpTrigger);
-
     const hasVisibleText = (text: string) =>
       portal.getAllByText(text).some((node) => node instanceof HTMLElement && node.offsetParent !== null);
 
@@ -131,6 +133,17 @@ export const CompactToolbarCollapsesHelpAndSecondaryLabels: Story = {
       expect(hasVisibleText("path")).toBe(true);
       expect(hasVisibleText("send")).toBe(true);
       expect(hasVisibleText("files")).toBe(true);
+    });
+
+    await userEvent.click(helpTrigger);
+    await waitFor(() => {
+      expect(helpTrigger).not.toHaveAttribute("data-popup-open");
+    });
+
+    await userEvent.click(helpTrigger);
+    await waitFor(() => {
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(hasVisibleText("path")).toBe(true);
     });
   },
 };

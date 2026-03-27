@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 
+import { __clearHelpHintPersistenceForTests } from "../../components/ui/help-hint-store";
 import { ComposerStatusBar } from "./ComposerStatusBar";
 
 const meta = {
@@ -18,20 +19,27 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const WideStatusBarKeepsInlineHelp: Story = {
+export const WideStatusBarAutoOpensHelpHint: Story = {
   render: (args) => (
     <div className="w-[720px] bg-white p-6">
       <ComposerStatusBar {...args} />
     </div>
   ),
   play: async ({ canvasElement }) => {
+    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
+    const portal = within(document.body);
     const statusBar = canvas.getByTestId("composer-status-bar");
+    const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
 
     await expect(canvas.getByTestId("composer-local-status")).toHaveTextContent("Attachments ready");
-    await expect(within(statusBar).getByText("path")).toBeInTheDocument();
-    await expect(within(statusBar).getByText("newline")).toBeInTheDocument();
-    await expect(canvas.queryByRole("button", { name: "Composer help" })).not.toBeInTheDocument();
+    await expect(helpTrigger).toHaveTextContent("?");
+    await waitFor(async () => {
+      await expect(portal.getByText("Composer help")).toBeVisible();
+      await expect(portal.getByText("path")).toBeVisible();
+      await expect(portal.getByText("newline")).toBeVisible();
+    });
+
     await waitFor(() => {
       expect(statusBar.getBoundingClientRect().height).toBeLessThan(36);
     });
@@ -45,22 +53,33 @@ export const CompactStatusBarCollapsesHelpIntoMenu: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
+    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
     await waitFor(() => {
-      expect(canvas.queryByText("path")).not.toBeInTheDocument();
       const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
       expect(helpTrigger).toHaveTextContent("?");
       expect(helpTrigger.querySelector("svg")).toBeNull();
       expect(canvas.getByTestId("composer-status-bar").getBoundingClientRect().height).toBeLessThan(36);
     });
 
-    await userEvent.click(canvas.getByRole("button", { name: "Composer help" }));
     await waitFor(() => {
       expect(portal.getByText("Composer help")).toBeInTheDocument();
       expect(portal.getByText("path")).toBeInTheDocument();
       expect(portal.getByText("files")).toBeInTheDocument();
+    });
+
+    const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
+    await userEvent.click(helpTrigger);
+    await waitFor(() => {
+      expect(helpTrigger).not.toHaveAttribute("data-popup-open");
+    });
+
+    await userEvent.click(helpTrigger);
+    await waitFor(() => {
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(portal.getByText("Composer help")).toBeInTheDocument();
     });
   },
 };

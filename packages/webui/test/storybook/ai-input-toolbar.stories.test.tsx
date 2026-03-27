@@ -6,7 +6,7 @@ import * as stories from "../../src/features/chat/AIInputToolbar.stories";
 const { WideToolbarKeepsLabelsAndHints, CompactToolbarCollapsesHelpAndSecondaryLabels } = composeStories(stories);
 
 describe("Feature: Storybook DOM contract for adaptive composer toolbar", () => {
-  test("Scenario: Given a wide composer toolbar When rendered in the browser Then the action row stays single-line and the thinner status row keeps inline help", async () => {
+  test("Scenario: Given a wide composer toolbar When rendered in the browser Then the action row stays single-line while help hints auto-open in the thinner status row", async () => {
     await WideToolbarKeepsLabelsAndHints.run();
   });
 

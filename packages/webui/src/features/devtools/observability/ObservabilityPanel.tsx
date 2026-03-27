@@ -2,6 +2,7 @@ import { Activity, CircleDashed } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge, BadgeLabel, BadgeLeadingVisual } from "../../../components/ui/badge";
+import { HelpHint } from "../../../components/ui/help-hint";
 import { JSONViewer } from "../../../components/ui/json-viewer";
 import { ScrollViewport } from "../../../components/ui/overflow-surface";
 import { Tabs } from "../../../components/ui/tabs";
@@ -101,10 +102,13 @@ export const ObservabilityPanel = ({
     <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] rounded-xl bg-white p-3 shadow-xs">
       <header className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="typo-title-3 text-slate-900">Observability</h2>
-          <p className="text-[11px] text-slate-500">
-            Context events, scheduler state, and transport records for the attention-driven runtime. Stage: {stage}.
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="typo-title-3 text-slate-900">Observability</h2>
+            <HelpHint
+              textContext="Context events, scheduler state, and transport records for the attention-driven runtime."
+              content={`Context events, scheduler state, and transport records for the attention-driven runtime. Stage: ${stage}.`}
+            />
+          </div>
         </div>
         <Badge variant="secondary" className="rounded-full text-[11px] text-slate-700">
           <BadgeLabel>{`cycle #${kernel?.cycle ?? 0}`}</BadgeLabel>

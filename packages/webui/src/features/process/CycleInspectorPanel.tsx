@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { cn } from "../../lib/utils";
@@ -195,9 +196,10 @@ export const CycleInspectorPanel = ({
           {errorCount > 0 ? <Badge className="bg-rose-100 text-rose-700">{errorCount} error</Badge> : null}
         </div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] text-slate-500">
-            Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained.
-          </p>
+          <HelpHint
+            textContext="Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained."
+            content="Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained."
+          />
           {pagingState || onLoadMore ? (
             <button
               type="button"

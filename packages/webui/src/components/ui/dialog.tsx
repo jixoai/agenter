@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "../../lib/utils";
+import { HelpHint } from "./help-hint";
 
 interface DialogProps {
   open: boolean;
@@ -21,12 +22,11 @@ export const Dialog = ({ open, title, description, onClose, children, footer }: 
         <DialogPrimitive.Popup className="fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none data-[closed]:invisible data-[closed]:pointer-events-none data-[ending-style]:animate-out data-[starting-style]:animate-in md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
           <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
             <div className="space-y-1">
-              <DialogPrimitive.Title className="typo-title-3 text-slate-900">{title}</DialogPrimitive.Title>
-              {description ? (
-                <DialogPrimitive.Description className="text-xs text-slate-600">
-                  {description}
-                </DialogPrimitive.Description>
-              ) : null}
+              <div className="flex items-center gap-2">
+                <DialogPrimitive.Title className="typo-title-3 text-slate-900">{title}</DialogPrimitive.Title>
+                {description ? <HelpHint textContext={`${title}\n${description}`} content={description} ariaLabel="Dialog help" /> : null}
+              </div>
+              {description ? <DialogPrimitive.Description className="sr-only">{description}</DialogPrimitive.Description> : null}
             </div>
             <DialogPrimitive.Close
               className={cn(

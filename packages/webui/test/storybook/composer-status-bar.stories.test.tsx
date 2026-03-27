@@ -3,12 +3,12 @@ import { describe, test } from "vitest";
 
 import * as stories from "../../src/features/chat/ComposerStatusBar.stories";
 
-const { WideStatusBarKeepsInlineHelp, CompactStatusBarCollapsesHelpIntoMenu, SubmittingStatusBarShowsBusySignal } =
+const { WideStatusBarAutoOpensHelpHint, CompactStatusBarCollapsesHelpIntoMenu, SubmittingStatusBarShowsBusySignal } =
   composeStories(stories);
 
 describe("Feature: Storybook DOM contract for composer status bar", () => {
-  test("Scenario: Given wide and compact composer status rows When they render Then composer-local status remains visible while help collapses into a question-mark menu first", async () => {
-    await WideStatusBarKeepsInlineHelp.run();
+  test("Scenario: Given wide and compact composer status rows When they render Then help hints auto-open once and remain re-openable after manual dismissal", async () => {
+    await WideStatusBarAutoOpensHelpHint.run();
     await CompactStatusBarCollapsesHelpIntoMenu.run();
   });
 

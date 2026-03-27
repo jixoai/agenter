@@ -1,12 +1,7 @@
 import { ImagePlus, LoaderCircle, TextCursorInput } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+import { HelpHint } from "../../components/ui/help-hint";
 import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 
@@ -84,33 +79,16 @@ export const ComposerStatusBar = ({
   imageEnabled,
   screenshotSupported,
 }: ComposerStatusBarProps) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [helpCollapsed, setHelpCollapsed] = useState(false);
   const helpItems = COMPOSER_HELP_ITEMS.filter((item) => imageEnabled || item.label !== "Paste");
   const meta = statusMeta({ disabled, submitting, imageEnabled, screenshotSupported });
   const StatusIcon = meta.Icon;
-
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const update = () => {
-      setHelpCollapsed(container.clientWidth < 560);
-    };
-
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(container);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+  const helpContext = useMemo(
+    () => helpItems.map((item) => `${item.label}:${item.value}`).join(" | "),
+    [helpItems],
+  );
 
   return (
     <div
-      ref={containerRef}
       className="min-w-0 border-t border-slate-100 px-1.5 py-1 md:px-2"
       data-testid="composer-status-bar"
       data-composer-row="status"
@@ -131,31 +109,23 @@ export const ComposerStatusBar = ({
           </div>
         </Tooltip>
 
-        {!helpCollapsed ? (
-          <div className="flex min-w-0 items-center justify-end gap-1 text-[10px] text-slate-500">
-            {helpItems.map((item) => (
-              <ShortcutHint key={`${item.label}-${item.value}`} label={item.label} value={item.value} />
-            ))}
-          </div>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="Composer help"
-              title="Composer help"
-              className="!inline-flex !h-6 !min-h-6 !w-6 !min-w-6 !items-center !justify-center !gap-0 !rounded-full border border-slate-200 bg-white !px-0 !py-0 text-[11px] leading-none font-semibold text-slate-600 shadow-xs hover:bg-slate-50"
-            >
-              <span>?</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-72">
-              <DropdownMenuLabel>Composer help</DropdownMenuLabel>
-              <div className="grid gap-2 px-2 pb-2">
+        <HelpHint
+          ariaLabel="Composer help"
+          textContext={`composer-help:${helpContext}`}
+          content={
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-slate-700">Composer help</p>
+              <div className="grid gap-1.5">
                 {helpItems.map((item) => (
                   <ShortcutHint key={`${item.label}-${item.value}`} label={item.label} value={item.value} />
                 ))}
               </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+            </div>
+          }
+          className="h-6 w-6 text-[11px]"
+          side="top"
+          align="end"
+        />
       </div>
     </div>
   );

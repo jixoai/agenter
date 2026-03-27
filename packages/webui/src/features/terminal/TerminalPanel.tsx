@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ClipSurface, ViewportMask } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/utils";
@@ -341,10 +342,12 @@ export const TerminalPanel = ({
               <Badge variant="secondary">
                 {cols}x{rows}
               </Badge>
+              <HelpHint
+                textContext="fit keeps PTY geometry container-driven; cover only changes presentation."
+                content="fit keeps PTY geometry container-driven; cover only changes presentation."
+              />
             </div>
-            <p className="text-[11px] text-slate-500">
-              seq {flattenedSnapshot?.seq ?? selectedTerminal.seq} · fit keeps PTY geometry container-driven; cover only changes presentation.
-            </p>
+            <p className="text-[11px] text-slate-500">seq {flattenedSnapshot?.seq ?? selectedTerminal.seq}</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
