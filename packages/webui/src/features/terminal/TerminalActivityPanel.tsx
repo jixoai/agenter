@@ -72,10 +72,9 @@ const toPayload = (value: unknown): ToolInvocationView["call"] => {
   };
 };
 
+const hasToolLikeTitle = (title: string): boolean => /tool[\s_-]?(call|result)/i.test(title);
+
 const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvocationView | null => {
-  if (item.kind !== "message" || item.channel !== "tool") {
-    return null;
-  }
   const parsed = parseToolPayload(item.content, item.title);
   if (!isRecord(parsed.data)) {
     return null;
@@ -90,7 +89,7 @@ const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvo
     "input" in payload ||
     "output" in payload ||
     "error" in payload;
-  if (!hasToolFields) {
+  if (!hasToolFields && !hasToolLikeTitle(item.title)) {
     return null;
   }
   const callValue = "call" in payload ? payload.call : "input" in payload ? payload.input : undefined;
@@ -110,32 +109,29 @@ const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvo
 };
 
 const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
-  if (item.kind !== "message" || item.channel !== "tool") {
-    return null;
+  if (item.kind === "message" && item.channel === "tool" && item.tool) {
+    return {
+      invocationId: item.tool.invocationId,
+      toolName: item.tool.name,
+      status: item.tool.status,
+      startedAt: item.tool.startedAt,
+      finishedAt: item.tool.finishedAt,
+      call: item.tool.call
+        ? {
+            value: item.tool.call.value,
+            rawText: item.tool.call.rawText,
+          }
+        : undefined,
+      result: item.tool.result
+        ? {
+            value: item.tool.result.value,
+            rawText: item.tool.result.rawText,
+          }
+        : undefined,
+      error: item.tool.error,
+    };
   }
-  if (!item.tool) {
-    return toInvocationFromLegacyToolContent(item);
-  }
-  return {
-    invocationId: item.tool.invocationId,
-    toolName: item.tool.name,
-    status: item.tool.status,
-    startedAt: item.tool.startedAt,
-    finishedAt: item.tool.finishedAt,
-    call: item.tool.call
-      ? {
-          value: item.tool.call.value,
-          rawText: item.tool.call.rawText,
-        }
-      : undefined,
-    result: item.tool.result
-      ? {
-          value: item.tool.result.value,
-          rawText: item.tool.result.rawText,
-        }
-      : undefined,
-    error: item.tool.error,
-  };
+  return toInvocationFromLegacyToolContent(item);
 };
 
 const renderActivityBody = (item: TerminalActivityItem) => {

@@ -135,6 +135,26 @@ const terminalActivityByTerminal = {
         "```",
       ].join("\n"),
     },
+    {
+      id: 24,
+      terminalId: "iflow",
+      createdAt: 11,
+      kind: "terminal_write" as const,
+      cycleId: 8,
+      title: "tool-call",
+      content: [
+        "```yaml+tool_call",
+        "invocationId: legacy-2",
+        "tool: terminal_snapshot",
+        "status: success",
+        "startedAt: 2026-03-27T12:01:00.000Z",
+        "finishedAt: 2026-03-27T12:01:01.000Z",
+        "call: \"\"",
+        "result:",
+        "  representation: snapshot",
+        "```",
+      ].join("\n"),
+    },
   ],
   "other-terminal": [
     {
@@ -203,8 +223,9 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.getByText("Latest terminal_read result")).toBeInTheDocument();
     expect(screen.getAllByText("terminal_read").length).toBeGreaterThan(0);
     expect(screen.getByText("terminal_get_config")).toBeInTheDocument();
+    expect(screen.getByText("terminal_snapshot")).toBeInTheDocument();
     expect(screen.queryByText("Call")).not.toBeInTheDocument();
-    expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.getAllByText("Result").length).toBeGreaterThan(0);
     expect(screen.queryByText("other-terminal")).not.toBeInTheDocument();
     expect(container.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
     expect(container.querySelector('[data-terminal-activity-scroll-owner="inspector"]')).not.toBeNull();

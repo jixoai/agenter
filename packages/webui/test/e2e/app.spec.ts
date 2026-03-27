@@ -151,7 +151,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(quickStartViewport.getByRole("button", { name: "Start", exact: true })).toBeEnabled({ timeout: 20_000 });
     await quickStartViewport.getByRole("button", { name: "Start", exact: true }).click();
 
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(/\/session\/[^/]+\/chats/, { timeout: 20_000 });
     await expect(page.getByText("Loading chat channels...")).toHaveCount(0, { timeout: 20_000 });
     const userMessage = articleByExactText(page, firstPrompt);
     if (fixture.modelMode !== "real") {
@@ -310,12 +310,12 @@ test.describe("Feature: Workspace-first browser shell", () => {
   }, testInfo) => {
     const fixture = loadFixture();
     const mobile = isMobileProject(testInfo);
-    const route = `/workspace/chat?workspacePath=${encodeURIComponent(fixture.workspacePath)}&sessionId=${encodeURIComponent(fixture.historySessionId)}`;
+    const route = `/session/${encodeURIComponent(fixture.historySessionId)}/chats`;
     const latestPrompt = `History prompt ${fixture.historyTurns}: confirm the long persisted conversation turn ${fixture.historyTurns}.`;
     const firstPrompt = "History prompt 1: confirm the long persisted conversation turn 1.";
 
     await page.goto(route);
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(/\/session\/[^/]+\/chats/, { timeout: 20_000 });
 
     await expect(articleByExactText(page, latestPrompt)).toBeVisible();
 

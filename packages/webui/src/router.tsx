@@ -88,45 +88,8 @@ const readSearchString = (value: unknown): string | undefined => {
   return normalized.length > 0 ? normalized : undefined;
 };
 
-const readPositiveInt = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-const validateWorkspaceRouteSearch = (search: Record<string, unknown>) => ({
-  workspacePath: readSearchString(search.workspacePath) ?? "",
-  sessionId: readSearchString(search.sessionId),
+const validateSessionChatSearch = (search: Record<string, unknown>) => ({
   chatId: readSearchString(search.chatId),
-});
-
-const validateWorkspaceDevtoolsSearch = (search: Record<string, unknown>) => ({
-  workspacePath: readSearchString(search.workspacePath) ?? "",
-  sessionId: readSearchString(search.sessionId),
-  chatId: readSearchString(search.chatId),
-  cycleId: readPositiveInt(search.cycleId),
-});
-
-const validateWorkspaceOnlySearch = (search: Record<string, unknown>) => ({
-  workspacePath: readSearchString(search.workspacePath) ?? "",
-  sessionId: readSearchString(search.sessionId),
-  chatId: readSearchString(search.chatId),
-});
-
-const renderWorkspaceRouteTarget = (
-  workspacePath: string,
-  sessionId?: string,
-  options?: { cycleId?: number; chatId?: string },
-) => ({
-  workspacePath,
-  sessionId,
-  chatId: options?.chatId,
-  cycleId: options?.cycleId,
 });
 
 const toBootstrapChannelMessages = (
@@ -372,8 +335,9 @@ const QuickStartRouteView = () => {
             return;
           }
           await navigate({
-            to: "/workspace/chat",
-            search: renderWorkspaceRouteTarget(controller.quickstartWorkspacePath, sessionId),
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: {},
           });
         }}
         onSaveBootstrapConfig={controller.saveQuickstartBootstrapConfig}
@@ -383,16 +347,18 @@ const QuickStartRouteView = () => {
             return;
           }
           await navigate({
-            to: "/workspace/chat",
-            search: renderWorkspaceRouteTarget(controller.quickstartWorkspacePath, sessionId),
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: {},
           });
         }}
         onSearchPaths={controller.searchWorkspacePaths}
         onResumeSession={async (sessionId) => {
           await controller.resumeSession(sessionId, controller.quickstartWorkspacePath);
           await navigate({
-            to: "/workspace/chat",
-            search: renderWorkspaceRouteTarget(controller.quickstartWorkspacePath, sessionId),
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: {},
           });
         }}
       />
@@ -458,8 +424,9 @@ const WorkspacesRouteView = () => {
                 return;
               }
               void navigate({
-                to: "/workspace/chat",
-                search: renderWorkspaceRouteTarget(path, sessionId),
+                to: "/session/$sessionId/chats",
+                params: { sessionId },
+                search: {},
               });
             });
           }}
@@ -490,16 +457,18 @@ const WorkspacesRouteView = () => {
                 return;
               }
               void navigate({
-                to: "/workspace/chat",
-                search: renderWorkspaceRouteTarget(path, sessionId),
+                to: "/session/$sessionId/chats",
+                params: { sessionId },
+                search: {},
               });
             });
           }}
           onOpenSession={(sessionId) => {
             void controller.resumeSession(sessionId, selectedWorkspace?.path).then(() => {
               void navigate({
-                to: "/workspace/chat",
-                search: renderWorkspaceRouteTarget(selectedWorkspace?.path ?? "", sessionId),
+                to: "/session/$sessionId/chats",
+                params: { sessionId },
+                search: {},
               });
             });
           }}
@@ -534,19 +503,22 @@ const WorkspacesRouteView = () => {
   );
 };
 
-const WorkspaceChatRouteView = () => {
+const SessionChatsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
-  const search = workspaceChatRoute.useSearch();
+  const params = sessionChatsRoute.useParams();
+  const search = sessionChatsRoute.useSearch();
+  const sessionId = params.sessionId;
   const connected = useRuntimeSelector((state) => state.connected);
-  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(search.workspacePath), equalWorkspaceChromeState);
-  const runtime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
+  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
+  const workspacePath = session?.cwd ?? "";
+  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
+  const runtime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
   const runtimeChatMessages = useRuntimeSelector((state) =>
-    search.sessionId ? state.chatsBySession[search.sessionId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES,
+    state.chatsBySession[sessionId] ?? EMPTY_MESSAGES,
   );
   const channelsResource = useRuntimeSelector(
-    (state) => (search.sessionId ? state.messageChannelsBySession[search.sessionId] : undefined) ?? EMPTY_MESSAGE_CHANNELS_RESOURCE,
+    (state) => state.messageChannelsBySession[sessionId] ?? EMPTY_MESSAGE_CHANNELS_RESOURCE,
   );
   const setChatVisibility = controller.setChatVisibility;
   const consumeNotifications = controller.consumeNotifications;
@@ -588,94 +560,79 @@ const WorkspaceChatRouteView = () => {
       ? { tone: "destructive" as const, message: channelsError }
       : (baseRouteNotice ?? legacyRouteNotice);
   const handleChatHeaderAction = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
     if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(search.sessionId);
+      void controller.stopSession(sessionId);
       return;
     }
-    void controller.startSession(search.sessionId);
-  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
+    void controller.startSession(sessionId);
+  }, [controller, sessionId, sessionStatusPill.primaryAction]);
   const handleAbortSession = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
-    void controller.abortSession(search.sessionId);
-  }, [controller, search.sessionId]);
+    void controller.abortSession(sessionId);
+  }, [controller, sessionId]);
 
-  const handleWorkspaceChatNavigate = useCallback(
+  const handleSessionChatsNavigate = useCallback(
     (tab: "chat" | "terminals" | "devtools" | "settings") => {
       if (tab === "chat") {
         void navigate({
-          to: "/workspace/chat",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, {
-            chatId: selectedChannel?.chatId,
-          }),
+          to: "/session/$sessionId/chats",
+          params: { sessionId },
+          search: { chatId: selectedChannel?.chatId },
         });
         return;
       }
       if (tab === "settings") {
         void navigate({
-          to: "/workspace/settings",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, {
-            chatId: selectedChannel?.chatId,
-          }),
+          to: "/session/$sessionId/settings",
+          params: { sessionId },
         });
         return;
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/workspace/terminals",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, {
-            chatId: selectedChannel?.chatId,
-          }),
+          to: "/session/$sessionId/terminals",
+          params: { sessionId },
         });
-        return;
-      }
-      if (!search.sessionId) {
         return;
       }
       void navigate({
         to: "/session/$sessionId/devtools",
-        params: { sessionId: search.sessionId },
+        params: { sessionId },
         search: buildSessionDevtoolsSearch({ panel: "attention" }),
       });
     },
-    [navigate, search.sessionId, search.workspacePath, selectedChannel?.chatId],
+    [navigate, selectedChannel?.chatId, sessionId],
   );
 
   useEffect(() => {
     setLatestVisibleMessageId(null);
-  }, [search.sessionId]);
+  }, [sessionId]);
 
   useEffect(() => {
-    const sessionId = search.sessionId;
-    if (!connected || !sessionId || channelsResource.loaded || channelsResource.loading || channelsResource.refreshing) {
+    if (!connected || channelsResource.loaded || channelsResource.loading || channelsResource.refreshing) {
       return;
     }
     void controller.ensureMessageChannels(sessionId);
-  }, [channelsResource.loaded, channelsResource.loading, channelsResource.refreshing, connected, controller, search.sessionId]);
+  }, [channelsResource.loaded, channelsResource.loading, channelsResource.refreshing, connected, controller, sessionId]);
 
   useEffect(() => {
-    if (!search.sessionId || !channelsResource.loaded) {
+    if (!channelsResource.loaded) {
       return;
     }
     const selected = channels.find((item) => item.chatId === search.chatId) ?? channels[0] ?? null;
     if (selected && selected.chatId !== search.chatId) {
       void navigate({
-        to: "/workspace/chat",
+        to: "/session/$sessionId/chats",
+        params: { sessionId },
         replace: true,
-        search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, { chatId: selected.chatId }),
+        search: { chatId: selected.chatId },
       });
     }
-  }, [channels, channelsResource.loaded, navigate, search.chatId, search.sessionId, search.workspacePath]);
+  }, [channels, channelsResource.loaded, navigate, search.chatId, sessionId]);
 
   useEffect(() => {
-    const sessionId = search.sessionId;
     const chatId = selectedChannel?.chatId;
-    const focusKey = sessionId && chatId ? `${sessionId}:${chatId}` : null;
-    if (!sessionId || !chatId || !routeRuntime?.started || focusedChatKeyRef.current === focusKey) {
+    const focusKey = chatId ? `${sessionId}:${chatId}` : null;
+    if (!chatId || !routeRuntime?.started || focusedChatKeyRef.current === focusKey) {
       return;
     }
     focusedChatKeyRef.current = focusKey;
@@ -688,12 +645,11 @@ const WorkspaceChatRouteView = () => {
       .catch(() => {
         focusedChatKeyRef.current = null;
       });
-  }, [controller, routeRuntime?.started, search.sessionId, selectedChannel?.accessToken, selectedChannel?.chatId]);
+  }, [controller, routeRuntime?.started, selectedChannel?.accessToken, selectedChannel?.chatId, sessionId]);
 
   useEffect(() => {
-    const sessionId = search.sessionId;
     const chatId = selectedChannel?.chatId;
-    if (!connected || !sessionId || !chatId) {
+    if (!connected || !chatId) {
       return;
     }
 
@@ -747,305 +703,241 @@ const WorkspaceChatRouteView = () => {
     connected,
     consumeNotifications,
     latestVisibleMessageId,
-    search.sessionId,
     selectedChannel?.chatId,
+    sessionId,
     setChatVisibility,
   ]);
 
   return (
     <WorkspaceShellFrame
-      workspacePath={search.workspacePath}
+      workspacePath={workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="chat"
-      onNavigate={handleWorkspaceChatNavigate}
+      onNavigate={handleSessionChatsNavigate}
       headerStatusSlot={
-        search.sessionId ? (
-          <SessionStatusPillMenu
-            triggerVariant="icon"
-            statusLabel={sessionStatusPill.label}
-            tone={sessionStatusPill.tone}
-            primaryActionLabel={sessionStatusPill.primaryActionLabel}
-            primaryActionDisabled={sessionStatusPill.disabled}
-            onPrimaryAction={handleChatHeaderAction}
-            onAbort={handleAbortSession}
-          />
-        ) : null
+        <SessionStatusPillMenu
+          triggerVariant="icon"
+          statusLabel={sessionStatusPill.label}
+          tone={sessionStatusPill.tone}
+          primaryActionLabel={sessionStatusPill.primaryActionLabel}
+          primaryActionDisabled={sessionStatusPill.disabled}
+          onPrimaryAction={handleChatHeaderAction}
+          onAbort={handleAbortSession}
+        />
       }
     >
-      {search.sessionId ? (
-        <MessageChannelSurface
-          sessionId={search.sessionId}
-          workspacePath={search.workspacePath}
-          channels={channels}
-          selectedChatId={selectedChannel?.chatId ?? null}
-          channelsLoading={channelsLoading}
-          channelsError={channelsError}
-          disabled={!routeRuntime?.started}
-          imageCompatible={runtime?.imageInput ?? false}
-          routeNotice={routeNotice}
-          initialMessages={bootstrapMessages}
-          assistantAvatarUrl={
-            session ? controller.runtimeStore.avatarIconUrl(session.avatar, search.workspacePath) : null
+      <MessageChannelSurface
+        sessionId={sessionId}
+        workspacePath={workspacePath}
+        channels={channels}
+        selectedChatId={selectedChannel?.chatId ?? null}
+        channelsLoading={channelsLoading}
+        channelsError={channelsError}
+        disabled={!routeRuntime?.started}
+        imageCompatible={runtime?.imageInput ?? false}
+        routeNotice={routeNotice}
+        initialMessages={bootstrapMessages}
+        assistantAvatarUrl={session ? controller.runtimeStore.avatarIconUrl(session.avatar, workspacePath) : null}
+        assistantAvatarLabel={session?.avatar ?? "Assistant"}
+        userAvatarLabel="You"
+        onSelectChannel={(chatId) => {
+          void navigate({
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: { chatId },
+          });
+        }}
+        onCreateChannel={async (input) => {
+          const created = await controller.createMessageChannel({
+            sessionId,
+            kind: input.kind,
+            title: input.title,
+            participants: input.participants,
+            metadata: input.metadata,
+            adminToken: input.adminToken,
+            focus: true,
+          });
+          await navigate({
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: { chatId: created.chatId },
+          });
+        }}
+        onFocusChannel={async (channel) => {
+          await controller.focusMessageChannels({
+            sessionId,
+            op: "replace",
+            channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
+          });
+          await navigate({
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: { chatId: channel.chatId },
+          });
+        }}
+        onArchiveChannel={async (channel) => {
+          await controller.archiveMessageChannel({
+            sessionId,
+            chatId: channel.chatId,
+            accessToken: channel.accessToken,
+          });
+          const remaining = await controller.listMessageChannels(sessionId);
+          const nextSelected = remaining.find((item) => item.focused) ?? remaining[0] ?? null;
+          await navigate({
+            to: "/session/$sessionId/chats",
+            params: { sessionId },
+            search: { chatId: nextSelected?.chatId },
+          });
+        }}
+        onSendMessage={({ channel, payload }) =>
+          controller.sendMessageChannel({
+            sessionId,
+            chatId: channel.chatId,
+            accessToken: channel.accessToken,
+            payload,
+          })
+        }
+        onUpdateChannel={async (input) =>
+          await controller.updateMessageChannel({
+            sessionId,
+            chatId: input.channel.chatId,
+            accessToken: input.channel.accessToken,
+            patch: input.patch,
+          })
+        }
+        onListChannelGrants={async (channel) =>
+          await controller.listMessageChannelGrants({
+            sessionId,
+            chatId: channel.chatId,
+            accessToken: channel.accessToken,
+          })
+        }
+        onIssueChannelGrant={async (input) =>
+          await controller.issueMessageChannelGrant({
+            sessionId,
+            chatId: input.channel.chatId,
+            accessToken: input.channel.accessToken,
+            role: input.role,
+            label: input.label,
+            participantId: input.participantId,
+          })
+        }
+        onRevokeChannelGrant={async (input) =>
+          await controller.revokeMessageChannelGrant({
+            sessionId,
+            chatId: input.channel.chatId,
+            accessToken: input.channel.accessToken,
+            grantId: input.grantId,
+          })
+        }
+        onCommand={async (command) => {
+          if (command === "/start") {
+            await controller.startSession(sessionId);
+            return;
           }
-          assistantAvatarLabel={session?.avatar ?? "Assistant"}
-          userAvatarLabel="You"
-          onSelectChannel={(chatId) => {
-            void navigate({
-              to: "/workspace/chat",
-              search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, { chatId }),
-            });
-          }}
-          onCreateChannel={async (input) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              return;
-            }
-            const created = await controller.createMessageChannel({
+          if (command === "/stop") {
+            await controller.stopSession(sessionId);
+            return;
+          }
+          if (command === "/compact" && selectedChannel) {
+            await controller.sendMessageChannel({
               sessionId,
-              kind: input.kind,
-              title: input.title,
-              participants: input.participants,
-              metadata: input.metadata,
-              adminToken: input.adminToken,
-              focus: true,
+              chatId: selectedChannel.chatId,
+              accessToken: selectedChannel.accessToken,
+              payload: { text: "/compact", assets: [] },
             });
-            await navigate({
-              to: "/workspace/chat",
-              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, { chatId: created.chatId }),
-            });
-          }}
-          onFocusChannel={async (channel) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              return;
-            }
-            await controller.focusMessageChannels({
-              sessionId,
-              op: "replace",
-              channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
-            });
-            await navigate({
-              to: "/workspace/chat",
-              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, { chatId: channel.chatId }),
-            });
-          }}
-          onArchiveChannel={async (channel) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              return;
-            }
-            await controller.archiveMessageChannel({
-              sessionId,
-              chatId: channel.chatId,
-              accessToken: channel.accessToken,
-            });
-            const remaining = await controller.listMessageChannels(sessionId);
-            const nextSelected = remaining.find((item) => item.focused) ?? remaining[0] ?? null;
-            await navigate({
-              to: "/workspace/chat",
-              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, {
-                chatId: nextSelected?.chatId,
-              }),
-            });
-          }}
-          onSendMessage={({ channel, payload }) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              return Promise.resolve();
-            }
-            return controller.sendMessageChannel({
-              sessionId,
-              chatId: channel.chatId,
-              accessToken: channel.accessToken,
-              payload,
-            });
-          }}
-          onUpdateChannel={async (input) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              throw new Error("session runtime is not active");
-            }
-            const channel = await controller.updateMessageChannel({
-              sessionId,
-              chatId: input.channel.chatId,
-              accessToken: input.channel.accessToken,
-              patch: input.patch,
-            });
-            return channel;
-          }}
-          onListChannelGrants={async (channel) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              throw new Error("session runtime is not active");
-            }
-            return await controller.listMessageChannelGrants({
-              sessionId,
-              chatId: channel.chatId,
-              accessToken: channel.accessToken,
-            });
-          }}
-          onIssueChannelGrant={async (input) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              throw new Error("session runtime is not active");
-            }
-            return await controller.issueMessageChannelGrant({
-              sessionId,
-              chatId: input.channel.chatId,
-              accessToken: input.channel.accessToken,
-              role: input.role,
-              label: input.label,
-              participantId: input.participantId,
-            });
-          }}
-          onRevokeChannelGrant={async (input) => {
-            const sessionId = search.sessionId;
-            if (!sessionId) {
-              throw new Error("session runtime is not active");
-            }
-            return await controller.revokeMessageChannelGrant({
-              sessionId,
-              chatId: input.channel.chatId,
-              accessToken: input.channel.accessToken,
-              grantId: input.grantId,
-            });
-          }}
-          onCommand={async (command) => {
-            if (!search.sessionId) {
-              return;
-            }
-            if (command === "/start") {
-              await controller.startSession(search.sessionId);
-              return;
-            }
-            if (command === "/stop") {
-              await controller.stopSession(search.sessionId);
-              return;
-            }
-            if (command === "/compact" && selectedChannel) {
-              await controller.sendMessageChannel({
-                sessionId: search.sessionId,
-                chatId: selectedChannel.chatId,
-                accessToken: selectedChannel.accessToken,
-                payload: { text: "/compact", assets: [] },
-              });
-            }
-          }}
-          onSearchPaths={controller.searchWorkspacePaths}
-          onLatestVisibleAssistantMessageIdChange={setLatestVisibleMessageId}
-          onOpenDevtools={(cycleId) => {
-            if (!search.sessionId) {
-              return;
-            }
-            void navigate({
-              to: "/session/$sessionId/devtools",
-              params: { sessionId: search.sessionId },
-              search: buildSessionDevtoolsSearch({
-                panel: cycleId ? "cycles" : "attention",
-                cycleId,
-              }),
-            });
-          }}
-        />
-      ) : (
-        <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
-          <div className="space-y-3 text-center">
-            <h2 className="typo-title-3 text-slate-900">No session selected</h2>
-            <p className="text-sm text-slate-600">Create or resume a session from Workspaces to start chatting.</p>
-          </div>
-        </section>
-      )}
+          }
+        }}
+        onSearchPaths={controller.searchWorkspacePaths}
+        onLatestVisibleAssistantMessageIdChange={setLatestVisibleMessageId}
+        onOpenDevtools={(cycleId) => {
+          void navigate({
+            to: "/session/$sessionId/devtools",
+            params: { sessionId },
+            search: buildSessionDevtoolsSearch({
+              panel: cycleId ? "cycles" : "attention",
+              cycleId,
+            }),
+          });
+        }}
+      />
     </WorkspaceShellFrame>
   );
 };
 
-const WorkspaceTerminalsRouteView = () => {
+const SessionTerminalsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
-  const search = workspaceTerminalsRoute.useSearch();
-  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(search.workspacePath), equalWorkspaceChromeState);
-  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
+  const params = sessionTerminalsRoute.useParams();
+  const sessionId = params.sessionId;
+  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
+  const workspacePath = session?.cwd ?? "";
+  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
+  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
   const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
-  const hasRuntime = useRuntimeSelector((state) =>
-    search.sessionId ? Boolean(state.runtimes[search.sessionId]) : false,
-  );
+  const hasRuntime = useRuntimeSelector((state) => Boolean(state.runtimes[sessionId]));
   const routeNotice = resolveChatRouteNotice({
     notice: controller.notice,
     session,
     runtime: routeRuntime ?? undefined,
   });
   const terminalsSurfaceLoading =
-    Boolean(search.sessionId) &&
-    !hasRuntime &&
-    session?.status !== "stopped" &&
-    session?.status !== "paused" &&
-    session?.status !== "error";
+    !hasRuntime && session?.status !== "stopped" && session?.status !== "paused" && session?.status !== "error";
 
-  const handleWorkspaceTerminalsNavigate = useCallback(
+  const handleSessionTerminalsNavigate = useCallback(
     (tab: "chat" | "terminals" | "devtools" | "settings") => {
       if (tab === "settings") {
         void navigate({
-          to: "/workspace/settings",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+          to: "/session/$sessionId/settings",
+          params: { sessionId },
         });
         return;
       }
       if (tab === "chat") {
         void navigate({
-          to: "/workspace/chat",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, { chatId: search.chatId }),
+          to: "/session/$sessionId/chats",
+          params: { sessionId },
+          search: {},
         });
         return;
       }
       if (tab === "devtools") {
-        if (!search.sessionId) {
-          return;
-        }
         void navigate({
           to: "/session/$sessionId/devtools",
-          params: { sessionId: search.sessionId },
+          params: { sessionId },
           search: buildSessionDevtoolsSearch({ panel: "attention" }),
         });
       }
     },
-    [navigate, search.chatId, search.sessionId, search.workspacePath],
+    [navigate, sessionId],
   );
   const handleSessionPrimaryAction = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
     if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(search.sessionId);
+      void controller.stopSession(sessionId);
       return;
     }
-    void controller.startSession(search.sessionId);
-  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
+    void controller.startSession(sessionId);
+  }, [controller, sessionId, sessionStatusPill.primaryAction]);
   const handleAbortSession = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
-    void controller.abortSession(search.sessionId);
-  }, [controller, search.sessionId]);
+    void controller.abortSession(sessionId);
+  }, [controller, sessionId]);
 
   return (
     <WorkspaceShellFrame
-      workspacePath={search.workspacePath}
+      workspacePath={workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="terminals"
-      onNavigate={handleWorkspaceTerminalsNavigate}
+      onNavigate={handleSessionTerminalsNavigate}
       headerStatusSlot={
-        search.sessionId ? (
-          <SessionStatusPillMenu
-            triggerVariant="icon"
-            statusLabel={sessionStatusPill.label}
-            tone={sessionStatusPill.tone}
-            primaryActionLabel={sessionStatusPill.primaryActionLabel}
-            primaryActionDisabled={sessionStatusPill.disabled}
-            onPrimaryAction={handleSessionPrimaryAction}
-            onAbort={handleAbortSession}
-          />
-        ) : null
+        <SessionStatusPillMenu
+          triggerVariant="icon"
+          statusLabel={sessionStatusPill.label}
+          tone={sessionStatusPill.tone}
+          primaryActionLabel={sessionStatusPill.primaryActionLabel}
+          primaryActionDisabled={sessionStatusPill.disabled}
+          onPrimaryAction={handleSessionPrimaryAction}
+          onAbort={handleAbortSession}
+        />
       }
     >
       <section
@@ -1056,16 +948,7 @@ const WorkspaceTerminalsRouteView = () => {
       >
         {routeNotice ? <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner> : null}
         <ViewportMask className="h-full">
-          {search.sessionId ? (
-            <SessionTerminalsSurface sessionId={search.sessionId} loading={terminalsSurfaceLoading} />
-          ) : (
-            <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
-              <div className="space-y-3 text-center">
-                <h2 className="typo-title-3 text-slate-900">No session selected</h2>
-                <p className="text-sm text-slate-600">Create or resume a session from Workspaces to inspect terminals.</p>
-              </div>
-            </section>
-          )}
+          <SessionTerminalsSurface sessionId={sessionId} loading={terminalsSurfaceLoading} />
         </ViewportMask>
       </section>
     </WorkspaceShellFrame>
@@ -1106,10 +989,10 @@ const SessionDevtoolsRouteView = () => {
         to: "/session/$sessionId/devtools",
         params: { sessionId },
         replace: options?.replace,
-        search: (current) => buildSessionDevtoolsSearch(patch, current),
+        search: buildSessionDevtoolsSearch(patch, search),
       });
     },
-    [navigate, sessionId],
+    [navigate, search, sessionId],
   );
 
   const handleDetailsTabChange = useCallback(
@@ -1135,31 +1018,32 @@ const SessionDevtoolsRouteView = () => {
     void controller.abortSession(sessionId);
   }, [controller, sessionId]);
 
-  const handleWorkspaceDevtoolsNavigate = useCallback(
+  const handleSessionDevtoolsNavigate = useCallback(
     (tab: "chat" | "terminals" | "devtools" | "settings") => {
       if (tab === "devtools") {
         return;
       }
       if (tab === "settings") {
         void navigate({
-          to: "/workspace/settings",
-          search: renderWorkspaceRouteTarget(workspacePath, sessionId),
+          to: "/session/$sessionId/settings",
+          params: { sessionId },
         });
         return;
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/workspace/terminals",
-          search: renderWorkspaceRouteTarget(workspacePath, sessionId),
+          to: "/session/$sessionId/terminals",
+          params: { sessionId },
         });
         return;
       }
       void navigate({
-        to: "/workspace/chat",
-        search: renderWorkspaceRouteTarget(workspacePath, sessionId),
+        to: "/session/$sessionId/chats",
+        params: { sessionId },
+        search: {},
       });
     },
-    [navigate, sessionId, workspacePath],
+    [navigate, sessionId],
   );
 
   const handleOpenAttentionRef = useCallback(
@@ -1228,7 +1112,7 @@ const SessionDevtoolsRouteView = () => {
       workspacePath={workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="devtools"
-      onNavigate={handleWorkspaceDevtoolsNavigate}
+      onNavigate={handleSessionDevtoolsNavigate}
       headerStatusSlot={
         <SessionStatusPillMenu
           triggerVariant="icon"
@@ -1259,123 +1143,89 @@ const SessionDevtoolsRouteView = () => {
   );
 };
 
-const WorkspaceDevtoolsRedirectRouteView = () => {
-  const navigate = useNavigate();
-  const search = workspaceDevtoolsRoute.useSearch();
-
-  useEffect(() => {
-    if (!search.sessionId) {
-      return;
-    }
-    void navigate({
-      to: "/session/$sessionId/devtools",
-      params: { sessionId: search.sessionId },
-      replace: true,
-      search: buildSessionDevtoolsSearch({
-        panel: search.cycleId ? "cycles" : "attention",
-        cycleId: search.cycleId,
-      }),
-    });
-  }, [navigate, search.cycleId, search.sessionId]);
-
-  return (
-    <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
-      <p className="text-sm text-slate-600">Redirecting to session Devtools...</p>
-    </section>
-  );
-};
-
-const WorkspaceSettingsRouteView = () => {
+const SessionSettingsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
   const adaptiveViewport = useAdaptiveViewport();
-  const search = workspaceSettingsRoute.useSearch();
+  const params = sessionSettingsRoute.useParams();
+  const sessionId = params.sessionId;
   const connected = useRuntimeSelector((state) => state.connected);
-  const session = useRuntimeSelector(selectSessionChromeState(search.sessionId), equalSessionChromeState);
-  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(search.sessionId), equalChatRuntimeState);
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(search.workspacePath), equalWorkspaceChromeState);
+  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
+  const workspacePath = session?.cwd ?? "";
+  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
+  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
   const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
   const ensureSettingsLayers = controller.ensureSettingsLayers;
   const refreshSettingsLayers = controller.refreshSettingsLayers;
 
   useEffect(() => {
-    if (!connected || !search.workspacePath) {
+    if (!connected || !workspacePath) {
       return;
     }
-    void ensureSettingsLayers(search.workspacePath);
-  }, [connected, ensureSettingsLayers, search.workspacePath]);
-  const handleWorkspaceSettingsNavigate = useCallback(
+    void ensureSettingsLayers(workspacePath);
+  }, [connected, ensureSettingsLayers, workspacePath]);
+  const handleSessionSettingsNavigate = useCallback(
     (tab: "chat" | "terminals" | "devtools" | "settings") => {
       if (tab === "settings") {
         return;
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/workspace/terminals",
-          search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+          to: "/session/$sessionId/terminals",
+          params: { sessionId },
         });
         return;
       }
       if (tab === "devtools") {
-        if (!search.sessionId) {
-          return;
-        }
         void navigate({
           to: "/session/$sessionId/devtools",
-          params: { sessionId: search.sessionId },
+          params: { sessionId },
           search: buildSessionDevtoolsSearch({ panel: "attention" }),
         });
         return;
       }
       void navigate({
-        to: "/workspace/chat",
-        search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId),
+        to: "/session/$sessionId/chats",
+        params: { sessionId },
+        search: {},
       });
     },
-    [navigate, search.sessionId, search.workspacePath],
+    [navigate, sessionId],
   );
   const handleSessionPrimaryAction = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
     if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(search.sessionId);
+      void controller.stopSession(sessionId);
       return;
     }
-    void controller.startSession(search.sessionId);
-  }, [controller, search.sessionId, sessionStatusPill.primaryAction]);
+    void controller.startSession(sessionId);
+  }, [controller, sessionId, sessionStatusPill.primaryAction]);
   const handleAbortSession = useCallback(() => {
-    if (!search.sessionId) {
-      return;
-    }
-    void controller.abortSession(search.sessionId);
-  }, [controller, search.sessionId]);
+    void controller.abortSession(sessionId);
+  }, [controller, sessionId]);
 
   return (
     <WorkspaceShellFrame
-      workspacePath={search.workspacePath}
+      workspacePath={workspacePath}
       workspaceMissing={workspace?.missing ?? false}
       activeTab="settings"
-      onNavigate={handleWorkspaceSettingsNavigate}
+      onNavigate={handleSessionSettingsNavigate}
       headerStatusSlot={
-        search.sessionId ? (
-          <SessionStatusPillMenu
-            triggerVariant="icon"
-            statusLabel={sessionStatusPill.label}
-            tone={sessionStatusPill.tone}
-            primaryActionLabel={sessionStatusPill.primaryActionLabel}
-            primaryActionDisabled={sessionStatusPill.disabled}
-            onPrimaryAction={handleSessionPrimaryAction}
-            onAbort={handleAbortSession}
-          />
-        ) : null
+        <SessionStatusPillMenu
+          triggerVariant="icon"
+          statusLabel={sessionStatusPill.label}
+          tone={sessionStatusPill.tone}
+          primaryActionLabel={sessionStatusPill.primaryActionLabel}
+          primaryActionDisabled={sessionStatusPill.disabled}
+          onPrimaryAction={handleSessionPrimaryAction}
+          onAbort={handleAbortSession}
+        />
       }
     >
       <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5">
         <ViewportMask className="h-full">
-          {search.workspacePath ? (
+          {workspacePath ? (
             <SettingsPanel
-              disabled={!search.workspacePath}
+              disabled={!workspacePath}
               loading={controller.settingsLoading}
               status={controller.settingsStatus}
               effective={controller.settingsEffective}
@@ -1389,16 +1239,16 @@ const WorkspaceSettingsRouteView = () => {
               }}
               onLayerContentChange={controller.setLayerDraft}
               onRefreshLayers={() => {
-                void refreshSettingsLayers(search.workspacePath);
+                void refreshSettingsLayers(workspacePath);
               }}
               onLoadLayer={(layerId) => {
-                void controller.loadSelectedLayer(search.workspacePath, layerId);
+                void controller.loadSelectedLayer(workspacePath, layerId);
               }}
               onSaveLayer={() => {
                 if (!controller.selectedLayerId) {
                   return;
                 }
-                void controller.saveSelectedLayer(search.workspacePath, controller.selectedLayerId);
+                void controller.saveSelectedLayer(workspacePath, controller.selectedLayerId);
               }}
             />
           ) : (
@@ -1590,27 +1440,6 @@ const globalSettingsRoute = createRoute({
   component: GlobalSettingsRouteView,
 });
 
-const workspaceChatRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/workspace/chat",
-  validateSearch: validateWorkspaceRouteSearch,
-  component: WorkspaceChatRouteView,
-});
-
-const workspaceTerminalsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/workspace/terminals",
-  validateSearch: validateWorkspaceOnlySearch,
-  component: WorkspaceTerminalsRouteView,
-});
-
-const workspaceDevtoolsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/workspace/devtools",
-  validateSearch: validateWorkspaceDevtoolsSearch,
-  component: WorkspaceDevtoolsRedirectRouteView,
-});
-
 const sessionDevtoolsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/session/$sessionId/devtools",
@@ -1618,22 +1447,33 @@ const sessionDevtoolsRoute = createRoute({
   component: SessionDevtoolsRouteView,
 });
 
-const workspaceSettingsRoute = createRoute({
+const sessionChatsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/workspace/settings",
-  validateSearch: validateWorkspaceOnlySearch,
-  component: WorkspaceSettingsRouteView,
+  path: "/session/$sessionId/chats",
+  validateSearch: validateSessionChatSearch,
+  component: SessionChatsRouteView,
+});
+
+const sessionTerminalsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/session/$sessionId/terminals",
+  component: SessionTerminalsRouteView,
+});
+
+const sessionSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/session/$sessionId/settings",
+  component: SessionSettingsRouteView,
 });
 
 const routeTree = rootRoute.addChildren([
   quickStartRoute,
   workspacesRoute,
   globalSettingsRoute,
-  workspaceChatRoute,
-  workspaceTerminalsRoute,
-  workspaceDevtoolsRoute,
+  sessionChatsRoute,
+  sessionTerminalsRoute,
   sessionDevtoolsRoute,
-  workspaceSettingsRoute,
+  sessionSettingsRoute,
 ]);
 
 export const createAppRouter = () =>

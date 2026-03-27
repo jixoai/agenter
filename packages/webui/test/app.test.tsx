@@ -635,7 +635,7 @@ describe("Feature: web ui app shell", () => {
     });
   });
 
-  test("Scenario: Given quick start workspace When Enter is pressed Then the app creates a session and navigates into workspace chat", async () => {
+  test("Scenario: Given quick start workspace When Enter is pressed Then the app creates a session and navigates into session chats", async () => {
     const workspacePath = "/repo/quickstart";
     mockState = {
       ...createState(),
@@ -658,9 +658,7 @@ describe("Feature: web ui app shell", () => {
 
     await waitFor(() => {
       expect(createSessionMock).toHaveBeenCalledWith({ cwd: workspacePath, autoStart: true });
-      expect(window.location.pathname).toBe("/workspace/chat");
-      expect(window.location.search).toContain(`workspacePath=${encodeURIComponent(workspacePath)}`);
-      expect(window.location.search).toContain("sessionId=session-enter");
+      expect(window.location.pathname).toBe("/session/session-enter/chats");
     });
   });
 
@@ -896,7 +894,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(sessionId)}&chatId=${encodeURIComponent(chatId)}`,
+      `/session/${encodeURIComponent(sessionId)}/chats?chatId=${encodeURIComponent(chatId)}`,
     );
 
     mockState = {
@@ -986,7 +984,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(sessionId)}&chatId=${encodeURIComponent(chatId)}`,
+      `/session/${encodeURIComponent(sessionId)}/chats?chatId=${encodeURIComponent(chatId)}`,
     );
 
     mockState = {
@@ -1083,7 +1081,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(sessionId)}&chatId=${encodeURIComponent(mainChannel.chatId)}`,
+      `/session/${encodeURIComponent(sessionId)}/chats?chatId=${encodeURIComponent(mainChannel.chatId)}`,
     );
 
     mockState = {
@@ -1312,7 +1310,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(firstSessionId)}&chatId=${encodeURIComponent(chatId)}`,
+      `/session/${encodeURIComponent(firstSessionId)}/chats?chatId=${encodeURIComponent(chatId)}`,
     );
 
     mockState = {
@@ -1435,7 +1433,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(secondSessionId)}&chatId=${encodeURIComponent(chatId)}`,
+      `/session/${encodeURIComponent(secondSessionId)}/chats?chatId=${encodeURIComponent(chatId)}`,
     );
     fireEvent.popState(window);
 
@@ -1701,7 +1699,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(sessionId)}`,
+      `/session/${encodeURIComponent(sessionId)}/chats`,
     );
     fireEvent.popState(window);
 
@@ -1712,8 +1710,7 @@ describe("Feature: web ui app shell", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Terminals" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/workspace/terminals");
-      expect(window.location.search).toContain(`sessionId=${encodeURIComponent(sessionId)}`);
+      expect(window.location.pathname).toBe(`/session/${encodeURIComponent(sessionId)}/terminals`);
     });
     expect(screen.getByTestId("workspace-basename-chip")).toHaveAttribute("title", workspacePath);
     expect(screen.getByTestId("workspace-basename-chip")).toHaveTextContent("demo");
@@ -1721,7 +1718,7 @@ describe("Feature: web ui app shell", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
 
     await waitFor(() => {
-      expect(window.location.search).toContain(`sessionId=${encodeURIComponent(sessionId)}`);
+      expect(window.location.pathname).toBe(`/session/${encodeURIComponent(sessionId)}/settings`);
     });
     expect(screen.getByTestId("workspace-basename-chip")).toHaveAttribute("title", workspacePath);
     expect(screen.getByTestId("workspace-basename-chip")).toHaveTextContent("demo");
@@ -1810,7 +1807,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(runningSessionId)}`,
+      `/session/${encodeURIComponent(runningSessionId)}/chats`,
     );
     fireEvent.popState(window);
 
@@ -1823,7 +1820,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(stoppedSessionId)}`,
+      `/session/${encodeURIComponent(stoppedSessionId)}/chats`,
     );
     fireEvent.popState(window);
 
@@ -1895,7 +1892,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent(workspacePath)}&sessionId=${encodeURIComponent(pausedSessionId)}`,
+      `/session/${encodeURIComponent(pausedSessionId)}/chats`,
     );
     fireEvent.popState(window);
 
@@ -2000,7 +1997,7 @@ describe("Feature: web ui app shell", () => {
     window.history.replaceState(
       null,
       "",
-      `/workspace/chat?workspacePath=${encodeURIComponent("/repo/demo")}&sessionId=${encodeURIComponent(sessionId)}`,
+      `/session/${encodeURIComponent(sessionId)}/chats`,
     );
     fireEvent.popState(window);
 

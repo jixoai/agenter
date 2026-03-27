@@ -21,18 +21,49 @@ import {
 import { ShellLayoutProvider } from "./shell-layout-context";
 import { useAdaptiveViewport } from "./useAdaptiveViewport";
 
-const SESSION_DEVTOOLS_PATH_RE = /^\/session\/([^/]+)\/devtools$/;
+const SESSION_ROUTE_PATH_RE = /^\/session\/([^/]+)\/(chats|terminals|devtools|settings)$/;
 
 const extractSessionIdFromPath = (pathname: string): string | undefined => {
-  const match = SESSION_DEVTOOLS_PATH_RE.exec(pathname);
+  const match = SESSION_ROUTE_PATH_RE.exec(pathname);
   return match?.[1];
 };
 
-const isSessionDevtoolsPath = (pathname: string): boolean => SESSION_DEVTOOLS_PATH_RE.test(pathname);
+const isSessionRoutePath = (pathname: string): boolean => SESSION_ROUTE_PATH_RE.test(pathname);
+
+const isSessionDevtoolsPath = (pathname: string): boolean => {
+  const match = SESSION_ROUTE_PATH_RE.exec(pathname);
+  return match?.[2] === "devtools";
+};
+
+const resolveSessionTabPath = (pathname: string): "/chats" | "/terminals" | "/devtools" | "/settings" => {
+  const match = SESSION_ROUTE_PATH_RE.exec(pathname);
+  const tab = match?.[2];
+  if (tab === "terminals") {
+    return "/terminals";
+  }
+  if (tab === "devtools") {
+    return "/devtools";
+  }
+  if (tab === "settings") {
+    return "/settings";
+  }
+  return "/chats";
+};
 
 const routeLabelFromPath = (pathname: string): string => {
-  if (isSessionDevtoolsPath(pathname)) {
-    return "Devtools";
+  const sessionMatch = SESSION_ROUTE_PATH_RE.exec(pathname);
+  if (sessionMatch) {
+    const tab = sessionMatch[2];
+    if (tab === "terminals") {
+      return "Terminals";
+    }
+    if (tab === "settings") {
+      return "Settings";
+    }
+    if (tab === "devtools") {
+      return "Devtools";
+    }
+    return "Chats";
   }
   if (pathname.startsWith("/workspace/")) {
     return "Workspace";
@@ -41,18 +72,6 @@ const routeLabelFromPath = (pathname: string): string => {
     return "Workspaces";
   }
   if (pathname === "/settings") {
-    return "Settings";
-  }
-  if (pathname === "/workspace/terminals") {
-    return "Terminals";
-  }
-  if (pathname === "/workspace/chat") {
-    return "Chats";
-  }
-  if (pathname === "/workspace/devtools") {
-    return "Devtools";
-  }
-  if (pathname === "/workspace/settings") {
     return "Settings";
   }
   return "Quick Start";
@@ -99,9 +118,7 @@ export const AppRoot = () => {
   const unreadTotal = useRuntimeSelector(selectUnreadTotal);
   const hydrateSession = controller.hydrateSession;
 
-  const searchParams =
-    typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-  const routeSessionId = extractSessionIdFromPath(location.pathname) ?? searchParams.get("sessionId") ?? undefined;
+  const routeSessionId = extractSessionIdFromPath(location.pathname) ?? undefined;
   const routeSession = useRuntimeSelector(selectSessionChromeState(routeSessionId), equalSessionChromeState);
   const routeRuntime = useRuntimeSelector(selectHeaderRuntimeState(routeSessionId), equalHeaderRuntimeState);
   const runningSessionStates = useRuntimeSelector(selectRunningSessionsState, equalRunningSessionsState);
@@ -156,8 +173,9 @@ export const AppRoot = () => {
         active: session.sessionId === routeSessionId,
         unreadCount: session.unreadCount,
         status: session.status,
-        onSelect: () => {
-          if (isSessionDevtoolsPath(location.pathname)) {
+          onSelect: () => {
+          const targetTabPath = resolveSessionTabPath(location.pathname);
+          if (targetTabPath === "/devtools") {
             void navigate({
               to: "/session/$sessionId/devtools",
               params: { sessionId: session.sessionId },
@@ -166,15 +184,26 @@ export const AppRoot = () => {
             setMobileSidebarOpen(false);
             return;
           }
-          const targetRoute =
-            location.pathname === "/workspace/terminals"
-              ? "/workspace/terminals"
-              : location.pathname === "/workspace/settings"
-                ? "/workspace/settings"
-                : "/workspace/chat";
+          if (targetTabPath === "/terminals") {
+            void navigate({
+              to: "/session/$sessionId/terminals",
+              params: { sessionId: session.sessionId },
+            });
+            setMobileSidebarOpen(false);
+            return;
+          }
+          if (targetTabPath === "/settings") {
+            void navigate({
+              to: "/session/$sessionId/settings",
+              params: { sessionId: session.sessionId },
+            });
+            setMobileSidebarOpen(false);
+            return;
+          }
           void navigate({
-            to: targetRoute,
-            search: { workspacePath: session.workspacePath, sessionId: session.sessionId, chatId: undefined },
+            to: "/session/$sessionId/chats",
+            params: { sessionId: session.sessionId },
+            search: {},
           });
           setMobileSidebarOpen(false);
         },
@@ -192,7 +221,7 @@ export const AppRoot = () => {
 
   const showGlobalNotice =
     controller.notice.length > 0 && (location.pathname === "/" || location.pathname === "/workspaces");
-  const isWorkspaceRoute = location.pathname.startsWith("/workspace/") || isSessionDevtoolsPath(location.pathname);
+  const isWorkspaceRoute = isSessionRoutePath(location.pathname);
   const showSidebarRail = adaptiveViewport.globalNavMode === "rail";
   const showDrawerTrigger = adaptiveViewport.globalNavMode === "drawer";
   const headerAiStatus = resolveHeaderAiStatus(routeSession, routeRuntime);
