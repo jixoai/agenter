@@ -7,6 +7,7 @@ import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/asyn
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { ToolInvocationCard, type ToolInvocationView } from "../../components/ui/tool-invocation-card";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
@@ -72,6 +73,49 @@ const toPayload = (value: unknown): ToolInvocationView["call"] => {
   };
 };
 
+const parseJsonLoose = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const toInvocationFromTerminalIo = (item: TerminalActivityItem): ToolInvocationView | null => {
+  if (item.kind !== "terminal_read" && item.kind !== "terminal_write") {
+    return null;
+  }
+  if (item.kind === "terminal_read") {
+    return {
+      invocationId: `terminal-activity-${item.id}`,
+      toolName: "terminal_read",
+      status: "success",
+      startedAt: item.createdAt,
+      finishedAt: item.createdAt,
+      result: {
+        value: parseJsonLoose(item.content),
+        rawText: item.content,
+      },
+    };
+  }
+  return {
+    invocationId: `terminal-activity-${item.id}`,
+    toolName: "terminal_write",
+    status: "success",
+    startedAt: item.createdAt,
+    finishedAt: item.createdAt,
+    call: {
+      value: item.content,
+      rawText: item.content,
+    },
+    result: item.detail
+      ? {
+          value: item.detail,
+        }
+      : undefined,
+  };
+};
+
 const hasToolLikeTitle = (title: string): boolean => /tool[\s_-]?(call|result)/i.test(title);
 
 const shouldUseLegacyToolFallback = (item: TerminalActivityItem): boolean =>
@@ -115,6 +159,10 @@ const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvo
 };
 
 const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
+  const ioInvocation = toInvocationFromTerminalIo(item);
+  if (ioInvocation) {
+    return ioInvocation;
+  }
   if (item.kind === "message" && item.channel === "tool" && item.tool) {
     return {
       invocationId: item.tool.invocationId,
@@ -144,10 +192,6 @@ const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationVie
 };
 
 const renderActivityBody = (item: TerminalActivityItem) => {
-  const invocation = toInvocationFromActivity(item);
-  if (invocation) {
-    return <ToolInvocationCard invocation={invocation} className="bg-white" />;
-  }
   if (item.kind === "message") {
     return (
       <AssistantMarkdown
@@ -168,6 +212,24 @@ const renderActivityBody = (item: TerminalActivityItem) => {
       density="compact"
       padding="compact"
     />
+  );
+};
+
+const renderActivityRow = (item: TerminalActivityItem) => {
+  const invocation = toInvocationFromActivity(item);
+  if (invocation) {
+    return <ToolInvocationCard key={item.id} invocation={invocation} className="bg-white" />;
+  }
+  return (
+    <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        {item.kind === "message" ? <MessageSquareText className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
+        <span>{item.title}</span>
+        <Badge variant="secondary">{item.kind}</Badge>
+        {item.cycleId ? <Badge variant="secondary">cycle {item.cycleId}</Badge> : null}
+      </div>
+      {renderActivityBody(item)}
+    </article>
   );
 };
 
@@ -197,6 +259,10 @@ export const TerminalActivityPanel = ({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="typo-title-3 text-slate-900">Activity</h3>
+            <HelpHint
+              textContext="Server-backed terminal activity scoped by session and terminal id."
+              content="Server-backed terminal activity scoped by session and terminal id."
+            />
             <Badge variant="secondary">{terminalId}</Badge>
             {terminalRead ? <Badge variant="secondary">latest read</Badge> : null}
             {items.length > 0 ? <Badge variant="secondary">{items.length} items</Badge> : null}
@@ -205,9 +271,6 @@ export const TerminalActivityPanel = ({
             {loading || loadingOlder ? "Loading..." : hasMore ? "Load older" : "Complete"}
           </Button>
         </div>
-        <p className="mt-1 text-[11px] text-slate-500">
-          Server-backed terminal activity scoped by session and terminal id.
-        </p>
       </div>
 
       <AsyncSurface
@@ -249,8 +312,9 @@ export const TerminalActivityPanel = ({
                     if (!item) {
                       return null;
                     }
+                    const invocation = toInvocationFromActivity(item);
                     return (
-                      <article
+                      <div
                         key={item.id}
                         data-index={row.index}
                         ref={(node) => {
@@ -263,34 +327,30 @@ export const TerminalActivityPanel = ({
                           transform: `translateY(${row.start}px)`,
                         }}
                       >
-                        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          {item.kind === "message" ? (
-                            <MessageSquareText className="h-3.5 w-3.5" />
-                          ) : (
-                            <Wrench className="h-3.5 w-3.5" />
-                          )}
-                          <span>{item.title}</span>
-                          <Badge variant="secondary">{item.kind}</Badge>
-                          {item.cycleId ? <Badge variant="secondary">cycle {item.cycleId}</Badge> : null}
-                        </div>
-                        {renderActivityBody(item)}
-                      </article>
+                        {invocation ? (
+                          <ToolInvocationCard invocation={invocation} className="bg-white" />
+                        ) : (
+                          <>
+                            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              {item.kind === "message" ? (
+                                <MessageSquareText className="h-3.5 w-3.5" />
+                              ) : (
+                                <Wrench className="h-3.5 w-3.5" />
+                              )}
+                              <span>{item.title}</span>
+                              <Badge variant="secondary">{item.kind}</Badge>
+                              {item.cycleId ? <Badge variant="secondary">cycle {item.cycleId}</Badge> : null}
+                            </div>
+                            {renderActivityBody(item)}
+                          </>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {items.map((item) => (
-                    <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {item.kind === "message" ? <MessageSquareText className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
-                        <span>{item.title}</span>
-                        <Badge variant="secondary">{item.kind}</Badge>
-                        {item.cycleId ? <Badge variant="secondary">cycle {item.cycleId}</Badge> : null}
-                      </div>
-                      {renderActivityBody(item)}
-                    </article>
-                  ))}
+                  {items.map((item) => renderActivityRow(item))}
                 </div>
               )
             ) : null}

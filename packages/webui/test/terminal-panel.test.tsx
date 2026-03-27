@@ -239,8 +239,7 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.getAllByText("terminal_read").length).toBeGreaterThan(0);
     expect(screen.getByText("terminal_get_config")).toBeInTheDocument();
     expect(screen.getByText("terminal_snapshot")).toBeInTheDocument();
-    expect(screen.queryByText("Call")).not.toBeInTheDocument();
-    expect(screen.queryByText("waiting")).not.toBeInTheDocument();
+    expect(screen.getAllByText("success").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Result").length).toBeGreaterThan(0);
     expect(container.textContent).toContain("status: waiting");
     expect(screen.queryByText("other-terminal")).not.toBeInTheDocument();
