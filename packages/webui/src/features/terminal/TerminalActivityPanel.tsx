@@ -8,8 +8,10 @@ import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
+import { ToolInvocationCard, type ToolInvocationView } from "../../components/ui/tool-invocation-card";
 import { observeElementOffsetWithCleanup } from "../../lib/virtualizer";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
+import { parseToolPayload } from "../chat/tool-payload";
 
 interface TerminalActivityPanelProps {
   terminalId: string;
@@ -28,7 +30,39 @@ const renderTerminalRead = (terminalRead: NonNullable<TerminalActivityPanelProps
   return ["```json", JSON.stringify(terminalRead, null, 2), "```"].join("\n");
 };
 
+const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationView | null => {
+  if (item.kind !== "message" || (item.channel !== "tool_call" && item.channel !== "tool_result")) {
+    return null;
+  }
+  const parsed = parseToolPayload(item.content, item.tool?.name);
+  const payload = {
+    value: parsed.data ?? parsed.body,
+    rawText: parsed.body,
+  };
+  const invocation: ToolInvocationView = {
+    invocationId: `terminal-activity:${item.id}`,
+    toolName: parsed.toolName,
+    status: item.channel === "tool_result" ? (item.tool?.ok === false ? "failed" : "success") : "running",
+    startedAt: item.createdAt,
+    ...(item.channel === "tool_call" ? { call: payload } : { result: payload, finishedAt: item.createdAt }),
+  };
+  if (item.channel === "tool_result" && item.tool?.ok === false) {
+    const error =
+      typeof parsed.data === "object" && parsed.data !== null && typeof (parsed.data as { error?: unknown }).error === "string"
+        ? (parsed.data as { error: string }).error
+        : null;
+    if (error && error.trim().length > 0) {
+      invocation.error = error.trim();
+    }
+  }
+  return invocation;
+};
+
 const renderActivityBody = (item: TerminalActivityItem) => {
+  const invocation = toInvocationFromActivity(item);
+  if (invocation) {
+    return <ToolInvocationCard invocation={invocation} className="bg-white" />;
+  }
   if (item.kind === "message") {
     return (
       <AssistantMarkdown

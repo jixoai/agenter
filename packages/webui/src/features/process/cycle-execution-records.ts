@@ -1,8 +1,7 @@
 import type { RuntimeChatCycle, RuntimeChatMessage } from "@agenter/client-sdk";
 
-import { buildToolMeta, parseToolPayload } from "../chat/tool-payload";
-
-type ToolTraceStatus = "calling" | "done" | "failed";
+import type { ToolInvocationView } from "../../components/ui/tool-invocation-card";
+import { parseToolPayload } from "../chat/tool-payload";
 
 export type CycleExecutionRecord =
   | {
@@ -12,15 +11,8 @@ export type CycleExecutionRecord =
     }
   | {
       key: string;
-      kind: "tool-trace";
-      toolTrace: {
-        id: string;
-        toolName: string;
-        status: ToolTraceStatus;
-        meta?: string | null;
-        callContent?: string;
-        resultContent?: string;
-      };
+      kind: "tool-invocation";
+      invocation: ToolInvocationView;
     };
 
 const compareMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
@@ -30,65 +22,67 @@ const compareMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): nu
   return left.id.localeCompare(right.id);
 };
 
-const parseLiveToolTraceId = (messageId: string): string | null => {
+const parseLiveToolInvocationId = (messageId: string): string | null => {
   const match = /^live-tool-(?:call|result):(.+)$/.exec(messageId);
   return match?.[1] ?? null;
 };
 
-const resolveToolName = (message: RuntimeChatMessage): string => {
-  return parseToolPayload(message.content, message.tool?.name).toolName;
+const resolveInvocationStatus = (message: RuntimeChatMessage): ToolInvocationView["status"] => {
+  if (message.channel !== "tool_result") {
+    return "running";
+  }
+  return message.tool?.ok === false ? "failed" : "success";
 };
 
-const resolveToolTraceIdentity = (message: RuntimeChatMessage): string | null => {
-  const liveId = parseLiveToolTraceId(message.id);
+const resolveInvocationIdentity = (message: RuntimeChatMessage): string | null => {
+  const liveId = parseLiveToolInvocationId(message.id);
   if (liveId) {
     return liveId;
   }
-
   const parsed = parseToolPayload(message.content, message.tool?.name);
   if (parsed.timestamp) {
     return `${parsed.toolName}:${parsed.timestamp}`;
   }
-
   return null;
 };
 
-const resolveToolTraceStatus = (message: RuntimeChatMessage): ToolTraceStatus => {
-  if (message.channel !== "tool_result") {
-    return "calling";
-  }
-  return message.tool?.ok === false ? "failed" : "done";
-};
-
-const isToolTraceMessage = (message: RuntimeChatMessage): boolean => {
+const isToolInvocationMessage = (message: RuntimeChatMessage): boolean => {
   return message.channel === "tool_call" || message.channel === "tool_result";
 };
 
 const collectExecutionMessages = (cycle: RuntimeChatCycle): RuntimeChatMessage[] =>
   [...cycle.outputs, ...cycle.liveMessages].filter((message) => message.channel !== "to_user").sort(compareMessage);
 
-const findLatestOpenToolTrace = (records: CycleExecutionRecord[], toolName: string): number => {
+const findLatestOpenInvocation = (records: CycleExecutionRecord[], toolName: string): number => {
   for (let index = records.length - 1; index >= 0; index -= 1) {
     const record = records[index];
-    if (!record || record.kind !== "tool-trace") {
+    if (!record || record.kind !== "tool-invocation") {
       continue;
     }
-    if (record.toolTrace.toolName !== toolName) {
+    if (record.invocation.toolName !== toolName) {
       continue;
     }
-    if (!record.toolTrace.resultContent) {
+    if (!record.invocation.result) {
       return index;
     }
   }
   return -1;
 };
 
+const toPayload = (content: string): { value: unknown; rawText: string } => {
+  const parsed = parseToolPayload(content);
+  return {
+    value: parsed.data ?? parsed.body,
+    rawText: parsed.body,
+  };
+};
+
 export const normalizeCycleExecutionRecords = (cycle: RuntimeChatCycle): CycleExecutionRecord[] => {
   const records: CycleExecutionRecord[] = [];
-  const toolTraceIndexByIdentity = new Map<string, number>();
+  const invocationIndexByIdentity = new Map<string, number>();
 
   for (const message of collectExecutionMessages(cycle)) {
-    if (!isToolTraceMessage(message)) {
+    if (!isToolInvocationMessage(message)) {
       records.push({
         key: `message:${message.id}`,
         kind: "message",
@@ -99,36 +93,41 @@ export const normalizeCycleExecutionRecords = (cycle: RuntimeChatCycle): CycleEx
 
     const parsed = parseToolPayload(message.content, message.tool?.name);
     const toolName = parsed.toolName;
-    const toolTraceId = resolveToolTraceIdentity(message);
-    const exactIndex = toolTraceId ? (toolTraceIndexByIdentity.get(toolTraceId) ?? -1) : -1;
-    const fallbackIndex = exactIndex >= 0 ? exactIndex : findLatestOpenToolTrace(records, toolName);
+    const invocationId = resolveInvocationIdentity(message);
+    const exactIndex = invocationId ? (invocationIndexByIdentity.get(invocationId) ?? -1) : -1;
+    const fallbackIndex = exactIndex >= 0 ? exactIndex : findLatestOpenInvocation(records, toolName);
     const recordIndex = fallbackIndex >= 0 ? fallbackIndex : records.length;
 
     const current =
-      fallbackIndex >= 0 && records[recordIndex]?.kind === "tool-trace"
+      fallbackIndex >= 0 && records[recordIndex]?.kind === "tool-invocation"
         ? records[recordIndex]
         : ({
-            key: `tool-trace:${toolTraceId ?? `${toolName}:${message.id}`}`,
-            kind: "tool-trace",
-            toolTrace: {
-              id: toolTraceId ?? `${toolName}:${message.id}`,
+            key: `tool-invocation:${invocationId ?? `${toolName}:${message.id}`}`,
+            kind: "tool-invocation",
+            invocation: {
+              invocationId: invocationId ?? `${toolName}:${message.id}`,
               toolName,
-              status: "calling" as ToolTraceStatus,
-              meta: buildToolMeta(parsed),
+              status: "running",
+              startedAt: message.timestamp,
             },
           } satisfies CycleExecutionRecord);
 
-    if (current.kind !== "tool-trace") {
+    if (current.kind !== "tool-invocation") {
       continue;
     }
 
-    current.toolTrace.meta ??= buildToolMeta(parsed);
-    current.toolTrace.status = resolveToolTraceStatus(message);
-
+    current.invocation.status = resolveInvocationStatus(message);
     if (message.channel === "tool_call") {
-      current.toolTrace.callContent = message.content;
+      current.invocation.call = toPayload(message.content);
     } else {
-      current.toolTrace.resultContent = message.content;
+      current.invocation.result = toPayload(message.content);
+      current.invocation.finishedAt = message.timestamp;
+      if (message.tool?.ok === false && typeof parsed.data === "object" && parsed.data !== null) {
+        const maybeError = (parsed.data as { error?: unknown }).error;
+        if (typeof maybeError === "string" && maybeError.trim().length > 0) {
+          current.invocation.error = maybeError.trim();
+        }
+      }
     }
 
     if (fallbackIndex >= 0) {
@@ -137,8 +136,8 @@ export const normalizeCycleExecutionRecords = (cycle: RuntimeChatCycle): CycleEx
       records.push(current);
     }
 
-    if (toolTraceId) {
-      toolTraceIndexByIdentity.set(toolTraceId, recordIndex);
+    if (invocationId) {
+      invocationIndexByIdentity.set(invocationId, recordIndex);
     }
   }
 

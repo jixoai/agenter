@@ -12,6 +12,7 @@ import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Badge } from "../../components/ui/badge";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { Tabs } from "../../components/ui/tabs";
+import { ToolInvocationCard } from "../../components/ui/tool-invocation-card";
 import { AssistantMarkdown } from "../chat/AssistantMarkdown";
 import {
   EMPTY_RUNTIME_ATTENTION_STATE,
@@ -527,11 +528,9 @@ const HookOutcomeCard = ({
 };
 
 const ExecutionRecordCard = ({ record }: { record: CycleExecutionRecord }) => {
-  if (record.kind === "tool-trace") {
+  if (record.kind === "tool-invocation") {
     return (
-      <article className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-        <AssistantMarkdown content="" toolTrace={record.toolTrace} />
-      </article>
+      <ToolInvocationCard invocation={record.invocation} />
     );
   }
 

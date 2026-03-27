@@ -13,6 +13,7 @@ import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
+import { ToolInvocationCard } from "../../components/ui/tool-invocation-card";
 import type { LongListPagingState } from "../../shared/long-list-paging";
 import { ToolStructuredView } from "../chat/tool-structured-view";
 import { buildHistoryMessages, buildLatestCallView, buildLatestTools, formatTimestamp } from "./model-debug";
@@ -523,25 +524,26 @@ export const ModelPanel = ({
                           {latestTools.length === 0 ? (
                             <EmptyCard message="No tools were attached to the latest request." />
                           ) : (
-                            <Accordion type="single" collapsible>
+                            <div className="space-y-3">
                               {latestTools.map((tool) => (
-                                <AccordionItem key={tool.key} value={tool.key} className="border-slate-200">
-                                  <AccordionTrigger className="py-2 hover:no-underline">
-                                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                                      <span className="truncate text-xs font-medium text-slate-900">{tool.title}</span>
-                                      {tool.description ? (
-                                        <span className="truncate text-[11px] text-slate-500">{tool.description}</span>
-                                      ) : null}
-                                    </span>
-                                  </AccordionTrigger>
-                                  <AccordionContent>
-                                    <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/80">
-                                      <ToolStructuredView value={tool.value} />
-                                    </div>
-                                  </AccordionContent>
-                                </AccordionItem>
+                                <div key={tool.key} className="space-y-1.5">
+                                  <ToolInvocationCard
+                                    invocation={{
+                                      invocationId: `model-tool:${tool.key}`,
+                                      toolName: tool.title,
+                                      status: "waiting",
+                                      call: {
+                                        value: tool.value,
+                                      },
+                                    }}
+                                    className="bg-white"
+                                  />
+                                  {tool.description ? (
+                                    <p className="px-1 text-[11px] text-slate-500">{tool.description}</p>
+                                  ) : null}
+                                </div>
                               ))}
-                            </Accordion>
+                            </div>
                           )}
                         </CardContent>
                       </Card>

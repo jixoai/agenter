@@ -131,7 +131,7 @@ export const RichModelDebug: Story = {
     await userEvent.click(canvas.getByRole("tab", { name: "Latest" }));
     await expect(canvas.getByRole("tab", { name: "Request" })).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("tab", { name: "Tools" }));
-    await expect(canvas.getByText("Read terminal snapshot.")).toBeInTheDocument();
+    await expect((await canvas.findAllByText("Read terminal snapshot.")).length).toBeGreaterThan(0);
 
     await userEvent.click(canvas.getByRole("tab", { name: "History" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Calls" }));

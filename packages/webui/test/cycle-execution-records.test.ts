@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { normalizeCycleExecutionRecords } from "../src/features/process/cycle-execution-records";
 
 describe("Feature: cycle execution records", () => {
-  test("Scenario: Given tool call and result messages When execution records are normalized Then they collapse into one tool trace", () => {
+  test("Scenario: Given tool call and result messages When execution records are normalized Then they collapse into one tool invocation card model", () => {
     const records = normalizeCycleExecutionRecords({
       id: "cycle:11",
       cycleId: 11,
@@ -68,17 +68,17 @@ describe("Feature: cycle execution records", () => {
 
     expect(records).toHaveLength(2);
     expect(records[0]).toMatchObject({
-      kind: "tool-trace",
-      toolTrace: {
+      kind: "tool-invocation",
+      invocation: {
         toolName: "terminal_read",
-        status: "done",
+        status: "success",
       },
     });
-    if (records[0]?.kind !== "tool-trace") {
-      throw new Error("expected tool trace record");
+    if (records[0]?.kind !== "tool-invocation") {
+      throw new Error("expected tool invocation record");
     }
-    expect(records[0].toolTrace.callContent).toContain("yaml+tool_call");
-    expect(records[0].toolTrace.resultContent).toContain("yaml+tool_result");
+    expect(records[0].invocation.call?.rawText).toContain("tool: terminal_read");
+    expect(records[0].invocation.result?.rawText).toContain("tool: terminal_read");
     expect(records[1]).toMatchObject({
       kind: "message",
       message: {

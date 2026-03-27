@@ -296,7 +296,7 @@ export const CycleDetailsStayInDevtools: Story = {
     await userEvent.click(canvas.getByRole("tab", { name: /Effects/i }));
     await expect(canvas.getByText(/Visible delivery/i)).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("tab", { name: /Evidence/i }));
-    await expect(canvas.getByText(/terminal_read/i)).toBeInTheDocument();
+    await expect((await canvas.findAllByText(/terminal_read/i)).length).toBeGreaterThan(0);
   },
 };
 

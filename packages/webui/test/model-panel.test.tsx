@@ -129,7 +129,7 @@ describe("Feature: model panel", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Tools" }));
     expect(screen.getByText("AI tools")).toBeInTheDocument();
-    expect(screen.getByText("Read terminal snapshot.")).toBeInTheDocument();
+    expect(screen.getAllByText("Read terminal snapshot.").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
     fireEvent.click(screen.getByRole("tab", { name: "Context" }));
