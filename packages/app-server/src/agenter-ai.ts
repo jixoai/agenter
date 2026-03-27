@@ -116,6 +116,80 @@ interface AttentionGateway {
 }
 
 interface MessageGateway {
+  listChannels: (input?: {
+    includeArchived?: boolean;
+  }) =>
+    | Array<{
+        chatId: string;
+        kind: "direct" | "room";
+        title: string;
+        owner: string;
+        contextId?: string;
+        participants: Array<{
+          id: string;
+          label?: string;
+          role?: "avatar" | "user" | "system";
+        }>;
+        metadata?: Record<string, unknown>;
+        focused: boolean;
+        archivedAt?: number;
+        archivedBy?: string;
+      }>
+    | Promise<
+        Array<{
+          chatId: string;
+          kind: "direct" | "room";
+          title: string;
+          owner: string;
+          contextId?: string;
+          participants: Array<{
+            id: string;
+            label?: string;
+            role?: "avatar" | "user" | "system";
+          }>;
+          metadata?: Record<string, unknown>;
+          focused: boolean;
+          archivedAt?: number;
+          archivedBy?: string;
+        }>
+      >;
+  getChannel: (input: { chatId: string; includeArchived?: boolean }) =>
+    | {
+        chatId: string;
+        kind: "direct" | "room";
+        title: string;
+        owner: string;
+        contextId?: string;
+        participants: Array<{
+          id: string;
+          label?: string;
+          role?: "avatar" | "user" | "system";
+        }>;
+        metadata?: Record<string, unknown>;
+        focused: boolean;
+        archivedAt?: number;
+        archivedBy?: string;
+      }
+    | null
+    | Promise<
+        | {
+            chatId: string;
+            kind: "direct" | "room";
+            title: string;
+            owner: string;
+            contextId?: string;
+            participants: Array<{
+              id: string;
+              label?: string;
+              role?: "avatar" | "user" | "system";
+            }>;
+            metadata?: Record<string, unknown>;
+            focused: boolean;
+            archivedAt?: number;
+            archivedBy?: string;
+          }
+        | null
+      >;
   send: (input: {
     chatId: string;
     content: string;
@@ -1585,6 +1659,71 @@ export class AgenterAI {
         })
       : null;
 
+    const messageChannelSchema = z.object({
+      chatId: z.string(),
+      kind: z.enum(["direct", "room"]),
+      title: z.string(),
+      owner: z.string(),
+      contextId: z.string().optional(),
+      participants: z.array(
+        z.object({
+          id: z.string(),
+          label: z.string().optional(),
+          role: z.enum(["avatar", "user", "system"]).optional(),
+        }),
+      ),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      focused: z.boolean(),
+      archivedAt: z.number().optional(),
+      archivedBy: z.string().optional(),
+    });
+
+    const messageChannelListTool = this.deps.messageGateway
+      ? toolDefinition({
+          name: "message_channel_list",
+          description: this.runtimeText.t("tool.message_channel_list.description"),
+          inputSchema: z.object({
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channels: z.array(messageChannelSchema),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_channel_list", input, async () => ({
+            channels: await this.deps.messageGateway!.listChannels(input),
+          }));
+        })
+      : null;
+
+    const messageChannelGetTool = this.deps.messageGateway
+      ? toolDefinition({
+          name: "message_channel_get",
+          description: this.runtimeText.t("tool.message_channel_get.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channel: messageChannelSchema.nullable(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_channel_get", input, async () => ({
+            channel: await this.deps.messageGateway!.getChannel(input),
+          }));
+        })
+      : null;
+
     const terminalProcessProfileSchema = z.object({
       command: z.array(z.string()).optional(),
       cwd: z.string().optional(),
@@ -1992,6 +2131,8 @@ export class AgenterAI {
       attentionContextListTool,
       attentionQueryTool,
       attentionCommitTool,
+      ...(messageChannelListTool ? [messageChannelListTool] : []),
+      ...(messageChannelGetTool ? [messageChannelGetTool] : []),
       ...(messageSendTool ? [messageSendTool] : []),
       listTool,
       createTool,

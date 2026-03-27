@@ -10,6 +10,8 @@ export const RUNTIME_TEXT_KEYS = [
   "tool.attention_context_list.description",
   "tool.attention_query.description",
   "tool.attention_commit.description",
+  "tool.message_channel_list.description",
+  "tool.message_channel_get.description",
   "tool.message_send.description",
   "tool.terminal_list.description",
   "tool.terminal_create.description",

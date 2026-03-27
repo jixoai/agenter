@@ -1,6 +1,6 @@
 import type { DraftResolutionOutput, WorkspaceSessionEntry } from "@agenter/client-sdk";
-import { FolderSearch, PlayCircle } from "lucide-react";
-import { useState } from "react";
+import { FolderSearch, Pencil, PlayCircle, Plus, Settings2, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
@@ -9,6 +9,13 @@ import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
 import { AIInput, type AIInputSuggestion, type AIInputSubmitPayload } from "../chat/AIInput";
 import { SessionItem } from "../workspaces/SessionItem";
+import { QuickstartRoomConfigDialog } from "./quickstart-room-config-dialog";
+import { QuickstartTerminalConfigDialog } from "./quickstart-terminal-config-dialog";
+import {
+  DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
+  type QuickstartBootstrapConfig,
+  type QuickstartTerminalConfig,
+} from "./quickstart-bootstrap-types";
 
 interface QuickStartViewProps {
   workspacePath: string;
@@ -16,8 +23,11 @@ interface QuickStartViewProps {
   recentSessions: WorkspaceSessionEntry[];
   loadingDraft: boolean;
   starting: boolean;
+  bootstrapConfig?: QuickstartBootstrapConfig;
+  bootstrapLoading?: boolean;
   onOpenWorkspacePicker: () => void;
   onEnterWorkspace: () => void;
+  onSaveBootstrapConfig?: (config: QuickstartBootstrapConfig) => Promise<void>;
   onSubmit: (payload: AIInputSubmitPayload) => Promise<void>;
   onSearchPaths: (input: { cwd: string; query: string; limit?: number }) => Promise<AIInputSuggestion[]>;
   onResumeSession: (sessionId: string) => void;
@@ -29,13 +39,22 @@ export const QuickStartView = ({
   recentSessions,
   loadingDraft,
   starting,
+  bootstrapConfig = DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
+  bootstrapLoading = false,
   onOpenWorkspacePicker,
   onEnterWorkspace,
+  onSaveBootstrapConfig,
   onSubmit,
   onSearchPaths,
   onResumeSession,
 }: QuickStartViewProps) => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false);
+  const [terminalDialogOpen, setTerminalDialogOpen] = useState(false);
+  const [editingTerminalId, setEditingTerminalId] = useState<string | null>(null);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const workspaceScoped = workspacePath.trim().length > 0 && workspacePath !== ".";
   const workspaceReady = workspacePath.trim().length > 0 && workspacePath !== "." && draftResolution !== null;
   const providerLabel = draftResolution
     ? [
@@ -50,6 +69,12 @@ export const QuickStartView = ({
       : "Provider unavailable";
 
   const imageInputCompatible = draftResolution?.modelCapabilities.imageInput ?? false;
+  const activeTerminals = bootstrapConfig.terminals;
+  const editingTerminal = useMemo(
+    () => activeTerminals.find((terminal) => terminal.terminalId === editingTerminalId) ?? null,
+    [activeTerminals, editingTerminalId],
+  );
+  const canEditBootstrap = Boolean(onSaveBootstrapConfig) && workspaceScoped;
   const inputPlaceholder = !workspaceReady
     ? "Choose a workspace before starting a session..."
     : imageInputCompatible
@@ -67,36 +92,162 @@ export const QuickStartView = ({
     </div>
   );
 
+  const persistBootstrapConfig = async (next: QuickstartBootstrapConfig) => {
+    if (!onSaveBootstrapConfig) {
+      return;
+    }
+    setConfigSaving(true);
+    setConfigError(null);
+    try {
+      await onSaveBootstrapConfig(next);
+    } catch (error) {
+      setConfigError(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleSaveTerminal = async (terminal: QuickstartTerminalConfig) => {
+    const nextTerminals = activeTerminals.some((item) => item.terminalId === terminal.terminalId)
+      ? activeTerminals.map((item) => (item.terminalId === terminal.terminalId ? terminal : item))
+      : [...activeTerminals, terminal];
+    await persistBootstrapConfig({
+      ...bootstrapConfig,
+      terminals: nextTerminals,
+    });
+  };
+
+  const handleDeleteTerminal = async (terminalId: string) => {
+    if (!onSaveBootstrapConfig) {
+      return;
+    }
+    try {
+      await persistBootstrapConfig({
+        ...bootstrapConfig,
+        terminals: activeTerminals.filter((terminal) => terminal.terminalId !== terminalId),
+      });
+    } catch {
+      // persistBootstrapConfig already publishes UI error state.
+    }
+  };
+
   return (
     <section className="grid h-full grid-rows-[minmax(0,1fr)]">
       <ScrollViewport data-testid="quickstart-scroll-viewport" className="h-full pr-1">
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4 pb-2">
           <section className="rounded-[1.5rem] bg-white/96 p-4 shadow-sm ring-1 ring-slate-200/80 md:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canEditBootstrap || configSaving || bootstrapLoading}
+                    onClick={() => setRoomDialogOpen(true)}
+                    title="Edit chat-main room metadata"
+                  >
+                    <ButtonLeadingVisual>
+                      <Settings2 className="h-4 w-4" />
+                    </ButtonLeadingVisual>
+                    <ButtonLabel>Room config</ButtonLabel>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canEditBootstrap || configSaving || bootstrapLoading}
+                    onClick={() => {
+                      setEditingTerminalId(null);
+                      setTerminalDialogOpen(true);
+                    }}
+                    title="Add quickstart boot terminal"
+                  >
+                    <ButtonLeadingVisual>
+                      <Plus className="h-4 w-4" />
+                    </ButtonLeadingVisual>
+                    <ButtonLabel>Add terminal</ButtonLabel>
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={onOpenWorkspacePicker} title="Choose workspace">
+                    <ButtonLeadingVisual>
+                      <FolderSearch className="h-4 w-4" />
+                    </ButtonLeadingVisual>
+                    <ButtonLabel>Change</ButtonLabel>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={onEnterWorkspace}
+                    disabled={starting || !workspaceReady}
+                    title="Enter workspace without a first message"
+                  >
+                    <ButtonLeadingVisual>
+                      <PlayCircle className="h-4 w-4" />
+                    </ButtonLeadingVisual>
+                    <ButtonLabel>Enter</ButtonLabel>
+                  </Button>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <h2 className="typo-title-2 text-slate-900">Quick Start</h2>
                 <p className="text-sm text-slate-600">Choose a workspace, then start a new session with one prompt.</p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" onClick={onOpenWorkspacePicker} title="Choose workspace">
-                  <ButtonLeadingVisual>
-                    <FolderSearch className="h-4 w-4" />
-                  </ButtonLeadingVisual>
-                  <ButtonLabel>Change</ButtonLabel>
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={onEnterWorkspace}
-                  disabled={starting || !workspaceReady}
-                  title="Enter workspace without a first message"
-                >
-                  <ButtonLeadingVisual>
-                    <PlayCircle className="h-4 w-4" />
-                  </ButtonLeadingVisual>
-                  <ButtonLabel>Enter</ButtonLabel>
-                </Button>
-              </div>
+              {activeTerminals.length > 0 ? (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Boot terminals</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeTerminals.map((terminal) => (
+                      <div
+                        key={terminal.terminalId}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2 py-1"
+                      >
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-xs text-slate-800"
+                          disabled={!canEditBootstrap || configSaving}
+                          onClick={() => {
+                            setEditingTerminalId(terminal.terminalId);
+                            setTerminalDialogOpen(true);
+                          }}
+                        >
+                          <span className="font-medium">{terminal.terminalId}</span>
+                          <span className="text-slate-500">{terminal.focus ? "focus" : "idle"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                          aria-label={`Edit terminal ${terminal.terminalId}`}
+                          disabled={!canEditBootstrap || configSaving}
+                          onClick={() => {
+                            setEditingTerminalId(terminal.terminalId);
+                            setTerminalDialogOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                          aria-label={`Delete terminal ${terminal.terminalId}`}
+                          disabled={!canEditBootstrap || configSaving}
+                          onClick={() => {
+                            void handleDeleteTerminal(terminal.terminalId);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {bootstrapLoading || configSaving ? (
+                <p className="text-xs text-slate-500">{bootstrapLoading ? "Loading quick start config..." : "Saving config..."}</p>
+              ) : null}
+              {configError ? <p className="text-xs text-rose-700">{configError}</p> : null}
             </div>
 
             <div className="mt-4">
@@ -165,6 +316,30 @@ export const QuickStartView = ({
           </section>
         </div>
       </ScrollViewport>
+      <QuickstartRoomConfigDialog
+        open={roomDialogOpen}
+        value={bootstrapConfig.room}
+        ownerHint={draftResolution?.avatar ?? "agenter"}
+        onClose={() => setRoomDialogOpen(false)}
+        onSave={async (room) => {
+          await persistBootstrapConfig({
+            ...bootstrapConfig,
+            room,
+          });
+        }}
+      />
+      <QuickstartTerminalConfigDialog
+        open={terminalDialogOpen}
+        workspacePath={workspacePath}
+        value={editingTerminal}
+        onClose={() => {
+          setTerminalDialogOpen(false);
+          setEditingTerminalId(null);
+        }}
+        onSave={async (terminal) => {
+          await handleSaveTerminal(terminal);
+        }}
+      />
     </section>
   );
 };

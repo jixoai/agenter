@@ -8,6 +8,8 @@
   "tool.attention_context_list.description": "List native attention contexts owned by the current runtime.",
   "tool.attention_query.description": "Query attention graph items by context, hash, author, text, and minimum score.",
   "tool.attention_commit.description": "Commit one attention mutation into the target context.",
+  "tool.message_channel_list.description": "List chat channels and their metadata from message-system.",
+  "tool.message_channel_get.description": "Get one chat channel and its metadata from message-system.",
   "tool.message_send.description": "Send a real message to a chat channel through message-system.",
   "tool.terminal_list.description": "List available terminal instances.",
   "tool.terminal_focus.description": "Update the focused terminal set with add/remove/replace/clear semantics.",

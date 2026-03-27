@@ -7,6 +7,7 @@ const {
   StartAndResumeFlow,
   ScrollViewportOwnsLongContent,
   CompactViewportKeepsPrimaryEntryPath,
+  BootstrapConfigActions,
   LoadingDraftKeepsSubmissionDisabled,
 } =
   composeStories(stories);
@@ -22,6 +23,10 @@ describe("Feature: Storybook DOM contract for quick start", () => {
 
   test("Scenario: Given a mobile-sized quick start viewport When the shell renders Then the primary entry actions remain visible without horizontal overflow", async () => {
     await CompactViewportKeepsPrimaryEntryPath.run();
+  });
+
+  test("Scenario: Given quick start bootstrap controls When admin edits room metadata and terminal chips Then the workspace bootstrap config callbacks receive updated payloads", async () => {
+    await BootstrapConfigActions.run();
   });
 
   test("Scenario: Given a loading quick start draft When the view renders Then submission stays disabled until the workspace draft is ready", async () => {

@@ -75,6 +75,7 @@ const parseVersion = (value?: string | null): number => {
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 const createOpaqueToken = (): string => `msgtok_${randomUUID().replace(/-/g, "")}`;
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 
 const roleRank = (role: MessageChannelAccessRole): number => {
   if (role === "admin") {
@@ -126,12 +127,20 @@ export class MessageControlPlane {
     return () => this.focusListeners.delete(listener);
   }
 
-  listChannels(): MessageControlPlaneEntry[] {
-    return this.db.listChannels(this.focusedChatIds).map((channel) => this.withProjection(channel, this.issueTrustedBootstrapAccess(channel.chatId)));
+  listChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
+    return this.db
+      .listChannels(this.focusedChatIds, input.includeArchived ?? false)
+      .map((channel) => this.withProjection(channel, this.issueTrustedBootstrapAccess(channel.chatId)));
   }
 
-  getChannel(chatId: string): MessageControlPlaneEntry | undefined {
+  getChannel(chatId: string, input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry | undefined {
     const channel = this.db.getChannel(chatId, this.focusedChatIds.has(chatId));
+    if (!channel) {
+      return undefined;
+    }
+    if (channel.archivedAt && !input.includeArchived) {
+      return undefined;
+    }
     return channel ? this.withProjection(channel, this.issueTrustedBootstrapAccess(chatId)) : undefined;
   }
 
@@ -147,11 +156,14 @@ export class MessageControlPlane {
       },
       this.focusedChatIds.has(input.chatId),
     );
-    return this.withProjection(channel, this.issueTrustedBootstrapAccess(input.chatId));
+    return this.withProjection(channel, this.issueTrustedBootstrapAccess(input.chatId, input.adminToken));
   }
 
   focus(op: MessageFocusOp = "replace", chatIds: string[] = []): string[] {
-    const validIds = chatIds.filter((chatId) => this.db.getChannel(chatId) !== undefined);
+    const validIds = chatIds.filter((chatId) => {
+      const channel = this.db.getChannel(chatId);
+      return Boolean(channel) && !channel?.archivedAt;
+    });
     switch (op) {
       case "add":
         for (const chatId of validIds) {
@@ -337,6 +349,18 @@ export class MessageControlPlane {
     return this.withProjection(channel, this.createProjection(input.chatId, grant.role, input.accessToken));
   }
 
+  archiveChannelAuthorized(input: {
+    chatId: string;
+    accessToken: string;
+    archivedBy: string;
+  }): MessageControlPlaneEntry {
+    const grant = this.requireAccess(input.chatId, input.accessToken, "admin");
+    const channel = this.db.archiveChannel(input.chatId, input.archivedBy, this.focusedChatIds.has(input.chatId));
+    this.focusedChatIds.delete(input.chatId);
+    this.bumpVersion();
+    return this.withProjection(channel, this.createProjection(input.chatId, grant.role, input.accessToken));
+  }
+
   listChannelGrantsAuthorized(input: MessageAuthorizedReadInput): MessageChannelGrantRecord[] {
     this.requireAccess(input.chatId, input.accessToken, "admin");
     return this.db.listActiveGrants(input.chatId).filter((grant) => !this.isTrustedBootstrapGrant(grant));
@@ -344,7 +368,7 @@ export class MessageControlPlane {
 
   issueChannelGrantAuthorized(input: MessageAuthorizedReadInput & MessageIssueGrantInput): MessageIssuedGrant {
     this.requireAccess(input.chatId, input.accessToken, "admin");
-    const accessToken = createOpaqueToken();
+    const accessToken = this.resolveGrantAccessToken(input.accessTokenHint);
     const grant = this.db.issueGrant({
       chatId: input.chatId,
       role: input.role,
@@ -591,18 +615,21 @@ export class MessageControlPlane {
     };
   }
 
-  private issueTrustedBootstrapAccess(chatId: string): MessageChannelAccessProjection {
+  private issueTrustedBootstrapAccess(chatId: string, preferredToken?: string): MessageChannelAccessProjection {
     const descriptor = this.createTrustedBootstrapDescriptor(chatId);
     const cachedAccessToken = this.trustedBootstrapTokens.get(chatId);
+    const preferred = this.normalizeOptionalAccessToken(preferredToken);
     if (cachedAccessToken) {
       const grant = this.db.findActiveGrantByToken(chatId, hashToken(cachedAccessToken));
       if (grant && this.isTrustedBootstrapGrant(grant)) {
-        return this.createProjection(chatId, grant.role, cachedAccessToken);
+        if (!preferred || preferred === cachedAccessToken) {
+          return this.createProjection(chatId, grant.role, cachedAccessToken);
+        }
       }
       this.trustedBootstrapTokens.delete(chatId);
     }
     this.db.revokeActiveGrantsByDescriptor(descriptor);
-    const accessToken = createOpaqueToken();
+    const accessToken = preferred ?? createOpaqueToken();
     const grant = this.db.issueGrant({
       ...descriptor,
       tokenHash: hashToken(accessToken),
@@ -660,7 +687,8 @@ export class MessageControlPlane {
     accessToken: string,
     minimumRole: MessageChannelAccessRole,
   ): MessageChannelGrantRecord {
-    if (!this.db.getChannel(chatId)) {
+    const channel = this.db.getChannel(chatId);
+    if (!channel || channel.archivedAt) {
       throw new Error("message channel access denied");
     }
     const grant = this.db.findActiveGrantByToken(chatId, hashToken(accessToken));
@@ -677,6 +705,28 @@ export class MessageControlPlane {
       );
     }
     return grant;
+  }
+
+  private resolveGrantAccessToken(input: string | undefined): string {
+    const value = input?.trim();
+    if (!value) {
+      return createOpaqueToken();
+    }
+    if (!ACCESS_TOKEN_PATTERN.test(value)) {
+      throw new Error("invalid access token format");
+    }
+    return value;
+  }
+
+  private normalizeOptionalAccessToken(input: string | undefined): string | undefined {
+    const value = input?.trim();
+    if (!value) {
+      return undefined;
+    }
+    if (!ACCESS_TOKEN_PATTERN.test(value)) {
+      throw new Error("invalid access token format");
+    }
+    return value;
   }
 
   private bumpVersion(): void {

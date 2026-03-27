@@ -249,7 +249,7 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
-  messageListChannelsQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
+  messageListChannelsQuery?: (input: { sessionId: string; includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
   messageCreateChannelMutate?: (input: {
     sessionId: string;
     kind: "direct" | "room";
@@ -298,6 +298,28 @@ const createMockClient = (input: {
     accessToken: string;
     grantId: string;
   }) => Promise<{ ok: boolean }>;
+  messageDeleteChannelMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    archivedBy?: string;
+  }) => Promise<{ channel: unknown }>;
+  terminalListQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
+  terminalCreateMutate?: (input: {
+    sessionId: string;
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: unknown;
+    focus?: boolean;
+  }) => Promise<{ result: unknown }>;
+  terminalFocusMutate?: (input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
+  terminalDeleteMutate?: (input: { sessionId: string; terminalId: string }) => Promise<{ ok: boolean; message: string }>;
   terminalActivityPageQuery?: (input: {
     sessionId: string;
     terminalId: string;
@@ -431,7 +453,7 @@ const createMockClient = (input: {
       },
       message: {
         listChannels: {
-          query: async (payload: { sessionId: string }) =>
+          query: async (payload: { sessionId: string; includeArchived?: boolean }) =>
             input.messageListChannelsQuery ? await input.messageListChannelsQuery(payload) : { items: [] },
         },
         createChannel: {
@@ -488,6 +510,41 @@ const createMockClient = (input: {
         revokeChannelGrant: {
           mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; grantId: string }) =>
             input.messageRevokeChannelGrantMutate ? await input.messageRevokeChannelGrantMutate(payload) : { ok: true },
+        },
+        deleteChannel: {
+          mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; archivedBy?: string }) =>
+            input.messageDeleteChannelMutate ? await input.messageDeleteChannelMutate(payload) : { channel: null },
+        },
+      },
+      terminal: {
+        list: {
+          query: async (payload: { sessionId: string }) =>
+            input.terminalListQuery ? await input.terminalListQuery(payload) : { items: [] },
+        },
+        create: {
+          mutate: async (payload: {
+            sessionId: string;
+            terminalId?: string;
+            processKind?: string;
+            command?: string[];
+            cwd?: string;
+            profile?: unknown;
+            focus?: boolean;
+          }) => (input.terminalCreateMutate ? await input.terminalCreateMutate(payload) : { result: { ok: true, message: "ok" } }),
+        },
+        focus: {
+          mutate: async (payload: {
+            sessionId: string;
+            op: "add" | "remove" | "replace" | "clear";
+            terminalIds: string[];
+          }) =>
+            input.terminalFocusMutate
+              ? await input.terminalFocusMutate(payload)
+              : { ok: true, message: "ok", focusedTerminalIds: payload.terminalIds },
+        },
+        delete: {
+          mutate: async (payload: { sessionId: string; terminalId: string }) =>
+            input.terminalDeleteMutate ? await input.terminalDeleteMutate(payload) : { ok: true, message: "ok" },
         },
       },
       draft: {

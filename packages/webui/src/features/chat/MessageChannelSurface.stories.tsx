@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { MessageChannelSurface } from "./MessageChannelSurface";
+import type { MessageChannelCreateInput } from "./message-channel-create-dialog";
 
 const createChannel = (input: {
   chatId: string;
@@ -192,6 +193,7 @@ const SurfaceStory = ({
   channelsError = null,
   socketMode = "snapshot",
   onSendMessage = fn(async () => undefined),
+  onCreateChannel = fn(async (_input: MessageChannelCreateInput) => undefined),
   onOpenDevtools = fn(),
 }: {
   compact: boolean;
@@ -200,6 +202,7 @@ const SurfaceStory = ({
   channelsError?: string | null;
   socketMode?: SocketMode;
   onSendMessage?: (input: { channel: MessageChannelEntry; payload: { text: string; assets: File[] } }) => Promise<void>;
+  onCreateChannel?: (input: MessageChannelCreateInput) => Promise<void>;
   onOpenDevtools?: (cycleId: number) => void;
 }) => {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(items[0]?.chatId ?? null);
@@ -220,7 +223,7 @@ const SurfaceStory = ({
         disabled={false}
         imageCompatible={false}
         onSelectChannel={setSelectedChatId}
-        onCreateChannel={fn()}
+        onCreateChannel={onCreateChannel}
         onSendMessage={onSendMessage}
         onSearchPaths={async () => []}
         socketFactory={socketFactory}
@@ -332,6 +335,31 @@ export const EmptyChannelCollection: Story = {
     await expect(await canvas.findByText("No chat channels yet")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
+  },
+};
+
+export const CreateChannelViaMetadataDialog: Story = {
+  args: {
+    onCreateChannel: fn(async () => undefined),
+  },
+  render: (args) => <SurfaceStory compact={false} onCreateChannel={args.onCreateChannel} />,
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const portal = within(document.body);
+
+    await userEvent.click(canvas.getByRole("button", { name: "New room" }));
+    const dialog = await portal.findByRole("dialog", { name: "Create room" });
+    await userEvent.clear(within(dialog).getByLabelText("Title"));
+    await userEvent.type(within(dialog).getByLabelText("Title"), "Coordination room");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create channel" }));
+    await waitFor(() => {
+      expect(args.onCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "room",
+          title: "Coordination room",
+        }),
+      );
+    });
   },
 };
 

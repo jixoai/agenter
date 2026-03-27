@@ -12,6 +12,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppControllerContext, useRuntimeStoreSelector, type AppController } from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
+import {
+  applyQuickstartBootstrapConfigToSettings,
+  normalizeQuickstartBootstrapConfig,
+  parseQuickstartBootstrapConfig,
+} from "./features/quickstart/quickstart-bootstrap-settings";
+import {
+  DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
+  type QuickstartBootstrapConfig,
+} from "./features/quickstart/quickstart-bootstrap-types";
 import { type SettingsEffectiveGraph, type SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
@@ -74,12 +83,33 @@ const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
   provenance: {},
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseSettingsLayerContent = (content: string): Record<string, unknown> => {
+  const trimmed = content.trim();
+  if (trimmed.length === 0) {
+    return {};
+  }
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error("settings layer content must be a JSON object");
+  }
+  return parsed;
+};
+
+const toSettingsLayerContent = (value: Record<string, unknown>): string => `${JSON.stringify(value, null, 2)}\n`;
+
 export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [router] = useState(() => createAppRouter());
   const [notice, setNotice] = useState("");
   const [quickstartWorkspacePath, setQuickstartWorkspacePath] = useState(".");
   const [quickstartDraft, setQuickstartDraft] = useState<DraftResolutionOutput | null>(null);
   const [quickstartDraftLoading, setQuickstartDraftLoading] = useState(false);
+  const [quickstartBootstrapConfig, setQuickstartBootstrapConfig] = useState<QuickstartBootstrapConfig>(
+    DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
+  );
+  const [quickstartBootstrapLoading, setQuickstartBootstrapLoading] = useState(false);
   const [quickstartRecentSessions, setQuickstartRecentSessions] = useState<WorkspaceSessionEntry[]>([]);
   const [quickstartBusy, setQuickstartBusy] = useState(false);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
@@ -269,6 +299,71 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [store],
   );
 
+  const resolveQuickstartLocalLayerId = useCallback(
+    async (workspacePath: string): Promise<string> => {
+      const scope = await store.listScopedSettings({
+        scope: "workspace",
+        workspacePath,
+      });
+      const preferredLayer = scope.layers.find((layer) => layer.editable && layer.sourceId === "local");
+      if (preferredLayer) {
+        return preferredLayer.layerId;
+      }
+      const fallbackLayer = scope.layers.find((layer) => layer.editable);
+      if (!fallbackLayer) {
+        throw new Error("No editable workspace settings layer found for quick start config.");
+      }
+      return fallbackLayer.layerId;
+    },
+    [store],
+  );
+
+  const loadQuickstartBootstrapConfigForWorkspace = useCallback(
+    async (workspacePath: string): Promise<QuickstartBootstrapConfig> => {
+      const scope = await store.listScopedSettings({
+        scope: "workspace",
+        workspacePath,
+      });
+      return normalizeQuickstartBootstrapConfig(parseQuickstartBootstrapConfig(scope.effective.value));
+    },
+    [store],
+  );
+
+  const saveQuickstartBootstrapConfigToWorkspace = useCallback(
+    async (workspacePath: string, config: QuickstartBootstrapConfig): Promise<QuickstartBootstrapConfig> => {
+      const layerId = await resolveQuickstartLocalLayerId(workspacePath);
+      let file = await store.readScopedSettingsLayer({
+        scope: "workspace",
+        workspacePath,
+        layerId,
+      });
+      let attempt = 0;
+      const normalizedConfig = normalizeQuickstartBootstrapConfig(config);
+      while (attempt < 2) {
+        const baseSettings = parseSettingsLayerContent(file.content);
+        const nextSettings = applyQuickstartBootstrapConfigToSettings(baseSettings, normalizedConfig);
+        const result = await store.saveScopedSettingsLayer({
+          scope: "workspace",
+          workspacePath,
+          layerId,
+          content: toSettingsLayerContent(nextSettings),
+          baseMtimeMs: file.mtimeMs,
+        });
+        if (result.ok) {
+          return normalizeQuickstartBootstrapConfig(parseQuickstartBootstrapConfig(result.effective.value));
+        }
+        if (result.reason === "conflict") {
+          file = result.latest;
+          attempt += 1;
+          continue;
+        }
+        throw new Error(result.message);
+      }
+      throw new Error("Failed to save quick start config due to repeated settings conflicts.");
+    },
+    [resolveQuickstartLocalLayerId, store],
+  );
+
   const quickstartRecentSessionStructureKey = useMemo(() => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
       return null;
@@ -363,6 +458,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
       setQuickstartDraft(null);
       setQuickstartRecentSessions([]);
+      setQuickstartBootstrapConfig(DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG);
+      setQuickstartDraftLoading(false);
+      setQuickstartBootstrapLoading(false);
       quickstartRecentSessionsSyncKeyRef.current = null;
       return;
     }
@@ -370,6 +468,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     let cancelled = false;
     quickstartRecentSessionsSyncKeyRef.current = null;
     setQuickstartDraftLoading(true);
+    setQuickstartBootstrapLoading(true);
 
     void Promise.all([
       store.resolveDraft({ cwd: quickstartWorkspacePath }).catch((error) => {
@@ -387,19 +486,27 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         })
         .then((output) => output.items.slice(0, 3))
         .catch(() => [] as WorkspaceSessionEntry[]),
-    ]).then(([draft, recent]) => {
+      loadQuickstartBootstrapConfigForWorkspace(quickstartWorkspacePath).catch((error) => {
+        if (!cancelled) {
+          setError(error);
+        }
+        return DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG;
+      }),
+    ]).then(([draft, recent, bootstrap]) => {
       if (cancelled) {
         return;
       }
       setQuickstartDraft(draft);
       setQuickstartRecentSessions(recent);
+      setQuickstartBootstrapConfig(normalizeQuickstartBootstrapConfig(bootstrap));
       setQuickstartDraftLoading(false);
+      setQuickstartBootstrapLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [quickstartWorkspacePath, setError, store]);
+  }, [loadQuickstartBootstrapConfigForWorkspace, quickstartWorkspacePath, setError, store]);
 
   useEffect(() => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === "." || quickstartRecentSessionStructureKey === null) {
@@ -648,6 +755,26 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }
   }, [createWorkspaceSession, quickstartWorkspacePath]);
 
+  const saveQuickstartBootstrapConfig = useCallback(
+    async (config: QuickstartBootstrapConfig): Promise<void> => {
+      if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
+        throw new Error("Select a workspace before editing quick start configuration.");
+      }
+      setQuickstartBootstrapLoading(true);
+      try {
+        const saved = await saveQuickstartBootstrapConfigToWorkspace(quickstartWorkspacePath, config);
+        setQuickstartBootstrapConfig(saved);
+        setNotice("");
+      } catch (error) {
+        setError(error);
+        throw error;
+      } finally {
+        setQuickstartBootstrapLoading(false);
+      }
+    },
+    [quickstartWorkspacePath, saveQuickstartBootstrapConfigToWorkspace, setError],
+  );
+
   const resumeSession = useCallback(
     async (sessionId: string, workspacePath?: string): Promise<void> => {
       try {
@@ -740,9 +867,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const listMessageChannels = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, input: { includeArchived?: boolean } = {}) => {
       try {
-        return await store.listMessageChannels(sessionId);
+        return await store.listMessageChannels(sessionId, input);
       } catch (error) {
         setError(error);
         throw error;
@@ -752,7 +879,15 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const createMessageChannel = useCallback(
-    async (input: { sessionId: string; kind: "direct" | "room"; title?: string; focus?: boolean }) => {
+    async (input: {
+      sessionId: string;
+      kind: "direct" | "room";
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+      adminToken?: string;
+      focus?: boolean;
+    }) => {
       try {
         return await store.createMessageChannel(input);
       } catch (error) {
@@ -837,6 +972,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       role: "admin" | "member" | "readonly";
       label?: string;
       participantId?: string;
+      accessTokenHint?: string;
     }) => {
       try {
         return await store.issueMessageChannelGrant(input);
@@ -852,6 +988,93 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: { sessionId: string; chatId: string; accessToken: string; grantId: string }) => {
       try {
         return await store.revokeMessageChannelGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const archiveMessageChannel = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      archivedBy?: string;
+    }) => {
+      try {
+        return await store.archiveMessageChannel(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listTerminals = useCallback(
+    async (sessionId: string) => {
+      try {
+        return await store.listTerminals(sessionId);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const createTerminal = useCallback(
+    async (input: {
+      sessionId: string;
+      terminalId?: string;
+      processKind?: string;
+      command?: string[];
+      cwd?: string;
+      profile?: {
+        command?: string[];
+        cwd?: string;
+        cols?: number;
+        rows?: number;
+        gitLog?: false | "none" | "normal" | "verbose";
+        logStyle?: "plain" | "rich";
+        icon?: string;
+        title?: string;
+        shortcuts?: Record<string, string>;
+      };
+      focus?: boolean;
+    }) => {
+      try {
+        return await store.createTerminal(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const focusTerminals = useCallback(
+    async (input: {
+      sessionId: string;
+      op: "add" | "remove" | "replace" | "clear";
+      terminalIds: string[];
+    }) => {
+      try {
+        return await store.focusTerminals(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const deleteTerminal = useCallback(
+    async (input: { sessionId: string; terminalId: string }) => {
+      try {
+        return await store.deleteTerminal(input);
       } catch (error) {
         setError(error);
         throw error;
@@ -1226,6 +1449,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       setQuickstartWorkspacePath,
       quickstartDraft,
       quickstartDraftLoading,
+      quickstartBootstrapConfig,
+      quickstartBootstrapLoading,
       quickstartRecentSessions,
       quickstartBusy,
       selectedWorkspacePath,
@@ -1252,6 +1477,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       createWorkspaceSession,
       quickstartSubmit,
       enterWorkspace,
+      saveQuickstartBootstrapConfig,
       resumeSession,
       startSession,
       stopSession,
@@ -1267,6 +1493,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       listMessageChannelGrants,
       issueMessageChannelGrant,
       revokeMessageChannelGrant,
+      archiveMessageChannel,
+      listTerminals,
+      createTerminal,
+      focusTerminals,
+      deleteTerminal,
       loadMoreChatMessages,
       loadMoreChatCycles,
       loadMoreTrace,
@@ -1295,6 +1526,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }),
     [
       archiveWorkspaceSession,
+      archiveMessageChannel,
       cleanMissingWorkspaces,
       consumeNotifications,
       createWorkspaceSession,
@@ -1308,6 +1540,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       getLongListPagingState,
       hydrateSession,
       issueMessageChannelGrant,
+      createTerminal,
       layerDraft,
       listMessageChannelGrants,
       loadMoreChatCycles,
@@ -1315,6 +1548,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       listMessageChannels,
       loadMoreTerminalActivity,
       loadTerminalActivity,
+      listTerminals,
       loadMoreModel,
       loadMoreTrace,
       loadMoreWorkspaceSessions,
@@ -1322,10 +1556,13 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       listDirectories,
       notice,
       quickstartBusy,
+      quickstartBootstrapConfig,
+      quickstartBootstrapLoading,
       quickstartDraft,
       quickstartDraftLoading,
       quickstartRecentSessions,
       quickstartSubmit,
+      saveQuickstartBootstrapConfig,
       queryAttention,
       quickstartWorkspacePath,
       refreshSettingsLayers,
@@ -1333,6 +1570,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       resumeSession,
       saveSelectedLayer,
       createMessageChannel,
+      deleteTerminal,
+      focusTerminals,
       updateMessageChannel,
       revokeMessageChannelGrant,
       sendMessageChannel,

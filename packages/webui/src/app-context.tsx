@@ -12,6 +12,7 @@ import type {
 import { createContext, useContext, useRef, useSyncExternalStore } from "react";
 
 import type { AIInputSuggestion } from "./features/chat/AIInput";
+import type { QuickstartBootstrapConfig } from "./features/quickstart/quickstart-bootstrap-types";
 import type { SettingsEffectiveGraph, SettingsLayerItem } from "./features/settings/settings-graph-types";
 import type { LongListPagingInput, LongListPagingState } from "./shared/long-list-paging";
 
@@ -23,6 +24,8 @@ export interface AppController {
   setQuickstartWorkspacePath: (path: string) => void;
   quickstartDraft: DraftResolutionOutput | null;
   quickstartDraftLoading: boolean;
+  quickstartBootstrapConfig: QuickstartBootstrapConfig;
+  quickstartBootstrapLoading: boolean;
   quickstartRecentSessions: WorkspaceSessionEntry[];
   quickstartBusy: boolean;
   selectedWorkspacePath: string | null;
@@ -49,6 +52,7 @@ export interface AppController {
   createWorkspaceSession: (workspacePath: string) => Promise<string | null>;
   quickstartSubmit: (payload: { text: string; assets: File[] }) => Promise<string | null>;
   enterWorkspace: () => Promise<string | null>;
+  saveQuickstartBootstrapConfig: (config: QuickstartBootstrapConfig) => Promise<void>;
   resumeSession: (sessionId: string, workspacePath?: string) => Promise<void>;
   startSession: (sessionId: string) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
@@ -56,11 +60,14 @@ export interface AppController {
   deleteSession: (sessionId: string) => Promise<void>;
   sendChat: (sessionId: string, payload: { text: string; assets: File[] }) => Promise<void>;
   ensureMessageChannels: (sessionId: string) => Promise<void>;
-  listMessageChannels: (sessionId: string) => Promise<MessageChannelEntry[]>;
+  listMessageChannels: (sessionId: string, input?: { includeArchived?: boolean }) => Promise<MessageChannelEntry[]>;
   createMessageChannel: (input: {
     sessionId: string;
     kind: "direct" | "room";
     title?: string;
+    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
     focus?: boolean;
   }) => Promise<MessageChannelEntry>;
   focusMessageChannels: (input: {
@@ -96,6 +103,7 @@ export interface AppController {
     role: "admin" | "member" | "readonly";
     label?: string;
     participantId?: string;
+    accessTokenHint?: string;
   }) => Promise<{
     grantId: string;
     chatId: string;
@@ -107,6 +115,54 @@ export interface AppController {
     accessToken: string;
     transportUrl?: string;
   }>;
+  archiveMessageChannel: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    archivedBy?: string;
+  }) => Promise<MessageChannelEntry>;
+  listTerminals: (sessionId: string) => Promise<
+    Array<{
+      terminalId: string;
+      processKind: string;
+      command: string[];
+      cwd: string;
+      workspace: string | null;
+      running: boolean;
+      status: "IDLE" | "BUSY";
+      seq: number;
+      focused: boolean;
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+      transportUrl?: string;
+    }>
+  >;
+  createTerminal: (input: {
+    sessionId: string;
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: {
+      command?: string[];
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+      gitLog?: false | "none" | "normal" | "verbose";
+      logStyle?: "plain" | "rich";
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+    };
+    focus?: boolean;
+  }) => Promise<{ ok: boolean; message: string; terminal?: unknown }>;
+  focusTerminals: (input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
+  deleteTerminal: (input: { sessionId: string; terminalId: string }) => Promise<{ ok: boolean; message: string }>;
   revokeMessageChannelGrant: (input: {
     sessionId: string;
     chatId: string;

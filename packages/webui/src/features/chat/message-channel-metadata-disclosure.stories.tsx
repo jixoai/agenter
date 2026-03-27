@@ -1,7 +1,7 @@
 import type { MessageChannelEntry, MessageChannelGrantEntry } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useRef, useState } from "react";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-disclosure";
 
@@ -34,7 +34,15 @@ const grantsFixture: MessageChannelGrantEntry[] = [
   },
 ];
 
-const DisclosureStory = ({ accessRole }: { accessRole: "admin" | "member" | "readonly" }) => {
+const DisclosureStory = ({
+  accessRole,
+  onFocusChannel,
+  onArchiveChannel,
+}: {
+  accessRole: "admin" | "member" | "readonly";
+  onFocusChannel?: () => Promise<void> | void;
+  onArchiveChannel?: () => Promise<void> | void;
+}) => {
   const [channel, setChannel] = useState(() => createChannel({ accessRole }));
   const [, setGrantVersion] = useState(0);
   const grantsRef = useRef<MessageChannelGrantEntry[]>(grantsFixture);
@@ -48,6 +56,21 @@ const DisclosureStory = ({ accessRole }: { accessRole: "admin" | "member" | "rea
     <div className="flex min-h-[28rem] items-start justify-center bg-slate-100 p-6">
       <MessageChannelMetadataDisclosure
         channel={channel}
+        onFocusChannel={
+          accessRole === "admin" && onFocusChannel
+            ? async () => {
+                await onFocusChannel();
+                setChannel((current) => ({ ...current, focused: true }));
+              }
+            : undefined
+        }
+        onArchiveChannel={
+          accessRole === "admin" && onArchiveChannel
+            ? async () => {
+                await onArchiveChannel();
+              }
+            : undefined
+        }
         onUpdateChannel={
           accessRole === "admin"
             ? async ({ patch }) => {
@@ -148,5 +171,34 @@ export const AdminMetadataManagement: Story = {
 
     await userEvent.click(portal.getAllByRole("button", { name: "Revoke" })[0]!);
     await expect(dialog).not.toHaveTextContent("Relay member");
+  },
+};
+
+const adminLifecycleFocusSpy = fn(async () => undefined);
+const adminLifecycleArchiveSpy = fn(async () => undefined);
+
+export const AdminLifecycleActions: Story = {
+  render: () => (
+    <DisclosureStory
+      accessRole="admin"
+      onFocusChannel={adminLifecycleFocusSpy}
+      onArchiveChannel={adminLifecycleArchiveSpy}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const portal = within(document.body);
+    adminLifecycleFocusSpy.mockClear();
+    adminLifecycleArchiveSpy.mockClear();
+    await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
+    await portal.findByRole("dialog");
+
+    await userEvent.click(portal.getByRole("button", { name: "Focus channel" }));
+    await userEvent.click(portal.getByRole("button", { name: "Archive channel" }));
+
+    await waitFor(() => {
+      expect(adminLifecycleFocusSpy).toHaveBeenCalledTimes(1);
+      expect(adminLifecycleArchiveSpy).toHaveBeenCalledTimes(1);
+    });
   },
 };

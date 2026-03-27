@@ -60,6 +60,18 @@ export interface ResolvedSessionConfig {
   tasks: {
     sources: Array<{ name: string; path: string }>;
   };
+  message: {
+    chatMainDefaults?: {
+      title?: string;
+      participants?: Array<{
+        id: string;
+        label?: string;
+        role?: "avatar" | "user" | "system";
+      }>;
+      metadata?: Record<string, unknown>;
+      adminToken?: string;
+    };
+  };
 }
 
 const URI_PATTERN = /^([a-z][a-z0-9+.-]*):/i;
@@ -259,6 +271,20 @@ export const resolveSessionConfig = async (
         { name: "user", path: resolve(homeDir, ".agenter", "tasks") },
         { name: "workspace", path: resolve(agentCwd, ".agenter", "tasks") },
       ],
+    },
+    message: {
+      chatMainDefaults: settings.features?.message?.chatMainDefaults
+        ? {
+            title: settings.features.message.chatMainDefaults.title,
+            participants: settings.features.message.chatMainDefaults.participants?.map((participant) => ({
+              id: participant.id,
+              label: participant.label,
+              role: participant.role,
+            })),
+            metadata: settings.features.message.chatMainDefaults.metadata,
+            adminToken: settings.features.message.chatMainDefaults.adminToken,
+          }
+        : undefined,
     },
   };
 };

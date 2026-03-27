@@ -102,8 +102,26 @@ export interface TerminalFeatureSettings {
   bootTerminals?: TerminalBootEntry[];
 }
 
+export interface MessageChannelParticipantSettings {
+  id: string;
+  label?: string;
+  role?: "avatar" | "user" | "system";
+}
+
+export interface MessageChatMainDefaultsSettings {
+  title?: string;
+  participants?: MessageChannelParticipantSettings[];
+  metadata?: Record<string, unknown>;
+  adminToken?: string;
+}
+
+export interface MessageFeatureSettings {
+  chatMainDefaults?: MessageChatMainDefaultsSettings;
+}
+
 export interface FeatureSettings {
   terminal?: TerminalFeatureSettings;
+  message?: MessageFeatureSettings;
 }
 
 export type { AiApiStandard, AiProviderInputSettings, AiProviderKind, LegacyAiProviderKind } from "./provider";

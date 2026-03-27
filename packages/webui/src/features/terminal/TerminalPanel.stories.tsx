@@ -1,9 +1,83 @@
 import type { RuntimeSnapshotEntry } from "@agenter/client-sdk";
+import { TERMINAL_VIEW_TAG } from "@agenter/terminal-view";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { TerminalPanel } from "./TerminalPanel";
 import { DEFAULT_LONG_LIST_PAGING_STATE } from "../../shared/long-list-paging";
+
+if (typeof customElements !== "undefined" && !customElements.get(TERMINAL_VIEW_TAG)) {
+  class TerminalViewStoryStubElement extends HTMLElement {
+    #terminalId = "";
+    #terminalTitle = "";
+    #cwd = "";
+    #status = "";
+    #viewportMode = "";
+    #transportUrl = "";
+    #snapshot: unknown = null;
+
+    connectedCallback() {
+      this.dataset.connected = "true";
+    }
+
+    get terminalId() {
+      return this.#terminalId;
+    }
+    set terminalId(value: string) {
+      this.#terminalId = value;
+      this.dataset.terminalId = value;
+    }
+
+    get terminalTitle() {
+      return this.#terminalTitle;
+    }
+    set terminalTitle(value: string) {
+      this.#terminalTitle = value;
+      this.dataset.terminalTitle = value;
+    }
+
+    get cwd() {
+      return this.#cwd;
+    }
+    set cwd(value: string) {
+      this.#cwd = value;
+      this.dataset.cwd = value;
+    }
+
+    get status() {
+      return this.#status;
+    }
+    set status(value: string) {
+      this.#status = value;
+      this.dataset.status = value;
+    }
+
+    get viewportMode() {
+      return this.#viewportMode;
+    }
+    set viewportMode(value: string) {
+      this.#viewportMode = value;
+      this.dataset.viewportMode = value;
+    }
+
+    get transportUrl() {
+      return this.#transportUrl;
+    }
+    set transportUrl(value: string) {
+      this.#transportUrl = value;
+      this.dataset.transportUrl = value;
+    }
+
+    get snapshot() {
+      return this.#snapshot;
+    }
+    set snapshot(value: unknown) {
+      this.#snapshot = value;
+      this.dataset.snapshotKind = value ? "provided" : "empty";
+    }
+  }
+  customElements.define(TERMINAL_VIEW_TAG, TerminalViewStoryStubElement);
+}
 
 const runtime = {
   sessionId: "session-1",
@@ -116,6 +190,9 @@ const meta = {
     }),
     onLoadTerminalActivity: async () => {},
     onLoadMoreTerminalActivity: async () => {},
+    onCreateTerminal: fn(async () => ({ ok: true, message: "created", terminal: { terminalId: "lint-terminal" } })),
+    onFocusTerminals: fn(async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] })),
+    onDeleteTerminal: fn(async () => ({ ok: true, message: "deleted" })),
   },
   render: (args) => (
     <div className="h-[520px] w-[min(960px,100vw)] p-6">
@@ -140,6 +217,20 @@ export const EmbeddedSnapshotFallback: Story = {
     await expect(canvas.queryByText("other-terminal")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(canvasElement.querySelector("terminal-view")).not.toBeNull();
+    });
+    const terminalView = canvasElement.querySelector("terminal-view") as HTMLElement | null;
+    await expect(terminalView).not.toBeNull();
+    await expect(terminalView?.dataset.connected).toBe("true");
+    await expect(terminalView?.dataset.terminalId).toBe("iflow");
+    await expect(terminalView?.dataset.viewportMode).toBe("fit");
+    await expect(terminalView?.dataset.snapshotKind).toBe("provided");
+    await userEvent.click(canvas.getByRole("button", { name: "Cover" }));
+    await waitFor(() => {
+      expect(terminalView?.dataset.viewportMode).toBe("cover");
+    });
+    await userEvent.click(canvas.getByRole("button", { name: "Fit" }));
+    await waitFor(() => {
+      expect(terminalView?.dataset.viewportMode).toBe("fit");
     });
     await expect(canvasElement.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
     await expect(canvasElement.querySelector('[data-terminal-activity-scroll-owner="inspector"]')).not.toBeNull();
@@ -168,5 +259,35 @@ export const NarrowViewportSnapshotFallback: Story = {
       expect(canvasElement.querySelector("terminal-view")).not.toBeNull();
     });
     await expect(canvasElement.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
+  },
+};
+
+export const LifecycleControls: Story = {
+  args: {
+    onCreateTerminal: fn(async () => ({ ok: true, message: "created", terminal: { terminalId: "lint-terminal" } })),
+    onFocusTerminals: fn(async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] })),
+    onDeleteTerminal: fn(async () => ({ ok: true, message: "deleted" })),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const portal = within(document.body);
+
+    await userEvent.click(canvas.getByRole("button", { name: "New terminal" }));
+    const dialog = await portal.findByRole("dialog", { name: "Create terminal" });
+    await userEvent.type(within(dialog).getByLabelText("Terminal ID"), "lint-terminal");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create terminal" }));
+    await waitFor(() => {
+      expect(args.onCreateTerminal).toHaveBeenCalledTimes(1);
+    });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Focus" }));
+    await waitFor(() => {
+      expect(args.onFocusTerminals).toHaveBeenCalled();
+    });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(args.onDeleteTerminal).toHaveBeenCalled();
+    });
   },
 };

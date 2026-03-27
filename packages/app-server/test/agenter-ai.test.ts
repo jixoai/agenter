@@ -240,9 +240,57 @@ const createMessageGateway = () => {
     from?: string;
     to?: string;
   }> = [];
+  const channels = [
+    {
+      chatId: "chat-main",
+      kind: "direct" as const,
+      title: "Main Chat",
+      owner: "agenter",
+      contextId: "ctx-chat-main",
+      participants: [
+        { id: "avatar:agenter", label: "agenter", role: "avatar" as const },
+        { id: "user", label: "User", role: "user" as const },
+      ],
+      metadata: {
+        builtIn: true,
+      },
+      focused: true,
+    },
+    {
+      chatId: "room-qa",
+      kind: "room" as const,
+      title: "QA Room",
+      owner: "agenter",
+      contextId: "ctx-room-qa",
+      participants: [
+        { id: "avatar:agenter", label: "agenter", role: "avatar" as const },
+        { id: "user:kzf", label: "kzf", role: "user" as const },
+      ],
+      metadata: {
+        topic: "dogfood",
+      },
+      focused: false,
+    },
+  ];
   return {
     sent,
     gateway: {
+      listChannels: async (input?: { includeArchived?: boolean }) => {
+        if (input?.includeArchived) {
+          return [...channels];
+        }
+        return channels.filter((channel) => !("archivedAt" in channel && typeof channel.archivedAt === "number"));
+      },
+      getChannel: async (input: { chatId: string; includeArchived?: boolean }) => {
+        const channel = channels.find((entry) => entry.chatId === input.chatId);
+        if (!channel) {
+          return null;
+        }
+        if (!input.includeArchived && "archivedAt" in channel && typeof channel.archivedAt === "number") {
+          return null;
+        }
+        return channel;
+      },
       send: async (input: {
         chatId: string;
         content: string;
@@ -327,7 +375,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(toolNames).not.toContain("terminal_run");
   });
 
-  test("Scenario: Given a message gateway When tools are exposed Then message_send is available and dispatches through message-system", async () => {
+  test("Scenario: Given a message gateway When tools are exposed Then channel metadata tools and message_send are both available", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -335,11 +383,53 @@ describe("Feature: AgenterAI behavior", () => {
 
     const modelClient = createModelClient(async (input) => {
       toolNames = input.tools.map((tool) => tool.name);
+      const listTool = input.tools.find((entry) => entry.name === "message_channel_list");
+      const getTool = input.tools.find((entry) => entry.name === "message_channel_get");
       const tool = input.tools.find((entry) => entry.name === "message_send");
+      expect(listTool).toBeDefined();
+      expect(getTool).toBeDefined();
       expect(tool).toBeDefined();
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("message_send tool missing");
+      if (
+        !listTool ||
+        typeof listTool.execute !== "function" ||
+        !getTool ||
+        typeof getTool.execute !== "function" ||
+        !tool ||
+        typeof tool.execute !== "function"
+      ) {
+        throw new Error("message tools missing");
       }
+
+      const listResult = (await listTool.execute(
+        {
+          includeArchived: false,
+        },
+        {
+          toolCallId: "call-message-channel-list",
+          emitCustomEvent: () => {},
+        },
+      )) as {
+        channels: Array<{ chatId: string; title: string }>;
+      };
+      expect(listResult.channels.some((channel) => channel.chatId === "chat-main")).toBeTrue();
+
+      const getResult = (await getTool.execute(
+        {
+          chatId: "room-qa",
+        },
+        {
+          toolCallId: "call-message-channel-get",
+          emitCustomEvent: () => {},
+        },
+      )) as {
+        channel: { chatId: string; title: string; kind: "direct" | "room" } | null;
+      };
+      if (!getResult.channel) {
+        throw new Error("message_channel_get returned null");
+      }
+      expect(getResult.channel.chatId).toBe("room-qa");
+      expect(getResult.channel.title).toBe("QA Room");
+      expect(getResult.channel.kind).toBe("room");
 
       const result = (await tool.execute(
         {
@@ -373,6 +463,8 @@ describe("Feature: AgenterAI behavior", () => {
 
     await ai.send([createUserMessage("dispatch a message")]);
 
+    expect(toolNames).toContain("message_channel_list");
+    expect(toolNames).toContain("message_channel_get");
     expect(toolNames).toContain("message_send");
     expect(message.sent).toEqual([
       {

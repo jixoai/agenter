@@ -4,6 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { dispatchClipboardImage, focusEditorSurface } from "../chat/ai-input-story-utils";
 import { QuickStartView } from "./QuickStartView";
+import { type QuickstartBootstrapConfig } from "./quickstart-bootstrap-types";
 
 const recentSession = {
   sessionId: "session-recent-001",
@@ -58,6 +59,30 @@ const searchPaths = fn(async ({ query }: { cwd: string; query: string; limit?: n
   return [];
 });
 
+const bootstrapConfig: QuickstartBootstrapConfig = {
+  room: {
+    title: "Main room",
+    participants: [
+      { id: "avatar:jane", label: "jane", role: "avatar" },
+      { id: "user:kzf", label: "kzf", role: "user" },
+    ],
+    metadata: {
+      builtIn: true,
+      theme: "compact",
+    },
+    adminToken: "",
+  },
+  terminals: [
+    {
+      terminalId: "iflow-main",
+      command: ["bash", "-i"],
+      cwd: "/repo/demo",
+      focus: true,
+      autoRun: true,
+    },
+  ],
+};
+
 const meta = {
   title: "Features/QuickStart/QuickStartView",
   component: QuickStartView,
@@ -84,8 +109,11 @@ const meta = {
     recentSessions: [recentSession],
     loadingDraft: false,
     starting: false,
+    bootstrapConfig,
+    bootstrapLoading: false,
     onOpenWorkspacePicker: fn(),
     onEnterWorkspace: fn(),
+    onSaveBootstrapConfig: fn(async () => undefined),
     onSubmit: fn(async () => undefined),
     onSearchPaths: searchPaths,
     onResumeSession: fn(),
@@ -192,6 +220,39 @@ export const CompactViewportKeepsPrimaryEntryPath: Story = {
     await expect(canvas.getByRole("button", { name: "Start" })).toBeInTheDocument();
     await expect(canvas.getByText("Recent Sessions")).toBeInTheDocument();
     await expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth + 1);
+  },
+};
+
+export const BootstrapConfigActions: Story = {
+  args: {
+    onSaveBootstrapConfig: fn(async () => undefined),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const portal = within(document.body);
+
+    await expect(canvas.getByRole("button", { name: "Room config" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Add terminal" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Edit terminal iflow-main" })).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Room config" }));
+    const roomDialog = await portal.findByRole("dialog", { name: "Chat room config" });
+    await expect(roomDialog).toBeInTheDocument();
+    await userEvent.clear(within(roomDialog).getByLabelText("Room title"));
+    await userEvent.type(within(roomDialog).getByLabelText("Room title"), "Main room updated");
+    await userEvent.click(within(roomDialog).getByRole("button", { name: "Save room config" }));
+    await waitFor(() => {
+      expect(args.onSaveBootstrapConfig).toHaveBeenCalled();
+    });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Add terminal" }));
+    const terminalDialog = await portal.findByRole("dialog", { name: "Add terminal chip" });
+    await userEvent.clear(within(terminalDialog).getByLabelText("Terminal ID"));
+    await userEvent.type(within(terminalDialog).getByLabelText("Terminal ID"), "lint-terminal");
+    await userEvent.click(within(terminalDialog).getByRole("button", { name: "Add terminal" }));
+    await waitFor(() => {
+      expect(args.onSaveBootstrapConfig).toHaveBeenCalledTimes(2);
+    });
   },
 };
 

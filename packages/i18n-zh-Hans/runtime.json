@@ -8,6 +8,8 @@
   "tool.attention_context_list.description": "列出当前运行时拥有的原生 attention context。",
   "tool.attention_query.description": "按 context、hash、作者、文本和最小分值查询 attention 图谱条目。",
   "tool.attention_commit.description": "向指定 context 提交一条 attention commit。",
+  "tool.message_channel_list.description": "通过 message-system 列出聊天频道和对应元数据。",
+  "tool.message_channel_get.description": "通过 message-system 读取单个聊天频道及其元数据。",
   "tool.message_send.description": "通过 message-system 向指定聊天频道发送真实消息。",
   "tool.terminal_list.description": "列出当前可用的终端实例。",
   "tool.terminal_focus.description": "使用 add/remove/replace/clear 语义更新聚焦终端集合。",

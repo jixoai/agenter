@@ -6,6 +6,7 @@ import * as stories from "../../src/features/chat/MessageChannelSurface.stories"
 const {
   DesktopMultiChannelSurface,
   CompactMultiChannelSurface,
+  CreateChannelViaMetadataDialog,
   DeliveredMessageLinksToDevtools,
   EmptyChannelCollection,
   LoadingChannelCollection,
@@ -19,6 +20,7 @@ describe("Feature: Storybook DOM contract for message channel surface", () => {
     await DesktopMultiChannelSurface.run();
     await CompactMultiChannelSurface.run();
     await DeliveredMessageLinksToDevtools.run();
+    await CreateChannelViaMetadataDialog.run();
   });
 
   test("Scenario: Given empty loading refreshing and error states When the surface renders Then each async state stays explicit and compact", async () => {

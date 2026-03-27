@@ -83,6 +83,8 @@ const mapChannel = (
     metadata_json: string | null;
     created_at: number;
     updated_at: number;
+    archived_at: number | null;
+    archived_by: string | null;
   },
   focused: boolean,
 ): MessageChannelRecord => ({
@@ -95,6 +97,8 @@ const mapChannel = (
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  archivedAt: row.archived_at ?? undefined,
+  archivedBy: row.archived_by ?? undefined,
   focused,
 });
 
@@ -163,8 +167,8 @@ export class MessageDb {
     this.db
       .query(
         `insert into chat_channel (
-          chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null)`,
       )
       .run(
         input.chatId,
@@ -183,20 +187,22 @@ export class MessageDb {
   getChannel(chatId: string, focused = false): MessageChannelRecord | undefined {
     const row = this.db
       .query(
-        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at
+        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
          from chat_channel where chat_id = ?`,
       )
       .get(chatId) as Parameters<typeof mapChannel>[0] | null;
     return row ? mapChannel(row, focused) : undefined;
   }
 
-  listChannels(focusedIds: Set<string>): MessageChannelRecord[] {
+  listChannels(focusedIds: Set<string>, includeArchived = false): MessageChannelRecord[] {
     const rows = this.db
       .query(
-        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at
-         from chat_channel order by updated_at desc, chat_id asc`,
+        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
+         from chat_channel
+         where (? = 1 or archived_at is null)
+         order by updated_at desc, chat_id asc`,
       )
-      .all() as Array<Parameters<typeof mapChannel>[0]>;
+      .all(includeArchived ? 1 : 0) as Array<Parameters<typeof mapChannel>[0]>;
     return rows.map((row) => mapChannel(row, focusedIds.has(row.chat_id)));
   }
 
@@ -219,6 +225,25 @@ export class MessageDb {
         now,
         chatId,
       );
+    return this.getChannel(chatId, focused)!;
+  }
+
+  archiveChannel(chatId: string, archivedBy: string, focused = false): MessageChannelRecord {
+    const current = this.getChannel(chatId, focused);
+    if (!current) {
+      throw new Error(`unknown chat channel: ${chatId}`);
+    }
+    if (current.archivedAt) {
+      return current;
+    }
+    const now = Date.now();
+    this.db
+      .query(
+        `update chat_channel
+         set archived_at = ?, archived_by = ?, updated_at = ?
+         where chat_id = ?`,
+      )
+      .run(now, archivedBy, now, chatId);
     return this.getChannel(chatId, focused)!;
   }
 
@@ -420,7 +445,9 @@ export class MessageDb {
         participants_json text not null,
         metadata_json text,
         created_at integer not null,
-        updated_at integer not null
+        updated_at integer not null,
+        archived_at integer,
+        archived_by text
       );
 
       create table if not exists chat_channel_grant (
@@ -452,6 +479,7 @@ export class MessageDb {
       );
 
       create index if not exists idx_chat_channel_updated on chat_channel(updated_at desc, chat_id asc);
+      create index if not exists idx_chat_channel_archived on chat_channel(archived_at, updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
       create index if not exists idx_chat_message_chat_created on chat_message(chat_id, created_at desc, id desc);
     `);
@@ -466,6 +494,18 @@ export class MessageDb {
     const hasPayloadColumn = messageColumns.some((column) => column.name === "payload_json");
     if (!hasPayloadColumn) {
       this.db.exec(`alter table chat_message add column payload_json text;`);
+    }
+
+    const channelColumns = this.db
+      .query(`pragma table_info(chat_channel)`)
+      .all() as Array<{ name: string }>;
+    const hasArchivedAt = channelColumns.some((column) => column.name === "archived_at");
+    if (!hasArchivedAt) {
+      this.db.exec(`alter table chat_channel add column archived_at integer;`);
+    }
+    const hasArchivedBy = channelColumns.some((column) => column.name === "archived_by");
+    if (!hasArchivedBy) {
+      this.db.exec(`alter table chat_channel add column archived_by text;`);
     }
   }
 }

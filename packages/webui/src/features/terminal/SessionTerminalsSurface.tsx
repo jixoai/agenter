@@ -25,6 +25,9 @@ export const SessionTerminalsSurface = ({ sessionId, loading }: SessionTerminals
       }
       onLoadTerminalActivity={controller.loadTerminalActivity}
       onLoadMoreTerminalActivity={controller.loadMoreTerminalActivity}
+      onCreateTerminal={controller.createTerminal}
+      onFocusTerminals={controller.focusTerminals}
+      onDeleteTerminal={controller.deleteTerminal}
       loading={loading}
     />
   );

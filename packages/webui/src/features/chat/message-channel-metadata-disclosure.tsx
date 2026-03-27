@@ -12,6 +12,7 @@ type ParticipantRole = "avatar" | "user" | "system";
 type GrantRole = "admin" | "member" | "readonly";
 
 interface ParticipantDraft {
+  key: string;
   id: string;
   label: string;
   role: ParticipantRole;
@@ -19,6 +20,8 @@ interface ParticipantDraft {
 
 interface MessageChannelMetadataDisclosureProps {
   channel: MessageChannelEntry;
+  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
+  onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onUpdateChannel?: (input: {
     channel: MessageChannelEntry;
     patch: {
@@ -48,7 +51,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const toParticipantDrafts = (channel: MessageChannelEntry): ParticipantDraft[] =>
-  channel.participants.map((participant) => ({
+  channel.participants.map((participant, index) => ({
+    key: `${participant.id || "participant"}-${index}-${channel.updatedAt}`,
     id: participant.id,
     label: participant.label ?? "",
     role: participant.role ?? "user",
@@ -101,6 +105,8 @@ const Section = ({
 
 export const MessageChannelMetadataDisclosure = ({
   channel,
+  onFocusChannel,
+  onArchiveChannel,
   onUpdateChannel,
   onListChannelGrants,
   onIssueChannelGrant,
@@ -122,8 +128,13 @@ export const MessageChannelMetadataDisclosure = ({
   const [issuedGrant, setIssuedGrant] = useState<MessageChannelGrantIssueOutput["grant"] | null>(null);
   const [revokingGrantId, setRevokingGrantId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [focusing, setFocusing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const isAdmin = channel.accessRole === "admin";
+  const isBuiltIn =
+    channel.chatId === "chat-main" ||
+    (isRecord(channel.metadata) && typeof channel.metadata.builtIn === "boolean" && channel.metadata.builtIn === true);
   const ChannelIcon = channel.kind === "room" ? Users : MessageCircleMore;
   const transportState = channel.transportUrl ? (channel.focused ? "connected and focused" : "connected") : "offline";
 
@@ -149,6 +160,8 @@ export const MessageChannelMetadataDisclosure = ({
     setParticipantDrafts(toParticipantDrafts(channel));
     setMetadataDraft(toMetadataDraft(channel.metadata));
     setFormError(null);
+    setFocusing(false);
+    setArchiving(false);
     setIssuedGrant(null);
     setCopyFeedback(null);
   }, [channel]);
@@ -162,6 +175,8 @@ export const MessageChannelMetadataDisclosure = ({
 
   const canEditChannel = isAdmin && Boolean(onUpdateChannel);
   const canManageGrants = isAdmin && Boolean(onIssueChannelGrant) && Boolean(onRevokeChannelGrant);
+  const canFocusChannel = isAdmin && Boolean(onFocusChannel);
+  const canArchiveChannel = isAdmin && Boolean(onArchiveChannel) && !isBuiltIn;
 
   const normalizedParticipants = useMemo(
     () =>
@@ -263,6 +278,37 @@ export const MessageChannelMetadataDisclosure = ({
     setCopyFeedback("Token copied.");
   }, [issuedGrant?.accessToken]);
 
+  const handleFocusChannel = useCallback(async () => {
+    if (!canFocusChannel || !onFocusChannel) {
+      return;
+    }
+    setFocusing(true);
+    setFormError(null);
+    try {
+      await onFocusChannel(channel);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFocusing(false);
+    }
+  }, [canFocusChannel, channel, onFocusChannel]);
+
+  const handleArchiveChannel = useCallback(async () => {
+    if (!canArchiveChannel || !onArchiveChannel) {
+      return;
+    }
+    setArchiving(true);
+    setFormError(null);
+    try {
+      await onArchiveChannel(channel);
+      setOpen(false);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setArchiving(false);
+    }
+  }, [canArchiveChannel, channel, onArchiveChannel]);
+
   return (
     <SurfaceSignalDisclosure
       icon={Info}
@@ -293,6 +339,35 @@ export const MessageChannelMetadataDisclosure = ({
             <FieldRow label="Transport" value={channel.transportUrl ?? "Not available"} />
             <FieldRow label="Focused" value={channel.focused ? "Yes" : "No"} />
             <FieldRow label="Context" value={channel.contextId ?? "Not bound"} />
+            {isAdmin ? (
+              <div className="pt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canFocusChannel || focusing}
+                    onClick={() => void handleFocusChannel()}
+                  >
+                    Focus channel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canArchiveChannel || archiving}
+                    onClick={() => void handleArchiveChannel()}
+                  >
+                    Archive channel
+                  </Button>
+                </div>
+                {!canArchiveChannel ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {isBuiltIn ? "Built-in chat-main channel cannot be archived." : "Archive requires admin access."}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </Section>
       </section>
@@ -300,58 +375,79 @@ export const MessageChannelMetadataDisclosure = ({
       <Section title="Participants" icon={CircleDot}>
         <div className="space-y-2">
           {participantDrafts.map((participant, index) => (
-            <div key={`${participant.id}-${index}`} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7rem_auto]">
-              <Input
-                aria-label={`Participant label ${index + 1}`}
-                value={participant.label}
-                readOnly={!canEditChannel}
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value;
-                  setParticipantDrafts((current) =>
-                    current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, label: nextValue } : entry)),
-                  );
-                }}
-                placeholder="Label"
-              />
-              <Input
-                aria-label={`Participant id ${index + 1}`}
-                value={participant.id}
-                readOnly={!canEditChannel}
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value;
-                  setParticipantDrafts((current) =>
-                    current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, id: nextValue } : entry)),
-                  );
-                }}
-                placeholder="user:someone"
-              />
-              <Select
-                aria-label={`Participant role ${index + 1}`}
-                disabled={!canEditChannel}
-                value={participant.role}
-                onChange={(event) => {
-                  const nextRole = toParticipantRole(event.currentTarget.value);
-                  setParticipantDrafts((current) =>
-                    current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, role: nextRole } : entry)),
-                  );
-                }}
-              >
-                <option value="avatar">avatar</option>
-                <option value="user">user</option>
-                <option value="system">system</option>
-              </Select>
-              {canEditChannel ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Remove participant ${index + 1}`}
-                  onClick={() => {
-                    setParticipantDrafts((current) => current.filter((_, entryIndex) => entryIndex !== index));
+            <div
+              key={participant.key}
+              className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7rem_auto]"
+            >
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-label-${participant.key}`}>
+                  Label
+                </label>
+                <Input
+                  id={`participant-label-${participant.key}`}
+                  aria-label={`Participant label ${index + 1}`}
+                  value={participant.label}
+                  readOnly={!canEditChannel}
+                  onChange={(event) => {
+                    const nextValue = event.currentTarget.value;
+                    setParticipantDrafts((current) =>
+                      current.map((entry) => (entry.key === participant.key ? { ...entry, label: nextValue } : entry)),
+                    );
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-id-${participant.key}`}>
+                  Participant ID
+                </label>
+                <Input
+                  id={`participant-id-${participant.key}`}
+                  aria-label={`Participant id ${index + 1}`}
+                  value={participant.id}
+                  readOnly={!canEditChannel}
+                  onChange={(event) => {
+                    const nextValue = event.currentTarget.value;
+                    setParticipantDrafts((current) =>
+                      current.map((entry) => (entry.key === participant.key ? { ...entry, id: nextValue } : entry)),
+                    );
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-role-${participant.key}`}>
+                  Role
+                </label>
+                <Select
+                  id={`participant-role-${participant.key}`}
+                  aria-label={`Participant role ${index + 1}`}
+                  disabled={!canEditChannel}
+                  value={participant.role}
+                  onChange={(event) => {
+                    const nextRole = toParticipantRole(event.currentTarget.value);
+                    setParticipantDrafts((current) =>
+                      current.map((entry) => (entry.key === participant.key ? { ...entry, role: nextRole } : entry)),
+                    );
                   }}
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <option value="avatar">avatar</option>
+                  <option value="user">user</option>
+                  <option value="system">system</option>
+                </Select>
+              </div>
+              {canEditChannel ? (
+                <div className="flex items-end justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Remove participant ${index + 1}`}
+                    onClick={() => {
+                      setParticipantDrafts((current) => current.filter((entry) => entry.key !== participant.key));
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               ) : null}
             </div>
           ))}
@@ -361,7 +457,10 @@ export const MessageChannelMetadataDisclosure = ({
               variant="outline"
               size="sm"
               onClick={() => {
-                setParticipantDrafts((current) => [...current, { id: "", label: "", role: "user" }]);
+                setParticipantDrafts((current) => [
+                  ...current,
+                  { key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id: "", label: "", role: "user" },
+                ]);
               }}
             >
               <Plus className="h-4 w-4" />

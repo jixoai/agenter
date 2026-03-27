@@ -62,6 +62,7 @@ import { DEFAULT_MESSAGE_CHAT_ID, resolveCollectedInputsChatId, resolveSessionBl
 import { resolveSessionConfig } from "./session-config";
 import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
+import type { TerminalControlPlaneEntry, TerminalProcessProfile } from "@agenter/terminal-system";
 import {
   listScopedSettingsGraph,
   readScopedSettingsLayer,
@@ -860,10 +861,10 @@ export class AppKernel {
     return { ok };
   }
 
-  listMessageChannels(sessionId: string): MessageControlPlaneEntry[] {
+  listMessageChannels(sessionId: string, input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      return runtime.listMessageChannels();
+      return runtime.listMessageChannels({ includeArchived: input.includeArchived });
     }
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
@@ -876,7 +877,7 @@ export class AppKernel {
     }
     const plane = new MessageControlPlane({ dbPath });
     try {
-      const channels = plane.listChannels();
+      const channels = plane.listChannels({ includeArchived: input.includeArchived });
       return channels.length > 0 ? channels : [createFallbackMessageChannel(session)];
     } finally {
       plane.close();
@@ -887,6 +888,13 @@ export class AppKernel {
     sessionId: string;
     kind: MessageChannelKind;
     title?: string;
+    participants?: Array<{
+      id: string;
+      label?: string;
+      role?: "avatar" | "user" | "system";
+    }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
     focus?: boolean;
   }): MessageControlPlaneEntry {
     const runtime = this.runtimes.get(input.sessionId);
@@ -896,6 +904,9 @@ export class AppKernel {
     return runtime.createMessageChannel({
       kind: input.kind,
       title: input.title,
+      participants: input.participants,
+      metadata: input.metadata,
+      adminToken: input.adminToken,
       focus: input.focus,
     });
   }
@@ -929,6 +940,18 @@ export class AppKernel {
     });
   }
 
+  archiveMessageChannel(input: { sessionId: string; chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.archiveMessageChannel({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      archivedBy: input.archivedBy,
+    });
+  }
+
   listMessageChannelGrants(input: { sessionId: string; chatId: string; accessToken: string }): MessageChannelGrantRecord[] {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
@@ -953,6 +976,7 @@ export class AppKernel {
       role: input.role,
       label: input.label,
       participantId: input.participantId,
+      accessTokenHint: input.accessTokenHint,
     });
   }
 
@@ -966,6 +990,60 @@ export class AppKernel {
       accessToken: input.accessToken,
       grantId: input.grantId,
     });
+  }
+
+  listTerminals(sessionId: string): TerminalControlPlaneEntry[] {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return [];
+    }
+    return runtime.listRuntimeTerminals();
+  }
+
+  async createTerminal(input: {
+    sessionId: string;
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: TerminalProcessProfile;
+    focus?: boolean;
+  }): Promise<{ ok: boolean; message: string; terminal?: TerminalControlPlaneEntry }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return await runtime.createRuntimeTerminal({
+      terminalId: input.terminalId,
+      processKind: input.processKind,
+      command: input.command,
+      cwd: input.cwd,
+      profile: input.profile,
+      focus: input.focus,
+    });
+  }
+
+  focusTerminals(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): { ok: boolean; message: string; focusedTerminalIds: string[] } {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.focusRuntimeTerminals({
+      op: input.op,
+      terminalIds: input.terminalIds,
+    });
+  }
+
+  async deleteTerminal(input: { sessionId: string; terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return await runtime.deleteRuntimeTerminal(input.terminalId);
   }
 
   async sendMessageChannel(input: {
@@ -1253,10 +1331,15 @@ export class AppKernel {
 
   listCurrentBranchCycles(sessionId: string, limit = 200) {
     const runtime = this.runtimes.get(sessionId);
-    if (!runtime) {
+    if (runtime) {
+      return runtime.listCurrentBranchCycles(limit);
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
       return [];
     }
-    return runtime.listCurrentBranchCycles(limit);
+    return this.readCurrentBranchCyclesPageFromDb(session.sessionRoot, { limit }).items;
   }
 
   pageCurrentBranchCycles(

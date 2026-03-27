@@ -76,6 +76,8 @@ export interface MessageChannelRecord {
   metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  archivedAt?: number;
+  archivedBy?: string;
   focused: boolean;
 }
 
@@ -148,6 +150,7 @@ export interface MessageCreateInput {
   contextId?: string;
   participants?: MessageParticipant[];
   metadata?: Record<string, unknown>;
+  adminToken?: string;
 }
 
 export interface MessageAppendInput {
@@ -188,6 +191,7 @@ export interface MessageIssueGrantInput {
   role: MessageChannelAccessRole;
   label?: string;
   participantId?: string;
+  accessTokenHint?: string;
 }
 
 export interface CommitWaitHandle<T = unknown> {

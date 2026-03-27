@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import * as stories from "../../src/features/terminal/TerminalPanel.stories";
 
-const { EmbeddedSnapshotFallback, NarrowViewportSnapshotFallback } = composeStories(stories);
+const { EmbeddedSnapshotFallback, NarrowViewportSnapshotFallback, LifecycleControls } = composeStories(stories);
 
 describe("Feature: Storybook DOM contract for terminal panel", () => {
   test("Scenario: Given an embedded terminal story When rendering in the browser Then the standalone renderer host mounts with renderer-owned scrolling", async () => {
@@ -30,5 +30,9 @@ describe("Feature: Storybook DOM contract for terminal panel", () => {
       warnSpy.mockRestore();
       expect(changeInUpdateWarnings).toHaveLength(0);
     }
+  });
+
+  test("Scenario: Given terminal lifecycle controls When admin creates, focuses, and deletes runtime terminals Then corresponding control-plane callbacks are triggered", async () => {
+    await LifecycleControls.run();
   });
 });

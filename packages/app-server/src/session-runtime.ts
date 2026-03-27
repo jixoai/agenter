@@ -56,6 +56,8 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalControlPlaneEntry,
+  type TerminalProcessProfile,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
 } from "@agenter/terminal-system";
 import { createHash } from "node:crypto";
@@ -124,6 +126,8 @@ const ATTENTION_DEBT_INITIAL_BACKOFF_MS = 600;
 const ATTENTION_DEBT_MAX_BACKOFF_MS = 5_000;
 const ATTENTION_DEBT_BACKOFF_MULTIPLIER = 2;
 const ATTENTION_FAILURE_BLOCK_THRESHOLD = 2;
+// Lifecycle commits are factual state-change records; keep them queryable but non-blocking by default.
+const LIFECYCLE_ATTENTION_SCORE = 0;
 
 type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 type TerminalReadMode = "auto" | "diff" | "snapshot";
@@ -916,6 +920,10 @@ export class SessionRuntime {
     return `ctx-${chatId}`;
   }
 
+  private getTerminalAttentionContextId(terminalId: string): string {
+    return `ctx-terminal-${terminalId}`;
+  }
+
   private ensureAttentionContextForChannel(chatId: string): AttentionContextDescriptor {
     const channel = this.messageSystem.getChannel(chatId);
     const contextId = channel?.contextId ?? this.getDefaultAttentionContextId(chatId);
@@ -951,17 +959,25 @@ export class SessionRuntime {
       return existing;
     }
     const avatar = this.getAvatarName();
+    const defaults = this.config?.message?.chatMainDefaults;
     const created = this.messageSystem.createChannel({
       chatId,
       kind: "direct",
-      title: "Chat",
+      title: defaults?.title ?? "Chat",
       owner: avatar,
       contextId: context.contextId,
-      participants: [
-        { id: `avatar:${avatar}`, label: avatar, role: "avatar" },
-        { id: "user", label: "User", role: "user" },
-      ],
-      metadata: { builtIn: true },
+      participants:
+        defaults?.participants && defaults.participants.length > 0
+          ? defaults.participants
+          : [
+              { id: `avatar:${avatar}`, label: avatar, role: "avatar" },
+              { id: "user", label: "User", role: "user" },
+            ],
+      metadata: {
+        builtIn: true,
+        ...(defaults?.metadata ?? {}),
+      },
+      adminToken: defaults?.adminToken,
     });
     this.messageSystem.focus("add", [chatId]);
     return created;
@@ -980,9 +996,68 @@ export class SessionRuntime {
     return `${base}-${suffix}`;
   }
 
-  listMessageChannels(): MessageControlPlaneEntry[] {
+  private projectMessageChannelForAttention(channel: MessageControlPlaneEntry): Record<string, unknown> {
+    return {
+      chatId: channel.chatId,
+      kind: channel.kind,
+      title: channel.title,
+      owner: channel.owner,
+      contextId: channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId),
+      participants: channel.participants.map((participant) => ({
+        id: participant.id,
+        label: participant.label,
+        role: participant.role,
+      })),
+      metadata:
+        channel.metadata && typeof channel.metadata === "object"
+          ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
+          : {},
+      focused: channel.focused,
+      archivedAt: channel.archivedAt ?? null,
+      archivedBy: channel.archivedBy ?? null,
+    };
+  }
+
+  private projectMessageChannelForTooling(channel: MessageControlPlaneEntry): {
+    chatId: string;
+    kind: "direct" | "room";
+    title: string;
+    owner: string;
+    contextId?: string;
+    participants: Array<{
+      id: string;
+      label?: string;
+      role?: "avatar" | "user" | "system";
+    }>;
+    metadata?: Record<string, unknown>;
+    focused: boolean;
+    archivedAt?: number;
+    archivedBy?: string;
+  } {
+    return {
+      chatId: channel.chatId,
+      kind: channel.kind,
+      title: channel.title,
+      owner: channel.owner,
+      contextId: channel.contextId,
+      participants: channel.participants.map((participant) => ({
+        id: participant.id,
+        label: participant.label,
+        role: participant.role,
+      })),
+      metadata:
+        channel.metadata && typeof channel.metadata === "object"
+          ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
+          : undefined,
+      focused: channel.focused,
+      archivedAt: channel.archivedAt,
+      archivedBy: channel.archivedBy,
+    };
+  }
+
+  listMessageChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     this.ensureDefaultChatChannel();
-    return this.messageSystem.listChannels();
+    return this.messageSystem.listChannels({ includeArchived: input.includeArchived });
   }
 
   createMessageChannel(input: {
@@ -993,6 +1068,8 @@ export class SessionRuntime {
       label?: string;
       role?: "avatar" | "user" | "system";
     }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
     focus?: boolean;
   }): MessageControlPlaneEntry {
     const avatar = this.getAvatarName();
@@ -1011,10 +1088,37 @@ export class SessionRuntime {
               { id: `avatar:${avatar}`, label: avatar, role: "avatar" },
               { id: "user", label: "User", role: "user" },
             ],
-      metadata: { builtIn: false },
+      metadata: input.metadata ?? { builtIn: false },
+      adminToken: input.adminToken,
+    });
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "message",
+      subjectId: chatId,
+      contextId: context.contextId,
+      event: "channel_create",
+      summary: `Created chat channel ${chatId}`,
+      payload: {
+        kind: input.kind,
+        title: channel.title,
+        focused: Boolean(input.focus ?? true),
+        channel: this.projectMessageChannelForAttention(channel),
+      },
     });
     if (input.focus ?? true) {
       this.messageSystem.focus("replace", [chatId]);
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "message",
+        subjectId: chatId,
+        contextId: context.contextId,
+        event: "channel_focus",
+        summary: `Focused chat channel ${chatId}`,
+        payload: {
+          op: "replace",
+          channels: [chatId],
+          focused: true,
+          channel: this.projectMessageChannelForAttention(channel),
+        },
+      });
       return this.messageSystem.getChannel(chatId) ?? channel;
     }
     return channel;
@@ -1024,8 +1128,39 @@ export class SessionRuntime {
     op: MessageFocusOp;
     channels: Array<{ chatId: string; accessToken: string }>;
   }): MessageControlPlaneEntry[] {
-    this.messageSystem.focusAuthorized(input.op, input.channels);
-    return this.messageSystem.listChannels();
+    const focusedBefore = new Set(this.messageSystem.getFocusedChatIds());
+    const focusedAfter = new Set(this.messageSystem.focusAuthorized(input.op, input.channels));
+    const channels = this.messageSystem.listChannels();
+    const touchedChatIds = new Set<string>([
+      ...focusedBefore,
+      ...focusedAfter,
+      ...input.channels.map((item) => item.chatId),
+    ]);
+    for (const chatId of touchedChatIds) {
+      const channel = channels.find((item) => item.chatId === chatId);
+      if (!channel) {
+        continue;
+      }
+      const focused = focusedAfter.has(chatId);
+      const wasFocused = focusedBefore.has(chatId);
+      if (focused === wasFocused && !input.channels.some((item) => item.chatId === chatId)) {
+        continue;
+      }
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "message",
+        subjectId: chatId,
+        contextId: channel.contextId ?? this.getDefaultAttentionContextId(chatId),
+        event: "channel_focus",
+        summary: `${focused ? "Focused" : "Unfocused"} chat channel ${chatId}`,
+        payload: {
+          op: input.op,
+          focused,
+          focusedChatIds: [...focusedAfter],
+          channel: this.projectMessageChannelForAttention(channel),
+        },
+      });
+    }
+    return channels;
   }
 
   updateMessageChannel(input: {
@@ -1033,7 +1168,51 @@ export class SessionRuntime {
     accessToken: string;
     patch: MessageChannelPatchInput;
   }): MessageControlPlaneEntry {
-    return this.messageSystem.updateChannelAuthorized(input);
+    const updated = this.messageSystem.updateChannelAuthorized(input);
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "message",
+      subjectId: updated.chatId,
+      contextId: updated.contextId ?? this.getDefaultAttentionContextId(updated.chatId),
+      event: "channel_update",
+      summary: `Updated chat channel ${updated.chatId}`,
+      payload: {
+        patch: {
+          title: input.patch.title ?? null,
+          participants: input.patch.participants ?? null,
+          metadata: input.patch.metadata ?? null,
+        },
+        channel: this.projectMessageChannelForAttention(updated),
+      },
+    });
+    return updated;
+  }
+
+  archiveMessageChannel(input: { chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
+    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    const builtIn = Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
+    if (channel.chatId === this.getDefaultChatId() || builtIn) {
+      throw new Error("chat-main is protected and cannot be archived");
+    }
+    const archived = this.messageSystem.archiveChannelAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      archivedBy: input.archivedBy ?? this.getAvatarName(),
+    });
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "message",
+      subjectId: archived.chatId,
+      contextId: archived.contextId ?? this.getDefaultAttentionContextId(archived.chatId),
+      event: "channel_archive",
+      summary: `Archived chat channel ${archived.chatId}`,
+      payload: {
+        archivedAt: archived.archivedAt ?? Date.now(),
+        channel: this.projectMessageChannelForAttention(archived),
+      },
+    });
+    return archived;
   }
 
   listMessageChannelGrants(input: { chatId: string; accessToken: string }): MessageChannelGrantRecord[] {
@@ -1043,11 +1222,178 @@ export class SessionRuntime {
   issueMessageChannelGrant(
     input: { chatId: string; accessToken: string } & MessageIssueGrantInput,
   ): MessageIssuedGrant {
-    return this.messageSystem.issueChannelGrantAuthorized(input);
+    const issued = this.messageSystem.issueChannelGrantAuthorized(input);
+    const channel = this.messageSystem.getChannel(issued.chatId, { includeArchived: true });
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "message",
+      subjectId: issued.chatId,
+      contextId: channel?.contextId ?? this.getDefaultAttentionContextId(issued.chatId),
+      event: "channel_issue_grant",
+      summary: `Issued ${issued.role} token for ${issued.chatId}`,
+      payload: {
+        role: issued.role,
+        participantId: issued.participantId ?? null,
+        label: issued.label ?? null,
+        channel: channel ? this.projectMessageChannelForAttention(channel) : null,
+      },
+    });
+    return issued;
   }
 
   revokeMessageChannelGrant(input: { chatId: string; accessToken: string; grantId: string }): { ok: boolean } {
-    return this.messageSystem.revokeChannelGrantAuthorized(input);
+    const result = this.messageSystem.revokeChannelGrantAuthorized(input);
+    if (result.ok) {
+      const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "message",
+        subjectId: input.chatId,
+        contextId: channel?.contextId ?? this.getDefaultAttentionContextId(input.chatId),
+        event: "channel_revoke_grant",
+        summary: `Revoked token for ${input.chatId}`,
+        payload: {
+          grantId: input.grantId,
+          channel: channel ? this.projectMessageChannelForAttention(channel) : null,
+        },
+      });
+    }
+    return result;
+  }
+
+  listRuntimeTerminals(): TerminalControlPlaneEntry[] {
+    return this.requireTerminalControlPlane().list();
+  }
+
+  async createRuntimeTerminal(input: {
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: TerminalProcessProfile;
+    focus?: boolean;
+  }): Promise<{ ok: boolean; message: string; terminal?: TerminalControlPlaneEntry }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    const targetTerminalId = input.terminalId;
+    try {
+      let createdTerminalId: string;
+      if (targetTerminalId && this.config?.terminals[targetTerminalId]) {
+        await this.createTerminal(targetTerminalId, this.config.terminals[targetTerminalId]);
+        controlPlane.start(targetTerminalId);
+        if (this.config.terminals[targetTerminalId]?.gitLog) {
+          await controlPlane.markDirty(targetTerminalId);
+        }
+        this.terminalDirtyState[targetTerminalId] = false;
+        createdTerminalId = targetTerminalId;
+      } else {
+        const created = await controlPlane.create({
+          terminalId: input.terminalId,
+          processKind: input.processKind,
+          command: input.command,
+          cwd: input.cwd,
+          profile: input.profile,
+        });
+        const managed = controlPlane.getManagedTerminal(created.terminalId);
+        if (managed) {
+          this.attachRuntimeTerminal(created.terminalId, managed);
+        }
+        this.terminalDirtyState[created.terminalId] = false;
+        createdTerminalId = created.terminalId;
+      }
+
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "terminal",
+        subjectId: createdTerminalId,
+        contextId: this.getTerminalAttentionContextId(createdTerminalId),
+        event: "terminal_create",
+        summary: `Created terminal ${createdTerminalId}`,
+        payload: {
+          processKind: input.processKind ?? "shell",
+        },
+      });
+
+      if (input.focus ?? true) {
+        this.updateFocusedTerminals("replace", [createdTerminalId]);
+        this.enqueueLifecycleAttentionCommit({
+          systemId: "terminal",
+          subjectId: createdTerminalId,
+          contextId: this.getTerminalAttentionContextId(createdTerminalId),
+          event: "terminal_focus",
+          summary: `Focused terminal ${createdTerminalId}`,
+          payload: { op: "replace", focused: true },
+        });
+      }
+
+      const terminal = controlPlane.list().find((item) => item.terminalId === createdTerminalId);
+      return {
+        ok: true,
+        message: terminal ? "terminal created" : "terminal created but unavailable in snapshot",
+        terminal,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit("error", { message: `terminal create failed (${targetTerminalId ?? "dynamic"}): ${message}` });
+      return { ok: false, message };
+    }
+  }
+
+  focusRuntimeTerminals(input: {
+    op: TerminalFocusOp;
+    terminalIds: string[];
+  }): { ok: boolean; message: string; focusedTerminalIds: string[] } {
+    const controlPlane = this.requireTerminalControlPlane();
+    const unknown = input.terminalIds.filter((terminalId) => !controlPlane.has(terminalId));
+    if (unknown.length > 0) {
+      return {
+        ok: false,
+        message: `unknown terminal: ${unknown[0]}`,
+        focusedTerminalIds: [...this.focusedTerminalIds],
+      };
+    }
+    const focusedTerminalIds = this.updateFocusedTerminals(input.op, input.terminalIds);
+    for (const terminalId of focusedTerminalIds) {
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "terminal",
+        subjectId: terminalId,
+        contextId: this.getTerminalAttentionContextId(terminalId),
+        event: "terminal_focus",
+        summary: `Focused terminal ${terminalId}`,
+        payload: {
+          op: input.op,
+          focused: true,
+        },
+      });
+    }
+    return { ok: true, message: `focus ${input.op}`, focusedTerminalIds };
+  }
+
+  async deleteRuntimeTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    const result = await controlPlane.kill(terminalId);
+    if (!result.ok) {
+      return result;
+    }
+    this.terminals.delete(terminalId);
+    delete this.terminalDirtyState[terminalId];
+    delete this.terminalLatestSeq[terminalId];
+    delete this.terminalSnapshots[terminalId];
+    delete this.terminalReads[terminalId];
+    this.dirtyQueue.delete(terminalId);
+    if (this.config?.terminals[terminalId]) {
+      delete this.config.terminals[terminalId];
+      this.config.bootTerminals = this.config.bootTerminals.filter((entry) => entry.terminalId !== terminalId);
+      if (this.config.primaryTerminalId === terminalId) {
+        this.config.primaryTerminalId = Object.keys(this.config.terminals)[0] ?? this.config.primaryTerminalId;
+      }
+    }
+    this.focusedTerminalIds = controlPlane.getFocusedTerminalIds();
+    this.emitFocusedTerminal();
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "terminal",
+      subjectId: terminalId,
+      contextId: this.getTerminalAttentionContextId(terminalId),
+      event: "terminal_delete",
+      summary: `Deleted terminal ${terminalId}`,
+    });
+    return result;
   }
 
   private resolveMessageRole(message: MessageRecord): ChatMessage["role"] {
@@ -1063,8 +1409,16 @@ export class SessionRuntime {
       message.metadata && typeof message.metadata === "object"
         ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
         : {};
+    const channel = this.messageSystem.getChannel(message.chatId, { includeArchived: true });
     if (message.chatId) {
       meta.chatId = message.chatId;
+    }
+    if (channel) {
+      meta.chatTitle = channel.title;
+      meta.chatKind = channel.kind;
+      meta.chatFocused = channel.focused;
+      meta.chatContextId = channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId);
+      meta.chatOwner = channel.owner;
     }
     return {
       name: message.from,
@@ -1363,6 +1717,10 @@ export class SessionRuntime {
           ...(request.ref.meta ? { ...request.ref.meta } : {}),
           source: "message",
           chatId,
+          chatTitle: channel?.title ?? chatId,
+          chatKind: channel?.kind ?? "direct",
+          chatContextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
+          chatFocused: channel?.focused ?? false,
         },
       },
     ];
@@ -1604,6 +1962,60 @@ export class SessionRuntime {
 
   private buildResolvedAttentionScores(scores: Record<string, number>): Record<string, number> {
     return Object.fromEntries(Object.keys(scores).map((key) => [key, 0]));
+  }
+
+  private enqueueLifecycleAttentionCommit(input: Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0]): void {
+    void this.commitLifecycleAttentionItem(input).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit("error", { message: `lifecycle attention commit failed: ${message}` });
+    });
+  }
+
+  private async commitLifecycleAttentionItem(input: {
+    systemId: "message" | "terminal";
+    subjectId: string;
+    contextId: string;
+    event: string;
+    summary: string;
+    payload?: Record<string, unknown>;
+    score?: number;
+  }): Promise<void> {
+    const context = this.attentionSystem.getContext(input.contextId);
+    if (!context) {
+      this.attentionSystem.createContext({
+        contextId: input.contextId,
+        owner: this.getAvatarName(),
+      });
+    }
+    const scoreToken = this.attentionHashAliases.ensureTokenForDigest(
+      buildAttentionScoreDigest(`lifecycle:${input.systemId}:${input.subjectId}:${input.event}`),
+    );
+    const score = Math.max(0, Math.trunc(input.score ?? LIFECYCLE_ATTENTION_SCORE));
+    const detail = toYaml({
+      event: input.event,
+      systemId: input.systemId,
+      subjectId: input.subjectId,
+      ...input.payload,
+    });
+    const commit = this.attentionSystem.commit(input.contextId, {
+      meta: {
+        author: this.getAvatarName(),
+        source: "lifecycle",
+        systemId: input.systemId,
+        subjectId: input.subjectId,
+        channelId: input.systemId === "message" ? input.subjectId : undefined,
+        lifecycleEvent: input.event,
+        createdAt: new Date().toISOString(),
+      },
+      scores: { [scoreToken]: score },
+      summary: input.summary,
+      change: {
+        type: "update",
+        value: mdFence("yaml", detail),
+        format: "text/markdown",
+      },
+    }).commit;
+    await this.handleCommittedAttentionCommit(input.contextId, commit, { notifyLoop: true });
   }
 
   private buildContextPreservingChange(contextId: string): AttentionCommitChange {
@@ -2478,68 +2890,20 @@ export class SessionRuntime {
           return [...configured, ...dynamic];
         },
         create: async ({ terminalId, processKind, command, cwd, profile }) => {
-          const controlPlane = this.requireTerminalControlPlane();
-          try {
-            if (terminalId && this.config?.terminals[terminalId]) {
-              await this.createTerminal(terminalId, this.config.terminals[terminalId]);
-              controlPlane.start(terminalId);
-              if (this.config.terminals[terminalId]?.gitLog) {
-                await controlPlane.markDirty(terminalId);
-              }
-              this.terminalDirtyState[terminalId] = false;
-              return {
-                ok: true,
-                message: "terminal started",
-                terminal: controlPlane.list().find((entry) => entry.terminalId === terminalId),
-              };
-            }
-            const created = await controlPlane.create({
-              terminalId,
-              processKind,
-              command,
-              cwd,
-              profile,
-            });
-            const managed = controlPlane.getManagedTerminal(created.terminalId);
-            if (managed) {
-              this.attachRuntimeTerminal(created.terminalId, managed);
-            }
-            this.terminalDirtyState[created.terminalId] = false;
-            return { ok: true, message: "terminal created", terminal: created };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.emit("error", { message: `terminal create failed (${terminalId ?? "dynamic"}): ${message}` });
-            return { ok: false, message };
-          }
+          return await this.createRuntimeTerminal({
+            terminalId,
+            processKind,
+            command,
+            cwd,
+            profile,
+            focus: false,
+          });
         },
         kill: async ({ terminalId }) => {
-          const result = await this.requireTerminalControlPlane().kill(terminalId);
-          if (result.ok) {
-            this.terminals.delete(terminalId);
-            delete this.terminalDirtyState[terminalId];
-            delete this.terminalLatestSeq[terminalId];
-            delete this.terminalSnapshots[terminalId];
-            delete this.terminalReads[terminalId];
-            this.focusedTerminalIds = this.requireTerminalControlPlane().getFocusedTerminalIds();
-            this.emitFocusedTerminal();
-          }
-          return result;
+          return await this.deleteRuntimeTerminal(terminalId);
         },
         focus: async ({ op = "replace", terminalIds = [] }) => {
-          const unknown = terminalIds.filter((terminalId) => !this.requireTerminalControlPlane().has(terminalId));
-          if (unknown.length > 0) {
-            return {
-              ok: false,
-              message: `unknown terminal: ${unknown[0]}`,
-              focusedTerminalIds: [...this.focusedTerminalIds],
-            };
-          }
-          const next = this.updateFocusedTerminals(op, terminalIds);
-          return {
-            ok: true,
-            message: `focus ${op}`,
-            focusedTerminalIds: next,
-          };
+          return this.focusRuntimeTerminals({ op, terminalIds });
         },
         write: async ({ terminalId, text, submit, submitKey }) => {
           const controlPlane = this.requireTerminalControlPlane();
@@ -2616,6 +2980,17 @@ export class SessionRuntime {
         },
       },
       messageGateway: {
+        listChannels: async (input = {}) =>
+          this.listMessageChannels({ includeArchived: input.includeArchived }).map((channel) =>
+            this.projectMessageChannelForTooling(channel),
+          ),
+        getChannel: async ({ chatId, includeArchived = false }) => {
+          if (chatId === this.getDefaultChatId()) {
+            this.ensureDefaultChatChannel();
+          }
+          const channel = this.messageSystem.getChannel(chatId, { includeArchived });
+          return channel ? this.projectMessageChannelForTooling(channel) : null;
+        },
         send: async ({ chatId, content, rootId, from, to }) => {
           const channel = this.messageSystem.getChannel(chatId);
           if (!channel) {
@@ -3535,11 +3910,7 @@ export class SessionRuntime {
   }
 
   focusTerminal(terminalId: string): boolean {
-    if (!this.terminals.has(terminalId)) {
-      return false;
-    }
-    this.updateFocusedTerminals("add", [terminalId]);
-    return true;
+    return this.focusRuntimeTerminals({ op: "add", terminalIds: [terminalId] }).ok;
   }
 
   snapshot(): SessionRuntimeSnapshot {

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { aiProviderSchema } from "./provider";
 
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
+
 export const settingsSchema = z.object({
   settingsSource: z.array(z.string()).describe("Settings source precedence from low to high priority.").optional(),
   avatar: z.string().min(1).describe("Nickname of the active avatar profile.").optional(),
@@ -62,6 +64,37 @@ export const settingsSchema = z.object({
             .optional(),
         })
         .describe("Terminal feature switches.")
+        .optional(),
+      message: z
+        .object({
+          chatMainDefaults: z
+            .object({
+              title: z.string().trim().min(1).describe("Default title for chat-main channel.").optional(),
+              participants: z
+                .array(
+                  z.object({
+                    id: z.string().trim().min(1).describe("Participant id."),
+                    label: z.string().trim().min(1).describe("Participant label.").optional(),
+                    role: z.enum(["avatar", "user", "system"]).describe("Participant role.").optional(),
+                  }),
+                )
+                .describe("Default participants for chat-main channel.")
+                .optional(),
+              metadata: z
+                .record(z.string(), z.unknown())
+                .describe("Additional metadata merged into chat-main channel.")
+                .optional(),
+              adminToken: z
+                .string()
+                .trim()
+                .regex(ACCESS_TOKEN_PATTERN, "adminToken must be 16-128 chars [A-Za-z0-9._-]")
+                .describe("Optional explicit admin token for chat-main bootstrap.")
+                .optional(),
+            })
+            .describe("Default chat-main bootstrap config.")
+            .optional(),
+        })
+        .describe("Message feature switches.")
         .optional(),
     })
     .describe("Feature-level runtime toggles.")

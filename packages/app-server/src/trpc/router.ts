@@ -19,6 +19,18 @@ const channelAccessInput = z.object({
   chatId: z.string().min(1),
   accessToken: z.string().min(1),
 });
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
+const terminalProcessProfileSchema = z.object({
+  command: z.array(z.string().min(1)).min(1).optional(),
+  cwd: z.string().min(1).optional(),
+  cols: z.number().int().positive().optional(),
+  rows: z.number().int().positive().optional(),
+  gitLog: z.union([z.literal(false), z.literal("none"), z.literal("normal"), z.literal("verbose")]).optional(),
+  logStyle: z.union([z.literal("plain"), z.literal("rich")]).optional(),
+  icon: z.string().trim().min(1).optional(),
+  title: z.string().trim().min(1).optional(),
+  shortcuts: z.record(z.string(), z.string().min(1)).optional(),
+});
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
   code: z.string().trim().min(1).optional(),
@@ -140,14 +152,34 @@ export const appRouter = t.router({
   }),
   message: t.router({
     listChannels: t.procedure
-      .input(sessionIdInput)
-      .query(({ ctx, input }) => ({ items: ctx.kernel.listMessageChannels(input.sessionId) })),
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          includeArchived: z.boolean().optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({ items: ctx.kernel.listMessageChannels(input.sessionId, { includeArchived: input.includeArchived }) })),
     createChannel: t.procedure
       .input(
         z.object({
           sessionId: z.string().min(1),
           kind: z.enum(["direct", "room"]),
           title: z.string().trim().min(1).optional(),
+          participants: z
+            .array(
+              z.object({
+                id: z.string().trim().min(1),
+                label: z.string().trim().min(1).optional(),
+                role: z.enum(["avatar", "user", "system"]).optional(),
+              }),
+            )
+            .optional(),
+          metadata: z.record(z.string(), z.unknown()).optional(),
+          adminToken: z
+            .string()
+            .trim()
+            .regex(ACCESS_TOKEN_PATTERN, "adminToken must be 16-128 chars [A-Za-z0-9._-]")
+            .optional(),
           focus: z.boolean().optional(),
         }),
       )
@@ -156,6 +188,9 @@ export const appRouter = t.router({
           sessionId: input.sessionId,
           kind: input.kind,
           title: input.title,
+          participants: input.participants,
+          metadata: input.metadata,
+          adminToken: input.adminToken,
           focus: input.focus,
         }),
       })),
@@ -261,6 +296,18 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.updateMessageChannel(input),
       })),
+    deleteChannel: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          archivedBy: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.archiveMessageChannel(input),
+      })),
     listChannelGrants: t.procedure
       .input(
         z.object({
@@ -281,6 +328,11 @@ export const appRouter = t.router({
           role: z.enum(["admin", "member", "readonly"]),
           label: z.string().trim().min(1).optional(),
           participantId: z.string().trim().min(1).optional(),
+          accessTokenHint: z
+            .string()
+            .trim()
+            .regex(ACCESS_TOKEN_PATTERN, "accessTokenHint must be 16-128 chars [A-Za-z0-9._-]")
+            .optional(),
         }),
       )
       .mutation(({ ctx, input }) => ({
@@ -296,6 +348,43 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.revokeMessageChannelGrant(input)),
+  }),
+  terminal: t.router({
+    list: t.procedure
+      .input(sessionIdInput)
+      .query(({ ctx, input }) => ({ items: ctx.kernel.listTerminals(input.sessionId) })),
+    create: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          terminalId: z.string().min(1).optional(),
+          processKind: z.string().trim().min(1).optional(),
+          command: z.array(z.string().min(1)).min(1).optional(),
+          cwd: z.string().min(1).optional(),
+          profile: terminalProcessProfileSchema.optional(),
+          focus: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        result: await ctx.kernel.createTerminal(input),
+      })),
+    focus: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          op: z.enum(["add", "remove", "replace", "clear"]),
+          terminalIds: z.array(z.string().min(1)).default([]),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.focusTerminals(input)),
+    delete: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          terminalId: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => await ctx.kernel.deleteTerminal(input)),
   }),
   draft: t.router({
     resolve: t.procedure

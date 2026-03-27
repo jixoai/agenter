@@ -363,6 +363,8 @@ const QuickStartRouteView = () => {
         recentSessions={controller.quickstartRecentSessions}
         loadingDraft={controller.quickstartDraftLoading}
         starting={controller.quickstartBusy}
+        bootstrapConfig={controller.quickstartBootstrapConfig}
+        bootstrapLoading={controller.quickstartBootstrapLoading}
         onOpenWorkspacePicker={() => setWorkspacePickerOpen(true)}
         onEnterWorkspace={async () => {
           const sessionId = await controller.enterWorkspace();
@@ -374,6 +376,7 @@ const QuickStartRouteView = () => {
             search: renderWorkspaceRouteTarget(controller.quickstartWorkspacePath, sessionId),
           });
         }}
+        onSaveBootstrapConfig={controller.saveQuickstartBootstrapConfig}
         onSubmit={async (payload) => {
           const sessionId = await controller.quickstartSubmit(payload);
           if (!sessionId) {
@@ -792,26 +795,58 @@ const WorkspaceChatRouteView = () => {
               search: renderWorkspaceRouteTarget(search.workspacePath, search.sessionId, { chatId }),
             });
           }}
-          onCreateChannel={(kind) => {
+          onCreateChannel={async (input) => {
             const sessionId = search.sessionId;
             if (!sessionId) {
               return;
             }
-            const nextCount = channels.filter((channel) => channel.kind === kind).length + 1;
-            const title = kind === "room" ? `Room ${nextCount}` : `Chat ${nextCount}`;
-            void controller
-              .createMessageChannel({
-                sessionId,
-                kind,
-                title,
-                focus: true,
-              })
-              .then((created) => {
-                void navigate({
-                  to: "/workspace/chat",
-                  search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, { chatId: created.chatId }),
-                });
-              });
+            const created = await controller.createMessageChannel({
+              sessionId,
+              kind: input.kind,
+              title: input.title,
+              participants: input.participants,
+              metadata: input.metadata,
+              adminToken: input.adminToken,
+              focus: true,
+            });
+            await navigate({
+              to: "/workspace/chat",
+              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, { chatId: created.chatId }),
+            });
+          }}
+          onFocusChannel={async (channel) => {
+            const sessionId = search.sessionId;
+            if (!sessionId) {
+              return;
+            }
+            await controller.focusMessageChannels({
+              sessionId,
+              op: "replace",
+              channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
+            });
+            await navigate({
+              to: "/workspace/chat",
+              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, { chatId: channel.chatId }),
+            });
+          }}
+          onArchiveChannel={async (channel) => {
+            const sessionId = search.sessionId;
+            if (!sessionId) {
+              return;
+            }
+            await controller.archiveMessageChannel({
+              sessionId,
+              chatId: channel.chatId,
+              accessToken: channel.accessToken,
+            });
+            const remaining = await controller.listMessageChannels(sessionId);
+            const nextSelected = remaining.find((item) => item.focused) ?? remaining[0] ?? null;
+            await navigate({
+              to: "/workspace/chat",
+              search: renderWorkspaceRouteTarget(search.workspacePath, sessionId, {
+                chatId: nextSelected?.chatId,
+              }),
+            });
           }}
           onSendMessage={({ channel, payload }) => {
             const sessionId = search.sessionId;

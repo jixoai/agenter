@@ -1284,7 +1284,19 @@ export class RuntimeStore {
     return await this.refreshMessageChannelsInternal(sessionId, { force: true });
   }
 
-  async listMessageChannels(sessionId: string): Promise<MessageChannelEntry[]> {
+  async listMessageChannels(
+    sessionId: string,
+    input: {
+      includeArchived?: boolean;
+    } = {},
+  ): Promise<MessageChannelEntry[]> {
+    if (input.includeArchived) {
+      const output = await this.client.trpc.message.listChannels.query({
+        sessionId,
+        includeArchived: true,
+      });
+      return output.items as MessageChannelEntry[];
+    }
     return await this.refreshMessageChannels(sessionId);
   }
 
@@ -1292,6 +1304,9 @@ export class RuntimeStore {
     sessionId: string;
     kind: "direct" | "room";
     title?: string;
+    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
     focus?: boolean;
   }): Promise<MessageChannelEntry> {
     const output = await this.client.trpc.message.createChannel.mutate(input);
@@ -1438,9 +1453,30 @@ export class RuntimeStore {
     role: "admin" | "member" | "readonly";
     label?: string;
     participantId?: string;
+    accessTokenHint?: string;
   }) {
     const output = await this.client.trpc.message.issueChannelGrant.mutate(input);
     return output.grant;
+  }
+
+  async archiveMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    archivedBy?: string;
+  }): Promise<MessageChannelEntry> {
+    const output = await this.client.trpc.message.deleteChannel.mutate(input);
+    this.setMessageChannelsState(input.sessionId, (resource) => ({
+      ...resource,
+      data: resource.data.filter((item) => item.chatId !== output.channel.chatId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    return output.channel;
   }
 
   async revokeMessageChannelGrant(input: {
@@ -1450,6 +1486,70 @@ export class RuntimeStore {
     grantId: string;
   }): Promise<{ ok: boolean }> {
     return await this.client.trpc.message.revokeChannelGrant.mutate(input);
+  }
+
+  async listTerminals(sessionId: string): Promise<
+    Array<{
+      terminalId: string;
+      processKind: string;
+      command: string[];
+      cwd: string;
+      workspace: string | null;
+      running: boolean;
+      status: "IDLE" | "BUSY";
+      seq: number;
+      focused: boolean;
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+      transportUrl?: string;
+    }>
+  > {
+    const output = await this.client.trpc.terminal.list.query({ sessionId });
+    return output.items;
+  }
+
+  async createTerminal(input: {
+    sessionId: string;
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: {
+      command?: string[];
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+      gitLog?: false | "none" | "normal" | "verbose";
+      logStyle?: "plain" | "rich";
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+    };
+    focus?: boolean;
+  }): Promise<{ ok: boolean; message: string; terminal?: unknown }> {
+    const output = await this.client.trpc.terminal.create.mutate(input);
+    await this.hydrateRuntime(input.sessionId);
+    this.emit();
+    return output.result;
+  }
+
+  async focusTerminals(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
+    const output = await this.client.trpc.terminal.focus.mutate(input);
+    await this.hydrateRuntime(input.sessionId);
+    this.emit();
+    return output;
+  }
+
+  async deleteTerminal(input: { sessionId: string; terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    const output = await this.client.trpc.terminal.delete.mutate(input);
+    await this.hydrateRuntime(input.sessionId);
+    this.emit();
+    return output;
   }
 
   async readSettings(sessionId: string, kind: "settings" | "agenter" | "system" | "template" | "contract") {
@@ -1634,6 +1734,10 @@ export class RuntimeStore {
 
     this.chatHydrationTasksBySession.set(sessionId, task);
     return await task;
+  }
+
+  async hydrateSessionArtifacts(sessionId: string): Promise<void> {
+    await this.hydrateRuntime(sessionId);
   }
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {

@@ -14,6 +14,7 @@ import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Tabs } from "../../components/ui/tabs";
 import { MessageChannelBubble } from "./message-channel-bubble";
+import { MessageChannelCreateDialog, type MessageChannelCreateInput } from "./message-channel-create-dialog";
 import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-disclosure";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
 
@@ -32,7 +33,9 @@ interface MessageChannelSurfaceProps {
   assistantAvatarLabel?: string;
   userAvatarLabel?: string;
   onSelectChannel: (chatId: string) => void;
-  onCreateChannel: (kind: "direct" | "room") => void;
+  onCreateChannel: (input: MessageChannelCreateInput) => Promise<void> | void;
+  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
+  onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onSendMessage: (input: { channel: MessageChannelEntry; payload: AIInputSubmitPayload }) => Promise<void>;
   onUpdateChannel?: (input: {
     channel: MessageChannelEntry;
@@ -72,6 +75,8 @@ export const MessageChannelSurface = ({
   userAvatarLabel,
   onSelectChannel,
   onCreateChannel,
+  onFocusChannel,
+  onArchiveChannel,
   onSendMessage,
   onUpdateChannel,
   onListChannelGrants,
@@ -89,6 +94,8 @@ export const MessageChannelSurface = ({
     [channels, selectedChatId],
   );
   const [collapseCreateLabels, setCollapseCreateLabels] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createDialogKind, setCreateDialogKind] = useState<"direct" | "room">("direct");
   const showEmptyChannelState = !channelsLoading && !channelsError && channels.length === 0;
   const emptyTitle = channelsError
     ? "Unable to load chat channels"
@@ -164,6 +171,8 @@ export const MessageChannelSurface = ({
               {selectedChannel ? (
                 <MessageChannelMetadataDisclosure
                   channel={selectedChannel}
+                  onFocusChannel={onFocusChannel}
+                  onArchiveChannel={onArchiveChannel}
                   onUpdateChannel={onUpdateChannel}
                   onListChannelGrants={onListChannelGrants}
                   onIssueChannelGrant={onIssueChannelGrant}
@@ -180,7 +189,10 @@ export const MessageChannelSurface = ({
                   label="New chat"
                   tooltip="Create a direct chat channel"
                   labelPriority={collapseCreateLabels ? "icon-only" : "always"}
-                  onClick={() => onCreateChannel("direct")}
+                  onClick={() => {
+                    setCreateDialogKind("direct");
+                    setCreateDialogOpen(true);
+                  }}
                   containerClassName="min-w-0"
                 />
                 <AdaptiveIconButton
@@ -192,7 +204,10 @@ export const MessageChannelSurface = ({
                   label="New room"
                   tooltip="Create a room chat channel"
                   labelPriority={collapseCreateLabels ? "icon-only" : "always"}
-                  onClick={() => onCreateChannel("room")}
+                  onClick={() => {
+                    setCreateDialogKind("room");
+                    setCreateDialogOpen(true);
+                  }}
                   containerClassName="min-w-0"
                 />
               </div>
@@ -239,6 +254,16 @@ export const MessageChannelSurface = ({
           socketFactory={socketFactory}
         />
       </AsyncSurface>
+      <MessageChannelCreateDialog
+        open={createDialogOpen}
+        kind={createDialogKind}
+        ownerHint={selectedChannel?.owner ?? assistantAvatarLabel ?? "agenter"}
+        existingCount={channels.filter((channel) => channel.kind === createDialogKind).length}
+        onClose={() => setCreateDialogOpen(false)}
+        onCreate={async (input) => {
+          await onCreateChannel(input);
+        }}
+      />
     </div>
   );
 };
