@@ -13,6 +13,7 @@ const effectiveValue = {
   terminal: {
     outputRoot: "/repo/demo/tmp",
   },
+  notes: "",
 };
 
 const effective: SettingsEffectiveGraph = {
@@ -21,18 +22,33 @@ const effective: SettingsEffectiveGraph = {
   schema: {
     type: "object",
     properties: {
-      lang: { type: "string" },
+      lang: {
+        type: "string",
+        description: "Preferred UI locale.",
+      },
       ai: {
         type: "object",
+        description: "Provider selection and model routing.",
         properties: {
-          activeProvider: { type: "string" },
+          activeProvider: {
+            type: "string",
+            description: "Provider id used for chat and tools.",
+          },
         },
       },
       terminal: {
         type: "object",
+        description: "Terminal runtime options.",
         properties: {
-          outputRoot: { type: "string" },
+          outputRoot: {
+            type: "string",
+            description: "Absolute path for terminal output files.",
+          },
         },
+      },
+      notes: {
+        type: "string",
+        description: "Optional workspace notes.",
       },
     },
   },
@@ -71,6 +87,23 @@ const effective: SettingsEffectiveGraph = {
         pointer: "/ai/activeProvider",
       },
     },
+    "/notes": {
+      pointer: "/notes",
+      origins: [
+        {
+          layerId: "1:project",
+          sourceId: "project",
+          kind: "file",
+          path: "/repo/demo/.agenter/settings.json",
+          pointer: "/notes",
+          value: "",
+        },
+      ],
+      jumpTarget: {
+        layerId: "1:project",
+        pointer: "/notes",
+      },
+    },
   },
 };
 
@@ -103,7 +136,7 @@ const layers = [
 
 const layerContentById: Record<string, string> = {
   "0:user": '{\n  "lang": "en"\n}\n',
-  "1:project": '{\n  "lang": "en",\n  "ai": {\n    "activeProvider": "default"\n  }\n}\n',
+  "1:project": '{\n  "lang": "en",\n  "ai": {\n    "activeProvider": "default"\n  },\n  "notes": ""\n}\n',
   "2:local": '{\n  "ai": {\n    "activeProvider": "default"\n  },\n  "terminal": {\n    "outputRoot": "./tmp"\n  }\n}\n',
 };
 
@@ -170,12 +203,21 @@ export const JumpFromEffectiveToLayerView: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
 
+    await userEvent.click(canvas.getByRole("tab", { name: "Effective" }));
     await userEvent.click(canvas.getByRole("tab", { name: "View" }));
-    await userEvent.click(canvas.getByRole("button", { name: /settings\.json/i }));
+    const notesTrigger = canvasElement.querySelector('[data-settings-pointer-trigger="/notes"]');
+    await expect(notesTrigger).not.toBeNull();
+    await expect(notesTrigger).not.toHaveAttribute("data-panel-open");
+    await expect(canvas.getByRole("button", { name: "Explain notes" })).toBeInTheDocument();
+    const notesSourceButton = canvasElement.querySelector('[data-settings-source-pointer="/notes"]');
+    await expect(notesSourceButton).not.toBeNull();
+    await userEvent.click(notesSourceButton as HTMLElement);
 
     await expect(args.onSelectLayer).toHaveBeenCalledWith("1:project");
     await expect(args.onLoadLayer).toHaveBeenCalledWith("1:project");
     await expect(canvas.getByText("Layer Detail")).toBeInTheDocument();
+    const focusedLayerNode = canvasElement.querySelector('[data-settings-pointer="/notes"]');
+    await expect(focusedLayerNode).not.toBeNull();
   },
 };
 

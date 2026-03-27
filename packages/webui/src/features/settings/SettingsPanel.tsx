@@ -7,9 +7,9 @@ import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
-import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { SettingsSchemaView } from "./SettingsSchemaView";
+import { SettingsSourceEditor } from "./SettingsSourceEditor";
 import type { SettingsEffectiveGraph, SettingsLayerItem, SettingsPointerJumpTarget } from "./settings-graph-types";
 import { toPrettyJson, tryParseJson } from "./settings-json-pointer";
 
@@ -158,12 +158,12 @@ export const SettingsPanel = ({
       <Tabs items={VIEW_TABS} value={layerViewMode} onValueChange={(value) => setLayerViewMode(value as "source" | "view")} />
 
       {layerViewMode === "source" ? (
-        <Textarea
+        <SettingsSourceEditor
           value={layerContent}
-          onChange={(event) => onLayerContentChange(event.target.value)}
+          onChange={(nextContent) => onLayerContentChange(nextContent)}
           placeholder="Select a layer and load content"
-          readOnly={!selectedLayer?.editable}
-          className="h-full resize-none font-mono text-xs"
+          readOnly={selectedLayer?.editable !== true}
+          testId="settings-layer-source-editor"
         />
       ) : (
         <ScrollViewport data-testid="settings-layer-view-viewport" className="h-full pr-1">
@@ -218,7 +218,7 @@ export const SettingsPanel = ({
               onValueChange={(value) => setEffectiveViewMode(value as "source" | "view")}
             />
             {effectiveViewMode === "source" ? (
-              <Textarea value={effectiveContent} readOnly className="h-full resize-none font-mono text-xs" />
+              <SettingsSourceEditor value={effectiveContent} readOnly testId="settings-effective-source-editor" />
             ) : (
               <ScrollViewport data-testid="settings-effective-view-viewport" className="h-full pr-1">
                 <SettingsSchemaView

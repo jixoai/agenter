@@ -25,6 +25,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@base-ui-components/react": "^1.0.0-rc.0",
     "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.11.3",
     "@codemirror/language-data": "^6.5.1",

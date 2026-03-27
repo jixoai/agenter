@@ -27,6 +27,7 @@ const baseAvatars: AvatarCatalogItem[] = [
 const globalEffectiveValue = {
   avatar: "jon",
   lang: "en",
+  notes: "",
 };
 
 const globalEffective: SettingsEffectiveGraph = {
@@ -35,8 +36,18 @@ const globalEffective: SettingsEffectiveGraph = {
   schema: {
     type: "object",
     properties: {
-      avatar: { type: "string" },
-      lang: { type: "string" },
+      avatar: {
+        type: "string",
+        description: "Nickname of the active avatar.",
+      },
+      lang: {
+        type: "string",
+        description: "Preferred locale for global defaults.",
+      },
+      notes: {
+        type: "string",
+        description: "Optional global note for operators.",
+      },
     },
   },
   provenance: {
@@ -80,7 +91,7 @@ const settingsLayers: SettingsLayerItem[] = [
 ];
 
 const layerContentById: Record<string, string> = {
-  "global:user": '{\n  "avatar": "jon",\n  "lang": "en"\n}\n',
+  "global:user": '{\n  "avatar": "jon",\n  "lang": "en",\n  "notes": ""\n}\n',
   "global:avatar": '{\n  "lang": "en"\n}\n',
 };
 
@@ -196,7 +207,9 @@ export const UserSettingsWorkbenchView: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("tab", { name: "View" }));
-    await userEvent.click(canvas.getByRole("button", { name: /settings\.json/i }));
+    const avatarSourceButton = canvasElement.querySelector('[data-settings-source-pointer="/avatar"]');
+    await expect(avatarSourceButton).not.toBeNull();
+    await userEvent.click(avatarSourceButton as HTMLElement);
 
     await expect(args.onSelectLayer).toHaveBeenCalledWith("global:user");
     await expect(args.onLoadLayer).toHaveBeenCalledWith("global:user");
@@ -221,7 +234,8 @@ export const ManageAvatarCatalog: Story = {
     await userEvent.click(canvas.getByRole("tab", { name: "Source" }));
 
     await expect(args.onLayerContentChange).toHaveBeenCalled();
-    const sourceField = canvas.getByPlaceholderText("Select a layer and load content") as HTMLTextAreaElement;
-    await expect(sourceField.value.includes('"avatar": "nova-ops"')).toBe(true);
+    const sourceDoc = canvasElement.querySelector('[data-testid="settings-layer-source-editor"] .cm-content');
+    await expect(sourceDoc).not.toBeNull();
+    await expect(sourceDoc?.textContent?.includes('"avatar": "nova-ops"')).toBe(true);
   },
 };

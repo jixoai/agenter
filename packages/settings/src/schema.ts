@@ -3,36 +3,45 @@ import { z } from "zod";
 import { aiProviderSchema } from "./provider";
 
 export const settingsSchema = z.object({
-  settingsSource: z.array(z.string()).optional(),
-  avatar: z.string().min(1).optional(),
-  sessionStoreTarget: z.enum(["global", "workspace"]).optional(),
-  lang: z.string().min(1).optional(),
-  agentCwd: z.string().min(1).optional(),
+  settingsSource: z.array(z.string()).describe("Settings source precedence from low to high priority.").optional(),
+  avatar: z.string().min(1).describe("Nickname of the active avatar profile.").optional(),
+  sessionStoreTarget: z
+    .enum(["global", "workspace"])
+    .describe("Session storage target: global profile or workspace-local.")
+    .optional(),
+  lang: z.string().min(1).describe("Preferred locale for UI and prompts.").optional(),
+  agentCwd: z.string().min(1).describe("Working directory for agent process startup.").optional(),
   agent: z
     .object({
-      defaultAssignee: z.string().min(1).optional(),
+      defaultAssignee: z.string().min(1).describe("Default assignee for newly created tasks.").optional(),
     })
+    .describe("Agent behavior preferences.")
     .optional(),
   terminal: z
     .object({
-      terminalId: z.string().min(1).optional(),
-      command: z.array(z.string().min(1)).min(1).optional(),
-      submitGapMs: z.number().int().nonnegative().optional(),
-      outputRoot: z.string().min(1).optional(),
-      gitLog: z.union([z.literal(false), z.literal("normal"), z.literal("verbose")]).optional(),
+      terminalId: z.string().min(1).describe("Terminal preset id used as default shell target.").optional(),
+      command: z.array(z.string().min(1)).min(1).describe("Command array used to boot the primary terminal.").optional(),
+      submitGapMs: z.number().int().nonnegative().describe("Delay between terminal submit chunks in milliseconds.").optional(),
+      outputRoot: z.string().min(1).describe("Output directory for terminal artifacts and logs.").optional(),
+      gitLog: z
+        .union([z.literal(false), z.literal("normal"), z.literal("verbose")])
+        .describe("Git log capture level for terminal context collection.")
+        .optional(),
       presets: z
         .record(
           z.string().min(1),
           z.object({
-            command: z.array(z.string().min(1)).min(1),
-            cwd: z.string().min(1).optional(),
-            submitGapMs: z.number().int().nonnegative().optional(),
-            helpSource: z.string().min(1).optional(),
+            command: z.array(z.string().min(1)).min(1).describe("Command array for this terminal preset."),
+            cwd: z.string().min(1).describe("Working directory for this preset.").optional(),
+            submitGapMs: z.number().int().nonnegative().describe("Per-preset submit delay in milliseconds.").optional(),
+            helpSource: z.string().min(1).describe("Help markdown source for this preset.").optional(),
           }),
         )
+        .describe("Named terminal presets.")
         .optional(),
-      helpSources: z.record(z.string().min(1), z.string().min(1)).optional(),
+      helpSources: z.record(z.string().min(1), z.string().min(1)).describe("Terminal help source map by terminal id.").optional(),
     })
+    .describe("Terminal runtime and preset settings.")
     .optional(),
   features: z
     .object({
@@ -43,55 +52,64 @@ export const settingsSchema = z.object({
               z.union([
                 z.string().min(1),
                 z.object({
-                  id: z.string().min(1),
-                  focus: z.boolean().optional(),
-                  autoRun: z.boolean().optional(),
+                  id: z.string().min(1).describe("Terminal preset id to boot."),
+                  focus: z.boolean().describe("Whether this boot terminal should gain focus.").optional(),
+                  autoRun: z.boolean().describe("Whether this boot terminal should auto start.").optional(),
                 }),
               ]),
             )
+            .describe("Boot terminal descriptors.")
             .optional(),
         })
+        .describe("Terminal feature switches.")
         .optional(),
     })
+    .describe("Feature-level runtime toggles.")
     .optional(),
   ai: z
     .object({
-      activeProvider: z.string().min(1).optional(),
-      providers: z.record(z.string().min(1), aiProviderSchema).optional(),
+      activeProvider: z.string().min(1).describe("Provider id selected for model calls.").optional(),
+      providers: z.record(z.string().min(1), aiProviderSchema).describe("Provider registry by id.").optional(),
     })
+    .describe("AI provider selection and registry.")
     .optional(),
   loop: z
     .object({
       sliceDirty: z
         .object({
-          wait: z.boolean().optional(),
-          timeoutMs: z.number().int().positive().optional(),
-          pollMs: z.number().int().positive().optional(),
+          wait: z.boolean().describe("Whether loop waits for dirty slices before wake.").optional(),
+          timeoutMs: z.number().int().positive().describe("Loop wait timeout in milliseconds.").optional(),
+          pollMs: z.number().int().positive().describe("Loop polling interval in milliseconds.").optional(),
         })
+        .describe("Loop dirty-slice wait policy.")
         .optional(),
     })
+    .describe("Loop scheduling policies.")
     .optional(),
   prompt: z
     .object({
-      rootDir: z.string().min(1).optional(),
-      agenterPath: z.string().min(1).optional(),
-      internalSystemPath: z.string().min(1).optional(),
-      systemTemplatePath: z.string().min(1).optional(),
-      responseContractPath: z.string().min(1).optional(),
+      rootDir: z.string().min(1).describe("Root directory for prompt sources.").optional(),
+      agenterPath: z.string().min(1).describe("User prompt path for AGENTER.mdx.").optional(),
+      internalSystemPath: z.string().min(1).describe("Internal system prompt path.").optional(),
+      systemTemplatePath: z.string().min(1).describe("System template prompt path.").optional(),
+      responseContractPath: z.string().min(1).describe("Response contract prompt path.").optional(),
     })
+    .describe("Prompt source paths.")
     .optional(),
   tasks: z
     .object({
       sources: z
         .array(
           z.object({
-            name: z.string().min(1),
-            path: z.string().min(1),
+            name: z.string().min(1).describe("Task source name."),
+            path: z.string().min(1).describe("Task source directory path."),
           }),
         )
         .min(1)
+        .describe("Task source list in load order.")
         .optional(),
     })
+    .describe("Task system source settings.")
     .optional(),
 });
 
