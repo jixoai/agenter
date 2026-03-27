@@ -85,6 +85,7 @@ const normalizeBootEntries = (
   terminals: Record<string, SessionTerminalConfig>,
   primaryTerminalId: string,
 ): Array<{ terminalId: string; focus: boolean; autoRun: boolean }> => {
+  const useDefaultBoot = configured === undefined;
   const normalized = new Map<string, { terminalId: string; focus: boolean; autoRun: boolean }>();
   const source = configured ?? [primaryTerminalId];
   for (const entry of source) {
@@ -98,7 +99,7 @@ const normalizeBootEntries = (
       autoRun: typeof entry === "object" ? entry.autoRun !== false : true,
     });
   }
-  if (normalized.size === 0 && terminals[primaryTerminalId]) {
+  if (normalized.size === 0 && useDefaultBoot && terminals[primaryTerminalId]) {
     normalized.set(primaryTerminalId, {
       terminalId: primaryTerminalId,
       focus: true,
@@ -106,6 +107,9 @@ const normalizeBootEntries = (
     });
   }
   const entries = [...normalized.values()];
+  if (entries.length === 0) {
+    return entries;
+  }
   if (entries.some((entry) => entry.focus)) {
     return entries;
   }

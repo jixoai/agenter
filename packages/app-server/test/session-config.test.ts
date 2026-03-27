@@ -55,4 +55,31 @@ describe("Feature: session config provider resolution", () => {
 
     expect(config.ai.baseUrl).toBe("https://api.kimi.com/coding");
   });
+
+  test("Scenario: Given explicit empty boot terminals When resolving session config Then runtime keeps manual terminal start", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-session-config-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      terminal: {
+        presets: {
+          iflow: {
+            command: ["iflow"],
+          },
+        },
+      },
+      features: {
+        terminal: {
+          bootTerminals: [],
+        },
+      },
+    });
+
+    const config = await resolveSessionConfig(projectRoot, { homeDir });
+
+    expect(config.primaryTerminalId).toBe("iflow");
+    expect(config.bootTerminals).toEqual([]);
+    expect(config.focusedTerminalIds).toEqual(["iflow"]);
+  });
 });
