@@ -155,6 +155,21 @@ const terminalActivityByTerminal = {
         "```",
       ].join("\n"),
     },
+    {
+      id: 25,
+      terminalId: "iflow",
+      createdAt: 12,
+      kind: "terminal_read" as const,
+      cycleId: 8,
+      title: "Terminal read",
+      content: [
+        "```yaml",
+        "kind: terminal-read",
+        "status: waiting",
+        "terminalId: iflow",
+        "```",
+      ].join("\n"),
+    },
   ],
   "other-terminal": [
     {
@@ -225,7 +240,9 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.getByText("terminal_get_config")).toBeInTheDocument();
     expect(screen.getByText("terminal_snapshot")).toBeInTheDocument();
     expect(screen.queryByText("Call")).not.toBeInTheDocument();
+    expect(screen.queryByText("waiting")).not.toBeInTheDocument();
     expect(screen.getAllByText("Result").length).toBeGreaterThan(0);
+    expect(container.textContent).toContain("status: waiting");
     expect(screen.queryByText("other-terminal")).not.toBeInTheDocument();
     expect(container.querySelector('[data-terminal-panel-scroll-owner="renderer"]')).not.toBeNull();
     expect(container.querySelector('[data-terminal-activity-scroll-owner="inspector"]')).not.toBeNull();

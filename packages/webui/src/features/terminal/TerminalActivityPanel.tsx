@@ -74,7 +74,13 @@ const toPayload = (value: unknown): ToolInvocationView["call"] => {
 
 const hasToolLikeTitle = (title: string): boolean => /tool[\s_-]?(call|result)/i.test(title);
 
+const shouldUseLegacyToolFallback = (item: TerminalActivityItem): boolean =>
+  (item.kind === "message" && item.channel === "tool") || hasToolLikeTitle(item.title);
+
 const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvocationView | null => {
+  if (!shouldUseLegacyToolFallback(item)) {
+    return null;
+  }
   const parsed = parseToolPayload(item.content, item.title);
   if (!isRecord(parsed.data)) {
     return null;
@@ -89,7 +95,7 @@ const toInvocationFromLegacyToolContent = (item: TerminalActivityItem): ToolInvo
     "input" in payload ||
     "output" in payload ||
     "error" in payload;
-  if (!hasToolFields && !hasToolLikeTitle(item.title)) {
+  if (!hasToolFields) {
     return null;
   }
   const callValue = "call" in payload ? payload.call : "input" in payload ? payload.input : undefined;
@@ -130,6 +136,9 @@ const toInvocationFromActivity = (item: TerminalActivityItem): ToolInvocationVie
         : undefined,
       error: item.tool.error,
     };
+  }
+  if (!shouldUseLegacyToolFallback(item)) {
+    return null;
   }
   return toInvocationFromLegacyToolContent(item);
 };
