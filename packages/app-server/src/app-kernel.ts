@@ -32,7 +32,7 @@ import {
   type SessionModelCallRecord,
   type TerminalActivityRecord,
 } from "@agenter/session-system";
-import { collectClientMessageIds, toChatCycleId, type ChatCycle } from "./chat-cycles";
+import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleCompactTrigger } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -167,6 +167,16 @@ const resolveWorkspaceGroup = (workspacePath: string): string => {
 
 const isRunningSession = (status: SessionMeta["status"]): boolean => status === "running" || status === "starting";
 
+const CHAT_CYCLE_COMPACT_TRIGGERS = new Set<ChatCycleCompactTrigger>(["manual", "threshold", "error", "attention_retry"]);
+
+const readChatCycleCompactTrigger = (result: Record<string, unknown>): ChatCycleCompactTrigger | null => {
+  const trigger = result.compactTrigger;
+  if (typeof trigger !== "string") {
+    return null;
+  }
+  return CHAT_CYCLE_COMPACT_TRIGGERS.has(trigger as ChatCycleCompactTrigger) ? (trigger as ChatCycleCompactTrigger) : null;
+};
+
 const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = DEFAULT_MESSAGE_CHAT_ID): ChatMessage => ({
   id: `${block.id}`,
   chatId,
@@ -186,24 +196,30 @@ const toChatCycle = (input: {
   inputs: SessionCollectedInput[];
   outputs: SessionBlockRecord[];
   modelCallId: number | null;
-}): ChatCycle => ({
-  id: toChatCycleId({ cycleId: input.cycle.id }),
-  cycleId: input.cycle.id,
-  seq: input.cycle.seq,
-  createdAt: input.cycle.createdAt,
-  wakeSource:
-    typeof input.cycle.wake?.source === "string" && input.cycle.wake.source.length > 0 ? input.cycle.wake.source : null,
-  kind: input.cycle.result.kind === "compact" ? "compact" : "model",
-  status: "done",
-  clientMessageIds: collectClientMessageIds(input.inputs),
-  inputs: structuredClone(input.inputs),
-  outputs: input.outputs.map((block) =>
-    toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, DEFAULT_MESSAGE_CHAT_ID)),
-  ),
-  liveMessages: [],
-  streaming: null,
-  modelCallId: input.modelCallId,
-});
+}): ChatCycle => {
+  const cycleResult =
+    input.cycle.result && typeof input.cycle.result === "object" ? (input.cycle.result as Record<string, unknown>) : {};
+  const kind = input.cycle.result.kind === "compact" ? "compact" : "model";
+  return {
+    id: toChatCycleId({ cycleId: input.cycle.id }),
+    cycleId: input.cycle.id,
+    seq: input.cycle.seq,
+    createdAt: input.cycle.createdAt,
+    wakeSource:
+      typeof input.cycle.wake?.source === "string" && input.cycle.wake.source.length > 0 ? input.cycle.wake.source : null,
+    kind,
+    status: "done",
+    clientMessageIds: collectClientMessageIds(input.inputs),
+    inputs: structuredClone(input.inputs),
+    outputs: input.outputs.map((block) =>
+      toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, DEFAULT_MESSAGE_CHAT_ID)),
+    ),
+    liveMessages: [],
+    streaming: null,
+    modelCallId: input.modelCallId,
+    compactTrigger: kind === "compact" ? readChatCycleCompactTrigger(cycleResult) : null,
+  };
+};
 
 const hasCollectedUserMessage = (inputs: SessionCollectedInput[]): boolean =>
   inputs.some((input) => input.source === "message" && input.role === "user");
@@ -1943,7 +1959,7 @@ export class AppKernel {
           compactThreshold: resolved.ai.compactThreshold,
           capabilities: resolveModelCapabilities(resolved.ai),
         },
-        history: [],
+        promptWindow: [],
         stats: null,
         latestModelCall: null,
         recentModelCalls: [],
@@ -1971,7 +1987,7 @@ export class AppKernel {
           compactThreshold: resolved.ai.compactThreshold,
           capabilities: resolveModelCapabilities(resolved.ai),
         },
-        history: [],
+        promptWindow: [],
         stats: null,
         latestModelCall: db.listModelCalls(1)[0] ?? null,
         recentModelCalls: db.listModelCalls(8),

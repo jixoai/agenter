@@ -68,6 +68,8 @@ const projectAttentionActiveMatch = (match: AttentionActiveContextMatch): Attent
 
 const cloneCycleFrame = (frame: AttentionCycleFrame): AttentionCycleFrame => ({
   ...frame,
+  protocolMode: frame.protocolMode ?? "none",
+  inputCommitRefs: (frame.inputCommitRefs ?? []).map((ref) => ({ ...ref })),
   inputContextIds: [...frame.inputContextIds],
   activeContextIds: [...frame.activeContextIds],
   producedCommitRefs: frame.producedCommitRefs.map((ref) => ({ ...ref })),

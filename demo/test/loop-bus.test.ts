@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { LoopBus, type LoopBusInput, type LoopBusWakeSource } from "@agenter/app-server";
-import type { ChatMessage } from "../src/core/protocol";
 
 const waitUntil = async (predicate: () => boolean, timeoutMs = 1_000): Promise<void> => {
   const startedAt = Date.now();
@@ -14,7 +13,7 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 1_000): Promise<v
 };
 
 describe("Feature: demo loop bus wiring", () => {
-  test("Scenario: Given committed chat inputs When one cycle runs Then user and terminal outputs are dispatched", async () => {
+  test("Scenario: Given committed chat inputs When one cycle runs Then the processor receives the batch without legacy output callbacks", async () => {
     const queued: LoopBusInput[][] = [
       [
         {
@@ -26,8 +25,7 @@ describe("Feature: demo loop bus wiring", () => {
         },
       ],
     ];
-    const userOutputs: ChatMessage[] = [];
-    const terminalOutputs: string[] = [];
+    const processorInputs: string[] = [];
     const persisted: Array<{ wakeSource: LoopBusWakeSource; size: number }> = [];
     const releaseWaitRef: { current: null | (() => void) } = { current: null };
 
@@ -39,27 +37,7 @@ describe("Feature: demo loop bus wiring", () => {
         send: async (messages) => {
           expect(messages).toHaveLength(1);
           expect(messages[0]?.text).toBe("continue");
-          return {
-            outputs: {
-              toUser: [
-                {
-                  id: "assistant-1",
-                  role: "assistant",
-                  content: "acknowledged",
-                  timestamp: Date.now(),
-                },
-              ],
-              toTerminal: [
-                {
-                  taskId: "task-1",
-                  terminalId: "iflow",
-                  text: "date",
-                  submit: true,
-                },
-              ],
-              toTools: [],
-            },
-          };
+          processorInputs.push(messages[0]?.text ?? "");
         },
       },
       waitForCommit: async () => {
@@ -76,17 +54,11 @@ describe("Feature: demo loop bus wiring", () => {
         persisted.push({ wakeSource, size: inputs.length });
         return { cycleId: 1 };
       },
-      onUserMessage: (message) => {
-        userOutputs.push(message);
-      },
-      onTerminalDispatch: (command) => {
-        terminalOutputs.push(command.text);
-      },
       sleep: async () => {},
     });
 
     bus.start();
-    await waitUntil(() => userOutputs.length === 1 && terminalOutputs.length === 1);
+    await waitUntil(() => processorInputs.length === 1);
     bus.stop();
     if (releaseWaitRef.current !== null) {
       releaseWaitRef.current();
@@ -94,8 +66,7 @@ describe("Feature: demo loop bus wiring", () => {
     await Bun.sleep(10);
 
     expect(persisted).toEqual([{ wakeSource: "user", size: 1 }]);
-    expect(userOutputs[0]?.content).toBe("acknowledged");
-    expect(terminalOutputs).toEqual(["date"]);
+    expect(processorInputs).toEqual(["continue"]);
   });
 
   test("Scenario: Given a wake signal but no collected inputs When the cycle settles Then the model call is skipped", async () => {

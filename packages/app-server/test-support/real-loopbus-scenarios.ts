@@ -1,6 +1,6 @@
 import type { MessageControlPlaneEntry } from "@agenter/message-system";
 
-import type { ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
+import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import { waitForRealValue } from "./real-kernel-harness";
 
@@ -17,6 +17,9 @@ const getAssistantMessages = (
 
 const getUserMessages = (runtime: SessionRuntimeSnapshot, predicate: (message: ChatMessage) => boolean): ChatMessage[] =>
   runtime.chatMessages.filter((message) => message.role === "user" && predicate(message));
+
+const countAssistantMessages = (runtime: SessionRuntimeSnapshot, chatId: string): number =>
+  runtime.chatMessages.filter((message) => message.role === "assistant" && message.chatId === chatId).length;
 
 const waitForAssistantMessage = async (
   harness: RealKernelHarness,
@@ -48,6 +51,44 @@ const waitForAttentionSettled = async (harness: RealKernelHarness, timeoutMs = D
     },
     {
       label: "attention convergence",
+      timeoutMs,
+    },
+  );
+
+const waitForCompactCycle = async (
+  harness: RealKernelHarness,
+  input: {
+    afterCycleId: number;
+    timeoutMs?: number;
+  },
+): Promise<ChatCycle> =>
+  await waitForRealValue(
+    () => {
+      const cycles = harness.kernel.listChatCycles(harness.session.id, 40);
+      return (
+        cycles.find(
+          (cycle) =>
+            cycle.kind === "compact" && cycle.compactTrigger === "manual" && cycle.cycleId > input.afterCycleId,
+        ) ?? null
+      );
+    },
+    {
+      label: "manual compact cycle",
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    },
+  );
+
+const waitForPromptWindowCompactApplied = async (
+  harness: RealKernelHarness,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) =>
+  await waitForRealValue(
+    async () => {
+      const debug = await harness.kernel.inspectModelDebug(harness.session.id);
+      return JSON.stringify(debug.promptWindow).includes("prompt_window_compact") ? debug.promptWindow : null;
+    },
+    {
+      label: "prompt-window compact applied",
       timeoutMs,
     },
   );
@@ -147,24 +188,15 @@ export const runRealLunchRelayScenario = async (
     focus: false,
   });
 
-  const prompt = [
-    "你需要完成一个跨频道消息闭环。",
-    "chat-main 是当前用户 kzf 的频道。",
-    `${relayChannel.chatId} 是 gaubee 的频道。`,
-    `第一步：只向 ${relayChannel.chatId} 发送一条消息，内容必须精确等于：在吗？kzf 问你中午吃什么？`,
-    "在收到 gaubee 的答复之前，不要向 chat-main 给最终答案，也不要把主任务 score 归零。",
-    "收到 gaubee 的答复后，再向 chat-main 发送一条消息，内容必须精确等于：gaubee 说中午吃蛋炒饭。",
-    "最后把相关 attention score 收敛到 0。",
-  ].join("\n");
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  const startAt = Date.now();
+  const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
   if (!sent.ok) {
     throw new Error(`failed to send lunch relay prompt: ${sent.reason ?? "unknown"}`);
   }
 
   const relayPromptMessage = await waitForAssistantMessage(harness, {
     label: "relay prompt to secondary chat",
-    predicate: (message) =>
-      message.chatId === relayChannel.chatId && message.content.trim() === "在吗？kzf 问你中午吃什么？",
+    predicate: (message) => message.chatId === relayChannel.chatId && message.timestamp >= startAt,
   });
 
   const activeAfterRelay = await waitForRealValue(
@@ -207,7 +239,7 @@ export const runRealLunchRelayScenario = async (
 
   const finalReply = await waitForAssistantMessage(harness, {
     label: "final reply on chat-main",
-    predicate: (message) => message.chatId === "chat-main" && message.content.trim() === "gaubee 说中午吃蛋炒饭。",
+    predicate: (message) => message.chatId === "chat-main" && message.timestamp > relayParticipantReply.timestamp && message.content.includes("蛋炒饭"),
   });
   const settledAttention = await waitForAttentionSettled(harness);
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
@@ -218,6 +250,68 @@ export const runRealLunchRelayScenario = async (
     relayParticipantReply,
     activeAfterRelay,
     finalReply,
+    settledAttention,
+    recentModelCalls,
+  };
+};
+
+export interface RealCompactFollowUpScenarioResult {
+  compactCycle: ChatCycle;
+  followUpReply: ChatMessage;
+  relayMessageCountBefore: number;
+  relayMessageCountAfter: number;
+  settledAttention: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+}
+
+export const runRealCompactFollowUpScenario = async (
+  harness: RealKernelHarness,
+  input: {
+    relayChannel: MessageControlPlaneEntry;
+    afterReplyTimestamp: number;
+  },
+): Promise<RealCompactFollowUpScenarioResult> => {
+  const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
+  const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
+  const runtimeBefore = getRuntimeSnapshot(harness);
+  const relayMessageCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, input.relayChannel.chatId) : 0;
+
+  const compactSent = await harness.kernel.sendChat(harness.session.id, "/compact");
+  if (!compactSent.ok) {
+    throw new Error(`failed to request compact: ${compactSent.reason ?? "unknown"}`);
+  }
+
+  const compactCycle = await waitForCompactCycle(harness, { afterCycleId: lastCycleId });
+  await waitForPromptWindowCompactApplied(harness);
+
+  const followUpSent = await harness.kernel.sendChat(harness.session.id, "中午吃什么");
+  if (!followUpSent.ok) {
+    throw new Error(`failed to send follow-up question: ${followUpSent.reason ?? "unknown"}`);
+  }
+
+  const followUpReply = await waitForAssistantMessage(harness, {
+    label: "post-compact follow-up answer",
+    predicate: (message) =>
+      message.chatId === "chat-main" &&
+      message.timestamp > input.afterReplyTimestamp &&
+      message.content.includes("蛋炒饭"),
+  });
+
+  const runtimeAfter = getRuntimeSnapshot(harness);
+  const relayMessageCountAfter = runtimeAfter ? countAssistantMessages(runtimeAfter, input.relayChannel.chatId) : 0;
+  const settledAttention = await waitForAttentionSettled(harness);
+  const recentModelCalls = await waitForLatestModelCallCompletion(harness);
+
+  return {
+    compactCycle,
+    followUpReply,
+    relayMessageCountBefore,
+    relayMessageCountAfter,
     settledAttention,
     recentModelCalls,
   };

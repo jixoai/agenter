@@ -34,7 +34,15 @@ export type {
   TaskView,
 } from "@agenter/task-system";
 export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
-export { AgenterAI, type AgentModelCallRecord, type AgentRuntimeStats } from "./agenter-ai";
+export {
+  AgenterAI,
+  type AgentModelCallRecord,
+  type AgentPromptWindowCompactSummary,
+  type AgentPromptWindowReadyReply,
+  type AgentRuntimeStats,
+  type AgentToolProvider,
+  type AgentToolProviderContext,
+} from "./agenter-ai";
 export {
   AppKernel,
   type AppKernelOptions,
@@ -63,14 +71,9 @@ export {
   type LoopBusLogger,
   type LoopBusMessage,
   type LoopBusMeta,
-  type LoopBusOutputs,
   type LoopBusPhase,
-  type LoopBusResponse,
   type LoopBusState,
   type LoopBusWakeSource,
-  type LoopChatMessage,
-  type LoopTerminalCommand,
-  type LoopToolCall,
 } from "./loop-bus";
 export {
   LoopBusPluginRuntime,
@@ -177,7 +180,6 @@ export type {
   ChatSessionAsset,
   ChatMessage,
   ModelCapabilities,
-  TaskEvent,
   TaskStage,
 } from "./types";
 export { WorkspacesStore } from "./workspaces-store";

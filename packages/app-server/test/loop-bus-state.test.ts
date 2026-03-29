@@ -4,9 +4,7 @@ import {
   LoopBus,
   type LoopBusInput,
   type LoopBusPhase,
-  type LoopBusResponse,
   type LoopBusWakeSource,
-  type LoopChatMessage,
 } from "../src/loop-bus";
 
 const userInput: LoopBusInput = {
@@ -31,7 +29,6 @@ describe("Feature: loop bus state transitions", () => {
     const phases: LoopBusPhase[] = [];
     const persisted: Array<{ wakeSource: LoopBusWakeSource; inputs: LoopBusInput[] }> = [];
     const sent: LoopBusInput[][] = [];
-    const outputs: string[] = [];
     const sleeps: number[] = [];
 
     let waitCalls = 0;
@@ -41,20 +38,7 @@ describe("Feature: loop bus state transitions", () => {
       processor: {
         send: async (messages) => {
           sent.push(messages);
-          return {
-            outputs: {
-              toUser: [
-                {
-                  id: "assistant-1",
-                  role: "assistant",
-                  content: "done",
-                  timestamp: Date.now(),
-                },
-              ],
-              toTerminal: [],
-              toTools: [],
-            },
-          };
+          return { ok: true };
         },
       },
       logger: { log: () => {} },
@@ -72,9 +56,6 @@ describe("Feature: loop bus state transitions", () => {
         persisted.push({ wakeSource: input.wakeSource, inputs: input.inputs });
         return { cycleId: 7 };
       },
-      onUserMessage: (message) => {
-        outputs.push(message.content);
-      },
       onStateChange: (state) => {
         phases.push(state.phase);
       },
@@ -87,7 +68,7 @@ describe("Feature: loop bus state transitions", () => {
 
     const deadline = Date.now() + 1_000;
     while (Date.now() < deadline) {
-      if (sent.length === 1 && outputs.length === 1) {
+      if (sent.length === 1) {
         break;
       }
       await Bun.sleep(10);
@@ -103,12 +84,10 @@ describe("Feature: loop bus state transitions", () => {
     expect(persisted[0]?.wakeSource).toBe("user");
     expect(persisted[0]?.inputs[0]?.text).toBe("hello");
     expect(sent).toHaveLength(1);
-    expect(outputs).toEqual(["done"]);
     expect(phases).toContain("waiting_commits");
     expect(phases).toContain("collecting_inputs");
     expect(phases).toContain("persisting_cycle");
     expect(phases).toContain("calling_model");
-    expect(phases).toContain("applying_outputs");
   });
 
   test("Scenario: Given wake signal but no collected facts When the cycle returns to race Then model call is skipped", async () => {
@@ -123,7 +102,7 @@ describe("Feature: loop bus state transitions", () => {
       processor: {
         send: async () => {
           sent.push(1);
-          return { outputs: { toUser: [], toTerminal: [], toTools: [] } };
+          return { ok: true };
         },
       },
       logger: { log: () => {} },
@@ -169,7 +148,7 @@ describe("Feature: loop bus state transitions", () => {
 
     const bus = new LoopBus({
       processor: {
-        send: async () => ({ outputs: { toUser: [], toTerminal: [], toTools: [] } }),
+        send: async () => ({ ok: true }),
       },
       logger: { log: () => {} },
       waitForCommit: async () => {
@@ -219,7 +198,7 @@ describe("Feature: loop bus state transitions", () => {
 
     const bus = new LoopBus({
       processor: {
-        send: async () => ({ outputs: { toUser: [], toTerminal: [], toTools: [] } }),
+        send: async () => ({ ok: true }),
       },
       logger: { log: () => {} },
       waitForCommit: async () => {
@@ -253,7 +232,6 @@ describe("Feature: loop bus state transitions", () => {
   });
 
   test("Scenario: Given an in-flight model call When stop is requested Then the active cycle is aborted and no outputs are applied", async () => {
-    const outputs: string[] = [];
     let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
     let signalSeen = false;
     let waitCalls = 0;
@@ -262,7 +240,7 @@ describe("Feature: loop bus state transitions", () => {
       processor: {
         send: async (_messages, context) => {
           signalSeen = Boolean(context?.signal);
-          return await new Promise<void | LoopBusResponse<LoopChatMessage, string>>((_resolve, reject) => {
+          return await new Promise<void | { ok: true }>((_resolve, reject) => {
             context?.signal?.addEventListener(
               "abort",
               () => {
@@ -285,9 +263,6 @@ describe("Feature: loop bus state transitions", () => {
       },
       collectInputs: async () => [userInput],
       persistCycle: async () => ({ cycleId: 21 }),
-      onUserMessage: (message) => {
-        outputs.push(message.content);
-      },
       sleep: async () => {},
     });
 
@@ -303,7 +278,6 @@ describe("Feature: loop bus state transitions", () => {
     await Bun.sleep(20);
 
     expect(signalSeen).toBe(true);
-    expect(outputs).toEqual([]);
     expect(bus.getState().phase).toBe("stopped");
   });
 });

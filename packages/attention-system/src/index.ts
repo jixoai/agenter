@@ -25,6 +25,7 @@ export type {
   AttentionContextDescriptor,
   AttentionContextRef,
   AttentionCycleFrame,
+  AttentionProtocolMode,
   AttentionHookRecord,
   AttentionQueryInput,
   AttentionSystemSnapshot,

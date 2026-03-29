@@ -4,6 +4,7 @@ import type { ChatMessage } from "./types";
 
 export type ChatCycleKind = "model" | "compact";
 export type ChatCycleStatus = "pending" | "collecting" | "streaming" | "applying" | "done" | "error";
+export type ChatCycleCompactTrigger = "manual" | "threshold" | "error" | "attention_retry";
 
 export interface ChatCycle {
   id: string;
@@ -21,6 +22,7 @@ export interface ChatCycle {
     content: string;
   } | null;
   modelCallId: number | null;
+  compactTrigger?: ChatCycleCompactTrigger | null;
 }
 
 export const toChatCycleId = (input: { cycleId?: number | null; clientMessageId?: string | null }): string => {
@@ -41,8 +43,20 @@ export const collectClientMessageIds = (inputs: SessionCollectedInput[]): string
   return [...ids];
 };
 
+const readCycleKind = (input: SessionCollectedInput): ChatCycleKind | null => {
+  const kind = input.meta?.cycleKind;
+  if (kind === "compact" || kind === "model") {
+    return kind;
+  }
+  return null;
+};
+
 export const detectChatCycleKind = (inputs: SessionCollectedInput[]): ChatCycleKind => {
   for (const input of inputs) {
+    const explicitKind = readCycleKind(input);
+    if (explicitKind) {
+      return explicitKind;
+    }
     if (input.role !== "user") {
       continue;
     }

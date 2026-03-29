@@ -12,6 +12,7 @@ import {
   type AttentionContextRef,
   type AttentionCycleFrame,
   type AttentionHookRecord,
+  type AttentionProtocolMode,
   type AttentionQueryInput,
   type AttentionSystemSnapshot,
 } from "@agenter/attention-system";
@@ -50,24 +51,37 @@ import {
   TaskEngine,
   resolveTaskSources,
   serializeTaskMarkdown,
+  type TaskCreateInput,
+  type TaskEventInput,
+  type TaskImportItem,
   type TaskSourceName,
   type TaskSourceResolved,
+  type TaskUpdateInput,
   type TaskView,
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalReadResult as ControlPlaneTerminalReadResult,
+  type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
   type TerminalProcessProfile,
-  type TerminalReadResult as ControlPlaneTerminalReadResult,
 } from "@agenter/terminal-system";
+import { toolDefinition } from "@tanstack/ai";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { z } from "zod";
 import { createRuntimeAttentionPreview } from "./attention-runtime-view";
 
 import { AgentRuntime } from "./agent-runtime";
-import { AgenterAI, type AgentModelCallRecord, type AgentRuntimeStats } from "./agenter-ai";
+import {
+  AgenterAI,
+  type AgentModelCallRecord,
+  type AgentRuntimeStats,
+  type AgentToolProvider,
+  type AgentToolTraceEntry,
+} from "./agenter-ai";
 import { AttentionHashAliasRegistry, AttentionHashAliasStore } from "./attention-hash-alias-registry";
 import { projectAttentionActiveContextForModel, projectAttentionCommitMatchForModel } from "./attention-model-view";
 import {
@@ -122,10 +136,10 @@ const slugifyMessageChannelTitle = (value: string, fallback: string): string => 
 };
 const ATTENTION_TITLE_LIMIT = 140;
 const MAX_TERMINAL_ATTENTION_DETAIL_CHARS = 4_000;
+const MAX_TASK_ATTENTION_DETAIL_CHARS = 4_000;
 const ATTENTION_DEBT_INITIAL_BACKOFF_MS = 600;
 const ATTENTION_DEBT_MAX_BACKOFF_MS = 5_000;
 const ATTENTION_DEBT_BACKOFF_MULTIPLIER = 2;
-const ATTENTION_FAILURE_BLOCK_THRESHOLD = 2;
 // Lifecycle commits are factual state-change records; keep them queryable but non-blocking by default.
 const LIFECYCLE_ATTENTION_SCORE = 0;
 
@@ -143,18 +157,66 @@ interface AttentionContainmentEntry {
   contextId: string;
   fingerprint: string;
   retryCount: number;
-  status: "backoff" | "blocked";
-  nextWakeAt: number | null;
-  blockedReason: string | null;
+  nextWakeAt: number;
   updatedAt: number;
 }
 
 interface AttentionContainmentSummary {
-  state: "none" | "ready" | "backoff" | "blocked";
+  state: "none" | "ready" | "backoff";
   nextWakeAt: number | null;
   retryCount: number;
-  blockedReason: string | null;
 }
+
+type CompactCycleTrigger = "manual" | "threshold" | "error" | "attention_retry";
+type AttentionInputProtocolKind = "context" | "items";
+
+interface PendingCompactRequest {
+  trigger: CompactCycleTrigger;
+  requestedAt: number;
+}
+
+const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>(["manual", "threshold", "error", "attention_retry"]);
+const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
+const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
+const MAX_ATTENTION_PROTOCOL_COMMITS = 24;
+
+const parseCompactCycleTrigger = (value: unknown): CompactCycleTrigger | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return COMPACT_CYCLE_TRIGGER_VALUES.has(value as CompactCycleTrigger) ? (value as CompactCycleTrigger) : null;
+};
+
+const parseAttentionInputProtocolKind = (value: unknown): AttentionInputProtocolKind | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return ATTENTION_INPUT_PROTOCOL_KINDS.has(value as AttentionInputProtocolKind)
+    ? (value as AttentionInputProtocolKind)
+    : null;
+};
+
+const serializeAttentionCommitIds = (commitIds: readonly string[]): string | undefined => {
+  if (commitIds.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify(commitIds);
+};
+
+const parseAttentionCommitIds = (value: unknown): string[] => {
+  if (typeof value !== "string" || value.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is string => typeof item === "string" && item.length > 0);
+  } catch {
+    return [];
+  }
+};
 
 type PendingTraceSpan = Omit<SessionDbLoopbusTraceRecord, "id" | "seq" | "cycleId">;
 
@@ -248,6 +310,14 @@ const serializeTerminalDiff = (
   },
 ): string => JSON.stringify(buildTerminalDiffPayload(terminalId, input));
 
+const truncateAttentionDetail = (value: string, maxChars: number): string => {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  const remaining = value.length - maxChars;
+  return `${value.slice(0, maxChars)}\n... [truncated ${remaining} chars]`;
+};
+
 const buildTerminalSnapshotPayload = (
   terminalId: string,
   snapshot: ManagedTerminalSnapshot,
@@ -265,11 +335,7 @@ const buildTerminalSnapshotPayload = (
 });
 
 const truncateTerminalAttentionDetail = (value: string): string => {
-  if (value.length <= MAX_TERMINAL_ATTENTION_DETAIL_CHARS) {
-    return value;
-  }
-  const remaining = value.length - MAX_TERMINAL_ATTENTION_DETAIL_CHARS;
-  return `${value.slice(0, MAX_TERMINAL_ATTENTION_DETAIL_CHARS)}\n... [truncated ${remaining} chars]`;
+  return truncateAttentionDetail(value, MAX_TERMINAL_ATTENTION_DETAIL_CHARS);
 };
 
 const getTerminalTail = (payload: Record<string, unknown>): string => {
@@ -375,6 +441,90 @@ const buildTerminalAttentionPresentation = (
     const trimmed = content.trim();
     return {
       title: trimmed.length > 0 ? truncateAttentionTitle(trimmed) : `Terminal ${fallbackTerminalId} updated`,
+      detailValue: content,
+      detailFormat: "text/plain",
+      detailKind: "replace",
+    };
+  }
+};
+
+const buildStableAttentionSubjectId = (prefix: string, seed: string): string => {
+  const normalized = seed
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  const digest = createHash("sha256").update(`${prefix}:${seed}`).digest("hex").slice(0, 10);
+  return normalized.length > 0 ? `${prefix}-${normalized}-${digest}` : `${prefix}-${digest}`;
+};
+
+const buildTaskAttentionPresentation = (
+  content: string,
+  fallbackSubjectId: string,
+): {
+  title: string;
+  detailValue: string;
+  detailFormat: string;
+  detailKind: "replace";
+} => {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    const kind = typeof parsed.kind === "string" ? parsed.kind : "task-event";
+
+    if (kind === "task-heartbeat") {
+      const activeCount = typeof parsed.activeCount === "number" ? parsed.activeCount : 0;
+      return {
+        title: `Task heartbeat: ${activeCount} active`,
+        detailValue: mdFence("yaml", toYaml(parsed)),
+        detailFormat: "text/markdown",
+        detailKind: "replace",
+      };
+    }
+
+    if (kind === "task-triggered") {
+      const source = typeof parsed.source === "string" ? parsed.source : "unknown";
+      const topic = typeof parsed.topic === "string" ? parsed.topic : "unknown";
+      const affected = Array.isArray(parsed.affected) ? parsed.affected : [];
+      return {
+        title: `Task trigger ${topic} (${affected.length} affected)`,
+        detailValue: mdFence("yaml", toYaml({ kind, source, topic, affected })),
+        detailFormat: "text/markdown",
+        detailKind: "replace",
+      };
+    }
+
+    if (kind === "task-source") {
+      const file = typeof parsed.file === "string" ? parsed.file : fallbackSubjectId;
+      const markdown = typeof parsed.markdown === "string" ? parsed.markdown : "";
+      const metaYaml = toYaml({
+        kind,
+        sourceName: parsed.sourceName ?? null,
+        sourcePath: parsed.sourcePath ?? null,
+        file,
+      });
+      const body =
+        markdown.trim().length > 0
+          ? mdFence("markdown", truncateAttentionDetail(markdown, MAX_TASK_ATTENTION_DETAIL_CHARS))
+          : "_empty task source_";
+      return {
+        title: `Task source changed: ${basename(file)}`,
+        detailValue: [mdFence("yaml", metaYaml), body].join("\n\n"),
+        detailFormat: "text/markdown",
+        detailKind: "replace",
+      };
+    }
+
+    return {
+      title: `Task ${fallbackSubjectId} updated`,
+      detailValue: mdFence("yaml", toYaml(parsed)),
+      detailFormat: "text/markdown",
+      detailKind: "replace",
+    };
+  } catch {
+    const trimmed = content.trim();
+    return {
+      title: trimmed.length > 0 ? truncateAttentionTitle(trimmed) : `Task ${fallbackSubjectId} updated`,
       detailValue: content,
       detailFormat: "text/plain",
       detailKind: "replace",
@@ -629,6 +779,8 @@ const mergeTraceRefs = (...groups: Array<SessionTraceRef[] | undefined>): Sessio
 
 const cloneAttentionCycleFrame = (frame: AttentionCycleFrame): AttentionCycleFrame => ({
   ...frame,
+  protocolMode: frame.protocolMode ?? "none",
+  inputCommitRefs: (frame.inputCommitRefs ?? []).map((ref) => ({ ...ref })),
   inputContextIds: [...frame.inputContextIds],
   activeContextIds: [...frame.activeContextIds],
   producedCommitRefs: frame.producedCommitRefs.map((ref) => ({ ...ref })),
@@ -771,7 +923,7 @@ export interface SessionRuntimeModelDebug {
     compactThreshold?: number;
     capabilities: ModelCapabilities;
   } | null;
-  history: ReturnType<AgenterAI["inspectDebugState"]>["history"];
+  promptWindow: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
   stats: ReturnType<AgenterAI["inspectDebugState"]>["stats"] | null;
   latestModelCall: SessionModelCallRecord | null;
   recentModelCalls: SessionModelCallRecord[];
@@ -789,7 +941,7 @@ export class SessionRuntime {
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
-  private readonly taskSourceQueue: LoopBusInput[] = [];
+  private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
   private taskSources: TaskSourceResolved[] = [];
 
   private config: ResolvedSessionConfig | null = null;
@@ -826,6 +978,7 @@ export class SessionRuntime {
   private readonly traceRowIdBySpanId = new Map<string, number>();
   private readonly runningTraceRowsByName = new Map<string, SessionDbLoopbusTraceRecord>();
   private readonly cycleReplyChatIds = new Map<number, string>();
+  private pendingCompactRequest: PendingCompactRequest | null = null;
   private abortingActiveCycle = false;
   private loopKernelVersion = 0;
   private apiCallRecordingRefCount = 0;
@@ -1055,6 +1208,94 @@ export class SessionRuntime {
     };
   }
 
+  private listMessageChannelsForTooling(input: { includeArchived?: boolean } = {}): Array<{
+    chatId: string;
+    kind: "direct" | "room";
+    title: string;
+    owner: string;
+    contextId?: string;
+    participants: Array<{
+      id: string;
+      label?: string;
+      role?: "avatar" | "user" | "system";
+    }>;
+    metadata?: Record<string, unknown>;
+    focused: boolean;
+    archivedAt?: number;
+    archivedBy?: string;
+  }> {
+    return this.listMessageChannels({ includeArchived: input.includeArchived }).map((channel) =>
+      this.projectMessageChannelForTooling(channel),
+    );
+  }
+
+  private getMessageChannelForTooling(input: { chatId: string; includeArchived?: boolean }): {
+    chatId: string;
+    kind: "direct" | "room";
+    title: string;
+    owner: string;
+    contextId?: string;
+    participants: Array<{
+      id: string;
+      label?: string;
+      role?: "avatar" | "user" | "system";
+    }>;
+    metadata?: Record<string, unknown>;
+    focused: boolean;
+    archivedAt?: number;
+    archivedBy?: string;
+  } | null {
+    if (input.chatId === this.getDefaultChatId()) {
+      this.ensureDefaultChatChannel();
+    }
+    const channel = this.messageSystem.getChannel(input.chatId, {
+      includeArchived: input.includeArchived ?? false,
+    });
+    return channel ? this.projectMessageChannelForTooling(channel) : null;
+  }
+
+  private async sendMessageTool(input: {
+    chatId: string;
+    content: string;
+    rootId?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{ ok: boolean; messageId: string }> {
+    const channel = this.messageSystem.getChannel(input.chatId);
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    const replyCycleId = this.activeCycleId;
+    const author = input.from ?? this.getAvatarName();
+    const redundant = this.findRedundantVisibleReply({
+      chatId: input.chatId,
+      content: input.content,
+      from: author,
+    });
+    if (redundant) {
+      return {
+        ok: true,
+        messageId: redundant.messageId,
+      };
+    }
+    const message = this.messageSystem.reply({
+      chatId: input.chatId,
+      rootId: input.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
+      from: author,
+      to: input.to,
+      content: input.content,
+      metadata: {
+        channel: "to_user",
+        source: "message_send",
+        cycleId: replyCycleId,
+      },
+    });
+    return {
+      ok: true,
+      messageId: message.messageId,
+    };
+  }
+
   listMessageChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     this.ensureDefaultChatChannel();
     return this.messageSystem.listChannels({ includeArchived: input.includeArchived });
@@ -1192,7 +1433,9 @@ export class SessionRuntime {
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
-    const builtIn = Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
+    const builtIn = Boolean(
+      channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true,
+    );
     if (channel.chatId === this.getDefaultChatId() || builtIn) {
       throw new Error("chat-main is protected and cannot be archived");
     }
@@ -1335,10 +1578,11 @@ export class SessionRuntime {
     }
   }
 
-  focusRuntimeTerminals(input: {
-    op: TerminalFocusOp;
-    terminalIds: string[];
-  }): { ok: boolean; message: string; focusedTerminalIds: string[] } {
+  focusRuntimeTerminals(input: { op: TerminalFocusOp; terminalIds: string[] }): {
+    ok: boolean;
+    message: string;
+    focusedTerminalIds: string[];
+  } {
     const controlPlane = this.requireTerminalControlPlane();
     const unknown = input.terminalIds.filter((terminalId) => !controlPlane.has(terminalId));
     if (unknown.length > 0) {
@@ -1517,6 +1761,47 @@ export class SessionRuntime {
     };
   }
 
+  private createTaskSourceRef(
+    subjectId: string,
+    reason: string,
+    meta?: Record<string, unknown>,
+    versionHint?: string | number,
+  ): LoopSourceRef {
+    return {
+      systemId: "task",
+      subjectId,
+      reason,
+      versionHint,
+      meta,
+    };
+  }
+
+  private enqueueTaskAttentionDraft(input: {
+    subjectId: string;
+    reason: string;
+    content: string;
+    from: string;
+    meta?: Record<string, unknown>;
+    score?: number;
+    versionHint?: string | number;
+  }): void {
+    const meta = input.meta ? { ...input.meta } : undefined;
+    this.taskAttentionDraftQueue.push({
+      sourceRef: this.createTaskSourceRef(input.subjectId, input.reason, meta, input.versionHint),
+      content: input.content,
+      from: input.from,
+      score: input.score ?? 100,
+      meta: {
+        source: "task",
+        ...(meta ?? {}),
+      },
+      supersedeActive: {
+        systemId: "task",
+        subjectId: input.subjectId,
+      },
+    });
+  }
+
   private hasDeliveredMessageSendForCycle(chatId: string, cycleId: number | null): boolean {
     if (cycleId === null) {
       return false;
@@ -1680,6 +1965,782 @@ export class SessionRuntime {
     const runtime = new LoopBusPluginRuntime(this.createLoopPlugins(), this.options.logger ?? { log: () => {} });
     await runtime.setup();
     return runtime;
+  }
+
+  private setProjectionStage(stage: TaskStage): void {
+    if (this.stage === stage) {
+      return;
+    }
+    this.stage = stage;
+    this.emit("stage", { stage });
+  }
+
+  private updateProjectionStageFromLoopPhase(phase: LoopBusPhase): void {
+    switch (phase) {
+      case "collecting_inputs":
+      case "persisting_cycle":
+        this.setProjectionStage("observe");
+        return;
+      case "calling_model":
+        this.setProjectionStage("decide");
+        return;
+      case "waiting_commits":
+      case "stopped":
+        this.setProjectionStage("idle");
+        return;
+    }
+  }
+
+  private deriveProjectionStageFromToolTrace(trace: readonly AgentToolTraceEntry[]): TaskStage {
+    if (trace.some((entry) => entry.tool === "attention_commit")) {
+      return "done";
+    }
+    if (
+      trace.some((entry) =>
+        ["message_send", "terminal_create", "terminal_focus", "terminal_kill", "terminal_write", "terminal_set_config"].includes(
+          entry.tool,
+        ),
+      )
+    ) {
+      return "act";
+    }
+    if (trace.some((entry) => entry.tool.startsWith("task_"))) {
+      return "act";
+    }
+    if (
+      trace.some((entry) =>
+        [
+          "message_channel_list",
+          "message_channel_get",
+          "terminal_list",
+          "terminal_read",
+          "terminal_snapshot",
+          "terminal_get_config",
+          "task_list",
+          "task_get",
+        ].includes(entry.tool),
+      )
+    ) {
+      return "observe";
+    }
+    return "decide";
+  }
+
+  private createAgentToolProviders(): AgentToolProvider[] {
+    return [this.createMessageToolProvider(), this.createTerminalToolProvider(), this.createTaskToolProvider()];
+  }
+
+  private createMessageToolProvider(): AgentToolProvider {
+    return {
+      name: "message",
+      createTools: ({ runtimeText, traceTool }) => {
+        const messageChannelSchema = z.object({
+          chatId: z.string(),
+          kind: z.enum(["direct", "room"]),
+          title: z.string(),
+          owner: z.string(),
+          contextId: z.string().optional(),
+          participants: z.array(
+            z.object({
+              id: z.string(),
+              label: z.string().optional(),
+              role: z.enum(["avatar", "user", "system"]).optional(),
+            }),
+          ),
+          metadata: z.record(z.string(), z.unknown()).optional(),
+          focused: z.boolean(),
+          archivedAt: z.number().optional(),
+          archivedBy: z.string().optional(),
+        });
+
+        const listTool = toolDefinition({
+          name: "message_channel_list",
+          description: runtimeText.t("tool.message_channel_list.description"),
+          inputSchema: z.object({
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channels: z.array(messageChannelSchema),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_channel_list", input, async () => ({
+            channels: this.listMessageChannelsForTooling(input),
+          }));
+        });
+
+        const getTool = toolDefinition({
+          name: "message_channel_get",
+          description: runtimeText.t("tool.message_channel_get.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channel: messageChannelSchema.nullable(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_channel_get", input, async () => ({
+            channel: this.getMessageChannelForTooling(input),
+          }));
+        });
+
+        const sendTool = toolDefinition({
+          name: "message_send",
+          description: runtimeText.t("tool.message_send.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            content: z.string().min(1),
+            rootId: z.string().optional(),
+            from: z.string().optional(),
+            to: z.string().optional(),
+          }),
+          outputSchema: z.object({
+            ok: z.boolean(),
+            messageId: z.string(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              content: z.string().min(1),
+              rootId: z.string().optional(),
+              from: z.string().optional(),
+              to: z.string().optional(),
+            })
+            .parse(rawInput);
+          return traceTool("message_send", input, async () => await this.sendMessageTool(input));
+        });
+
+        return [listTool, getTool, sendTool];
+      },
+    };
+  }
+
+  private createTerminalToolProvider(): AgentToolProvider {
+    return {
+      name: "terminal",
+      createTools: ({ runtimeText, traceTool }) => {
+        const terminalProcessProfileSchema = z.object({
+          command: z.array(z.string()).optional(),
+          cwd: z.string().optional(),
+          cols: z.number().optional(),
+          rows: z.number().optional(),
+          gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+          logStyle: z.enum(["rich", "plain"]).optional(),
+          icon: z.string().optional(),
+          title: z.string().optional(),
+          shortcuts: z.record(z.string(), z.string()).optional(),
+        });
+
+        const terminalControlPlaneConfigPatchSchema = z.object({
+          defaults: terminalProcessProfileSchema.optional(),
+          processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+          terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+          transport: z
+            .object({
+              host: z.string().optional(),
+              port: z.number().nullable().optional(),
+              pathPrefix: z.string().optional(),
+            })
+            .optional(),
+        });
+
+        const listTool = toolDefinition({
+          name: "terminal_list",
+          description: runtimeText.t("tool.terminal_list.description"),
+          outputSchema: z.object({
+            terminals: z.array(
+              z.object({
+                terminalId: z.string(),
+                running: z.boolean(),
+                cwd: z.string().optional(),
+                cols: z.number(),
+                rows: z.number(),
+                focused: z.boolean().optional(),
+                dirty: z.boolean().optional(),
+                latestSeq: z.number().optional(),
+                icon: z.string().optional(),
+                title: z.string().optional(),
+                shortcuts: z.record(z.string(), z.string()).optional(),
+                transportUrl: z.string().optional(),
+              }),
+            ),
+          }),
+        }).server(async () =>
+          traceTool("terminal_list", {}, async () => {
+            const plane = this.requireTerminalControlPlane();
+            const planeEntries = new Map(plane.list().map((entry) => [entry.terminalId, entry] as const));
+            const configured = Object.values(this.config?.terminals ?? {}).map((terminal) => {
+              const entry = planeEntries.get(terminal.terminalId);
+              return {
+                terminalId: terminal.terminalId,
+                running: entry?.running ?? false,
+                cwd: entry?.cwd ?? terminal.cwd,
+                cols: entry ? plane.getSnapshot(terminal.terminalId).cols : 0,
+                rows: entry ? plane.getSnapshot(terminal.terminalId).rows : 0,
+                focused: this.focusedTerminalIds.includes(terminal.terminalId),
+                dirty: this.terminalDirtyState[terminal.terminalId] ?? false,
+                latestSeq: this.terminalLatestSeq[terminal.terminalId] ?? 0,
+                icon: entry?.icon,
+                title: entry?.title,
+                shortcuts: entry?.shortcuts,
+                transportUrl: entry?.transportUrl,
+              };
+            });
+            const dynamic = plane
+              .list()
+              .filter((entry) => !this.config?.terminals[entry.terminalId])
+              .map((entry) => ({
+                terminalId: entry.terminalId,
+                running: entry.running,
+                cwd: entry.cwd,
+                cols: plane.getSnapshot(entry.terminalId).cols,
+                rows: plane.getSnapshot(entry.terminalId).rows,
+                focused: this.focusedTerminalIds.includes(entry.terminalId),
+                dirty: this.terminalDirtyState[entry.terminalId] ?? false,
+                latestSeq: this.terminalLatestSeq[entry.terminalId] ?? 0,
+                icon: entry.icon,
+                title: entry.title,
+                shortcuts: entry.shortcuts,
+                transportUrl: entry.transportUrl,
+              }));
+            return {
+              terminals: [...configured, ...dynamic],
+            };
+          }),
+        );
+
+        const createTool = toolDefinition({
+          name: "terminal_create",
+          description: runtimeText.t("tool.terminal_create.description"),
+          inputSchema: z.object({
+            terminalId: z.string().optional(),
+            processKind: z.string().optional(),
+            command: z.array(z.string()).optional(),
+            cwd: z.string().optional(),
+            profile: terminalProcessProfileSchema.optional(),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string().optional(),
+              processKind: z.string().optional(),
+              command: z.array(z.string()).optional(),
+              cwd: z.string().optional(),
+              profile: terminalProcessProfileSchema.optional(),
+            })
+            .parse(rawInput);
+          return traceTool(
+            "terminal_create",
+            input,
+            async () =>
+              await this.createRuntimeTerminal({
+                terminalId: input.terminalId,
+                processKind: input.processKind,
+                command: input.command,
+                cwd: input.cwd,
+                profile: input.profile,
+                focus: false,
+              }),
+          );
+        });
+
+        const focusTool = toolDefinition({
+          name: "terminal_focus",
+          description: runtimeText.t("tool.terminal_focus.description"),
+          inputSchema: z.object({
+            op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+            terminalIds: z.array(z.string()).optional(),
+          }),
+          outputSchema: z.object({
+            ok: z.boolean(),
+            message: z.string(),
+            focusedTerminalIds: z.array(z.string()).optional(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+              terminalIds: z.array(z.string()).optional(),
+            })
+            .parse(rawInput);
+          return traceTool("terminal_focus", input, async () =>
+            this.focusRuntimeTerminals({
+              op: input.op ?? "replace",
+              terminalIds: input.terminalIds ?? [],
+            }),
+          );
+        });
+
+        const killTool = toolDefinition({
+          name: "terminal_kill",
+          description: runtimeText.t("tool.terminal_kill.description"),
+          inputSchema: z.object({ terminalId: z.string() }),
+          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
+        }).server(async (rawInput) => {
+          const input = z.object({ terminalId: z.string() }).parse(rawInput);
+          return traceTool("terminal_kill", input, async () => await this.deleteRuntimeTerminal(input.terminalId));
+        });
+
+        const writeTool = toolDefinition({
+          name: "terminal_write",
+          description: runtimeText.t("tool.terminal_write.description"),
+          inputSchema: z.object({
+            terminalId: z.string(),
+            text: z.string(),
+            submit: z.boolean().optional(),
+            submitKey: z.enum(["enter", "linefeed"]).optional(),
+          }),
+          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string(),
+              text: z.string(),
+              submit: z.boolean().optional(),
+              submitKey: z.enum(["enter", "linefeed"]).optional(),
+            })
+            .parse(rawInput);
+          return traceTool("terminal_write", input, async () => {
+            const controlPlane = this.requireTerminalControlPlane();
+            if (!controlPlane.has(input.terminalId)) {
+              return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+            }
+            const submitGapMs = this.config?.terminals[input.terminalId]?.submitGapMs ?? 80;
+            try {
+              if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
+                controlPlane.start(input.terminalId);
+                await controlPlane.markDirty(input.terminalId);
+              }
+              const result = await controlPlane.write({
+                terminalId: input.terminalId,
+                text: input.text,
+                submit: input.submit,
+                submitKey: input.submitKey,
+                submitGapMs,
+              });
+              if (result.ok) {
+                this.appendTerminalActivity({
+                  terminalId: input.terminalId,
+                  kind: "terminal_write",
+                  cycleId: this.activeCycleId,
+                  title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+                  content: input.text,
+                  detail: {
+                    submit: input.submit,
+                    submitKey: input.submitKey ?? null,
+                  },
+                });
+              }
+              return { ok: result.ok, message: result.message };
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
+              return { ok: false, message };
+            }
+          });
+        });
+
+        const readTool = toolDefinition({
+          name: "terminal_read",
+          description: runtimeText.t("tool.terminal_read.description"),
+          inputSchema: z.object({
+            terminalId: z.string(),
+            mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string(),
+              mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+            })
+            .parse(rawInput);
+          return traceTool(
+            "terminal_read",
+            input,
+            async () =>
+              await this.readTerminalRepresentation(input.terminalId, {
+                mode: input.mode ?? "auto",
+                remark: false,
+              }),
+          );
+        });
+
+        const snapshotTool = toolDefinition({
+          name: "terminal_snapshot",
+          description: runtimeText.t("tool.terminal_snapshot.description"),
+          inputSchema: z.object({ terminalId: z.string() }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ terminalId: z.string() }).parse(rawInput);
+          return traceTool(
+            "terminal_snapshot",
+            input,
+            async () =>
+              await this.readTerminalRepresentation(input.terminalId, {
+                mode: "snapshot",
+                remark: false,
+              }),
+          );
+        });
+
+        const getConfigTool = toolDefinition({
+          name: "terminal_get_config",
+          description: runtimeText.t("tool.terminal_get_config.description"),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async () =>
+          traceTool("terminal_get_config", {}, async () => await this.requireTerminalControlPlane().getConfig()),
+        );
+
+        const setConfigTool = toolDefinition({
+          name: "terminal_set_config",
+          description: runtimeText.t("tool.terminal_set_config.description"),
+          inputSchema: z.object({
+            patch: terminalControlPlaneConfigPatchSchema,
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              patch: terminalControlPlaneConfigPatchSchema,
+            })
+            .parse(rawInput);
+          return traceTool(
+            "terminal_set_config",
+            input,
+            async () =>
+              await this.requireTerminalControlPlane().setConfig(input.patch as TerminalControlPlaneConfigPatch),
+          );
+        });
+
+        return [
+          listTool,
+          createTool,
+          focusTool,
+          killTool,
+          writeTool,
+          readTool,
+          snapshotTool,
+          getConfigTool,
+          setConfigTool,
+        ];
+      },
+    };
+  }
+
+  private createTaskToolProvider(): AgentToolProvider {
+    return {
+      name: "task",
+      createTools: ({ runtimeText, traceTool }) => {
+        const taskSourceSchema = z.string().min(1);
+        const taskIdSchema = z.string().min(1);
+        const taskRefSchema = z.object({
+          source: taskSourceSchema,
+          id: taskIdSchema,
+        });
+        const taskRefLikeSchema = z.union([z.string().min(1), taskRefSchema]);
+        const taskRelationshipTypeSchema = z.enum([
+          "blocks",
+          "blocked_by",
+          "relates_to",
+          "parent_of",
+          "child_of",
+          "duplicates",
+        ]);
+        const taskRelationshipSchema = z.object({
+          type: taskRelationshipTypeSchema,
+          target: taskRefLikeSchema,
+        });
+        const taskTriggerSchema = z.union([
+          z.object({ type: z.literal("manual") }),
+          z.object({ type: z.literal("event"), topic: z.string().min(1) }),
+          z.object({ type: z.literal("at"), at: z.string().min(1) }),
+          z.object({ type: z.literal("cron"), expr: z.string().min(1) }),
+        ]);
+        const taskStatusSchema = z.enum(["backlog", "pending", "ready", "running", "done", "failed", "canceled"]);
+        const taskCreateSchema = z.object({
+          source: taskSourceSchema,
+          id: taskIdSchema.optional(),
+          title: z.string().min(1),
+          body: z.string().optional(),
+          status: taskStatusSchema.optional(),
+          type: z.string().optional(),
+          assignees: z.array(z.string()).optional(),
+          labels: z.array(z.string()).optional(),
+          milestone: z.string().optional(),
+          projects: z.array(z.string()).optional(),
+          dependsOn: z.array(taskRefLikeSchema).optional(),
+          relationships: z.array(taskRelationshipSchema).optional(),
+          triggers: z.array(taskTriggerSchema).optional(),
+          sourceFile: z.string().optional(),
+        });
+        const taskPatchSchema = z.object({
+          title: z.string().optional(),
+          body: z.string().optional(),
+          status: taskStatusSchema.optional(),
+          type: z.string().optional(),
+          assignees: z.array(z.string()).optional(),
+          labels: z.array(z.string()).optional(),
+          milestone: z.string().optional(),
+          projects: z.array(z.string()).optional(),
+          dependsOn: z.array(taskRefLikeSchema).optional(),
+          relationships: z.array(taskRelationshipSchema).optional(),
+          triggers: z.array(taskTriggerSchema).optional(),
+        });
+        const taskUpdateSchema = z.object({
+          source: taskSourceSchema,
+          id: taskIdSchema,
+          patch: taskPatchSchema,
+        });
+        const taskImportTaskSchema = z.object({
+          id: taskIdSchema.optional(),
+          title: z.string().min(1),
+          body: z.string().optional(),
+          status: taskStatusSchema.optional(),
+          type: z.string().optional(),
+          assignees: z.array(z.string()).optional(),
+          labels: z.array(z.string()).optional(),
+          milestone: z.string().optional(),
+          projects: z.array(z.string()).optional(),
+          dependsOn: z.array(taskRefLikeSchema).optional(),
+          relationships: z.array(taskRelationshipSchema).optional(),
+          triggers: z.array(taskTriggerSchema).optional(),
+        });
+        const taskImportItemSchema = z.object({
+          source: taskSourceSchema,
+          file: z.string().min(1),
+          task: taskImportTaskSchema,
+        });
+
+        const taskListTool = toolDefinition({
+          name: "task_list",
+          description: runtimeText.t("tool.task_list.description"),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async () => traceTool("task_list", {}, async () => ({ tasks: this.taskEngine.list() })));
+
+        const taskGetTool = toolDefinition({
+          name: "task_get",
+          description: runtimeText.t("tool.task_get.description"),
+          inputSchema: z.object({
+            source: taskSourceSchema,
+            id: z.string().min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+          return traceTool("task_get", input, async () => ({
+            task: this.taskEngine.get(input.source, input.id) ?? null,
+          }));
+        });
+
+        const taskImportTool = toolDefinition({
+          name: "task_import_markdown_batch",
+          description: runtimeText.t("tool.task_import.description"),
+          inputSchema: z.object({
+            items: z.array(taskImportItemSchema).min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ items: z.array(taskImportItemSchema).min(1) }).parse(rawInput);
+          return traceTool("task_import_markdown_batch", input, async () => {
+            const result = this.taskEngine.import(input.items as TaskImportItem[]);
+            for (const task of result.items) {
+              void this.persistTask(task).catch((error) => {
+                this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+              });
+              this.emit("taskUpdated", { task });
+            }
+            if (result.items.length > 0) {
+              this.notifyInput("task");
+            }
+            return result;
+          });
+        });
+
+        const taskCreateTool = toolDefinition({
+          name: "task_create",
+          description: runtimeText.t("tool.task_create.description"),
+          inputSchema: taskCreateSchema,
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = taskCreateSchema.parse(rawInput) as TaskCreateInput;
+          return traceTool("task_create", input, async () => {
+            const task = this.taskEngine.create(input);
+            void this.persistTask(task).catch((error) => {
+              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+            });
+            this.emit("taskUpdated", { task });
+            this.notifyInput("task");
+            return task;
+          });
+        });
+
+        const taskUpdateTool = toolDefinition({
+          name: "task_update",
+          description: runtimeText.t("tool.task_update.description"),
+          inputSchema: taskUpdateSchema,
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = taskUpdateSchema.parse(rawInput) as TaskUpdateInput;
+          return traceTool("task_update", input, async () => {
+            const task = this.taskEngine.update(input);
+            void this.persistTask(task).catch((error) => {
+              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+            });
+            this.emit("taskUpdated", { task });
+            this.notifyInput("task");
+            return task;
+          });
+        });
+
+        const taskDoneTool = toolDefinition({
+          name: "task_done",
+          description: runtimeText.t("tool.task_done.description"),
+          inputSchema: z.object({
+            source: taskSourceSchema,
+            id: z.string().min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+          return traceTool("task_done", input, async () => {
+            const result = this.taskEngine.done(input.source, input.id);
+            if (result.task) {
+              void this.persistTask(result.task).catch((error) => {
+                this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+              });
+              this.emit("taskUpdated", { task: result.task });
+            }
+            for (const task of result.affected) {
+              this.emit("taskUpdated", { task });
+            }
+            this.notifyInput("task");
+            return result;
+          });
+        });
+
+        const taskAddDependencyTool = toolDefinition({
+          name: "task_add_dependency",
+          description: runtimeText.t("tool.task_add_dependency.description"),
+          inputSchema: z.object({
+            source: taskSourceSchema,
+            id: z.string().min(1),
+            target: z.string().min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
+            .parse(rawInput);
+          return traceTool("task_add_dependency", input, async () => {
+            const task = this.taskEngine.addDependency(input.source, input.id, input.target);
+            void this.persistTask(task).catch((error) => {
+              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+            });
+            this.emit("taskUpdated", { task });
+            this.notifyInput("task");
+            return task;
+          });
+        });
+
+        const taskRemoveDependencyTool = toolDefinition({
+          name: "task_remove_dependency",
+          description: runtimeText.t("tool.task_remove_dependency.description"),
+          inputSchema: z.object({
+            source: taskSourceSchema,
+            id: z.string().min(1),
+            target: z.string().min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
+            .parse(rawInput);
+          return traceTool("task_remove_dependency", input, async () => {
+            const task = this.taskEngine.removeDependency(input.source, input.id, input.target);
+            void this.persistTask(task).catch((error) => {
+              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+            });
+            this.emit("taskUpdated", { task });
+            this.notifyInput("task");
+            return task;
+          });
+        });
+
+        const taskTriggerManualTool = toolDefinition({
+          name: "task_trigger_manual",
+          description: runtimeText.t("tool.task_trigger_manual.description"),
+          inputSchema: z.object({
+            source: taskSourceSchema,
+            id: z.string().min(1),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
+          return traceTool("task_trigger_manual", input, async () => {
+            const task = this.taskEngine.triggerManual(input.source, input.id);
+            if (task) {
+              this.emit("taskUpdated", { task });
+              this.notifyInput("task");
+            }
+            return { task: task ?? null };
+          });
+        });
+
+        const taskEmitEventTool = toolDefinition({
+          name: "task_emit_event",
+          description: runtimeText.t("tool.task_emit_event.description"),
+          inputSchema: z.object({
+            topic: z.string().min(1),
+            payload: z.unknown().optional(),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ topic: z.string().min(1), payload: z.unknown().optional() }).parse(rawInput);
+          return traceTool("task_emit_event", input, async () => {
+            const result = this.taskEngine.emitEvent({
+              topic: input.topic,
+              payload: input.payload,
+              source: "tool",
+            } satisfies TaskEventInput);
+            if (result.affected.length > 0) {
+              this.emit("taskTriggered", result);
+              for (const task of result.affected) {
+                this.emit("taskUpdated", { task });
+              }
+              this.notifyInput("task");
+            }
+            return result;
+          });
+        });
+
+        return [
+          taskListTool,
+          taskGetTool,
+          taskImportTool,
+          taskCreateTool,
+          taskUpdateTool,
+          taskDoneTool,
+          taskAddDependencyTool,
+          taskRemoveDependencyTool,
+          taskTriggerManualTool,
+          taskEmitEventTool,
+        ];
+      },
+    };
   }
 
   private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
@@ -1941,12 +3002,22 @@ export class SessionRuntime {
               changeType: terminalPresentation.detailKind === "patch" ? ("diff" as const) : ("update" as const),
             };
           })()
-        : {
-            summary: truncateAttentionTitle(normalizedContent),
-            content: draft.content,
-            format: draft.sourceRef.systemId === "message" ? "text/markdown" : "application/json",
-            changeType: "update" as const,
-          };
+        : draft.sourceRef.systemId === "task"
+          ? (() => {
+              const taskPresentation = buildTaskAttentionPresentation(draft.content, draft.sourceRef.subjectId);
+              return {
+                summary: taskPresentation.title,
+                content: taskPresentation.detailValue,
+                format: taskPresentation.detailFormat,
+                changeType: "update" as const,
+              };
+            })()
+          : {
+              summary: truncateAttentionTitle(normalizedContent),
+              content: draft.content,
+              format: draft.sourceRef.systemId === "message" ? "text/markdown" : "application/json",
+              changeType: "update" as const,
+            };
     return {
       contextId: this.resolveAttentionContextId(draft),
       meta: this.buildAttentionMeta(draft),
@@ -2499,6 +3570,132 @@ export class SessionRuntime {
     this.upsertAttentionCycleFrame(current);
   }
 
+  private hasPendingCompactCycle(): boolean {
+    return this.pendingCompactRequest !== null;
+  }
+
+  private queueCompactCycle(trigger: CompactCycleTrigger): void {
+    this.pendingCompactRequest = {
+      trigger,
+      requestedAt: Date.now(),
+    };
+    this.notifyInput("attention");
+  }
+
+  private consumePendingCompactCycle(): PendingCompactRequest | null {
+    const request = this.pendingCompactRequest;
+    this.pendingCompactRequest = null;
+    return request;
+  }
+
+  private buildCompactCycleInput(request: PendingCompactRequest): LoopBusInput {
+    return {
+      name: COMPACT_CYCLE_INPUT_NAME,
+      role: "user",
+      type: "text",
+      source: "attention",
+      text: JSON.stringify({
+        kind: "compact-cycle",
+        trigger: request.trigger,
+        requestedAt: new Date(request.requestedAt).toISOString(),
+      }),
+      meta: {
+        cycleKind: "compact",
+        compactTrigger: request.trigger,
+        exclusiveCycle: true,
+        requestedAt: new Date(request.requestedAt).toISOString(),
+      },
+    };
+  }
+
+  private isCompactCycleInputMessage(input: { meta?: Record<string, string | number | boolean | null> }): boolean {
+    return input.meta?.cycleKind === "compact";
+  }
+
+  private readCompactCycleTriggerFromInputs(
+    inputs: ReadonlyArray<{ meta?: Record<string, string | number | boolean | null> }>,
+  ): CompactCycleTrigger | null {
+    for (const input of inputs) {
+      const trigger = parseCompactCycleTrigger(input.meta?.compactTrigger);
+      if (trigger) {
+        return trigger;
+      }
+    }
+    return null;
+  }
+
+  private buildAttentionProtocolState(): Map<string, { bootstrapped: boolean; lastSeenCommitId: string | null }> {
+    const state = new Map<string, { bootstrapped: boolean; lastSeenCommitId: string | null }>();
+    const frames = [...this.attentionCycleFrames.values()].sort(
+      (left, right) => left.seq - right.seq || left.cycleId - right.cycleId,
+    );
+
+    const ensure = (contextId: string) => {
+      const existing = state.get(contextId);
+      if (existing) {
+        return existing;
+      }
+      const next = { bootstrapped: false, lastSeenCommitId: null as string | null };
+      state.set(contextId, next);
+      return next;
+    };
+
+    for (const frame of frames) {
+      if (frame.protocolMode === "compact" || frame.protocolMode === "none") {
+        continue;
+      }
+      for (const contextId of frame.inputContextIds) {
+        ensure(contextId).bootstrapped = true;
+      }
+      for (const ref of [...frame.inputCommitRefs, ...frame.producedCommitRefs]) {
+        const entry = ensure(ref.contextId);
+        entry.bootstrapped = true;
+        entry.lastSeenCommitId = ref.commitId;
+      }
+    }
+
+    return state;
+  }
+
+  private selectAttentionProtocolCommits(
+    match: AttentionActiveContextMatch,
+    cursorCommitId: string | null,
+  ): AttentionCommit[] {
+    const context = this.attentionSystem.getContext(match.contextId);
+    const allCommits = context?.listCommits() ?? match.recentCommits;
+    if (allCommits.length === 0) {
+      return [];
+    }
+    const cursorIndex =
+      cursorCommitId === null ? -1 : allCommits.findIndex((commit) => commit.commitId === cursorCommitId);
+    let commits = allCommits.slice(cursorIndex + 1);
+    if (commits.length === 0) {
+      commits = allCommits.slice(-1);
+    }
+    if (commits.length > MAX_ATTENTION_PROTOCOL_COMMITS) {
+      commits = commits.slice(-MAX_ATTENTION_PROTOCOL_COMMITS);
+    }
+    return commits;
+  }
+
+  private serializeAttentionItemsInput(contextId: string, commits: readonly AttentionCommit[]): string {
+    return mdFence(
+      "yaml+attention_items",
+      toYaml({
+        contextId,
+        commits: commits.map((commit) => ({
+          commitId: commit.commitId,
+          parentCommitIds: [...commit.parentCommitIds],
+          meta: { ...commit.meta },
+          scores: { ...commit.scores },
+          summary: commit.summary,
+          change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
+          createdAt: commit.createdAt,
+        })),
+      }),
+    );
+  }
+
   private recordAttentionHook(
     contextId: string,
     commitId: string,
@@ -2699,7 +3896,9 @@ export class SessionRuntime {
     this.attentionHashAliasStore = new AttentionHashAliasStore(attentionRoot);
     const persistedAttentionSnapshot = await this.attentionStore.load();
     const persistedHashAliases = await this.attentionHashAliasStore.load();
-    this.attentionHashAliases = new AttentionHashAliasRegistry(this.mergeBootAttentionHashAliases(persistedHashAliases));
+    this.attentionHashAliases = new AttentionHashAliasRegistry(
+      this.mergeBootAttentionHashAliases(persistedHashAliases),
+    );
     this.attentionSystem = AttentionSystem.fromSnapshot(this.mergeBootAttentionSnapshot(persistedAttentionSnapshot));
     await this.persistAttentionSystem();
     if (this.attentionSystem.listActiveContexts().length > 0) {
@@ -2836,126 +4035,9 @@ export class SessionRuntime {
       onModelCall: async (record) => {
         await this.handleModelCall(record);
       },
-      onAssistantLiveMessage: async (message) => {
-        this.updateActiveCycle({
-          status: "streaming",
-          streaming: {
-            content: message.content,
-          },
-        });
-      },
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
-      terminalGateway: {
-        list: () => {
-          const planeEntries = new Map(
-            this.requireTerminalControlPlane()
-              .list()
-              .map((entry) => [entry.terminalId, entry] as const),
-          );
-          const configured = Object.values(this.config?.terminals ?? {}).map((terminal) => {
-            const entry = planeEntries.get(terminal.terminalId);
-            return {
-              terminalId: terminal.terminalId,
-              running: entry?.running ?? false,
-              cwd: entry?.cwd ?? terminal.cwd,
-              cols: entry ? this.requireTerminalControlPlane().getSnapshot(terminal.terminalId).cols : 0,
-              rows: entry ? this.requireTerminalControlPlane().getSnapshot(terminal.terminalId).rows : 0,
-              focused: this.focusedTerminalIds.includes(terminal.terminalId),
-              dirty: this.terminalDirtyState[terminal.terminalId] ?? false,
-              latestSeq: this.terminalLatestSeq[terminal.terminalId] ?? 0,
-              icon: entry?.icon,
-              title: entry?.title,
-              shortcuts: entry?.shortcuts,
-              transportUrl: entry?.transportUrl,
-            };
-          });
-          const dynamic = this.requireTerminalControlPlane()
-            .list()
-            .filter((entry) => !this.config?.terminals[entry.terminalId])
-            .map((entry) => ({
-              terminalId: entry.terminalId,
-              running: entry.running,
-              cwd: entry.cwd,
-              cols: this.requireTerminalControlPlane().getSnapshot(entry.terminalId).cols,
-              rows: this.requireTerminalControlPlane().getSnapshot(entry.terminalId).rows,
-              focused: this.focusedTerminalIds.includes(entry.terminalId),
-              dirty: this.terminalDirtyState[entry.terminalId] ?? false,
-              latestSeq: this.terminalLatestSeq[entry.terminalId] ?? 0,
-              icon: entry.icon,
-              title: entry.title,
-              shortcuts: entry.shortcuts,
-              transportUrl: entry.transportUrl,
-            }));
-          return [...configured, ...dynamic];
-        },
-        create: async ({ terminalId, processKind, command, cwd, profile }) => {
-          return await this.createRuntimeTerminal({
-            terminalId,
-            processKind,
-            command,
-            cwd,
-            profile,
-            focus: false,
-          });
-        },
-        kill: async ({ terminalId }) => {
-          return await this.deleteRuntimeTerminal(terminalId);
-        },
-        focus: async ({ op = "replace", terminalIds = [] }) => {
-          return this.focusRuntimeTerminals({ op, terminalIds });
-        },
-        write: async ({ terminalId, text, submit, submitKey }) => {
-          const controlPlane = this.requireTerminalControlPlane();
-          if (!controlPlane.has(terminalId)) {
-            return { ok: false, message: `unknown terminal: ${terminalId}` };
-          }
-          const submitGapMs = this.config?.terminals[terminalId]?.submitGapMs ?? 80;
-          try {
-            if (this.config?.terminals[terminalId]?.gitLog && !controlPlane.isRunning(terminalId)) {
-              controlPlane.start(terminalId);
-              await controlPlane.markDirty(terminalId);
-            }
-            const result = await controlPlane.write({
-              terminalId,
-              text,
-              submit,
-              submitKey,
-              submitGapMs,
-            });
-            if (result.ok) {
-              this.appendTerminalActivity({
-                terminalId,
-                kind: "terminal_write",
-                cycleId: this.activeCycleId,
-                title: submit || submitKey ? "Terminal write + submit" : "Terminal write",
-                content: text,
-                detail: {
-                  submit,
-                  submitKey: submitKey ?? null,
-                },
-              });
-            }
-            return { ok: result.ok, message: result.message };
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.emit("error", { message: `terminal write failed (${terminalId}): ${message}` });
-            return { ok: false, message };
-          }
-        },
-        read: async ({ terminalId, mode = "auto" }) =>
-          this.readTerminalRepresentation(terminalId, {
-            mode,
-            remark: false,
-          }),
-        snapshot: async ({ terminalId }) =>
-          this.readTerminalRepresentation(terminalId, {
-            mode: "snapshot",
-            remark: false,
-          }),
-        getConfig: async () => this.requireTerminalControlPlane().getConfig(),
-        setConfig: async ({ patch }) => this.requireTerminalControlPlane().setConfig(patch),
-      },
+      toolProviders: this.createAgentToolProviders(),
       attentionGateway: {
         listContexts: () => this.attentionSystem.listContexts(),
         listActive: () => this.attentionSystem.listActiveContexts(),
@@ -2979,151 +4061,8 @@ export class SessionRuntime {
           return commit;
         },
       },
-      messageGateway: {
-        listChannels: async (input = {}) =>
-          this.listMessageChannels({ includeArchived: input.includeArchived }).map((channel) =>
-            this.projectMessageChannelForTooling(channel),
-          ),
-        getChannel: async ({ chatId, includeArchived = false }) => {
-          if (chatId === this.getDefaultChatId()) {
-            this.ensureDefaultChatChannel();
-          }
-          const channel = this.messageSystem.getChannel(chatId, { includeArchived });
-          return channel ? this.projectMessageChannelForTooling(channel) : null;
-        },
-        send: async ({ chatId, content, rootId, from, to }) => {
-          const channel = this.messageSystem.getChannel(chatId);
-          if (!channel) {
-            throw new Error(`unknown chat channel: ${chatId}`);
-          }
-          const replyCycleId = this.activeCycleId;
-          const author = from ?? this.getAvatarName();
-          const redundant = this.findRedundantVisibleReply({
-            chatId,
-            content,
-            from: author,
-          });
-          if (redundant) {
-            return {
-              ok: true,
-              messageId: redundant.messageId,
-            };
-          }
-          const message = this.messageSystem.reply({
-            chatId,
-            rootId: rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
-            from: author,
-            to,
-            content,
-            metadata: {
-              channel: "to_user",
-              source: "message_send",
-              cycleId: replyCycleId,
-            },
-          });
-          return {
-            ok: true,
-            messageId: message.messageId,
-          };
-        },
-      },
-      taskGateway: {
-        list: () => this.taskEngine.list(),
-        get: ({ source, id }) => this.taskEngine.get(source, id),
-        create: (input) => {
-          const task = this.taskEngine.create(input);
-          void this.persistTask(task).catch((error) => {
-            this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-          });
-          this.emit("taskUpdated", { task });
-          this.notifyInput("task");
-          return task;
-        },
-        update: (input) => {
-          const task = this.taskEngine.update(input);
-          void this.persistTask(task).catch((error) => {
-            this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-          });
-          this.emit("taskUpdated", { task });
-          this.notifyInput("task");
-          return task;
-        },
-        done: ({ source, id }) => {
-          const result = this.taskEngine.done(source, id);
-          if (result.task) {
-            void this.persistTask(result.task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task: result.task });
-          }
-          for (const task of result.affected) {
-            this.emit("taskUpdated", { task });
-          }
-          this.notifyInput("task");
-          return result;
-        },
-        addDependency: ({ source, id, target }) => {
-          const task = this.taskEngine.addDependency(source, id, target);
-          void this.persistTask(task).catch((error) => {
-            this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-          });
-          this.emit("taskUpdated", { task });
-          this.notifyInput("task");
-          return task;
-        },
-        removeDependency: ({ source, id, target }) => {
-          const task = this.taskEngine.removeDependency(source, id, target);
-          void this.persistTask(task).catch((error) => {
-            this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-          });
-          this.emit("taskUpdated", { task });
-          this.notifyInput("task");
-          return task;
-        },
-        triggerManual: ({ source, id }) => {
-          const task = this.taskEngine.triggerManual(source, id);
-          if (task) {
-            this.emit("taskUpdated", { task });
-            this.notifyInput("task");
-          }
-          return task;
-        },
-        emitEvent: (input) => {
-          const result = this.taskEngine.emitEvent(input);
-          if (result.affected.length > 0) {
-            this.emit("taskTriggered", {
-              topic: result.topic,
-              source: result.source,
-              affected: result.affected,
-            });
-            for (const task of result.affected) {
-              this.emit("taskUpdated", { task });
-            }
-            this.notifyInput("task");
-          }
-          return result;
-        },
-        import: (items) => {
-          const result = this.taskEngine.import(items);
-          for (const task of result.items) {
-            void this.persistTask(task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task });
-          }
-          if (result.items.length > 0) {
-            this.notifyInput("task");
-          }
-          return result;
-        },
-      },
     });
     this.agent = agent;
-
-    agent.onTaskEvent((event) => {
-      this.stage = event.stage;
-      this.emit("stage", { stage: event.stage });
-    });
 
     agent.onStats((stats) => {
       this.emit("stats", stats);
@@ -3139,7 +4078,14 @@ export class SessionRuntime {
           });
         }
         try {
-          const result = await agent.send(messages, context);
+          const compactTrigger = this.readCompactCycleTriggerFromInputs(messages);
+          const result = this.isCompactCycleInputMessage(messages[0] ?? {})
+            ? await agent.runCompactCycle({ trigger: compactTrigger ?? "manual", signal: context?.signal }).then(() => undefined)
+            : await agent.send(messages, context);
+          const pendingCompactTrigger = agent.consumePendingCompactRequest();
+          if (pendingCompactTrigger) {
+            this.queueCompactCycle(pendingCompactTrigger);
+          }
           if (context?.signal) {
             await this.loopPluginRuntime?.notifyCycleDidCallModel({
               cycleId,
@@ -3167,13 +4113,12 @@ export class SessionRuntime {
       onLoopStateChange: (state) => {
         const previousPhase = this.loopPhase;
         this.loopPhase = state.phase;
+        this.updateProjectionStageFromLoopPhase(state.phase);
         if (this.activeCycle) {
           if (state.phase === "waiting_commits" && previousPhase !== "waiting_commits") {
             const nextStatus = this.abortingActiveCycle || this.activeCycle.status === "error" ? "error" : "done";
             this.abortingActiveCycle = false;
             this.finalizeActiveCycle(nextStatus);
-          } else if (state.phase === "applying_outputs") {
-            this.updateActiveCycle({ status: "applying" });
           } else if (state.phase === "calling_model" && this.activeCycle.status === "collecting") {
             this.updateActiveCycle({ status: "collecting" });
           } else if (
@@ -3214,28 +4159,6 @@ export class SessionRuntime {
       waitForCommit: async () => this.waitForAnyInput(),
       collectInputs: async () => this.collectLoopInputs(),
       persistCycle: async ({ wakeSource, inputs }) => this.persistCycle({ wakeSource, inputs }),
-      onUserMessage: (message, context) => {
-        if (message.channel && message.channel !== "to_user") {
-          this.recordChatMessage(message, context.cycleId);
-          return;
-        }
-        const replyCycleId = context.cycleId ?? this.activeCycleId;
-        const replyChatId = this.cycleReplyChatIds.get(context.cycleId) ?? this.getDefaultChatId();
-        this.messageSystem.reply({
-          chatId: replyChatId,
-          rootId: replyCycleId ? String(replyCycleId) : undefined,
-          from: this.getAvatarName(),
-          content: message.content,
-          metadata: {
-            channel: message.channel ?? "to_user",
-            format: message.format ?? "markdown",
-            cycleId: replyCycleId,
-          },
-        });
-      },
-      onTerminalDispatch: async (_command, context) => {
-        this.activeCycleId = context.cycleId;
-      },
     });
 
     this.runtime.start();
@@ -3307,7 +4230,7 @@ export class SessionRuntime {
     await this.terminalControlPlane?.dispose();
     this.terminalControlPlane = null;
     this.terminals.clear();
-    this.taskSourceQueue.length = 0;
+    this.taskAttentionDraftQueue.length = 0;
     this.inboundMessageQueue.length = 0;
     this.taskSourceMtime.clear();
     this.taskSources = [];
@@ -3489,7 +4412,7 @@ export class SessionRuntime {
             capabilities: resolveModelCapabilities(this.config.ai),
           }
         : null,
-      history: modelState?.history ?? [],
+      promptWindow: modelState?.promptWindow ?? [],
       stats: modelState?.stats ?? null,
       latestModelCall: this.sessionDb?.listModelCalls(1)[0] ?? null,
       recentModelCalls: this.sessionDb?.listModelCalls(8) ?? [],
@@ -3870,7 +4793,7 @@ export class SessionRuntime {
   pushUserChat(text: string, assetIds: string[] = [], clientMessageId?: string): void {
     const isCompactCommand = text.trim() === "/compact";
     if (isCompactCommand) {
-      this.agent?.requestCompact("user-command");
+      this.queueCompactCycle("manual");
     }
 
     const channel = this.ensureDefaultChatChannel();
@@ -4252,22 +5175,18 @@ export class SessionRuntime {
         message?: string;
         name?: string;
       };
-      immediateBlock?: boolean;
     },
   ): void {
     const now = Date.now();
     const fingerprint = this.buildAttentionFailureFingerprint(input);
-    for (const contextId of contextIds) {
+    for (const contextId of new Set(contextIds)) {
       const previous = this.attentionContainment.get(contextId);
       const retryCount = previous?.fingerprint === fingerprint ? previous.retryCount + 1 : 1;
-      const blockNow = input.immediateBlock === true || retryCount >= ATTENTION_FAILURE_BLOCK_THRESHOLD;
       this.attentionContainment.set(contextId, {
         contextId,
         fingerprint,
         retryCount,
-        status: blockNow ? "blocked" : "backoff",
-        nextWakeAt: blockNow ? null : now + this.getAttentionContainmentBackoffMs(retryCount),
-        blockedReason: blockNow ? input.outcome?.message ?? input.error?.message ?? fingerprint : null,
+        nextWakeAt: now + this.getAttentionContainmentBackoffMs(retryCount),
         updatedAt: now,
       });
     }
@@ -4281,8 +5200,6 @@ export class SessionRuntime {
     let hasReady = false;
     let nextWakeAt: number | null = null;
     let retryCount = 0;
-    let blockedReason: string | null = null;
-    let hasBlocked = false;
 
     for (const match of active) {
       const entry = this.attentionContainment.get(match.contextId);
@@ -4291,12 +5208,7 @@ export class SessionRuntime {
         continue;
       }
       retryCount = Math.max(retryCount, entry.retryCount);
-      if (entry.status === "blocked") {
-        hasBlocked = true;
-        blockedReason ??= entry.blockedReason;
-        continue;
-      }
-      if (entry.nextWakeAt === null || entry.nextWakeAt <= now) {
+      if (entry.nextWakeAt <= now) {
         hasReady = true;
         continue;
       }
@@ -4308,7 +5220,6 @@ export class SessionRuntime {
         state: "ready",
         nextWakeAt: null,
         retryCount,
-        blockedReason: null,
       };
     }
     if (nextWakeAt !== null) {
@@ -4316,22 +5227,12 @@ export class SessionRuntime {
         state: "backoff",
         nextWakeAt,
         retryCount,
-        blockedReason: null,
-      };
-    }
-    if (hasBlocked) {
-      return {
-        state: "blocked",
-        nextWakeAt: null,
-        retryCount,
-        blockedReason,
       };
     }
     return {
       state: "none",
       nextWakeAt: null,
       retryCount: 0,
-      blockedReason: null,
     };
   }
 
@@ -4384,13 +5285,11 @@ export class SessionRuntime {
         if (!entry) {
           return true;
         }
-        if (entry.status === "blocked") {
-          return false;
-        }
-        return entry.nextWakeAt === null || entry.nextWakeAt <= now;
+        return entry.nextWakeAt <= now;
       })
       .sort((left, right) => {
-        const priorityDelta = this.resolveAttentionCollectionPriority(right) - this.resolveAttentionCollectionPriority(left);
+        const priorityDelta =
+          this.resolveAttentionCollectionPriority(right) - this.resolveAttentionCollectionPriority(left);
         if (priorityDelta !== 0) {
           return priorityDelta;
         }
@@ -4436,7 +5335,13 @@ export class SessionRuntime {
     if (phase !== "waiting_commits") {
       return null;
     }
-    if (this.inboundMessageQueue.length > 0 || this.taskSourceQueue.length > 0) {
+    if (this.hasPendingCompactCycle()) {
+      return "ready_now";
+    }
+    if (this.inboundMessageQueue.length > 0 || this.taskAttentionDraftQueue.length > 0) {
+      return "ready_now";
+    }
+    if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
       return "ready_now";
     }
     if (this.focusedTerminalIds.some((terminalId) => this.terminalDirtyState[terminalId])) {
@@ -4448,9 +5353,6 @@ export class SessionRuntime {
     const activeAttention = this.attentionSystem.listActiveContexts();
     if (activeAttention.length > 0) {
       const containment = this.summarizeAttentionContainment(activeAttention);
-      if (containment.state === "blocked") {
-        return "blocked";
-      }
       if (containment.state === "backoff") {
         return "attention_backoff";
       }
@@ -4465,6 +5367,11 @@ export class SessionRuntime {
   private async waitForAnyInput(): Promise<LoopInputKind> {
     const loopPaused = this.runtime?.getLoopState().paused ?? false;
     const hasPendingAttention = this.hasPendingAttentionInputs();
+    if (this.hasPendingCompactCycle()) {
+      this.loopKernelLastWakeCause = "compact_cycle";
+      this.resetAttentionDebtBackoff();
+      return "attention";
+    }
     if (this.inboundMessageQueue.length > 0) {
       this.loopKernelLastWakeCause = "user_input";
       this.resetAttentionDebtBackoff();
@@ -4475,7 +5382,12 @@ export class SessionRuntime {
       this.resetAttentionDebtBackoff();
       return "terminal";
     }
-    if (this.taskSourceQueue.length > 0) {
+    if (this.taskAttentionDraftQueue.length > 0) {
+      this.loopKernelLastWakeCause = "task_input";
+      this.resetAttentionDebtBackoff();
+      return "task";
+    }
+    if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
       this.loopKernelLastWakeCause = "task_input";
       this.resetAttentionDebtBackoff();
       return "task";
@@ -4487,7 +5399,7 @@ export class SessionRuntime {
     }
 
     this.inputSignalCursor.user = this.inputSignals.user.current();
-    if (this.taskSourceQueue.length === 0 && !this.hasTimeBasedTask()) {
+    if (this.taskAttentionDraftQueue.length === 0 && !this.hasTimeBasedTask()) {
       this.inputSignalCursor.task = this.inputSignals.task.current();
     }
     if (!hasPendingAttention) {
@@ -4622,19 +5534,31 @@ export class SessionRuntime {
       for (const task of triggered.affected) {
         this.emit("taskUpdated", { task });
       }
-      this.taskSourceQueue.push({
-        name: "TaskSystem",
-        role: "user",
-        type: "text",
-        source: "task",
-        text: JSON.stringify({
+      this.enqueueTaskAttentionDraft({
+        subjectId: buildStableAttentionSubjectId("trigger", `${triggered.source}:${triggered.topic}`),
+        reason: "task-triggered",
+        content: JSON.stringify({
           kind: "task-triggered",
           source: triggered.source,
           topic: triggered.topic,
           affected: triggered.affected.map((task) => ({ key: task.key, status: task.status, progress: task.progress })),
         }),
+        from: "task-system",
+        meta: {
+          triggerSource: triggered.source,
+          topic: triggered.topic,
+          affectedTaskKeys: triggered.affected.map((task) => task.key),
+        },
       });
       this.notifyInput("task");
+    }
+
+    const pendingCompact = this.collectPendingCompactCycleInputs();
+    if (pendingCompact) {
+      for (const kind of Object.keys(this.inputSignalCursor) as Array<LoopInputKind>) {
+        this.inputSignalCursor[kind] = this.inputSignals[kind].current();
+      }
+      return pendingCompact;
     }
 
     const outputs: LoopBusInput[] = [];
@@ -4665,12 +5589,9 @@ export class SessionRuntime {
         outputs.push(...messageInputs.filter((item) => item.text.trim() === "/compact"));
       }
     }
-    if (this.taskSourceQueue.length > 0) {
-      outputs.push(...this.taskSourceQueue.splice(0, this.taskSourceQueue.length));
-    }
-    const taskHeartbeat = this.collectTaskHeartbeatInput();
-    if (taskHeartbeat) {
-      outputs.push(taskHeartbeat);
+    const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
+    if (pendingTaskDrafts.length > 0) {
+      await this.commitAttentionDrafts(pendingTaskDrafts);
     }
     const terminalInputs = this.loopPluginRuntime ? undefined : await this.collectTerminalInputs();
     if (terminalInputs) {
@@ -4684,6 +5605,30 @@ export class SessionRuntime {
       this.inputSignalCursor[kind] = this.inputSignals[kind].current();
     }
     return outputs.length > 0 ? outputs : undefined;
+  }
+
+  private collectPendingCompactCycleInputs(): LoopBusInput[] | undefined {
+    const pending = this.consumePendingCompactCycle();
+    if (!pending) {
+      return undefined;
+    }
+    if (pending.trigger === "manual" && this.inboundMessageQueue.length > 0) {
+      const compactMessages = this.inboundMessageQueue.filter((item) => item.text.trim() === "/compact");
+      if (compactMessages.length > 0) {
+        const remainingMessages = this.inboundMessageQueue.filter((item) => item.text.trim() !== "/compact");
+        this.inboundMessageQueue.splice(0, this.inboundMessageQueue.length, ...remainingMessages);
+        return compactMessages.map((item) => ({
+          ...item,
+          meta: {
+            ...(item.meta ?? {}),
+            cycleKind: "compact",
+            compactTrigger: pending.trigger,
+            exclusiveCycle: true,
+          },
+        }));
+      }
+    }
+    return [this.buildCompactCycleInput(pending)];
   }
 
   private collectAttentionInputs(): LoopBusInput[] | undefined {
@@ -4717,25 +5662,50 @@ export class SessionRuntime {
       this.attentionFactsSentVersion = this.attentionFactsVersion;
     }
 
-    return selected.map((match) => {
+    const protocolState = this.buildAttentionProtocolState();
+    const outputs: LoopBusInput[] = [];
+    for (const match of selected) {
+      const protocol = protocolState.get(match.contextId) ?? { bootstrapped: false, lastSeenCommitId: null };
+      const commits = this.selectAttentionProtocolCommits(match, protocol.lastSeenCommitId);
       const channel = this.resolveMessageChannelForContext(match.contextId);
       const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(match.contextId);
-      return {
-        name: `Attention-${match.contextId}`,
-        role: "user",
-        type: "text",
-        source: "attention",
-        text: serializeAttentionActiveContext(match),
-        meta: {
-          attentionContextId: match.contextId,
-          attentionHeadCommitId: match.context.headCommitId,
-          owner: match.context.owner,
-          createdAt: match.context.updatedAt,
-          ...(channel ? { chatFocused: channel.focused } : {}),
-          ...(chatId ? { chatId } : {}),
-        },
+      const commonMeta = {
+        attentionContextId: match.contextId,
+        attentionHeadCommitId: match.context.headCommitId,
+        owner: match.context.owner,
+        createdAt: match.context.updatedAt,
+        ...(channel ? { chatFocused: channel.focused } : {}),
+        ...(chatId ? { chatId } : {}),
       };
-    });
+      if (!protocol.bootstrapped) {
+        outputs.push({
+          name: `AttentionContext-${match.contextId}`,
+          role: "user",
+          type: "text",
+          source: "attention",
+          text: serializeAttentionActiveContext(match),
+          meta: {
+            ...commonMeta,
+            attentionProtocolKind: "context",
+          },
+        });
+      }
+      if (commits.length > 0) {
+        outputs.push({
+          name: `AttentionItems-${match.contextId}`,
+          role: "user",
+          type: "text",
+          source: "attention",
+          text: this.serializeAttentionItemsInput(match.contextId, commits),
+          meta: {
+            ...commonMeta,
+            attentionProtocolKind: "items",
+            attentionCommitIds: serializeAttentionCommitIds(commits.map((commit) => commit.commitId)) ?? null,
+          },
+        });
+      }
+    }
+    return outputs.length > 0 ? outputs : undefined;
   }
 
   private resolveMessageChannelForContext(contextId: string): MessageControlPlaneEntry | null {
@@ -4753,7 +5723,16 @@ export class SessionRuntime {
     return null;
   }
 
-  private collectTaskHeartbeatInput(): LoopBusInput | undefined {
+  private collectPendingTaskAttentionDrafts(): AttentionDraft[] {
+    const drafts = this.taskAttentionDraftQueue.splice(0, this.taskAttentionDraftQueue.length);
+    const heartbeat = this.collectTaskHeartbeatDraft();
+    if (heartbeat) {
+      drafts.push(heartbeat);
+    }
+    return drafts;
+  }
+
+  private collectTaskHeartbeatDraft(): AttentionDraft | undefined {
     const now = Date.now();
     const active = this.taskEngine.list().filter((task) => task.status !== "done" && task.status !== "canceled");
     if (active.length === 0) {
@@ -4784,11 +5763,10 @@ export class SessionRuntime {
     }));
 
     return {
-      name: "TaskHeartbeat",
-      role: "user",
-      type: "text",
-      source: "task",
-      text: JSON.stringify({
+      sourceRef: this.createTaskSourceRef("heartbeat", "task-heartbeat", {
+        activeCount: active.length,
+      }),
+      content: JSON.stringify({
         kind: "task-heartbeat",
         timestamp: new Date(now).toISOString(),
         activeCount: active.length,
@@ -4796,7 +5774,13 @@ export class SessionRuntime {
         top,
       }),
       meta: {
+        source: "task",
         activeCount: active.length,
+      },
+      from: "task-system",
+      supersedeActive: {
+        systemId: "task",
+        subjectId: "heartbeat",
       },
     };
   }
@@ -4893,12 +5877,10 @@ export class SessionRuntime {
         const markdown = await readFile(file, "utf8");
         this.taskSourceMtime.set(file, info.mtimeMs);
         this.emit("taskSourceChanged", { sourceName: item.name, sourcePath: item.path, file, source, markdown });
-        this.taskSourceQueue.push({
-          name: "TaskSource",
-          role: "user",
-          type: "text",
-          source: "task",
-          text: JSON.stringify({
+        this.enqueueTaskAttentionDraft({
+          subjectId: buildStableAttentionSubjectId("source", `${item.name}:${file}`),
+          reason: "task-source",
+          content: JSON.stringify({
             kind: "task-source",
             sourceName: item.name,
             sourcePath: item.path,
@@ -4906,6 +5888,14 @@ export class SessionRuntime {
             source,
             markdown,
           }),
+          from: `task-source:${item.name}`,
+          meta: {
+            sourceName: item.name,
+            sourcePath: item.path,
+            file,
+            taskSourceEvent: source,
+            semanticHash: createHash("sha256").update(markdown).digest("hex"),
+          },
         });
         this.notifyInput("task");
       }
@@ -4997,6 +5987,8 @@ export class SessionRuntime {
     createdAt: number;
     wakeSource: string | null;
     inputs: SessionCollectedInput[];
+    kind: ChatCycle["kind"];
+    compactTrigger?: CompactCycleTrigger | null;
   }): void {
     this.activeCycle = {
       id: toChatCycleId({ cycleId: input.cycleId }),
@@ -5004,7 +5996,7 @@ export class SessionRuntime {
       seq: input.seq,
       createdAt: input.createdAt,
       wakeSource: input.wakeSource,
-      kind: detectChatCycleKind(input.inputs),
+      kind: input.kind,
       status: "collecting",
       clientMessageIds: collectClientMessageIds(input.inputs),
       inputs: structuredClone(input.inputs),
@@ -5012,6 +6004,7 @@ export class SessionRuntime {
       liveMessages: [],
       streaming: null,
       modelCallId: null,
+      compactTrigger: input.kind === "compact" ? (input.compactTrigger ?? null) : null,
     };
     this.emitActiveCycle();
   }
@@ -5076,6 +6069,7 @@ export class SessionRuntime {
     if (!this.activeCycle) {
       return;
     }
+    this.setProjectionStage(status === "error" ? "error" : "idle");
     if (status === "error" && this.activeCycle.liveMessages.length > 0) {
       const cancelledAt = Date.now();
       const liveMessages = [...this.activeCycle.liveMessages];
@@ -5294,11 +6288,44 @@ export class SessionRuntime {
         },
       ]),
     );
+    const cycleKind = detectChatCycleKind(collectedInputs);
+    const compactTrigger = cycleKind === "compact" ? this.readCompactCycleTriggerFromInputs(input.inputs) : null;
     const activeContextIds = this.collectActiveAttentionContextIds();
-    const inputContextIds = collectedInputs
-      .filter((item) => item.source === "attention")
-      .map((item) => item.meta?.attentionContextId)
-      .filter((contextId): contextId is string => typeof contextId === "string");
+    const inputContextIds = [
+      ...new Set(
+        collectedInputs
+          .filter((item) => item.source === "attention")
+          .map((item) => item.meta?.attentionContextId)
+          .filter((contextId): contextId is string => typeof contextId === "string"),
+      ),
+    ];
+    const inputCommitRefs = dedupeAttentionCommitRefs(
+      collectedInputs.flatMap((item) => {
+        if (item.source !== "attention") {
+          return [];
+        }
+        const contextId = typeof item.meta?.attentionContextId === "string" ? item.meta.attentionContextId : null;
+        if (!contextId) {
+          return [];
+        }
+        return parseAttentionCommitIds(item.meta?.attentionCommitIds).map((commitId) => ({
+          contextId,
+          commitId,
+        }));
+      }),
+    );
+    const protocolMode: AttentionProtocolMode =
+      cycleKind === "compact"
+        ? "compact"
+        : collectedInputs.some(
+              (item) => parseAttentionInputProtocolKind(item.meta?.attentionProtocolKind) === "context",
+            )
+          ? "bootstrap"
+          : collectedInputs.some(
+                (item) => parseAttentionInputProtocolKind(item.meta?.attentionProtocolKind) === "items",
+              )
+            ? "delta"
+            : "none";
 
     const cycle = this.sessionDb.appendCycle({
       prevCycleId: previousHead,
@@ -5311,7 +6338,9 @@ export class SessionRuntime {
           seq: -1,
           createdAt: 0,
           wakeSource: input.wakeSource,
+          protocolMode,
           inputContextIds,
+          inputCommitRefs,
           activeContextIds,
           producedCommitRefs: [],
           modelCallIds: [],
@@ -5322,14 +6351,19 @@ export class SessionRuntime {
         terminal: { focusedTerminalIds: [...this.focusedTerminalIds], terminals },
         message: { channels: this.messageSystem.listChannels() },
       },
-      result: { kind: detectChatCycleKind(collectedInputs) },
+      result: {
+        kind: cycleKind,
+        ...(cycleKind === "compact" && compactTrigger ? { compactTrigger } : {}),
+      },
     });
     const attentionCycleFrame: AttentionCycleFrame = {
       cycleId: cycle.id,
       seq: cycle.seq,
       createdAt: cycle.createdAt,
       wakeSource: input.wakeSource,
+      protocolMode,
       inputContextIds,
+      inputCommitRefs,
       activeContextIds,
       producedCommitRefs: [],
       modelCallIds: [],
@@ -5373,6 +6407,8 @@ export class SessionRuntime {
       createdAt: cycle.createdAt,
       wakeSource: input.wakeSource,
       inputs: collectedInputs,
+      kind: cycleKind,
+      compactTrigger,
     });
     return { cycleId: cycle.id };
   }
@@ -5416,22 +6452,19 @@ export class SessionRuntime {
         : waitingReason === "attention_backoff"
           ? attentionContainment.nextWakeAt
           : null;
-    const runtimeStatus: LoopBusKernelState["runtimeStatus"] =
-      !this.started
-        ? "idle"
-        : paused
-          ? "paused"
-          : input.phase !== "waiting_commits"
-            ? "running"
-            : waitingReason === "blocked"
-              ? "blocked"
-              : waitingReason === "attention_backoff"
-                ? "backoff"
-                : waitingReason === "attention_debt"
-                  ? "waiting"
-                  : waitingReason === "ready_now"
-                    ? "running"
-                    : "idle";
+    const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
+      ? "idle"
+      : paused
+        ? "paused"
+        : input.phase !== "waiting_commits"
+          ? "running"
+          : waitingReason === "attention_backoff"
+            ? "backoff"
+            : waitingReason === "attention_debt"
+              ? "waiting"
+              : waitingReason === "ready_now"
+                ? "running"
+                : "idle";
     const next: LoopBusKernelState = {
       ...previous,
       phase: input.phase,
@@ -5459,7 +6492,7 @@ export class SessionRuntime {
             ? Math.max(0, nextAutoWakeAt - Date.now())
             : null,
       retryCount: attentionContainment.retryCount,
-      blockedReason: attentionContainment.blockedReason,
+      blockedReason: null,
       lastProgressAt: this.lastAttentionProgressAt,
       lastError: input.lastError === undefined ? previous.lastError : input.lastError,
       lastResponseAt: previous.lastResponseAt,
@@ -5526,6 +6559,7 @@ export class SessionRuntime {
     }
     switch (input.kind) {
       case "draft":
+        this.setProjectionStage("decide");
         this.updateActiveCycle({
           status: "streaming",
           streaming: {
@@ -5543,6 +6577,7 @@ export class SessionRuntime {
         });
         return;
       case "run_finished":
+        this.setProjectionStage("decide");
         this.updateActiveCycle({
           status: this.activeCycle.status === "error" ? "error" : "applying",
         });
@@ -5556,6 +6591,7 @@ export class SessionRuntime {
         });
         return;
       case "tool_call": {
+        this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const callValue = input.input ?? input.argsText;
         this.updateActiveCycle({
@@ -5598,11 +6634,13 @@ export class SessionRuntime {
         return;
       }
       case "tool_result": {
+        this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const liveMessage = this.activeCycle.liveMessages.find((message) => message.id === `live-tool:${invocationId}`);
         const call = liveMessage?.tool?.call;
         const startedAt = liveMessage?.tool?.startedAt ?? input.timestamp;
-        const errorText = typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined;
+        const errorText =
+          typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined;
         this.updateActiveCycle({
           status: "streaming",
           upsertLiveMessage: {
@@ -5760,7 +6798,6 @@ export class SessionRuntime {
             model: record.model,
             outcome: record.outcome,
             error: errorMessage || errorName ? { message: errorMessage, name: errorName } : undefined,
-            immediateBlock: record.outcome?.reason === "attention.no_progress" && record.outcome.retryable === false,
           });
         }
       }
@@ -5769,6 +6806,12 @@ export class SessionRuntime {
       modelCallId: modelCall.id,
       status: modelCall.status === "error" ? "error" : this.activeCycle?.status,
     });
+    if (record.status === "error") {
+      this.setProjectionStage("error");
+    } else if (record.status === "done") {
+      const toolTrace = record.response?.toolTrace ?? [];
+      this.setProjectionStage(toolTrace.length > 0 ? this.deriveProjectionStageFromToolTrace(toolTrace) : "idle");
+    }
     if (record.status === "error" && record.error?.message) {
       this.setLoopKernelLastError(record.error.message);
       this.emit("error", { message: record.error.message });

@@ -5,10 +5,11 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
-import type { TaskImportItem } from "@agenter/task-system";
+import { toolDefinition } from "@tanstack/ai";
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
-import { AgenterAI, type AgentModelCallRecord } from "../src/agenter-ai";
+import { AgenterAI, type AgentModelCallRecord, type AgentToolProvider } from "../src/agenter-ai";
 import { type LoopBusMessage } from "../src/loop-bus";
 import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
@@ -81,8 +82,18 @@ const extractAssistantReplay = (input: ModelRespondInput | readonly unknown[] | 
 const extractUserReplay = (input: ModelRespondInput | readonly unknown[] | undefined): string[] => {
   const messages = toReplayMessages(input);
   return messages
-    .filter((message): message is { role: "user" } => typeof message === "object" && message !== null && "role" in message && message.role === "user")
+    .filter(
+      (message): message is { role: "user" } =>
+        typeof message === "object" && message !== null && "role" in message && message.role === "user",
+    )
     .map((message) => flattenModelMessageContent(message));
+};
+
+const extractReplayRoles = (input: ModelRespondInput | readonly unknown[] | undefined): Array<"user" | "assistant"> => {
+  const messages = toReplayMessages(input);
+  return messages
+    .map((message) => (typeof message === "object" && message !== null && "role" in message ? message.role : null))
+    .filter((role): role is "user" | "assistant" => role === "user" || role === "assistant");
 };
 
 const createModelClient = (
@@ -110,27 +121,6 @@ const createModelClient = (
   return client as unknown as ModelClient;
 };
 
-const createTaskGateway = () => ({
-  list: () => [],
-  get: () => undefined,
-  create: () => {
-    throw new Error("task create should not be called in this test");
-  },
-  update: () => {
-    throw new Error("task update should not be called in this test");
-  },
-  done: () => ({ ok: false, affected: [], reason: "not used in test" }),
-  addDependency: () => {
-    throw new Error("task addDependency should not be called in this test");
-  },
-  removeDependency: () => {
-    throw new Error("task removeDependency should not be called in this test");
-  },
-  triggerManual: () => undefined,
-  emitEvent: (input: { topic: string }) => ({ topic: input.topic, source: "tool" as const, affected: [] }),
-  import: (_items: TaskImportItem[]) => ({ created: 0, updated: 0, items: [] }),
-});
-
 const createTerminalGateway = () => {
   const writeCalls: Array<{ terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" }> =
     [];
@@ -138,9 +128,29 @@ const createTerminalGateway = () => {
     writeCalls,
     gateway: {
       list: () => [],
-      create: async () => ({ ok: true, message: "created" }),
-      kill: async () => ({ ok: true, message: "stopped" }),
-      focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
+      create: async (_input: {
+        terminalId?: string;
+        processKind?: string;
+        command?: string[];
+        cwd?: string;
+        profile?: {
+          command?: string[];
+          cwd?: string;
+          cols?: number;
+          rows?: number;
+          gitLog?: false | "normal" | "verbose";
+          logStyle?: "rich" | "plain";
+          icon?: string;
+          title?: string;
+          shortcuts?: Record<string, string>;
+        };
+      }) => ({ ok: true, message: "created" }),
+      kill: async (_input: { terminalId: string }) => ({ ok: true, message: "stopped" }),
+      focus: async (_input: { op?: "add" | "remove" | "replace" | "clear"; terminalIds?: string[] }) => ({
+        ok: true,
+        message: "focused",
+        focusedTerminalIds: ["iflow"],
+      }),
       write: async (input: {
         terminalId: string;
         text: string;
@@ -150,12 +160,303 @@ const createTerminalGateway = () => {
         writeCalls.push(input);
         return { ok: true, message: "written" };
       },
-      read: async () => ({ ok: true }),
-      snapshot: async () => ({ ok: true }),
+      read: async (_input: { terminalId: string; mode?: "auto" | "diff" | "snapshot" }) => ({ ok: true }),
+      snapshot: async (_input: { terminalId: string }) => ({ ok: true }),
       getConfig: async () => ({ transport: { port: 4100 } }),
-      setConfig: async () => ({ transport: { port: 4100 } }),
+      setConfig: async (_input: {
+        patch: {
+          defaults?: unknown;
+          processProfiles?: Record<string, unknown>;
+          terminalProfiles?: Record<string, unknown>;
+          transport?: { host?: string; port?: number | null; pathPrefix?: string };
+        };
+      }) => ({ transport: { port: 4100 } }),
     },
   };
+};
+
+type TerminalGatewayLike = ReturnType<typeof createTerminalGateway>["gateway"];
+type MessageGatewayLike = ReturnType<typeof createMessageGateway>["gateway"];
+
+const createTerminalToolProvider = (terminalGateway?: TerminalGatewayLike): AgentToolProvider | null => {
+  if (!terminalGateway) {
+    return null;
+  }
+  return {
+    name: "terminal-test",
+    createTools: ({ runtimeText, traceTool }) => {
+      const terminalProcessProfileSchema = z.object({
+        command: z.array(z.string()).optional(),
+        cwd: z.string().optional(),
+        cols: z.number().optional(),
+        rows: z.number().optional(),
+        gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+        logStyle: z.enum(["rich", "plain"]).optional(),
+        icon: z.string().optional(),
+        title: z.string().optional(),
+        shortcuts: z.record(z.string(), z.string()).optional(),
+      });
+      const terminalControlPlaneConfigPatchSchema = z.object({
+        defaults: terminalProcessProfileSchema.optional(),
+        processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+        terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+        transport: z
+          .object({
+            host: z.string().optional(),
+            port: z.number().nullable().optional(),
+            pathPrefix: z.string().optional(),
+          })
+          .optional(),
+      });
+
+      return [
+        toolDefinition({
+          name: "terminal_list",
+          description: runtimeText.t("tool.terminal_list.description"),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(
+          async () => await traceTool("terminal_list", {}, async () => ({ terminals: terminalGateway.list() })),
+        ),
+        toolDefinition({
+          name: "terminal_create",
+          description: runtimeText.t("tool.terminal_create.description"),
+          inputSchema: z.object({
+            terminalId: z.string().optional(),
+            processKind: z.string().optional(),
+            command: z.array(z.string()).optional(),
+            cwd: z.string().optional(),
+            profile: terminalProcessProfileSchema.optional(),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string().optional(),
+              processKind: z.string().optional(),
+              command: z.array(z.string()).optional(),
+              cwd: z.string().optional(),
+              profile: terminalProcessProfileSchema.optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("terminal_create", input, async () => await terminalGateway.create(input));
+        }),
+        toolDefinition({
+          name: "terminal_focus",
+          description: runtimeText.t("tool.terminal_focus.description"),
+          inputSchema: z.object({
+            op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+            terminalIds: z.array(z.string()).optional(),
+          }),
+          outputSchema: z.object({
+            ok: z.boolean(),
+            message: z.string(),
+            focusedTerminalIds: z.array(z.string()).optional(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+              terminalIds: z.array(z.string()).optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("terminal_focus", input, async () => await terminalGateway.focus(input));
+        }),
+        toolDefinition({
+          name: "terminal_kill",
+          description: runtimeText.t("tool.terminal_kill.description"),
+          inputSchema: z.object({ terminalId: z.string() }),
+          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
+        }).server(async (rawInput) => {
+          const input = z.object({ terminalId: z.string() }).parse(rawInput);
+          return await traceTool("terminal_kill", input, async () => await terminalGateway.kill(input));
+        }),
+        toolDefinition({
+          name: "terminal_write",
+          description: runtimeText.t("tool.terminal_write.description"),
+          inputSchema: z.object({
+            terminalId: z.string(),
+            text: z.string(),
+            submit: z.boolean().optional(),
+            submitKey: z.enum(["enter", "linefeed"]).optional(),
+          }),
+          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string(),
+              text: z.string(),
+              submit: z.boolean().optional(),
+              submitKey: z.enum(["enter", "linefeed"]).optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("terminal_write", input, async () => await terminalGateway.write(input));
+        }),
+        toolDefinition({
+          name: "terminal_read",
+          description: runtimeText.t("tool.terminal_read.description"),
+          inputSchema: z.object({
+            terminalId: z.string(),
+            mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              terminalId: z.string(),
+              mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("terminal_read", input, async () => await terminalGateway.read(input));
+        }),
+        toolDefinition({
+          name: "terminal_snapshot",
+          description: runtimeText.t("tool.terminal_snapshot.description"),
+          inputSchema: z.object({ terminalId: z.string() }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z.object({ terminalId: z.string() }).parse(rawInput);
+          return await traceTool("terminal_snapshot", input, async () => await terminalGateway.snapshot(input));
+        }),
+        toolDefinition({
+          name: "terminal_get_config",
+          description: runtimeText.t("tool.terminal_get_config.description"),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(
+          async () => await traceTool("terminal_get_config", {}, async () => await terminalGateway.getConfig()),
+        ),
+        toolDefinition({
+          name: "terminal_set_config",
+          description: runtimeText.t("tool.terminal_set_config.description"),
+          inputSchema: z.object({
+            patch: terminalControlPlaneConfigPatchSchema,
+          }),
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              patch: terminalControlPlaneConfigPatchSchema,
+            })
+            .parse(rawInput);
+          return await traceTool(
+            "terminal_set_config",
+            input,
+            async () => await terminalGateway.setConfig({ patch: input.patch }),
+          );
+        }),
+      ];
+    },
+  };
+};
+
+const createMessageToolProvider = (messageGateway?: MessageGatewayLike): AgentToolProvider | null => {
+  if (!messageGateway) {
+    return null;
+  }
+  return {
+    name: "message-test",
+    createTools: ({ runtimeText, traceTool }) => {
+      const messageChannelSchema = z.object({
+        chatId: z.string(),
+        kind: z.enum(["direct", "room"]),
+        title: z.string(),
+        owner: z.string(),
+        contextId: z.string().optional(),
+        participants: z.array(
+          z.object({
+            id: z.string(),
+            label: z.string().optional(),
+            role: z.enum(["avatar", "user", "system"]).optional(),
+          }),
+        ),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        focused: z.boolean(),
+        archivedAt: z.number().optional(),
+        archivedBy: z.string().optional(),
+      });
+
+      return [
+        toolDefinition({
+          name: "message_channel_list",
+          description: runtimeText.t("tool.message_channel_list.description"),
+          inputSchema: z.object({
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channels: z.array(messageChannelSchema),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("message_channel_list", input, async () => ({
+            channels: await messageGateway.listChannels(input),
+          }));
+        }),
+        toolDefinition({
+          name: "message_channel_get",
+          description: runtimeText.t("tool.message_channel_get.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            includeArchived: z.boolean().optional(),
+          }),
+          outputSchema: z.object({
+            channel: messageChannelSchema.nullable(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              includeArchived: z.boolean().optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("message_channel_get", input, async () => ({
+            channel: await messageGateway.getChannel(input),
+          }));
+        }),
+        toolDefinition({
+          name: "message_send",
+          description: runtimeText.t("tool.message_send.description"),
+          inputSchema: z.object({
+            chatId: z.string().min(1),
+            content: z.string().min(1),
+            rootId: z.string().optional(),
+            from: z.string().optional(),
+            to: z.string().optional(),
+          }),
+          outputSchema: z.object({
+            ok: z.boolean(),
+            messageId: z.string(),
+          }),
+        }).server(async (rawInput) => {
+          const input = z
+            .object({
+              chatId: z.string().min(1),
+              content: z.string().min(1),
+              rootId: z.string().optional(),
+              from: z.string().optional(),
+              to: z.string().optional(),
+            })
+            .parse(rawInput);
+          return await traceTool("message_send", input, async () => await messageGateway.send(input));
+        }),
+      ];
+    },
+  };
+};
+
+const createToolProviders = (
+  input: {
+    terminalGateway?: TerminalGatewayLike;
+    messageGateway?: MessageGatewayLike;
+  } = {},
+): AgentToolProvider[] => {
+  const providers = [
+    createTerminalToolProvider(input.terminalGateway),
+    createMessageToolProvider(input.messageGateway),
+  ];
+  return providers.filter((provider): provider is AgentToolProvider => provider !== null);
 };
 
 const createAttentionGateway = () => {
@@ -291,13 +592,7 @@ const createMessageGateway = () => {
         }
         return channel;
       },
-      send: async (input: {
-        chatId: string;
-        content: string;
-        rootId?: string;
-        from?: string;
-        to?: string;
-      }) => {
+      send: async (input: { chatId: string; content: string; rootId?: string; from?: string; to?: string }) => {
         sent.push(input);
         return {
           ok: true,
@@ -318,28 +613,93 @@ const createUserMessage = (text: string): LoopBusMessage => ({
   text,
 });
 
+const createAttentionContextMessage = (
+  text: string,
+  input: {
+    id?: string;
+    name?: string;
+    timestamp?: number;
+    contextId?: string;
+    headCommitId?: string;
+    meta?: Record<string, string | number | boolean | null>;
+  } = {},
+): LoopBusMessage => ({
+  id: input.id ?? "m-attention",
+  timestamp: input.timestamp ?? Date.now(),
+  name: input.name ?? `AttentionContext-${input.contextId ?? "ctx-main"}`,
+  role: "user",
+  type: "text",
+  source: "attention",
+  text,
+  meta: {
+    attentionContextId: input.contextId ?? "ctx-main",
+    attentionHeadCommitId: input.headCommitId ?? "commit-1",
+    attentionProtocolKind: "context",
+    ...(input.meta ?? {}),
+  },
+});
+
+const createAttentionItemsMessage = (
+  text: string,
+  input: {
+    id?: string;
+    name?: string;
+    timestamp?: number;
+    contextId?: string;
+    headCommitId?: string;
+    commitIds?: string[];
+    meta?: Record<string, string | number | boolean | null>;
+  } = {},
+): LoopBusMessage => ({
+  id: input.id ?? "m-attention-items",
+  timestamp: input.timestamp ?? Date.now(),
+  name: input.name ?? `AttentionItems-${input.contextId ?? "ctx-main"}`,
+  role: "user",
+  type: "text",
+  source: "attention",
+  text,
+  meta: {
+    attentionContextId: input.contextId ?? "ctx-main",
+    attentionHeadCommitId: input.headCommitId ?? "commit-1",
+    attentionProtocolKind: "items",
+    attentionCommitIds: JSON.stringify(input.commitIds ?? [input.headCommitId ?? "commit-1"]),
+    ...(input.meta ?? {}),
+  },
+});
+
 const createAttentionMessage = (
   text: string,
   input: {
     id?: string;
     name?: string;
     timestamp?: number;
+    contextId?: string;
+    headCommitId?: string;
+    commitIds?: string[];
     meta?: Record<string, string | number | boolean | null>;
   } = {},
-): LoopBusMessage => ({
-  id: input.id ?? "m-attention",
-  timestamp: input.timestamp ?? Date.now(),
-  name: input.name ?? "Attention-ctx-main",
-  role: "user",
-  type: "text",
-  source: "attention",
-  text,
-  meta: {
-    attentionContextId: "ctx-main",
-    attentionHeadCommitId: "commit-1",
-    ...(input.meta ?? {}),
-  },
-});
+): LoopBusMessage => createAttentionItemsMessage(text, input);
+
+const createAttentionBootstrapMessages = (input: {
+  contextText: string;
+  itemsText: string;
+  contextId?: string;
+  headCommitId?: string;
+  commitIds?: string[];
+  meta?: Record<string, string | number | boolean | null>;
+}): LoopBusMessage[] => [
+  createAttentionContextMessage(input.contextText, {
+    contextId: input.contextId,
+    headCommitId: input.headCommitId,
+    meta: input.meta,
+  }),
+  createAttentionItemsMessage(input.itemsText, {
+    contextId: input.contextId,
+    headCommitId: input.headCommitId,
+    commitIds: input.commitIds,
+    meta: input.meta,
+  }),
+];
 
 describe("Feature: AgenterAI behavior", () => {
   test("Scenario: Given a model call When terminal tools are exposed Then create config and snapshot tools are available while legacy aliases stay hidden", async () => {
@@ -360,8 +720,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -455,10 +814,11 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({
+        terminalGateway: terminal.gateway,
+        messageGateway: message.gateway,
+      }),
       attentionGateway: chat.gateway,
-      messageGateway: message.gateway,
     });
 
     await ai.send([createUserMessage("dispatch a message")]);
@@ -474,7 +834,7 @@ describe("Feature: AgenterAI behavior", () => {
     ]);
   });
 
-  test("Scenario: Given terminal help mdx When model receives context Then <CliHelp/> is rendered before call", async () => {
+  test("Scenario: Given terminal help payload When raw terminal context reaches AgenterAI Then the core preserves the source payload without terminal-specific rendering", async () => {
     let capturedMessages: unknown[] | null = null;
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
@@ -491,8 +851,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -520,11 +879,13 @@ describe("Feature: AgenterAI behavior", () => {
 
     const captured = Array.isArray(capturedMessages) ? capturedMessages : [];
     const joinedHistory = captured.map((item) => flattenModelMessageContent(item)).join("\n\n");
-    expect(joinedHistory).toContain("IFLOW HELP CONTENT");
-    expect(joinedHistory).not.toContain("<CliHelp");
+    expect(joinedHistory).toContain('"kind":"terminal-help"');
+    expect(joinedHistory).toContain("<CliHelp");
+    expect(joinedHistory).toContain('"manuals":{"iflow":"IFLOW HELP CONTENT"}');
+    expect(joinedHistory).not.toContain("```markdown\nIFLOW HELP CONTENT");
   });
 
-  test("Scenario: Given terminal snapshot tail as one string When model receives terminal context Then multiline tail stays intact", async () => {
+  test("Scenario: Given terminal snapshot tail as one string When raw terminal context reaches AgenterAI Then the core keeps the JSON payload intact", async () => {
     let capturedMessages: unknown[] | null = null;
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
@@ -541,8 +902,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -571,8 +931,8 @@ describe("Feature: AgenterAI behavior", () => {
 
     const captured = Array.isArray(capturedMessages) ? capturedMessages : [];
     const joinedHistory = captured.map((item) => flattenModelMessageContent(item)).join("\n\n");
-    expect(joinedHistory).toContain("tailLines: 3");
-    expect(joinedHistory).toContain("line 1\nline 2\nline 3");
+    expect(joinedHistory).toContain('"kind":"terminal-snapshot"');
+    expect(joinedHistory).toContain('"tail":"line 1\\nline 2\\nline 3"');
   });
 
   test("Scenario: Given active attention items When model patches the tracked item and still emits plain text Then the item is cleared without leaking a duplicate user-visible reply", async () => {
@@ -631,19 +991,14 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     const response = await ai.send([createUserMessage("继续")]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
+    expect(response).toBeUndefined();
 
     expect(chat.engine.list()).toHaveLength(0);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
   test("Scenario: Given no active attention items When model appends a resolved item Then an internal fact is recorded without a user-visible reply", async () => {
@@ -694,23 +1049,126 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     const response = await ai.send([createUserMessage("continue")]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
+    expect(response).toBeUndefined();
 
     expect(chat.engine.list()).toHaveLength(0);
     expect(chat.engine.query({ minScore: 0, query: "startup ping" })).toHaveLength(1);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
   });
 
-  test("Scenario: Given no attention item write When model returns plain text Then output is published as a user-facing assistant reply", async () => {
+  test("Scenario: Given attention_commit omits author and source When the tool executes Then the stored commit uses context defaults", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      const tool = input.tools.find((item) => item.name === "attention_commit");
+      expect(tool).toBeDefined();
+      if (!tool || typeof tool.execute !== "function") {
+        throw new Error("attention_commit tool missing");
+      }
+
+      const result = (await tool.execute(
+        {
+          contextId: chat.defaultContextId,
+          scores: {
+            "default-meta-check": 0,
+          },
+          summary: "defaults applied",
+          change: {
+            type: "update",
+            value: "defaults applied",
+            format: "text/plain",
+          },
+          done: true,
+          stage: "done",
+        },
+        {
+          toolCallId: "call-attention-commit-default-meta",
+          emitCustomEvent: () => {},
+        },
+      )) as { ok: boolean; commitId: string };
+
+      expect(result.ok).toBeTrue();
+
+      return {
+        thinking: "Recorded the internal fact.",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    const response = await ai.send([createUserMessage("记录默认 meta 行为")]);
+    expect(response).toBeUndefined();
+
+    const commit = chat.system.getContext(chat.defaultContextId)?.listCommits().at(-1);
+    expect(commit).toBeDefined();
+    expect(commit?.meta.author).toBe("tester");
+    expect(commit?.meta.source).toBe("attention");
+  });
+
+  test("Scenario: Given attention_commit only provides done on a resolved context When the tool executes Then runtime cleans the context and clears the active scores", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "需要闭环", from: "user", score: 100 });
+    const modelClient = createModelClient(async (input) => {
+      const tool = input.tools.find((item) => item.name === "attention_commit");
+      expect(tool).toBeDefined();
+      if (!tool || typeof tool.execute !== "function") {
+        throw new Error("attention_commit tool missing");
+      }
+
+      const result = (await tool.execute(
+        {
+          contextId: chat.defaultContextId,
+          parentCommitIds: [tracked.commitId],
+          summary: "已完成闭环",
+          done: true,
+          stage: "done",
+        },
+        {
+          toolCallId: "call-attention-commit-done-no-scores",
+          emitCustomEvent: () => {},
+        },
+      )) as { ok: boolean; commitId: string };
+
+      expect(result.ok).toBeTrue();
+
+      return {
+        thinking: "Closed the active context.",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    const response = await ai.send([createUserMessage("继续处理")]);
+    expect(response).toBeUndefined();
+
+    expect(chat.engine.list()).toHaveLength(0);
+    const commit = chat.system.getContext(chat.defaultContextId)?.listCommits().at(-1);
+    expect(commit?.scores).toEqual(Object.fromEntries(Object.keys(tracked.scores).map((hash) => [hash, 0])));
+    expect(commit?.change).toEqual({ type: "clean" });
+  });
+
+  test("Scenario: Given no attention item write When model returns plain text Then promptWindow records the assistant text without emitting a core chat payload", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async () => ({
@@ -723,27 +1181,18 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     const response = await ai.send([createUserMessage("下一步")]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
+    expect(response).toBeUndefined();
 
-    const outputs = response.outputs?.toUser ?? [];
-    expect(outputs.filter((item) => item.channel === "to_user").map((item) => item.content)).toEqual([
-      "assistant internal note",
-    ]);
-    expect(outputs.filter((item) => item.channel === "self_talk").map((item) => item.content)).toEqual([
-      "Observation: terminal idle\nDecision: wait\nNext: collect diff",
-    ]);
+    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
+    expect(replay).toEqual(["assistant internal note"]);
   });
 
-  test("Scenario: Given an attention-only round When model returns plain text without mutation Then the runtime retries once, records the no-op as invalid, and keeps no false assistant history", async () => {
+  test("Scenario: Given an attention-only round When model returns plain text without mutation Then AgenterAI records the invalid round, queues compact retry, and keeps no false assistant history", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     let calls = 0;
@@ -756,35 +1205,33 @@ describe("Feature: AgenterAI behavior", () => {
       })),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
       },
     });
 
-    const response = await ai.send([createAttentionMessage("contextId: ctx-main\nitemId: item-1\npending score")]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
+    const response = await ai.send(
+      createAttentionBootstrapMessages({
+        contextText: "contextId: ctx-main\nbody: pending attention",
+        itemsText: "contextId: ctx-main\nitemId: item-1\npending score",
+      }),
+    );
 
-    expect(calls).toBe(2);
-    expect(response.done).toBeFalse();
-    expect(response.outputs?.toUser ?? []).toEqual([]);
-    expect(extractAssistantReplay(ai.inspectDebugState().history)).toEqual([]);
+    expect(calls).toBe(1);
+    expect(response).toBeUndefined();
+    expect(extractAssistantReplay(ai.inspectDebugState().promptWindow)).toEqual([]);
 
     const finalRecords = modelCalls.filter((record) => record.status !== "running");
-    expect(finalRecords).toHaveLength(2);
+    expect(finalRecords).toHaveLength(1);
     expect(finalRecords.every((record) => record.status === "error")).toBeTrue();
     expect(finalRecords[0]?.outcome?.reason).toBe("attention.no_progress");
     expect(finalRecords[0]?.outcome?.retryable).toBeTrue();
-    expect(finalRecords[1]?.outcome?.reason).toBe("attention.no_progress");
-    expect(finalRecords[1]?.outcome?.retryable).toBeFalse();
+    expect(ai.consumePendingCompactRequest()).toBe("attention_retry");
   });
 
-  test("Scenario: Given chat-backed attention When the model clears scores without dispatching a visible reply Then the runtime retries until message_send closes the loop", async () => {
+  test("Scenario: Given chat-backed attention When the model clears scores without dispatching a visible reply Then AgenterAI accepts the attention mutation and leaves egress to runtime adapters", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -808,53 +1255,10 @@ describe("Feature: AgenterAI behavior", () => {
           throw new Error("message attention tools missing");
         }
 
-        if (calls === 1) {
-          await attentionCommit.execute(
-            {
-              contextId: chat.defaultContextId,
-              parentCommitIds: [tracked.commitId],
-              meta: {
-                author: "assistant",
-                source: "test",
-                systemId: "message",
-                subjectId: "chat-main",
-                channelId: "chat-main",
-              },
-              scores: Object.fromEntries(Object.keys(tracked.scores).map((key) => [key, 0])),
-              summary: "Reply with exactly PLAYWRIGHT-MOCK-REPLY",
-              change: {
-                type: "update",
-                value: "PLAYWRIGHT-MOCK-REPLY",
-                format: "text/plain",
-              },
-              done: true,
-              stage: "done",
-            },
-            {
-              toolCallId: "call-attention-commit-1",
-              emitCustomEvent: () => {},
-            },
-          );
-          return {
-            thinking: "",
-            text: "",
-            finishReason: "stop",
-          };
-        }
-
-        await messageSend.execute(
-          {
-            chatId: "chat-main",
-            content: "PLAYWRIGHT-MOCK-REPLY",
-          },
-          {
-            toolCallId: "call-message-send-2",
-            emitCustomEvent: () => {},
-          },
-        );
         await attentionCommit.execute(
           {
             contextId: chat.defaultContextId,
+            parentCommitIds: [tracked.commitId],
             meta: {
               author: "assistant",
               source: "test",
@@ -872,10 +1276,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-attention-commit-2",
-            emitCustomEvent: () => {},
-          },
+          { toolCallId: "call-attention-commit-1", emitCustomEvent: () => {} },
         );
         return {
           thinking: "",
@@ -885,46 +1286,36 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({
+        terminalGateway: terminal.gateway,
+        messageGateway: message.gateway,
+      }),
       attentionGateway: chat.gateway,
-      messageGateway: message.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
       },
     });
 
     const response = await ai.send([
-      {
-        ...createAttentionMessage("contextId: ctx-main\nscore: 100"),
+      createAttentionItemsMessage("contextId: ctx-main\nscore: 100", {
+        contextId: chat.defaultContextId,
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
         meta: {
-          attentionContextId: chat.defaultContextId,
-          attentionHeadCommitId: tracked.commitId,
           chatId: "chat-main",
         },
-      },
+      }),
     ]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
 
-    expect(calls).toBe(2);
-    expect(response.done).toBeTrue();
-    expect(message.sent.map((item) => ({ chatId: item.chatId, content: item.content }))).toEqual([
-      {
-        chatId: "chat-main",
-        content: "PLAYWRIGHT-MOCK-REPLY",
-      },
-    ]);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
+    expect(calls).toBe(1);
+    expect(response).toBeUndefined();
+    expect(message.sent).toEqual([]);
 
     const finalRecords = modelCalls.filter((record) => record.status !== "running");
-    expect(finalRecords).toHaveLength(2);
-    expect(finalRecords[0]?.status).toBe("error");
-    expect(finalRecords[0]?.outcome?.reason).toBe("attention.missing_message_dispatch");
-    expect(finalRecords[0]?.outcome?.retryable).toBeTrue();
-    expect(finalRecords[1]?.status).toBe("done");
+    expect(finalRecords).toHaveLength(1);
+    expect(finalRecords[0]?.status).toBe("done");
+    expect(finalRecords[0]?.outcome?.code).toBe("done");
+    expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
   test("Scenario: Given a focused main chat and an unfocused relay chat When the model resolves both contexts Then only the focused chat requires a visible dispatch", async () => {
@@ -1017,10 +1408,11 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({
+        terminalGateway: terminal.gateway,
+        messageGateway: message.gateway,
+      }),
       attentionGateway: chat.gateway,
-      messageGateway: message.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
       },
@@ -1053,11 +1445,7 @@ describe("Feature: AgenterAI behavior", () => {
       }),
     ]);
 
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
-
+    expect(response).toBeUndefined();
     expect(calls).toBe(1);
     expect(message.sent).toEqual([
       {
@@ -1071,7 +1459,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(finalRecords[0]?.outcome?.code).toBe("done");
   });
 
-  test("Scenario: Given an attention-only round When model only calls read tools without mutating attention Then the runtime still treats the round as no progress", async () => {
+  test("Scenario: Given an attention-only round When model only calls read tools without mutating attention Then AgenterAI still treats the round as no progress", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     let calls = 0;
@@ -1095,8 +1483,7 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
@@ -1104,22 +1491,18 @@ describe("Feature: AgenterAI behavior", () => {
     });
 
     const response = await ai.send([createAttentionMessage("contextId: ctx-main\nitemId: item-1\npending score")]);
-    expect(response).toBeDefined();
-    if (!response) {
-      return;
-    }
 
-    expect(calls).toBe(2);
-    expect(response.done).toBeFalse();
-    expect(response.outputs?.toUser ?? []).toEqual([]);
+    expect(calls).toBe(1);
+    expect(response).toBeUndefined();
 
     const finalRecords = modelCalls.filter((record) => record.status !== "running");
-    expect(finalRecords).toHaveLength(2);
-    expect(finalRecords.every((record) => record.outcome?.reason === "attention.no_progress")).toBeTrue();
+    expect(finalRecords).toHaveLength(1);
+    expect(finalRecords.every((record) => record.status === "done")).toBeTrue();
     expect(finalRecords.every((record) => (record.response?.toolTrace?.length ?? 0) >= 1)).toBeTrue();
+    expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
-  test("Scenario: Given an attention-only round When the first model response is a no-op Then the retry reminder can still drive a real attention mutation", async () => {
+  test("Scenario: Given an attention-only round When the first model response is a no-op Then the next runtime-managed cycle can still drive a real attention mutation", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "resolve me", from: "user", score: 100 });
@@ -1162,7 +1545,8 @@ describe("Feature: AgenterAI behavior", () => {
         )) as { items: Array<{ commit: { commitId: string } }> };
 
         expect(matches.items.some((item) => item.commit.commitId === tracked.commitId)).toBeTrue();
-        expect(flattenModelMessageContent(input.messages.at(-1))).toContain("attention_round_retry");
+        expect(flattenModelMessageContent(input.messages.at(-1))).toContain("yaml+attention_items");
+        expect(flattenModelMessageContent(input.messages.at(-1))).not.toContain("attention_round_retry");
 
         await attentionCommit.execute(
           {
@@ -1196,24 +1580,32 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
-    const response = await ai.send([createAttentionMessage("contextId: ctx-main\nitemId: item-1\npending score")]);
-    expect(response).toBeDefined();
-    if (!response) {
+    const firstResponse = await ai.send([createAttentionMessage("contextId: ctx-main\nitemId: item-1\npending score")]);
+    expect(firstResponse).toBeUndefined();
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("attention_retry");
+    if (!compactTrigger) {
       return;
     }
 
-    expect(calls).toBe(2);
-    expect(response.done).toBeTrue();
-    expect(chat.engine.list()).toHaveLength(0);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
+    await ai.runCompactCycle({ trigger: compactTrigger });
+    const response = await ai.send([
+      createAttentionItemsMessage("contextId: ctx-main\nitemId: item-1\npending score", {
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+    expect(response).toBeUndefined();
+
+    expect(calls).toBe(3);
+    expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
-  test("Scenario: Given attention-first follow-up rounds When the next prompt is built Then assistant tool fences are excluded from replay history", async () => {
+  test("Scenario: Given attention-first follow-up rounds When the next prompt is built Then prior attention and tool evidence remain in replay history", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "ask gaubee then report back", from: "user", score: 100 });
@@ -1227,7 +1619,12 @@ describe("Feature: AgenterAI behavior", () => {
       if (round === 1) {
         const sendMessage = input.tools.find((tool) => tool.name === "message_send");
         const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        if (!sendMessage || typeof sendMessage.execute !== "function" || !attentionCommit || typeof attentionCommit.execute !== "function") {
+        if (
+          !sendMessage ||
+          typeof sendMessage.execute !== "function" ||
+          !attentionCommit ||
+          typeof attentionCommit.execute !== "function"
+        ) {
           throw new Error("message attention tools missing");
         }
 
@@ -1281,12 +1678,15 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({
+        terminalGateway: terminal.gateway,
+        messageGateway: {
+          listChannels: async () => [],
+          getChannel: async () => null,
+          send: async () => ({ ok: true, messageId: "msg-test" }),
+        },
+      }),
       attentionGateway: chat.gateway,
-      messageGateway: {
-        send: async () => ({ ok: true, messageId: "msg-test" }),
-      },
     });
 
     await ai.send([createAttentionMessage("ctx-main unresolved")]);
@@ -1294,14 +1694,17 @@ describe("Feature: AgenterAI behavior", () => {
 
     const replay = extractAssistantReplay(seenInputs[1]);
     const userReplay = extractUserReplay(seenInputs[1]);
-    expect(replay).toEqual([]);
-    expect(userReplay).toHaveLength(1);
-    expect(userReplay[0]).toContain("ctx-gaubee replied");
-    expect(userReplay[0]).not.toContain("ctx-main unresolved");
+    const roles = extractReplayRoles(seenInputs[1]);
+    expect(replay.some((item) => item.includes("yaml+attention_items"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: attention_commit"))).toBeTrue();
+    expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeTrue();
+    expect(userReplay.some((item) => item.includes("ctx-gaubee replied"))).toBeTrue();
+    expect(roles.at(-1)).toBe("user");
     expect(flattenModelMessageContent(seenInputs[1].messages.at(-1))).toContain("ctx-gaubee");
   });
 
-  test("Scenario: Given assistant self-talk in history When the next turn is built Then replayed history preserves factual self-talk without synthetic headings", async () => {
+  test("Scenario: Given assistant internal thinking and text When the next turn is built Then replayed promptWindow keeps only assistant text without synthetic headings", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const seenInputs: ModelRespondInput[] = [];
@@ -1328,8 +1731,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1337,13 +1739,14 @@ describe("Feature: AgenterAI behavior", () => {
     await ai.send([createUserMessage("second turn")]);
 
     const replay = extractAssistantReplay(seenInputs[1]);
-    expect(replay).toEqual(["Observation: terminal idle", "Decision: wait for user"]);
+    expect(replay).toHaveLength(1);
+    expect(replay[0]).toContain("Decision: wait for user");
     expect(replay.join("\n\n")).not.toContain("### Notes");
     expect(replay.join("\n\n")).not.toContain("### Replies");
     expect(replay.join("\n\n")).not.toContain("### Tool activity");
   });
 
-  test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed history preserves factual order and merged tool invocation fences", async () => {
+  test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed promptWindow preserves text plus tool invocation fences", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "inspect terminal and report back", from: "user", score: 100 });
@@ -1417,8 +1820,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1426,23 +1828,16 @@ describe("Feature: AgenterAI behavior", () => {
     await ai.send([createUserMessage("second turn")]);
 
     const replay = extractAssistantReplay(seenInputs[1]);
-    expect(replay).toHaveLength(3);
-    expect(replay[0]).toBe("Observation: terminal focused");
-    expect(replay[1]).toContain("```yaml");
-    expect(replay[1]).toContain("invocationId:");
-    expect(replay[1]).toContain("status: success");
-    expect(replay[1]).toContain("tool: terminal_read");
-    expect(replay[2]).toContain("```yaml");
-    expect(replay[2]).toContain("invocationId:");
-    expect(replay[2]).toContain("status: success");
-    expect(replay[2]).toContain("tool: attention_commit");
+    expect(replay.some((item) => item.includes("Decision: report result"))).toBeFalse();
+    expect(replay.some((item) => item.includes("tool: terminal_read"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: attention_commit"))).toBeTrue();
   });
 
-  test("Scenario: Given /compact-like forced compact When next loop runs Then summarize includes attention_system and attention item patching still clears records", async () => {
+  test("Scenario: Given a queued compact request When the runtime runs a compact cycle Then summarize includes attention_system and the next attention round can still clear records", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "提醒我确认发布时间", from: "user", score: 100 });
-    const summarizeInputs: string[] = [];
+    const compactInputs: string[] = [];
 
     let round = 0;
     const modelClient = {
@@ -1457,11 +1852,31 @@ describe("Feature: AgenterAI behavior", () => {
       getCompactConfig() {
         return {};
       },
-      async summarizeText(text: string) {
-        summarizeInputs.push(text);
-        return { summary: "compacted" };
-      },
       async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          compactInputs.push(flattenModelMessageContent(input.messages[0]));
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted",
+              decisions: ["keep working"],
+              keyFiles: [],
+              keyFacts: ["attention_system preserved"],
+              readyReplies: [
+                {
+                  channelId: "chat-main",
+                  topic: "gaubee lunch answer",
+                  triggerPhrases: ["中午吃什么"],
+                  reply: "gaubee说他中午吃蛋炒饭。",
+                  reuseWhen: "Send directly when chat-main asks the same thing after compact.",
+                },
+              ],
+              unresolvedWork: ["ctx-main pending"],
+              nextSteps: ["continue the attention cycle"],
+            }),
+            finishReason: "stop",
+          };
+        }
         round += 1;
         if (round === 1) {
           return { thinking: "round1", text: "", finishReason: "stop" };
@@ -1510,23 +1925,417 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     await ai.send([createUserMessage("第一轮")]);
     ai.requestCompact("test-/compact");
-    const response = await ai.send([createUserMessage("/compact")]);
-
-    expect(response).toBeDefined();
-    if (!response) {
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("manual");
+    if (!compactTrigger) {
       return;
     }
-    expect(summarizeInputs.length).toBeGreaterThan(0);
-    expect(summarizeInputs.join("\n")).toContain("attention_system");
+    await ai.runCompactCycle({ trigger: compactTrigger });
+    const response = await ai.send([
+      createAttentionItemsMessage("contextId: ctx-main\npending score", {
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+
+    expect(response).toBeUndefined();
+    expect(compactInputs.length).toBeGreaterThan(0);
+    expect(compactInputs.join("\n")).toContain("attention_system");
     expect(chat.engine.list()).toHaveLength(0);
-    expect((response.outputs?.toUser ?? []).some((item) => item.channel === "to_user")).toBeFalse();
+    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
+    expect(replay.some((item) => item.includes("yaml+prompt_window_compact"))).toBeTrue();
+    expect(replay.some((item) => item.includes("yaml+ready_replies"))).toBeTrue();
+    expect(replay.some((item) => item.includes("channelId: chat-main"))).toBeTrue();
+    expect(replay.some((item) => item.includes("triggerPhrases"))).toBeTrue();
+    expect(replay.some((item) => item.includes("gaubee说他中午吃蛋炒饭"))).toBeTrue();
+  });
+
+  test("Scenario: Given a compact ready-reply fact When the next attention input matches it Then AgenterAI reuses the fact without another model round", async () => {
+    const chat = createAttentionGateway();
+    const message = createMessageGateway();
+    let modelRounds = 0;
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted relay",
+              decisions: ["reply can be reused"],
+              keyFiles: [],
+              keyFacts: ["gaubee说他中午吃蛋炒饭。"],
+              readyReplies: [
+                {
+                  channelId: "chat-main",
+                  topic: "gaubee lunch answer",
+                  triggerPhrases: ["中午吃什么"],
+                  reply: "gaubee说他中午吃蛋炒饭。",
+                  reuseWhen: "Send directly after compact when chat-main asks again.",
+                },
+              ],
+              unresolvedWork: [],
+              nextSteps: [],
+            }),
+            finishReason: "stop",
+          };
+        }
+        modelRounds += 1;
+        return {
+          thinking: "",
+          text: "should-not-run",
+          finishReason: "stop",
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ messageGateway: message.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    ai.requestCompact("test-ready-reply");
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("manual");
+    if (!compactTrigger) {
+      return;
+    }
+    await ai.runCompactCycle({ trigger: compactTrigger });
+
+    const followUp = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
+    await ai.send([
+      createAttentionItemsMessage("contextId: ctx-main\nsummary: 中午吃什么", {
+        contextId: chat.defaultContextId,
+        headCommitId: followUp.commitId,
+        commitIds: [followUp.commitId],
+        meta: {
+          chatId: "chat-main",
+          chatFocused: true,
+        },
+      }),
+    ]);
+
+    expect(modelRounds).toBe(0);
+    expect(message.sent).toHaveLength(1);
+    expect(message.sent[0]).toMatchObject({
+      chatId: "chat-main",
+      content: "gaubee说他中午吃蛋炒饭。",
+    });
+    expect(chat.engine.list()).toHaveLength(0);
+    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
+    expect(replay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(replay.some((item) => item.includes("answered from compact memory"))).toBeTrue();
+  });
+
+  test("Scenario: Given compact summary paraphrases a resolved reply When tool-derived ready reply facts exist Then AgenterAI reuses the exact dispatched reply text", async () => {
+    const chat = createAttentionGateway();
+    const message = createMessageGateway();
+    const initial = chat.engine.add({ content: "gaubee在吗？问他中午吃什么？", from: "user", score: 100 });
+    let modelRounds = 0;
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted relay",
+              decisions: ["reply can be reused"],
+              keyFiles: [],
+              keyFacts: ["gaubee说中午吃蛋炒饭。"],
+              readyReplies: [
+                {
+                  channelId: "chat-main",
+                  topic: "gaubee lunch response",
+                  triggerPhrases: ["问他中午吃什么？", "中午吃什么"],
+                  reply: "Gaubee said they want egg fried rice for lunch.",
+                  reuseWhen: "Send directly after compact when chat-main asks again.",
+                },
+              ],
+              unresolvedWork: [],
+              nextSteps: [],
+            }),
+            finishReason: "stop",
+          };
+        }
+
+        modelRounds += 1;
+        if (modelRounds > 1) {
+          return {
+            thinking: "",
+            text: "should-not-run",
+            finishReason: "stop",
+          };
+        }
+
+        const messageSend = input.tools.find((tool) => tool.name === "message_send");
+        expect(messageSend).toBeDefined();
+        if (!messageSend || typeof messageSend.execute !== "function") {
+          throw new Error("message_send tool missing");
+        }
+        await messageSend.execute(
+          {
+            chatId: "chat-main",
+            content: "gaubee说中午吃蛋炒饭。",
+          },
+          {
+            toolCallId: "call-message-send-initial",
+            emitCustomEvent: () => {
+              // no-op
+            },
+          },
+        );
+
+        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
+        expect(attentionCommit).toBeDefined();
+        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
+          throw new Error("attention_commit tool missing");
+        }
+        await attentionCommit.execute(
+          {
+            contextId: chat.defaultContextId,
+            parentCommitIds: [initial.commitId],
+            summary: "reported lunch answer",
+            done: true,
+          },
+          {
+            toolCallId: "call-attention-commit-initial",
+            emitCustomEvent: () => {
+              // no-op
+            },
+          },
+        );
+
+        return {
+          thinking: "",
+          text: "",
+          finishReason: "stop",
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ messageGateway: message.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    const initialAttentionText = [
+      "```yaml+attention_items",
+      "contextId: ctx-main",
+      "commits:",
+      "  -",
+      "    channelId: chat-main",
+      "    chatFocused: true",
+      '    content: "gaubee在吗？问他中午吃什么？"',
+      '    summary: "gaubee在吗？问他中午吃什么？"',
+      "```",
+    ].join("\n");
+
+    await ai.send([
+      createAttentionItemsMessage(initialAttentionText, {
+        contextId: chat.defaultContextId,
+        headCommitId: initial.commitId,
+        commitIds: [initial.commitId],
+        meta: {
+          chatId: "chat-main",
+          chatFocused: true,
+        },
+      }),
+    ]);
+
+    ai.requestCompact("test-ready-reply-prefer-durable");
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("manual");
+    if (!compactTrigger) {
+      return;
+    }
+    await ai.runCompactCycle({ trigger: compactTrigger });
+
+    const followUp = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
+    const followUpAttentionText = [
+      "```yaml+attention_items",
+      "contextId: ctx-main",
+      "commits:",
+      "  -",
+      "    channelId: chat-main",
+      "    chatFocused: true",
+      '    content: "中午吃什么"',
+      '    summary: "中午吃什么"',
+      "```",
+    ].join("\n");
+    await ai.send([
+      createAttentionItemsMessage(followUpAttentionText, {
+        contextId: chat.defaultContextId,
+        headCommitId: followUp.commitId,
+        commitIds: [followUp.commitId],
+        meta: {
+          chatId: "chat-main",
+          chatFocused: true,
+        },
+      }),
+    ]);
+
+    expect(modelRounds).toBe(1);
+    expect(message.sent).toHaveLength(2);
+    expect(message.sent.at(-1)).toMatchObject({
+      chatId: "chat-main",
+      content: "gaubee说中午吃蛋炒饭。",
+    });
+
+    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
+    expect(replay.some((item) => item.includes("reply: \"gaubee说中午吃蛋炒饭。\""))).toBeTrue();
+    expect(replay.some((item) => item.includes("answered from compact memory: gaubee说中午吃蛋炒饭。"))).toBeTrue();
+  });
+
+  test("Scenario: Given model context overflow When the runtime runs compact and retries Then AgenterAI continues with the same attention task", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "resolve after compact retry", from: "user", score: 100 });
+    const compactInputs: string[] = [];
+    const lifecycle: AgentModelCallRecord[] = [];
+    let round = 0;
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          compactInputs.push(flattenModelMessageContent(input.messages[0]));
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted-history",
+              decisions: ["retry after compact"],
+              keyFiles: [],
+              keyFacts: [],
+              readyReplies: [],
+              unresolvedWork: ["ctx-main unresolved"],
+              nextSteps: ["rerun attention round"],
+            }),
+            finishReason: "stop",
+          };
+        }
+        round += 1;
+        if (round === 1) {
+          throw new Error("maximum context length exceeded");
+        }
+        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
+        expect(attentionCommit).toBeDefined();
+        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
+          throw new Error("attention_commit tool missing");
+        }
+        await attentionCommit.execute(
+          {
+            contextId: chat.defaultContextId,
+            parentCommitIds: [tracked.commitId],
+            meta: { author: "assistant", source: "test" },
+            scores: Object.fromEntries(Object.keys(tracked.scores).map((key) => [key, 0])),
+            summary: "resolved after compact",
+            change: {
+              type: "update",
+              value: "resolved",
+              format: "text/plain",
+            },
+            done: true,
+            stage: "done",
+          },
+          {
+            toolCallId: "call-attention-after-compact",
+            emitCustomEvent: () => {},
+          },
+        );
+        return {
+          thinking: "retry-ok",
+          text: "",
+          finishReason: "stop",
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      attentionGateway: chat.gateway,
+      onModelCall: (record) => {
+        lifecycle.push(record);
+      },
+    });
+
+    const firstResponse = await ai.send([
+      createAttentionItemsMessage("ctx-main unresolved score", {
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+    expect(firstResponse).toBeUndefined();
+    expect(compactInputs).toEqual([]);
+    expect(
+      lifecycle.some((record) => record.status === "error" && record.outcome?.reason === "model.context_overflow"),
+    ).toBeTrue();
+
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("error");
+    if (!compactTrigger) {
+      return;
+    }
+    await ai.runCompactCycle({ trigger: compactTrigger });
+    const response = await ai.send([
+      createAttentionItemsMessage("ctx-main unresolved score", {
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+    expect(response).toBeUndefined();
+
+    expect(round).toBe(2);
+    expect(compactInputs.length).toBeGreaterThan(0);
+    expect(compactInputs.join("\n")).toContain("attention_system");
+    expect(chat.engine.list()).toHaveLength(0);
   });
 
   test("Scenario: Given a stalled model call When timeout elapses Then AgenterAI persists running then error lifecycle records", async () => {
@@ -1550,8 +2359,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelCallTimeoutMs: 10,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: (record) => {
         lifecycle.push({
@@ -1571,10 +2379,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.completedAt).toBeNumber();
     expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
     expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
-    if (!response || !response.outputs?.toUser) {
-      throw new Error("Expected a loop bus response payload.");
-    }
-    expect(response.outputs.toUser.some((item) => item.content.includes("timed out after 10ms"))).toBeTrue();
+    expect(response).toBeUndefined();
   });
 
   test("Scenario: Given async model-call observers When a round finishes Then AgenterAI waits for the terminal lifecycle record before resolving", async () => {
@@ -1595,8 +2400,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal.gateway,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: async (record) => {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1613,7 +2417,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[0]).toMatchObject({ status: "running", completedAt: undefined });
     expect(lifecycle[1]?.status).toBe("done");
     expect(lifecycle[1]?.completedAt).toBeNumber();
-    expect(response?.outputs?.toUser?.some((item) => item.content === "done")).toBeTrue();
+    expect(response).toBeUndefined();
   });
 
   test("Scenario: Given an external stop during server-tool execution When the shared signal aborts Then AgenterAI cancels the round instead of accepting the late tool result", async () => {
@@ -1623,21 +2427,31 @@ describe("Feature: AgenterAI behavior", () => {
       outcome?: AgentModelCallRecord["outcome"];
       error?: { message: string; details?: unknown };
     }> = [];
-    const writeCalls: Array<{ terminalId: string; text: string }> = [];
-    const terminal = {
+    const writeCalls: Array<{
+      terminalId: string;
+      text: string;
+      submit?: boolean;
+      submitKey?: "enter" | "linefeed";
+    }> = [];
+    const terminal: TerminalGatewayLike = {
       list: () => [],
       create: async () => ({ ok: true, message: "created" }),
       kill: async () => ({ ok: true, message: "stopped" }),
       focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
-      write: async (input: { terminalId: string; text: string }) => {
+      write: async (input: {
+        terminalId: string;
+        text: string;
+        submit?: boolean;
+        submitKey?: "enter" | "linefeed";
+      }) => {
         writeCalls.push(input);
         await new Promise((resolve) => setTimeout(resolve, 40));
         return { ok: true, message: "written" };
       },
-      read: async () => ({ ok: true }),
-      snapshot: async () => ({ ok: true }),
+      read: async (_input) => ({ ok: true }),
+      snapshot: async (_input) => ({ ok: true }),
       getConfig: async () => ({ transport: { port: 4100 } }),
-      setConfig: async () => ({ transport: { port: 4100 } }),
+      setConfig: async (_input) => ({ transport: { port: 4100 } }),
     };
     const chat = createAttentionGateway();
     const externalAbort = new AbortController();
@@ -1672,8 +2486,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      terminalGateway: terminal,
-      taskGateway: createTaskGateway(),
+      toolProviders: createToolProviders({ terminalGateway: terminal }),
       attentionGateway: chat.gateway,
       onModelCall: (record) => {
         lifecycle.push({
@@ -1685,7 +2498,9 @@ describe("Feature: AgenterAI behavior", () => {
       },
     });
 
-    await expect(ai.send([createUserMessage("run a terminal tool")], { signal: externalAbort.signal })).rejects.toMatchObject({
+    await expect(
+      ai.send([createUserMessage("run a terminal tool")], { signal: externalAbort.signal }),
+    ).rejects.toMatchObject({
       name: "AbortError",
     });
     expect(writeCalls).toEqual([

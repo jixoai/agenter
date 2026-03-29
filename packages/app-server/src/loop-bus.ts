@@ -1,4 +1,3 @@
-import type { ChatSessionAsset } from "./types";
 import type {
   SessionTerminalOutcome,
   SessionTraceEvent,
@@ -8,6 +7,7 @@ import type {
 } from "@agenter/session-system";
 
 import { createSpanId, createTraceEvent, createTraceId, mapAbortReasonToOutcome, toTerminalOutcomeFromError } from "./runtime-trace";
+import type { ChatSessionAsset } from "./types";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -25,47 +25,6 @@ export interface LoopBusMessage {
   text: string;
   meta?: LoopBusMeta;
   attachments?: ChatSessionAsset[];
-}
-
-export interface LoopTerminalCommand {
-  taskId: string;
-  terminalId: string;
-  text: string;
-  submit: boolean;
-  submitKey?: "enter" | "linefeed";
-}
-
-export interface LoopToolCall {
-  id: string;
-  name: string;
-  input: string;
-}
-
-export interface LoopChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
-}
-
-export interface LoopBusResponse<
-  TChatMessage extends LoopChatMessage = LoopChatMessage,
-  TStage extends string = string,
-> {
-  taskId?: string;
-  stage?: TStage;
-  summary?: string;
-  done?: boolean;
-  outputs?: Partial<LoopBusOutputs<TChatMessage>>;
-  user?: TChatMessage;
-  terminal?: LoopTerminalCommand[];
-  tools?: LoopToolCall[];
-}
-
-export interface LoopBusOutputs<TChatMessage extends LoopChatMessage = LoopChatMessage> {
-  toUser: TChatMessage[];
-  toTerminal: LoopTerminalCommand[];
-  toTools: LoopToolCall[];
 }
 
 export type LoopBusInput = Omit<LoopBusMessage, "id" | "timestamp"> & {
@@ -87,7 +46,6 @@ export type LoopBusPhase =
   | "collecting_inputs"
   | "persisting_cycle"
   | "calling_model"
-  | "applying_outputs"
   | "stopped";
 
 export interface LoopBusState {
@@ -120,19 +78,13 @@ export interface LoopBusTraceEntry {
   outcome?: SessionTerminalOutcome;
 }
 
-interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
+interface LoopBusDeps {
   processor: {
-    send: (
-      messages: LoopBusMessage[],
-      context?: { signal?: AbortSignal },
-    ) => Promise<LoopBusResponse<TChatMessage, TStage> | void>;
+    send: (messages: LoopBusMessage[], context?: { signal?: AbortSignal }) => Promise<unknown | void>;
   };
   waitForCommit: () => Promise<LoopBusWakeSource | void>;
   collectInputs: () => Promise<LoopBusInput[] | LoopBusInput | void>;
   persistCycle: (input: { wakeSource: LoopBusWakeSource; inputs: LoopBusMessage[] }) => Promise<{ cycleId: number }>;
-  onUserMessage?: (message: TChatMessage, context: { cycleId: number }) => Promise<void> | void;
-  onTerminalDispatch?: (command: LoopTerminalCommand, context: { cycleId: number }) => Promise<void> | void;
-  onToolCall?: (calls: LoopToolCall[], context: { cycleId: number }) => Promise<void> | void;
   onStateChange?: (state: LoopBusState) => Promise<void> | void;
   onTrace?: (entry: LoopBusTraceEntry) => Promise<void> | void;
   logger: LoopBusLogger;
@@ -141,6 +93,9 @@ interface LoopBusDeps<TChatMessage extends LoopChatMessage = LoopChatMessage, TS
 
 const LOOP_COLLECT_DEBOUNCE_MS = 300;
 const LOOP_COLLECT_THROTTLE_MS = 1_000;
+
+const isExclusiveCycleBatch = (messages: readonly LoopBusMessage[]): boolean =>
+  messages.some((message) => message.meta?.exclusiveCycle === true);
 
 const normalizeInputs = (input: LoopBusInput[] | LoopBusInput | void): LoopBusMessage[] => {
   if (!input) {
@@ -160,22 +115,11 @@ const normalizeInputs = (input: LoopBusInput[] | LoopBusInput | void): LoopBusMe
   }));
 };
 
-const normalizeOutputs = <TChatMessage extends LoopChatMessage>(
-  response: LoopBusResponse<TChatMessage>,
-): LoopBusOutputs<TChatMessage> => {
-  const outputs = response.outputs;
-  return {
-    toUser: outputs?.toUser ?? (response.user ? [response.user] : []),
-    toTerminal: outputs?.toTerminal ?? response.terminal ?? [],
-    toTools: outputs?.toTools ?? response.tools ?? [],
-  };
-};
-
 const defaultSleep = async (ms: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 };
 
-export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TStage extends string = string> {
+export class LoopBus {
   private running = false;
   private paused = false;
   private waitResume: (() => void) | null = null;
@@ -188,7 +132,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   private readonly sleep: (ms: number) => Promise<void>;
   private cycleAbortController: AbortController | null = null;
 
-  constructor(private readonly deps: LoopBusDeps<TChatMessage, TStage>) {
+  constructor(private readonly deps: LoopBusDeps) {
     this.sleep = deps.sleep ?? defaultSleep;
   }
 
@@ -274,9 +218,9 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
           attributes: { phase: this.phase },
         },
         async () => {
-        await this.emitState("waiting_commits");
-        wakeSource = (await this.deps.waitForCommit()) ?? "unknown";
-        this.lastWakeSource = wakeSource;
+          await this.emitState("waiting_commits");
+          wakeSource = (await this.deps.waitForCommit()) ?? "unknown";
+          this.lastWakeSource = wakeSource;
         },
       );
 
@@ -328,7 +272,7 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
 
       const cycleAbortController = new AbortController();
       this.cycleAbortController = cycleAbortController;
-      const response = await this.traceWithCycle(
+      const result = await this.traceWithCycle(
         cycleId,
         {
           traceId,
@@ -352,46 +296,25 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
         return;
       }
 
-      if (!response) {
+      if (result === undefined) {
         this.deps.logger.log({
           channel: "agent",
           level: "debug",
-          message: "loopbus.response.empty",
+          message: "loopbus.processor.completed",
           meta: { cycleId, inputs: collected.length },
         });
         return;
       }
 
-      const outputs = normalizeOutputs(response);
-      await this.traceWithCycle(
-        cycleId,
-        {
-          traceId,
-          kind: "egress.apply",
-          name: "apply_outputs",
-          attributes: {
-            toUser: outputs.toUser.length,
-            toTerminal: outputs.toTerminal.length,
-            toTools: outputs.toTools.length,
-          },
+      this.deps.logger.log({
+        channel: "agent",
+        level: "debug",
+        message: "loopbus.processor.result",
+        meta: {
+          cycleId,
+          inputs: collected.length,
         },
-        async () => {
-          await this.emitState("applying_outputs");
-          if (!this.running || cycleAbortController.signal.aborted) {
-            return;
-          }
-          if (outputs.toTools.length > 0) {
-            await this.deps.onToolCall?.(outputs.toTools, { cycleId });
-          }
-          for (const message of outputs.toUser) {
-            await this.deps.onUserMessage?.(message, { cycleId });
-          }
-          for (const command of outputs.toTerminal) {
-            await this.deps.onTerminalDispatch?.(command, { cycleId });
-          }
-        },
-        cycleAbortController.signal,
-      );
+      });
     } catch (error) {
       if (this.isAbortError(error)) {
         this.deps.logger.log({
@@ -443,6 +366,9 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
     if (firstBatch.length === 0) {
       return [];
     }
+    if (isExclusiveCycleBatch(firstBatch)) {
+      return firstBatch;
+    }
 
     await this.emitState("collecting_inputs");
 
@@ -469,6 +395,9 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
       }
 
       collected.push(...nextBatch);
+      if (isExclusiveCycleBatch(nextBatch)) {
+        break;
+      }
       quietMs = 0;
     }
 
@@ -633,12 +562,10 @@ export class LoopBus<TChatMessage extends LoopChatMessage = LoopChatMessage, TSt
   }
 
   private isAbortError(error: unknown): boolean {
-    return (
-      error instanceof DOMException
-        ? error.name === "AbortError"
-        : error instanceof Error
-          ? error.name === "AbortError" || error.message === "This operation was aborted"
-          : false
-    );
+    return error instanceof DOMException
+      ? error.name === "AbortError"
+      : error instanceof Error
+        ? error.name === "AbortError" || error.message === "This operation was aborted"
+        : false;
   }
 }

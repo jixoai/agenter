@@ -59,12 +59,16 @@ export interface AttentionCommitRef {
   commitId: string;
 }
 
+export type AttentionProtocolMode = "none" | "bootstrap" | "delta" | "compact";
+
 export interface AttentionCycleFrame {
   cycleId: number;
   seq: number;
   createdAt: number;
   wakeSource: string | null;
+  protocolMode: AttentionProtocolMode;
   inputContextIds: string[];
+  inputCommitRefs: AttentionCommitRef[];
   activeContextIds: string[];
   producedCommitRefs: AttentionCommitRef[];
   modelCallIds: number[];

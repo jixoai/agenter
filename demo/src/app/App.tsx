@@ -9,7 +9,9 @@ import type {
 } from "@agenter/terminal-system";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { toolDefinition } from "@tanstack/ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 
 import {
   AgentRuntime,
@@ -17,14 +19,11 @@ import {
   FilePromptStore,
   ModelClient,
   SessionStore,
-  TaskEngine,
+  type AgentToolProvider,
   type AgentRuntimeStats,
   type LoopBusInput,
   type LoopBusPhase,
   type LoopBusWakeSource,
-  type TaskCreateInput,
-  type TaskImportItem,
-  type TaskUpdateInput,
 } from "@agenter/app-server";
 import { CommandDispatcher } from "../core/command-dispatcher";
 import {
@@ -53,8 +52,17 @@ const DEMO_ATTENTION_CONTEXT_ID = "ctx-demo-main";
 
 type DemoWakeSource = Exclude<LoopBusWakeSource, "unknown">;
 
+const deriveTaskStage = (loopPhase: LoopBusPhase, processState: "stopped" | "running"): TaskStage => {
+  if (loopPhase === "calling_model") {
+    return "decide";
+  }
+  if (processState === "running") {
+    return "observe";
+  }
+  return "idle";
+};
+
 const resolveChatAiStatus = (
-  stage: TaskStage,
   loopPhase: LoopBusPhase,
   processState: "stopped" | "running",
 ): string | null => {
@@ -62,25 +70,13 @@ const resolveChatAiStatus = (
     return null;
   }
   if (loopPhase === "calling_model") {
-    return "等待服务返回";
-  }
-  if (loopPhase === "waiting_commits") {
-    if (stage === "done" || stage === "idle" || stage === "error") {
-      return "等待用户输入";
-    }
-    return processState === "running" ? "等待终端输出" : "等待新消息";
+    return "思考中";
   }
   if (loopPhase === "collecting_inputs" || loopPhase === "persisting_cycle") {
     return processState === "running" ? "整理终端与输入" : "整理输入中";
   }
-  if (loopPhase === "applying_outputs") {
-    return stage === "observe" || stage === "act" ? "工具调用中" : "生成回复中";
-  }
-  if (stage === "plan" || stage === "decide") {
-    return "思考中";
-  }
-  if (stage === "observe" || stage === "act") {
-    return processState === "running" ? "等待终端输出" : "处理中";
+  if (loopPhase === "waiting_commits") {
+    return processState === "running" ? "等待终端输出" : "等待用户输入";
   }
   return null;
 };
@@ -386,7 +382,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const [logs, setLogs] = useState(() => logger.getRecent(120));
   const [focus, setFocus] = useState<FocusPanel>("chat");
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [stage, setStage] = useState<TaskStage>("idle");
   const [processState, setProcessState] = useState<"stopped" | "running">("stopped");
   const [loopPhase, setLoopPhase] = useState<LoopBusPhase>("waiting_commits");
   const [focusedTerminalIds, setFocusedTerminalIds] = useState<string[]>(initialFocusedTerminalIds);
@@ -418,9 +413,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const terminalLatestSeqRef = useRef<Record<string, number>>({});
   const bootInjectedRef = useRef(new Set<string>());
   const bootInProgressRef = useRef(false);
-  const stageRef = useRef<TaskStage>("idle");
-  const processStateRef = useRef<"stopped" | "running">("stopped");
-  const taskEngineRef = useRef(new TaskEngine());
   const attentionSystemRef = useRef<AttentionSystem>(new AttentionSystem());
   if (!attentionSystemRef.current.getContext(DEMO_ATTENTION_CONTEXT_ID)) {
     attentionSystemRef.current.createContext({ contextId: DEMO_ATTENTION_CONTEXT_ID, owner: "demo" });
@@ -452,10 +444,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
   const chatInputRef = useRef<TextareaRenderable | null>(null);
   const terminalContentRef = useRef<TextRenderable | null>(null);
   const debugContentRef = useRef<TextRenderable | null>(null);
-  const chatAiStatus = useMemo(
-    () => resolveChatAiStatus(stage, loopPhase, processState),
-    [loopPhase, processState, stage],
-  );
+  const stage = useMemo(() => deriveTaskStage(loopPhase, processState), [loopPhase, processState]);
+  const chatAiStatus = useMemo(() => resolveChatAiStatus(loopPhase, processState), [loopPhase, processState]);
 
   const getAdapter = (terminalId: string): TerminalAdapter | null => terminalAdapters.get(terminalId) ?? null;
 
@@ -519,14 +509,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
   useEffect(() => {
     focusedTerminalIdsRef.current = focusedTerminalIds;
   }, [focusedTerminalIds]);
-
-  useEffect(() => {
-    stageRef.current = stage;
-  }, [stage]);
-
-  useEffect(() => {
-    processStateRef.current = processState;
-  }, [processState]);
 
   useEffect(() => {
     focusedTerminalIdsRef.current = initialFocusedTerminalIds;
@@ -909,24 +891,285 @@ export const App = ({ runtimeConfig }: AppProps) => {
     [runtimeConfig, terminalAdapters],
   );
 
-  const taskGateway = useMemo(
+  const messageGateway = useMemo(
     () => ({
-      list: () => taskEngineRef.current.list(),
-      get: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.get(source, id),
-      create: (input: TaskCreateInput) => taskEngineRef.current.create(input),
-      update: (input: TaskUpdateInput) => taskEngineRef.current.update(input),
-      done: ({ source, id }: { source: string; id: string }) => taskEngineRef.current.done(source, id),
-      addDependency: ({ source, id, target }: { source: string; id: string; target: string }) =>
-        taskEngineRef.current.addDependency(source, id, target),
-      removeDependency: ({ source, id, target }: { source: string; id: string; target: string }) =>
-        taskEngineRef.current.removeDependency(source, id, target),
-      triggerManual: ({ source, id }: { source: string; id: string }) =>
-        taskEngineRef.current.triggerManual(source, id),
-      emitEvent: ({ topic, payload, source }: { topic: string; payload?: unknown; source?: "api" | "file" | "tool" }) =>
-        taskEngineRef.current.emitEvent({ topic, payload, source }),
-      import: (items: TaskImportItem[]) => taskEngineRef.current.import(items),
+      listChannels: async () => [
+        {
+          chatId: "chat-main",
+          kind: "direct" as const,
+          title: "Chat",
+          owner: "demo",
+          contextId: DEMO_ATTENTION_CONTEXT_ID,
+          participants: [
+            { id: "avatar:demo", label: "demo", role: "avatar" as const },
+            { id: "user", label: "User", role: "user" as const },
+          ],
+          metadata: {
+            builtIn: true,
+          },
+          focused: true,
+        },
+      ],
+      getChannel: async ({ chatId }: { chatId: string }) =>
+        chatId === "chat-main"
+          ? {
+              chatId: "chat-main",
+              kind: "direct" as const,
+              title: "Chat",
+              owner: "demo",
+              contextId: DEMO_ATTENTION_CONTEXT_ID,
+              participants: [
+                { id: "avatar:demo", label: "demo", role: "avatar" as const },
+                { id: "user", label: "User", role: "user" as const },
+              ],
+              metadata: {
+                builtIn: true,
+              },
+              focused: true,
+            }
+          : null,
+      send: async ({ chatId, content }: { chatId: string; content: string; rootId?: string; from?: string; to?: string }) => {
+        if (chatId !== "chat-main") {
+          return {
+            ok: false,
+            messageId: null,
+            reason: `unknown chat: ${chatId}`,
+          };
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: createId(),
+            role: "assistant",
+            content,
+            timestamp: Date.now(),
+            channel: "to_user",
+            format: "markdown",
+          },
+        ]);
+        return {
+          ok: true,
+          messageId: createId(),
+        };
+      },
     }),
     [],
+  );
+
+  const toolProviders = useMemo<AgentToolProvider[]>(
+    () => {
+      const terminalProcessProfileSchema = z.object({
+        command: z.array(z.string()).optional(),
+        cwd: z.string().optional(),
+        cols: z.number().optional(),
+        rows: z.number().optional(),
+        gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+        logStyle: z.enum(["rich", "plain"]).optional(),
+        icon: z.string().optional(),
+        title: z.string().optional(),
+        shortcuts: z.record(z.string(), z.string()).optional(),
+      });
+      const terminalConfigPatchSchema = z.object({
+        defaults: terminalProcessProfileSchema.optional(),
+        processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+        terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
+        transport: z
+          .object({
+            host: z.string().optional(),
+            port: z.number().nullable().optional(),
+            pathPrefix: z.string().optional(),
+          })
+          .optional(),
+      });
+
+      return [
+        {
+          name: "demo-terminal",
+          createTools: ({ runtimeText, traceTool }) => [
+            toolDefinition({
+              name: "terminal_list",
+              description: runtimeText.t("tool.terminal_list.description"),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async () => await traceTool("terminal_list", {}, async () => ({ terminals: terminalGateway.list() }))),
+            toolDefinition({
+              name: "terminal_create",
+              description: runtimeText.t("tool.terminal_create.description"),
+              inputSchema: z.object({
+                terminalId: z.string().optional(),
+                processKind: z.string().optional(),
+                command: z.array(z.string()).optional(),
+                cwd: z.string().optional(),
+                profile: terminalProcessProfileSchema.optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z
+                .object({
+                  terminalId: z.string().optional(),
+                  processKind: z.string().optional(),
+                  command: z.array(z.string()).optional(),
+                  cwd: z.string().optional(),
+                  profile: terminalProcessProfileSchema.optional(),
+                })
+                .parse(rawInput);
+              return await traceTool("terminal_create", input, async () => await terminalGateway.create(input));
+            }),
+            toolDefinition({
+              name: "terminal_focus",
+              description: runtimeText.t("tool.terminal_focus.description"),
+              inputSchema: z.object({
+                op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+                terminalIds: z.array(z.string()).optional(),
+              }),
+              outputSchema: z.object({
+                ok: z.boolean(),
+                message: z.string(),
+                focusedTerminalIds: z.array(z.string()).optional(),
+              }),
+            }).server(async (rawInput) => {
+              const input = z
+                .object({
+                  op: z.enum(["add", "remove", "replace", "clear"]).optional(),
+                  terminalIds: z.array(z.string()).optional(),
+                })
+                .parse(rawInput);
+              return await traceTool("terminal_focus", input, async () => await terminalGateway.focus(input));
+            }),
+            toolDefinition({
+              name: "terminal_kill",
+              description: runtimeText.t("tool.terminal_kill.description"),
+              inputSchema: z.object({
+                terminalId: z.string(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ terminalId: z.string() }).parse(rawInput);
+              return await traceTool("terminal_kill", input, async () => await terminalGateway.kill(input));
+            }),
+            toolDefinition({
+              name: "terminal_write",
+              description: runtimeText.t("tool.terminal_write.description"),
+              inputSchema: z.object({
+                terminalId: z.string(),
+                text: z.string(),
+                submit: z.boolean().optional(),
+                submitKey: z.enum(["enter", "linefeed"]).optional(),
+                returnRead: z.union([z.boolean(), z.object({ throttleMs: z.number().optional(), debounceMs: z.number().optional() })]).optional(),
+                readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z
+                .object({
+                  terminalId: z.string(),
+                  text: z.string(),
+                  submit: z.boolean().optional(),
+                  submitKey: z.enum(["enter", "linefeed"]).optional(),
+                  returnRead: z.union([z.boolean(), z.object({ throttleMs: z.number().optional(), debounceMs: z.number().optional() })]).optional(),
+                  readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+                })
+                .parse(rawInput);
+              return await traceTool("terminal_write", input, async () => await terminalGateway.write(input));
+            }),
+            toolDefinition({
+              name: "terminal_read",
+              description: runtimeText.t("tool.terminal_read.description"),
+              inputSchema: z.object({
+                terminalId: z.string(),
+                mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ terminalId: z.string(), mode: z.enum(["auto", "diff", "snapshot"]).optional() }).parse(rawInput);
+              return await traceTool("terminal_read", input, async () => await terminalGateway.read(input));
+            }),
+            toolDefinition({
+              name: "terminal_snapshot",
+              description: runtimeText.t("tool.terminal_snapshot.description"),
+              inputSchema: z.object({
+                terminalId: z.string(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ terminalId: z.string() }).parse(rawInput);
+              return await traceTool("terminal_snapshot", input, async () => await terminalGateway.snapshot(input));
+            }),
+            toolDefinition({
+              name: "terminal_get_config",
+              description: runtimeText.t("tool.terminal_get_config.description"),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async () => await traceTool("terminal_get_config", {}, async () => terminalGateway.getConfig())),
+            toolDefinition({
+              name: "terminal_set_config",
+              description: runtimeText.t("tool.terminal_set_config.description"),
+              inputSchema: z.object({
+                patch: terminalConfigPatchSchema,
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ patch: terminalConfigPatchSchema }).parse(rawInput);
+              return await traceTool("terminal_set_config", input, async () => terminalGateway.setConfig(input));
+            }),
+          ],
+        },
+        {
+          name: "demo-message",
+          createTools: ({ runtimeText, traceTool }) => [
+            toolDefinition({
+              name: "message_channel_list",
+              description: runtimeText.t("tool.message_channel_list.description"),
+              inputSchema: z.object({
+                includeArchived: z.boolean().optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ includeArchived: z.boolean().optional() }).parse(rawInput);
+              return await traceTool("message_channel_list", input, async () => ({
+                channels: await messageGateway.listChannels(),
+              }));
+            }),
+            toolDefinition({
+              name: "message_channel_get",
+              description: runtimeText.t("tool.message_channel_get.description"),
+              inputSchema: z.object({
+                chatId: z.string(),
+                includeArchived: z.boolean().optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z.object({ chatId: z.string(), includeArchived: z.boolean().optional() }).parse(rawInput);
+              return await traceTool("message_channel_get", input, async () => ({
+                channel: await messageGateway.getChannel(input),
+              }));
+            }),
+            toolDefinition({
+              name: "message_send",
+              description: runtimeText.t("tool.message_send.description"),
+              inputSchema: z.object({
+                chatId: z.string(),
+                content: z.string(),
+                rootId: z.string().optional(),
+                from: z.string().optional(),
+                to: z.string().optional(),
+              }),
+              outputSchema: z.record(z.string(), z.unknown()),
+            }).server(async (rawInput) => {
+              const input = z
+                .object({
+                  chatId: z.string(),
+                  content: z.string(),
+                  rootId: z.string().optional(),
+                  from: z.string().optional(),
+                  to: z.string().optional(),
+                })
+                .parse(rawInput);
+              return await traceTool("message_send", input, async () => await messageGateway.send(input));
+            }),
+          ],
+        },
+      ];
+    },
+    [messageGateway, terminalGateway],
   );
 
   const attentionGateway = useMemo(
@@ -1105,21 +1348,13 @@ export const App = ({ runtimeConfig }: AppProps) => {
       modelClient,
       logger,
       promptStore,
-      terminalGateway,
-      taskGateway,
+      toolProviders,
       attentionGateway,
       sessionStore,
     });
     agentRef.current = agent;
     sessionStore.setLifecycle({ status: "running" });
 
-    const stopTask = agent.onTaskEvent((event) => {
-      setStage(event.stage);
-      if (event.stage === "done" || event.stage === "error") {
-        const visibleAdapter = getAdapter(focusedTerminalIdRef.current);
-        setProcessState(visibleAdapter?.isRunning() ? "running" : "stopped");
-      }
-    });
     const stopStats = agent.onStats((stats) => {
       setAgentStats(stats);
     });
@@ -1159,35 +1394,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
       onLoopStateChange: (state) => {
         setLoopPhase(state.phase);
       },
-      onUserMessage: (message) => {
-        setMessages((prev) => [...prev, message]);
-      },
-      onTerminalDispatch: async (command) => {
-        const terminal = runtimeConfig.terminals[command.terminalId];
-        const adapter = getAdapter(command.terminalId);
-        if (!terminal || !adapter) {
-          logger.log({
-            channel: "error",
-            level: "error",
-            message: `unknown terminal dispatch: ${command.terminalId}`,
-          });
-          return;
-        }
-        if (!adapter.isRunning()) {
-          adapter.start();
-          adapter.resize(terminalSizeRef.current.cols, terminalSizeRef.current.rows);
-          if (terminal.gitLog) {
-            await adapter.markDirty();
-          }
-        }
-        await dispatchToTerminal(adapter, {
-          taskId: command.taskId,
-          text: command.text,
-          submit: command.submit,
-          submitKey: command.submitKey,
-          submitGapMs: terminal.submitGapMs,
-        });
-      },
     });
 
     loopBusRef.current = loopBus;
@@ -1204,7 +1410,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
       loopBus.stop();
       loopBusRef.current = null;
       stopStats();
-      stopTask();
       for (const stop of stopStatusListeners) {
         stop();
       }
@@ -1223,9 +1428,9 @@ export const App = ({ runtimeConfig }: AppProps) => {
     promptStore,
     runtimeConfig,
     sessionStore,
-    taskGateway,
     terminalAdapters,
     terminalGateway,
+    toolProviders,
   ]);
 
   useEffect(() => {

@@ -96,7 +96,7 @@ describe("Feature: app kernel event replay", () => {
     expect(debug.config?.apiStandard).toBeTruthy();
     expect(debug.config?.model).toBeTruthy();
     expect(debug.config?.capabilities.streaming).toBeBoolean();
-    expect(debug.history).toEqual([]);
+    expect(debug.promptWindow).toEqual([]);
     expect(debug.latestModelCall).toBeNull();
     expect(debug.recentApiCalls).toEqual([]);
   });
@@ -642,7 +642,7 @@ describe("Feature: app kernel event replay", () => {
           meta: { clientMessageId: "client-compact-1" },
         },
       ],
-      result: { kind: "compact" },
+      result: { kind: "compact", compactTrigger: "manual" },
     });
     db.setHead(roundB.id);
     db.close();
@@ -652,9 +652,11 @@ describe("Feature: app kernel event replay", () => {
     const compactCycle = cycles.find((cycle) => cycle.clientMessageIds.includes("client-compact-1"));
 
     expect(firstCycle?.kind).toBe("model");
+    expect(firstCycle?.compactTrigger).toBeNull();
     expect(firstCycle?.inputs[0]?.parts[0]).toEqual({ type: "text", text: "hello cycle" });
     expect(firstCycle?.outputs[0]?.content).toBe("done");
     expect(compactCycle?.kind).toBe("compact");
+    expect(compactCycle?.compactTrigger).toBe("manual");
 
     await kernel.stop();
   });

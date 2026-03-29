@@ -2,12 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { AgentRuntime } from "../src/agent-runtime";
 import type { LoopBusInput, LoopBusWakeSource } from "../src/loop-bus";
-import type { ChatMessage } from "../src/types";
 
 describe("Feature: agent runtime orchestration", () => {
-  test("Scenario: Given committed chat inputs When runtime runs one cycle Then processor receives them and user outputs are dispatched", async () => {
+  test("Scenario: Given committed chat inputs When runtime runs one cycle Then processor receives them without requiring legacy output dispatch", async () => {
     const sent: LoopBusInput[][] = [];
-    const outputs: ChatMessage[] = [];
     const queue: LoopBusInput[][] = [
       [
         {
@@ -23,25 +21,10 @@ describe("Feature: agent runtime orchestration", () => {
     let waitCalls = 0;
     let releaseWait: ((value: LoopBusWakeSource | void) => void) | null = null;
 
-    const runtime = new AgentRuntime<ChatMessage>({
+    const runtime = new AgentRuntime({
       processor: {
         send: async (messages) => {
           sent.push(messages);
-          return {
-            outputs: {
-              toUser: [
-                {
-                  id: "assistant-1",
-                  role: "assistant",
-                  content: "acknowledged",
-                  channel: "to_user",
-                  timestamp: Date.now(),
-                },
-              ],
-              toTerminal: [],
-              toTools: [],
-            },
-          };
         },
       },
       logger: { log: () => {} },
@@ -56,9 +39,6 @@ describe("Feature: agent runtime orchestration", () => {
       },
       collectInputs: async () => queue.shift(),
       persistCycle: async () => ({ cycleId: 1 }),
-      onUserMessage: (message) => {
-        outputs.push(message);
-      },
       onLoopStateChange: () => {},
     });
 
@@ -66,7 +46,7 @@ describe("Feature: agent runtime orchestration", () => {
 
     const deadline = Date.now() + 1_000;
     while (Date.now() < deadline) {
-      if (outputs.length === 1) {
+      if (sent.length === 1) {
         break;
       }
       await Bun.sleep(10);
@@ -79,7 +59,6 @@ describe("Feature: agent runtime orchestration", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]?.[0]?.text).toBe("continue");
-    expect(outputs).toHaveLength(1);
-    expect(outputs[0]?.content).toBe("acknowledged");
+    expect(runtime.getLoopState().phase).toBe("stopped");
   });
 });
