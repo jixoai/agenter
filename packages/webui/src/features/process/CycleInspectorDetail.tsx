@@ -118,12 +118,14 @@ const AttentionRefCard = ({
 };
 
 const InspectorTabsPanel = ({
+  cycle,
   tab,
   onTabChange,
   workbench,
   detailModel,
   onOpenAttentionRef,
 }: {
+  cycle: RuntimeChatCycle;
   tab: InspectorTab;
   onTabChange: (next: InspectorTab) => void;
   workbench: ReturnType<typeof buildCycleModelCallWorkbench>;
@@ -152,9 +154,35 @@ const InspectorTabsPanel = ({
                 <h4 className="text-sm font-semibold text-slate-900">Model call</h4>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                   <Badge variant="secondary">#{workbench.modelCall?.id ?? "-"}</Badge>
+                  <Badge variant="secondary">{cycle.kind}</Badge>
+                  {detailModel.metrics.compactTrigger ? (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+                      compact:{detailModel.metrics.compactTrigger}
+                    </Badge>
+                  ) : null}
                   <Badge variant="secondary">{workbench.modelCall?.provider ?? "provider: n/a"}</Badge>
                   <Badge variant="secondary">{workbench.modelCall?.model ?? "model: n/a"}</Badge>
                   <Badge variant="secondary">{workbench.modelCall?.status ?? "status: n/a"}</Badge>
+                </div>
+              </article>
+
+              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <h4 className="text-sm font-semibold text-slate-900">Cycle facts</h4>
+                <div className="mt-2">
+                  <JSONViewer
+                    value={{
+                      kind: cycle.kind,
+                      wakeSource: detailModel.metrics.wakeSource,
+                      protocolMode: detailModel.metrics.protocolMode,
+                      inputContexts: detailModel.detail.inputContexts.length,
+                      inputCommits: detailModel.metrics.inputCommitCount,
+                      producedCommits: detailModel.detail.producedCommits.length,
+                      activeContexts: detailModel.metrics.remainingActiveCount,
+                      deliveredHooks: detailModel.metrics.deliveredCount,
+                      failedHooks: detailModel.metrics.failedCount,
+                      compactTrigger: detailModel.metrics.compactTrigger,
+                    }}
+                  />
                 </div>
               </article>
 
@@ -211,6 +239,26 @@ const InspectorTabsPanel = ({
                     ))
                   ) : (
                     <p className="text-sm text-slate-500">No attention input contexts were captured.</p>
+                  )}
+                </div>
+              </article>
+
+              <article className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <h4 className="text-sm font-semibold text-slate-900">Input commits</h4>
+                <div className="mt-2 space-y-2">
+                  {detailModel.detail.inputCommits.length > 0 ? (
+                    detailModel.detail.inputCommits.map((commit) => (
+                      <AttentionRefCard
+                        key={commit.key}
+                        label={commit.title}
+                        subtitle={`${commit.contextId}${commit.scoreSummary ? ` · ${commit.scoreSummary}` : ""}`}
+                        contextId={commit.contextId}
+                        itemId={commit.commitId}
+                        onOpenAttentionRef={onOpenAttentionRef}
+                      />
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500">No input commits were captured for this cycle.</p>
                   )}
                 </div>
               </article>
@@ -344,6 +392,7 @@ export const CycleInspectorDetail = ({
 
         {!compact ? (
           <InspectorTabsPanel
+            cycle={cycle}
             tab={inspectorTab}
             onTabChange={setInspectorTab}
             workbench={workbench}
@@ -357,6 +406,7 @@ export const CycleInspectorDetail = ({
         <Sheet open={inspectorSheetOpen} onOpenChange={setInspectorSheetOpen} side="right" title="Cycle Inspector Panel">
           <div className="h-full min-h-[42dvh]">
             <InspectorTabsPanel
+              cycle={cycle}
               tab={inspectorTab}
               onTabChange={setInspectorTab}
               workbench={workbench}

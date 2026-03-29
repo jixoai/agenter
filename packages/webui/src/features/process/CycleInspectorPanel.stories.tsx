@@ -94,7 +94,12 @@ const baseAttention: RuntimeAttentionState = {
       seq: 11,
       createdAt: 11,
       wakeSource: "user",
+      protocolMode: "bootstrap",
       inputContextIds: ["ctx-terminal-iflow", "ctx-chat-kzf"],
+      inputCommitRefs: [
+        { contextId: "ctx-terminal-iflow", commitId: "commit-42" },
+        { contextId: "ctx-chat-kzf", commitId: "commit-chat-1" },
+      ],
       activeContextIds: [],
       producedCommitRefs: [{ contextId: "ctx-terminal-iflow", commitId: "commit-43" }],
       modelCallIds: [12],
@@ -105,7 +110,9 @@ const baseAttention: RuntimeAttentionState = {
       seq: 12,
       createdAt: 12,
       wakeSource: "attention",
+      protocolMode: "delta",
       inputContextIds: ["ctx-chat-kzf"],
+      inputCommitRefs: [{ contextId: "ctx-chat-kzf", commitId: "commit-chat-1" }],
       activeContextIds: ["ctx-chat-kzf"],
       producedCommitRefs: [],
       modelCallIds: [13],
@@ -236,9 +243,11 @@ const modelCalls: ModelCallItem[] = [
     },
     response: {
       decision: {
-        stage: "answer",
-        done: true,
-        toUser: ["The retry burst comes from the deploy watcher retry loop."],
+        kind: "model",
+        attentionRound: true,
+        attentionMutation: true,
+        toolTraceCount: 2,
+        promptWindowText: false,
       },
       usage: {
         promptTokens: 321,

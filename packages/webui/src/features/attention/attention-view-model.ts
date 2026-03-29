@@ -9,7 +9,7 @@ export type AttentionContextView = RuntimeAttentionState["snapshot"]["contexts"]
 export type AttentionCommitView = AttentionContextView["commits"][number];
 export type AttentionCycleFrameView = RuntimeAttentionState["cycleFrames"][number];
 export type AttentionHookView = RuntimeAttentionState["hooks"][number];
-export type AttentionCommitRefView = AttentionCycleFrameView["producedCommitRefs"][number];
+export type AttentionCommitRefView = AttentionCycleFrameView["inputCommitRefs"][number];
 
 export interface AttentionSelectionState {
   contextId: string | null;
@@ -66,6 +66,7 @@ export interface ResolvedAttentionCommitView {
 export interface CycleAttentionDetailView {
   frame: AttentionCycleFrameView | null;
   inputContexts: ResolvedAttentionContextView[];
+  inputCommits: ResolvedAttentionCommitView[];
   activeContexts: ResolvedAttentionContextView[];
   producedCommits: ResolvedAttentionCommitView[];
   hooks: AttentionHookView[];
@@ -302,6 +303,7 @@ export const buildCycleAttentionDetail = (input: {
   return {
     frame,
     inputContexts: (frame?.inputContextIds ?? []).map((contextId) => resolveContextView(attention, contextId)),
+    inputCommits: (frame?.inputCommitRefs ?? []).map((ref) => resolveCommitView(attention, ref)),
     activeContexts: (frame?.activeContextIds ?? []).map((contextId) => resolveContextView(attention, contextId)),
     producedCommits: (frame?.producedCommitRefs ?? []).map((ref) => resolveCommitView(attention, ref)),
     hooks,

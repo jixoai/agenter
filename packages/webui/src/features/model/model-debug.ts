@@ -92,7 +92,7 @@ export const formatTimestamp = (value: number | undefined): string => {
 };
 
 export const buildHistoryMessages = (debug: ModelDebugOutput): HistoryMessageView[] => {
-  return debug.history.map((message, index) => ({
+  return debug.promptWindow.map((message, index) => ({
     key: `${message.role}-${message.name ?? "anon"}-${index}`,
     title: `${index + 1}. ${message.role}`,
     subtitle: message.name ? message.name : `${toTextParts(message.content).length} text part(s)`,

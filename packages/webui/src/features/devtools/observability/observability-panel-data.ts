@@ -87,7 +87,7 @@ export interface SchedulerKernelState {
   stateVersion: number;
   running: boolean;
   paused: boolean;
-  runtimeStatus: "idle" | "running" | "waiting" | "backoff" | "blocked" | "paused";
+  runtimeStatus: "idle" | "running" | "waiting" | "backoff" | "paused";
   phase: string;
   gate: "open" | "waiting_input";
   queueSize: number;
@@ -121,7 +121,6 @@ export type SchedulerPhase =
   | "collecting_inputs"
   | "persisting_cycle"
   | "calling_model"
-  | "applying_outputs"
   | "stopped";
 
 export interface FlowStep {
@@ -187,17 +186,7 @@ export const FLOW_ROWS: FlowStep[][] = [
     { id: "collect", phase: "collecting_inputs", step: "2", title: "Collect", subtitle: "attention + debounce" },
     { id: "persist", phase: "persisting_cycle", step: "3", title: "Persist", subtitle: "cycle ledger" },
   ],
-  [
-    {
-      id: "apply",
-      phase: "applying_outputs",
-      step: "5",
-      title: "Apply",
-      subtitle: "dispatch outputs",
-      direction: "left",
-    },
-    { id: "model", phase: "calling_model", step: "4", title: "Model", subtitle: "provider call", direction: "left" },
-  ],
+  [{ id: "model", phase: "calling_model", step: "4", title: "Model", subtitle: "provider call", direction: "left" }],
 ];
 
 export const TRACE_ROW_ESTIMATE = 72;
@@ -245,7 +234,6 @@ export const normalizePhase = (phase?: string | null): SchedulerPhase => {
     case "collecting_inputs":
     case "persisting_cycle":
     case "calling_model":
-    case "applying_outputs":
     case "stopped":
     case "waiting_commits":
       return phase;

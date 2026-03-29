@@ -88,9 +88,6 @@ const resolveHeaderAiStatus = (
     | null,
 ): string | null => {
   if (routeRuntime?.started) {
-    if (routeRuntime.scheduler?.runtimeStatus === "blocked") {
-      return "attention";
-    }
     if (routeRuntime.scheduler?.runtimeStatus === "backoff" || routeRuntime.scheduler?.runtimeStatus === "waiting") {
       return "working";
     }

@@ -48,7 +48,7 @@ const TEXT_MODE_TABS = [
 const MODEL_TABS = [
   { id: "overview", label: "Overview" },
   { id: "latest", label: "Latest" },
-  { id: "history", label: "History" },
+  { id: "history", label: "Prompt window" },
   { id: "transport", label: "HTTP" },
 ] as const satisfies readonly TabItem[];
 const LATEST_TABS = [
@@ -588,15 +588,15 @@ export const ModelPanel = ({
                   <Card>
                     <CardHeader className="pb-3">
                       <SectionTitle
-                        title="Current context"
-                        description="Messages currently retained for the next model turn."
+                        title="Current prompt window"
+                        description="Messages currently retained in bounded model memory for the next turn."
                         helpId="model-panel:history:context"
                         badge={String(historyMessages.length)}
                       />
                     </CardHeader>
                     <CardContent className="pt-0">
                       {historyMessages.length === 0 ? (
-                        <EmptyCard message="Model history is still empty for this session." />
+                        <EmptyCard message="Model prompt window is still empty for this session." />
                       ) : (
                         <Accordion type="single" collapsible>
                           {historyMessages.map((message) => (

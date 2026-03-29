@@ -30,7 +30,7 @@ const debug = {
       mcpCatalog: false,
     },
   },
-  history: [
+  promptWindow: [
     {
       role: "user",
       name: "User",
@@ -133,7 +133,7 @@ export const RichModelDebug: Story = {
     await userEvent.click(canvas.getByRole("tab", { name: "Tools" }));
     await expect((await canvas.findAllByText("Read terminal snapshot.")).length).toBeGreaterThan(0);
 
-    await userEvent.click(canvas.getByRole("tab", { name: "History" }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Prompt window" }));
     await userEvent.click(canvas.getByRole("tab", { name: "Calls" }));
     await expect(canvas.getByText("Recent model calls")).toBeInTheDocument();
 

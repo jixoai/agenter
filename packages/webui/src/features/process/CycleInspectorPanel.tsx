@@ -96,6 +96,15 @@ const TimelineItemButton = ({
             <Badge variant="secondary" className={selected ? "bg-white/12 text-white/80" : ""}>
               {item.cycle.kind}
             </Badge>
+            {item.cycle.kind === "compact" && item.cycle.compactTrigger ? (
+              <Badge
+                variant="secondary"
+                className={selected ? "bg-white/12 text-white/80" : "bg-amber-100 text-amber-700"}
+                title={`Compaction trigger: ${item.cycle.compactTrigger}`}
+              >
+                compact:{item.cycle.compactTrigger}
+              </Badge>
+            ) : null}
           </div>
           <p className={cn("text-xs font-medium leading-5", selected ? "text-white/88" : "text-slate-700")}>
             {item.headline}

@@ -26,6 +26,7 @@ export interface CycleContextBucketView {
   contextId: string;
   owner: string | null;
   inputContexts: CycleAttentionDetailView["inputContexts"];
+  inputCommits: CycleAttentionDetailView["inputCommits"];
   activeContexts: CycleAttentionDetailView["activeContexts"];
   producedCommits: CycleAttentionDetailView["producedCommits"];
 }
@@ -34,12 +35,15 @@ const pluralize = (count: number, noun: string): string => `${count} ${noun}${co
 
 const collectCycleContextIds = (detail: CycleAttentionDetailView): Set<string> =>
   new Set(
-    [...detail.inputContexts, ...detail.activeContexts, ...detail.producedCommits]
+    [...detail.inputContexts, ...detail.inputCommits, ...detail.activeContexts, ...detail.producedCommits]
       .map((entry) => entry.contextId)
       .filter((contextId) => contextId.length > 0),
   );
 
 const buildFallbackHeadline = (cycle: RuntimeChatCycle, detail: CycleAttentionDetailView): string => {
+  if (cycle.kind === "compact") {
+    return cycle.compactTrigger ? `Compact cycle (${cycle.compactTrigger})` : "Compact cycle";
+  }
   const delivered = detail.hooks.find((record) => record.status === "delivered");
   if (delivered?.systemId === "message") {
     return "Delivered chat reply";
@@ -53,7 +57,7 @@ const buildFallbackHeadline = (cycle: RuntimeChatCycle, detail: CycleAttentionDe
   if (cycle.streaming?.content.trim().length) {
     return "Streaming attention work";
   }
-  return cycle.kind === "compact" ? "Context compaction" : "Attention cycle";
+  return "Attention cycle";
 };
 
 export const formatCycleTitle = (cycle: RuntimeChatCycle, fallbackOrdinal?: number): string => {
@@ -98,15 +102,18 @@ export const buildCycleTimelineSummary = (input: {
   const deliveredCount = detail.hooks.filter((record) => record.status === "delivered").length;
   const failedCount = detail.hooks.filter((record) => record.status === "failed").length;
   const headline =
-    detail.producedCommits[0]?.title ??
+    (input.cycle.kind === "compact" ? null : detail.producedCommits[0]?.title) ??
     detail.activeContexts[0]?.title ??
+    detail.inputCommits[0]?.title ??
     detail.inputContexts[0]?.title ??
     buildFallbackHeadline(input.cycle, detail);
 
   const parts = [
     input.cycle.wakeSource ? `wake ${input.cycle.wakeSource}` : null,
+    input.cycle.kind === "compact" && input.cycle.compactTrigger ? `trigger ${input.cycle.compactTrigger}` : null,
     contextCount > 0 ? pluralize(contextCount, "context") : null,
     detail.inputContexts.length > 0 ? `${detail.inputContexts.length} in` : null,
+    detail.inputCommits.length > 0 ? `${detail.inputCommits.length} input commits` : null,
     detail.producedCommits.length > 0 ? `${detail.producedCommits.length} commits` : null,
     detail.activeContexts.length > 0 ? `${detail.activeContexts.length} active` : "resolved",
     deliveredCount > 0 ? `${deliveredCount} delivered` : null,
@@ -127,20 +134,24 @@ export const buildCycleContextBuckets = (detail: CycleAttentionDetailView): Cycl
     if (existing) {
       return existing;
     }
-    const next: CycleContextBucketView = {
-      key: contextId,
-      contextId,
-      owner,
-      inputContexts: [],
-      activeContexts: [],
-      producedCommits: [],
-    };
+      const next: CycleContextBucketView = {
+        key: contextId,
+        contextId,
+        owner,
+        inputContexts: [],
+        inputCommits: [],
+        activeContexts: [],
+        producedCommits: [],
+      };
     buckets.set(contextId, next);
     return next;
   };
 
   for (const context of detail.inputContexts) {
     ensureBucket(context.contextId, context.owner).inputContexts.push(context);
+  }
+  for (const commit of detail.inputCommits) {
+    ensureBucket(commit.contextId, commit.owner).inputCommits.push(commit);
   }
   for (const context of detail.activeContexts) {
     ensureBucket(context.contextId, context.owner).activeContexts.push(context);
@@ -150,8 +161,10 @@ export const buildCycleContextBuckets = (detail: CycleAttentionDetailView): Cycl
   }
 
   return [...buckets.values()].sort((left, right) => {
-    const leftWeight = left.producedCommits.length * 10 + left.activeContexts.length * 5 + left.inputContexts.length;
-    const rightWeight = right.producedCommits.length * 10 + right.activeContexts.length * 5 + right.inputContexts.length;
+    const leftWeight =
+      left.producedCommits.length * 10 + left.activeContexts.length * 5 + left.inputCommits.length * 3 + left.inputContexts.length;
+    const rightWeight =
+      right.producedCommits.length * 10 + right.activeContexts.length * 5 + right.inputCommits.length * 3 + right.inputContexts.length;
     if (leftWeight !== rightWeight) {
       return rightWeight - leftWeight;
     }
@@ -181,10 +194,13 @@ export const buildCycleInspectorDetail = (input: {
     summary: buildCycleTimelineSummary(input),
     metrics: {
       wakeSource: detail.frame?.wakeSource ?? input.cycle.wakeSource ?? "manual",
+      protocolMode: detail.frame?.protocolMode ?? "none",
       contextCount: collectCycleContextIds(detail).size,
+      inputCommitCount: detail.inputCommits.length,
       deliveredCount,
       failedCount,
       remainingActiveCount: detail.activeContexts.length,
+      compactTrigger: input.cycle.kind === "compact" ? (input.cycle.compactTrigger ?? null) : null,
     },
   };
 };

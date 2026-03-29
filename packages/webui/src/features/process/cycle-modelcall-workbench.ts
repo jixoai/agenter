@@ -356,34 +356,13 @@ const appendResponseRows = (builder: ConversationBuilder, response: LooseRecord 
 
   const decision = asRecord(response.decision);
   if (decision) {
-    asArray(decision.toUser).forEach((entry, index) => {
-      pushMessageContentRows(builder, {
-        keyPrefix: `response:decision:toUser:${index}`,
-        lane: "output",
-        role: "assistant",
-        label: `decision to user #${index + 1}`,
-        content: entry,
-        skipSeenAssistantText: true,
-      });
+    pushJsonRow(builder, {
+      key: "response:decision",
+      lane: "output",
+      role: "assistant",
+      label: "decision",
+      payload: decision,
     });
-
-    const decisionMeta: LooseRecord = {};
-    for (const [key, value] of Object.entries(decision)) {
-      if (key === "toUser") {
-        continue;
-      }
-      decisionMeta[key] = value;
-    }
-
-    if (Object.keys(decisionMeta).length > 0) {
-      pushJsonRow(builder, {
-        key: "response:decision:meta",
-        lane: "output",
-        role: "assistant",
-        label: "decision meta",
-        payload: decisionMeta,
-      });
-    }
   }
 
   const responseMeta: LooseRecord = {};

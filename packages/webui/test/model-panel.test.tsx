@@ -34,7 +34,7 @@ const debug = {
       mcpCatalog: false,
     },
   },
-  history: [
+  promptWindow: [
     {
       role: "user",
       name: "User",
@@ -131,9 +131,9 @@ describe("Feature: model panel", () => {
     expect(screen.getByText("AI tools")).toBeInTheDocument();
     expect(screen.getAllByText("Read terminal snapshot.").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Prompt window" }));
     fireEvent.click(screen.getByRole("tab", { name: "Context" }));
-    expect(screen.getByText("Current context")).toBeInTheDocument();
+    expect(screen.getByText("Current prompt window")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /1\. user/i }));
     expect(screen.getByText("Please inspect the iflow terminal.")).toBeInTheDocument();
 

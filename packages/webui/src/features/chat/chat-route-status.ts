@@ -30,9 +30,6 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
     return "starting";
   }
   if (runtime?.started) {
-    if (runtime.scheduler?.runtimeStatus === "blocked") {
-      return "attention blocked";
-    }
     if (runtime.scheduler?.runtimeStatus === "backoff") {
       return "attention backoff";
     }
@@ -44,9 +41,6 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
     }
     if (runtime.schedulerPhase === "calling_model") {
       return "waiting model";
-    }
-    if (runtime.schedulerPhase === "applying_outputs") {
-      return "applying outputs";
     }
     if (runtime.schedulerPhase === "collecting_inputs") {
       return "syncing";
@@ -62,9 +56,6 @@ export const phaseToStatus = (session: RouteSession | null, runtime?: RouteRunti
     }
     if (runtime.stage === "act") {
       return "executing";
-    }
-    if (runtime.stage === "done") {
-      return "done";
     }
     return "active";
   }
@@ -130,15 +121,6 @@ export const resolveSessionStatusPillState = (
     };
   }
   if (runtime?.started) {
-    if (runtime.scheduler?.runtimeStatus === "blocked") {
-      return {
-        label: "Attention blocked",
-        tone: "warning",
-        primaryActionLabel: "Stop session",
-        primaryAction: "stop",
-        disabled: false,
-      };
-    }
     if (runtime.scheduler?.runtimeStatus === "backoff") {
       return {
         label: "Attention retrying",
@@ -196,16 +178,6 @@ export const resolveChatRouteNotice = (input: {
     return {
       tone: "destructive",
       message: normalizeUserNotice(input.runtime.lastError, "Something failed while preparing this session."),
-    };
-  }
-
-  if (input.runtime?.scheduler?.runtimeStatus === "blocked") {
-    return {
-      tone: "warning",
-      message: normalizeUserNotice(
-        input.runtime.scheduler.blockedReason ?? "",
-        "Attention work is blocked. Inspect Devtools for the unresolved cause.",
-      ),
     };
   }
 

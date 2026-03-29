@@ -207,7 +207,7 @@ describe("Feature: chat route status resolution", () => {
     });
   });
 
-  test("Scenario: Given unresolved attention debt is blocked When resolving route status Then the UI shows the blocked cause instead of idle completion", () => {
+  test("Scenario: Given unresolved attention debt is waiting When resolving route status Then the UI keeps attention debt visible instead of idle completion", () => {
     const session: Parameters<typeof phaseToStatus>[0] = {
       status: "running",
       lastError: undefined,
@@ -219,28 +219,25 @@ describe("Feature: chat route status resolution", () => {
       stage: "idle",
       lastError: null,
       scheduler: {
-        runtimeStatus: "blocked",
-        waitingReason: "blocked",
+        runtimeStatus: "waiting",
+        waitingReason: "attention_debt",
         nextAutoWakeAt: null,
         backoffMs: null,
-        retryCount: 3,
-        blockedReason: "Provider request failed: Missing API key",
+        retryCount: 1,
+        blockedReason: null,
         lastProgressAt: Date.now() - 5_000,
         lastError: null,
       },
     };
 
-    expect(phaseToStatus(session, runtime)).toBe("attention blocked");
+    expect(phaseToStatus(session, runtime)).toBe("attention pending");
     expect(resolveSessionStatusPillState(session, runtime)).toEqual({
-      label: "Attention blocked",
-      tone: "warning",
+      label: "Attention pending",
+      tone: "active",
       primaryActionLabel: "Stop session",
       primaryAction: "stop",
       disabled: false,
     });
-    expect(resolveChatRouteNotice({ notice: "", session, runtime })).toEqual({
-      tone: "warning",
-      message: "Provider request failed: Missing API key",
-    });
+    expect(resolveChatRouteNotice({ notice: "", session, runtime })).toBeNull();
   });
 });
