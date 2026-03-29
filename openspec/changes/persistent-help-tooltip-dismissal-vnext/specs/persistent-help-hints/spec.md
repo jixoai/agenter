@@ -14,7 +14,14 @@ Each help hint SHALL open by default for users who have not dismissed that exact
 #### Scenario: First visit opens contextual help automatically
 - **WHEN** the user loads a surface containing a help hint for the first time
 - **THEN** the hint popup opens without requiring hover
+- **THEN** the auto-opened popup uses a passive onboarding presentation that stays visually lighter than an explicitly opened tooltip
 - **THEN** clicking the trigger dismisses and closes the popup
+
+#### Scenario: User intent upgrades the hint to the normal tooltip presentation
+- **GIVEN** a help hint is still in its first-visit auto-open state
+- **WHEN** the user hovers, focuses, or explicitly re-opens the `?` trigger
+- **THEN** the hint switches to the standard tooltip presentation
+- **THEN** any passive onboarding animation stays paint-only and does not shift the popup layout
 
 ### Requirement: Help hint dismissal SHALL persist by deterministic key
 Dismissal state SHALL be persisted in IndexedDB and keyed deterministically by normalized hint context (`sha256(textContext)`), optionally namespaced by a stable `helpId`.

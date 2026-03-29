@@ -13,6 +13,10 @@ We need one orthogonal primitive for contextual help that can be mounted anywher
 - Introduce `HelpHint` as a reusable trigger + tooltip popup contract.
 - The trigger is always a compact `?` affordance.
 - `HelpHint` is controlled (explicit `open` state) so onboarding and dismissal behavior are deterministic.
+- The popup exposes two visual presentation modes:
+  - `passive-auto` for first-visit onboarding, using a lighter visual treatment.
+  - `active-open` once the user intentionally hovers, focuses, or presses the trigger.
+- Passive onboarding animation must remain paint-only; do not animate geometry or offset that can make anchored positioning appear to jitter.
 
 ### Persistence contract
 
@@ -27,6 +31,8 @@ We need one orthogonal primitive for contextual help that can be mounted anywher
 
 - If not dismissed:
   - tooltip opens automatically on mount.
+  - auto-open starts in the passive onboarding presentation.
+  - hover, focus, or explicit re-open promotes the popup to the standard tooltip presentation.
   - first click on `?` dismisses and closes.
 - If dismissed:
   - hover and click can open/close tooltip normally.
