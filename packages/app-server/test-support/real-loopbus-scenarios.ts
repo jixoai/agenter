@@ -68,7 +68,10 @@ const waitForCompactCycle = async (
       return (
         cycles.find(
           (cycle) =>
-            cycle.kind === "compact" && cycle.compactTrigger === "manual" && cycle.cycleId > input.afterCycleId,
+            cycle.kind === "compact" &&
+            cycle.compactTrigger === "manual" &&
+            typeof cycle.cycleId === "number" &&
+            cycle.cycleId > input.afterCycleId,
         ) ?? null
       );
     },
@@ -101,6 +104,43 @@ const listRecentModelCalls = async (harness: RealKernelHarness) => {
     status: call.status,
     outcome: call.outcome?.code ?? null,
   }));
+};
+
+const listRecentModelCallRecords = async (harness: RealKernelHarness) =>
+  (await harness.kernel.inspectModelDebug(harness.session.id)).recentModelCalls;
+
+const waitForModelCallsAfter = async (
+  harness: RealKernelHarness,
+  input: {
+    afterTimestamp: number;
+    label: string;
+    timeoutMs?: number;
+  },
+) =>
+  await waitForRealValue(
+    async () => {
+      const calls = await listRecentModelCallRecords(harness);
+      const relevant = calls.filter((call) => call.createdAt >= input.afterTimestamp);
+      const latest = relevant.at(-1) ?? null;
+      if (!latest || latest.status === "running") {
+        return null;
+      }
+      return relevant;
+    },
+    {
+      label: input.label,
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    },
+  );
+
+const extractToolTraceTools = (call: { response?: unknown }): string[] => {
+  const response = call.response;
+  if (!response || typeof response !== "object" || !("toolTrace" in response) || !Array.isArray(response.toolTrace)) {
+    return [];
+  }
+  return response.toolTrace.flatMap((entry) =>
+    typeof entry === "object" && entry !== null && "tool" in entry && typeof entry.tool === "string" ? [entry.tool] : [],
+  );
 };
 
 const waitForLatestModelCallCompletion = async (
@@ -314,5 +354,135 @@ export const runRealCompactFollowUpScenario = async (
     relayMessageCountAfter,
     settledAttention,
     recentModelCalls,
+  };
+};
+
+export interface RealWeatherTerminalScenarioResult {
+  reply: ChatMessage;
+  settledAttention: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+  toolTraceTools: string[];
+}
+
+export const runRealWeatherThroughTerminalScenario = async (
+  harness: RealKernelHarness,
+): Promise<RealWeatherTerminalScenarioResult> => {
+  const startAt = Date.now();
+  const prompt = [
+    "请回答一个需要外部事实的问题。",
+    "必须先使用 terminal 工具联网查询厦门未来至少 3 天的天气，禁止凭记忆回答。",
+    "最终只在 chat-main 发送一条以 WEATHER-RESULT: 开头的简短中文消息。",
+    "完成后把 attention 收敛到 0。",
+  ].join("\n");
+  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  if (!sent.ok) {
+    throw new Error(`failed to send weather prompt: ${sent.reason ?? "unknown"}`);
+  }
+
+  const reply = await waitForAssistantMessage(harness, {
+    label: "weather result on chat-main",
+    predicate: (message) =>
+      message.chatId === "chat-main" &&
+      message.timestamp >= startAt &&
+      message.content.trim().startsWith("WEATHER-RESULT:"),
+    timeoutMs: 180_000,
+  });
+
+  const modelCallRecords = await waitForModelCallsAfter(harness, {
+    afterTimestamp: startAt,
+    label: "weather model call completion",
+    timeoutMs: 180_000,
+  });
+  const settledAttention = await waitForAttentionSettled(harness, 180_000);
+
+  return {
+    reply,
+    settledAttention,
+    recentModelCalls: modelCallRecords.map((call) => ({
+      id: call.id,
+      cycleId: call.cycleId,
+      status: call.status,
+      outcome: call.outcome?.code ?? null,
+    })),
+    toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+  };
+};
+
+export interface RealJudgeRelayScenarioResult {
+  relayChannel: MessageControlPlaneEntry;
+  relayPromptMessage: ChatMessage;
+  activeAfterRelay: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+  toolTraceTools: string[];
+}
+
+export const runRealJudgeRelayScenario = async (
+  harness: RealKernelHarness,
+): Promise<RealJudgeRelayScenarioResult> => {
+  const relayChannel = harness.kernel.createMessageChannel({
+    sessionId: harness.session.id,
+    kind: "direct",
+    title: "kzf",
+    participants: [
+      { id: `avatar:${harness.session.avatar}`, label: harness.session.avatar, role: "avatar" },
+      { id: "user:kzf", label: "kzf", role: "user" },
+    ],
+    focus: false,
+  });
+
+  const startAt = Date.now();
+  const prompt = [
+    "和 kzf 玩个剪刀石头布，你做裁判，我出布。",
+    "请先联系 kzf 获取他的出招，不要代替 kzf 出招，也不要把我的整句话原样转发。",
+    "等 kzf 回复后，只把比赛结果发回 chat-main，并收敛 attention。",
+  ].join("\n");
+  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+  if (!sent.ok) {
+    throw new Error(`failed to send judge relay prompt: ${sent.reason ?? "unknown"}`);
+  }
+
+  const relayPromptMessage = await waitForAssistantMessage(harness, {
+    label: "judge relay prompt",
+    predicate: (message) => message.chatId === relayChannel.chatId && message.timestamp >= startAt,
+    timeoutMs: 180_000,
+  });
+  const activeAfterRelay = await waitForRealValue(
+    async () => {
+      const attention = await harness.kernel.inspectAttentionState(harness.session.id);
+      return attention.active.length > 0 ? attention : null;
+    },
+    {
+      label: "judge relay attention waiting state",
+      timeoutMs: 180_000,
+    },
+  );
+
+  const modelCallRecords = await waitForModelCallsAfter(harness, {
+    afterTimestamp: startAt,
+    label: "judge relay model call completion",
+    timeoutMs: 180_000,
+  });
+
+  return {
+    relayChannel,
+    relayPromptMessage,
+    activeAfterRelay,
+    recentModelCalls: modelCallRecords.map((call) => ({
+      id: call.id,
+      cycleId: call.cycleId,
+      status: call.status,
+      outcome: call.outcome?.code ?? null,
+    })),
+    toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
   };
 };

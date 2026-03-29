@@ -44,8 +44,16 @@ export interface AgentToolProviderContext {
   traceTool: <TInput, TOutput>(toolName: string, input: TInput, handler: () => Promise<TOutput>) => Promise<TOutput>;
 }
 
+export interface AgentToolProviderPromptContext {
+  readonly runtimeText: ReturnType<typeof createRuntimeText>;
+  readonly locale?: string;
+}
+
 export interface AgentToolProvider {
   readonly name: string;
+  buildSystemPromptSection?: (
+    context: AgentToolProviderPromptContext,
+  ) => Promise<string | null | undefined> | string | null | undefined;
   createTools: (context: AgentToolProviderContext) => Tool[];
 }
 
@@ -350,6 +358,12 @@ const normalizeCompactText = (value: string): string => value.replace(/\s+/g, " 
 
 const isPromptWindowCommandText = (value: string): boolean => value.startsWith("/");
 
+const joinPromptSections = (sections: readonly string[]): string =>
+  sections
+    .map((section) => section.trim())
+    .filter((section) => section.length > 0)
+    .join("\n\n---\n\n");
+
 const pushUniqueCompactText = (target: string[], value: string): void => {
   const normalized = normalizeCompactText(value);
   if (normalized.length === 0 || isPromptWindowCommandText(normalized) || target.includes(normalized)) {
@@ -451,37 +465,30 @@ const extractFocusedReplyChatIds = (promptWindow: readonly TextOnlyModelMessage[
   return chatIds;
 };
 
-const extractFocusedTriggerPhrases = (
-  promptWindow: readonly TextOnlyModelMessage[],
+const extractAttentionPromptWindowFocus = (
+  content: string,
   focusedChatIds: ReadonlySet<string>,
-): Map<string, string[]> => {
-  const phrasesByChatId = new Map<string, string[]>();
-  for (const message of promptWindow) {
-    const content = historyContentToText(message.content);
-    if (!content.includes("yaml+attention_items") || !content.includes("chatFocused: true")) {
-      continue;
-    }
-    const chatIds = [...content.matchAll(/channelId:\s+([^\n]+)/g)]
-      .map((match) => parseYamlScalarText(match[1] ?? ""))
-      .filter((chatId) => chatId.length > 0 && (focusedChatIds.size === 0 || focusedChatIds.has(chatId)));
-    if (chatIds.length === 0) {
-      continue;
-    }
-    const phrases = [...content.matchAll(/content:\s+([^\n]+)/g)]
-      .map((match) => parseYamlScalarText(match[1] ?? ""))
-      .filter((phrase) => phrase.length > 0 && !isPromptWindowCommandText(phrase));
-    if (phrases.length === 0) {
-      continue;
-    }
-    for (const chatId of chatIds) {
-      const current = phrasesByChatId.get(chatId) ?? [];
-      for (const phrase of phrases) {
-        pushUniqueCompactText(current, phrase);
-      }
-      phrasesByChatId.set(chatId, current);
-    }
+): Array<{ chatId: string; triggerPhrases: string[] }> => {
+  if (!content.includes("yaml+attention_items") || !content.includes("chatFocused: true")) {
+    return [];
   }
-  return phrasesByChatId;
+  const chatIds = [...content.matchAll(/channelId:\s+([^\n]+)/g)]
+    .map((match) => parseYamlScalarText(match[1] ?? ""))
+    .filter((chatId) => chatId.length > 0 && (focusedChatIds.size === 0 || focusedChatIds.has(chatId)));
+  if (chatIds.length === 0) {
+    return [];
+  }
+  const triggerPhrases: string[] = [];
+  for (const match of content.matchAll(/content:\s+([^\n]+)/g)) {
+    pushUniqueCompactText(triggerPhrases, parseYamlScalarText(match[1] ?? ""));
+  }
+  if (triggerPhrases.length === 0) {
+    return [];
+  }
+  return chatIds.map((chatId) => ({
+    chatId,
+    triggerPhrases: [...triggerPhrases],
+  }));
 };
 
 const extractMessageSendReadyReplies = (
@@ -489,9 +496,12 @@ const extractMessageSendReadyReplies = (
   focusedChatIds: ReadonlySet<string>,
 ): AgentPromptWindowReadyReply[] => {
   const readyReplies: AgentPromptWindowReadyReply[] = [];
-  const triggerPhrasesByChatId = extractFocusedTriggerPhrases(promptWindow, focusedChatIds);
+  const latestTriggerPhrasesByChatId = new Map<string, string[]>();
   for (const message of promptWindow) {
     const content = historyContentToText(message.content);
+    for (const entry of extractAttentionPromptWindowFocus(content, focusedChatIds)) {
+      latestTriggerPhrasesByChatId.set(entry.chatId, entry.triggerPhrases);
+    }
     if (!isPromptWindowToolTraceEntry(content) || !content.includes("tool: message_send")) {
       continue;
     }
@@ -502,7 +512,7 @@ const extractMessageSendReadyReplies = (
     }
     const reply = parseYamlScalarText(inputSection?.[1]?.match(/^\s+content:\s+([^\n]+)$/m)?.[1] ?? "");
     if (reply.length > 0) {
-      const triggerPhrases = [...(triggerPhrasesByChatId.get(chatId) ?? [])];
+      const triggerPhrases = [...(latestTriggerPhrasesByChatId.get(chatId) ?? [])];
       readyReplies.push({
         channelId: chatId,
         topic: triggerPhrases.at(-1) ?? reply,
@@ -575,6 +585,19 @@ export class AgenterAI {
 
   constructor(private readonly deps: AgentDeps) {
     this.runtimeText = createRuntimeText(this.deps.locale);
+  }
+
+  private async buildProviderOwnedSystemGuide(): Promise<string> {
+    const sections = await Promise.all(
+      (this.deps.toolProviders ?? []).map(async (provider) => {
+        const section = await provider.buildSystemPromptSection?.({
+          runtimeText: this.runtimeText,
+          locale: this.deps.locale,
+        });
+        return typeof section === "string" ? section.trim() : "";
+      }),
+    );
+    return joinPromptSections(sections);
   }
 
   private queueCompactRequest(trigger: ChatCycleCompactTrigger): void {
@@ -977,13 +1000,19 @@ export class AgenterAI {
     const agenterSystem = await this.deps.promptStore.buildMd(promptDocs.AGENTER_SYSTEM);
     const agenter = await this.deps.promptStore.buildMd(promptDocs.AGENTER);
     const contract = await this.deps.promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
+    const systemsGuide = await this.buildProviderOwnedSystemGuide();
+    const templateHasSystemsGuideSlot = promptDocs.SYSTEM_TEMPLATE.content.includes('name="SYSTEMS_GUIDE"');
     const systemPrompt = await this.deps.promptStore.buildMd(promptDocs.SYSTEM_TEMPLATE, {
       slots: {
-        AGENTER_SYSTEM: agenterSystem,
+        AGENTER_SYSTEM:
+          templateHasSystemsGuideSlot || systemsGuide.length === 0
+            ? agenterSystem
+            : joinPromptSections([agenterSystem, systemsGuide]),
+        SYSTEMS_GUIDE: systemsGuide,
         AGENTER: agenter,
         RESPONSE_CONTRACT: contract,
-          },
-        });
+      },
+    });
     const promptWindowSnapshot = [...this.promptWindow];
     const contextChars = systemPrompt.length + JSON.stringify(promptWindowSnapshot).length;
     this.stats.lastContextChars = contextChars;

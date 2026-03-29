@@ -81,6 +81,7 @@ import {
   type AgentModelCallRecord,
   type AgentRuntimeStats,
   type AgentToolProvider,
+  type AgentToolProviderPromptContext,
   type AgentToolTraceEntry,
 } from "./agenter-ai";
 import { AttentionHashAliasRegistry, AttentionHashAliasStore } from "./attention-hash-alias-registry";
@@ -2124,9 +2125,57 @@ export class SessionRuntime {
     return [this.createMessageToolProvider(), this.createTerminalToolProvider(), this.createTaskToolProvider()];
   }
 
+  private buildSystemPromptSection(
+    context: AgentToolProviderPromptContext,
+    input: {
+      title: {
+        en: string;
+        zhHans: string;
+      };
+      bullets: {
+        en: string[];
+        zhHans: string[];
+      };
+    },
+  ): string {
+    const zhHans = context.runtimeText.locale === "zh-Hans";
+    const title = zhHans ? input.title.zhHans : input.title.en;
+    const bullets = zhHans ? input.bullets.zhHans : input.bullets.en;
+    return [`## ${title}`, ...bullets.map((line) => `- ${line}`)].join("\n");
+  }
+
   private createMessageToolProvider(): AgentToolProvider {
     return {
       name: "message",
+      buildSystemPromptSection: (context) =>
+        this.buildSystemPromptSection(context, {
+          title: {
+            en: "Message System",
+            zhHans: "消息系统",
+          },
+          bullets: {
+            en: [
+              "Treat message-system as an asynchronous multi-channel communication network, not as a generic chat transcript.",
+              "Decide your role before sending: direct reply, relay, follow-up question, coordinator, judge, moderator, or notifier.",
+              "A relay message must be composed for the target participant; do not mechanically forward the user's raw sentence when context or intent needs reframing.",
+              "When acting as judge or coordinator, do not speak as another participant or invent their move or opinion.",
+              "When a secondary-channel reply satisfies an earlier request from a focused origin channel, treat that reply as evidence for the origin task and answer back in the origin channel before stopping.",
+              "Judge or moderator flows are origin-owned work: collect the other participants' moves in their own channels, then publish the ruling yourself in the originating channel.",
+              "A missing reply in one channel does not stop unrelated work elsewhere; you can continue other attention while waiting.",
+              "If a channel needs external facts, fetch or verify them through terminal or other tools before messaging the result.",
+            ],
+            zhHans: [
+              "把 message-system 视为异步、多频道、多角色的通信网络，而不是普通聊天记录。",
+              "发送消息前先判断自己的角色：直接回复、relay、追问、协调者、裁判、主持者或通知者。",
+              "relay 要为目标对象重新组织信息；当上下文和意图需要重述时，不要机械转发用户原话。",
+              "当你是裁判或协调者时，不要代替其他参与者发言，也不要凭空替他们出招或表态。",
+              "当次级频道的回复满足了某个聚焦主频道里的原始请求时，要把这条回复当成主任务证据，先回到原始频道给出结果，再决定是否结束。",
+              "裁判或主持流程的所有权属于原始频道：你应当在各参与者所在频道收集输入，然后由你自己回到原始频道发布裁决。",
+              "某个频道暂时没人回复，不代表整个系统停止；等待期间仍可继续处理其他 attention 工作。",
+              "如果某个频道的问题依赖外部事实，先通过 terminal 或其他工具获取和验证，再把结果发回对应频道。",
+            ],
+          },
+        }),
       createTools: ({ runtimeText, traceTool }) => {
         const messageChannelSchema = z.object({
           chatId: z.string(),
@@ -2224,6 +2273,29 @@ export class SessionRuntime {
   private createTerminalToolProvider(): AgentToolProvider {
     return {
       name: "terminal",
+      buildSystemPromptSection: (context) =>
+        this.buildSystemPromptSection(context, {
+          title: {
+            en: "Terminal System",
+            zhHans: "终端系统",
+          },
+          bullets: {
+            en: [
+              "Treat terminal as your professional operating-system workbench for Linux or Windows level problem solving.",
+              "When work depends on external facts, files, processes, commands, source code, environment state, or network access, prefer terminal tools over memory or hallucination.",
+              "Work like a strong shell user: analyze the problem, decompose it, find tools, combine commands, and author temporary scripts when needed.",
+              "Unverified weather, network, filesystem, or process claims are not finished facts until terminal or another tool confirms them.",
+              "If terminal work is blocked by missing context, failed commands, or missing permissions, use other systems such as message-system to ask for what you need instead of inventing results.",
+            ],
+            zhHans: [
+              "把 terminal 视为你与操作系统交互的专业工作台，像熟练的 Linux 或 Windows 用户一样解决问题。",
+              "当任务依赖外部事实、文件、进程、命令、源码、环境状态或网络访问时，优先使用 terminal 工具，而不是凭记忆或幻觉回答。",
+              "要像强 shell 用户那样工作：分析问题、拆解步骤、寻址工具、组合命令，并在必要时发明临时脚本。",
+              "没有经过 terminal 或其他工具验证的天气、网络、文件系统、进程结果，都不能当作已确认事实。",
+              "如果 terminal 因缺少上下文、命令失败或权限不足而受阻，就通过 message-system 等其它系统追问或协调，不要编造结果。",
+            ],
+          },
+        }),
       createTools: ({ runtimeText, traceTool }) => {
         const terminalProcessProfileSchema = z.object({
           command: z.array(z.string()).optional(),
@@ -2538,6 +2610,29 @@ export class SessionRuntime {
   private createTaskToolProvider(): AgentToolProvider {
     return {
       name: "task",
+      buildSystemPromptSection: (context) =>
+        this.buildSystemPromptSection(context, {
+          title: {
+            en: "Task System",
+            zhHans: "任务系统",
+          },
+          bullets: {
+            en: [
+              "Treat task-system as a durable obligation ledger, not as a user-visible reply channel.",
+              "Use task tools to record ongoing work, blockers, dependencies, triggers, and durable progress that must survive later cycles.",
+              "Task writes do not answer the user by themselves; use message-system for communication and terminal-system for execution or inspection.",
+              "When work is waiting on outside input or a later trigger, it is valid to keep the task pending while continuing unrelated attention elsewhere.",
+              "Avoid task noise: create or update tasks when durable obligation state changes, not for every transient thought.",
+            ],
+            zhHans: [
+              "把 task-system 视为持久义务账本，而不是用户可见的回复通道。",
+              "用 task 工具记录持续性工作、阻塞、依赖、触发条件和需要跨 cycle 保留的进度。",
+              "写入 task 本身不等于回复用户；对外沟通用 message-system，执行和探查用 terminal-system。",
+              "当工作在等待外部输入或未来触发时，可以让任务保持 pending，同时继续处理其它无关的 attention。",
+              "避免任务噪音：只有当持久义务状态真的变化时才创建或更新 task，而不是把每次瞬时思考都写成任务。",
+            ],
+          },
+        }),
       createTools: ({ runtimeText, traceTool }) => {
         const taskSourceSchema = z.string().min(1);
         const taskIdSchema = z.string().min(1);

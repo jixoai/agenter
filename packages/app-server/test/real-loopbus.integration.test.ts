@@ -3,8 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
+  runRealJudgeRelayScenario,
   runRealLunchRelayScenario,
   runRealSimpleReplyScenario,
+  runRealWeatherThroughTerminalScenario,
 } from "../test-support/real-loopbus-scenarios";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 
@@ -14,7 +16,6 @@ const realTest = hasRealModel ? test : test.skip;
 describe("Feature: real AI loopbus convergence", () => {
   realTest(
     "Scenario: Given a real provider When a minimal chat request is sent Then LoopBus replies through tools and settles attention",
-    { timeout: 180_000 },
     async () => {
       const harness = await createRealKernelHarness({ sessionName: "real-simple-reply" });
       if (!harness) {
@@ -33,11 +34,11 @@ describe("Feature: real AI loopbus convergence", () => {
         await harness.stop();
       }
     },
+    { timeout: 180_000 },
   );
 
   realTest(
     "Scenario: Given a real provider When kzf asks gaubee about lunch and manual compact follows Then the answer returns to chat-main and remains available after compact",
-    { timeout: 360_000 },
     async () => {
       const harness = await createRealKernelHarness({ sessionName: "real-lunch-relay" });
       if (!harness) {
@@ -72,5 +73,62 @@ describe("Feature: real AI loopbus convergence", () => {
         await harness.stop();
       }
     },
+    { timeout: 360_000 },
+  );
+
+  realTest(
+    "Scenario: Given a real provider When the user asks weather that requires external facts Then the assistant uses terminal tools before replying",
+    async () => {
+      const harness = await createRealKernelHarness({ sessionName: "real-weather-terminal" });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const result = await runRealWeatherThroughTerminalScenario(harness);
+
+        expect(result.reply.chatId).toBe("chat-main");
+        expect(result.reply.content.startsWith("WEATHER-RESULT:")).toBe(true);
+        expect(result.settledAttention.active).toHaveLength(0);
+        expect(result.toolTraceTools.some((tool) => tool.startsWith("terminal_"))).toBe(true);
+        expect(result.toolTraceTools).toContain("message_send");
+        expect(result.toolTraceTools).toContain("attention_commit");
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 360_000 },
+  );
+
+  realTest(
+    "Scenario: Given a real provider When the assistant acts as judge across channels Then it relays role-aware prompts instead of pretending to be a player",
+    async () => {
+      const harness = await createRealKernelHarness({ sessionName: "real-judge-relay" });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const result = await runRealJudgeRelayScenario(harness);
+
+        expect(result.relayChannel.chatId).toBe("chat-kzf");
+        expect(result.relayPromptMessage.chatId).toBe("chat-kzf");
+        expect(result.relayPromptMessage.content).not.toBe(
+          [
+            "和 kzf 玩个剪刀石头布，你做裁判，我出布。",
+            "请先联系 kzf 获取他的出招，不要代替 kzf 出招，也不要把我的整句话原样转发。",
+            "等 kzf 回复后，只把比赛结果发回 chat-main，并收敛 attention。",
+          ].join("\n"),
+        );
+        expect(result.relayPromptMessage.content.includes("我出剪刀")).toBe(false);
+        expect(result.relayPromptMessage.content.includes("我出石头")).toBe(false);
+        expect(result.relayPromptMessage.content.includes("我出布")).toBe(false);
+        expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
+        expect(result.toolTraceTools).toContain("message_send");
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 360_000 },
   );
 });

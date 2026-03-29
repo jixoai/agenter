@@ -9,19 +9,26 @@ import { toolDefinition } from "@tanstack/ai";
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
-import { AgenterAI, type AgentModelCallRecord, type AgentToolProvider } from "../src/agenter-ai";
+import {
+  AgenterAI,
+  type AgentModelCallRecord,
+  type AgentPromptWindowCompactSummary,
+  type AgentToolProvider,
+} from "../src/agenter-ai";
 import { type LoopBusMessage } from "../src/loop-bus";
 import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
 import type { AppServerLogger } from "../src/types";
 
-const createPromptDocs = (): PromptDocRecord => ({
+const createPromptDocs = (input: { legacySystemTemplate?: boolean } = {}): PromptDocRecord => ({
   AGENTER: { syntax: "mdx", content: "" },
   AGENTER_SYSTEM: { syntax: "mdx", content: "You are agenter-ai." },
   SYSTEM_TEMPLATE: {
     syntax: "mdx",
-    content: `<Slot name="AGENTER_SYSTEM" />\n\n<Slot name="AGENTER" />\n\n<Slot name="RESPONSE_CONTRACT" />`,
+    content: input.legacySystemTemplate
+      ? `<Slot name="AGENTER_SYSTEM" />\n\n<Slot name="AGENTER" />\n\n<Slot name="RESPONSE_CONTRACT" />`
+      : `<Slot name="AGENTER_SYSTEM" />\n\n<Slot name="SYSTEMS_GUIDE" />\n\n<Slot name="AGENTER" />\n\n<Slot name="RESPONSE_CONTRACT" />`,
   },
   RESPONSE_CONTRACT: { syntax: "mdx", content: "Use tools when needed." },
 });
@@ -95,6 +102,21 @@ const extractReplayRoles = (input: ModelRespondInput | readonly unknown[] | unde
     .map((message) => (typeof message === "object" && message !== null && "role" in message ? message.role : null))
     .filter((role): role is "user" | "assistant" => role === "user" || role === "assistant");
 };
+
+const countOccurrences = (value: string, needle: string): number =>
+  value.length === 0 || needle.length === 0 ? 0 : value.split(needle).length - 1;
+
+const isCompactDecision = (
+  value: unknown,
+): value is {
+  kind: "compact";
+  summary: AgentPromptWindowCompactSummary;
+} =>
+  typeof value === "object" &&
+  value !== null &&
+  "kind" in value &&
+  value.kind === "compact" &&
+  "summary" in value;
 
 const createModelClient = (
   handler: (input: ModelRespondInput) => ReturnType<ModelClient["respondWithMeta"]>,
@@ -458,6 +480,12 @@ const createToolProviders = (
   ];
   return providers.filter((provider): provider is AgentToolProvider => provider !== null);
 };
+
+const createGuideToolProvider = (input: { name: string; section: string }): AgentToolProvider => ({
+  name: input.name,
+  buildSystemPromptSection: () => input.section,
+  createTools: () => [],
+});
 
 const createAttentionGateway = () => {
   const system = new AttentionSystem();
@@ -832,6 +860,90 @@ describe("Feature: AgenterAI behavior", () => {
         content: "hello from tool",
       },
     ]);
+  });
+
+  test("Scenario: Given provider-owned system guides When the model call is assembled Then systemPrompt includes them without replay pollution", async () => {
+    const seenInputs: ModelRespondInput[] = [];
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      seenInputs.push(input);
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: [
+        createGuideToolProvider({
+          name: "terminal-guide",
+          section: ["## Terminal System", "- Use terminal before guessing."].join("\n"),
+        }),
+        createGuideToolProvider({
+          name: "message-guide",
+          section: ["## Message System", "- Use role-aware communication."].join("\n"),
+        }),
+      ],
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("assemble the prompt")]);
+
+    const captured = seenInputs[0];
+    expect(captured).toBeDefined();
+    if (!captured) {
+      return;
+    }
+    expect(captured.systemPrompt).toContain("## Terminal System");
+    expect(captured.systemPrompt).toContain("Use terminal before guessing.");
+    expect(captured.systemPrompt).toContain("## Message System");
+    expect(captured.systemPrompt.indexOf("## Terminal System")).toBeLessThan(
+      captured.systemPrompt.indexOf("## Message System"),
+    );
+
+    const replayText = [...extractUserReplay(captured), ...extractAssistantReplay(captured)].join("\n");
+    expect(replayText).not.toContain("Use terminal before guessing.");
+    expect(replayText).not.toContain("Use role-aware communication.");
+  });
+
+  test("Scenario: Given a legacy system template When providers contribute guides Then fallback injection still reaches the model exactly once", async () => {
+    let capturedPrompt = "";
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      capturedPrompt = input.systemPrompt;
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({
+        defaultDocs: createPromptDocs({
+          legacySystemTemplate: true,
+        }),
+      }),
+      toolProviders: [
+        createGuideToolProvider({
+          name: "legacy-guide",
+          section: ["## Legacy Guide", "- Inject me once."].join("\n"),
+        }),
+      ],
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("legacy template fallback")]);
+
+    expect(capturedPrompt).toContain("## Legacy Guide");
+    expect(countOccurrences(capturedPrompt, "## Legacy Guide")).toBe(1);
+    expect(countOccurrences(capturedPrompt, "Inject me once.")).toBe(1);
   });
 
   test("Scenario: Given terminal help payload When raw terminal context reaches AgenterAI Then the core preserves the source payload without terminal-specific rendering", async () => {
@@ -2219,6 +2331,183 @@ describe("Feature: AgenterAI behavior", () => {
     const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
     expect(replay.some((item) => item.includes("reply: \"gaubee说中午吃蛋炒饭。\""))).toBeTrue();
     expect(replay.some((item) => item.includes("answered from compact memory: gaubee说中午吃蛋炒饭。"))).toBeTrue();
+  });
+
+  test("Scenario: Given two different replies in one focused channel When compact derives ready replies Then each reply keeps only its own trigger phrases", async () => {
+    const chat = createAttentionGateway();
+    const message = createMessageGateway();
+    const modelCalls: AgentModelCallRecord[] = [];
+    const lunch = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
+    const weather = chat.engine.add({ content: "厦门天气然后，天气预报未来 15 天天气", from: "user", score: 100 });
+    let round = 0;
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted facts",
+              decisions: ["preserve ready replies"],
+              keyFiles: [],
+              keyFacts: [],
+              readyReplies: [],
+              unresolvedWork: [],
+              nextSteps: [],
+            }),
+            finishReason: "stop",
+          };
+        }
+
+        round += 1;
+        const messageSend = input.tools.find((tool) => tool.name === "message_send");
+        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
+        expect(messageSend).toBeDefined();
+        expect(attentionCommit).toBeDefined();
+        if (!messageSend || typeof messageSend.execute !== "function") {
+          throw new Error("message_send tool missing");
+        }
+        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
+          throw new Error("attention_commit tool missing");
+        }
+
+        const tracked = round === 1 ? lunch : weather;
+        const reply =
+          round === 1 ? "gaubee说中午吃蛋炒饭。" : "厦门未来 15 天天气请以 terminal 查询结果为准。";
+
+        await messageSend.execute(
+          {
+            chatId: "chat-main",
+            content: reply,
+          },
+          {
+            toolCallId: `call-message-send-${round}`,
+            emitCustomEvent: () => {
+              // no-op
+            },
+          },
+        );
+
+        await attentionCommit.execute(
+          {
+            contextId: chat.defaultContextId,
+            parentCommitIds: [tracked.commitId],
+            summary: round === 1 ? "reported lunch answer" : "reported weather answer",
+            done: true,
+          },
+          {
+            toolCallId: `call-attention-commit-${round}`,
+            emitCustomEvent: () => {
+              // no-op
+            },
+          },
+        );
+
+        return {
+          thinking: "",
+          text: "",
+          finishReason: "stop",
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ messageGateway: message.gateway }),
+      attentionGateway: chat.gateway,
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    const lunchAttentionText = [
+      "```yaml+attention_items",
+      "contextId: ctx-main",
+      "commits:",
+      "  -",
+      "    channelId: chat-main",
+      "    chatFocused: true",
+      '    content: "中午吃什么"',
+      '    summary: "中午吃什么"',
+      "```",
+    ].join("\n");
+    const weatherAttentionText = [
+      "```yaml+attention_items",
+      "contextId: ctx-main",
+      "commits:",
+      "  -",
+      "    channelId: chat-main",
+      "    chatFocused: true",
+      '    content: "厦门天气然后，天气预报未来 15 天天气"',
+      '    summary: "厦门天气然后，天气预报未来 15 天天气"',
+      "```",
+    ].join("\n");
+
+    await ai.send([
+      createAttentionItemsMessage(lunchAttentionText, {
+        contextId: chat.defaultContextId,
+        headCommitId: lunch.commitId,
+        commitIds: [lunch.commitId],
+        meta: {
+          chatId: "chat-main",
+          chatFocused: true,
+        },
+      }),
+    ]);
+
+    await ai.send([
+      createAttentionItemsMessage(weatherAttentionText, {
+        contextId: chat.defaultContextId,
+        headCommitId: weather.commitId,
+        commitIds: [weather.commitId],
+        meta: {
+          chatId: "chat-main",
+          chatFocused: true,
+        },
+      }),
+    ]);
+
+    ai.requestCompact("test-ready-reply-provenance");
+    const compactTrigger = ai.consumePendingCompactRequest();
+    expect(compactTrigger).toBe("manual");
+    if (!compactTrigger) {
+      return;
+    }
+    await ai.runCompactCycle({ trigger: compactTrigger });
+
+    const compactRecord = [...modelCalls]
+      .reverse()
+      .find((record) => record.status === "done" && isCompactDecision(record.response?.decision));
+    expect(compactRecord).toBeDefined();
+    if (!compactRecord || !isCompactDecision(compactRecord.response?.decision)) {
+      return;
+    }
+
+    const { readyReplies } = compactRecord.response.decision.summary;
+    expect(readyReplies).toHaveLength(2);
+
+    const lunchReply = readyReplies.find((item) => item.reply === "gaubee说中午吃蛋炒饭。");
+    const weatherReply = readyReplies.find((item) => item.reply === "厦门未来 15 天天气请以 terminal 查询结果为准。");
+
+    expect(lunchReply).toBeDefined();
+    expect(weatherReply).toBeDefined();
+    expect(lunchReply?.triggerPhrases).toContain("中午吃什么");
+    expect(lunchReply?.triggerPhrases).not.toContain("厦门天气然后，天气预报未来 15 天天气");
+    expect(weatherReply?.triggerPhrases).toContain("厦门天气然后，天气预报未来 15 天天气");
+    expect(weatherReply?.triggerPhrases).not.toContain("中午吃什么");
   });
 
   test("Scenario: Given model context overflow When the runtime runs compact and retries Then AgenterAI continues with the same attention task", async () => {

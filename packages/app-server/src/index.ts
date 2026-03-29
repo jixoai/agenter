@@ -41,6 +41,7 @@ export {
   type AgentPromptWindowReadyReply,
   type AgentRuntimeStats,
   type AgentToolProvider,
+  type AgentToolProviderPromptContext,
   type AgentToolProviderContext,
 } from "./agenter-ai";
 export {
