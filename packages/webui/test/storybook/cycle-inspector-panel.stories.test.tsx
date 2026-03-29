@@ -4,6 +4,7 @@ import { describe, test } from "vitest";
 import * as stories from "../../src/features/process/CycleInspectorPanel.stories";
 
 const { CycleDetailsStayInDevtools } = composeStories(stories);
+const { ConversationPaneCanCollapseToRail } = composeStories(stories);
 const { StreamingCycleState } = composeStories(stories);
 const { CompactCycleDetailSheet } = composeStories(stories);
 const { MultiContextAttentionRefsStayReadable } = composeStories(stories);
@@ -12,6 +13,10 @@ const { LoadingCycleHistory } = composeStories(stories);
 describe("Feature: Storybook DOM contract for cycle inspection", () => {
   test("Scenario: Given the Devtools cycle workbench When switching right-panel tabs Then model-call input and output stay inspectable", async () => {
     await CycleDetailsStayInDevtools.run();
+  });
+
+  test("Scenario: Given split cycle detail When collapsing the conversation pane Then it shrinks to an icon rail and can reopen", async () => {
+    await ConversationPaneCanCollapseToRail.run();
   });
 
   test("Scenario: Given a running cycle story When selected in the browser Then the conversation lane stays within model-call timeline data", async () => {

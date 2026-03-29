@@ -1,15 +1,16 @@
 import type {
   ModelCallDeltaItem,
   ModelCallItem,
+  ObservabilityTraceItem,
   RuntimeAttentionState,
   RuntimeChatCycle,
-  ObservabilityTraceItem,
 } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 
 import type { AttentionSelectionState } from "../attention/attention-view-model";
+import { CycleInspectorDetail } from "./CycleInspectorDetail";
 import { CycleInspectorPanel } from "./CycleInspectorPanel";
 
 const contextTerminal: RuntimeAttentionState["snapshot"]["contexts"][number] = {
@@ -29,7 +30,11 @@ const contextTerminal: RuntimeAttentionState["snapshot"]["contexts"][number] = {
       meta: { author: "terminal:iflow", source: "terminal", createdAt: "2026-03-24T09:00:00.000Z" },
       scores: { retry001: 72 },
       summary: "stderr shows repeated retry noise",
-      change: { type: "update" as const, value: "Investigate the repeated retry burst in stderr.", format: "text/plain" },
+      change: {
+        type: "update" as const,
+        value: "Investigate the repeated retry burst in stderr.",
+        format: "text/plain",
+      },
       createdAt: "2026-03-24T09:00:00.000Z",
     },
     {
@@ -39,7 +44,11 @@ const contextTerminal: RuntimeAttentionState["snapshot"]["contexts"][number] = {
       meta: { author: "user:kzf", source: "message", createdAt: "2026-03-24T09:00:10.000Z" },
       scores: { answer001: 18 },
       summary: "User only asked for the root cause",
-      change: { type: "update" as const, value: "Keep the answer concise and focused on the root cause.", format: "text/plain" },
+      change: {
+        type: "update" as const,
+        value: "Keep the answer concise and focused on the root cause.",
+        format: "text/plain",
+      },
       createdAt: "2026-03-24T09:00:10.000Z",
     },
     {
@@ -54,7 +63,11 @@ const contextTerminal: RuntimeAttentionState["snapshot"]["contexts"][number] = {
       },
       scores: { retry001: 0, answer001: 0 },
       summary: "The terminal diff is ready for review.",
-      change: { type: "update" as const, value: "The retry burst comes from the deploy watcher retry loop.", format: "text/plain" },
+      change: {
+        type: "update" as const,
+        value: "The retry burst comes from the deploy watcher retry loop.",
+        format: "text/plain",
+      },
       createdAt: "2026-03-24T09:00:20.000Z",
     },
   ],
@@ -163,13 +176,9 @@ const baseCycles: RuntimeChatCycle[] = [
         id: "tool-11",
         role: "assistant",
         channel: "tool",
-        content: [
-          "```yaml",
-          "invocationId: terminal-read-11",
-          "tool: terminal_read",
-          "status: success",
-          "```",
-        ].join("\n"),
+        content: ["```yaml", "invocationId: terminal-read-11", "tool: terminal_read", "status: success", "```"].join(
+          "\n",
+        ),
         timestamp: 12,
         cycleId: 11,
         tool: {
@@ -236,7 +245,13 @@ const modelCalls: ModelCallItem[] = [
     request: {
       systemPrompt: "You are a concise debugging assistant.",
       messages: [
-        { role: "user", content: "Please inspect the terminal diff." },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Please inspect the terminal diff." },
+            { type: "text", text: "Focus on the retry burst only." },
+          ],
+        },
         { role: "assistant", content: "Working on it." },
       ],
       tools: [{ name: "terminal_read", description: "Read terminal output" }],
@@ -329,7 +344,7 @@ const modelCallDeltas: ModelCallDeltaItem[] = [
       toolCallId: "tool-continue-1",
       toolName: "terminal_read",
       input: { terminalId: "iflow", mode: "diff" },
-      argsText: "{\"terminalId\":\"iflow\",\"mode\":\"diff\"}",
+      argsText: '{"terminalId":"iflow","mode":"diff"}',
     },
   },
 ];
@@ -396,11 +411,64 @@ export const CycleDetailsStayInDevtools: Story = {
 
     await expect(canvas.getByText("Cycles")).toBeInTheDocument();
     await expect(canvas.getByText(/Model conversation/i)).toBeInTheDocument();
-    await expect(canvas.getByText(/Please inspect the terminal diff/i)).toBeInTheDocument();
+    const transcript = await canvas.findByTestId("cycle-modelcall-transcript");
+    const inputRow = canvas
+      .getByText(/Please inspect the terminal diff/i)
+      .closest("[data-cycle-transcript-lane='input']");
+    await expect(inputRow).toBeInTheDocument();
+    await expect(canvas.getByText(/Focus on the retry burst only/i)).toBeInTheDocument();
     await expect(canvas.getByText(/The retry burst comes from the deploy watcher retry loop/i)).toBeInTheDocument();
+    const outputRow = canvas
+      .getByText(/The retry burst comes from the deploy watcher retry loop/i)
+      .closest("[data-cycle-transcript-lane='output']");
+    await expect(outputRow).toBeInTheDocument();
+    expect(transcript.querySelectorAll("[data-cycle-transcript-kind='tool']").length).toBeGreaterThan(0);
     await expect(canvas.getByText(/image:\/\/retry-burst.webp/i)).toBeInTheDocument();
     await userEvent.click(await panelRoot.findByRole("tab", { name: /Config/i }));
     await expect(await panelRoot.findByText(/System prompt/i)).toBeInTheDocument();
+  },
+};
+
+export const ConversationPaneCanCollapseToRail: Story = {
+  render: (args) => {
+    const selectedCycle = args.cycles.find((cycle) => cycle.id === args.selectedCycleId) ?? args.cycles[0];
+    if (!selectedCycle) {
+      return null;
+    }
+
+    return (
+      <div className="min-w-[1440px] space-y-3 p-6">
+        <div className="h-[760px]">
+          <CycleInspectorDetail
+            cycle={selectedCycle}
+            attention={args.attention}
+            modelCalls={args.modelCalls}
+            modelCallDeltas={args.modelCallDeltas}
+            traces={args.traces}
+            compactViewportOverride={false}
+          />
+        </div>
+      </div>
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const conversationPane = await canvas.findByTestId("cycle-modelcall-pane");
+    await expect(conversationPane).toHaveAttribute("data-cycle-conversation-collapsed", "false");
+
+    await userEvent.click(await canvas.findByRole("button", { name: /Collapse model conversation/i }));
+    await expect(await canvas.findByTestId("cycle-modelcall-pane")).toHaveAttribute(
+      "data-cycle-conversation-collapsed",
+      "true",
+    );
+    await expect(canvas.queryByTestId("cycle-modelcall-transcript")).not.toBeInTheDocument();
+
+    await userEvent.click(await canvas.findByRole("button", { name: /Expand model conversation/i }));
+    await expect(await canvas.findByTestId("cycle-modelcall-pane")).toHaveAttribute(
+      "data-cycle-conversation-collapsed",
+      "false",
+    );
+    await expect(await canvas.findByTestId("cycle-modelcall-transcript")).toBeInTheDocument();
   },
 };
 
@@ -413,6 +481,7 @@ export const StreamingCycleState: Story = {
 
     await expect(canvas.getByRole("button", { name: /Cycle 12/i })).toBeInTheDocument();
     await expect(await canvas.findByText(/Continue tracing/i)).toBeInTheDocument();
+    await expect(await canvas.findByText(/Still tracing the remaining answer debt/i)).toBeInTheDocument();
   },
 };
 
@@ -428,6 +497,7 @@ export const CompactCycleDetailSheet: Story = {
     await userEvent.click(canvas.getByRole("button", { name: /Cycle 11/i }));
     await expect(await documentCanvas.findByRole("dialog")).toBeInTheDocument();
     await expect(await documentCanvas.findByText(/Model conversation/i)).toBeInTheDocument();
+    await expect(await documentCanvas.findByTestId("cycle-modelcall-transcript")).toBeInTheDocument();
     await userEvent.click(await documentCanvas.findByTestId("sheet-backdrop"));
     await waitFor(() => {
       expect(documentCanvas.queryByRole("dialog")).not.toBeInTheDocument();
