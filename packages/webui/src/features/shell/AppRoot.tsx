@@ -22,6 +22,18 @@ import { ShellLayoutProvider } from "./shell-layout-context";
 import { useAdaptiveViewport } from "./useAdaptiveViewport";
 
 const SESSION_ROUTE_PATH_RE = /^\/session\/([^/]+)\/(chats|terminals|devtools|settings)$/;
+const DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY = "agenter:webui:desktop-sidebar-collapsed";
+
+const readDesktopSidebarCollapsed = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
 
 const extractSessionIdFromPath = (pathname: string): string | undefined => {
   const match = SESSION_ROUTE_PATH_RE.exec(pathname);
@@ -79,13 +91,11 @@ const routeLabelFromPath = (pathname: string): string => {
 
 const resolveHeaderAiStatus = (
   routeSession: { status: string } | null,
-  routeRuntime?:
-    | {
-        started: boolean;
-        schedulerPhase: string;
-        scheduler?: { runtimeStatus: string; unresolvedScoreCount?: number } | null;
-      }
-    | null,
+  routeRuntime?: {
+    started: boolean;
+    schedulerPhase: string;
+    scheduler?: { runtimeStatus: string; unresolvedScoreCount?: number } | null;
+  } | null,
 ): string | null => {
   if (routeRuntime?.started) {
     if (routeRuntime.scheduler?.runtimeStatus === "backoff" || routeRuntime.scheduler?.runtimeStatus === "waiting") {
@@ -109,6 +119,7 @@ export const AppRoot = () => {
     select: (state) => state.location,
   });
   const adaptiveViewport = useAdaptiveViewport();
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(readDesktopSidebarCollapsed);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const connected = useRuntimeSelector((state) => state.connected);
   const connectionStatus = useRuntimeSelector((state) => state.connectionStatus);
@@ -146,6 +157,17 @@ export const AppRoot = () => {
     void hydrateSession(routeSessionId);
   }, [connected, hydrateSession, routeSessionId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY, desktopSidebarCollapsed ? "true" : "false");
+    } catch {
+      // Ignore storage failures; collapsed state can remain session-local.
+    }
+  }, [desktopSidebarCollapsed]);
+
   const primaryItems = useMemo(
     () =>
       defaultPrimaryNavItems({
@@ -170,7 +192,7 @@ export const AppRoot = () => {
         active: session.sessionId === routeSessionId,
         unreadCount: session.unreadCount,
         status: session.status,
-          onSelect: () => {
+        onSelect: () => {
           const targetTabPath = resolveSessionTabPath(location.pathname);
           if (targetTabPath === "/devtools") {
             void navigate({
@@ -227,7 +249,14 @@ export const AppRoot = () => {
     <main className="h-dvh bg-[radial-gradient(circle_at_top,#e2f2ff,#f8fafc_48%)] text-slate-900">
       <ViewportMask className="h-full">
         <div className="flex h-full">
-          {showSidebarRail ? <SidebarNav primaryItems={primaryItems} runningSessions={runningSessions} /> : null}
+          {showSidebarRail ? (
+            <SidebarNav
+              primaryItems={primaryItems}
+              runningSessions={runningSessions}
+              collapsed={desktopSidebarCollapsed}
+              onToggleCollapsed={() => setDesktopSidebarCollapsed((current) => !current)}
+            />
+          ) : null}
 
           <ShellLayoutProvider
             value={{

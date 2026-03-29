@@ -10,7 +10,6 @@ import { useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 
 import type { AttentionSelectionState } from "../attention/attention-view-model";
-import { CycleInspectorDetail } from "./CycleInspectorDetail";
 import { CycleInspectorPanel } from "./CycleInspectorPanel";
 
 const contextTerminal: RuntimeAttentionState["snapshot"]["contexts"][number] = {
@@ -426,49 +425,6 @@ export const CycleDetailsStayInDevtools: Story = {
     await expect(canvas.getByText(/image:\/\/retry-burst.webp/i)).toBeInTheDocument();
     await userEvent.click(await panelRoot.findByRole("tab", { name: /Config/i }));
     await expect(await panelRoot.findByText(/System prompt/i)).toBeInTheDocument();
-  },
-};
-
-export const ConversationPaneCanCollapseToRail: Story = {
-  render: (args) => {
-    const selectedCycle = args.cycles.find((cycle) => cycle.id === args.selectedCycleId) ?? args.cycles[0];
-    if (!selectedCycle) {
-      return null;
-    }
-
-    return (
-      <div className="min-w-[1440px] space-y-3 p-6">
-        <div className="h-[760px]">
-          <CycleInspectorDetail
-            cycle={selectedCycle}
-            attention={args.attention}
-            modelCalls={args.modelCalls}
-            modelCallDeltas={args.modelCallDeltas}
-            traces={args.traces}
-            compactViewportOverride={false}
-          />
-        </div>
-      </div>
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const conversationPane = await canvas.findByTestId("cycle-modelcall-pane");
-    await expect(conversationPane).toHaveAttribute("data-cycle-conversation-collapsed", "false");
-
-    await userEvent.click(await canvas.findByRole("button", { name: /Collapse model conversation/i }));
-    await expect(await canvas.findByTestId("cycle-modelcall-pane")).toHaveAttribute(
-      "data-cycle-conversation-collapsed",
-      "true",
-    );
-    await expect(canvas.queryByTestId("cycle-modelcall-transcript")).not.toBeInTheDocument();
-
-    await userEvent.click(await canvas.findByRole("button", { name: /Expand model conversation/i }));
-    await expect(await canvas.findByTestId("cycle-modelcall-pane")).toHaveAttribute(
-      "data-cycle-conversation-collapsed",
-      "false",
-    );
-    await expect(await canvas.findByTestId("cycle-modelcall-transcript")).toBeInTheDocument();
   },
 };
 

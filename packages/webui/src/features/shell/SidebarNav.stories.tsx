@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
 import { useState } from "react";
+import { expect, userEvent, within } from "storybook/test";
 
 import { SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
 
@@ -146,5 +146,55 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
 
     await expect(canvas.getByText("Running Sessions")).toBeInTheDocument();
     await expect(["auto", "scroll"]).toContain(getComputedStyle(viewport).overflowY);
+  },
+};
+
+export const DesktopRailCanCollapseToIconWidth: Story = {
+  render: () => {
+    const [collapsed, setCollapsed] = useState(false);
+    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "settings">("workspaces");
+    const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
+
+    return (
+      <div className={collapsed ? "h-[480px] w-[4.75rem] p-3" : "h-[480px] w-[18.5rem] p-3"}>
+        <SidebarNavContent
+          compact={false}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((current) => !current)}
+          primaryItems={defaultPrimaryNavItems({
+            quickStartActive: activePrimary === "quickstart",
+            workspacesActive: activePrimary === "workspaces",
+            settingsActive: activePrimary === "settings",
+            unreadWorkspaces: 4,
+            onSelectQuickStart: () => setActivePrimary("quickstart"),
+            onSelectWorkspaces: () => setActivePrimary("workspaces"),
+            onSelectSettings: () => setActivePrimary("settings"),
+          })}
+          runningSessions={baseSessions.map((item) => ({
+            ...item,
+            active: item.sessionId === activeSessionId,
+            onSelect: () => setActiveSessionId(item.sessionId),
+          }))}
+        />
+      </div>
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const sidebar = canvas.getByText("Workspace-first shell").closest("[data-sidebar-collapsed]");
+    if (!sidebar) {
+      throw new Error("sidebar root not found");
+    }
+
+    await expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
+    await userEvent.click(canvas.getByRole("button", { name: "Collapse sidebar" }));
+    await expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "true");
+    await expect(canvas.queryByText("Workspace-first shell")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Quick Start")).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Workspaces" })).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Expand sidebar" }));
+    await expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
+    await expect(canvas.getByText("Workspace-first shell")).toBeInTheDocument();
   },
 };

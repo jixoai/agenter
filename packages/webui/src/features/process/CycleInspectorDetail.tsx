@@ -5,8 +5,8 @@ import type {
   RuntimeChatCycle,
   ObservabilityTraceItem as RuntimeTraceItem,
 } from "@agenter/client-sdk";
-import { ChevronLeft, CircleAlert, CircleCheckBig, LoaderCircle, PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CircleAlert, CircleCheckBig, LoaderCircle, PanelRightOpen } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { Badge } from "../../components/ui/badge";
@@ -30,7 +30,6 @@ interface CycleInspectorDetailProps {
   modelCallDeltas?: ModelCallDeltaItem[];
   traces?: RuntimeTraceItem[];
   onOpenAttentionRef?: (selection: AttentionSelectionState) => void;
-  compactViewportOverride?: boolean;
 }
 
 type InspectorTab = "config" | "attention";
@@ -43,31 +42,6 @@ const statusIcon = (cycle: RuntimeChatCycle) => {
     return <LoaderCircle className="h-4 w-4 animate-spin text-teal-700" />;
   }
   return <CircleCheckBig className="h-4 w-4 text-emerald-600" />;
-};
-
-const ConversationRail = ({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) => {
-  if (!collapsed) {
-    return null;
-  }
-
-  return (
-    <section
-      data-testid="cycle-modelcall-pane"
-      data-cycle-conversation-collapsed="true"
-      className="flex h-full items-start justify-center rounded-2xl border border-slate-200 bg-slate-50 px-1 py-3"
-    >
-      <Button
-        size="icon"
-        variant="ghost"
-        aria-label="Expand model conversation"
-        title="Expand model conversation"
-        onClick={onToggle}
-        className="rounded-xl border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-700"
-      >
-        <PanelLeftOpen className="h-4 w-4" />
-      </Button>
-    </section>
-  );
 };
 
 const AttentionRefCard = ({
@@ -305,13 +279,10 @@ export const CycleInspectorDetail = ({
   modelCallDeltas = [],
   traces = [],
   onOpenAttentionRef,
-  compactViewportOverride,
 }: CycleInspectorDetailProps) => {
-  const detectedCompact = useCompactViewport();
-  const compact = compactViewportOverride ?? detectedCompact;
+  const compact = useCompactViewport();
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("config");
   const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
-  const [conversationCollapsed, setConversationCollapsed] = useState(false);
 
   const detailModel = useMemo(
     () => buildCycleInspectorDetail({ cycle, attention, modelCalls, traces }),
@@ -328,18 +299,9 @@ export const CycleInspectorDetail = ({
     [cycle, modelCallDeltas, modelCalls],
   );
 
-  useEffect(() => {
-    if (compact) {
-      setConversationCollapsed(false);
-    }
-  }, [compact]);
-
-  const splitConversationCollapsed = !compact && conversationCollapsed;
   const detailColumnsClassName = compact
     ? "grid-cols-1"
-    : splitConversationCollapsed
-      ? "grid-cols-[3.75rem_minmax(0,1fr)]"
-      : "grid-cols-[minmax(16rem,0.82fr)_minmax(20rem,1.18fr)] @[72rem]:grid-cols-[minmax(18rem,0.9fr)_minmax(22rem,1.1fr)] @[88rem]:grid-cols-[minmax(22rem,0.98fr)_minmax(24rem,1.02fr)] @[104rem]:grid-cols-[minmax(25rem,1.06fr)_minmax(24rem,0.94fr)]";
+    : "grid-cols-[minmax(16rem,0.82fr)_minmax(20rem,1.18fr)] @[72rem]:grid-cols-[minmax(18rem,0.9fr)_minmax(22rem,1.1fr)] @[88rem]:grid-cols-[minmax(22rem,0.98fr)_minmax(24rem,1.02fr)] @[104rem]:grid-cols-[minmax(25rem,1.06fr)_minmax(24rem,0.94fr)]";
 
   return (
     <section className="@container grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
@@ -366,47 +328,28 @@ export const CycleInspectorDetail = ({
 
       <div
         className={cn("grid h-full grid-rows-[minmax(0,1fr)] gap-3 p-3", detailColumnsClassName)}
-        data-cycle-detail-split-mode={compact ? "compact" : splitConversationCollapsed ? "collapsed" : "expanded"}
+        data-cycle-detail-split-mode={compact ? "compact" : "expanded"}
       >
-        {splitConversationCollapsed ? (
-          <ConversationRail collapsed={splitConversationCollapsed} onToggle={() => setConversationCollapsed(false)} />
-        ) : (
-          <section
-            data-testid="cycle-modelcall-pane"
-            data-cycle-conversation-collapsed="false"
-            className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50"
-          >
-            <div className="border-b border-slate-200 px-3 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <h4 className="truncate text-sm font-semibold text-slate-900">Model conversation</h4>
-                  <HelpHint
-                    helpId="cycle-inspector:model-conversation"
-                    textContext="Objective timeline from ModelCall request and response."
-                    content="Objective timeline from ModelCall request and response."
-                  />
-                </div>
-
-                {!compact ? (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Collapse model conversation"
-                    title="Collapse model conversation"
-                    onClick={() => setConversationCollapsed(true)}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                ) : null}
-              </div>
+        <section
+          data-testid="cycle-modelcall-pane"
+          className="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-slate-50"
+        >
+          <div className="border-b border-slate-200 px-3 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <h4 className="truncate text-sm font-semibold text-slate-900">Model conversation</h4>
+              <HelpHint
+                helpId="cycle-inspector:model-conversation"
+                textContext="Objective timeline from ModelCall request and response."
+                content="Objective timeline from ModelCall request and response."
+              />
             </div>
+          </div>
 
-            <CycleModelCallTranscript
-              rows={workbench.transcript}
-              emptyMessage="No model-call messages captured for this cycle."
-            />
-          </section>
-        )}
+          <CycleModelCallTranscript
+            rows={workbench.transcript}
+            emptyMessage="No model-call messages captured for this cycle."
+          />
+        </section>
 
         {!compact ? (
           <InspectorTabsPanel

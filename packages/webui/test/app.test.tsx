@@ -37,6 +37,8 @@ const createState = (): RuntimeClientState => ({
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
+  unreadByChat: {},
+  unreadByTerminal: {},
 });
 
 const setViewport = (input: { width: number; height: number }) => {
@@ -297,8 +299,10 @@ const saveSettingsLayerMock = vi.fn(async () => ({
   file: { path: "settings.json", content: "{}", mtimeMs: 1 },
   effective: { content: "{}" },
 }));
-const setChatVisibilityMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
-const consumeNotificationsMock = vi.fn(async () => ({ items: [], unreadBySession: {} }));
+const emptyNotificationSnapshot = () => ({ items: [], unreadBySession: {}, unreadByChat: {}, unreadByTerminal: {} });
+const setChatVisibilityMock = vi.fn(async () => emptyNotificationSnapshot());
+const setTerminalVisibilityMock = vi.fn(async () => emptyNotificationSnapshot());
+const consumeNotificationsMock = vi.fn(async () => emptyNotificationSnapshot());
 const hydrateSessionHistoryMock = vi.fn(async () => ({ messagesHasMore: false, cyclesHasMore: false }));
 const hydrateSessionArtifactsMock = vi.fn(async () => {});
 const loadChatMessagesMock = vi.fn(async () => {});
@@ -430,6 +434,7 @@ vi.mock("@agenter/client-sdk", () => ({
     readSettingsLayer: readSettingsLayerMock,
     saveSettingsLayer: saveSettingsLayerMock,
     setChatVisibility: setChatVisibilityMock,
+    setTerminalVisibility: setTerminalVisibilityMock,
     consumeNotifications: consumeNotificationsMock,
     listRecentWorkspaces: async () => [],
     listAllWorkspaces: async () => [],
@@ -474,6 +479,7 @@ beforeEach(() => {
   readSettingsLayerMock.mockClear();
   saveSettingsLayerMock.mockClear();
   setChatVisibilityMock.mockClear();
+  setTerminalVisibilityMock.mockClear();
   consumeNotificationsMock.mockClear();
   hydrateSessionHistoryMock.mockClear();
   hydrateSessionArtifactsMock.mockClear();
@@ -829,11 +835,7 @@ describe("Feature: web ui app shell", () => {
     const workspacePath = "/repo/devtools";
     const sessionId = "session-devtools";
 
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(sessionId)}/devtools`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(sessionId)}/devtools`);
 
     mockState = {
       ...createState(),
@@ -1060,9 +1062,7 @@ describe("Feature: web ui app shell", () => {
     expect(ensureMessageChannelsMock).not.toHaveBeenCalled();
   });
 
-  test(
-    "Scenario: Given two message channels When the user switches channels Then the chat surface clears the previous transcript before hydrating the next channel",
-    async () => {
+  test("Scenario: Given two message channels When the user switches channels Then the chat surface clears the previous transcript before hydrating the next channel", async () => {
     const workspacePath = "/repo/channel-switch";
     const sessionId = "session-channel-switch";
     const mainChannel = createMessageChannel({
@@ -1292,9 +1292,7 @@ describe("Feature: web ui app shell", () => {
       expect(switchedConversation).toHaveTextContent("稍等，我去问一下。");
     });
     expect(switchedConversation).not.toHaveTextContent("中午吃蛋炒饭。");
-    },
-    15_000,
-  );
+  }, 15_000);
 
   test("Scenario: Given two running sessions that both select chat-main When the route switches sessions Then message-channel focus is refreshed for the new session", async () => {
     const workspacePath = "/repo/focus";
@@ -1450,11 +1448,7 @@ describe("Feature: web ui app shell", () => {
     const workspacePath = "/repo/devtools";
     const sessionId = "session-model";
 
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(sessionId)}/devtools`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(sessionId)}/devtools`);
 
     mockState = {
       ...createState(),
@@ -1627,6 +1621,33 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
   });
 
+  test("Scenario: Given the desktop shell sidebar When collapsing it Then the app navigation shrinks to an icon rail and can reopen", async () => {
+    mockState = createState();
+
+    render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+
+    const sidebar = await screen.findByTestId("app-sidebar-nav");
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
+    });
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Collapse sidebar" }));
+
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "true");
+    });
+    expect(within(sidebar).queryByText("Workspace-first shell")).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText("Quick Start")).not.toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Quick Start" })).toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Expand sidebar" }));
+
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
+    });
+    expect(within(sidebar).getByText("Workspace-first shell")).toBeInTheDocument();
+  });
+
   test("Scenario: Given a workspace shell session When switching to Terminals Settings and Devtools Then the compact header keeps the workspace context attached to the route", async () => {
     const workspacePath = "/repo/demo";
     const sessionId = "session-keep-context";
@@ -1696,11 +1717,7 @@ describe("Feature: web ui app shell", () => {
     };
 
     render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(sessionId)}/chats`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(sessionId)}/chats`);
     fireEvent.popState(window);
 
     await waitFor(() => {
@@ -1804,11 +1821,7 @@ describe("Feature: web ui app shell", () => {
 
     render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
 
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(runningSessionId)}/chats`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(runningSessionId)}/chats`);
     fireEvent.popState(window);
 
     fireEvent.click(await screen.findByRole("button", { name: "Session status: Session running" }));
@@ -1817,11 +1830,7 @@ describe("Feature: web ui app shell", () => {
       expect(stopSessionMock).toHaveBeenCalledWith(runningSessionId);
     });
 
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(stoppedSessionId)}/chats`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(stoppedSessionId)}/chats`);
     fireEvent.popState(window);
 
     fireEvent.click(await screen.findByRole("button", { name: "Session status: Session stopped" }));
@@ -1889,11 +1898,7 @@ describe("Feature: web ui app shell", () => {
 
     render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
 
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(pausedSessionId)}/chats`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(pausedSessionId)}/chats`);
     fireEvent.popState(window);
 
     fireEvent.click(await screen.findByRole("button", { name: "Session status: Session paused" }));
@@ -1994,11 +1999,7 @@ describe("Feature: web ui app shell", () => {
     };
 
     render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
-    window.history.replaceState(
-      null,
-      "",
-      `/session/${encodeURIComponent(sessionId)}/chats`,
-    );
+    window.history.replaceState(null, "", `/session/${encodeURIComponent(sessionId)}/chats`);
     fireEvent.popState(window);
 
     const header = await screen.findByRole("banner");
