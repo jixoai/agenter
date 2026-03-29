@@ -4,7 +4,7 @@
 TBD - created by archiving change attention-kernel-runtime-vnext. Update Purpose after archive.
 ## Requirements
 ### Requirement: Runtime SHALL treat attention as the primary execution model
-The runtime SHALL normalize message, terminal, task, and future system activity into committed attention items before any cycle scheduling or model work starts.
+The runtime SHALL normalize message, terminal, task, and future system activity into committed attention items before any cycle scheduling or model work starts. The kernel SHALL pass only attention-centric inputs into model work and SHALL NOT require chat, terminal, or task output arrays as its semantic completion contract.
 
 #### Scenario: Focused source activity becomes committed attention
 - **WHEN** a message source, focused terminal source, or future system source invalidates runtime work
@@ -15,6 +15,11 @@ The runtime SHALL normalize message, terminal, task, and future system activity 
 - **WHEN** all invalidated sources resolve without creating or changing any attention item
 - **THEN** the runtime does not schedule a new model pass from that source activity alone
 - **THEN** it does not fabricate a flattened fallback input to force a cycle
+
+#### Scenario: Attention progress does not require legacy output arrays
+- **WHEN** a model pass reduces attention debt through committed attention mutations or provider side-effects
+- **THEN** the kernel treats that round as valid progress even if the processor returns no `toUser`, `terminal`, or `tools` payloads
+- **THEN** projection layers derive user-visible updates from persisted facts instead of core response outputs
 
 ### Requirement: Runtime SHALL keep unresolved attention active across cycles
 Unresolved attention items SHALL remain queryable and eligible for later scheduling until their score vectors are reduced to zero or they are explicitly dismissed.
@@ -41,4 +46,3 @@ As long as one or more attention items still have `score >= 1`, the runtime SHAL
 - **WHEN** a model round was triggered only by unresolved attention debt and it emits no attention append/patch mutation
 - **THEN** the runtime does not treat that round as semantic completion for the unresolved item
 - **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless a message egress adapter later dispatches a committed attention outcome
-

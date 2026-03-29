@@ -164,6 +164,15 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - `bun run typecheck` 与 `bun run test` 必须通过。
 - 文档（SPEC/README/AGENTS）与行为保持一致。
 
+## 5.1) Spec 治理纪律
+
+- `openspec/changes/*` 只承载 change 进行中的 proposal / design / tasks / delta specs，不承担长期真源职责。
+- `SPEC.md` 与 `packages/*/SPEC.md` 只承载长期有效的“平台法则 + 正交设计 + durable contract”，必须保持精简，不记录阶段性任务、临时收口状态或执行流水账。
+- 任何会改变长期行为、公共契约、系统边界或架构法则的 change，在 archive 之前必须同步更新对应的 `SPEC.md` 或包级 `SPEC.md`。
+- 如果 OpenSpec 已推进但 durable spec 未同步，该 change 不得 archive，也不得宣称“已经完成收口”。
+- `openspec/specs/*` 用于 capability 级规格沉淀；当其内容已经成为仓库长期法则时，项目级或包级 `SPEC.md` 仍需补齐最小摘要，不允许只留在 archive/change 里。
+- `TASKS.md` 不再是项目真源；活跃任务看 `openspec/changes/*`，长期法则看 `SPEC.md` / `packages/*/SPEC.md`。
+
 ## 6) 用户协作方法论（必须遵守）
 
 - **先证据后结论**：先跑真实流程（CLI/TUI/WebUI/Browser），再下判断；不凭主观猜测解释问题。

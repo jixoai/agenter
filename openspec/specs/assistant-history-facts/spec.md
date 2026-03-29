@@ -1,34 +1,35 @@
 ## Purpose
 
-Define the factual assistant-history replay contract used by model history and chat rendering.
+Define the bounded prompt-window memory contract used by model execution after the assistant-history design was removed from core.
 
 ## Requirements
 
-### Requirement: Assistant history replay preserves factual message boundaries
+### Requirement: Prompt window preserves factual attention evidence
 
-The system SHALL replay one assistant turn into model history as the same factual message sequence used for chat rendering, without adding synthetic headings, summaries, or category labels.
+The system SHALL build the model prompt window from attention-centric factual records instead of synthetic assistant chat messages or task-stage summaries.
 
-#### Scenario: Self-talk and replies are replayed as facts
+#### Scenario: Uncompacted prompt window reuses factual evidence
 
-- **WHEN** one assistant turn contains self-talk text and one or more user-facing replies
-- **THEN** the replayed assistant history contains separate assistant messages for those facts
-- **THEN** none of those messages contain synthetic headings such as `### Replies`, `### Notes`, or `### Tool activity`
+- **WHEN** a later model round is prepared before compaction
+- **THEN** the prompt window reuses factual message, attention, and tool evidence without synthetic chat headings
+- **THEN** projection-only UI labels are not written into the prompt window
 
-### Requirement: Tool activity remains raw structured content
+### Requirement: Prompt window compaction replaces detailed memory with structured summary
 
-The system SHALL preserve tool activity in replayed assistant history as raw structured fenced content using the same `yaml+tool_call` and `yaml+tool_result` payloads exposed to chat rendering.
+The system SHALL allow completed prompt-window detail to be replaced by a structured compact summary while canonical session facts remain unchanged.
 
-#### Scenario: Tool call and result are preserved in order
+#### Scenario: Compact summary replaces prior prompt-window detail
 
-- **WHEN** one assistant turn records a tool call and its result
-- **THEN** the replayed assistant history contains the `yaml+tool_call` fenced block before the matching `yaml+tool_result` fenced block
-- **THEN** the tool payload content remains factual and unwrapped by explanatory prose
+- **WHEN** a compact cycle completes successfully
+- **THEN** the next prompt window starts from the structured compact summary plus unresolved attention
+- **THEN** completed prompt-window detail is removed from the bounded model memory without deleting persisted facts
 
-### Requirement: Assistant history ordering matches runtime fact ordering
+### Requirement: Prompt window remembers reusable replies as structured facts
 
-The system SHALL preserve fact ordering consistently between chat output generation and model-history replay.
+The system SHALL preserve reusable user-visible answers after compaction as structured prompt-window facts instead of bare prose strings.
 
-#### Scenario: Mixed assistant facts stay aligned
+#### Scenario: Ready replies carry routing and matching hints
 
-- **WHEN** one assistant turn contains self-talk, tool activity, and a user-facing reply
-- **THEN** chat output and replayed assistant history expose those facts in the same order
+- **WHEN** a compact cycle preserves a resolved reply for later reuse
+- **THEN** the prompt window stores that reply with its destination channel plus semantic matching hints such as topic or trigger phrases
+- **THEN** a later model round can reuse that fact without replaying the original tool trace
