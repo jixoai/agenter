@@ -30,6 +30,12 @@ const renderToolbar = (widthClassName: string) => (args: AIInputToolbarStoryArgs
 
 const meta: Meta<AIInputToolbarStoryArgs> = {
   title: "Features/Chat/AIInputToolbar",
+  loaders: [
+    async () => {
+      await __clearHelpHintPersistenceForTests();
+      return {};
+    },
+  ],
   args: {
     disabled: false,
     submitting: false,
@@ -51,7 +57,6 @@ export const WideToolbarKeepsLabelsAndHints: Story = {
   args: {},
   render: renderToolbar("w-[720px]"),
   play: async ({ canvasElement }) => {
-    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
     const actionBar = canvas.getByTestId("composer-action-bar");
@@ -94,7 +99,6 @@ export const CompactToolbarCollapsesHelpAndSecondaryLabels: Story = {
   args: {},
   render: renderToolbar("w-[320px]"),
   play: async ({ canvasElement }) => {
-    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
     const actionBar = canvas.getByTestId("composer-action-bar");

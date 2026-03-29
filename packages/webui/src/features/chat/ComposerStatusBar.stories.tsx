@@ -7,6 +7,12 @@ import { ComposerStatusBar } from "./ComposerStatusBar";
 const meta = {
   title: "Features/Chat/ComposerStatusBar",
   component: ComposerStatusBar,
+  loaders: [
+    async () => {
+      await __clearHelpHintPersistenceForTests();
+      return {};
+    },
+  ],
   args: {
     disabled: false,
     submitting: false,
@@ -19,6 +25,14 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+const getHelpHintPopup = (titleNode: HTMLElement) => {
+  const popup = titleNode.closest("[data-help-hint-presentation]");
+  if (!(popup instanceof HTMLElement)) {
+    throw new Error("Expected help hint popup container.");
+  }
+  return popup;
+};
+
 export const WideStatusBarAutoOpensHelpHint: Story = {
   render: (args) => (
     <div className="w-[720px] bg-white p-6">
@@ -26,7 +40,6 @@ export const WideStatusBarAutoOpensHelpHint: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
     const statusBar = canvas.getByTestId("composer-status-bar");
@@ -38,6 +51,20 @@ export const WideStatusBarAutoOpensHelpHint: Story = {
       await expect(portal.getByText("Composer help")).toBeVisible();
       await expect(portal.getByText("path")).toBeVisible();
       await expect(portal.getByText("newline")).toBeVisible();
+    });
+
+    await waitFor(() => {
+      const popup = getHelpHintPopup(portal.getByText("Composer help"));
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "passive-auto");
+      expect(window.getComputedStyle(popup).animationName).toBe("help-hint-breathe");
+    });
+
+    await userEvent.hover(helpTrigger);
+    await waitFor(() => {
+      const popup = getHelpHintPopup(portal.getByText("Composer help"));
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "active-open");
+      expect(window.getComputedStyle(popup).animationName).toBe("none");
     });
 
     await waitFor(() => {
@@ -53,12 +80,11 @@ export const CompactStatusBarCollapsesHelpIntoMenu: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    await __clearHelpHintPersistenceForTests();
     const canvas = within(canvasElement);
     const portal = within(document.body);
+    const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
 
     await waitFor(() => {
-      const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
       expect(helpTrigger).toHaveTextContent("?");
       expect(helpTrigger.querySelector("svg")).toBeNull();
       expect(canvas.getByTestId("composer-status-bar").getBoundingClientRect().height).toBeLessThan(36);
@@ -70,15 +96,26 @@ export const CompactStatusBarCollapsesHelpIntoMenu: Story = {
       expect(portal.getByText("files")).toBeInTheDocument();
     });
 
-    const helpTrigger = canvas.getByRole("button", { name: "Composer help" });
+    await waitFor(() => {
+      const popup = getHelpHintPopup(portal.getByText("Composer help"));
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "passive-auto");
+    });
+
+    const openBackgroundColor = window.getComputedStyle(helpTrigger).backgroundColor;
     await userEvent.click(helpTrigger);
     await waitFor(() => {
       expect(helpTrigger).not.toHaveAttribute("data-popup-open");
     });
 
+    const closedBackgroundColor = window.getComputedStyle(helpTrigger).backgroundColor;
+    expect(closedBackgroundColor).not.toBe(openBackgroundColor);
+
     await userEvent.click(helpTrigger);
     await waitFor(() => {
+      const popup = getHelpHintPopup(portal.getByText("Composer help"));
       expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "active-open");
       expect(portal.getByText("Composer help")).toBeInTheDocument();
     });
   },

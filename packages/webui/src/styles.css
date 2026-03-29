@@ -40,9 +40,7 @@
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
-  --font-sans:
-    "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI",
-    sans-serif;
+  --font-sans: "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
   --font-serif:
     "Source Serif 4", "Noto Serif SC", "Noto Serif TC", "Noto Serif JP", "Noto Serif KR", "Times New Roman", serif;
@@ -81,9 +79,7 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
-  --font-sans:
-    "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI",
-    sans-serif;
+  --font-sans: "IBM Plex Sans", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
   --font-serif:
     "Source Serif 4", "Noto Serif SC", "Noto Serif TC", "Noto Serif JP", "Noto Serif KR", "Times New Roman", serif;
@@ -234,6 +230,62 @@
   .typo-code {
     font-family: var(--font-mono);
     line-height: 1.35;
+  }
+
+  @keyframes help-hint-breathe {
+    0%,
+    100% {
+      background-color: color-mix(in oklch, var(--popover) 74%, transparent);
+      border-color: color-mix(in oklch, var(--border) 76%, transparent);
+    }
+    50% {
+      background-color: color-mix(in oklch, var(--popover) 82%, transparent);
+      border-color: color-mix(in oklch, var(--primary) 10%, var(--border));
+    }
+  }
+
+  .help-hint-trigger {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease,
+      opacity 160ms ease;
+  }
+
+  .help-hint-popup {
+    transition:
+      opacity 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease,
+      color 180ms ease,
+      box-shadow 180ms ease,
+      backdrop-filter 180ms ease;
+  }
+
+  .help-hint-popup[data-help-hint-presentation="passive-auto"] {
+    border-color: color-mix(in oklch, var(--border) 78%, transparent);
+    background-color: color-mix(in oklch, var(--popover) 76%, transparent);
+    color: color-mix(in oklch, var(--popover-foreground) 84%, white 16%);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 12px 24px color-mix(in srgb, black 8%, transparent);
+    will-change: background-color, border-color;
+    animation: help-hint-breathe 3.2s ease-in-out infinite;
+  }
+
+  .help-hint-popup[data-help-hint-presentation="active-open"] {
+    opacity: 1;
+    border-color: var(--border);
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+    backdrop-filter: blur(0);
+    animation: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .help-hint-popup[data-help-hint-presentation="passive-auto"] {
+      animation: none;
+    }
   }
 
   @keyframes sheet-backdrop-in {
