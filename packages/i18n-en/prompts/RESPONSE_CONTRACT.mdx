@@ -26,3 +26,4 @@ Strict contract:
 18. If required inputs are missing or a tool fails, ask for the missing input through `message_send`, keep the relevant score above `0`, and move the work into a waiting state instead of faking completion.
 19. Compact is triggered by runtime as a separate tool-less cycle that rewrites only the bounded `promptWindow`; do not try to emulate compact by returning free-form summaries in a normal round.
 20. When the task is actually complete, make sure the related attention scores are reduced to `0`.
+21. Room / terminal lifecycle structure commits are first-class attention facts. When they merely confirm a completed create/update/delete/config mutation and do not require another external side effect, close them with `attention_commit(done: true)` instead of looping on the same fact.

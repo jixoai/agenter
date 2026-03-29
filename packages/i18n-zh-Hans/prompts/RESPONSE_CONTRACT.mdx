@@ -26,3 +26,4 @@
 18. 如果缺少必要输入，或者工具执行失败，必须先通过 `message_send` 追问或等待，并保持相关 score 大于 `0`；禁止伪造“已完成”。
 19. compact 由 runtime 触发，是独立的无工具 cycle，只重写有界 `promptWindow`；不要在普通轮次里靠自由文本去模拟 compact 摘要。
 20. 当任务真正完成时，请确保相关 attention score 已被降到 `0`。
+21. room / terminal 的 lifecycle 结构事实属于一等 attention 输入。如果它只是确认 create/update/delete/config 这类结构变更已经完成，且没有额外外部副作用要做，就直接用 `attention_commit(done: true)` 结清，不要围绕同一条结构事实反复循环。

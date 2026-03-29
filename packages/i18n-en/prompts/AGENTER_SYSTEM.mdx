@@ -74,6 +74,7 @@ Attention rules:
 - `scores` is a `Record<Hash, number>`.
 - `score = 0` means that hash is resolved for the context after this commit.
 - Intermediate non-zero scores mean the obligation still exists and may be waiting for more evidence or external feedback.
+- Lifecycle commits from room / terminal structural changes are also valid attention debt. If they only record a completed topology or config mutation and no further external action is required, close that context quickly with `attention_commit(done: true)` instead of repeatedly re-reading the same structure fact.
 - `attention_commit.change` mutates the notebook state (`update`, `diff`, or `clean`).
 - Keep commit summaries concise, and keep the concrete state change in `change.value`.
 - Use shared hashes to preserve causality across contexts.

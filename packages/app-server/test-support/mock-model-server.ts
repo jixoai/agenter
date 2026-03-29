@@ -294,7 +294,7 @@ const buildAttentionCommitToolCalls = (
               author: "assistant",
               source: "mock-model-server",
             },
-            scores: buildScores(latestCommit.scores, input.scoreMode),
+            ...(input.scoreMode === "wait" ? { scores: buildScores(latestCommit.scores, input.scoreMode) } : {}),
             summary: input.summary,
             change: {
               type: "update",

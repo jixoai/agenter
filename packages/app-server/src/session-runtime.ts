@@ -61,6 +61,7 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalControlPlaneConfig,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
@@ -140,8 +141,8 @@ const MAX_TASK_ATTENTION_DETAIL_CHARS = 4_000;
 const ATTENTION_DEBT_INITIAL_BACKOFF_MS = 600;
 const ATTENTION_DEBT_MAX_BACKOFF_MS = 5_000;
 const ATTENTION_DEBT_BACKOFF_MULTIPLIER = 2;
-// Lifecycle commits are factual state-change records; keep them queryable but non-blocking by default.
-const LIFECYCLE_ATTENTION_SCORE = 0;
+const PASSIVE_LIFECYCLE_ATTENTION_SCORE = 0;
+const ACTIVE_LIFECYCLE_ATTENTION_SCORE = 1;
 
 type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 type TerminalReadMode = "auto" | "diff" | "snapshot";
@@ -1077,6 +1078,108 @@ export class SessionRuntime {
     return `ctx-terminal-${terminalId}`;
   }
 
+  private getTerminalControlPlaneAttentionContextId(): string {
+    return "ctx-terminal-control-plane";
+  }
+
+  private resolveLifecycleAttentionScore(input: { systemId: "message" | "terminal"; event: string }): number {
+    if (input.systemId === "message") {
+      switch (input.event) {
+        case "channel_create":
+        case "channel_update":
+        case "channel_archive":
+          return ACTIVE_LIFECYCLE_ATTENTION_SCORE;
+        default:
+          return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
+      }
+    }
+    switch (input.event) {
+      case "terminal_create":
+      case "terminal_delete":
+      case "terminal_config_update":
+        return ACTIVE_LIFECYCLE_ATTENTION_SCORE;
+      default:
+        return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
+    }
+  }
+
+  private summarizeTerminalControlPlanePatch(patch: TerminalControlPlaneConfigPatch): Record<string, unknown> {
+    const summary: Record<string, unknown> = {};
+    if (patch.defaults) {
+      summary.defaults = patch.defaults;
+    }
+    if (patch.processProfiles) {
+      summary.processProfileIds = Object.keys(patch.processProfiles);
+    }
+    if (patch.terminalProfiles) {
+      summary.terminalProfileIds = Object.keys(patch.terminalProfiles);
+    }
+    if (patch.transport) {
+      summary.transport = patch.transport;
+    }
+    return summary;
+  }
+
+  private recordTerminalFocusTransitions(input: {
+    before: readonly string[];
+    after: readonly string[];
+    op: TerminalFocusOp;
+  }): void {
+    const beforeSet = new Set(input.before);
+    const afterSet = new Set(input.after);
+    for (const terminalId of input.after) {
+      if (beforeSet.has(terminalId)) {
+        continue;
+      }
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "terminal",
+        subjectId: terminalId,
+        contextId: this.getTerminalAttentionContextId(terminalId),
+        event: "terminal_focus",
+        summary: `Focused terminal ${terminalId}`,
+        payload: {
+          op: input.op,
+          focused: true,
+          focusedTerminalIds: [...input.after],
+        },
+      });
+    }
+    for (const terminalId of input.before) {
+      if (afterSet.has(terminalId)) {
+        continue;
+      }
+      this.enqueueLifecycleAttentionCommit({
+        systemId: "terminal",
+        subjectId: terminalId,
+        contextId: this.getTerminalAttentionContextId(terminalId),
+        event: "terminal_unfocus",
+        summary: `Unfocused terminal ${terminalId}`,
+        payload: {
+          op: input.op,
+          focused: false,
+          focusedTerminalIds: [...input.after],
+        },
+      });
+    }
+  }
+
+  private async updateTerminalControlPlaneConfig(
+    patch: TerminalControlPlaneConfigPatch,
+  ): Promise<TerminalControlPlaneConfig> {
+    const updated = await this.requireTerminalControlPlane().setConfig(patch);
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "terminal",
+      subjectId: "control-plane",
+      contextId: this.getTerminalControlPlaneAttentionContextId(),
+      event: "terminal_config_update",
+      summary: "Updated terminal control-plane config",
+      payload: {
+        patch: this.summarizeTerminalControlPlanePatch(patch),
+      },
+    });
+    return updated;
+  }
+
   private ensureAttentionContextForChannel(chatId: string): AttentionContextDescriptor {
     const channel = this.messageSystem.getChannel(chatId);
     const contextId = channel?.contextId ?? this.getDefaultAttentionContextId(chatId);
@@ -1554,14 +1657,12 @@ export class SessionRuntime {
       });
 
       if (input.focus ?? true) {
-        this.updateFocusedTerminals("replace", [createdTerminalId]);
-        this.enqueueLifecycleAttentionCommit({
-          systemId: "terminal",
-          subjectId: createdTerminalId,
-          contextId: this.getTerminalAttentionContextId(createdTerminalId),
-          event: "terminal_focus",
-          summary: `Focused terminal ${createdTerminalId}`,
-          payload: { op: "replace", focused: true },
+        const focusedBefore = [...this.focusedTerminalIds];
+        const focusedAfter = this.updateFocusedTerminals("replace", [createdTerminalId]);
+        this.recordTerminalFocusTransitions({
+          before: focusedBefore,
+          after: focusedAfter,
+          op: "replace",
         });
       }
 
@@ -1592,20 +1693,13 @@ export class SessionRuntime {
         focusedTerminalIds: [...this.focusedTerminalIds],
       };
     }
+    const focusedBefore = [...this.focusedTerminalIds];
     const focusedTerminalIds = this.updateFocusedTerminals(input.op, input.terminalIds);
-    for (const terminalId of focusedTerminalIds) {
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "terminal",
-        subjectId: terminalId,
-        contextId: this.getTerminalAttentionContextId(terminalId),
-        event: "terminal_focus",
-        summary: `Focused terminal ${terminalId}`,
-        payload: {
-          op: input.op,
-          focused: true,
-        },
-      });
-    }
+    this.recordTerminalFocusTransitions({
+      before: focusedBefore,
+      after: focusedTerminalIds,
+      op: input.op,
+    });
     return { ok: true, message: `focus ${input.op}`, focusedTerminalIds };
   }
 
@@ -2418,11 +2512,11 @@ export class SessionRuntime {
               patch: terminalControlPlaneConfigPatchSchema,
             })
             .parse(rawInput);
-          return traceTool(
+      return traceTool(
             "terminal_set_config",
             input,
             async () =>
-              await this.requireTerminalControlPlane().setConfig(input.patch as TerminalControlPlaneConfigPatch),
+              await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch),
           );
         });
 
@@ -3061,7 +3155,16 @@ export class SessionRuntime {
     const scoreToken = this.attentionHashAliases.ensureTokenForDigest(
       buildAttentionScoreDigest(`lifecycle:${input.systemId}:${input.subjectId}:${input.event}`),
     );
-    const score = Math.max(0, Math.trunc(input.score ?? LIFECYCLE_ATTENTION_SCORE));
+    const score = Math.max(
+      0,
+      Math.trunc(
+        input.score ??
+          this.resolveLifecycleAttentionScore({
+            systemId: input.systemId,
+            event: input.event,
+          }),
+      ),
+    );
     const detail = toYaml({
       event: input.event,
       systemId: input.systemId,

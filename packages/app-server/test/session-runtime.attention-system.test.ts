@@ -213,6 +213,9 @@ const getActiveItems = (internal: RuntimeInternal) =>
     meta: commit.meta,
   }));
 
+const getAttentionContextSnapshot = (internal: RuntimeInternal, contextId: string) =>
+  internal.attentionSystem.snapshot().contexts.find((context) => context.contextId === contextId) ?? null;
+
 const buildCommitChange = (
   internal: RuntimeInternal,
   contextId: string,
@@ -358,6 +361,99 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(attentionInput.meta?.chatId).toBe(channel.chatId);
     expect(attentionInput.meta?.chatFocused).toBe(false);
     expect(internal.resolveCycleReplyChatId([attentionInput])).toBe(channel.chatId);
+  });
+
+  test("Scenario: Given room lifecycle mutations When runtime changes the room Then structural room events become active attention debt", () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    const room = runtime.createMessageChannel({
+      kind: "room",
+      title: "QA",
+      focus: false,
+    });
+    runtime.updateMessageChannel({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      patch: {
+        title: "QA 2",
+      },
+    });
+    runtime.archiveMessageChannel({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+
+    const activeRoomItems = getActiveItems(internal).filter((item) => item.meta.channelId === room.chatId);
+    expect(activeRoomItems.map((item) => item.title)).toContain(`Created chat channel ${room.chatId}`);
+    expect(activeRoomItems.map((item) => item.title)).toContain(`Updated chat channel ${room.chatId}`);
+    expect(activeRoomItems.map((item) => item.title)).toContain(`Archived chat channel ${room.chatId}`);
+    expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`)).toBeTrue();
+  });
+
+  test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus and unfocus facts are recorded without becoming active debt", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    try {
+      const created1 = await runtime.createRuntimeTerminal({
+        terminalId: "iflow-1",
+        processKind: "shell",
+        focus: true,
+      });
+      const created2 = await runtime.createRuntimeTerminal({
+        terminalId: "iflow-2",
+        processKind: "shell",
+        focus: false,
+      });
+
+      expect(created1.ok).toBeTrue();
+      expect(created2.ok).toBeTrue();
+
+      const focusResult = runtime.focusRuntimeTerminals({
+        op: "replace",
+        terminalIds: ["iflow-2"],
+      });
+      expect(focusResult.ok).toBeTrue();
+
+      const firstSnapshot = getAttentionContextSnapshot(internal, "ctx-terminal-iflow-1");
+      const secondSnapshot = getAttentionContextSnapshot(internal, "ctx-terminal-iflow-2");
+      expect(firstSnapshot?.commits.some((commit) => commit.meta.lifecycleEvent === "terminal_unfocus")).toBeTrue();
+      expect(secondSnapshot?.commits.some((commit) => commit.meta.lifecycleEvent === "terminal_focus")).toBeTrue();
+
+      const activeTerminalItems = getActiveItems(internal).filter((item) => item.meta.systemId === "terminal");
+      expect(activeTerminalItems.some((item) => item.title === "Focused terminal iflow-2")).toBeFalse();
+      expect(activeTerminalItems.some((item) => item.title === "Unfocused terminal iflow-1")).toBeFalse();
+      expect(activeTerminalItems.some((item) => item.title === "Created terminal iflow-1")).toBeTrue();
+      expect(activeTerminalItems.some((item) => item.title === "Created terminal iflow-2")).toBeTrue();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given terminal control-plane config changes When runtime updates config Then the change becomes active attention in the control-plane context", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      updateTerminalControlPlaneConfig: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    };
+
+    await runtime.start();
+    try {
+      await internal.updateTerminalControlPlaneConfig({
+        transport: {
+          port: 0,
+        },
+      });
+
+      const controlPlaneContext = getAttentionContextSnapshot(internal, "ctx-terminal-control-plane");
+      expect(controlPlaneContext).not.toBeNull();
+      expect(controlPlaneContext?.commits.at(-1)?.summary).toBe("Updated terminal control-plane config");
+      expect(controlPlaneContext?.commits.at(-1)?.meta.lifecycleEvent).toBe("terminal_config_update");
+      expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-terminal-control-plane")).toBeTrue();
+    } finally {
+      await runtime.stop();
+    }
   });
 
   test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then only the newest dirty context is sent to the model in that round", async () => {
