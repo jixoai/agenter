@@ -16,6 +16,11 @@ The system SHALL provide session-specific icon media endpoints that allow client
 - **THEN** subsequent reads for that session icon return the uploaded asset
 - **THEN** the session media owner remains semantically distinct from profile/avatar media
 
+#### Scenario: Session fallback preserves the canonical Agenter renderer
+- **WHEN** a caller requests a deterministic session fallback for the same `workspacePath + sessionId + label`
+- **THEN** the backend returns the same Agenter-native SVG composition that the product already treats as the canonical session identity artwork
+- **THEN** raster outputs are derived from that SVG instead of swapping to a different identicon family
+
 ### Requirement: Avatar media SHALL provide backend fallback and override upload
 The system SHALL provide profile/avatar media endpoints that allow callers to resolve uploaded assets, gravatar-backed fallbacks when eligible, and deterministic backend fallback artwork from one semantic owner URL family. Uploaded assets SHALL override every lower-priority fallback source.
 
@@ -28,6 +33,11 @@ The system SHALL provide profile/avatar media endpoints that allow callers to re
 - **WHEN** a client uploads an avatar image for a profile/avatar identity
 - **THEN** later media reads return the uploaded asset instead of gravatar or deterministic fallback artwork
 - **THEN** Chat and settings surfaces can consume the same semantic media URL
+
+#### Scenario: Profile fallback preserves the canonical Agenter renderer
+- **WHEN** a caller resolves a temporary or non-gravatar-backed profile/avatar identifier with no uploaded asset
+- **THEN** the backend returns the same Agenter-native deterministic SVG style already used as the canonical fallback artwork for that identifier seed
+- **THEN** the service does not silently substitute a third-party identicon style
 
 ### Requirement: Session and avatar media SHALL remain semantically separated
 The system SHALL keep session icon media and profile/avatar media in separate semantic URL spaces even when both are served by profile-service. Callers MUST be able to distinguish session identity assets from user/profile identity assets without inspecting implementation details.

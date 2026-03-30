@@ -39,10 +39,12 @@
 
 - icon owner 只允许两类：`profile` 与 `session`
 - public URL 语义必须保持分离：profile/avatar 与 session 不能混成一个无类型 bucket
-- session fallback seed（`sessionId -> workspacePath + label`）属于 profile-service 的 durable fact，不能继续依赖调用方 query 参数临时注入
+- session fallback seed 属于 profile-service 的 durable fact：`workspacePath + sessionId` 决定图形，`label` 只负责覆盖显示文字符号；调用方不能继续依赖 query 参数临时注入
+- Agenter 的 deterministic renderer 必须复用仓库原生的 SVG 随机绘制法则，而不是替换成另一套第三方 identicon 风格；相同 seed 必须持续产出同一视觉身份
 - fallback precedence 固定为：
   - `profile`: uploaded asset -> gravatar(仅适用于 email-backed resolution) -> deterministic renderer
   - `session`: uploaded asset -> deterministic renderer
+- `profile` 图形 seed 由 resolved identifier 决定
 - deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端通过 `bun:ffi + resvg bridge` 生成
 - 默认 icon read 对于 SVG-backed source 也必须返回服务端光栅化后的 raster bytes；只有显式 `format=svg` 才允许返回原始 SVG
 - 前端不得再为了“让后端有图可读”而先上传浏览器本地 rasterized fallback
