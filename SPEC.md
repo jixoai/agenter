@@ -32,6 +32,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `message-system`、`terminal-system`、`task-system`、未来的 `browser-system` / `os-system` 都是 source adapter，不得把自己的私有语义硬编码进 LoopBus core。
 - `AgenterAI` 是 attention-first decision engine，不应直接绑定 terminal/task 等 source-specific gateway、payload 结构或 stage 语义。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
+- `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - 新能力优先以“新增原子 + 复用平台法则”的方式接入；当现有法则无法优雅容纳时，应优先升级法则，而不是补 source-specific glue。
 
 ## 4. Durable Runtime Contract
@@ -46,7 +47,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
-- Global settings 属于 app-level navigation，不与 workspace-scoped route 混层。
+- Global settings 属于 app-level navigation，不与 workspace-scoped route 混层；durable profile 管理、identifier linking 与 app-level profile selection 都归这个 surface。
+- Session icon 与 profile/avatar icon 必须通过 profile-service 的语义 URL 消费，fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 
 ## 6. 测试与验收法则

@@ -1,8 +1,5 @@
-# identity-media-assets Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the semantic media URL contracts for user/profile and session identity assets without leaking which backend owns rendering or persistence.
-## Requirements
 ### Requirement: Session media SHALL provide durable icon upload and fallback retrieval
 The system SHALL provide session-specific icon media endpoints that allow clients to upload a durable session icon asset and retrieve either the uploaded asset or a profile-service-generated deterministic fallback icon when no uploaded asset exists. The backend SHALL be able to produce raster variants from the canonical SVG render without relying on browser-side fallback uploads.
 
@@ -27,7 +24,7 @@ The system SHALL provide profile/avatar media endpoints that allow callers to re
 #### Scenario: Uploaded avatar overrides fallback
 - **WHEN** a client uploads an avatar image for a profile/avatar identity
 - **THEN** later media reads return the uploaded asset instead of gravatar or deterministic fallback artwork
-- **THEN** Chat and settings surfaces can consume the same semantic media URL
+- **THEN** Chat and settings surfaces consume the same semantic media URL
 
 ### Requirement: Session and avatar media SHALL remain semantically separated
 The system SHALL keep session icon media and profile/avatar media in separate semantic URL spaces even when both are served by profile-service. Callers MUST be able to distinguish session identity assets from user/profile identity assets without inspecting implementation details.
@@ -35,4 +32,4 @@ The system SHALL keep session icon media and profile/avatar media in separate se
 #### Scenario: Client resolves different media owners
 - **WHEN** the client requests Session icon media and Profile/Avatar media
 - **THEN** those requests use different semantic URL patterns
-- **THEN** the caller can distinguish session identity assets from user/profile identity assets without inspecting implementation details
+- **THEN** the caller can distinguish session identity assets from profile identity assets without inspecting implementation details
