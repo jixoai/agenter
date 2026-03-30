@@ -410,7 +410,9 @@ export const VirtualizedPersistedHistory: Story = {
     const canvas = within(canvasElement);
     const viewport = await canvas.findByTestId("chat-scroll-viewport");
 
-    await expect(canvas.getByText("Assistant reply 14: completed the visible conversation turn 14.")).toBeInTheDocument();
+    await expect(
+      await canvas.findByText("Assistant reply 14: completed the visible conversation turn 14."),
+    ).toBeInTheDocument();
     await expect(viewport).toHaveClass("h-full");
     await expect(canvas.queryByText(/Cycle 14/i)).not.toBeInTheDocument();
 
