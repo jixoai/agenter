@@ -22,6 +22,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention 是内核语义货币。外部熵增必须先被表达为 attention debt，再决定是否进入下一轮模型调用。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
+- Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
+- Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
 - Provider 请求保持纯度。HTTP/model body 只表达真实 provider 参数，循环事实进入 `session_cycle` / trace。
 
