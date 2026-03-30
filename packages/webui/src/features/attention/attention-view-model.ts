@@ -16,7 +16,7 @@ export interface AttentionSelectionState {
   itemId: string | null;
 }
 
-export type AttentionPanelTab = "context" | "items";
+export type AttentionPanelTab = "context" | "items" | "search";
 
 export interface AttentionScoreEntryView {
   key: string;

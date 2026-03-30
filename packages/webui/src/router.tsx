@@ -357,9 +357,9 @@ const DevtoolsAttentionSurface = ({
   sessionId: string;
   loading: boolean;
   selection: AttentionSelectionState;
-  detailView: "context" | "items";
+  detailView: "context" | "items" | "search";
   queryText: string;
-  onDetailViewChange: (view: "context" | "items") => void;
+  onDetailViewChange: (view: "context" | "items" | "search") => void;
   onQueryTextChange: (query: string) => void;
   onSelectionChange: (selection: AttentionSelectionState) => void;
 }) => {
@@ -1201,7 +1201,6 @@ const SessionDevtoolsRouteView = () => {
             navigateDevtools(
               {
                 panel: "attention",
-                attentionView: query.trim().length > 0 ? "items" : "context",
                 attentionQuery: query.trim().length > 0 ? query : undefined,
               },
               { replace: true },

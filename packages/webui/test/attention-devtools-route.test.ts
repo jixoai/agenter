@@ -27,14 +27,14 @@ describe("Feature: Session Devtools route search", () => {
     ).toEqual({
       panel: "cycles",
       cycleId: 7,
-      attentionView: "items",
+      attentionView: "search",
       attentionQuery: "score:hash-1 deep:2",
       commitId: undefined,
       contextId: undefined,
     });
   });
 
-  test("Scenario: Given an existing attention drill-down When the route patch updates the query Then the rest of the selection is preserved and normalized", () => {
+  test("Scenario: Given an existing attention drill-down When the route patch updates the query Then the rest of the selection is preserved and normalized onto the search tab", () => {
     expect(
       buildSessionDevtoolsSearch(
         {
@@ -54,8 +54,33 @@ describe("Feature: Session Devtools route search", () => {
       cycleId: undefined,
       contextId: "ctx-chat-main",
       commitId: "commit-3",
-      attentionView: "items",
+      attentionView: "search",
       attentionQuery: "score:abc123 deep:2",
+    });
+  });
+
+  test("Scenario: Given the search tab is already active When the query is cleared Then only the query text is removed", () => {
+    expect(
+      buildSessionDevtoolsSearch(
+        {
+          attentionQuery: undefined,
+        },
+        {
+          panel: "attention",
+          cycleId: undefined,
+          contextId: "ctx-chat-main",
+          commitId: "commit-3",
+          attentionView: "search",
+          attentionQuery: "score:abc123 deep:2",
+        },
+      ),
+    ).toEqual({
+      panel: "attention",
+      cycleId: undefined,
+      contextId: "ctx-chat-main",
+      commitId: "commit-3",
+      attentionView: "search",
+      attentionQuery: undefined,
     });
   });
 

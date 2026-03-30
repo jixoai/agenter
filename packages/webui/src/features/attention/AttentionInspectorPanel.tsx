@@ -65,6 +65,7 @@ const surfaceClassName = "rounded-xl border border-slate-200 bg-white";
 const detailTabs = [
   { id: "context", label: "Context" },
   { id: "items", label: "Items" },
+  { id: "search", label: "Search" },
 ] satisfies Array<{ id: AttentionPanelTab; label: string }>;
 
 const formatAttentionTimestamp = (value: string | null | undefined): string | null => {
@@ -275,10 +276,14 @@ export const AttentionInspectorPanel = ({
     };
   }, [attention, queryAttention, queryText, sessionId]);
 
-  const isQueryMode = queryText.trim().length > 0;
-  const visibleItems = isQueryMode ? queryItems : defaultContextItems;
+  const hasQuery = queryText.trim().length > 0;
+  const isSearchTab = activeTab === "search";
+  const visibleItems = isSearchTab ? queryItems : defaultContextItems;
 
   useEffect(() => {
+    if (activeTab === "context") {
+      return;
+    }
     if (visibleItems.length === 0) {
       return;
     }
@@ -290,10 +295,10 @@ export const AttentionInspectorPanel = ({
     }
     const first = visibleItems[0]!;
     applySelection({ contextId: first.contextId, itemId: first.commit.commitId });
-  }, [selection.contextId, selection.itemId, visibleItems]);
+  }, [activeTab, selection.contextId, selection.itemId, visibleItems]);
 
   const selectedQueryEntry = useMemo<QueryListItem | null>(() => {
-    if (!isQueryMode) {
+    if (!isSearchTab) {
       return null;
     }
     return (
@@ -301,12 +306,12 @@ export const AttentionInspectorPanel = ({
         (entry) => entry.contextId === selection.contextId && entry.commit.commitId === selection.itemId,
       ) ?? null
     );
-  }, [isQueryMode, queryItems, selection.contextId, selection.itemId]);
+  }, [isSearchTab, queryItems, selection.contextId, selection.itemId]);
 
-  const detailContext = isQueryMode
+  const detailContext = isSearchTab
     ? (contexts.find((context) => context.contextId === selectedQueryEntry?.contextId) ?? undefined)
     : selectedContext;
-  const detailCommit = isQueryMode ? selectedQueryEntry?.commit : selectedCommit;
+  const detailCommit = isSearchTab ? selectedQueryEntry?.commit : selectedCommit;
   const selectedCommitScoreSummary = useMemo(
     () => (detailCommit ? buildAttentionScoreSummary(detailCommit.scores) : null),
     [detailCommit],
@@ -348,7 +353,7 @@ export const AttentionInspectorPanel = ({
   }, [contexts, detailCommit, detailContext?.contextId]);
 
   const openHashQuery = (hash: string) => {
-    setActiveTab("items");
+    setActiveTab("search");
     setQueryText(
       buildAttentionScoreQuery({
         contextId: detailContext?.contextId ?? selectedContext?.contextId ?? null,
@@ -358,11 +363,28 @@ export const AttentionInspectorPanel = ({
     );
   };
 
+  const searchStatusLabel = !hasQuery
+    ? "Run a Lucene-like attention query to inspect historical commits and graph-linked work."
+    : queryLoading
+      ? "Querying related commits..."
+      : `${queryItems.length} matches`;
+
+  const tabsTrailing =
+    activeTab === "search" ? (
+      <span className={badgeClassName} data-testid="attention-current-search-pill">
+        <Search className="h-3.5 w-3.5" />
+        {hasQuery ? (queryLoading ? "Querying" : `${queryItems.length} matches`) : "Search"}
+      </span>
+    ) : selectedContext ? (
+      <span className={badgeClassName} data-testid="attention-current-context-pill">
+        <FileCode2 className="h-3.5 w-3.5" />
+        {selectedContext.contextId}
+      </span>
+    ) : null;
+
   return (
-    <section
-      className={cn("grid h-full grid-rows-[auto_auto_minmax(0,1fr)] rounded-xl bg-white p-3 shadow-xs", className)}
-    >
-      <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
+    <section className={cn("grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-xl bg-white p-3 shadow-xs", className)}>
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="typo-title-3 text-slate-900">Attention</h2>
@@ -387,43 +409,6 @@ export const AttentionInspectorPanel = ({
         </div>
       </header>
 
-      <section className="mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-        <label
-          className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"
-          htmlFor="attention-query-input"
-        >
-          <Search className="h-3.5 w-3.5" />
-          Search attention
-        </label>
-        <input
-          id="attention-query-input"
-          data-testid="attention-query-input"
-          value={queryText}
-          onChange={(event) => setQueryText(event.target.value)}
-          placeholder="context:ctx-chat-kzf score:abc123 deep:2"
-          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
-        />
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-          <span>
-            {isQueryMode
-              ? queryLoading
-                ? "Querying related commits..."
-                : `${queryItems.length} matches`
-              : "Leave empty to browse contexts and their current notebook state."}
-          </span>
-          {isQueryMode ? (
-            <button
-              type="button"
-              onClick={() => setQueryText("")}
-              className="font-medium text-sky-700 hover:text-sky-800"
-            >
-              Clear query
-            </button>
-          ) : null}
-        </div>
-        {queryError ? <p className="mt-2 text-[11px] text-rose-600">{queryError}</p> : null}
-      </section>
-
       <AsyncSurface
         state={asyncState}
         skeleton={<div className="h-full rounded-xl border border-dashed border-slate-200 bg-slate-50/60" />}
@@ -436,198 +421,287 @@ export const AttentionInspectorPanel = ({
         loadingOverlayLabel="Refreshing context state..."
         className="min-h-0"
       >
-        {isQueryMode ? (
-          <div className="grid h-full gap-3 xl:grid-cols-[20rem_minmax(0,1fr)]">
-            <ScrollViewport
-              className="rounded-xl border border-slate-200 bg-white p-2"
-              data-testid="attention-item-scroll-viewport"
-            >
-              <div className="space-y-1.5">
-                {queryItems.map((entry) => {
-                  const contextActive = Object.values(
-                    contexts.find((context) => context.contextId === entry.contextId)?.scoreMap ?? {},
-                  ).some((score) => score > 0);
-                  const isSelected =
-                    entry.contextId === detailContext?.contextId && entry.commit.commitId === detailCommit?.commitId;
-                  const scoreSummary = buildAttentionScoreSummary(entry.commit.scores);
-                  return (
+        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <Tabs
+              items={detailTabs}
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value === "items" ? "items" : value === "search" ? "search" : "context")}
+              ariaLabel="Attention detail tabs"
+              trailing={tabsTrailing}
+            />
+          </div>
+
+          {isSearchTab ? (
+            <div className="grid h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3 xl:grid-cols-[20rem_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
+              <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 xl:hidden">
+                <label
+                  className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"
+                  htmlFor="attention-query-input-mobile"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Search attention
+                </label>
+                <input
+                  id="attention-query-input-mobile"
+                  value={queryText}
+                  onChange={(event) => setQueryText(event.target.value)}
+                  placeholder="context:ctx-chat-kzf score:abc123 deep:2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
+                />
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                  <span>{searchStatusLabel}</span>
+                  {hasQuery ? (
                     <button
-                      key={`${entry.contextId}:${entry.commit.commitId}`}
                       type="button"
-                      onClick={() => {
-                        applySelection({
-                          contextId: entry.contextId,
-                          itemId: entry.commit.commitId,
-                        });
-                      }}
-                      className={cn(
-                        "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-                        isSelected
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
-                      )}
+                      onClick={() => setQueryText("")}
+                      className="font-medium text-sky-700 hover:text-sky-800"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{entry.commit.summary}</div>
-                          <div className="mt-1 text-[11px] opacity-80">
-                            {entry.contextId} · {entry.commit.meta.author} · {entry.commit.meta.source}
-                          </div>
-                        </div>
-                        <span className="text-[11px] opacity-70">{contextActive ? "active" : "resolved"}</span>
-                      </div>
-                      <div className="mt-1 text-[11px] opacity-80">{scoreSummary?.text ?? "No score summary"}</div>
-                      <div className="mt-1 line-clamp-2 text-[11px] opacity-70">
-                        {readChangePreviewText(entry.commit)}
-                      </div>
+                      Clear query
                     </button>
-                  );
-                })}
-                {queryItems.length === 0 && !queryLoading ? (
-                  <p className="px-2 py-4 text-sm text-slate-500">No commits match the current query.</p>
-                ) : null}
-              </div>
-            </ScrollViewport>
+                  ) : null}
+                </div>
+                {queryError ? <p className="mt-2 text-[11px] text-rose-600">{queryError}</p> : null}
+              </section>
 
-            <ScrollViewport
-              className="rounded-xl border border-slate-200 bg-white p-3"
-              data-testid="attention-detail-scroll-viewport"
-            >
-              {detailContext && detailCommit ? (
-                <div className="space-y-4">
-                  <section className={cn(surfaceClassName, "space-y-3 bg-slate-50/60 p-3")}>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                      <span className={badgeClassName}>{detailContext.contextId}</span>
-                      <span className={badgeClassName}>{detailCommit.commitId}</span>
-                      <span className={badgeClassName}>{detailCommit.meta.author}</span>
-                      <span className={badgeClassName}>{detailCommit.meta.source}</span>
-                      {formatAttentionTimestamp(detailCommit.createdAt) ? (
-                        <span className={badgeClassName}>{formatAttentionTimestamp(detailCommit.createdAt)}</span>
-                      ) : null}
-                    </div>
-                    <div>
-                      <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        Commit summary
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <h3 className="text-base font-semibold text-slate-950">{detailCommit.summary}</h3>
-                        <HelpHint
-                          helpId="attention-panel:commit-summary"
-                          textContext="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
-                          content="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
-                        />
-                      </div>
-                    </div>
-                  </section>
+              <section className="grid h-full grid-rows-[minmax(0,1fr)] gap-3 xl:grid-rows-[auto_minmax(0,1fr)]">
+                <section className="hidden rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 xl:block">
+                  <label
+                    className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"
+                    htmlFor="attention-query-input-desktop"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    Search attention
+                  </label>
+                  <input
+                    id="attention-query-input-desktop"
+                    value={queryText}
+                    onChange={(event) => setQueryText(event.target.value)}
+                    placeholder="context:ctx-chat-kzf score:abc123 deep:2"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span>{searchStatusLabel}</span>
+                    {hasQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setQueryText("")}
+                        className="font-medium text-sky-700 hover:text-sky-800"
+                      >
+                        Clear query
+                      </button>
+                    ) : null}
+                  </div>
+                  {queryError ? <p className="mt-2 text-[11px] text-rose-600">{queryError}</p> : null}
+                </section>
 
-                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]">
-                    <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Change</h4>
+                <ScrollViewport
+                  className="h-full rounded-xl border border-slate-200 bg-white p-2"
+                  data-testid="attention-search-results-scroll-viewport"
+                >
+                  {!hasQuery ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-slate-500">
+                      Search is a dedicated view now. Enter a query to browse matching commits and graph links.
+                    </div>
+                  ) : queryItems.length === 0 && !queryLoading ? (
+                    <p className="px-2 py-4 text-sm text-slate-500">No commits match the current query.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {queryItems.map((entry) => {
+                        const contextActive = Object.values(
+                          contexts.find((context) => context.contextId === entry.contextId)?.scoreMap ?? {},
+                        ).some((score) => score > 0);
+                        const isSelected =
+                          entry.contextId === detailContext?.contextId && entry.commit.commitId === detailCommit?.commitId;
+                        const scoreSummary = buildAttentionScoreSummary(entry.commit.scores);
+                        return (
+                          <button
+                            key={`${entry.contextId}:${entry.commit.commitId}`}
+                            type="button"
+                            onClick={() => {
+                              applySelection({
+                                contextId: entry.contextId,
+                                itemId: entry.commit.commitId,
+                              });
+                            }}
+                            className={cn(
+                              "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
+                              isSelected
+                                ? "border-slate-900 bg-slate-950 text-white"
+                                : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{entry.commit.summary}</div>
+                                <div className="mt-1 text-[11px] opacity-80">
+                                  {entry.contextId} · {entry.commit.meta.author} · {entry.commit.meta.source}
+                                </div>
+                              </div>
+                              <span className="text-[11px] opacity-70">{contextActive ? "active" : "resolved"}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] opacity-80">{scoreSummary?.text ?? "No score summary"}</div>
+                            <div className="mt-1 line-clamp-2 text-[11px] opacity-70">
+                              {readChangePreviewText(entry.commit)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </ScrollViewport>
+              </section>
+
+              <ScrollViewport
+                className="h-full rounded-xl border border-slate-200 bg-white p-3"
+                data-testid="attention-search-detail-scroll-viewport"
+              >
+                {detailContext && detailCommit && hasQuery ? (
+                  <div className="space-y-4">
+                    <section className={cn(surfaceClassName, "space-y-3 bg-slate-50/60 p-3")}>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className={badgeClassName}>{detailContext.contextId}</span>
+                        <span className={badgeClassName}>{detailCommit.commitId}</span>
+                        <span className={badgeClassName}>{detailCommit.meta.author}</span>
+                        <span className={badgeClassName}>{detailCommit.meta.source}</span>
+                        {formatAttentionTimestamp(detailCommit.createdAt) ? (
+                          <span className={badgeClassName}>{formatAttentionTimestamp(detailCommit.createdAt)}</span>
+                        ) : null}
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                          Commit summary
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <h3 className="text-base font-semibold text-slate-950">{detailCommit.summary}</h3>
                           <HelpHint
-                            helpId="attention-panel:change"
-                            textContext="This payload is the concrete mutation applied to the notebook state."
-                            content="This payload is the concrete mutation applied to the notebook state."
+                            helpId="attention-panel:commit-summary"
+                            textContext="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
+                            content="Each item is one immutable attention commit: metadata, scores, summary, and a context mutation."
                           />
                         </div>
-                        <span className="text-[11px] text-slate-500">{detailCommit.change.type}</span>
                       </div>
-                      <JSONViewer value={detailCommit.change} rawText={readChangeRawText(detailCommit)} />
                     </section>
 
-                    <div className="space-y-3">
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]">
                       <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Scores</h4>
-                          <HelpHint
-                            helpId="attention-panel:scores"
-                            textContext="Scores are the lookup edges that connect this commit to related work."
-                            content="Scores are the lookup edges that connect this commit to related work."
-                          />
-                        </div>
-                        {renderScoreButtons({
-                          scores: detailCommit.scores,
-                          emptyLabel: "No scores are attached to this commit.",
-                          onSelectHash: openHashQuery,
-                        })}
-                        {selectedCommitScoreSummary?.text ? (
-                          <p className="text-[11px] text-slate-500">{selectedCommitScoreSummary.text}</p>
-                        ) : null}
-                        <JSONViewer value={detailCommit.scores} />
-                      </section>
-
-                      <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Metadata</h4>
-                          <HelpHint
-                            helpId="attention-panel:metadata"
-                            textContext="Metadata explains who emitted the commit and where the mutation belongs."
-                            content="Metadata explains who emitted the commit and where the mutation belongs."
-                          />
-                        </div>
-                        <JSONViewer value={detailCommit.meta} />
-                      </section>
-
-                      <section className={cn(surfaceClassName, "space-y-3 p-3")}>
-                        <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                          Graph links
-                        </h4>
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className={badgeClassName}>
-                            <GitCommitHorizontal className="h-3.5 w-3.5" />
-                            {detailCommit.parentCommitIds.length} parents
-                          </span>
-                          <span className={badgeClassName}>
-                            <GitMerge className="h-3.5 w-3.5" />
-                            {relatedItems.length} related
-                          </span>
-                        </div>
-                        {relatedItems.length > 0 ? (
-                          <div className="space-y-1.5">
-                            {relatedItems.map((entry) => (
-                              <button
-                                key={`${entry.contextId}:${entry.commit.commitId}:${entry.reason}`}
-                                type="button"
-                                onClick={() => {
-                                  applySelection({
-                                    contextId: entry.contextId,
-                                    itemId: entry.commit.commitId,
-                                  });
-                                }}
-                                className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left hover:border-slate-300 hover:bg-white"
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium text-slate-900">
-                                    {entry.commit.summary}
-                                  </div>
-                                  <div className="mt-0.5 text-[11px] text-slate-500">{entry.contextId}</div>
-                                </div>
-                                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                                  <Link2 className="h-3.5 w-3.5" />
-                                  {entry.reason}
-                                </span>
-                              </button>
-                            ))}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Change</h4>
+                            <HelpHint
+                              helpId="attention-panel:change"
+                              textContext="This payload is the concrete mutation applied to the notebook state."
+                              content="This payload is the concrete mutation applied to the notebook state."
+                            />
                           </div>
-                        ) : (
-                          <p className="text-sm text-slate-500">No related commits are linked to this selection yet.</p>
-                        )}
+                          <span className="text-[11px] text-slate-500">{detailCommit.change.type}</span>
+                        </div>
+                        <JSONViewer value={detailCommit.change} rawText={readChangeRawText(detailCommit)} />
                       </section>
+
+                      <div className="space-y-3">
+                        <section className={cn(surfaceClassName, "space-y-3 p-3")}>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Scores</h4>
+                            <HelpHint
+                              helpId="attention-panel:scores"
+                              textContext="Scores are the lookup edges that connect this commit to related work."
+                              content="Scores are the lookup edges that connect this commit to related work."
+                            />
+                          </div>
+                          {renderScoreButtons({
+                            scores: detailCommit.scores,
+                            emptyLabel: "No scores are attached to this commit.",
+                            onSelectHash: openHashQuery,
+                          })}
+                          {selectedCommitScoreSummary?.text ? (
+                            <p className="text-[11px] text-slate-500">{selectedCommitScoreSummary.text}</p>
+                          ) : null}
+                          <JSONViewer value={detailCommit.scores} />
+                        </section>
+
+                        <section className={cn(surfaceClassName, "space-y-3 p-3")}>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Metadata</h4>
+                            <HelpHint
+                              helpId="attention-panel:metadata"
+                              textContext="Metadata explains who emitted the commit and where the mutation belongs."
+                              content="Metadata explains who emitted the commit and where the mutation belongs."
+                            />
+                          </div>
+                          <JSONViewer value={detailCommit.meta} />
+                        </section>
+
+                        <section className={cn(surfaceClassName, "space-y-3 p-3")}>
+                          <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                            Graph links
+                          </h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className={badgeClassName}>
+                              <GitCommitHorizontal className="h-3.5 w-3.5" />
+                              {detailCommit.parentCommitIds.length} parents
+                            </span>
+                            <span className={badgeClassName}>
+                              <GitMerge className="h-3.5 w-3.5" />
+                              {relatedItems.length} related
+                            </span>
+                          </div>
+                          {relatedItems.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {relatedItems.map((entry) => (
+                                <button
+                                  key={`${entry.contextId}:${entry.commit.commitId}:${entry.reason}`}
+                                  type="button"
+                                  onClick={() => {
+                                    applySelection({
+                                      contextId: entry.contextId,
+                                      itemId: entry.commit.commitId,
+                                    });
+                                  }}
+                                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left hover:border-slate-300 hover:bg-white"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium text-slate-900">
+                                      {entry.commit.summary}
+                                    </div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500">{entry.contextId}</div>
+                                  </div>
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                    <Link2 className="h-3.5 w-3.5" />
+                                    {entry.reason}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-500">No related commits are linked to this selection yet.</p>
+                          )}
+                        </section>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                  {queryLoading ? "Querying related commits..." : "Select a search result to inspect its detail."}
-                </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                    {queryLoading
+                      ? "Querying related commits..."
+                      : hasQuery
+                        ? "Select a search result to inspect its detail."
+                        : "Run a search to inspect matching commits."}
+                  </div>
+                )}
+              </ScrollViewport>
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "grid h-full grid-cols-1 gap-3 lg:grid-cols-[14rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]",
+                activeTab === "context"
+                  ? "grid-rows-[minmax(0,1fr)_minmax(0,1fr)]"
+                  : "grid-rows-[minmax(6rem,0.5fr)_minmax(0,1.5fr)]",
               )}
-            </ScrollViewport>
-          </div>
-        ) : (
-          <div className="grid h-full gap-3 lg:grid-cols-[14rem_minmax(0,1fr)]">
+            >
             <ScrollViewport
-              className="rounded-xl border border-slate-200 bg-slate-50/70 p-2"
+              className="h-full rounded-xl border border-slate-200 bg-slate-50/70 p-2"
               data-testid="attention-context-scroll-viewport"
             >
               <div className="space-y-1.5">
@@ -671,27 +745,9 @@ export const AttentionInspectorPanel = ({
               </div>
             </ScrollViewport>
 
-            <div className="grid grid-rows-[auto_minmax(0,1fr)] gap-3">
-              {selectedContext ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                  <Tabs
-                    items={detailTabs}
-                    value={activeTab}
-                    onValueChange={(value) => setActiveTab(value === "items" ? "items" : "context")}
-                    ariaLabel="Attention detail tabs"
-                    trailing={
-                      <span className={badgeClassName} data-testid="attention-current-context-pill">
-                        <FileCode2 className="h-3.5 w-3.5" />
-                        {selectedContext.contextId}
-                      </span>
-                    }
-                  />
-                </div>
-              ) : null}
-
-              {activeTab === "context" ? (
+            {activeTab === "context" ? (
                 <ScrollViewport
-                  className="rounded-xl border border-slate-200 bg-white p-3"
+                  className="h-full rounded-xl border border-slate-200 bg-white p-3"
                   data-testid="attention-context-detail-scroll-viewport"
                 >
                   {contextSnapshot ? (
@@ -816,9 +872,9 @@ export const AttentionInspectorPanel = ({
                   )}
                 </ScrollViewport>
               ) : (
-                <div className="grid h-full gap-3 xl:grid-cols-[20rem_minmax(0,1fr)]">
+                <div className="grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3 xl:grid-cols-[20rem_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
                   <ScrollViewport
-                    className="rounded-xl border border-slate-200 bg-white p-2"
+                    className="h-full rounded-xl border border-slate-200 bg-white p-2"
                     data-testid="attention-item-scroll-viewport"
                   >
                     <div className="space-y-1.5">
@@ -872,7 +928,7 @@ export const AttentionInspectorPanel = ({
                   </ScrollViewport>
 
                   <ScrollViewport
-                    className="rounded-xl border border-slate-200 bg-white p-3"
+                    className="h-full rounded-xl border border-slate-200 bg-white p-3"
                     data-testid="attention-detail-scroll-viewport"
                   >
                     {selectedContext && selectedCommit ? (
@@ -1017,9 +1073,9 @@ export const AttentionInspectorPanel = ({
                   </ScrollViewport>
                 </div>
               )}
-            </div>
           </div>
-        )}
+          )}
+        </div>
       </AsyncSurface>
     </section>
   );
