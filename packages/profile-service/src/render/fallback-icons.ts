@@ -1,5 +1,11 @@
 import type { ProfileIconSeed, SessionIconSeed } from "../types";
-import { fractionFromSeed, hashString } from "./hash";
+
+const toTrimmedOrFallback = (value: string | undefined, fallback: string): string => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
+};
+
+const buildProfileSeed = (input: ProfileIconSeed): string => toTrimmedOrFallback(input.identifier.value, input.identifier.kind);
 
 const escapeXml = (value: string): string =>
   value
@@ -9,7 +15,26 @@ const escapeXml = (value: string): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
 
+const hashString = (value: string): number => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const fractionFromSeed = (seed: number, offset: number): number => {
+  const next = Math.imul(seed ^ (offset * 0x45d9f3b), 0x27d4eb2d) >>> 0;
+  return next / 0xffffffff;
+};
+
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
+
+const labelFromValue = (value: string, fallback: string): string => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+};
 
 const buildRadialStops = (seed: number, accentHue: number) => {
   const glowHue = (accentHue + 30 + Math.round(fractionFromSeed(seed, 4) * 80)) % 360;
@@ -22,13 +47,6 @@ const buildRadialStops = (seed: number, accentHue: number) => {
   };
 };
 
-const labelFromValue = (value: string | undefined, fallback: string): string => {
-  const trimmed = value?.trim() ?? "";
-  return trimmed.length > 0 ? trimmed : fallback;
-};
-
-const normalizeIdentifierSeed = (input: ProfileIconSeed): string => `${input.identifier.kind}:${input.identifier.value.trim()}`;
-
 export const buildProfileIconUrl = (identifier: string): string =>
   `/media/profiles/${encodeURIComponent(identifier)}/icon`;
 
@@ -36,12 +54,14 @@ export const buildSessionIconUrl = (sessionId: string): string =>
   `/media/sessions/${encodeURIComponent(sessionId)}/icon`;
 
 export const renderSessionFallbackSvg = (input: SessionIconSeed): string => {
-  const seed = hashString(`${input.workspacePath}::${input.sessionId}`);
+  const workspacePath = input.workspacePath.trim();
+  const sessionId = input.sessionId.trim();
+  const seed = hashString(`${workspacePath}::${sessionId}`);
   const accentHue = seed % 360;
-  const foregroundHue = hashString(input.sessionId) % 360;
+  const foregroundHue = hashString(sessionId) % 360;
   const background = buildRadialStops(seed, accentHue);
-  const foreground = buildRadialStops(hashString(input.sessionId), foregroundHue);
-  const labelSource = labelFromValue(input.label, String(hashString(input.sessionId) % 100).padStart(2, "0"));
+  const foreground = buildRadialStops(hashString(sessionId), foregroundHue);
+  const labelSource = labelFromValue(input.label ?? "", String(hashString(sessionId) % 100).padStart(2, "0"));
   const cx = percent(0.26 + fractionFromSeed(seed, 1) * 0.52);
   const cy = percent(0.18 + fractionFromSeed(seed, 2) * 0.5);
   const radius = percent(0.55 + fractionFromSeed(seed, 3) * 0.2);
@@ -66,7 +86,9 @@ export const renderSessionFallbackSvg = (input: SessionIconSeed): string => {
     `<filter id="noise">`,
     `<feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" seed="${turbulenceSeed}" />`,
     `<feColorMatrix type="saturate" values="0" />`,
-    `<feComponentTransfer><feFuncA type="table" tableValues="0 0.18" /></feComponentTransfer>`,
+    `<feComponentTransfer>`,
+    `<feFuncA type="table" tableValues="0 0.18" />`,
+    `</feComponentTransfer>`,
     `</filter>`,
     `</defs>`,
     `<rect width="96" height="96" rx="26" fill="url(#bg)" />`,
@@ -80,12 +102,11 @@ export const renderSessionFallbackSvg = (input: SessionIconSeed): string => {
 };
 
 export const renderProfileFallbackSvg = (input: ProfileIconSeed): string => {
-  const seedKey = normalizeIdentifierSeed(input);
-  const seed = hashString(seedKey);
+  const seedValue = buildProfileSeed(input);
+  const seed = hashString(seedValue);
   const accentHue = seed % 360;
   const background = buildRadialStops(seed, accentHue);
-  const fallbackLabel = input.identifier.value.trim().slice(0, 1).toUpperCase() || input.identifier.kind.slice(0, 1).toUpperCase();
-  const label = escapeXml(labelFromValue(input.label, fallbackLabel));
+  const label = escapeXml(labelFromValue(input.label ?? "", seedValue.slice(0, 1).toUpperCase()));
   const orbCx = percent(0.24 + fractionFromSeed(seed, 1) * 0.52);
   const orbCy = percent(0.18 + fractionFromSeed(seed, 2) * 0.48);
   const turbulenceSeed = (seed % 997) + 1;
@@ -99,7 +120,9 @@ export const renderProfileFallbackSvg = (input: ProfileIconSeed): string => {
     `</radialGradient>`,
     `<filter id="grain">`,
     `<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="${turbulenceSeed}" />`,
-    `<feComponentTransfer><feFuncA type="table" tableValues="0 0.12" /></feComponentTransfer>`,
+    `<feComponentTransfer>`,
+    `<feFuncA type="table" tableValues="0 0.12" />`,
+    `</feComponentTransfer>`,
     `</filter>`,
     `</defs>`,
     `<rect width="96" height="96" rx="48" fill="url(#bg)" />`,
