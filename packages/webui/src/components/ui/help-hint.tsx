@@ -12,11 +12,17 @@ import {
 } from "react";
 
 import { cn } from "../../lib/utils";
+import { registerHelpHintRuntimeHandle } from "./help-hint-runtime";
 import { dismissHelpHint, readHelpHintDismissed } from "./help-hint-store";
 
 type HelpHintSide = "top" | "right" | "bottom" | "left";
 type HelpHintAlign = "start" | "center" | "end";
 type HelpHintPresentationMode = "closed" | "passive-auto" | "active-open";
+type HelpHintPassiveReason = "onboarding" | "global-shortcut";
+type HelpHintDisplayState =
+  | { kind: "closed" }
+  | { kind: "passive"; reason: HelpHintPassiveReason }
+  | { kind: "active"; reason: "manual-click" | "transient" };
 
 interface HelpHintProps {
   textContext: string;
@@ -35,6 +41,9 @@ const VIEWPORT_PADDING = 8;
 const HIDDEN_POSITION = -10_000;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+const createClosedState = (): HelpHintDisplayState => ({ kind: "closed" });
+const createPassiveState = (reason: HelpHintPassiveReason): HelpHintDisplayState => ({ kind: "passive", reason });
+const createActiveState = (reason: "manual-click" | "transient"): HelpHintDisplayState => ({ kind: "active", reason });
 const isPointInsideElement = (element: HTMLElement, clientX: number, clientY: number): boolean => {
   const rect = element.getBoundingClientRect();
   return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
@@ -84,9 +93,7 @@ export const HelpHint = ({
   disabled = false,
   testId,
 }: HelpHintProps) => {
-  const [dismissed, setDismissed] = useState<boolean | null>(null);
-  const [open, setOpen] = useState(false);
-  const [hasUserIntent, setHasUserIntent] = useState(false);
+  const [displayState, setDisplayState] = useState<HelpHintDisplayState>(createClosedState);
   const [popupStyle, setPopupStyle] = useState<CSSProperties>({
     left: HIDDEN_POSITION,
     top: HIDDEN_POSITION,
@@ -96,13 +103,24 @@ export const HelpHint = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
-  const manualOpenRef = useRef(false);
+  const displayStateRef = useRef<HelpHintDisplayState>(createClosedState());
+  const disabledRef = useRef(disabled);
+  const persistenceStateRef = useRef<"loading" | "dismissed" | "undismissed">(disabled ? "dismissed" : "loading");
+
+  const open = displayState.kind !== "closed";
+  const presentationMode: HelpHintPresentationMode =
+    displayState.kind === "closed" ? "closed" : displayState.kind === "passive" ? "passive-auto" : "active-open";
+  const passiveReason = displayState.kind === "passive" ? displayState.reason : null;
+  const isOnboardingPassive = passiveReason === "onboarding";
+  const isTransientActive = displayState.kind === "active" && displayState.reason === "transient";
+
+  const closeHint = useCallback(() => {
+    setDisplayState(createClosedState());
+  }, []);
 
   const dismissPersistentHint = useCallback(() => {
-    manualOpenRef.current = false;
-    setDismissed(true);
-    setOpen(false);
-    setHasUserIntent(false);
+    persistenceStateRef.current = "dismissed";
+    setDisplayState(createClosedState());
     void dismissHelpHint(identity);
   }, [identity]);
 
@@ -167,25 +185,48 @@ export const HelpHint = ({
   }, [cancelScheduledPositioning, updatePosition]);
 
   useEffect(() => {
+    displayStateRef.current = displayState;
+  }, [displayState]);
+
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
+
+  useEffect(() => {
+    return registerHelpHintRuntimeHandle({
+      id: popupId,
+      isDisabled: () => disabledRef.current,
+      isOpen: () => displayStateRef.current.kind !== "closed",
+      openPassiveFromShortcut: () => {
+        setDisplayState(createPassiveState("global-shortcut"));
+      },
+      closeFromShortcut: () => {
+        setDisplayState(createClosedState());
+      },
+    });
+  }, [popupId]);
+
+  useEffect(() => {
     let canceled = false;
-    manualOpenRef.current = false;
     if (disabled) {
-      setDismissed(true);
-      setOpen(false);
-      setHasUserIntent(false);
+      persistenceStateRef.current = "dismissed";
+      setDisplayState(createClosedState());
       setPopupStyle({ left: HIDDEN_POSITION, top: HIDDEN_POSITION });
       return;
     }
-    setDismissed(null);
-    setOpen(false);
-    setHasUserIntent(false);
+    persistenceStateRef.current = "loading";
+    setDisplayState(createClosedState());
     void readHelpHintDismissed(identity).then((value) => {
       if (canceled) {
         return;
       }
-      setDismissed(value);
-      setOpen(!value);
-      setHasUserIntent(false);
+      persistenceStateRef.current = value ? "dismissed" : "undismissed";
+      setDisplayState((current) => {
+        if (current.kind !== "closed") {
+          return current;
+        }
+        return value ? current : createPassiveState("onboarding");
+      });
     });
     return () => {
       canceled = true;
@@ -262,7 +303,7 @@ export const HelpHint = ({
   }, [open, schedulePositioning]);
 
   useEffect(() => {
-    if (!open || dismissed === false) {
+    if (!open || isOnboardingPassive) {
       return;
     }
 
@@ -274,18 +315,14 @@ export const HelpHint = ({
       if (triggerRef.current?.contains(target) || popupRef.current?.contains(target)) {
         return;
       }
-      manualOpenRef.current = false;
-      setOpen(false);
-      setHasUserIntent(false);
+      closeHint();
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
       }
-      manualOpenRef.current = false;
-      setOpen(false);
-      setHasUserIntent(false);
+      closeHint();
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -295,10 +332,10 @@ export const HelpHint = ({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [dismissed, open]);
+  }, [closeHint, isOnboardingPassive, open]);
 
   useEffect(() => {
-    if (!open || dismissed !== false) {
+    if (!open || passiveReason === null) {
       return;
     }
 
@@ -317,51 +354,49 @@ export const HelpHint = ({
       }
       event.preventDefault();
       event.stopPropagation();
-      dismissPersistentHint();
+      if (displayStateRef.current.kind !== "passive") {
+        return;
+      }
+      if (displayStateRef.current.reason === "onboarding") {
+        dismissPersistentHint();
+        return;
+      }
+      closeHint();
     };
 
     document.addEventListener("pointerdown", handlePointerDownCapture, true);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDownCapture, true);
     };
-  }, [dismissPersistentHint, dismissed, open]);
+  }, [closeHint, dismissPersistentHint, open, passiveReason]);
 
   if (disabled) {
     return null;
   }
 
-  const presentationMode: HelpHintPresentationMode = !open
-    ? "closed"
-    : dismissed === false && !hasUserIntent
-      ? "passive-auto"
-      : "active-open";
-
-  const markUserIntent = () => {
-    if (!open || dismissed !== false) {
-      return;
-    }
-    setHasUserIntent(true);
-  };
-
   const openTransientHint = () => {
-    if (dismissed === false || manualOpenRef.current) {
-      markUserIntent();
+    if (persistenceStateRef.current !== "dismissed") {
       return;
     }
-    setOpen(true);
-    setHasUserIntent(true);
+    setDisplayState((current) => {
+      if (current.kind !== "closed") {
+        return current;
+      }
+      return createActiveState("transient");
+    });
   };
 
   const closeTransientHint = () => {
-    if (dismissed === false || manualOpenRef.current) {
-      return;
-    }
-    setOpen(false);
-    setHasUserIntent(false);
+    setDisplayState((current) => {
+      if (current.kind === "active" && current.reason === "transient") {
+        return createClosedState();
+      }
+      return current;
+    });
   };
 
   const handleTriggerBlur = (event: FocusEvent<HTMLButtonElement>) => {
-    if (manualOpenRef.current || dismissed === false) {
+    if (!isTransientActive) {
       return;
     }
     const nextTarget = event.relatedTarget;
@@ -373,22 +408,28 @@ export const HelpHint = ({
 
   const handleTriggerClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    if (dismissed === false) {
+    if (isOnboardingPassive) {
       dismissPersistentHint();
       return;
     }
-    const nextOpen = !manualOpenRef.current;
-    manualOpenRef.current = nextOpen;
-    setOpen(nextOpen);
-    setHasUserIntent(nextOpen);
+    setDisplayState((current) => {
+      if (current.kind === "active" && current.reason === "manual-click") {
+        return createClosedState();
+      }
+      return createActiveState("manual-click");
+    });
   };
 
   const handlePopupClick = (event: MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (dismissed !== false) {
+    if (displayStateRef.current.kind !== "passive") {
       return;
     }
-    dismissPersistentHint();
+    if (displayStateRef.current.reason === "onboarding") {
+      dismissPersistentHint();
+      return;
+    }
+    closeHint();
   };
 
   return (
