@@ -140,6 +140,7 @@ export interface SessionBlockAssetRecord {
 export type SessionBlockRole = "user" | "assistant";
 export type SessionBlockChannel = "to_user" | "self_talk" | "tool" | "user_input";
 export type SessionBlockFormat = "plain" | "markdown";
+export type SessionBlockAttentionState = "queued" | "loaded";
 
 export type ToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
 
@@ -164,8 +165,14 @@ export interface SessionBlockRecord {
   seq: number;
   cycleId: number | null;
   createdAt: number;
+  updatedAt: number;
+  messageId?: string;
+  visibleAt?: number;
+  attentionState?: SessionBlockAttentionState;
+  attentionLoadedAt?: number;
   role: SessionBlockRole;
   channel: SessionBlockChannel;
+  chatId: string | null;
   format: SessionBlockFormat;
   content: string;
   tool?: SessionBlockToolMeta;
@@ -175,8 +182,14 @@ export interface SessionBlockRecord {
 export interface SessionBlockInsert {
   cycleId?: number | null;
   createdAt?: number;
+  updatedAt?: number;
+  messageId?: string;
+  visibleAt?: number;
+  attentionState?: SessionBlockAttentionState;
+  attentionLoadedAt?: number;
   role: SessionBlockRole;
   channel: SessionBlockChannel;
+  chatId?: string | null;
   format?: SessionBlockFormat;
   content: string;
   tool?: SessionBlockToolMeta;

@@ -87,7 +87,7 @@ export interface SchedulerKernelState {
   stateVersion: number;
   running: boolean;
   paused: boolean;
-  runtimeStatus: "idle" | "running" | "waiting" | "backoff" | "paused";
+  runtimeStatus: "idle" | "running" | "waiting" | "backoff" | "blocked" | "paused";
   phase: string;
   gate: "open" | "waiting_input";
   queueSize: number;

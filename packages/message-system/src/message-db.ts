@@ -5,12 +5,14 @@ import { Database } from "bun:sqlite";
 
 import type {
   MessageAppendInput,
+  MessageAttentionState,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
   MessageKind,
   MessagePayload,
   MessageChannelRecord,
   MessageCreateInput,
+  MessageEditInput,
   MessageIssueGrantInput,
   MessageParticipant,
   MessageRecord,
@@ -37,6 +39,13 @@ const normalizeMessageKind = (value: string | null): MessageKind => {
     return value;
   }
   return "text";
+};
+
+const normalizeAttentionState = (value: string | null): MessageAttentionState => {
+  if (value === "queued") {
+    return "queued";
+  }
+  return "loaded";
 };
 
 const parseMessagePayload = (kind: MessageKind, raw: string | null): MessagePayload | undefined => {
@@ -130,6 +139,10 @@ const mapMessage = (row: {
   kind: string | null;
   content: string;
   created_at: number;
+  updated_at: number;
+  visible_at: number | null;
+  attention_state: string | null;
+  attention_loaded_at: number | null;
   metadata_json: string | null;
   attachments_json: string | null;
   payload_json: string | null;
@@ -143,6 +156,11 @@ const mapMessage = (row: {
   to: row.to_id ?? undefined,
   content: row.content,
   createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  visibleAt: row.visible_at ?? undefined,
+  attentionState: normalizeAttentionState(row.attention_state),
+  attentionLoadedAt: row.attention_loaded_at ?? undefined,
+  editable: normalizeAttentionState(row.attention_state) === "queued",
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
   attachments: parseJson(row.attachments_json, []),
   payload: parseMessagePayload(normalizeMessageKind(row.kind), row.payload_json),
@@ -353,12 +371,18 @@ export class MessageDb {
 
   appendMessage(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? createdAt;
     const kind = input.kind ?? "text";
+    const attentionState =
+      input.attentionState ??
+      (kind === "text" && input.visibleAt === undefined && input.attentionLoadedAt === undefined ? "loaded" : "loaded");
+    const visibleAt = input.visibleAt ?? (attentionState === "loaded" ? createdAt : null);
+    const attentionLoadedAt = input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt ?? createdAt : null);
     const result = this.db
       .query(
         `insert into chat_message (
-          message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.messageId ?? createId(),
@@ -369,22 +393,89 @@ export class MessageDb {
         kind,
         input.content,
         createdAt,
+        updatedAt,
+        visibleAt,
+        attentionState,
+        attentionLoadedAt,
         toJson(input.metadata ?? {}),
         toJson(input.attachments ?? []),
         toJson(input.payload ?? {}),
       );
     this.touchChannel(input.chatId, createdAt);
     const rowId = Number(result.lastInsertRowid);
-    const row = this.db
-      .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
-         from chat_message where id = ?`,
-      )
-      .get(rowId) as Parameters<typeof mapMessage>[0] | null;
+    const row = this.getMessageRowByDbId(rowId);
     if (!row) {
       throw new Error("failed to load inserted message");
     }
     return mapMessage(row);
+  }
+
+  getMessage(chatId: string, messageId: string): MessageRecord | undefined {
+    const row = this.db
+      .query(
+        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+         from chat_message
+         where chat_id = ? and message_id = ?`,
+      )
+      .get(chatId, messageId) as Parameters<typeof mapMessage>[0] | null;
+    return row ? mapMessage(row) : undefined;
+  }
+
+  editQueuedMessage(input: MessageEditInput): MessageRecord {
+    const current = this.getMessage(input.chatId, input.messageId);
+    if (!current) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    if (current.attentionState !== "queued") {
+      throw new Error("queued message can no longer be edited");
+    }
+    const updatedAt = Date.now();
+    const kind = current.kind;
+    this.db
+      .query(
+        `update chat_message
+         set content = ?, updated_at = ?, metadata_json = ?, attachments_json = ?, payload_json = ?
+         where chat_id = ? and message_id = ?`,
+      )
+      .run(
+        input.content,
+        updatedAt,
+        toJson(input.metadata ?? current.metadata ?? {}),
+        toJson(input.attachments ?? current.attachments ?? []),
+        toJson(input.payload ?? current.payload ?? {}),
+        input.chatId,
+        input.messageId,
+      );
+    this.touchChannel(input.chatId, updatedAt);
+    const row = this.getMessage(input.chatId, input.messageId);
+    if (!row || row.kind !== kind) {
+      throw new Error("failed to load edited message");
+    }
+    return row;
+  }
+
+  markMessageAttentionLoaded(input: { chatId: string; messageId: string; loadedAt?: number }): MessageRecord {
+    const current = this.getMessage(input.chatId, input.messageId);
+    if (!current) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    if (current.attentionState === "loaded") {
+      return current;
+    }
+    const loadedAt = input.loadedAt ?? Date.now();
+    this.db
+      .query(
+        `update chat_message
+         set updated_at = ?, visible_at = ?, attention_state = 'loaded', attention_loaded_at = ?
+         where chat_id = ? and message_id = ?`,
+      )
+      .run(loadedAt, loadedAt, loadedAt, input.chatId, input.messageId);
+    this.touchChannel(input.chatId, loadedAt);
+    const next = this.getMessage(input.chatId, input.messageId);
+    if (!next) {
+      throw new Error("failed to load attention-loaded message");
+    }
+    return next;
   }
 
   pageMessages(chatId: string, input: { before?: ReverseTimeCursor | null; limit?: number }): ReversePage<MessageRecord> {
@@ -392,7 +483,7 @@ export class MessageDb {
     const before = input.before ?? undefined;
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and (
@@ -434,6 +525,15 @@ export class MessageDb {
     this.db.query(`update chat_channel set updated_at = ? where chat_id = ?`).run(updatedAt, chatId);
   }
 
+  private getMessageRowByDbId(id: number): Parameters<typeof mapMessage>[0] | null {
+    return this.db
+      .query(
+        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+         from chat_message where id = ?`,
+      )
+      .get(id) as Parameters<typeof mapMessage>[0] | null;
+  }
+
   private migrate(): void {
     this.db.exec(`
       create table if not exists chat_channel (
@@ -472,6 +572,10 @@ export class MessageDb {
         kind text not null default 'text',
         content text not null,
         created_at integer not null,
+        updated_at integer not null,
+        visible_at integer,
+        attention_state text not null default 'loaded',
+        attention_loaded_at integer,
         metadata_json text,
         attachments_json text,
         payload_json text,
@@ -495,6 +599,27 @@ export class MessageDb {
     if (!hasPayloadColumn) {
       this.db.exec(`alter table chat_message add column payload_json text;`);
     }
+    const hasUpdatedAtColumn = messageColumns.some((column) => column.name === "updated_at");
+    if (!hasUpdatedAtColumn) {
+      this.db.exec(`alter table chat_message add column updated_at integer;`);
+      this.db.exec(`update chat_message set updated_at = created_at where updated_at is null;`);
+    }
+    const hasVisibleAtColumn = messageColumns.some((column) => column.name === "visible_at");
+    if (!hasVisibleAtColumn) {
+      this.db.exec(`alter table chat_message add column visible_at integer;`);
+      this.db.exec(`update chat_message set visible_at = created_at where visible_at is null;`);
+    }
+    const hasAttentionStateColumn = messageColumns.some((column) => column.name === "attention_state");
+    if (!hasAttentionStateColumn) {
+      this.db.exec(`alter table chat_message add column attention_state text not null default 'loaded';`);
+    }
+    const hasAttentionLoadedAtColumn = messageColumns.some((column) => column.name === "attention_loaded_at");
+    if (!hasAttentionLoadedAtColumn) {
+      this.db.exec(`alter table chat_message add column attention_loaded_at integer;`);
+      this.db.exec(`update chat_message set attention_loaded_at = coalesce(attention_loaded_at, visible_at, created_at);`);
+    }
+    this.db.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
+    this.db.exec(`update chat_message set attention_state = coalesce(attention_state, 'loaded');`);
 
     const channelColumns = this.db
       .query(`pragma table_info(chat_channel)`)

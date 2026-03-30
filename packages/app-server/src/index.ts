@@ -38,7 +38,6 @@ export {
   AgenterAI,
   type AgentModelCallRecord,
   type AgentPromptWindowCompactSummary,
-  type AgentPromptWindowReadyReply,
   type AgentRuntimeStats,
   type AgentToolProvider,
   type AgentToolProviderPromptContext,

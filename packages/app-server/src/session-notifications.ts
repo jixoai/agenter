@@ -5,14 +5,19 @@ const toMessageSeq = (messageId: string): number => {
   return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
 };
 
+export type SessionNotificationSourceType = "chat" | "terminal";
+
 export interface SessionNotificationItem {
   id: string;
   sessionId: string;
+  sourceType: SessionNotificationSourceType;
+  sourceId: string;
   chatId?: string;
+  terminalId?: string;
   workspacePath: string;
   sessionName: string;
-  messageId: string;
-  messageSeq: number;
+  messageId?: string;
+  messageSeq?: number;
   content: string;
   timestamp: number;
 }
@@ -20,6 +25,8 @@ export interface SessionNotificationItem {
 export interface SessionNotificationSnapshot {
   items: SessionNotificationItem[];
   unreadBySession: Record<string, number>;
+  unreadByChat: Record<string, Record<string, number>>;
+  unreadByTerminal: Record<string, Record<string, number>>;
 }
 
 interface ChatVisibilityState {
@@ -27,23 +34,55 @@ interface ChatVisibilityState {
   focused: boolean;
 }
 
-const notificationKey = (sessionId: string, chatId?: string): string => `${sessionId}:${chatId ?? "*"}`;
+const notificationKey = (sessionId: string, sourceType: SessionNotificationSourceType, sourceId?: string): string =>
+  `${sessionId}:${sourceType}:${sourceId ?? "*"}`;
+
+const bumpNestedCount = (
+  target: Record<string, Record<string, number>>,
+  sessionId: string,
+  sourceId: string,
+): void => {
+  const nextSessionCounts = target[sessionId] ?? {};
+  nextSessionCounts[sourceId] = (nextSessionCounts[sourceId] ?? 0) + 1;
+  target[sessionId] = nextSessionCounts;
+};
 
 export class SessionNotificationRegistry {
   private readonly itemsByKey = new Map<string, SessionNotificationItem[]>();
   private readonly visibilityByKey = new Map<string, ChatVisibilityState>();
+
+  private getVisibility(
+    sessionId: string,
+    sourceType: SessionNotificationSourceType,
+    sourceId: string,
+  ): ChatVisibilityState | undefined {
+    return (
+      this.visibilityByKey.get(notificationKey(sessionId, sourceType, sourceId)) ??
+      this.visibilityByKey.get(notificationKey(sessionId, sourceType))
+    );
+  }
 
   snapshot(): SessionNotificationSnapshot {
     const items = [...this.itemsByKey.values()]
       .flat()
       .sort((left, right) => left.timestamp - right.timestamp);
     const unreadCounts = new Map<string, number>();
+    const unreadByChat: Record<string, Record<string, number>> = {};
+    const unreadByTerminal: Record<string, Record<string, number>> = {};
     for (const item of items) {
       unreadCounts.set(item.sessionId, (unreadCounts.get(item.sessionId) ?? 0) + 1);
+      if (item.sourceType === "chat" && item.chatId) {
+        bumpNestedCount(unreadByChat, item.sessionId, item.chatId);
+      }
+      if (item.sourceType === "terminal" && item.terminalId) {
+        bumpNestedCount(unreadByTerminal, item.sessionId, item.terminalId);
+      }
     }
     return {
       items,
       unreadBySession: Object.fromEntries(unreadCounts),
+      unreadByChat,
+      unreadByTerminal,
     };
   }
 
@@ -53,7 +92,25 @@ export class SessionNotificationRegistry {
     visible: boolean;
     focused: boolean;
   }): SessionNotificationSnapshot | null {
-    const key = notificationKey(input.sessionId, input.chatId);
+    const key = notificationKey(input.sessionId, "chat", input.chatId);
+    const previous = this.visibilityByKey.get(key);
+    if (previous?.visible === input.visible && previous.focused === input.focused) {
+      return null;
+    }
+    this.visibilityByKey.set(key, {
+      visible: input.visible,
+      focused: input.focused,
+    });
+    return this.snapshot();
+  }
+
+  setTerminalVisibility(input: {
+    sessionId: string;
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }): SessionNotificationSnapshot | null {
+    const key = notificationKey(input.sessionId, "terminal", input.terminalId);
     const previous = this.visibilityByKey.get(key);
     if (previous?.visible === input.visible && previous.focused === input.focused) {
       return null;
@@ -74,8 +131,9 @@ export class SessionNotificationRegistry {
     if (input.message.role !== "assistant" || input.message.channel !== "to_user") {
       return null;
     }
-    const key = notificationKey(input.sessionId, input.message.chatId);
-    const visibility = this.visibilityByKey.get(key);
+    const chatId = input.message.chatId ?? "chat-main";
+    const key = notificationKey(input.sessionId, "chat", chatId);
+    const visibility = this.getVisibility(input.sessionId, "chat", chatId);
     if (visibility?.visible && visibility.focused) {
       return null;
     }
@@ -86,7 +144,9 @@ export class SessionNotificationRegistry {
     current.push({
       id: `${key}:${input.message.id}`,
       sessionId: input.sessionId,
-      chatId: input.message.chatId,
+      sourceType: "chat",
+      sourceId: chatId,
+      chatId,
       workspacePath: input.workspacePath,
       sessionName: input.sessionName,
       messageId: input.message.id,
@@ -98,12 +158,50 @@ export class SessionNotificationRegistry {
     return this.snapshot();
   }
 
+  noteTerminalNotification(input: {
+    sessionId: string;
+    workspacePath: string;
+    sessionName: string;
+    terminalId: string;
+    notificationId: string;
+    content: string;
+    timestamp: number;
+  }): SessionNotificationSnapshot | null {
+    const key = notificationKey(input.sessionId, "terminal", input.terminalId);
+    const visibility = this.getVisibility(input.sessionId, "terminal", input.terminalId);
+    if (visibility?.visible && visibility.focused) {
+      return null;
+    }
+    const current = this.itemsByKey.get(key) ?? [];
+    if (current.some((item) => item.id === `${key}:${input.notificationId}`)) {
+      return null;
+    }
+    current.push({
+      id: `${key}:${input.notificationId}`,
+      sessionId: input.sessionId,
+      sourceType: "terminal",
+      sourceId: input.terminalId,
+      terminalId: input.terminalId,
+      workspacePath: input.workspacePath,
+      sessionName: input.sessionName,
+      content: input.content,
+      timestamp: input.timestamp,
+    });
+    this.itemsByKey.set(key, current);
+    return this.snapshot();
+  }
+
   consume(input: {
     sessionId: string;
     chatId?: string;
+    terminalId?: string;
     upToMessageId?: string | null;
   }): SessionNotificationSnapshot | null {
-    const keys = input.chatId ? [notificationKey(input.sessionId, input.chatId)] : [...this.itemsByKey.keys()].filter((key) => key.startsWith(`${input.sessionId}:`));
+    const keys = input.chatId
+      ? [notificationKey(input.sessionId, "chat", input.chatId)]
+      : input.terminalId
+        ? [notificationKey(input.sessionId, "terminal", input.terminalId)]
+        : [...this.itemsByKey.keys()].filter((key) => key.startsWith(`${input.sessionId}:`));
     if (keys.length === 0) {
       return null;
     }
@@ -115,8 +213,8 @@ export class SessionNotificationRegistry {
         continue;
       }
       const next =
-        upToMessageId.length > 0
-          ? current.filter((item) => item.messageSeq > toMessageSeq(upToMessageId))
+        input.chatId && upToMessageId.length > 0
+          ? current.filter((item) => (item.messageSeq ?? 0) > toMessageSeq(upToMessageId))
           : [];
       if (next.length === current.length) {
         continue;

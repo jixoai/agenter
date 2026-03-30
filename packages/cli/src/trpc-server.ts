@@ -3,10 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 
-import { AppKernel, appRouter, createTrpcContext } from "@agenter/app-server";
+import { AppKernel, appRouter, createTrpcContext, type AppKernelOptions } from "@agenter/app-server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -29,6 +29,7 @@ export interface TrpcServerOptions {
   workspacesPath?: string;
   workspaceCwd?: string;
   staticDir?: string;
+  profileService?: AppKernelOptions["profileService"];
 }
 
 export interface TrpcServerHandle {
@@ -48,10 +49,13 @@ const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, 
 const setCors = (res: ServerResponse): void => {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type");
+  res.setHeader("access-control-allow-headers", "content-type,authorization");
 };
 
 type RequestInitWithDuplex = RequestInit & { duplex: "half" };
+type FileUpload = { name: string; mimeType: string; bytes: Uint8Array };
+
+const isFileValue = (value: FormDataEntryValue): value is File => value instanceof File;
 
 const toWebRequest = (req: IncomingMessage, origin: string): Request => {
   const url = new URL(req.url ?? "/", origin);
@@ -74,7 +78,7 @@ const toWebRequest = (req: IncomingMessage, origin: string): Request => {
     duplex: "half",
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = Readable.toWeb(req) as ReadableStream;
+    init.body = Readable.toWeb(req) as unknown as NonNullable<RequestInit["body"]>;
   }
   return new Request(url, init);
 };
@@ -127,6 +131,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     globalSessionRoot: options.globalSessionRoot,
     workspacesPath: options.workspacesPath,
     initialWorkspace: options.workspaceCwd,
+    profileService: options.profileService,
   });
   await kernel.start();
 
@@ -163,12 +168,12 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
         try {
           const request = toWebRequest(req, origin);
           const form = await request.formData();
-          const files = [...form.values()].filter((value): value is File => value instanceof File);
+          const files = form.getAll("files").filter(isFileValue);
           if (files.length === 0) {
             sendJson(res, 400, { ok: false, error: "asset file is required" });
             return;
           }
-          const uploads: Array<{ name: string; mimeType: string; bytes: Uint8Array }> = [];
+          const uploads: FileUpload[] = [];
           for (const file of files) {
             uploads.push({
               name: file.name || "asset",
@@ -201,104 +206,6 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       res.setHeader("content-type", media.mimeType);
       res.setHeader("content-length", String(media.sizeBytes));
       createReadStream(media.filePath).pipe(res);
-      return;
-    }
-
-    const sessionIconUploadMatch = decodePathMatch(pathname, /^\/api\/sessions\/([^/]+)\/icon$/);
-    if (req.method === "POST" && sessionIconUploadMatch) {
-      setCors(res);
-      const [sessionId] = sessionIconUploadMatch;
-      void (async () => {
-        try {
-          const request = toWebRequest(req, origin);
-          const form = await request.formData();
-          const file = [...form.values()].find((value): value is File => value instanceof File);
-          if (!file) {
-            sendJson(res, 400, { ok: false, error: "icon file is required" });
-            return;
-          }
-          const result = await kernel.uploadSessionIcon(sessionId, {
-            bytes: new Uint8Array(await file.arrayBuffer()),
-            name: file.name || "session-icon.webp",
-            mimeType: file.type || "image/webp",
-          });
-          sendJson(res, 200, result);
-        } catch (error) {
-          sendJson(res, 500, {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      })();
-      return;
-    }
-
-    const sessionIconMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/icon$/);
-    if (req.method === "GET" && sessionIconMatch) {
-      setCors(res);
-      const [sessionId] = sessionIconMatch;
-      const icon = kernel.getSessionIcon(sessionId);
-      if (!icon) {
-        sendJson(res, 404, { ok: false, error: "session icon not found" });
-        return;
-      }
-      res.statusCode = 200;
-      res.setHeader("content-type", icon.mimeType);
-      if (icon.kind === "file") {
-        res.setHeader("content-length", String(icon.sizeBytes));
-        createReadStream(icon.filePath).pipe(res);
-        return;
-      }
-      res.end(icon.svg);
-      return;
-    }
-
-    const avatarIconUploadMatch = decodePathMatch(pathname, /^\/api\/avatars\/([^/]+)\/icon$/);
-    if (req.method === "POST" && avatarIconUploadMatch) {
-      setCors(res);
-      const [nickname] = avatarIconUploadMatch;
-      void (async () => {
-        try {
-          const request = toWebRequest(req, origin);
-          const form = await request.formData();
-          const file = [...form.values()].find((value): value is File => value instanceof File);
-          if (!file) {
-            sendJson(res, 400, { ok: false, error: "icon file is required" });
-            return;
-          }
-          const result = await kernel.uploadAvatarIcon({
-            nickname,
-            bytes: new Uint8Array(await file.arrayBuffer()),
-            name: file.name || "avatar-icon.webp",
-            mimeType: file.type || "image/webp",
-          });
-          sendJson(res, 200, result);
-        } catch (error) {
-          sendJson(res, 500, {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      })();
-      return;
-    }
-
-    const avatarIconMatch = decodePathMatch(pathname, /^\/media\/avatars\/([^/]+)\/icon$/);
-    if (req.method === "GET" && avatarIconMatch) {
-      setCors(res);
-      const [nickname] = avatarIconMatch;
-      const icon = kernel.getAvatarIcon({
-        nickname,
-        workspacePath: url?.searchParams.get("workspacePath") ?? undefined,
-      });
-      res.statusCode = 200;
-      res.setHeader("content-type", icon.mimeType);
-      if (icon.kind === "file") {
-        res.setHeader("content-length", String(icon.sizeBytes));
-        createReadStream(icon.filePath).pipe(res);
-        return;
-      }
-      res.end(icon.svg);
       return;
     }
 
@@ -337,7 +244,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       wss.emit("connection", ws, req);
     });
   });

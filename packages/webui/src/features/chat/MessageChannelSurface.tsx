@@ -7,7 +7,7 @@ import {
   type WebChatNotice,
   type WebChatSocketFactory,
 } from "@agenter/web-chat-view";
-import { Plus, Users } from "lucide-react";
+import { Crosshair, Plus, Users } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
@@ -22,6 +22,7 @@ interface MessageChannelSurfaceProps {
   sessionId: string;
   workspacePath?: string | null;
   channels: MessageChannelEntry[];
+  unreadByChat?: Record<string, number>;
   selectedChatId: string | null;
   channelsLoading?: boolean;
   channelsError?: string | null;
@@ -63,6 +64,7 @@ interface MessageChannelSurfaceProps {
 export const MessageChannelSurface = ({
   workspacePath,
   channels,
+  unreadByChat = {},
   selectedChatId,
   channelsLoading = false,
   channelsError = null,
@@ -93,7 +95,7 @@ export const MessageChannelSurface = ({
     () => channels.find((channel) => channel.chatId === selectedChatId) ?? channels[0] ?? null,
     [channels, selectedChatId],
   );
-  const [collapseCreateLabels, setCollapseCreateLabels] = useState(false);
+  const [collapseActionLabels, setCollapseActionLabels] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createDialogKind, setCreateDialogKind] = useState<"direct" | "room">("direct");
   const showEmptyChannelState = !channelsLoading && !channelsError && channels.length === 0;
@@ -115,7 +117,7 @@ export const MessageChannelSurface = ({
     }
 
     const update = () => {
-      setCollapseCreateLabels(container.clientWidth < 164);
+      setCollapseActionLabels(container.clientWidth < 268);
     };
 
     update();
@@ -157,12 +159,19 @@ export const MessageChannelSurface = ({
     loading: channelsLoading,
     hasData: Boolean(selectedChannel),
   });
+  const canToggleSelectedChannelFocus = Boolean(
+    selectedChannel && onFocusChannel && selectedChannel.accessRole === "admin",
+  );
 
   return (
     <div className="grid h-full min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-3">
       <div className="min-w-0">
         <Tabs
-          items={channels.map((channel) => ({ id: channel.chatId, label: channel.title }))}
+          items={channels.map((channel) => ({
+            id: channel.chatId,
+            label: channel.title,
+            badgeCount: unreadByChat[channel.chatId] ?? 0,
+          }))}
           value={selectedChannel?.chatId ?? ""}
           ariaLabel="Chat channels"
           onValueChange={onSelectChannel}
@@ -180,6 +189,26 @@ export const MessageChannelSurface = ({
                 />
               ) : null}
               <div ref={actionGroupRef} className="flex min-w-0 items-center gap-1.5">
+                {selectedChannel && onFocusChannel ? (
+                  <AdaptiveIconButton
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canToggleSelectedChannelFocus || disabled}
+                    icon={Crosshair}
+                    label={selectedChannel.focused ? "Unfocus" : "Focus"}
+                    tooltip={
+                      selectedChannel.focused
+                        ? "Remove this chat channel from semantic focus"
+                        : "Add this chat channel to semantic focus"
+                    }
+                    labelPriority={collapseActionLabels ? "icon-only" : "always"}
+                    onClick={() => {
+                      void onFocusChannel(selectedChannel);
+                    }}
+                    containerClassName="min-w-0"
+                  />
+                ) : null}
                 <AdaptiveIconButton
                   type="button"
                   size="sm"
@@ -188,7 +217,7 @@ export const MessageChannelSurface = ({
                   icon={Plus}
                   label="New chat"
                   tooltip="Create a direct chat channel"
-                  labelPriority={collapseCreateLabels ? "icon-only" : "always"}
+                  labelPriority={collapseActionLabels ? "icon-only" : "always"}
                   onClick={() => {
                     setCreateDialogKind("direct");
                     setCreateDialogOpen(true);
@@ -203,7 +232,7 @@ export const MessageChannelSurface = ({
                   icon={Users}
                   label="New room"
                   tooltip="Create a room chat channel"
-                  labelPriority={collapseCreateLabels ? "icon-only" : "always"}
+                  labelPriority={collapseActionLabels ? "icon-only" : "always"}
                   onClick={() => {
                     setCreateDialogKind("room");
                     setCreateDialogOpen(true);

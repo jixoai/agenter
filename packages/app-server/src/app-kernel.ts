@@ -7,9 +7,7 @@ import {
   type AttentionCommitMatch,
   type AttentionCycleFrame,
   type AttentionHookRecord,
-  type AttentionQueryInput,
 } from "@agenter/attention-system";
-import { normalizeAvatarNickname } from "@agenter/avatar";
 import {
   MessageControlPlane,
   type MessageChannelGrantRecord,
@@ -33,22 +31,10 @@ import {
   type TerminalActivityRecord,
 } from "@agenter/session-system";
 import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleCompactTrigger } from "./chat-cycles";
+import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
-import {
-  buildAvatarIconUrl,
-  buildSessionIconUrl,
-  createAvatarCatalogItem,
-  listUserAvatarNicknames,
-  renderAvatarFallbackSvg,
-  renderSessionFallbackSvg,
-  resolveAvatarForWorkspace,
-  resolveAvatarIconFile,
-  resolveAvatarUserRoot,
-  resolveSessionIconFile,
-  writeAvatarIconUpload,
-  writeSessionIconUpload,
-} from "./profile-images";
+import { ProfileServiceBridge, type ProfileServiceBridgeOptions } from "./profile-service-bridge";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -77,6 +63,7 @@ import {
   saveWorkspaceSettingsLayer,
 } from "./workspace-settings";
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
+import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 
 const now = (): number => Date.now();
 const DEFAULT_MESSAGE_CHAT_TITLE = "Chat";
@@ -89,6 +76,8 @@ const hashNumericLabel = (value: string): string => {
   }
   return String(hash).padStart(2, "0");
 };
+
+const buildSessionIconLabel = (sessionId: string): string => sessionId.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(sessionId);
 
 const createFallbackMessageChannel = (session: SessionMeta): MessageControlPlaneEntry => ({
   chatId: DEFAULT_MESSAGE_CHAT_ID,
@@ -177,9 +166,17 @@ const readChatCycleCompactTrigger = (result: Record<string, unknown>): ChatCycle
   return CHAT_CYCLE_COMPACT_TRIGGERS.has(trigger as ChatCycleCompactTrigger) ? (trigger as ChatCycleCompactTrigger) : null;
 };
 
+const readPersistedBlockChatId = (block: Pick<SessionBlockRecord, "chatId">): string | null => {
+  if (typeof block.chatId !== "string") {
+    return null;
+  }
+  const normalized = block.chatId.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
 const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = DEFAULT_MESSAGE_CHAT_ID): ChatMessage => ({
   id: `${block.id}`,
-  chatId,
+  chatId: readPersistedBlockChatId(block) ?? chatId,
   role: block.role,
   content: block.content,
   timestamp: block.createdAt,
@@ -342,6 +339,7 @@ export interface AppKernelOptions {
   archiveSessionRoot?: string;
   workspacesPath?: string;
   initialWorkspace?: string;
+  profileService?: ProfileServiceBridgeOptions;
   logger?: {
     log: (line: {
       channel: "agent" | "error";
@@ -399,7 +397,9 @@ export class AppKernel {
   private readonly listeners = new Set<KernelListener>();
   private readonly eventLog: AnyRuntimeEvent[] = [];
   private readonly notifications = new SessionNotificationRegistry();
+  private readonly terminalStatusByKey = new Map<string, { running: boolean; status: "IDLE" | "BUSY" }>();
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
+  private readonly profileService: ProfileServiceBridge;
   private eventSeq = 0;
   private sessionsCatalogLoaded = false;
 
@@ -409,6 +409,10 @@ export class AppKernel {
       archiveRoot: options.archiveSessionRoot,
     });
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
+    this.profileService = new ProfileServiceBridge({
+      ...options.profileService,
+      dataDir: options.profileService?.dataDir ?? join(this.sessions.getGlobalRoot(), "..", "profile-service"),
+    });
   }
 
   async start(): Promise<void> {
@@ -416,6 +420,7 @@ export class AppKernel {
       this.workspaces.add(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
+    await Promise.all(this.sessions.list().map((session) => this.syncSessionIconSeed(session)));
   }
 
   async stop(): Promise<void> {
@@ -424,6 +429,8 @@ export class AppKernel {
     }
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
+    this.terminalStatusByKey.clear();
+    await this.profileService.stop();
   }
 
   private ensureSessionCatalogLoaded(): void {
@@ -432,6 +439,14 @@ export class AppKernel {
     }
     this.sessions.refresh(this.workspaces.list());
     this.sessionsCatalogLoaded = true;
+  }
+
+  private async syncSessionIconSeed(session: Pick<SessionMeta, "id" | "cwd">): Promise<void> {
+    await this.profileService.upsertSessionSeed({
+      sessionId: session.id,
+      workspacePath: session.cwd,
+      label: buildSessionIconLabel(session.id),
+    });
   }
 
   getSnapshot(): RuntimeSnapshotPayload {
@@ -742,6 +757,7 @@ export class AppKernel {
       avatar: resolved.avatar.nickname,
       storeTarget: resolved.sessionStoreTarget,
     });
+    await this.syncSessionIconSeed(session);
     this.emit("session.updated", { session }, session.id);
 
     if (input.autoStart === false) {
@@ -1240,109 +1256,49 @@ export class AppKernel {
     if (!session) {
       throw new Error(`session not found: ${sessionId}`);
     }
-    writeSessionIconUpload(session.sessionRoot, file);
+    await this.syncSessionIconSeed(session);
+    const result = await this.profileService.uploadSessionIcon(sessionId, file);
     return {
       ok: true,
-      url: buildSessionIconUrl(sessionId),
+      url: result.iconUrl,
     };
   }
 
-  getSessionIcon(
-    sessionId: string,
-  ):
-    | { kind: "file"; filePath: string; mimeType: string; sizeBytes: number }
-    | { kind: "generated"; svg: string; mimeType: "image/svg+xml" }
-    | null {
-    this.ensureSessionCatalogLoaded();
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return null;
-    }
-    const uploaded = resolveSessionIconFile(session.sessionRoot);
-    if (uploaded) {
-      return {
-        kind: "file",
-        ...uploaded,
-      };
-    }
-    return {
-      kind: "generated",
-      svg: renderSessionFallbackSvg({
-        sessionId: session.id,
-        workspacePath: session.cwd,
-        label: String(session.id.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(session.id)),
-      }),
-      mimeType: "image/svg+xml",
-    };
+  async listProfiles(): Promise<ProfileProjection[]> {
+    return await this.profileService.listProfiles();
   }
 
-  async listAvatarCatalog(): Promise<{ activeAvatar: string; items: Array<{ nickname: string; active: boolean; iconUrl: string }> }> {
-    const settings = await readGlobalSettingsFile();
-    const nicknames = new Set(listUserAvatarNicknames());
-    nicknames.add(settings.activeAvatar);
-    return {
-      activeAvatar: settings.activeAvatar,
-      items: [...nicknames]
-        .map((nickname) =>
-          createAvatarCatalogItem({
-            nickname,
-            active: nickname === settings.activeAvatar,
-          }),
-        )
-        .sort((left, right) => {
-          if (left.active !== right.active) {
-            return left.active ? -1 : 1;
-          }
-          return left.nickname.localeCompare(right.nickname);
-        }),
-    };
+  async getProfile(reference: string): Promise<ProfileProjection> {
+    return await this.profileService.getProfile(reference);
   }
 
-  async createAvatar(input: { nickname: string }): Promise<{ nickname: string; iconUrl: string }> {
-    const nickname = normalizeAvatarNickname(input.nickname);
-    mkdirSync(resolveAvatarUserRoot(nickname), { recursive: true });
-    return {
-      nickname,
-      iconUrl: buildAvatarIconUrl(nickname),
-    };
+  async updateProfile(input: { reference: string; token: string; patch: ProfileMetadata }): Promise<ProfileProjection> {
+    return await this.profileService.updateProfile(input.reference, input.patch, input.token);
   }
 
-  async uploadAvatarIcon(input: {
-    nickname: string;
+  async uploadProfileIcon(input: {
+    reference: string;
+    token: string;
     bytes: Uint8Array;
-    name: string;
     mimeType: string;
   }): Promise<{ ok: true; url: string }> {
-    const nickname = normalizeAvatarNickname(input.nickname);
-    writeAvatarIconUpload(nickname, input);
+    const result = await this.profileService.uploadProfileIcon(input.reference, input, input.token);
     return {
       ok: true,
-      url: buildAvatarIconUrl(nickname),
+      url: result.iconUrl,
     };
   }
 
-  getAvatarIcon(
-    input: { nickname: string; workspacePath?: string },
-  ):
-    | { kind: "file"; filePath: string; mimeType: string; sizeBytes: number }
-    | { kind: "generated"; svg: string; mimeType: "image/svg+xml" } {
-    const workspacePath = input.workspacePath ? resolve(input.workspacePath) : process.cwd();
-    const avatar = resolveAvatarForWorkspace(workspacePath, input.nickname);
-    const uploaded = resolveAvatarIconFile(avatar);
-    if (uploaded) {
-      return {
-        kind: "file",
-        ...uploaded,
-      };
-    }
-    return {
-      kind: "generated",
-      svg: renderAvatarFallbackSvg({
-        nickname: avatar.nickname,
-        label: avatar.nickname.slice(0, 1).toUpperCase(),
-      }),
-      mimeType: "image/svg+xml",
-    };
+  async startProfileEmailChallenge(email: string) {
+    return await this.profileService.startEmailChallenge(email);
+  }
+
+  async verifyProfileEmailChallenge(input: { email: string; code: string; token?: string }) {
+    return await this.profileService.verifyEmailChallenge(input.email, input.code, input.token);
+  }
+
+  async getProfileServiceDescriptor() {
+    return await this.profileService.describe();
   }
 
   listCurrentBranchCycles(sessionId: string, limit = 200) {
@@ -1582,11 +1538,11 @@ export class AppKernel {
 
   async queryAttention(
     sessionId: string,
-    input: AttentionQueryInput,
+    input: AttentionSearchRequest,
   ): Promise<AttentionCommitMatch[]> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      return runtime.queryAttention(input);
+      return await runtime.queryAttention(input);
     }
 
     const session = this.sessions.get(sessionId);
@@ -1595,7 +1551,13 @@ export class AppKernel {
     }
 
     const attention = await this.readPersistedAttentionState(session);
-    return AttentionSystem.fromSnapshot(attention.snapshot).query(input);
+    const attentionSystem = AttentionSystem.fromSnapshot(attention.snapshot);
+    const engine = new AttentionSearchEngine(join(session.sessionRoot, "attention-search.duckdb"));
+    return await engine.query({
+      attentionSystem,
+      snapshot: attention.snapshot,
+      request: input,
+    });
   }
 
   async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
@@ -1711,7 +1673,23 @@ export class AppKernel {
     return snapshot;
   }
 
-  consumeNotifications(input: { sessionId: string; chatId?: string; upToMessageId?: string | null }): SessionNotificationSnapshot {
+  setTerminalVisibility(input: {
+    sessionId: string;
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }): SessionNotificationSnapshot {
+    const snapshot = this.notifications.setTerminalVisibility(input) ?? this.notifications.snapshot();
+    this.emit("notification.updated", { snapshot }, input.sessionId);
+    return snapshot;
+  }
+
+  consumeNotifications(input: {
+    sessionId: string;
+    chatId?: string;
+    terminalId?: string;
+    upToMessageId?: string | null;
+  }): SessionNotificationSnapshot {
     const snapshot = this.notifications.consume(input) ?? this.notifications.snapshot();
     this.emit("notification.updated", { snapshot }, input.sessionId);
     return snapshot;
@@ -1797,6 +1775,10 @@ export class AppKernel {
     try {
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
+        const explicitChatId = readPersistedBlockChatId(item);
+        if (explicitChatId) {
+          return explicitChatId;
+        }
         if (item.cycleId === null) {
           return DEFAULT_MESSAGE_CHAT_ID;
         }
@@ -1847,6 +1829,10 @@ export class AppKernel {
       const page = db.listBlocksPage(input);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
+        const explicitChatId = readPersistedBlockChatId(item);
+        if (explicitChatId) {
+          return explicitChatId;
+        }
         if (item.cycleId === null) {
           return DEFAULT_MESSAGE_CHAT_ID;
         }
@@ -2018,8 +2004,30 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
+      const cycleChatIds = new Map<number, string>();
+      const resolveBlockChatId = (item: SessionBlockRecord): string => {
+        const explicitChatId = readPersistedBlockChatId(item);
+        if (explicitChatId) {
+          return explicitChatId;
+        }
+        if (item.cycleId === null) {
+          return DEFAULT_MESSAGE_CHAT_ID;
+        }
+        const cached = cycleChatIds.get(item.cycleId);
+        if (cached) {
+          return cached;
+        }
+        const chatId = resolveSessionBlockChatId({
+          block: item,
+          getCycleById: (cycleId) => db.getCycleById(cycleId),
+          fallback: DEFAULT_MESSAGE_CHAT_ID,
+        });
+        cycleChatIds.set(item.cycleId, chatId);
+        return chatId;
+      };
       return db.listBlocksBefore(beforeId, limit).map((item) => ({
         ...item,
+        chatId: resolveBlockChatId(item),
         attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
         sessionId,
         messageId: `${item.id}`,
@@ -2195,6 +2203,11 @@ export class AppKernel {
 
   private detachRuntime(sessionId: string): void {
     this.runtimes.delete(sessionId);
+    for (const key of [...this.terminalStatusByKey.keys()]) {
+      if (key.startsWith(`${sessionId}:`)) {
+        this.terminalStatusByKey.delete(key);
+      }
+    }
     const unsubscribe = this.runtimeStopListeners.get(sessionId);
     if (unsubscribe) {
       unsubscribe();
@@ -2233,6 +2246,15 @@ export class AppKernel {
         return;
       case "terminalStatus":
         this.emit("terminal.status", event.payload, sessionId, event.timestamp);
+        this.emitNotificationForTerminalStatus(
+          sessionId,
+          event.payload as {
+            terminalId: string;
+            running: boolean;
+            status: "IDLE" | "BUSY";
+          },
+          event.timestamp,
+        );
         return;
       case "taskUpdated":
         this.emit("task.updated", event.payload, sessionId, event.timestamp);
@@ -2299,6 +2321,40 @@ export class AppKernel {
       workspacePath: session.cwd,
       sessionName: session.name,
       message,
+    });
+    this.emitNotificationSnapshot(snapshot, sessionId);
+  }
+
+  private emitNotificationForTerminalStatus(
+    sessionId: string,
+    payload: {
+      terminalId: string;
+      running: boolean;
+      status: "IDLE" | "BUSY";
+    },
+    timestamp: number,
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const statusKey = `${sessionId}:${payload.terminalId}`;
+    const previous = this.terminalStatusByKey.get(statusKey);
+    this.terminalStatusByKey.set(statusKey, {
+      running: payload.running,
+      status: payload.status,
+    });
+    if (!previous || previous.status !== "BUSY" || payload.status !== "IDLE" || !payload.running) {
+      return;
+    }
+    const snapshot = this.notifications.noteTerminalNotification({
+      sessionId,
+      workspacePath: session.cwd,
+      sessionName: session.name,
+      terminalId: payload.terminalId,
+      notificationId: `idle:${timestamp}`,
+      content: `Terminal ${payload.terminalId} is ready for your input.`,
+      timestamp,
     });
     this.emitNotificationSnapshot(snapshot, sessionId);
   }

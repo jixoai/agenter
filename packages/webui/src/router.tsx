@@ -1,6 +1,6 @@
-import type { CachedResourceState, MessageChannelEntry } from "@agenter/client-sdk";
-import { createRootRoute, createRoute, createRouter, useNavigate } from "@tanstack/react-router";
+import type { CachedResourceState, MessageChannelEntry, ProfileListItem } from "@agenter/client-sdk";
 import type { WebChatMessage } from "@agenter/web-chat-view";
+import { createRootRoute, createRoute, createRouter, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,6 +21,7 @@ import { resolveChatRouteNotice, resolveSessionStatusPillState } from "./feature
 import { extractInternalFailureNotice, isInternalFailureMessage } from "./features/chat/internal-system-messages";
 import { SystemsPanel } from "./features/devtools/SystemsPanel";
 import { ObservabilityPanel } from "./features/devtools/observability/ObservabilityPanel";
+import { useIconServiceUrls } from "./features/profile/icon-service";
 import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
 import { QuickStartView } from "./features/quickstart/QuickStartView";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
@@ -31,7 +32,6 @@ import { AppRoot } from "./features/shell/AppRoot";
 import { SessionStatusPillMenu } from "./features/shell/SessionStatusPillMenu";
 import { WorkspaceShellFrame } from "./features/shell/WorkspaceShellFrame";
 import { MasterDetailPage } from "./features/shell/master-detail-page";
-import { SessionTerminalsSurface } from "./features/terminal/SessionTerminalsSurface";
 import {
   equalChatRuntimeState,
   equalSessionChromeState,
@@ -41,6 +41,7 @@ import {
   selectWorkspaceChromeState,
 } from "./features/shell/runtime-selectors";
 import { useAdaptiveViewport } from "./features/shell/useAdaptiveViewport";
+import { SessionTerminalsSurface } from "./features/terminal/SessionTerminalsSurface";
 import { WorkspaceSessionsPanel } from "./features/workspaces/WorkspaceSessionsPanel";
 import { WorkspacesPanel } from "./features/workspaces/WorkspacesPanel";
 import { cn } from "./lib/utils";
@@ -63,6 +64,7 @@ const EMPTY_MESSAGE_CHANNELS_RESOURCE = {
   error: null,
   refreshedAt: null,
 } as const satisfies CachedResourceState<MessageChannelEntry[]>;
+const EMPTY_UNREAD_COUNTS: Record<string, number> = {};
 const EMPTY_CYCLES: never[] = [];
 const EMPTY_LOGS: never[] = [];
 const EMPTY_TRACES: never[] = [];
@@ -79,6 +81,22 @@ const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
   },
   provenance: {},
 };
+const PROFILE_AUTH_STORAGE_KEY = "agenter:webui:profile-auth";
+const PROFILE_AUTH_MESSAGE_SOURCE = "agenter-profile-service";
+
+type DurableProfileItem = ProfileListItem & { profileId: string };
+
+type ProfileEditorDraft = {
+  nickname: string;
+  displayName: string;
+  phone: string;
+  address: string;
+};
+
+type StoredProfileAuth = {
+  token: string;
+  profileId: string | null;
+};
 
 const readSearchString = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
@@ -86,6 +104,87 @@ const readSearchString = (value: unknown): string | undefined => {
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
+};
+
+const readProfileReference = (value: unknown): string => (typeof value === "string" && value.trim().length > 0 ? value.trim() : "");
+
+const patchActiveProfileReference = (content: string, profileReference: string): string => {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    parsed.profileReference = profileReference;
+    return `${JSON.stringify(parsed, null, 2)}\n`;
+  } catch {
+    return `{\n  "profileReference": "${profileReference}"\n}\n`;
+  }
+};
+
+const isDurableProfileItem = (profile: ProfileListItem): profile is DurableProfileItem =>
+  typeof profile.profileId === "string" && profile.profileId.trim().length > 0;
+
+const createEmptyProfileDraft = (): ProfileEditorDraft => ({
+  nickname: "",
+  displayName: "",
+  phone: "",
+  address: "",
+});
+
+const toProfileDraft = (profile: DurableProfileItem | null): ProfileEditorDraft => ({
+  nickname: profile?.metadata.nickname ?? "",
+  displayName: profile?.metadata.displayName ?? "",
+  phone: profile?.metadata.phone ?? "",
+  address: profile?.metadata.address ?? "",
+});
+
+const selectPreferredProfileReference = (
+  profiles: DurableProfileItem[],
+  input: { preferred?: string | null; active?: string | null; authenticated?: string | null },
+): string | null => {
+  const candidates = [input.preferred, input.active, input.authenticated];
+  for (const candidate of candidates) {
+    if (candidate && profiles.some((profile) => profile.profileId === candidate)) {
+      return candidate;
+    }
+  }
+  return profiles[0]?.profileId ?? null;
+};
+
+const readStoredProfileAuth = (): StoredProfileAuth => {
+  if (typeof window === "undefined") {
+    return { token: "", profileId: null };
+  }
+  try {
+    const raw = window.localStorage.getItem(PROFILE_AUTH_STORAGE_KEY);
+    if (!raw) {
+      return { token: "", profileId: null };
+    }
+    const parsed = JSON.parse(raw) as { token?: unknown; profileId?: unknown };
+    return {
+      token: typeof parsed.token === "string" ? parsed.token : "",
+      profileId: typeof parsed.profileId === "string" && parsed.profileId.trim().length > 0 ? parsed.profileId : null,
+    };
+  } catch {
+    return { token: "", profileId: null };
+  }
+};
+
+const writeStoredProfileAuth = (auth: StoredProfileAuth): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (!auth.token) {
+    window.localStorage.removeItem(PROFILE_AUTH_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(PROFILE_AUTH_STORAGE_KEY, JSON.stringify(auth));
+};
+
+const openProfilePopup = (url: string): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const popupUrl = new URL(url, window.location.origin);
+  popupUrl.searchParams.set("openerOrigin", window.location.origin);
+  window.open(popupUrl.toString(), "_blank", "popup=yes,width=560,height=720");
 };
 
 const validateSessionChatSearch = (search: Record<string, unknown>) => ({
@@ -123,6 +222,11 @@ const toBootstrapChannelMessages = (
       };
     };
     timestamp: number;
+    updatedAt?: number;
+    visibleAt?: number;
+    attentionState?: "queued" | "loaded";
+    attentionLoadedAt?: number;
+    editable?: boolean;
     cycleId?: number | null;
     channel?: "to_user" | "self_talk" | "tool";
     format?: "plain" | "markdown";
@@ -152,23 +256,33 @@ const toBootstrapChannelMessages = (
       }
       return true;
     })
-    .map((message, index) => ({
-      rowId: Number.isFinite(Number(message.id)) ? Number(message.id) : index + 1,
-      messageId: message.id,
-      chatId: channel.chatId,
-      from: message.role === "assistant" ? channel.owner : "User",
-      to: message.role === "assistant" ? undefined : channel.owner,
-      kind: message.messageKind ?? "text",
-      content: message.content,
-      createdAt: message.timestamp,
-      metadata: {
-        ...(message.channel ? { channel: message.channel } : {}),
-        ...(message.format ? { format: message.format } : {}),
-        ...(message.cycleId != null ? { cycleId: message.cycleId } : {}),
-      },
-      attachments: message.attachments?.map((attachment) => ({ ...attachment })),
-      payload: message.messagePayload,
-    }));
+    .map((message, index) => {
+      const attentionState = message.attentionState ?? "loaded";
+      const visibleAt = message.visibleAt ?? (attentionState === "loaded" ? message.updatedAt ?? message.timestamp : undefined);
+      return {
+        rowId: Number.isFinite(Number(message.id)) ? Number(message.id) : index + 1,
+        messageId: message.id,
+        chatId: channel.chatId,
+        from: message.role === "assistant" ? channel.owner : "User",
+        to: message.role === "assistant" ? undefined : channel.owner,
+        kind: message.messageKind ?? "text",
+        content: message.content,
+        createdAt: message.timestamp,
+        updatedAt: message.updatedAt ?? message.timestamp,
+        visibleAt,
+        attentionState,
+        attentionLoadedAt:
+          message.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt ?? message.updatedAt ?? message.timestamp : undefined),
+        editable: message.editable ?? attentionState === "queued",
+        metadata: {
+          ...(message.channel ? { channel: message.channel } : {}),
+          ...(message.format ? { format: message.format } : {}),
+          ...(message.cycleId != null ? { cycleId: message.cycleId } : {}),
+        },
+        attachments: message.attachments?.map((attachment) => ({ ...attachment })),
+        payload: message.messagePayload,
+      };
+    });
 };
 
 const normalizeSchedulerStateLogs = (
@@ -337,7 +451,7 @@ const QuickStartRouteView = () => {
           await navigate({
             to: "/session/$sessionId/chats",
             params: { sessionId },
-            search: {},
+            search: { chatId: undefined },
           });
         }}
         onSaveBootstrapConfig={controller.saveQuickstartBootstrapConfig}
@@ -349,7 +463,7 @@ const QuickStartRouteView = () => {
           await navigate({
             to: "/session/$sessionId/chats",
             params: { sessionId },
-            search: {},
+            search: { chatId: undefined },
           });
         }}
         onSearchPaths={controller.searchWorkspacePaths}
@@ -358,7 +472,7 @@ const QuickStartRouteView = () => {
           await navigate({
             to: "/session/$sessionId/chats",
             params: { sessionId },
-            search: {},
+            search: { chatId: undefined },
           });
         }}
       />
@@ -426,7 +540,7 @@ const WorkspacesRouteView = () => {
               void navigate({
                 to: "/session/$sessionId/chats",
                 params: { sessionId },
-                search: {},
+                search: { chatId: undefined },
               });
             });
           }}
@@ -459,7 +573,7 @@ const WorkspacesRouteView = () => {
               void navigate({
                 to: "/session/$sessionId/chats",
                 params: { sessionId },
-                search: {},
+                search: { chatId: undefined },
               });
             });
           }}
@@ -468,7 +582,7 @@ const WorkspacesRouteView = () => {
               void navigate({
                 to: "/session/$sessionId/chats",
                 params: { sessionId },
-                search: {},
+                search: { chatId: undefined },
               });
             });
           }}
@@ -514,9 +628,8 @@ const SessionChatsRouteView = () => {
   const workspacePath = session?.cwd ?? "";
   const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
   const runtime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
-  const runtimeChatMessages = useRuntimeSelector((state) =>
-    state.chatsBySession[sessionId] ?? EMPTY_MESSAGES,
-  );
+  const runtimeChatMessages = useRuntimeSelector((state) => state.chatsBySession[sessionId] ?? EMPTY_MESSAGES);
+  const unreadByChat = useRuntimeSelector((state) => state.unreadByChat[sessionId] ?? EMPTY_UNREAD_COUNTS);
   const channelsResource = useRuntimeSelector(
     (state) => state.messageChannelsBySession[sessionId] ?? EMPTY_MESSAGE_CHANNELS_RESOURCE,
   );
@@ -531,10 +644,11 @@ const SessionChatsRouteView = () => {
   });
   const [latestVisibleMessageId, setLatestVisibleMessageId] = useState<string | null>(null);
   const pageFocusedRef = useRef(true);
-  const focusedChatKeyRef = useRef<string | null>(null);
+  const routeFocusSyncRef = useRef<string | null>(null);
   const channels = channelsResource.data;
   const channelsLoading = channelsResource.loading || channelsResource.refreshing;
   const channelsError = channelsResource.error;
+  const iconUrls = useIconServiceUrls(controller.runtimeStore);
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.chatId === search.chatId) ?? channels[0] ?? null,
     [channels, search.chatId],
@@ -612,7 +726,14 @@ const SessionChatsRouteView = () => {
       return;
     }
     void controller.ensureMessageChannels(sessionId);
-  }, [channelsResource.loaded, channelsResource.loading, channelsResource.refreshing, connected, controller, sessionId]);
+  }, [
+    channelsResource.loaded,
+    channelsResource.loading,
+    channelsResource.refreshing,
+    connected,
+    controller,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (!channelsResource.loaded) {
@@ -630,22 +751,37 @@ const SessionChatsRouteView = () => {
   }, [channels, channelsResource.loaded, navigate, search.chatId, sessionId]);
 
   useEffect(() => {
-    const chatId = selectedChannel?.chatId;
-    const focusKey = chatId ? `${sessionId}:${chatId}` : null;
-    if (!chatId || !routeRuntime?.started || focusedChatKeyRef.current === focusKey) {
+    if (!connected || !channelsResource.loaded || !search.chatId || !selectedChannel) {
       return;
     }
-    focusedChatKeyRef.current = focusKey;
+    if (selectedChannel.chatId !== search.chatId) {
+      return;
+    }
+    const syncKey = `${sessionId}:${selectedChannel.chatId}:${selectedChannel.accessToken}`;
+    if (routeFocusSyncRef.current === syncKey) {
+      return;
+    }
+    routeFocusSyncRef.current = syncKey;
     void controller
       .focusMessageChannels({
         sessionId,
         op: "replace",
-        channels: [{ chatId, accessToken: selectedChannel.accessToken }],
+        channels: [{ chatId: selectedChannel.chatId, accessToken: selectedChannel.accessToken }],
       })
       .catch(() => {
-        focusedChatKeyRef.current = null;
+        if (routeFocusSyncRef.current === syncKey) {
+          routeFocusSyncRef.current = null;
+        }
       });
-  }, [controller, routeRuntime?.started, selectedChannel?.accessToken, selectedChannel?.chatId, sessionId]);
+  }, [
+    channelsResource.loaded,
+    connected,
+    controller,
+    search.chatId,
+    selectedChannel?.accessToken,
+    selectedChannel?.chatId,
+    sessionId,
+  ]);
 
   useEffect(() => {
     const chatId = selectedChannel?.chatId;
@@ -699,14 +835,7 @@ const SessionChatsRouteView = () => {
       window.removeEventListener("blur", handleBlur);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [
-    connected,
-    consumeNotifications,
-    latestVisibleMessageId,
-    selectedChannel?.chatId,
-    sessionId,
-    setChatVisibility,
-  ]);
+  }, [connected, consumeNotifications, latestVisibleMessageId, selectedChannel?.chatId, sessionId, setChatVisibility]);
 
   return (
     <WorkspaceShellFrame
@@ -730,6 +859,7 @@ const SessionChatsRouteView = () => {
         sessionId={sessionId}
         workspacePath={workspacePath}
         channels={channels}
+        unreadByChat={unreadByChat}
         selectedChatId={selectedChannel?.chatId ?? null}
         channelsLoading={channelsLoading}
         channelsError={channelsError}
@@ -737,7 +867,7 @@ const SessionChatsRouteView = () => {
         imageCompatible={runtime?.imageInput ?? false}
         routeNotice={routeNotice}
         initialMessages={bootstrapMessages}
-        assistantAvatarUrl={session ? controller.runtimeStore.avatarIconUrl(session.avatar, workspacePath) : null}
+        assistantAvatarUrl={iconUrls.profile(session?.avatar)}
         assistantAvatarLabel={session?.avatar ?? "Assistant"}
         userAvatarLabel="You"
         onSelectChannel={(chatId) => {
@@ -755,7 +885,7 @@ const SessionChatsRouteView = () => {
             participants: input.participants,
             metadata: input.metadata,
             adminToken: input.adminToken,
-            focus: true,
+            focus: false,
           });
           await navigate({
             to: "/session/$sessionId/chats",
@@ -766,7 +896,7 @@ const SessionChatsRouteView = () => {
         onFocusChannel={async (channel) => {
           await controller.focusMessageChannels({
             sessionId,
-            op: "replace",
+            op: channel.focused ? "remove" : "add",
             channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
           });
           await navigate({
@@ -897,7 +1027,7 @@ const SessionTerminalsRouteView = () => {
         void navigate({
           to: "/session/$sessionId/chats",
           params: { sessionId },
-          search: {},
+          search: { chatId: undefined },
         });
         return;
       }
@@ -941,10 +1071,7 @@ const SessionTerminalsRouteView = () => {
       }
     >
       <section
-        className={cn(
-          surfaceToneClassName("panel"),
-          "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5 p-2.5 md:p-3",
-        )}
+        className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5 p-2.5 md:p-3")}
       >
         {routeNotice ? <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner> : null}
         <ViewportMask className="h-full">
@@ -1040,7 +1167,7 @@ const SessionDevtoolsRouteView = () => {
       void navigate({
         to: "/session/$sessionId/chats",
         params: { sessionId },
-        search: {},
+        search: { chatId: undefined },
       });
     },
     [navigate, sessionId],
@@ -1074,7 +1201,7 @@ const SessionDevtoolsRouteView = () => {
             navigateDevtools(
               {
                 panel: "attention",
-                attentionView: "items",
+                attentionView: query.trim().length > 0 ? "items" : "context",
                 attentionQuery: query.trim().length > 0 ? query : undefined,
               },
               { replace: true },
@@ -1187,7 +1314,7 @@ const SessionSettingsRouteView = () => {
       void navigate({
         to: "/session/$sessionId/chats",
         params: { sessionId },
-        search: {},
+        search: { chatId: undefined },
       });
     },
     [navigate, sessionId],
@@ -1268,17 +1395,59 @@ const SessionSettingsRouteView = () => {
 const GlobalSettingsRouteView = () => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
+  const profileServiceOrigin = useRuntimeSelector((state) => {
+    const endpoint = state.profileService?.endpoint;
+    if (!endpoint) {
+      return null;
+    }
+    try {
+      return new URL(endpoint).origin;
+    } catch {
+      return null;
+    }
+  });
   const adaptiveViewport = useAdaptiveViewport();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("idle");
+  const [profileStatus, setProfileStatus] = useState("No stored durable profile auth token.");
   const [effective, setEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
   const [layers, setLayers] = useState<SettingsLayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [layerDraft, setLayerDraft] = useState("{}\n");
   const [layerMtimeMs, setLayerMtimeMs] = useState(0);
-  const [avatars, setAvatars] = useState<Array<{ nickname: string; active: boolean; iconUrl: string }>>([]);
-  const [activeAvatar, setActiveAvatar] = useState("");
+  const [profiles, setProfiles] = useState<DurableProfileItem[]>([]);
+  const [activeProfileReference, setActiveProfileReference] = useState("");
+  const [selectedProfileReference, setSelectedProfileReference] = useState<string | null>(null);
+  const [profileDraft, setProfileDraft] = useState<ProfileEditorDraft>(createEmptyProfileDraft());
+  const [emailDraft, setEmailDraft] = useState("");
+  const [verificationCodeDraft, setVerificationCodeDraft] = useState("");
+  const [pendingRegistrationTicket, setPendingRegistrationTicket] = useState<string | null>(null);
+  const [pendingRegistrationUrl, setPendingRegistrationUrl] = useState<string | null>(null);
+  const [profileAuth, setProfileAuth] = useState<StoredProfileAuth>(() => readStoredProfileAuth());
+  const pendingRegistrationOrigin = useMemo(() => {
+    if (!pendingRegistrationUrl) {
+      return null;
+    }
+    try {
+      return new URL(pendingRegistrationUrl).origin;
+    } catch {
+      return null;
+    }
+  }, [pendingRegistrationUrl]);
+
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.profileId === selectedProfileReference) ?? null,
+    [profiles, selectedProfileReference],
+  );
+
+  useEffect(() => {
+    writeStoredProfileAuth(profileAuth);
+  }, [profileAuth]);
+
+  useEffect(() => {
+    setProfileDraft(toProfileDraft(selectedProfile));
+  }, [selectedProfile]);
 
   const loadLayer = async (layerId: string) => {
     setLoading(true);
@@ -1305,45 +1474,102 @@ const GlobalSettingsRouteView = () => {
     return items.find((layer) => layer.editable)?.layerId ?? items[0]?.layerId ?? null;
   };
 
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const [settingsScope, avatarCatalog] = await Promise.all([
-        controller.runtimeStore.listScopedSettings({ scope: "global" }),
-        controller.runtimeStore.listAvatarCatalog(),
-      ]);
-      setEffective(settingsScope.effective);
-      setLayers(settingsScope.layers);
-      setAvatars(avatarCatalog.items);
-      setActiveAvatar(avatarCatalog.activeAvatar);
-      const nextLayerId = selectPreferredLayer(settingsScope.layers, selectedLayerId);
-      setSelectedLayerId(nextLayerId);
-      if (nextLayerId) {
-        const file = await controller.runtimeStore.readScopedSettingsLayer({
-          scope: "global",
-          layerId: nextLayerId,
+  const refresh = useCallback(
+    async (preferredProfileReference?: string | null) => {
+      setLoading(true);
+      try {
+        const [settingsScope, profileList] = await Promise.all([
+          controller.runtimeStore.listScopedSettings({ scope: "global" }),
+          controller.runtimeStore.listProfiles(),
+        ]);
+        const durableProfiles = profileList.items.filter(isDurableProfileItem);
+        const effectiveProfileReference = readProfileReference(
+          (settingsScope.effective.value as { profileReference?: unknown } | undefined)?.profileReference,
+        );
+
+        setEffective(settingsScope.effective);
+        setLayers(settingsScope.layers);
+        setProfiles(durableProfiles);
+        setActiveProfileReference(effectiveProfileReference);
+
+        const nextLayerId = selectPreferredLayer(settingsScope.layers, selectedLayerId);
+        setSelectedLayerId(nextLayerId);
+        if (nextLayerId) {
+          const file = await controller.runtimeStore.readScopedSettingsLayer({
+            scope: "global",
+            layerId: nextLayerId,
+          });
+          setLayerDraft(file.content);
+          setLayerMtimeMs(file.mtimeMs);
+        } else {
+          setLayerDraft("{}\n");
+          setLayerMtimeMs(0);
+        }
+
+        const nextSelectedProfileReference = selectPreferredProfileReference(durableProfiles, {
+          preferred: preferredProfileReference ?? selectedProfileReference,
+          active: effectiveProfileReference,
+          authenticated: profileAuth.profileId,
         });
-        setLayerDraft(file.content);
-        setLayerMtimeMs(file.mtimeMs);
-      } else {
-        setLayerDraft("{}\n");
-        setLayerMtimeMs(0);
+        setSelectedProfileReference(nextSelectedProfileReference);
+        setStatus(`Loaded ${durableProfiles.length} durable profiles`);
+      } catch (error) {
+        controller.setNotice(String(error instanceof Error ? error.message : error));
+        setStatus("load failed");
+      } finally {
+        setLoading(false);
       }
-      setStatus(`Loaded ${avatarCatalog.items.length} avatars`);
-    } catch (error) {
-      controller.setNotice(String(error instanceof Error ? error.message : error));
-      setStatus("load failed");
-    } finally {
-      setLoading(false);
+    },
+    [controller, profileAuth.profileId, selectedLayerId, selectedProfileReference],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
     }
-  };
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin &&
+        event.origin !== profileServiceOrigin &&
+        event.origin !== pendingRegistrationOrigin
+      ) {
+        return;
+      }
+      const data = event.data;
+      if (!data || typeof data !== "object") {
+        return;
+      }
+      const message = data as { source?: unknown; kind?: unknown; token?: unknown; profileId?: unknown };
+      if (message.source !== PROFILE_AUTH_MESSAGE_SOURCE || message.kind !== "auth-success" || typeof message.token !== "string") {
+        return;
+      }
+      const nextAuth: StoredProfileAuth = {
+        token: message.token,
+        profileId: typeof message.profileId === "string" && message.profileId.trim().length > 0 ? message.profileId : null,
+      };
+      setProfileAuth(nextAuth);
+      setPendingRegistrationTicket(null);
+      setPendingRegistrationUrl(null);
+      setProfileStatus(nextAuth.profileId ? `Authenticated durable profile ${nextAuth.profileId}.` : "Authenticated durable profile.");
+      if (nextAuth.profileId) {
+        setSelectedProfileReference(nextAuth.profileId);
+        setActiveProfileReference((current) => current || nextAuth.profileId!);
+        setLayerDraft((current) => patchActiveProfileReference(current, nextAuth.profileId!));
+      }
+      void refresh(nextAuth.profileId);
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+    };
+  }, [pendingRegistrationOrigin, profileServiceOrigin, refresh]);
 
   useEffect(() => {
     if (!connected) {
       return;
     }
     void refresh();
-  }, [connected]);
+  }, [connected, refresh]);
 
   return (
     <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col")}>
@@ -1351,13 +1577,21 @@ const GlobalSettingsRouteView = () => {
         loading={loading}
         saving={saving}
         status={status}
+        profileStatus={profileStatus}
         detailMode={adaptiveViewport.compact ? "sheet" : "split"}
         effective={effective}
         layers={layers}
         selectedLayerId={selectedLayerId}
         layerContent={layerDraft}
-        avatars={avatars}
-        activeAvatar={activeAvatar}
+        profiles={profiles}
+        activeProfileReference={activeProfileReference}
+        selectedProfileReference={selectedProfileReference}
+        profileDraft={profileDraft}
+        emailDraft={emailDraft}
+        verificationCodeDraft={verificationCodeDraft}
+        authToken={profileAuth.token}
+        authenticatedProfileId={profileAuth.profileId}
+        pendingRegistrationTicket={pendingRegistrationTicket}
         onSelectLayer={(layerId) => {
           setSelectedLayerId(layerId);
         }}
@@ -1405,13 +1639,102 @@ const GlobalSettingsRouteView = () => {
               setSaving(false);
             });
         }}
-        onCreateAvatar={async (nickname) => {
-          await controller.runtimeStore.createAvatar(nickname);
-          await refresh();
+        onSelectProfile={(reference) => {
+          setSelectedProfileReference(reference);
         }}
-        onUploadAvatarIcon={async (nickname, file) => {
-          await controller.runtimeStore.uploadAvatarIcon(nickname, file);
-          await refresh();
+        onSetActiveProfile={(reference) => {
+          setActiveProfileReference(reference);
+          setLayerDraft((current) => patchActiveProfileReference(current, reference));
+        }}
+        onProfileDraftChange={setProfileDraft}
+        onEmailDraftChange={setEmailDraft}
+        onVerificationCodeDraftChange={setVerificationCodeDraft}
+        onStartEmailChallenge={async () => {
+          const email = emailDraft.trim();
+          if (!email) {
+            setProfileStatus("Email is required before starting OTP.");
+            return;
+          }
+          const result = await controller.runtimeStore.startProfileEmailChallenge(email);
+          setProfileStatus(`OTP issued for ${email}. Check the endpoint log. challenge=${result.challengeId}`);
+        }}
+        onVerifyEmailChallenge={async () => {
+          const email = emailDraft.trim();
+          const code = verificationCodeDraft.trim();
+          if (!email || !code) {
+            setProfileStatus("Email and verification code are required.");
+            return;
+          }
+          const result = await controller.runtimeStore.verifyProfileEmailChallenge({
+            email,
+            code,
+            token: profileAuth.token || undefined,
+          });
+          const verifiedProfileId = typeof result.profile.profileId === "string" ? result.profile.profileId : null;
+          setPendingRegistrationTicket(result.registrationTicket);
+          setPendingRegistrationUrl(result.registrationUrl);
+          setProfileStatus("Email verified. Open passkey registration to finish durable auth.");
+          if (verifiedProfileId) {
+            setSelectedProfileReference(verifiedProfileId);
+            setActiveProfileReference((current) => current || verifiedProfileId);
+            setLayerDraft((current) => patchActiveProfileReference(current, verifiedProfileId));
+          }
+          await refresh(verifiedProfileId);
+          openProfilePopup(result.registrationUrl);
+        }}
+        onOpenPasskeyRegistration={() => {
+          const registrationUrl =
+            pendingRegistrationUrl ??
+            (pendingRegistrationTicket ? controller.runtimeStore.webauthnRegistrationUrl(pendingRegistrationTicket) : null);
+          if (!registrationUrl) {
+            setProfileStatus("Profile-service endpoint is not ready yet.");
+            return;
+          }
+          openProfilePopup(registrationUrl);
+        }}
+        onOpenPasskeyAuthentication={() => {
+          if (!selectedProfileReference) {
+            return;
+          }
+          const authenticationUrl = controller.runtimeStore.webauthnAuthenticationUrl(selectedProfileReference);
+          if (!authenticationUrl) {
+            setProfileStatus("Profile-service endpoint is not ready yet.");
+            return;
+          }
+          openProfilePopup(authenticationUrl);
+        }}
+        onUploadProfileIcon={async (reference, file) => {
+          if (!profileAuth.token || profileAuth.profileId !== reference) {
+            setProfileStatus("Authenticate the selected profile before uploading its icon.");
+            return;
+          }
+          await controller.runtimeStore.uploadProfileIcon(reference, profileAuth.token, file);
+          setProfileStatus(`Uploaded icon for ${reference}.`);
+          await refresh(reference);
+        }}
+        onSaveProfile={async () => {
+          if (!selectedProfile || !profileAuth.token || profileAuth.profileId !== selectedProfile.profileId) {
+            setProfileStatus("Authenticate the selected profile before saving metadata.");
+            return;
+          }
+          await controller.runtimeStore.updateProfile({
+            reference: selectedProfile.profileId,
+            token: profileAuth.token,
+            patch: {
+              ...(profileDraft.nickname.trim() ? { nickname: profileDraft.nickname.trim() } : {}),
+              ...(profileDraft.displayName.trim() ? { displayName: profileDraft.displayName.trim() } : {}),
+              ...(profileDraft.phone.trim() ? { phone: profileDraft.phone.trim() } : {}),
+              ...(profileDraft.address.trim() ? { address: profileDraft.address.trim() } : {}),
+            },
+          });
+          setProfileStatus(`Saved metadata for ${selectedProfile.profileId}.`);
+          await refresh(selectedProfile.profileId);
+        }}
+        onClearProfileAuth={() => {
+          setProfileAuth({ token: "", profileId: null });
+          setPendingRegistrationTicket(null);
+          setPendingRegistrationUrl(null);
+          setProfileStatus("Cleared stored durable profile auth token.");
         }}
       />
     </section>

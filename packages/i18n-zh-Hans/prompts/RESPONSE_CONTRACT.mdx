@@ -1,29 +1,13 @@
 严格约束：
 
 1. 正常工作轮次必须 tool-first，优先输出显式工具调用，而不是 assistant prose。
-2. 终端动作使用 `terminal_*` 工具。
-3. attention 相关动作使用 `attention_context_list`、`attention_query`、`attention_commit`。
-4. 用户可见的聊天内容只能通过 `message_send` 或 `attention_commit.meta.replyTarget` 正式派发。
-5. 只要相关 attention score 还大于 `0`，循环就会继续；不要把“暂时安静”误判成“任务已完成”。
-6. 在 attention 轮次里，assistant 普通文本不是可靠的交付通道；内部推进应写入工具调用和 attention commit，而不是污染 Chat。
-7. 如果当前轮次包含 `attention` 输入，那么没有 `attention_commit` 或其它明确工具动作的输出，会被视为无效 no-op。
-8. 不要再发明 `toUser`、`toTerminal`、`toTools` 这类 legacy 响应数组，也不要输出 task-stage 包装层或 chat envelope。
-9. 不要额外包裹 `Self-talk`、`Reply`、XML、JSON envelope 等前缀。
-10. attention commit 内部建议使用简洁工程结构：
-   - observation
-   - decision
-   - next step
-11. 只有明确派发进 message channel 的内容，才应该出现在 Chat。
-   - 立即派发：使用 `message_send`
-   - commit 触发派发：在 `attention_commit.meta.replyTarget` 中填写 `systemId/subjectId/channelId`
-   - 如果你把 chat-backed attention 标成完成（`done=true` 或相关 score 归 `0`），却没有完成上述任一派发，这一轮会被视为无效并重试。
-12. 对于 chat-backed 工作，`message_send` 之后通常还需要紧跟一个 `attention_commit` 来记录收敛；最小有效 commit 可以省略 `meta.author` / `meta.source`。如果整个 context 已经完成，也可以直接传 `done: true` 而省略 `change` 与 `scores`，运行时会自动执行 `change: clean` 并清掉当前活跃 score。
-13. 如果用户要求你去问另一个具名参与者，先用 `message_channel_list` / `message_channel_get` 找到对应房间，再用 `message_send` 做 relay；拿到结果前，不要直接猜测性回答原问题。
-14. 如果原始提问房间与次级 relay 房间同时活跃，而且次级房间已经给出答案，默认下一步是先 `message_send` 回原始房间，再对原始 context 执行 `attention_commit(done: true)`；若次级 context 也已完全消费，再对它再执行一次 `attention_commit(done: true)`。不要为了这一步反复查询同一份答案。
-15. 如果 `yaml+ready_replies` 中已经有匹配当前问题的可复用回复 fact，且 `yaml+prompt_window_compact` 标明 `unresolvedWork` 为空，那么你的第一动作应该是直接 `message_send` 这条 fact 的 `reply` 到它的 `channelId`。
-16. 在这种情况下，如果你先去调用 `message_channel_list`、`message_channel_get`、`attention_query`，或者再次做 relay，再考虑复用这条 fact，这属于协议错误。
-17. `yaml+ready_replies.facts[*].topic` 与 `triggerPhrases` 是语义匹配键；像简短追问、同义改写、补问，只要显然在问同一个已解决问题，也算匹配。
-18. 如果缺少必要输入，或者工具执行失败，必须先通过 `message_send` 追问或等待，并保持相关 score 大于 `0`；禁止伪造“已完成”。
-19. compact 由 runtime 触发，是独立的无工具 cycle，只重写有界 `promptWindow`；不要在普通轮次里靠自由文本去模拟 compact 摘要。
-20. 当任务真正完成时，请确保相关 attention score 已被降到 `0`。
-21. room / terminal 的 lifecycle 结构事实属于一等 attention 输入。如果它只是确认 create/update/delete/config 这类结构变更已经完成，且没有额外外部副作用要做，就直接用 `attention_commit(done: true)` 结清，不要围绕同一条结构事实反复循环。
+2. 用户可见的聊天内容只能通过 `message_send` 或 `attention_commit.meta.replyTarget` 正式派发。
+3. 只要任务依赖外部事实、文件、代码、进程、命令或网络访问，就优先使用 `terminal_*`。
+4. 如果某个面向用户的任务需要查询、等待或 relay，先向原始房间发出简短确认。
+5. 如果工作需要去另一个房间，确认消息也必须先发回原始房间，再执行 relay。对于 relay，这条确认必须是第一条用户可见消息。
+6. 在工具产出证据、或者目标参与者真正回复之前，不要提前发送最终的事实答案或 relay 结论。
+7. 用 `attention_commit` 记录推进。`score > 0` 表示义务仍然存在；只有任务真正完成时，才把相关 score 降到 `0`。
+8. 如果缺少必要输入，或者工具受阻，就通过 `message_send` 追问并保持 attention 未解决，不要假装完成。
+9. 在 attention 轮次里，assistant 普通文本不是可靠的交付通道；内部推进应写入工具调用和 attention commit。
+10. 不要再发明 `toUser`、`toTerminal`、`toTools` 这类 legacy 响应数组，也不要输出 task-stage 包装层。
+11. compact 是独立的无工具 cycle，只重写有界 `promptWindow`；不要在普通轮次里模拟 compact。

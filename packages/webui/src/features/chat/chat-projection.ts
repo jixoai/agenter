@@ -114,7 +114,7 @@ const projectedMessageEqual = (left: ProjectedConversationMessage, right: Projec
     left.content === right.content &&
     left.timestamp === right.timestamp &&
     left.tool?.name === right.tool?.name &&
-    left.tool?.ok === right.tool?.ok &&
+    left.tool?.status === right.tool?.status &&
     left.transient === right.transient &&
     sameAttachmentSet(left.attachments, right.attachments)
   );

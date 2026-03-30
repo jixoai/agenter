@@ -193,7 +193,7 @@ export const AdminLifecycleActions: Story = {
     await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
     await portal.findByRole("dialog");
 
-    await userEvent.click(portal.getByRole("button", { name: "Focus channel" }));
+    await userEvent.click(portal.getByRole("button", { name: /focus channel/i }));
     await userEvent.click(portal.getByRole("button", { name: "Archive channel" }));
 
     await waitFor(() => {

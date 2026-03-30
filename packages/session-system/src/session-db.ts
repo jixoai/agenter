@@ -574,8 +574,14 @@ export class SessionDb {
     return rows;
   }
 
+  replaceBlockAssets(blockId: number, assetIds: string[]): SessionBlockAssetRecord[] {
+    this.db.query(`delete from session_block_asset where block_id = ?`).run(blockId);
+    return this.linkBlockAssets(blockId, assetIds);
+  }
+
   appendBlock(input: SessionBlockInsert): SessionBlockRecord {
     const createdAt = input.createdAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? createdAt;
     const seq = this.nextSeq('session_block');
     const result = this.db
       .query(
@@ -583,19 +589,31 @@ export class SessionDb {
           seq,
           cycle_id,
           created_at,
+          updated_at,
+          message_id,
+          visible_at,
+          attention_state,
+          attention_loaded_at,
           role,
           channel,
+          chat_id,
           format,
           content,
           tool_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         seq,
         input.cycleId ?? null,
         createdAt,
+        updatedAt,
+        input.messageId ?? null,
+        input.visibleAt ?? null,
+        input.attentionState ?? null,
+        input.attentionLoadedAt ?? null,
         input.role,
         input.channel,
+        input.chatId ?? null,
         input.format ?? 'markdown',
         input.content,
         input.tool === undefined ? null : toJson(input.tool),
@@ -607,10 +625,61 @@ export class SessionDb {
     return row;
   }
 
+  upsertMessageBlock(input: SessionBlockInsert & { messageId: string }): SessionBlockRecord {
+    const current = this.getBlockByMessageId(input.messageId);
+    if (!current) {
+      return this.appendBlock(input);
+    }
+    this.db
+      .query(
+        `update session_block
+         set cycle_id = ?,
+             created_at = ?,
+             updated_at = ?,
+             visible_at = ?,
+             attention_state = ?,
+             attention_loaded_at = ?,
+             role = ?,
+             channel = ?,
+             chat_id = ?,
+             format = ?,
+             content = ?,
+             tool_json = ?
+         where id = ?`,
+      )
+      .run(
+        input.cycleId ?? current.cycleId,
+        input.createdAt ?? current.createdAt,
+        input.updatedAt ?? current.updatedAt,
+        input.visibleAt ?? current.visibleAt ?? null,
+        input.attentionState ?? current.attentionState ?? null,
+        input.attentionLoadedAt ?? current.attentionLoadedAt ?? null,
+        input.role,
+        input.channel,
+        input.chatId ?? current.chatId,
+        input.format ?? current.format,
+        input.content,
+        input.tool === undefined ? null : toJson(input.tool),
+        current.id,
+      );
+    const row = this.getBlockById(current.id);
+    if (!row) {
+      throw new Error("failed to load updated session_block");
+    }
+    return row;
+  }
+
+  getBlockByMessageId(messageId: string): SessionBlockRecord | null {
+    const row = this.db
+      .query(`select id from session_block where message_id = ?`)
+      .get(messageId) as { id: number } | null;
+    return row ? this.getBlockById(row.id) : null;
+  }
+
   getBlockById(id: number): SessionBlockRecord | null {
     const row = this.db
       .query(
-        `select id, seq, cycle_id, created_at, role, channel, format, content, tool_json
+        `select id, seq, cycle_id, created_at, updated_at, message_id, visible_at, attention_state, attention_loaded_at, role, channel, chat_id, format, content, tool_json
          from session_block where id = ?`,
       )
       .get(id) as
@@ -619,8 +688,14 @@ export class SessionDb {
           seq: number;
           cycle_id: number | null;
           created_at: number;
+          updated_at: number;
+          message_id: string | null;
+          visible_at: number | null;
+          attention_state: 'queued' | 'loaded' | null;
+          attention_loaded_at: number | null;
           role: 'user' | 'assistant';
           channel: SessionBlockRecord['channel'];
+          chat_id: string | null;
           format: SessionBlockRecord['format'];
           content: string;
           tool_json: string | null;
@@ -634,8 +709,14 @@ export class SessionDb {
       seq: row.seq,
       cycleId: row.cycle_id,
       createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messageId: row.message_id ?? undefined,
+      visibleAt: row.visible_at ?? undefined,
+      attentionState: row.attention_state ?? undefined,
+      attentionLoadedAt: row.attention_loaded_at ?? undefined,
       role: row.role,
       channel: row.channel,
+      chatId: row.chat_id,
       format: row.format,
       content: row.content,
       tool: row.tool_json ? parseJson(row.tool_json, undefined) : undefined,
@@ -1285,8 +1366,14 @@ export class SessionDb {
         seq integer not null unique,
         cycle_id integer,
         created_at integer not null,
+        updated_at integer not null,
+        message_id text,
+        visible_at integer,
+        attention_state text,
+        attention_loaded_at integer,
         role text not null,
         channel text not null,
+        chat_id text,
         format text not null,
         content text not null,
         tool_json text
@@ -1374,6 +1461,16 @@ export class SessionDb {
     this.ensureColumn("model_call", "completed_at", "alter table model_call add column completed_at integer");
     this.ensureColumn("model_call", "trace_json", "alter table model_call add column trace_json text");
     this.ensureColumn("model_call", "outcome_json", "alter table model_call add column outcome_json text");
+    this.ensureColumn("session_block", "chat_id", "alter table session_block add column chat_id text");
+    this.ensureColumn("session_block", "updated_at", "alter table session_block add column updated_at integer");
+    this.ensureColumn("session_block", "message_id", "alter table session_block add column message_id text");
+    this.ensureColumn("session_block", "visible_at", "alter table session_block add column visible_at integer");
+    this.ensureColumn("session_block", "attention_state", "alter table session_block add column attention_state text");
+    this.ensureColumn("session_block", "attention_loaded_at", "alter table session_block add column attention_loaded_at integer");
+    this.db.exec(`update session_block set updated_at = coalesce(updated_at, created_at);`);
+    this.db.exec(
+      `create unique index if not exists idx_session_block_message_id on session_block(message_id) where message_id is not null;`,
+    );
     this.ensureModelCallCycleMultiplicity();
     this.db.query(`update model_call set status = 'done' where status is null or status = ''`).run();
   }

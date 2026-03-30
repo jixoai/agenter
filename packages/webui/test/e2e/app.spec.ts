@@ -20,6 +20,7 @@ const loadFixture = (): E2EFixture => JSON.parse(readFileSync(E2E_FIXTURE_PATH, 
 const isMobileProject = (testInfo: TestInfo): boolean => testInfo.project.name === "mobile-iphone14";
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const exactTextPattern = (value: string): RegExp => new RegExp(`^${escapeRegExp(value)}$`);
+const sessionChatsRoutePattern = /\/session\/[^/]+\/chats(?:\?|$)/;
 const articleByExactText = (page: Page, text: string) =>
   page.getByRole("article").filter({ has: page.getByText(exactTextPattern(text)) }).first();
 const waitForAssistantArticle = async (page: Page, fixture: E2EFixture, text?: string) => {
@@ -199,9 +200,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
       await cycleDialog.getByRole("tab", { name: /Effects/i }).click();
       await expect(cycleDialog.getByRole("heading", { name: "Hook outcomes", exact: true })).toBeVisible();
       await expect(cycleDialog.getByRole("heading", { name: "Delivered messages", exact: true })).toBeVisible();
-      if (fixture.modelMode !== "real") {
-        await expect(cycleDialog.getByText(exactTextPattern(fixture.mockReply)).first()).toBeVisible();
-      }
+      await expect(cycleDialog.getByText(exactTextPattern(fixture.mockReply)).first()).toBeVisible();
       await expect(cycleDialog.getByText("Technical records")).toHaveCount(0);
     } else {
       await page.getByRole("tab", { name: /Contexts/i }).click();
@@ -209,9 +208,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
       await page.getByRole("tab", { name: /Effects/i }).click();
       await expect(page.getByRole("heading", { name: "Hook outcomes", exact: true })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Delivered messages", exact: true })).toBeVisible();
-      if (fixture.modelMode !== "real") {
-        await expect(page.getByText(exactTextPattern(fixture.mockReply)).first()).toBeVisible();
-      }
+      await expect(page.getByText(exactTextPattern(fixture.mockReply)).first()).toBeVisible();
       await expect(page.getByText("Technical records")).toHaveCount(0);
     }
   });
@@ -230,7 +227,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole("button", { name: "Start", exact: true }).click();
 
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(sessionChatsRoutePattern, { timeout: 20_000 });
     const assistantMessage = await waitForAssistantArticle(page, fixture, fixture.mockReply);
     await assistantMessage.hover();
     await assistantMessage.getByLabel("Message actions").click();
@@ -244,7 +241,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
         await page.waitForURL(/\/session\/[^/]+\/devtools(?:\\?|$)/, { timeout: 20_000 });
         await expect(page.getByRole("heading", { name: "Attention", exact: true })).toBeVisible();
         await page.goBack();
-        await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+        await page.waitForURL(sessionChatsRoutePattern, { timeout: 20_000 });
         await expect(page.getByText(exactTextPattern(prompt)).first()).toBeVisible();
         await page.goForward();
         await page.waitForURL(/\/session\/[^/]+\/devtools(?:\\?|$)/, { timeout: 20_000 });
@@ -263,7 +260,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     }
 
     await page.goBack();
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(sessionChatsRoutePattern, { timeout: 20_000 });
     await expect(page.getByRole("article")).toHaveCount(2, { timeout: assistantTimeoutMs(fixture) });
     await expect(page.getByText(exactTextPattern(prompt)).first()).toBeVisible();
 
@@ -286,7 +283,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole("button", { name: "Start", exact: true }).click();
 
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(sessionChatsRoutePattern, { timeout: 20_000 });
     await expect(page.getByText(exactTextPattern(prompt)).first()).toBeVisible({ timeout: 20_000 });
 
     await page.getByTestId("message-channel-metadata-trigger").click();
@@ -392,7 +389,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await page.keyboard.type(originPrompt);
     await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole("button", { name: "Start", exact: true }).click();
-    await page.waitForURL(/\/workspace\/chat\?/, { timeout: 20_000 });
+    await page.waitForURL(sessionChatsRoutePattern, { timeout: 20_000 });
     await expect(page.getByText(exactTextPattern(originPrompt)).first()).toBeVisible({ timeout: 20_000 });
     await waitForAssistantArticle(page, fixture, fixture.modelMode === "real" ? undefined : originReply);
 
@@ -402,6 +399,10 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(page.getByRole("button", { name: "New chat" })).toBeVisible();
 
     await page.getByRole("button", { name: "New chat" }).click();
+    const createChatDialog = page.getByRole("dialog", { name: "Create chat" });
+    await expect(createChatDialog).toBeVisible({ timeout: 20_000 });
+    await expect(createChatDialog.getByLabel("Title")).toHaveValue("Chat 2");
+    await createChatDialog.getByRole("button", { name: "Create channel" }).click();
     await expect(
       page.getByRole("tablist", { name: "Chat channels" }).getByRole("tab", { name: /^Chat 2$/ }),
     ).toBeVisible({

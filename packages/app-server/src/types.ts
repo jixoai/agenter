@@ -4,7 +4,7 @@ import type {
   SessionBlockToolPayload,
   ToolInvocationStatus,
 } from "@agenter/session-system";
-import type { MessageKind, MessagePayload } from "@agenter/message-system";
+import type { MessageAttentionState, MessageKind, MessagePayload } from "@agenter/message-system";
 
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
@@ -46,6 +46,11 @@ export interface ChatMessage {
   messageKind?: MessageKind;
   messagePayload?: MessagePayload;
   timestamp: number;
+  updatedAt?: number;
+  visibleAt?: number;
+  attentionState?: MessageAttentionState;
+  attentionLoadedAt?: number;
+  editable?: boolean;
   cycleId?: number | null;
   channel?: "to_user" | "self_talk" | "tool";
   format?: "plain" | "markdown";

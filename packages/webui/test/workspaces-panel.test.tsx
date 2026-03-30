@@ -192,6 +192,34 @@ describe("Feature: workspace browser", () => {
     expect(onOpenSession).toHaveBeenCalledWith("session-abc-123");
   });
 
+  test("Scenario: Given aggregated session unread counts When rendering session cards Then each session shows its unread badge", () => {
+    render(
+      <WorkspaceSessionsPanel
+        workspace={workspace}
+        sessions={[activeSession]}
+        unreadBySession={{ [activeSession.sessionId]: 4 }}
+        counts={workspace.counts}
+        tab="all"
+        selectedSessionId={null}
+        loading={false}
+        loadingMore={false}
+        hasMore={false}
+        onChangeTab={() => {}}
+        onSelectSession={() => {}}
+        onLoadMore={() => {}}
+        onCreateSessionInWorkspace={() => {}}
+        onOpenSession={() => {}}
+        onStopSession={() => {}}
+        onToggleSessionFavorite={() => {}}
+        onArchiveSession={() => {}}
+        onRestoreSession={() => {}}
+        onDeleteSession={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("4 unread")).toBeInTheDocument();
+  });
+
   test("Scenario: Given sessions panel first load When no session rows are ready yet Then loading skeleton stays distinct from the empty state", () => {
     const { container } = render(
       <WorkspaceSessionsPanel

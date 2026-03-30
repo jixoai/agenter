@@ -128,7 +128,7 @@ const terminalActivityByTerminal = {
         "status: success",
         "startedAt: 2026-03-27T12:00:00.000Z",
         "finishedAt: 2026-03-27T12:00:01.000Z",
-        "call: \"\"",
+        'call: ""',
         "result:",
         "  transport:",
         "    port: 43001",
@@ -149,7 +149,7 @@ const terminalActivityByTerminal = {
         "status: success",
         "startedAt: 2026-03-27T12:01:00.000Z",
         "finishedAt: 2026-03-27T12:01:01.000Z",
-        "call: \"\"",
+        'call: ""',
         "result:",
         "  representation: snapshot",
         "```",
@@ -162,13 +162,7 @@ const terminalActivityByTerminal = {
       kind: "terminal_read" as const,
       cycleId: 8,
       title: "Terminal read",
-      content: [
-        "```yaml",
-        "kind: terminal-read",
-        "status: waiting",
-        "terminalId: iflow",
-        "```",
-      ].join("\n"),
+      content: ["```yaml", "kind: terminal-read", "status: waiting", "terminalId: iflow", "```"].join("\n"),
     },
   ],
   "other-terminal": [
@@ -327,6 +321,45 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
     expect(screen.queryByText("/repo/stale")).not.toBeInTheDocument();
   });
 
+  test("Scenario: Given unread terminal prompts When rendering terminal selectors Then each terminal exposes its own unread badge", async () => {
+    render(
+      <TerminalPanel
+        sessionId="session-1"
+        runtime={{
+          ...runtime,
+          terminals: [
+            runtime.terminals[0],
+            {
+              terminalId: "other-terminal",
+              running: true,
+              status: "IDLE",
+              seq: 9,
+              cwd: "/repo/other",
+              title: "Other shell",
+              transportUrl: "ws://127.0.0.1:43001/pty/other-terminal",
+            },
+          ],
+        }}
+        snapshots={snapshots}
+        terminalReads={terminalReads}
+        terminalActivityByTerminal={terminalActivityByTerminal}
+        unreadByTerminal={{
+          iflow: 2,
+          "other-terminal": 1,
+        }}
+        getTerminalActivityPagingState={getTerminalActivityPagingState}
+        onLoadTerminalActivity={async () => {}}
+        onLoadMoreTerminalActivity={async () => {}}
+      />,
+    );
+
+    const focusedButton = await screen.findByRole("button", { name: /iflow/i });
+    expect(within(focusedButton).getByText("2")).toBeInTheDocument();
+
+    const otherButton = screen.getByRole("button", { name: /other-terminal/i });
+    expect(within(otherButton).getByText("1")).toBeInTheDocument();
+  });
+
   test("Scenario: Given terminal lifecycle callbacks reject admin actions When create focus and delete run Then the panel surfaces action errors without throwing", async () => {
     const onCreateTerminal = vi.fn(async () => ({ ok: false, message: "create denied", terminal: undefined }));
     const onFocusTerminals = vi.fn(async () => ({ ok: false, message: "focus denied", focusedTerminalIds: [] }));
@@ -348,7 +381,7 @@ describe("Feature: terminal panel uses the standalone renderer host", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("button", { name: /focus/i }));
     await screen.findByText("focus denied");
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));

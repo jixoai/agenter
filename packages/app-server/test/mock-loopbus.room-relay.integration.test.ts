@@ -11,7 +11,6 @@ import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "../test
 describe("Feature: non-GUI LoopBus two-room relay", () => {
   test(
     "Scenario: Given a session with rooms for kzf and gaubee When kzf asks about lunch Then the runtime relays through gaubee's room and answers back in kzf's room",
-    { timeout: 30_000 },
     async () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-relay" });
 
@@ -44,11 +43,11 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         await harness.stop();
       }
     },
+    { timeout: 30_000 },
   );
 
   test(
     "Scenario: Given the relay already completed When the session runs manual compact and kzf asks again Then the answer is recovered without relaying to gaubee a second time",
-    { timeout: 30_000 },
     async () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-compact-follow-up" });
 
@@ -70,5 +69,6 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         await harness.stop();
       }
     },
+    { timeout: 30_000 },
   );
 });

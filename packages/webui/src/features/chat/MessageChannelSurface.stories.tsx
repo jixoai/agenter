@@ -1,11 +1,16 @@
 import type { MessageChannelEntry } from "@agenter/client-sdk";
 import { type WebChatSocketFactory, type WebChatSocketLike } from "@agenter/web-chat-view";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { MessageChannelSurface } from "./MessageChannelSurface";
 import type { MessageChannelCreateInput } from "./message-channel-create-dialog";
+
+const noopFocusChannel = async (_channel: MessageChannelEntry): Promise<void> => undefined;
+const noopCreateChannel = async (_input: MessageChannelCreateInput): Promise<void> => undefined;
+const explicitFocusToggleSpy = fn(noopFocusChannel);
+const createChannelViaMetadataDialogSpy = fn(noopCreateChannel);
 
 const createChannel = (input: {
   chatId: string;
@@ -194,6 +199,7 @@ const SurfaceStory = ({
   socketMode = "snapshot",
   onSendMessage = fn(async () => undefined),
   onCreateChannel = fn(async (_input: MessageChannelCreateInput) => undefined),
+  onFocusChannel = fn(async (_channel: MessageChannelEntry) => undefined),
   onOpenDevtools = fn(),
 }: {
   compact: boolean;
@@ -203,10 +209,17 @@ const SurfaceStory = ({
   socketMode?: SocketMode;
   onSendMessage?: (input: { channel: MessageChannelEntry; payload: { text: string; assets: File[] } }) => Promise<void>;
   onCreateChannel?: (input: MessageChannelCreateInput) => Promise<void>;
+  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void>;
   onOpenDevtools?: (cycleId: number) => void;
 }) => {
+  const [channelsState, setChannelsState] = useState(items);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(items[0]?.chatId ?? null);
-  const socketFactory = useMemo(() => createSocketFactory(items, socketMode), [items, socketMode]);
+  const socketFactory = useMemo(() => createSocketFactory(channelsState, socketMode), [channelsState, socketMode]);
+
+  useEffect(() => {
+    setChannelsState(items);
+    setSelectedChatId(items[0]?.chatId ?? null);
+  }, [items]);
 
   return (
     <div
@@ -216,7 +229,7 @@ const SurfaceStory = ({
       <MessageChannelSurface
         sessionId="session-story"
         workspacePath="/repo/demo"
-        channels={items}
+        channels={channelsState}
         selectedChatId={selectedChatId}
         channelsLoading={channelsLoading}
         channelsError={channelsError}
@@ -224,6 +237,12 @@ const SurfaceStory = ({
         imageCompatible={false}
         onSelectChannel={setSelectedChatId}
         onCreateChannel={onCreateChannel}
+        onFocusChannel={async (channel) => {
+          await onFocusChannel(channel);
+          setChannelsState((current) =>
+            current.map((entry) => (entry.chatId === channel.chatId ? { ...entry, focused: !entry.focused } : entry)),
+          );
+        }}
         onSendMessage={onSendMessage}
         onSearchPaths={async () => []}
         socketFactory={socketFactory}
@@ -251,6 +270,7 @@ const meta = {
     userAvatarLabel: "You",
     onSelectChannel: () => undefined,
     onCreateChannel: () => undefined,
+    onFocusChannel: () => undefined,
     onSendMessage: async () => undefined,
     onCommand: async () => undefined,
     onSearchPaths: async () => [],
@@ -295,6 +315,7 @@ export const CompactMultiChannelSurface: Story = {
 
     await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /focus/i })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
 
@@ -304,6 +325,22 @@ export const CompactMultiChannelSurface: Story = {
     await waitFor(() => {
       expect(frame.scrollWidth).toBeLessThanOrEqual(frame.clientWidth + 1);
     });
+  },
+};
+
+export const ExplicitFocusToggleSurface: Story = {
+  render: () => <SurfaceStory compact={false} onFocusChannel={explicitFocusToggleSpy} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    explicitFocusToggleSpy.mockClear();
+    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: /focus/i }));
+
+    await waitFor(() => {
+      expect(explicitFocusToggleSpy).toHaveBeenCalledWith(expect.objectContaining({ chatId: "chat-jane" }));
+    });
+    await expect(canvas.getByRole("button", { name: "Unfocus" })).toBeInTheDocument();
   },
 };
 
@@ -339,21 +376,19 @@ export const EmptyChannelCollection: Story = {
 };
 
 export const CreateChannelViaMetadataDialog: Story = {
-  args: {
-    onCreateChannel: fn(async () => undefined),
-  },
-  render: (args) => <SurfaceStory compact={false} onCreateChannel={args.onCreateChannel} />,
-  play: async ({ args, canvasElement }) => {
+  render: () => <SurfaceStory compact={false} onCreateChannel={createChannelViaMetadataDialogSpy} />,
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
+    createChannelViaMetadataDialogSpy.mockClear();
     await userEvent.click(canvas.getByRole("button", { name: "New room" }));
     const dialog = await portal.findByRole("dialog", { name: "Create room" });
     await userEvent.clear(within(dialog).getByLabelText("Title"));
     await userEvent.type(within(dialog).getByLabelText("Title"), "Coordination room");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create channel" }));
     await waitFor(() => {
-      expect(args.onCreateChannel).toHaveBeenCalledWith(
+      expect(createChannelViaMetadataDialogSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: "room",
           title: "Coordination room",

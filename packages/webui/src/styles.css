@@ -259,15 +259,13 @@
       border-color 180ms ease,
       background-color 180ms ease,
       color 180ms ease,
-      box-shadow 180ms ease,
-      backdrop-filter 180ms ease;
+      box-shadow 180ms ease;
   }
 
   .help-hint-popup[data-help-hint-presentation="passive-auto"] {
     border-color: color-mix(in oklch, var(--border) 78%, transparent);
     background-color: color-mix(in oklch, var(--popover) 76%, transparent);
     color: color-mix(in oklch, var(--popover-foreground) 84%, white 16%);
-    backdrop-filter: blur(8px);
     box-shadow: 0 12px 24px color-mix(in srgb, black 8%, transparent);
     will-change: background-color, border-color;
     animation: help-hint-breathe 3.2s ease-in-out infinite;
@@ -278,7 +276,6 @@
     border-color: var(--border);
     background-color: var(--popover);
     color: var(--popover-foreground);
-    backdrop-filter: blur(0);
     animation: none;
   }
 

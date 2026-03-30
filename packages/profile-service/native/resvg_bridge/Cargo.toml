@@ -1,0 +1,11 @@
+[package]
+name = "profile_resvg_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+image = { version = "0.25.8", default-features = false, features = ["jpeg"] }
+resvg = "0.45.1"

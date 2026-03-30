@@ -142,6 +142,7 @@ export interface LoopSettings {
 export interface AgenterSettings {
   settingsSource?: SettingsSourceInput[];
   avatar?: string;
+  profileReference?: string;
   sessionStoreTarget?: "global" | "workspace";
   lang?: string;
   agentCwd?: string;

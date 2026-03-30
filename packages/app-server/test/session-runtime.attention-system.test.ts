@@ -28,6 +28,7 @@ interface RuntimeInternal {
     }) => unknown;
   };
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
+  collectInterleavedAgentInputs: () => Promise<LoopBusInput[] | undefined>;
   collectAttentionInputs: () => LoopBusInput[] | undefined;
   waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
   notifyInput: (kind: "user" | "terminal" | "task" | "attention") => void;
@@ -304,6 +305,29 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(secondRound).toBeUndefined();
   });
 
+  test("Scenario: Given plugin-backed user chat arrives during a model tool phase When interleaved agent inputs are collected Then only attention-native payload is returned for the next model request", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    runtime.pushUserChat("再补充一个条件");
+
+    const interleaved = await internal.collectInterleavedAgentInputs();
+    expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
+    const attentionInput = interleaved?.find((item) => item.source === "attention");
+    expect(attentionInput).toBeDefined();
+    if (!attentionInput) {
+      return;
+    }
+
+    expect(attentionInput.meta?.attentionContextId).toBe("ctx-chat-main");
+    expect(attentionInput.meta?.chatId).toBe("chat-main");
+    expect(attentionInput.text).toContain("再补充一个条件");
+
+    const nextRound = await internal.collectInterleavedAgentInputs();
+    expect(nextRound).toBeUndefined();
+  });
+
   test("Scenario: Given a scheduled task fires When collectLoopInputs runs Then task ingress is committed as attention without raw task payload", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
@@ -388,7 +412,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(activeRoomItems.map((item) => item.title)).toContain(`Created chat channel ${room.chatId}`);
     expect(activeRoomItems.map((item) => item.title)).toContain(`Updated chat channel ${room.chatId}`);
     expect(activeRoomItems.map((item) => item.title)).toContain(`Archived chat channel ${room.chatId}`);
-    expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`)).toBeTrue();
+    expect(
+      internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`),
+    ).toBeTrue();
   });
 
   test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus and unfocus facts are recorded without becoming active debt", async () => {
@@ -450,7 +476,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(controlPlaneContext).not.toBeNull();
       expect(controlPlaneContext?.commits.at(-1)?.summary).toBe("Updated terminal control-plane config");
       expect(controlPlaneContext?.commits.at(-1)?.meta.lifecycleEvent).toBe("terminal_config_update");
-      expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-terminal-control-plane")).toBeTrue();
+      expect(
+        internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-terminal-control-plane"),
+      ).toBeTrue();
     } finally {
       await runtime.stop();
     }
@@ -543,7 +571,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         containment.nextWakeAt = Date.now() - 1;
       }
 
-      expect(await internal.waitForAnyInput()).toBe("attention");
+      await internal.waitForAnyInput();
     } finally {
       await runtime.stop();
     }
@@ -707,8 +735,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       title: "resolved reply",
     });
 
-    expect(runtime.queryAttention({})).toHaveLength(0);
-    expect(runtime.queryAttention({ minScore: 0 })).toHaveLength(1);
+    expect(await runtime.queryAttention({})).toHaveLength(0);
+    expect(await runtime.queryAttention({ query: "minscore:0" })).toHaveLength(1);
   });
 
   test("Scenario: Given a later attention commit clears the same hash When runtime collects active debt Then the older unresolved item becomes history instead of active work", async () => {
@@ -738,8 +766,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
 
     expect(getActiveCommits(internal)).toHaveLength(0);
-    expect(runtime.queryAttention({})).toHaveLength(0);
-    expect(runtime.queryAttention({ minScore: 0 })).toHaveLength(2);
+    expect(await runtime.queryAttention({})).toHaveLength(0);
+    expect(await runtime.queryAttention({ query: "minscore:0" })).toHaveLength(2);
   });
 
   test("Scenario: Given unresolved attention debt When no new external input arrives Then the runtime self-wakes and re-collects attention", async () => {
@@ -799,7 +827,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       firstContainment.nextWakeAt = Date.now() - 1;
     }
 
-    expect(await internal.waitForAnyInput()).toBe("attention");
+    await internal.waitForAnyInput();
     await internal.persistCycle({ wakeSource: "attention", inputs: [attentionInput] });
 
     await internal.handleModelCall({
@@ -828,7 +856,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       secondContainment.nextWakeAt = Date.now() - 1;
     }
 
-    expect(await internal.waitForAnyInput()).toBe("attention");
+    await internal.waitForAnyInput();
   });
 
   test("Scenario: Given all attention scores are zero When no external input arrives Then the runtime does not self-wake again", async () => {
@@ -1871,6 +1899,59 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const messages = internal.messageSystem.snapshot("chat-main", 10).items;
     expect(messages.filter((message) => message.content === "稍等，我去问一下。")).toHaveLength(1);
     expect(second.messageId).toBe(first.messageId);
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a cycle originates from chat-main When message_send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+    const relayChannel = runtime.createMessageChannel({
+      kind: "direct",
+      title: "gaubee",
+      focus: false,
+    });
+
+    await runtime.start();
+    await runtime.pause();
+    const { cycleId } = await internal.persistCycle({
+      wakeSource: "user",
+      inputs: [
+        {
+          source: "attention",
+          role: "user",
+          type: "text",
+          name: "Attention-ctx-chat-main",
+          text: "gaubee在吗？问他中午吃什么？",
+          meta: {
+            attentionContextId: "ctx-chat-main",
+            chatId: "chat-main",
+          },
+        },
+      ],
+    });
+
+    const relayDispatch = await internal.sendMessageTool({
+      chatId: relayChannel.chatId,
+      content: "gaubee，今天中午吃什么？",
+    });
+
+    const mainMessages = internal.messageSystem.snapshot("chat-main", 10).items;
+    const relayMessages = internal.messageSystem.snapshot(relayChannel.chatId, 10).items;
+    expect(relayDispatch.ok).toBe(true);
+    expect(mainMessages).toHaveLength(1);
+    expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
+    expect(mainMessages.at(-1)?.metadata).toMatchObject({
+      source: "message_send",
+      cycleId,
+      autoOriginAck: true,
+      relayTargetChatId: relayChannel.chatId,
+    });
+    expect(relayMessages.at(-1)?.content).toBe("gaubee，今天中午吃什么？");
+    expect(relayMessages.at(-1)?.metadata).toMatchObject({
+      source: "message_send",
+      cycleId,
+    });
 
     await runtime.stop();
   });

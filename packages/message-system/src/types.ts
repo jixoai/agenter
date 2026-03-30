@@ -25,6 +25,7 @@ export interface MessageParticipant {
 }
 
 export type MessageKind = "text" | "error" | "interactive";
+export type MessageAttentionState = "queued" | "loaded";
 
 export type MessageAttachmentKind = "image" | "video" | "file";
 
@@ -107,6 +108,11 @@ export interface MessageRecord {
   kind: MessageKind;
   content: string;
   createdAt: number;
+  updatedAt: number;
+  visibleAt?: number;
+  attentionState: MessageAttentionState;
+  attentionLoadedAt?: number;
+  editable: boolean;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -162,6 +168,19 @@ export interface MessageAppendInput {
   kind?: MessageKind;
   content: string;
   createdAt?: number;
+  updatedAt?: number;
+  visibleAt?: number;
+  attentionState?: MessageAttentionState;
+  attentionLoadedAt?: number;
+  metadata?: Record<string, unknown>;
+  attachments?: MessageAttachment[];
+  payload?: MessagePayload;
+}
+
+export interface MessageEditInput {
+  chatId: string;
+  messageId: string;
+  content: string;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -173,6 +192,10 @@ export interface MessageAuthorizedReadInput {
 }
 
 export interface MessageAuthorizedWriteInput extends MessageAppendInput {
+  accessToken: string;
+}
+
+export interface MessageAuthorizedEditInput extends MessageEditInput {
   accessToken: string;
 }
 
@@ -203,6 +226,11 @@ export type MessageTransportClientMessage =
   | {
       type: "send";
       message: Omit<MessageAppendInput, "chatId">;
+    }
+  | {
+      type: "edit";
+      messageId: string;
+      content: string;
     }
   | {
       type: "page";

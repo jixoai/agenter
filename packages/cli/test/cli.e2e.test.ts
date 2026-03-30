@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
@@ -35,20 +37,34 @@ const findFreePort = async (): Promise<number> =>
     });
   });
 
-const spawnCli = (...args: string[]) =>
+const tempHomes: string[] = [];
+
+const createIsolatedHome = (): string => {
+  const home = mkdtempSync(resolve(tmpdir(), "agenter-cli-e2e-"));
+  tempHomes.push(home);
+  return home;
+};
+
+const spawnCli = (args: string[], envOverrides: Record<string, string> = {}) =>
   Bun.spawn({
     cmd: [BUN_BIN, "run", CLI_ENTRY, ...args],
     stdout: "pipe",
     stderr: "pipe",
-    env: process.env,
+    env: {
+      ...process.env,
+      ...envOverrides,
+    },
   });
 
-const daemons: Subprocess[] = [];
+const daemons: Array<Bun.Subprocess<"ignore", "pipe", "pipe">> = [];
 
 afterEach(async () => {
   for (const daemon of daemons.splice(0)) {
     daemon.kill();
     await daemon.exited;
+  }
+  for (const home of tempHomes.splice(0)) {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -100,80 +116,83 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<vo
 describe("Feature: cli daemon and web commands", () => {
   test(
     "Scenario: Given daemon command When doctor checks health Then exit code is 0",
-    { timeout: 70_000 },
     async () => {
-    const host = "127.0.0.1";
-    const port = await findFreePort();
-    const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
-    daemons.push(daemon);
+      const host = "127.0.0.1";
+      const port = await findFreePort();
+      const home = createIsolatedHome();
+      const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
+      daemons.push(daemon);
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+      const healthy = await waitForHealth(host, port);
+      if (!healthy) {
+        const stderr = await readText(daemon.stderr);
+        throw new Error(`daemon failed to become healthy: ${stderr}`);
+      }
 
-    const doctor = spawnCli("doctor", "--host", host, "--port", String(port));
-    const doctorCode = await doctor.exited;
-    const doctorStdout = await readText(doctor.stdout);
+      const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
+      const doctorCode = await doctor.exited;
+      const doctorStdout = await readText(doctor.stdout);
 
-    expect(doctorCode).toBe(0);
-    expect(doctorStdout.includes("healthy")).toBe(true);
+      expect(doctorCode).toBe(0);
+      expect(doctorStdout.includes("healthy")).toBe(true);
     },
+    70_000,
   );
 
   test(
     "Scenario: Given web command When reading root html Then include web ui shell content",
-    { timeout: 70_000 },
     async () => {
-    const host = "127.0.0.1";
-    const port = await findFreePort();
-    const daemon = spawnCli("web", "--host", host, "--port", String(port));
-    daemons.push(daemon);
+      const host = "127.0.0.1";
+      const port = await findFreePort();
+      const home = createIsolatedHome();
+      const daemon = spawnCli(["web", "--host", host, "--port", String(port)], { HOME: home });
+      daemons.push(daemon);
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`web daemon failed to become healthy: ${stderr}`);
-    }
+      const healthy = await waitForHealth(host, port);
+      if (!healthy) {
+        const stderr = await readText(daemon.stderr);
+        throw new Error(`web daemon failed to become healthy: ${stderr}`);
+      }
 
-    const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
-    expect(html.includes("Agenter WebUI")).toBe(true);
-    await waitForWsOpen(`ws://${host}:${port}/trpc`);
+      const html = await fetch(`http://${host}:${port}/`).then((response) => response.text());
+      expect(html.includes("Agenter WebUI")).toBe(true);
+      await waitForWsOpen(`ws://${host}:${port}/trpc`);
     },
+    70_000,
   );
 
   test(
     "Scenario: Given daemon and runtime store When creating session Then subscription syncs state",
-    { timeout: 90_000 },
     async () => {
-    const host = "127.0.0.1";
-    const port = await findFreePort();
-    const daemon = spawnCli("daemon", "--host", host, "--port", String(port));
-    daemons.push(daemon);
+      const host = "127.0.0.1";
+      const port = await findFreePort();
+      const home = createIsolatedHome();
+      const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
+      daemons.push(daemon);
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+      const healthy = await waitForHealth(host, port);
+      if (!healthy) {
+        const stderr = await readText(daemon.stderr);
+        throw new Error(`daemon failed to become healthy: ${stderr}`);
+      }
 
-    const client = createAgenterClient({
-      wsUrl: `ws://${host}:${port}/trpc`,
-    });
-    const store = createRuntimeStore(client);
-    try {
-      await store.connect();
-      await store.createSession({
-        cwd: process.cwd(),
-        name: "e2e-subscription",
-        autoStart: false,
+      const client = createAgenterClient({
+        wsUrl: `ws://${host}:${port}/trpc`,
       });
-      await waitFor(() => store.getState().sessions.some((item) => item.name === "e2e-subscription"));
-      expect(store.getState().sessions.some((item) => item.name === "e2e-subscription")).toBe(true);
-    } finally {
-      store.disconnect();
-    }
+      const store = createRuntimeStore(client);
+      try {
+        await store.connect();
+        await store.createSession({
+          cwd: process.cwd(),
+          name: "e2e-subscription",
+          autoStart: false,
+        });
+        await waitFor(() => store.getState().sessions.some((item) => item.name === "e2e-subscription"));
+        expect(store.getState().sessions.some((item) => item.name === "e2e-subscription")).toBe(true);
+      } finally {
+        store.disconnect();
+      }
     },
+    90_000,
   );
 });

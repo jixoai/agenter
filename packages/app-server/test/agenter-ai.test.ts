@@ -15,6 +15,9 @@ import {
   type AgentPromptWindowCompactSummary,
   type AgentToolProvider,
 } from "../src/agenter-ai";
+import { buildAttentionSearchDocument } from "../src/attention-search/documents";
+import { compileAttentionSearch } from "../src/attention-search/query";
+import type { AttentionSearchRequest } from "../src/attention-search/types";
 import { type LoopBusMessage } from "../src/loop-bus";
 import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
@@ -493,6 +496,29 @@ const createAttentionGateway = () => {
   system.createContext({ contextId: defaultContextId, owner: "tester" });
 
   const listActive = (): AttentionActiveContextMatch[] => system.listActiveContexts();
+  const queryAttention = (input: AttentionSearchRequest): AttentionCommitMatch[] => {
+    const normalizedQuery = input.query?.trim() ?? "";
+    const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+    const limit = Math.max(1, Math.trunc(input.limit ?? 200));
+    if (normalizedQuery.length === 0) {
+      return system.query({ minScore: 1, offset, limit });
+    }
+
+    const compiled = compileAttentionSearch(normalizedQuery);
+    return system
+      .query({
+        contextId: compiled.controls.contextId,
+        hash: compiled.controls.hash,
+        depth: compiled.controls.depth,
+        author: compiled.controls.author,
+        source: compiled.controls.source,
+        minScore: compiled.controls.minScore ?? 1,
+        limit: Number.MAX_SAFE_INTEGER,
+      })
+      .filter((match) => compiled.evaluate(buildAttentionSearchDocument(match)))
+      .slice(offset, offset + limit);
+  };
+
   const commitLegacy = (input: { content: string; from: string; score?: number; remark?: string }) => {
     const hash = `test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const commit = system.commit(defaultContextId, {
@@ -528,27 +554,12 @@ const createAttentionGateway = () => {
     engine: {
       add: commitLegacy,
       list: () => listActive(),
-      query: (input: { minScore?: number; query?: string }) =>
-        system.query({
-          minScore: input.minScore,
-          text: input.query,
-          limit: 200,
-        }),
+      query: (input: AttentionSearchRequest) => queryAttention(input),
     },
     gateway: {
       listContexts: (): AttentionContextDescriptor[] => system.listContexts(),
       listActive: () => listActive(),
-      query: async (input: {
-        contextId?: string;
-        hash?: string;
-        depth?: number;
-        minScore?: number;
-        author?: string;
-        source?: string;
-        text?: string;
-        offset?: number;
-        limit?: number;
-      }): Promise<AttentionCommitMatch[]> => system.query(input),
+      query: async (input: AttentionSearchRequest): Promise<AttentionCommitMatch[]> => queryAttention(input),
       commit: async (input: AttentionCommitToolInput) =>
         system.commit(input.contextId, {
           parentCommitIds: input.parentCommitIds,
@@ -1068,8 +1079,7 @@ describe("Feature: AgenterAI behavior", () => {
       };
 
       const list = (await callTool("attention_query", {
-        contextId: chat.defaultContextId,
-        minScore: 1,
+        query: `context:${chat.defaultContextId} minscore:1`,
         limit: 20,
       })) as { items: Array<{ commit: { commitId: string } }> };
       expect(list.items.some((item) => item.commit.commitId === userItem.commitId)).toBeTrue();
@@ -1169,7 +1179,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(response).toBeUndefined();
 
     expect(chat.engine.list()).toHaveLength(0);
-    expect(chat.engine.query({ minScore: 0, query: "startup ping" })).toHaveLength(1);
+    expect(chat.engine.query({ query: "minscore:0 startup ping" })).toHaveLength(1);
   });
 
   test("Scenario: Given attention_commit omits author and source When the tool executes Then the stored commit uses context defaults", async () => {
@@ -1646,8 +1656,7 @@ describe("Feature: AgenterAI behavior", () => {
 
         const matches = (await attentionQuery.execute(
           {
-            contextId: chat.defaultContextId,
-            minScore: 1,
+            query: `context:${chat.defaultContextId} minscore:1`,
             limit: 20,
           },
           {
@@ -1974,15 +1983,6 @@ describe("Feature: AgenterAI behavior", () => {
               decisions: ["keep working"],
               keyFiles: [],
               keyFacts: ["attention_system preserved"],
-              readyReplies: [
-                {
-                  channelId: "chat-main",
-                  topic: "gaubee lunch answer",
-                  triggerPhrases: ["中午吃什么"],
-                  reply: "gaubee说他中午吃蛋炒饭。",
-                  reuseWhen: "Send directly when chat-main asks the same thing after compact.",
-                },
-              ],
               unresolvedWork: ["ctx-main pending"],
               nextSteps: ["continue the attention cycle"],
             }),
@@ -2062,16 +2062,17 @@ describe("Feature: AgenterAI behavior", () => {
     expect(chat.engine.list()).toHaveLength(0);
     const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
     expect(replay.some((item) => item.includes("yaml+prompt_window_compact"))).toBeTrue();
-    expect(replay.some((item) => item.includes("yaml+ready_replies"))).toBeTrue();
-    expect(replay.some((item) => item.includes("channelId: chat-main"))).toBeTrue();
-    expect(replay.some((item) => item.includes("triggerPhrases"))).toBeTrue();
-    expect(replay.some((item) => item.includes("gaubee说他中午吃蛋炒饭"))).toBeTrue();
+    expect(replay.some((item) => item.includes("attention_system preserved"))).toBeTrue();
+    expect(replay.some((item) => item.includes("ctx-main pending"))).toBeTrue();
+    expect(replay.some((item) => item.includes("continue the attention cycle"))).toBeTrue();
+    expect(replay.some((item) => item.includes("readyReplies"))).toBeFalse();
   });
 
-  test("Scenario: Given a compact ready-reply fact When the next attention input matches it Then AgenterAI reuses the fact without another model round", async () => {
-    const chat = createAttentionGateway();
+  test("Scenario: Given a tool-result boundary When new attention input becomes loadable Then AgenterAI reissues the next model request with tool evidence plus the interleaved attention payload", async () => {
     const message = createMessageGateway();
-    let modelRounds = 0;
+    const seenInputs: ModelRespondInput[] = [];
+    let round = 0;
+    let interleavedCollected = false;
 
     const modelClient = {
       getMeta() {
@@ -2086,33 +2087,59 @@ describe("Feature: AgenterAI behavior", () => {
         return {};
       },
       async respondWithMeta(input: ModelRespondInput) {
-        if (input.tools.length === 0) {
+        seenInputs.push(input);
+        round += 1;
+
+        if (round === 1) {
+          const messageSend = input.tools.find((tool) => tool.name === "message_send");
+          expect(messageSend).toBeDefined();
+          if (!messageSend || typeof messageSend.execute !== "function") {
+            throw new Error("message_send tool missing");
+          }
+
+          await input.onUpdate?.({
+            kind: "tool_call",
+            toolCallId: "call-message-send-interleaved",
+            toolName: "message_send",
+            argsText: '{"chatId":"chat-main","content":"正在处理中"}',
+            input: {
+              chatId: "chat-main",
+              content: "正在处理中",
+            },
+            timestamp: Date.now(),
+          });
+          await messageSend.execute(
+            {
+              chatId: "chat-main",
+              content: "正在处理中",
+            },
+            {
+              toolCallId: "call-message-send-interleaved",
+              emitCustomEvent: () => {
+                // no-op
+              },
+            },
+          );
+          await input.onUpdate?.({
+            kind: "tool_result",
+            toolCallId: "call-message-send-interleaved",
+            toolName: "message_send",
+            ok: true,
+            result: { ok: true, messageId: "msg-1" },
+            timestamp: Date.now(),
+          });
+          expect(input.shouldYieldAfterToolPhase?.()).toBeTrue();
           return {
             thinking: "",
-            text: JSON.stringify({
-              overview: "compacted relay",
-              decisions: ["reply can be reused"],
-              keyFiles: [],
-              keyFacts: ["gaubee说他中午吃蛋炒饭。"],
-              readyReplies: [
-                {
-                  channelId: "chat-main",
-                  topic: "gaubee lunch answer",
-                  triggerPhrases: ["中午吃什么"],
-                  reply: "gaubee说他中午吃蛋炒饭。",
-                  reuseWhen: "Send directly after compact when chat-main asks again.",
-                },
-              ],
-              unresolvedWork: [],
-              nextSteps: [],
-            }),
-            finishReason: "stop",
+            text: "",
+            finishReason: "tool_calls",
+            yieldedAfterToolPhase: true,
           };
         }
-        modelRounds += 1;
+
         return {
           thinking: "",
-          text: "should-not-run",
+          text: "done",
           finishReason: "stop",
         };
       },
@@ -2123,47 +2150,46 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({ messageGateway: message.gateway }),
-      attentionGateway: chat.gateway,
+      attentionGateway: createAttentionGateway().gateway,
+      collectInterleavedInputs: async () => {
+        if (interleavedCollected) {
+          return undefined;
+        }
+        interleavedCollected = true;
+        return [
+          createAttentionItemsMessage("contextId: ctx-main\nsummary: 新消息补充条件", {
+            id: "m-attention-interleaved",
+            contextId: "ctx-main",
+            headCommitId: "commit-interleaved-1",
+            commitIds: ["commit-interleaved-1"],
+            meta: {
+              chatId: "chat-main",
+              chatFocused: true,
+            },
+          }),
+        ];
+      },
     });
 
-    ai.requestCompact("test-ready-reply");
-    const compactTrigger = ai.consumePendingCompactRequest();
-    expect(compactTrigger).toBe("manual");
-    if (!compactTrigger) {
-      return;
-    }
-    await ai.runCompactCycle({ trigger: compactTrigger });
+    await ai.send([createUserMessage("先发一条确认消息")]);
 
-    const followUp = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
-    await ai.send([
-      createAttentionItemsMessage("contextId: ctx-main\nsummary: 中午吃什么", {
-        contextId: chat.defaultContextId,
-        headCommitId: followUp.commitId,
-        commitIds: [followUp.commitId],
-        meta: {
-          chatId: "chat-main",
-          chatFocused: true,
-        },
-      }),
-    ]);
-
-    expect(modelRounds).toBe(0);
+    expect(seenInputs).toHaveLength(2);
     expect(message.sent).toHaveLength(1);
     expect(message.sent[0]).toMatchObject({
       chatId: "chat-main",
-      content: "gaubee说他中午吃蛋炒饭。",
+      content: "正在处理中",
     });
-    expect(chat.engine.list()).toHaveLength(0);
-    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
-    expect(replay.some((item) => item.includes("tool: message_send"))).toBeTrue();
-    expect(replay.some((item) => item.includes("answered from compact memory"))).toBeTrue();
+    const assistantReplay = extractAssistantReplay(seenInputs[1]);
+    const userReplay = extractUserReplay(seenInputs[1]);
+    expect(assistantReplay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(userReplay.some((item) => item.includes("summary: 新消息补充条件"))).toBeTrue();
   });
 
-  test("Scenario: Given compact summary paraphrases a resolved reply When tool-derived ready reply facts exist Then AgenterAI reuses the exact dispatched reply text", async () => {
-    const chat = createAttentionGateway();
+  test("Scenario: Given an interleaved continuation When a later tool phase finishes without new input Then AgenterAI still reissues the next model request until the tool result is resolved into a final answer", async () => {
     const message = createMessageGateway();
-    const initial = chat.engine.add({ content: "gaubee在吗？问他中午吃什么？", from: "user", score: 100 });
-    let modelRounds = 0;
+    const seenInputs: ModelRespondInput[] = [];
+    let round = 0;
+    let interleavedCollected = false;
 
     const modelClient = {
       getMeta() {
@@ -2178,80 +2204,100 @@ describe("Feature: AgenterAI behavior", () => {
         return {};
       },
       async respondWithMeta(input: ModelRespondInput) {
-        if (input.tools.length === 0) {
-          return {
-            thinking: "",
-            text: JSON.stringify({
-              overview: "compacted relay",
-              decisions: ["reply can be reused"],
-              keyFiles: [],
-              keyFacts: ["gaubee说中午吃蛋炒饭。"],
-              readyReplies: [
-                {
-                  channelId: "chat-main",
-                  topic: "gaubee lunch response",
-                  triggerPhrases: ["问他中午吃什么？", "中午吃什么"],
-                  reply: "Gaubee said they want egg fried rice for lunch.",
-                  reuseWhen: "Send directly after compact when chat-main asks again.",
-                },
-              ],
-              unresolvedWork: [],
-              nextSteps: [],
-            }),
-            finishReason: "stop",
-          };
-        }
-
-        modelRounds += 1;
-        if (modelRounds > 1) {
-          return {
-            thinking: "",
-            text: "should-not-run",
-            finishReason: "stop",
-          };
-        }
+        seenInputs.push(input);
+        round += 1;
 
         const messageSend = input.tools.find((tool) => tool.name === "message_send");
         expect(messageSend).toBeDefined();
         if (!messageSend || typeof messageSend.execute !== "function") {
           throw new Error("message_send tool missing");
         }
-        await messageSend.execute(
-          {
-            chatId: "chat-main",
-            content: "gaubee说中午吃蛋炒饭。",
-          },
-          {
-            toolCallId: "call-message-send-initial",
-            emitCustomEvent: () => {
-              // no-op
-            },
-          },
-        );
 
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionCommit).toBeDefined();
-        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-        await attentionCommit.execute(
-          {
-            contextId: chat.defaultContextId,
-            parentCommitIds: [initial.commitId],
-            summary: "reported lunch answer",
-            done: true,
-          },
-          {
-            toolCallId: "call-attention-commit-initial",
-            emitCustomEvent: () => {
-              // no-op
+        if (round === 1) {
+          await input.onUpdate?.({
+            kind: "tool_call",
+            toolCallId: "call-message-send-1",
+            toolName: "message_send",
+            argsText: '{"chatId":"chat-main","content":"处理中-1"}',
+            input: {
+              chatId: "chat-main",
+              content: "处理中-1",
             },
-          },
-        );
+            timestamp: Date.now(),
+          });
+          await messageSend.execute(
+            {
+              chatId: "chat-main",
+              content: "处理中-1",
+            },
+            {
+              toolCallId: "call-message-send-1",
+              emitCustomEvent: () => {
+                // no-op
+              },
+            },
+          );
+          await input.onUpdate?.({
+            kind: "tool_result",
+            toolCallId: "call-message-send-1",
+            toolName: "message_send",
+            ok: true,
+            result: { ok: true, messageId: "msg-1" },
+            timestamp: Date.now(),
+          });
+          expect(input.shouldYieldAfterToolPhase?.()).toBeTrue();
+          return {
+            thinking: "",
+            text: "",
+            finishReason: "tool_calls",
+            yieldedAfterToolPhase: true,
+          };
+        }
+
+        if (round === 2) {
+          await input.onUpdate?.({
+            kind: "tool_call",
+            toolCallId: "call-message-send-2",
+            toolName: "message_send",
+            argsText: '{"chatId":"chat-main","content":"处理中-2"}',
+            input: {
+              chatId: "chat-main",
+              content: "处理中-2",
+            },
+            timestamp: Date.now(),
+          });
+          await messageSend.execute(
+            {
+              chatId: "chat-main",
+              content: "处理中-2",
+            },
+            {
+              toolCallId: "call-message-send-2",
+              emitCustomEvent: () => {
+                // no-op
+              },
+            },
+          );
+          await input.onUpdate?.({
+            kind: "tool_result",
+            toolCallId: "call-message-send-2",
+            toolName: "message_send",
+            ok: true,
+            result: { ok: true, messageId: "msg-2" },
+            timestamp: Date.now(),
+          });
+          expect(input.shouldYieldAfterToolPhase?.()).toBeFalse();
+          return {
+            thinking: "",
+            text: "",
+            finishReason: "tool_calls",
+            yieldedAfterToolPhase: false,
+          };
+        }
 
         return {
           thinking: "",
-          text: "",
+          text: "done-after-second-tool-phase",
           finishReason: "stop",
         };
       },
@@ -2262,32 +2308,96 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({ messageGateway: message.gateway }),
-      attentionGateway: chat.gateway,
+      attentionGateway: createAttentionGateway().gateway,
+      collectInterleavedInputs: async () => {
+        if (interleavedCollected) {
+          return undefined;
+        }
+        interleavedCollected = true;
+        return [
+          createAttentionItemsMessage("contextId: ctx-main\nsummary: 第二阶段补充要求", {
+            id: "m-attention-interleaved-2",
+            contextId: "ctx-main",
+            headCommitId: "commit-interleaved-2",
+            commitIds: ["commit-interleaved-2"],
+            meta: {
+              chatId: "chat-main",
+              chatFocused: true,
+            },
+          }),
+        ];
+      },
     });
 
-    const initialAttentionText = [
-      "```yaml+attention_items",
-      "contextId: ctx-main",
-      "commits:",
-      "  -",
-      "    channelId: chat-main",
-      "    chatFocused: true",
-      '    content: "gaubee在吗？问他中午吃什么？"',
-      '    summary: "gaubee在吗？问他中午吃什么？"',
-      "```",
-    ].join("\n");
+    await ai.send([createUserMessage("继续验证 tool phase continuation")]);
 
-    await ai.send([
-      createAttentionItemsMessage(initialAttentionText, {
-        contextId: chat.defaultContextId,
-        headCommitId: initial.commitId,
-        commitIds: [initial.commitId],
-        meta: {
-          chatId: "chat-main",
-          chatFocused: true,
-        },
-      }),
-    ]);
+    expect(seenInputs).toHaveLength(3);
+    expect(message.sent).toHaveLength(2);
+    expect(message.sent[0]).toMatchObject({
+      chatId: "chat-main",
+      content: "处理中-1",
+    });
+    expect(message.sent[1]).toMatchObject({
+      chatId: "chat-main",
+      content: "处理中-2",
+    });
+    const secondRoundUserReplay = extractUserReplay(seenInputs[1]);
+    expect(secondRoundUserReplay.some((item) => item.includes("第二阶段补充要求"))).toBeTrue();
+    const thirdRoundAssistantReplay = extractAssistantReplay(seenInputs[2]);
+    expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(thirdRoundAssistantReplay.some((item) => item.includes("处理中-2"))).toBeTrue();
+  });
+
+  test("Scenario: Given a compact summary with durable facts When follow-up attention arrives Then AgenterAI keeps the compact summary in prompt replay but still runs a fresh model round", async () => {
+    const chat = createAttentionGateway();
+    const seenInputs: ModelRespondInput[] = [];
+    let modelRounds = 0;
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        if (input.tools.length === 0) {
+          return {
+            thinking: "",
+            text: JSON.stringify({
+              overview: "compacted relay",
+              decisions: ["preserve durable facts"],
+              keyFiles: ["packages/app-server/src/agenter-ai.ts"],
+              keyFacts: ["gaubee说中午吃蛋炒饭。"],
+              unresolvedWork: ["ctx-main follow-up pending"],
+              nextSteps: ["continue with a fresh model round"],
+            }),
+            finishReason: "stop",
+          };
+        }
+
+        modelRounds += 1;
+        seenInputs.push(input);
+        return {
+          thinking: "",
+          text: "follow-up handled",
+          finishReason: "stop",
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({}),
+      attentionGateway: chat.gateway,
+    });
 
     ai.requestCompact("test-ready-reply-prefer-durable");
     const compactTrigger = ai.consumePendingCompactRequest();
@@ -2297,20 +2407,9 @@ describe("Feature: AgenterAI behavior", () => {
     }
     await ai.runCompactCycle({ trigger: compactTrigger });
 
-    const followUp = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
-    const followUpAttentionText = [
-      "```yaml+attention_items",
-      "contextId: ctx-main",
-      "commits:",
-      "  -",
-      "    channelId: chat-main",
-      "    chatFocused: true",
-      '    content: "中午吃什么"',
-      '    summary: "中午吃什么"',
-      "```",
-    ].join("\n");
+    const followUp = chat.engine.add({ content: "继续下一步", from: "user", score: 100 });
     await ai.send([
-      createAttentionItemsMessage(followUpAttentionText, {
+      createAttentionItemsMessage("contextId: ctx-main\nsummary: 继续下一步", {
         contextId: chat.defaultContextId,
         headCommitId: followUp.commitId,
         commitIds: [followUp.commitId],
@@ -2322,24 +2421,16 @@ describe("Feature: AgenterAI behavior", () => {
     ]);
 
     expect(modelRounds).toBe(1);
-    expect(message.sent).toHaveLength(2);
-    expect(message.sent.at(-1)).toMatchObject({
-      chatId: "chat-main",
-      content: "gaubee说中午吃蛋炒饭。",
-    });
-
-    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
-    expect(replay.some((item) => item.includes("reply: \"gaubee说中午吃蛋炒饭。\""))).toBeTrue();
-    expect(replay.some((item) => item.includes("answered from compact memory: gaubee说中午吃蛋炒饭。"))).toBeTrue();
+    expect(seenInputs).toHaveLength(1);
+    const replay = extractAssistantReplay(seenInputs[0]);
+    expect(replay.some((item) => item.includes("yaml+prompt_window_compact"))).toBeTrue();
+    expect(replay.some((item) => item.includes("gaubee说中午吃蛋炒饭。"))).toBeTrue();
+    expect(replay.some((item) => item.includes("ctx-main follow-up pending"))).toBeTrue();
   });
 
-  test("Scenario: Given two different replies in one focused channel When compact derives ready replies Then each reply keeps only its own trigger phrases", async () => {
+  test("Scenario: Given compact output is persisted When the summary is recorded Then only the durable compact fields remain without legacy ready reply caches", async () => {
     const chat = createAttentionGateway();
-    const message = createMessageGateway();
     const modelCalls: AgentModelCallRecord[] = [];
-    const lunch = chat.engine.add({ content: "中午吃什么", from: "user", score: 100 });
-    const weather = chat.engine.add({ content: "厦门天气然后，天气预报未来 15 天天气", from: "user", score: 100 });
-    let round = 0;
 
     const modelClient = {
       getMeta() {
@@ -2359,61 +2450,15 @@ describe("Feature: AgenterAI behavior", () => {
             thinking: "",
             text: JSON.stringify({
               overview: "compacted facts",
-              decisions: ["preserve ready replies"],
-              keyFiles: [],
-              keyFacts: [],
-              readyReplies: [],
-              unresolvedWork: [],
-              nextSteps: [],
+              decisions: ["preserve durable facts"],
+              keyFiles: ["packages/app-server/src/agenter-ai.ts"],
+              keyFacts: ["gaubee说中午吃蛋炒饭。", "厦门未来 15 天天气请以 terminal 查询结果为准。"],
+              unresolvedWork: ["ctx-main pending"],
+              nextSteps: ["continue processing active attention"],
             }),
             finishReason: "stop",
           };
         }
-
-        round += 1;
-        const messageSend = input.tools.find((tool) => tool.name === "message_send");
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(messageSend).toBeDefined();
-        expect(attentionCommit).toBeDefined();
-        if (!messageSend || typeof messageSend.execute !== "function") {
-          throw new Error("message_send tool missing");
-        }
-        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-
-        const tracked = round === 1 ? lunch : weather;
-        const reply =
-          round === 1 ? "gaubee说中午吃蛋炒饭。" : "厦门未来 15 天天气请以 terminal 查询结果为准。";
-
-        await messageSend.execute(
-          {
-            chatId: "chat-main",
-            content: reply,
-          },
-          {
-            toolCallId: `call-message-send-${round}`,
-            emitCustomEvent: () => {
-              // no-op
-            },
-          },
-        );
-
-        await attentionCommit.execute(
-          {
-            contextId: chat.defaultContextId,
-            parentCommitIds: [tracked.commitId],
-            summary: round === 1 ? "reported lunch answer" : "reported weather answer",
-            done: true,
-          },
-          {
-            toolCallId: `call-attention-commit-${round}`,
-            emitCustomEvent: () => {
-              // no-op
-            },
-          },
-        );
-
         return {
           thinking: "",
           text: "",
@@ -2426,59 +2471,12 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ messageGateway: message.gateway }),
+      toolProviders: createToolProviders({}),
       attentionGateway: chat.gateway,
       onModelCall: (record) => {
         modelCalls.push(record);
       },
     });
-
-    const lunchAttentionText = [
-      "```yaml+attention_items",
-      "contextId: ctx-main",
-      "commits:",
-      "  -",
-      "    channelId: chat-main",
-      "    chatFocused: true",
-      '    content: "中午吃什么"',
-      '    summary: "中午吃什么"',
-      "```",
-    ].join("\n");
-    const weatherAttentionText = [
-      "```yaml+attention_items",
-      "contextId: ctx-main",
-      "commits:",
-      "  -",
-      "    channelId: chat-main",
-      "    chatFocused: true",
-      '    content: "厦门天气然后，天气预报未来 15 天天气"',
-      '    summary: "厦门天气然后，天气预报未来 15 天天气"',
-      "```",
-    ].join("\n");
-
-    await ai.send([
-      createAttentionItemsMessage(lunchAttentionText, {
-        contextId: chat.defaultContextId,
-        headCommitId: lunch.commitId,
-        commitIds: [lunch.commitId],
-        meta: {
-          chatId: "chat-main",
-          chatFocused: true,
-        },
-      }),
-    ]);
-
-    await ai.send([
-      createAttentionItemsMessage(weatherAttentionText, {
-        contextId: chat.defaultContextId,
-        headCommitId: weather.commitId,
-        commitIds: [weather.commitId],
-        meta: {
-          chatId: "chat-main",
-          chatFocused: true,
-        },
-      }),
-    ]);
 
     ai.requestCompact("test-ready-reply-provenance");
     const compactTrigger = ai.consumePendingCompactRequest();
@@ -2496,18 +2494,18 @@ describe("Feature: AgenterAI behavior", () => {
       return;
     }
 
-    const { readyReplies } = compactRecord.response.decision.summary;
-    expect(readyReplies).toHaveLength(2);
-
-    const lunchReply = readyReplies.find((item) => item.reply === "gaubee说中午吃蛋炒饭。");
-    const weatherReply = readyReplies.find((item) => item.reply === "厦门未来 15 天天气请以 terminal 查询结果为准。");
-
-    expect(lunchReply).toBeDefined();
-    expect(weatherReply).toBeDefined();
-    expect(lunchReply?.triggerPhrases).toContain("中午吃什么");
-    expect(lunchReply?.triggerPhrases).not.toContain("厦门天气然后，天气预报未来 15 天天气");
-    expect(weatherReply?.triggerPhrases).toContain("厦门天气然后，天气预报未来 15 天天气");
-    expect(weatherReply?.triggerPhrases).not.toContain("中午吃什么");
+    const summary = compactRecord.response.decision.summary as AgentPromptWindowCompactSummary & {
+      readyReplies?: unknown;
+    };
+    expect(summary.decisions).toEqual(["preserve durable facts"]);
+    expect(summary.keyFiles).toEqual(["packages/app-server/src/agenter-ai.ts"]);
+    expect(summary.keyFacts).toEqual([
+      "gaubee说中午吃蛋炒饭。",
+      "厦门未来 15 天天气请以 terminal 查询结果为准。",
+    ]);
+    expect(summary.unresolvedWork).toEqual(["ctx-main pending"]);
+    expect(summary.nextSteps).toEqual(["continue processing active attention"]);
+    expect(summary.readyReplies).toBeUndefined();
   });
 
   test("Scenario: Given model context overflow When the runtime runs compact and retries Then AgenterAI continues with the same attention task", async () => {

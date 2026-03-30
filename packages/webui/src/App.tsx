@@ -11,7 +11,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppControllerContext, useRuntimeStoreSelector, type AppController } from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { rasterizeSessionIconFallback } from "./features/profile/rasterize-session-icon";
 import {
   applyQuickstartBootstrapConfigToSettings,
   normalizeQuickstartBootstrapConfig,
@@ -133,7 +132,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const workspaceSelectionRef = useRef<{ path: string | null; tab: WorkspaceSessionTab } | null>(null);
   const quickstartRecentSessionsSyncKeyRef = useRef<string | null>(null);
   const seenNotificationIdsRef = useRef<string[]>([]);
-  const rasterizedSessionIconIdsRef = useRef(new Set<string>());
   const longListPagingByKeyRef = useRef<Record<string, LongListPagingState>>({});
   const settingsCatalogWorkspaceRef = useRef<string | null>(null);
   const settingsCatalogLoadedRef = useRef(false);
@@ -427,32 +425,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }
     setQuickstartWorkspacePath((prev) => (prev === "." ? fallbackWorkspace : prev));
   }, [runtimeRecentWorkspaces, runtimeWorkspaces]);
-
-  useEffect(() => {
-    const pending = runtimeSessions.filter(
-      (session) =>
-        (session.status === "running" || session.status === "starting") &&
-        !rasterizedSessionIconIdsRef.current.has(session.id),
-    );
-    if (pending.length === 0) {
-      return;
-    }
-    for (const session of pending) {
-      rasterizedSessionIconIdsRef.current.add(session.id);
-      void rasterizeSessionIconFallback({
-        iconUrl: store.sessionIconUrl(session.id),
-      })
-        .then((file) => {
-          if (!file) {
-            return;
-          }
-          return store.uploadSessionIcon(session.id, file);
-        })
-        .catch(() => {
-          rasterizedSessionIconIdsRef.current.delete(session.id);
-        });
-    }
-  }, [runtimeSessions, store]);
 
   useEffect(() => {
     if (!quickstartWorkspacePath || quickstartWorkspacePath === ".") {
@@ -1397,8 +1369,24 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [setError, store],
   );
 
+  const setTerminalVisibility = useCallback(
+    async (input: { sessionId: string; terminalId?: string; visible: boolean; focused: boolean }): Promise<void> => {
+      try {
+        await store.setTerminalVisibility(input);
+      } catch (error) {
+        setError(error);
+      }
+    },
+    [setError, store],
+  );
+
   const consumeNotifications = useCallback(
-    async (input: { sessionId: string; chatId?: string; upToMessageId?: string | null }): Promise<void> => {
+    async (input: {
+      sessionId: string;
+      chatId?: string;
+      terminalId?: string;
+      upToMessageId?: string | null;
+    }): Promise<void> => {
       try {
         await store.consumeNotifications(input);
       } catch (error) {
@@ -1420,15 +1408,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const queryAttention = useCallback(
     async (input: {
       sessionId: string;
-      contextId?: string;
-      hash?: string;
-      depth?: number;
-      author?: string;
-      source?: string;
-      text?: string;
+      query: string;
       offset?: number;
       limit?: number;
-      minScore?: number;
     }) => {
       return await store.queryAttention(input);
     },
@@ -1520,6 +1502,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       loadSelectedLayer,
       saveSelectedLayer,
       setChatVisibility,
+      setTerminalVisibility,
       consumeNotifications,
       hydrateSession,
       queryAttention,
@@ -1584,6 +1567,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       abortSession,
       sendChat,
       setChatVisibility,
+      setTerminalVisibility,
       settingsEffective,
       settingsLayers,
       settingsLoading,

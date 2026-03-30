@@ -7,6 +7,7 @@ import { ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
 import { cn } from "../../lib/utils";
 import { buildSessionDevtoolsSearch } from "../attention/attention-devtools-route";
+import { useIconServiceUrls } from "../profile/icon-service";
 import { SidebarNav, SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
 import { TopHeader } from "./TopHeader";
 import {
@@ -125,6 +126,7 @@ export const AppRoot = () => {
   const connectionStatus = useRuntimeSelector((state) => state.connectionStatus);
   const unreadTotal = useRuntimeSelector(selectUnreadTotal);
   const hydrateSession = controller.hydrateSession;
+  const iconUrls = useIconServiceUrls(controller.runtimeStore);
 
   const routeSessionId = extractSessionIdFromPath(location.pathname) ?? undefined;
   const routeSession = useRuntimeSelector(selectSessionChromeState(routeSessionId), equalSessionChromeState);
@@ -188,7 +190,7 @@ export const AppRoot = () => {
         sessionId: session.sessionId,
         name: session.name,
         workspacePath: session.workspacePath,
-        iconUrl: controller.runtimeStore.sessionIconUrl(session.sessionId),
+        iconUrl: iconUrls.session(session.sessionId) ?? undefined,
         active: session.sessionId === routeSessionId,
         unreadCount: session.unreadCount,
         status: session.status,
@@ -222,7 +224,7 @@ export const AppRoot = () => {
           void navigate({
             to: "/session/$sessionId/chats",
             params: { sessionId: session.sessionId },
-            search: {},
+            search: { chatId: undefined },
           });
           setMobileSidebarOpen(false);
         },
@@ -236,7 +238,7 @@ export const AppRoot = () => {
         }
         return left.name.localeCompare(right.name);
       });
-  }, [controller.runtimeStore, location.pathname, navigate, routeSessionId, runningSessionStates]);
+  }, [iconUrls, location.pathname, navigate, routeSessionId, runningSessionStates]);
 
   const showGlobalNotice =
     controller.notice.length > 0 && (location.pathname === "/" || location.pathname === "/workspaces");

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
+  runRealInterleavedCanInputScenario,
   runRealJudgeRelayScenario,
   runRealLunchRelayScenario,
   runRealSimpleReplyScenario,
@@ -38,6 +39,35 @@ describe("Feature: real AI loopbus convergence", () => {
   );
 
   realTest(
+    "Scenario: Given a real provider When the user asks the assistant to ask gaubee about lunch Then the assistant acknowledges in chat-main before relaying and brings the answer back",
+    async () => {
+      const harness = await createRealKernelHarness({ sessionName: "real-lunch-relay-ack" });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const result = await runRealLunchRelayScenario(harness);
+
+        expect(result.originAcknowledgement.chatId).toBe("chat-main");
+        expect(result.originAcknowledgement.content.length).toBeGreaterThan(0);
+        expect(result.relayChannel.chatId).toBe("chat-gaubee");
+        expect(result.relayPromptMessage.chatId).toBe("chat-gaubee");
+        expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
+        expect(result.relayParticipantReply.chatId).toBe("chat-gaubee");
+        expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
+        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.content).toContain("蛋炒饭");
+        expect(result.settledAttention.active).toHaveLength(0);
+        expect(result.recentModelCalls.length).toBeGreaterThan(0);
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 240_000 },
+  );
+
+  realTest(
     "Scenario: Given a real provider When kzf asks gaubee about lunch and manual compact follows Then the answer returns to chat-main and remains available after compact",
     async () => {
       const harness = await createRealKernelHarness({ sessionName: "real-lunch-relay" });
@@ -52,9 +82,12 @@ describe("Feature: real AI loopbus convergence", () => {
           afterReplyTimestamp: result.finalReply.timestamp,
         });
 
+        expect(result.originAcknowledgement.chatId).toBe("chat-main");
+        expect(result.originAcknowledgement.content.length).toBeGreaterThan(0);
         expect(result.relayChannel.chatId).toBe("chat-gaubee");
         expect(result.relayPromptMessage.chatId).toBe("chat-gaubee");
         expect(result.relayPromptMessage.content.length).toBeGreaterThan(0);
+        expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
         expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
         expect(result.relayParticipantReply.chatId).toBe("chat-gaubee");
         expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
@@ -87,12 +120,43 @@ describe("Feature: real AI loopbus convergence", () => {
       try {
         const result = await runRealWeatherThroughTerminalScenario(harness);
 
+        expect(result.acknowledgement.chatId).toBe("chat-main");
+        expect(result.acknowledgement.content.length).toBeGreaterThan(0);
         expect(result.reply.chatId).toBe("chat-main");
         expect(result.reply.content.startsWith("WEATHER-RESULT:")).toBe(true);
+        expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.toolTraceTools.some((tool) => tool.startsWith("terminal_"))).toBe(true);
         expect(result.toolTraceTools).toContain("message_send");
         expect(result.toolTraceTools).toContain("attention_commit");
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 360_000 },
+  );
+
+  realTest(
+    "Scenario: Given a real provider When a new user message arrives during tool execution Then the next model request in the same cycle includes that interleaved attention input",
+    async () => {
+      const harness = await createRealKernelHarness({ sessionName: "real-interleaved-can-input" });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const result = await runRealInterleavedCanInputScenario(harness);
+
+        expect(result.acknowledgement.chatId).toBe("chat-main");
+        expect(result.acknowledgement.content).toContain("INTERLEAVED-ACK");
+        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.content).toContain("INTERLEAVED-RESULT:");
+        expect(result.finalReply.content).toContain("TOOL-PHASE-DONE");
+        expect(result.finalReply.content).toContain("SECOND-CLAUSE");
+        expect(result.yieldedCall.interleavedInputCount).toBeGreaterThan(0);
+        expect(result.interleavedRequestCall.cycleId).toBe(result.yieldedCall.cycleId);
+        expect(result.interleavedRequestCall.requestText).toContain("SECOND-CLAUSE");
+        expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
       } finally {
         await harness.stop();
       }

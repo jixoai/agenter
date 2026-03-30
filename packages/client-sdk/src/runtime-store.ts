@@ -13,6 +13,7 @@ import type {
   RuntimeChatCycle,
   RuntimeChatMessage,
   RuntimeClientState,
+  ProfileServiceInfoOutput,
   RuntimeEvent,
   RuntimeSchedulerContainmentState,
   RuntimeSnapshotEntry,
@@ -27,6 +28,7 @@ import type {
 const createInitialState = (): RuntimeClientState => ({
   connected: false,
   connectionStatus: "connecting",
+  profileService: null,
   lastEventId: 0,
   sessions: [],
   runtimes: {},
@@ -49,6 +51,8 @@ const createInitialState = (): RuntimeClientState => ({
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
+  unreadByChat: {},
+  unreadByTerminal: {},
 });
 
 type Listener = (state: RuntimeClientState) => void;
@@ -63,6 +67,7 @@ const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
 
 const LOOPBUS_LRU_LIMIT = 100;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
+const DEFAULT_MESSAGE_CHAT_ID = "chat-main";
 const DEFAULT_MODEL_CAPABILITIES = {
   streaming: false,
   tools: false,
@@ -205,6 +210,9 @@ const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessa
   return (
     left.chatId === right.chatId &&
     left.role === right.role &&
+    (left.attentionState ?? null) === (right.attentionState ?? null) &&
+    (left.attentionLoadedAt ?? null) === (right.attentionLoadedAt ?? null) &&
+    (left.visibleAt ?? null) === (right.visibleAt ?? null) &&
     (left.cycleId ?? null) === (right.cycleId ?? null) &&
     left.channel === right.channel &&
     leftFormat === rightFormat &&
@@ -293,10 +301,38 @@ export class RuntimeStore {
     return url.startsWith("/") ? this.resolveHttpUrl(url) : url;
   }
 
+  private buildProfileServiceUrl(pathname: string): string | null {
+    const endpoint = this.state.profileService?.endpoint;
+    return endpoint ? `${withTrailingSlashTrimmed(endpoint)}${pathname}` : null;
+  }
+
+  private async ensureProfileServiceInfo(): Promise<ProfileServiceInfoOutput> {
+    if (this.state.profileService) {
+      return this.state.profileService;
+    }
+    const profileService = await this.client.trpc.profile.service.query();
+    this.state = {
+      ...this.state,
+      profileService,
+    };
+    this.emit();
+    return profileService;
+  }
+
+  private async resolveProfileServiceUrl(pathname: string): Promise<string> {
+    const profileService = await this.ensureProfileServiceInfo();
+    return `${withTrailingSlashTrimmed(profileService.endpoint)}${pathname}`;
+  }
+
   private normalizeRuntimeChatMessage(message: RuntimeChatMessage): RuntimeChatMessage {
     return {
       ...message,
       cycleId: message.cycleId ?? null,
+      updatedAt: message.updatedAt ?? message.timestamp,
+      visibleAt: message.visibleAt,
+      attentionState: message.attentionState,
+      attentionLoadedAt: message.attentionLoadedAt,
+      editable: message.editable ?? message.attentionState === "queued",
       attachments: message.attachments?.map((attachment) => ({
         ...attachment,
         url: this.resolveMediaUrl(attachment.url),
@@ -326,10 +362,15 @@ export class RuntimeStore {
   private toRuntimeChatMessage(item: ChatListItem): RuntimeChatMessage {
     return {
       id: item.messageId,
-      chatId: item.chatId,
+      chatId: item.chatId ?? DEFAULT_MESSAGE_CHAT_ID,
       role: item.role,
       content: item.content,
       timestamp: item.timestamp,
+      updatedAt: item.updatedAt ?? item.timestamp,
+      visibleAt: item.visibleAt,
+      attentionState: item.attentionState,
+      attentionLoadedAt: item.attentionLoadedAt,
+      editable: item.attentionState === "queued",
       cycleId: item.cycleId ?? null,
       channel: item.channel === "user_input" ? undefined : item.channel,
       format: item.format,
@@ -668,6 +709,8 @@ export class RuntimeStore {
   private applyNotificationSnapshot(snapshot: NotificationSnapshotOutput): void {
     this.state.notifications = snapshot.items;
     this.state.unreadBySession = snapshot.unreadBySession;
+    this.state.unreadByChat = snapshot.unreadByChat;
+    this.state.unreadByTerminal = snapshot.unreadByTerminal;
   }
 
   private setConnectionStatus(status: RuntimeClientState["connectionStatus"]): void {
@@ -857,9 +900,10 @@ export class RuntimeStore {
     try {
       const connectSequence = ++this.connectSequence;
       const previousState = this.state;
-      const [snapshot, recentWorkspaces] = await Promise.all([
+      const [snapshot, recentWorkspaces, profileService] = await Promise.all([
         this.client.trpc.runtime.snapshot.query(),
         this.client.trpc.workspace.recent.query({ limit: 8 }),
+        this.client.trpc.profile.service.query().catch(() => previousState.profileService),
       ]);
       const runtimes = Object.fromEntries(
         Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
@@ -871,6 +915,7 @@ export class RuntimeStore {
         ...previousState,
         sessions: sortSessions(snapshot.sessions),
         runtimes,
+        profileService: profileService ?? previousState.profileService ?? null,
         lastEventId: snapshot.lastEventId,
         recentWorkspaces: recentWorkspaces.items,
         activityBySession: Object.fromEntries(
@@ -942,6 +987,8 @@ export class RuntimeStore {
         workspaces: previousState.workspaces,
         notifications: previousState.notifications,
         unreadBySession: previousState.unreadBySession,
+        unreadByChat: previousState.unreadByChat,
+        unreadByTerminal: previousState.unreadByTerminal,
       };
       this.setConnectionStatus("connected");
       for (const session of this.state.sessions) {
@@ -1159,15 +1206,9 @@ export class RuntimeStore {
 
   async queryAttention(input: {
     sessionId: string;
-    contextId?: string;
-    hash?: string;
-    depth?: number;
-    author?: string;
-    source?: string;
-    text?: string;
+    query: string;
     offset?: number;
     limit?: number;
-    minScore?: number;
   }): Promise<AttentionQueryItem[]> {
     const output = await this.client.trpc.runtime.attentionQuery.query(input);
     return output.items;
@@ -1209,45 +1250,53 @@ export class RuntimeStore {
     }));
   }
 
-  sessionIconUrl(sessionId: string): string {
-    return this.resolveHttpUrl(`/media/sessions/${encodeURIComponent(sessionId)}/icon`);
-  }
-
-  avatarIconUrl(nickname: string, workspacePath?: string | null): string {
-    const base = this.resolveHttpUrl(`/media/avatars/${encodeURIComponent(nickname)}/icon`);
-    if (!workspacePath || workspacePath.trim().length === 0) {
-      return base;
-    }
-    const params = new URLSearchParams({ workspacePath });
-    return `${base}?${params.toString()}`;
+  sessionIconUrl(sessionId: string): string | null {
+    return this.buildProfileServiceUrl(`/media/sessions/${encodeURIComponent(sessionId)}/icon`);
   }
 
   async uploadSessionIcon(sessionId: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    const response = await fetch(this.resolveHttpUrl(`/api/sessions/${encodeURIComponent(sessionId)}/icon`), {
+    const response = await fetch(await this.resolveProfileServiceUrl(`/sessions/${encodeURIComponent(sessionId)}/icon`), {
       method: "POST",
-      body: form,
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+      },
+      body: file,
     });
-    const payload = (await response.json()) as { ok: boolean; url?: string; error?: string };
+    const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error ?? `session icon upload failed (${response.status})`);
     }
-    return payload;
+    return {
+      ok: true,
+      url: payload.url ?? payload.iconUrl,
+    };
   }
 
-  async uploadAvatarIcon(nickname: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    const response = await fetch(this.resolveHttpUrl(`/api/avatars/${encodeURIComponent(nickname)}/icon`), {
+  profileIconUrl(reference: string): string | null {
+    return this.buildProfileServiceUrl(`/media/profiles/${encodeURIComponent(reference)}/icon`);
+  }
+
+  async uploadProfileIcon(
+    reference: string,
+    token: string,
+    file: File,
+  ): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const response = await fetch(await this.resolveProfileServiceUrl(`/profiles/${encodeURIComponent(reference)}/icon`), {
       method: "POST",
-      body: form,
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": file.type || "application/octet-stream",
+      },
+      body: file,
     });
-    const payload = (await response.json()) as { ok: boolean; url?: string; error?: string };
+    const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.error ?? `avatar icon upload failed (${response.status})`);
+      throw new Error(payload.error ?? `profile icon upload failed (${response.status})`);
     }
-    return payload;
+    return {
+      ok: true,
+      url: payload.url ?? payload.iconUrl,
+    };
   }
 
   async sendChat(
@@ -1581,12 +1630,42 @@ export class RuntimeStore {
     return await this.client.trpc.settings.global.save.mutate(input);
   }
 
-  async listAvatarCatalog() {
-    return await this.client.trpc.avatar.list.query();
+  async listProfiles() {
+    return await this.client.trpc.profile.list.query();
   }
 
-  async createAvatar(nickname: string) {
-    return await this.client.trpc.avatar.create.mutate({ nickname });
+  async getProfile(reference: string) {
+    return await this.client.trpc.profile.get.query({ reference });
+  }
+
+  async updateProfile(input: {
+    reference: string;
+    token: string;
+    patch: {
+      nickname?: string;
+      displayName?: string;
+      phone?: string;
+      address?: string;
+      extra?: Record<string, unknown>;
+    };
+  }) {
+    return await this.client.trpc.profile.update.mutate(input);
+  }
+
+  async startProfileEmailChallenge(email: string) {
+    return await this.client.trpc.profile.auth.emailStart.mutate({ email });
+  }
+
+  async verifyProfileEmailChallenge(input: { email: string; code: string; token?: string }) {
+    return await this.client.trpc.profile.auth.emailVerify.mutate(input);
+  }
+
+  webauthnRegistrationUrl(ticketId: string): string | null {
+    return this.buildProfileServiceUrl(`/auth/webauthn/register?ticket=${encodeURIComponent(ticketId)}`);
+  }
+
+  webauthnAuthenticationUrl(reference: string): string | null {
+    return this.buildProfileServiceUrl(`/auth/webauthn/authenticate?reference=${encodeURIComponent(reference)}`);
   }
 
   async readSettingsLayer(workspacePath: string, layerId: string) {
@@ -1618,10 +1697,23 @@ export class RuntimeStore {
     return snapshot;
   }
 
-  async consumeNotifications(input: { sessionId: string; chatId?: string; upToMessageId?: string | null }) {
+  async setTerminalVisibility(input: { sessionId: string; terminalId?: string; visible: boolean; focused: boolean }) {
+    const snapshot = await this.client.trpc.notification.setTerminalVisibility.mutate(input);
+    this.applyNotificationSnapshot(snapshot);
+    this.emit();
+    return snapshot;
+  }
+
+  async consumeNotifications(input: {
+    sessionId: string;
+    chatId?: string;
+    terminalId?: string;
+    upToMessageId?: string | null;
+  }) {
     const snapshot = await this.client.trpc.notification.consume.mutate({
       sessionId: input.sessionId,
       chatId: input.chatId,
+      terminalId: input.terminalId,
       upToMessageId: input.upToMessageId ?? undefined,
     });
     this.applyNotificationSnapshot(snapshot);

@@ -88,6 +88,24 @@ export type AttentionWillLoadHook = (
   context: LoopBusHookContext,
 ) => Promise<LoopSourceReadRequest> | LoopSourceReadRequest;
 
+export type AttentionShouldLoadResult =
+  | boolean
+  | {
+      allow: boolean;
+      reason?: string;
+    };
+
+export type AttentionShouldLoadHook = (
+  input: {
+    request: LoopSourceReadRequest;
+  },
+  context: LoopBusHookContext,
+) =>
+  | Promise<AttentionShouldLoadResult | null | undefined>
+  | AttentionShouldLoadResult
+  | null
+  | undefined;
+
 export type AttentionTransformHook = (
   drafts: AttentionDraft[],
   input: {
@@ -140,6 +158,7 @@ export interface LoopBusPlugin {
   enforce?: LoopBusPluginEnforce;
   setup?: (api: LoopBusPluginApi) => Promise<void> | void;
   attentionWillLoad?: LoopBusHook<AttentionWillLoadHook>;
+  attentionShouldLoad?: LoopBusHook<AttentionShouldLoadHook>;
   attentionTransform?: LoopBusHook<AttentionTransformHook>;
   attentionCommitted?: LoopBusHook<AttentionCommittedHook>;
   cycleShouldStart?: LoopBusHook<CycleShouldStartHook>;
@@ -197,6 +216,7 @@ export class LoopBusPluginRuntime {
   private readonly exposed = new Map<string, unknown>();
   private readonly invalidated = new Map<string, LoopSourceRef>();
   private readonly attentionWillLoadHooks: RegisteredHook<AttentionWillLoadHook>[] = [];
+  private readonly attentionShouldLoadHooks: RegisteredHook<AttentionShouldLoadHook>[] = [];
   private readonly attentionTransformHooks: RegisteredHook<AttentionTransformHook>[] = [];
   private readonly attentionCommittedHooks: RegisteredHook<AttentionCommittedHook>[] = [];
   private readonly cycleShouldStartHooks: RegisteredHook<CycleShouldStartHook>[] = [];
@@ -249,6 +269,11 @@ export class LoopBusPluginRuntime {
       const context: LoopBusHookContext = { ref };
       let request: LoopSourceReadRequest = { ref, mode: "auto" };
       request = await this.runSequentialWaterfall(this.attentionWillLoadHooks, request, context);
+      const loadDecision = await this.shouldLoadAttention(request, context);
+      if (!loadDecision.allow) {
+        this.invalidate(ref);
+        continue;
+      }
       const result = await source.read(request);
       const initialDrafts = source.toAttentionDrafts ? await source.toAttentionDrafts(result, request) : [];
       const nextDrafts = await this.runAttentionTransform(initialDrafts, { request, result }, context);
@@ -295,6 +320,7 @@ export class LoopBusPluginRuntime {
   private registerPlugin(plugin: LoopBusPlugin): void {
     this.plugins.push(plugin);
     this.registerHook(plugin.name, plugin.attentionWillLoad, this.attentionWillLoadHooks);
+    this.registerHook(plugin.name, plugin.attentionShouldLoad, this.attentionShouldLoadHooks);
     this.registerHook(plugin.name, plugin.attentionTransform, this.attentionTransformHooks);
     this.registerHook(plugin.name, plugin.attentionCommitted, this.attentionCommittedHooks);
     this.registerHook(plugin.name, plugin.cycleShouldStart, this.cycleShouldStartHooks);
@@ -371,6 +397,20 @@ export class LoopBusPluginRuntime {
       current = await hook.handler(current, input);
     }
     return current;
+  }
+
+  private async shouldLoadAttention(
+    request: LoopSourceReadRequest,
+    context: LoopBusHookContext,
+  ): Promise<{ allow: boolean; reason?: string }> {
+    const first = await this.runFirst(this.attentionShouldLoadHooks, { request }, context);
+    if (first === null || first === undefined) {
+      return { allow: true };
+    }
+    if (typeof first === "boolean") {
+      return { allow: first };
+    }
+    return first;
   }
 
   private async runParallel<TInput>(

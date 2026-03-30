@@ -9,8 +9,8 @@ import { AttentionInspectorPanel } from "./AttentionInspectorPanel";
 const contextKzf: RuntimeAttentionState["snapshot"]["contexts"][number] = {
   contextId: "ctx-chat-kzf",
   owner: "avatar:jane",
-  content: "kzf asks jane to ask gaubee about lunch.",
-  contentFormat: "text/plain",
+  content: "## Lunch relay\n\n- kzf asks jane to ask gaubee about lunch.\n- jane is waiting for a reply.",
+  contentFormat: "text/markdown",
   scoreMap: {
     a1b2c3: 50,
     d4e5f6: 50,
@@ -37,7 +37,11 @@ const contextKzf: RuntimeAttentionState["snapshot"]["contexts"][number] = {
       meta: { author: "avatar:jane", source: "attention", createdAt: "2026-03-24T10:00:10.000Z" },
       scores: { a1b2c3: 50, d4e5f6: 50, relay01: 100 },
       summary: "稍等，我问一下",
-      change: { type: "update" as const, value: "Jane needs to ask gaubee and relay the answer.", format: "text/plain" },
+      change: {
+        type: "update" as const,
+        value: "Jane needs to ask gaubee and relay the answer.",
+        format: "text/plain",
+      },
       createdAt: "2026-03-24T10:00:10.000Z",
     },
   ],
@@ -46,8 +50,8 @@ const contextKzf: RuntimeAttentionState["snapshot"]["contexts"][number] = {
 const contextGaubee: RuntimeAttentionState["snapshot"]["contexts"][number] = {
   contextId: "ctx-chat-gaubee",
   owner: "avatar:jane",
-  content: "gaubee replies with fried rice.",
-  contentFormat: "text/plain",
+  content: "## Reply\n\nGaubee replies with **fried rice**.",
+  contentFormat: "text/markdown",
   scoreMap: {
     relay01: 0,
     rice123: 100,
@@ -162,6 +166,10 @@ const meta = {
     );
     const [detailView, setDetailView] = useState<AttentionPanelTab>("context");
     const [queryText, setQueryText] = useState("");
+    const handleQueryTextChange = (query: string) => {
+      setDetailView(query.trim().length > 0 ? "items" : "context");
+      setQueryText(query);
+    };
     return (
       <div className="space-y-3 p-6">
         <div data-testid="attention-selection-state" className="text-xs text-slate-500">
@@ -178,7 +186,7 @@ const meta = {
             detailView={detailView}
             onDetailViewChange={setDetailView}
             queryText={queryText}
-            onQueryTextChange={setQueryText}
+            onQueryTextChange={handleQueryTextChange}
             onSelectionChange={setSelection}
           />
         </div>
@@ -198,6 +206,8 @@ export const ContextFirstView: Story = {
     await expect(canvas.getByText("Attention")).toBeInTheDocument();
     await expect(canvas.getByTestId("attention-context-scroll-viewport")).toBeInTheDocument();
     await expect(canvas.getByTestId("attention-context-detail-scroll-viewport")).toBeInTheDocument();
+    await expect(canvas.getByTestId("attention-query-input")).toBeInTheDocument();
+    await expect(canvas.getByTestId("attention-context-markdown-card")).toHaveTextContent("Lunch relay");
     await expect(canvas.getByTestId("attention-selection-state")).toHaveTextContent("ctx-chat-kzf/commit-2");
     await expect(canvas.getByRole("tab", { name: /Context/i })).toHaveAttribute("data-active", "");
     await expect(canvas.getByText(/Context state/i)).toBeInTheDocument();
@@ -210,7 +220,7 @@ export const ScoreQueryTraversal: Story = {
     const canvas = within(canvasElement);
 
     await userEvent.click(canvas.getByRole("button", { name: /relay01/i }));
-    await expect(canvas.getByRole("tab", { name: /Items/i })).toHaveAttribute("data-active", "");
+    await expect(canvas.getByTestId("attention-item-scroll-viewport")).toBeInTheDocument();
     await waitFor(() => {
       expect(canvas.getByTestId("attention-query-input")).toHaveValue("context:ctx-chat-kzf score:relay01 deep:2");
     });
@@ -219,6 +229,9 @@ export const ScoreQueryTraversal: Story = {
     );
 
     await userEvent.clear(canvas.getByTestId("attention-query-input"));
+    await expect(canvas.getByTestId("attention-route-state")).toHaveTextContent("context:-");
+    await expect(canvas.getByTestId("attention-context-scroll-viewport")).toBeInTheDocument();
+
     await userEvent.type(canvas.getByTestId("attention-query-input"), "score:relay01 deep:2");
     await waitFor(() => {
       expect(canvas.getByText(/matches/i)).toBeInTheDocument();

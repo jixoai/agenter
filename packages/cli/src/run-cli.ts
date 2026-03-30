@@ -73,7 +73,7 @@ const startWebDevServer = async (input: {
   webPort: number;
   trpcHost: string;
   trpcPort: number;
-}): Promise<Subprocess> => {
+}): Promise<Bun.Subprocess<"ignore", "inherit", "inherit">> => {
   const webuiDir = join(import.meta.dir, "../../webui");
   const proc = Bun.spawn({
     cmd: [BUN_BIN, "run", "dev", "--host", input.host, "--port", String(input.webPort)],

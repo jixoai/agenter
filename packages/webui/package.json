@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "test": "pnpm run test:unit && pnpm run test:dom",
     "e2e": "bun ./test/e2e/run.ts",
     "storybook": "storybook dev --ci --no-open --port 6006",
@@ -20,6 +21,7 @@
   },
   "dependencies": {
     "@agenter/client-sdk": "workspace:*",
+    "@agenter/search-syntax": "workspace:*",
     "@agenter/terminal-view": "workspace:*",
     "@agenter/web-chat-view": "workspace:*",
     "@base-ui-components/react": "^1.0.0-rc.0",
@@ -47,6 +49,7 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@playwright/test": "^1.54.2",
     "@storybook/addon-docs": "^10.2.9",
     "@storybook/addon-vitest": "^10.2.9",

@@ -349,7 +349,7 @@ export const MessageChannelMetadataDisclosure = ({
                     disabled={!canFocusChannel || focusing}
                     onClick={() => void handleFocusChannel()}
                   >
-                    Focus channel
+                    {channel.focused ? "Unfocus channel" : "Focus channel"}
                   </Button>
                   <Button
                     type="button"

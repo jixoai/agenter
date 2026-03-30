@@ -4,8 +4,8 @@ import { createServer as createNetServer } from "node:net";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
-import type { AppKernel } from "@agenter/app-server";
 import { parse as parseYaml } from "yaml";
+import type { AppKernel } from "../../../app-server/src/index";
 
 import {
   canProxyRealModelConfig,
@@ -444,7 +444,7 @@ const startModelServerHarness = async (host: string, modelPort: number): Promise
   };
 };
 
-const startWebDevServer = async (ports: HarnessPorts): Promise<Subprocess> => {
+const startWebDevServer = async (ports: HarnessPorts): Promise<ReturnType<typeof Bun.spawn>> => {
   const proc = Bun.spawn({
     cmd: [Bun.which("bun") ?? process.execPath, "run", "dev", "--host", ports.host, "--port", String(ports.webPort)],
     cwd: join(import.meta.dir, "../.."),

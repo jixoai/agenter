@@ -17,6 +17,7 @@ const originalWebSocket = globalThis.WebSocket;
 const createState = (): RuntimeClientState => ({
   connected: true,
   connectionStatus: "connected",
+  profileService: { endpoint: "http://127.0.0.1:4591" },
   lastEventId: 0,
   sessions: [],
   runtimes: {},
@@ -307,18 +308,52 @@ const hydrateSessionHistoryMock = vi.fn(async () => ({ messagesHasMore: false, c
 const hydrateSessionArtifactsMock = vi.fn(async () => {});
 const loadChatMessagesMock = vi.fn(async () => {});
 const loadChatCyclesMock = vi.fn(async () => {});
-const sessionIconUrlMock = vi.fn((sessionId: string) => `/media/sessions/${sessionId}/icon`);
-const avatarIconUrlMock = vi.fn((nickname: string) => `/media/avatars/${nickname}/icon`);
+const sessionIconUrlMock = vi.fn((sessionId: string) => `http://127.0.0.1:4591/media/sessions/${sessionId}/icon`);
+const profileIconUrlMock = vi.fn((reference: string) => `http://127.0.0.1:4591/media/profiles/${reference}/icon`);
 const uploadSessionIconMock = vi.fn(async () => ({ ok: true }));
-const uploadAvatarIconMock = vi.fn(async () => ({ ok: true }));
+const listProfilesMock = vi.fn(async () => ({ items: [] }));
+const getProfileMock = vi.fn(async (reference: string) => ({
+  profileId: reference,
+  identifiers: [],
+  metadata: {},
+  iconUrl: `http://127.0.0.1:4591/media/profiles/${reference}/icon`,
+  isVirtual: false,
+}));
+const updateProfileMock = vi.fn(async (input: { reference: string; patch: Record<string, unknown> }) => ({
+  profileId: input.reference,
+  identifiers: [],
+  metadata: input.patch,
+  iconUrl: `http://127.0.0.1:4591/media/profiles/${input.reference}/icon`,
+  isVirtual: false,
+}));
+const startProfileEmailChallengeMock = vi.fn(async () => ({
+  challengeId: "challenge-1",
+  delivery: "console",
+  expiresAt: new Date(0).toISOString(),
+}));
+const verifyProfileEmailChallengeMock = vi.fn(async () => ({
+  profile: {
+    profileId: "profile-1",
+    identifiers: [],
+    metadata: {},
+    iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+    isVirtual: false,
+  },
+  registrationTicket: "ticket-1",
+  expiresAt: new Date(0).toISOString(),
+  registrationUrl: "http://127.0.0.1:4591/auth/webauthn/register?ticket=ticket-1",
+}));
+const uploadProfileIconMock = vi.fn(async () => ({ ok: true }));
+const webauthnRegistrationUrlMock = vi.fn((ticketId: string) => `http://127.0.0.1:4591/auth/webauthn/register?ticket=${ticketId}`);
+const webauthnAuthenticationUrlMock = vi.fn(
+  (reference: string) => `http://127.0.0.1:4591/auth/webauthn/authenticate?reference=${reference}`,
+);
 const readGlobalSettingsMock = vi.fn(async () => ({ path: "settings.json", content: "{}\n", mtimeMs: 0 }));
 const saveGlobalSettingsMock = vi.fn(async () => ({
   ok: true,
   file: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
   latest: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
 }));
-const listAvatarCatalogMock = vi.fn(async () => ({ items: [], activeAvatar: "" }));
-const createAvatarMock = vi.fn(async () => ({ nickname: "assistant" }));
 
 const emitState = (next: RuntimeClientState) => {
   mockState = next;
@@ -374,7 +409,12 @@ vi.mock("@agenter/client-sdk", () => ({
       writeMessageChannels(sessionId, channels);
       return channels;
     },
-    createMessageChannel: async (input) => {
+    createMessageChannel: async (input: {
+      sessionId: string;
+      kind: "direct" | "room";
+      title?: string;
+      focus?: boolean;
+    }) => {
       const created = await createMessageChannelMock(input);
       const previous = mockState.messageChannelsBySession[input.sessionId]?.data ?? [];
       writeMessageChannels(
@@ -385,13 +425,22 @@ vi.mock("@agenter/client-sdk", () => ({
       );
       return created;
     },
-    focusMessageChannels: async (input) => {
+    focusMessageChannels: async (input: {
+      sessionId: string;
+      op: "add" | "remove" | "replace" | "clear";
+      channels: Array<{ chatId: string; accessToken: string }>;
+    }) => {
       const channels = await focusMessageChannelsMock(input);
       writeMessageChannels(input.sessionId, channels);
       return channels;
     },
     sendMessageChannel: sendMessageChannelMock,
-    updateMessageChannel: async (input) => {
+    updateMessageChannel: async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+      patch: { title?: string };
+    }) => {
       const updated = await updateMessageChannelMock(input);
       const previous = mockState.messageChannelsBySession[input.sessionId]?.data ?? [];
       writeMessageChannels(
@@ -415,9 +464,16 @@ vi.mock("@agenter/client-sdk", () => ({
     searchWorkspacePaths: async () => [],
     uploadSessionAssets: async () => [],
     sessionIconUrl: sessionIconUrlMock,
-    avatarIconUrl: avatarIconUrlMock,
+    profileIconUrl: profileIconUrlMock,
     uploadSessionIcon: uploadSessionIconMock,
-    uploadAvatarIcon: uploadAvatarIconMock,
+    listProfiles: listProfilesMock,
+    getProfile: getProfileMock,
+    updateProfile: updateProfileMock,
+    startProfileEmailChallenge: startProfileEmailChallengeMock,
+    verifyProfileEmailChallenge: verifyProfileEmailChallengeMock,
+    uploadProfileIcon: uploadProfileIconMock,
+    webauthnRegistrationUrl: webauthnRegistrationUrlMock,
+    webauthnAuthenticationUrl: webauthnAuthenticationUrlMock,
     hydrateSessionHistory: hydrateSessionHistoryMock,
     hydrateSessionArtifacts: hydrateSessionArtifactsMock,
     loadChatMessages: loadChatMessagesMock,
@@ -428,8 +484,6 @@ vi.mock("@agenter/client-sdk", () => ({
     saveSettings: async () => ({ ok: true, file: { path: "settings.json", content: "{}", mtimeMs: 1 } }),
     readGlobalSettings: readGlobalSettingsMock,
     saveGlobalSettings: saveGlobalSettingsMock,
-    listAvatarCatalog: listAvatarCatalogMock,
-    createAvatar: createAvatarMock,
     listSettingsLayers: listSettingsLayersMock,
     readSettingsLayer: readSettingsLayerMock,
     saveSettingsLayer: saveSettingsLayerMock,
@@ -486,13 +540,19 @@ beforeEach(() => {
   loadChatMessagesMock.mockClear();
   loadChatCyclesMock.mockClear();
   sessionIconUrlMock.mockClear();
-  avatarIconUrlMock.mockClear();
+  profileIconUrlMock.mockClear();
   uploadSessionIconMock.mockClear();
-  uploadAvatarIconMock.mockClear();
+  listProfilesMock.mockClear();
+  getProfileMock.mockClear();
+  updateProfileMock.mockClear();
+  startProfileEmailChallengeMock.mockClear();
+  verifyProfileEmailChallengeMock.mockClear();
+  uploadProfileIconMock.mockClear();
+  webauthnRegistrationUrlMock.mockClear();
+  webauthnAuthenticationUrlMock.mockClear();
   readGlobalSettingsMock.mockClear();
   saveGlobalSettingsMock.mockClear();
-  listAvatarCatalogMock.mockClear();
-  createAvatarMock.mockClear();
+  listProfilesMock.mockResolvedValue({ items: [] });
   listWorkspaceSessionsMock.mockResolvedValue({
     items: [],
     nextCursor: null,
@@ -1036,7 +1096,7 @@ describe("Feature: web ui app shell", () => {
             timestamp: 20,
             cycleId: 1,
             format: "markdown",
-            tool: null,
+            tool: undefined,
             attachments: [],
           },
         ],
@@ -1058,6 +1118,7 @@ describe("Feature: web ui app shell", () => {
 
     expect(await screen.findByText("Bootstrap hello")).toBeInTheDocument();
     expect(screen.getByText("Bootstrap reply")).toBeInTheDocument();
+    expect(profileIconUrlMock).toHaveBeenCalledWith("jon");
     expect(screen.queryByText("Loading chat channels...")).not.toBeInTheDocument();
     expect(ensureMessageChannelsMock).not.toHaveBeenCalled();
   });
@@ -1615,6 +1676,11 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getAllByRole("button", { name: "Workspaces" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Quick Start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Build shell .*session-1.*\/repo\/demo/i })).toBeInTheDocument();
+    expect(sessionIconUrlMock).toHaveBeenCalledWith(sessionId);
+    expect(screen.getByAltText("Build shell")).toHaveAttribute(
+      "src",
+      expect.stringContaining(`http://127.0.0.1:4591/media/sessions/${sessionId}/icon`),
+    );
     expect(screen.getByRole("tab", { name: "Chats" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Terminals" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Devtools" })).toBeInTheDocument();

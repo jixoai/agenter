@@ -92,6 +92,7 @@ describe("Feature: workspace settings and session notifications", () => {
     });
 
     expect(hiddenSnapshot?.unreadBySession["session-1"]).toBe(1);
+    expect(hiddenSnapshot?.unreadByChat["session-1"]?.["chat-main"]).toBe(1);
     expect(hiddenSnapshot?.items[0]?.messageId).toBe("9");
 
     registry.setChatVisibility({ sessionId: "session-1", chatId: "chat-main", visible: true, focused: true });
@@ -127,10 +128,61 @@ describe("Feature: workspace settings and session notifications", () => {
     });
 
     expect(otherChannelSnapshot?.unreadBySession["session-1"]).toBe(2);
+    expect(otherChannelSnapshot?.unreadByChat["session-1"]?.["room-team"]).toBe(1);
 
     const consumed = registry.consume({ sessionId: "session-1", chatId: "chat-main", upToMessageId: "9" });
     expect(consumed?.items.map((item) => item.messageId)).toEqual(["11"]);
     expect(consumed?.unreadBySession["session-1"]).toBe(1);
     expect(registry.snapshot().items.map((item) => item.chatId)).toEqual(["room-team"]);
+  });
+
+  test("Scenario: Given hidden terminal completion notifications When terminal visibility and consume change Then unread terminal badges stay scoped to that terminal", () => {
+    const registry = new SessionNotificationRegistry();
+
+    const hiddenSnapshot = registry.noteTerminalNotification({
+      sessionId: "session-1",
+      workspacePath: "/repo/demo",
+      sessionName: "Demo",
+      terminalId: "shell-main",
+      notificationId: "idle:1",
+      content: "Terminal shell-main is ready for your input.",
+      timestamp: 1,
+    });
+
+    expect(hiddenSnapshot?.unreadBySession["session-1"]).toBe(1);
+    expect(hiddenSnapshot?.unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
+    expect(hiddenSnapshot?.items[0]?.sourceType).toBe("terminal");
+
+    registry.setTerminalVisibility({ sessionId: "session-1", terminalId: "shell-main", visible: true, focused: true });
+    const visibleSnapshot = registry.noteTerminalNotification({
+      sessionId: "session-1",
+      workspacePath: "/repo/demo",
+      sessionName: "Demo",
+      terminalId: "shell-main",
+      notificationId: "idle:2",
+      content: "Terminal shell-main is ready for your input.",
+      timestamp: 2,
+    });
+
+    expect(visibleSnapshot).toBeNull();
+    expect(registry.snapshot().unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
+
+    const otherTerminalSnapshot = registry.noteTerminalNotification({
+      sessionId: "session-1",
+      workspacePath: "/repo/demo",
+      sessionName: "Demo",
+      terminalId: "shell-side",
+      notificationId: "idle:3",
+      content: "Terminal shell-side is ready for your input.",
+      timestamp: 3,
+    });
+
+    expect(otherTerminalSnapshot?.unreadBySession["session-1"]).toBe(2);
+    expect(otherTerminalSnapshot?.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
+
+    const consumed = registry.consume({ sessionId: "session-1", terminalId: "shell-main" });
+    expect(consumed?.unreadBySession["session-1"]).toBe(1);
+    expect(consumed?.unreadByTerminal["session-1"]?.["shell-main"]).toBeUndefined();
+    expect(consumed?.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
   });
 });

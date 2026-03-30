@@ -7,6 +7,11 @@ const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 export const settingsSchema = z.object({
   settingsSource: z.array(z.string()).describe("Settings source precedence from low to high priority.").optional(),
   avatar: z.string().min(1).describe("Nickname of the active avatar profile.").optional(),
+  profileReference: z
+    .string()
+    .min(1)
+    .describe("Canonical durable profile reference used for profile-service-backed identity and icon selection.")
+    .optional(),
   sessionStoreTarget: z
     .enum(["global", "workspace"])
     .describe("Session storage target: global profile or workspace-local.")

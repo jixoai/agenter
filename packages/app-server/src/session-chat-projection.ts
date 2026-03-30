@@ -2,18 +2,22 @@ import type { SessionBlockRecord, SessionCollectedInput, SessionCycleRecord } fr
 
 export const DEFAULT_MESSAGE_CHAT_ID = "chat-main";
 
+const normalizeChatId = (value: string | null | undefined): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
 const readCollectedInputChatId = (input: SessionCollectedInput): string | null => {
-  const chatId =
+  return normalizeChatId(
     typeof input.meta?.chatId === "string"
       ? input.meta.chatId
       : typeof input.meta?.channelId === "string"
         ? input.meta.channelId
-        : null;
-  if (!chatId) {
-    return null;
-  }
-  const normalized = chatId.trim();
-  return normalized.length > 0 ? normalized : null;
+        : null,
+  );
 };
 
 const readCollectedInputCreatedAt = (input: SessionCollectedInput): number => {
@@ -54,10 +58,14 @@ export const resolveCollectedInputsChatId = (
 };
 
 export const resolveSessionBlockChatId = (input: {
-  block: Pick<SessionBlockRecord, "cycleId">;
+  block: Pick<SessionBlockRecord, "cycleId" | "chatId">;
   getCycleById: (cycleId: number) => Pick<SessionCycleRecord, "collectedInputs"> | null;
   fallback?: string;
 }): string => {
+  const explicitChatId = normalizeChatId(input.block.chatId);
+  if (explicitChatId) {
+    return explicitChatId;
+  }
   if (input.block.cycleId === null) {
     return input.fallback ?? DEFAULT_MESSAGE_CHAT_ID;
   }

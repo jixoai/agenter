@@ -6,6 +6,7 @@ import { cn } from "../../lib/utils";
 export interface TabItem {
   id: string;
   label: string;
+  badgeCount?: number;
 }
 
 interface TabsProps {
@@ -45,7 +46,14 @@ export const Tabs = memo(({ items, value, onValueChange, ariaLabel = "Details ta
                   "text-slate-600 hover:text-slate-900",
                 )}
               >
-                {item.label}
+                <span className="inline-flex items-center gap-1.5">
+                  <span>{item.label}</span>
+                  {item.badgeCount && item.badgeCount > 0 ? (
+                    <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                      {item.badgeCount}
+                    </span>
+                  ) : null}
+                </span>
               </TabsPrimitive.Tab>
             ))}
           </TabsPrimitive.List>

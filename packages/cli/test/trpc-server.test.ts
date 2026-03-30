@@ -128,4 +128,65 @@ describe("Feature: trpc server media routes", () => {
     expect(payload[0]?.result?.data?.json?.version).toBe(1);
     expect(Array.isArray(payload[0]?.result?.data?.json?.sessions)).toBe(true);
   });
+
+  test("Scenario: Given app-server starts a child profile-service When the client discovers it Then icon traffic goes to the independent profile endpoint", async () => {
+    const { dir, workspace } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      profileService: {
+        dataDir: join(dir, "profile-service"),
+      },
+    });
+    handles.push(handle);
+
+    const client = createAgenterClient({
+      wsUrl: `ws://${handle.host}:${handle.port}/trpc`,
+    });
+    clients.push(client);
+
+    const created = await client.trpc.session.create.mutate({
+      cwd: workspace,
+      autoStart: false,
+      avatar: "gaubee",
+    });
+
+    const profileService = await client.trpc.profile.service.query();
+    expect(profileService.endpoint).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(profileService.endpoint).not.toBe(`http://${handle.host}:${handle.port}`);
+
+    const sessionIconResponse = await fetch(
+      `${profileService.endpoint}/media/sessions/${encodeURIComponent(created.session.id)}/icon`,
+    );
+    expect(sessionIconResponse.status).toBe(200);
+    expect(sessionIconResponse.headers.get("content-type")).toBe("image/png");
+
+    const profileIconResponse = await fetch(`${profileService.endpoint}/media/profiles/gaubee/icon`);
+    expect(profileIconResponse.status).toBe(200);
+    expect(profileIconResponse.headers.get("content-type")).toBe("image/png");
+
+    const proxiedSessionIconResponse = await fetch(
+      `http://${handle.host}:${handle.port}/media/sessions/${encodeURIComponent(created.session.id)}/icon`,
+    );
+    expect(proxiedSessionIconResponse.status).toBe(404);
+
+    const uploadResponse = await fetch(`${profileService.endpoint}/sessions/${encodeURIComponent(created.session.id)}/icon`, {
+      method: "POST",
+      headers: { "content-type": "image/svg+xml" },
+      body: `<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="10">profile-service</text></svg>`,
+    });
+    const uploadPayload = (await uploadResponse.json()) as { ok: boolean; iconUrl?: string };
+    expect(uploadResponse.status).toBe(200);
+    expect(uploadPayload.ok).toBe(true);
+    expect(uploadPayload.iconUrl).toBe(`${profileService.endpoint}/media/sessions/${encodeURIComponent(created.session.id)}/icon`);
+
+    const uploadedSessionIconResponse = await fetch(
+      `${profileService.endpoint}/media/sessions/${encodeURIComponent(created.session.id)}/icon?format=svg`,
+    );
+    expect(uploadedSessionIconResponse.status).toBe(200);
+    expect(uploadedSessionIconResponse.headers.get("content-type")).toContain("image/svg+xml");
+    expect(await uploadedSessionIconResponse.text()).toContain("profile-service");
+  });
 });

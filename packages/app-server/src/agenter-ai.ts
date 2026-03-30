@@ -4,15 +4,15 @@ import type {
   AttentionCommitMatch,
   AttentionCommitToolInput,
   AttentionContextDescriptor,
-  AttentionQueryInput,
 } from "@agenter/attention-system";
 import type { SessionTerminalOutcome } from "@agenter/session-system";
 import { toolDefinition, type ContentPart, type Tool } from "@tanstack/ai";
 import { z } from "zod";
 
+import type { AttentionSearchRequest } from "./attention-search";
 import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import type { ChatCycleCompactTrigger } from "./chat-cycles";
-import type { LoopBusMessage } from "./loop-bus";
+import type { LoopBusInput, LoopBusMessage } from "./loop-bus";
 import type { AssistantStreamUpdate, ModelClient, TextOnlyModelMessage } from "./model-client";
 import { ModelDecisionError } from "./model-client";
 import type { PromptStore } from "./prompt-store";
@@ -24,7 +24,7 @@ import type { AppServerLogger, ChatSessionAsset } from "./types";
 interface AttentionGateway {
   listContexts: () => AttentionContextDescriptor[];
   listActive: () => AttentionActiveContextMatch[];
-  query: (input: AttentionQueryInput) => Promise<AttentionCommitMatch[]> | AttentionCommitMatch[];
+  query: (input: AttentionSearchRequest) => Promise<AttentionCommitMatch[]> | AttentionCommitMatch[];
   commit: (input: AttentionCommitToolInput) => Promise<AttentionCommit> | AttentionCommit;
 }
 
@@ -74,6 +74,7 @@ interface AgentDeps {
   resolveImageAttachment?: (
     attachment: ChatSessionAsset,
   ) => Promise<ResolvedImageAttachmentSource | null> | ResolvedImageAttachmentSource | null;
+  collectInterleavedInputs?: () => Promise<LoopBusInput[] | undefined> | LoopBusInput[] | undefined;
   onAssistantStream?: (update: AssistantStreamUpdate) => Promise<void> | void;
   onModelCall?: (record: AgentModelCallRecord) => Promise<void> | void;
 }
@@ -130,20 +131,11 @@ interface AttentionUpdateCall {
   done: boolean;
 }
 
-export interface AgentPromptWindowReadyReply {
-  channelId: string;
-  topic: string;
-  triggerPhrases: string[];
-  reply: string;
-  reuseWhen: string;
-}
-
 export interface AgentPromptWindowCompactSummary {
   overview: string;
   decisions: string[];
   keyFiles: string[];
   keyFacts: string[];
-  readyReplies: AgentPromptWindowReadyReply[];
   unresolvedWork: string[];
   nextSteps: string[];
   raw: string;
@@ -167,6 +159,7 @@ const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice
 const MAX_HISTORY_MESSAGES = 80;
 const ENABLE_AGENT_TOOLS = true;
 const DEFAULT_MODEL_CALL_TIMEOUT_MS = 120_000;
+const MAX_EXTERNAL_MODEL_ROUNDS = 8;
 const CONTEXT_OVERFLOW_MARKERS = [
   "context length",
   "context window",
@@ -317,20 +310,24 @@ const buildToolInvocationContent = (trace: AgentToolTraceEntry): string =>
 const roundHasAttentionInput = (messages: readonly LoopBusMessage[]): boolean =>
   messages.some((message) => message.source === "attention");
 
-const COMPACT_READY_REPLY_SCHEMA = z.object({
-  channelId: z.string().default(""),
-  topic: z.string().default(""),
-  triggerPhrases: z.array(z.string()).default([]),
-  reply: z.string().default(""),
-  reuseWhen: z.string().default(""),
-});
+const normalizeLoopInputs = (inputs: readonly LoopBusInput[] | undefined): LoopBusMessage[] =>
+  (inputs ?? []).map((input) => ({
+    id: input.id ?? createId(),
+    timestamp: input.timestamp ?? Date.now(),
+    name: input.name,
+    role: input.role,
+    type: input.type,
+    source: input.source,
+    text: input.text,
+    meta: input.meta,
+    attachments: input.attachments?.map((attachment) => ({ ...attachment })),
+  }));
 
 const COMPACT_SUMMARY_SCHEMA = z.object({
   overview: z.string().default(""),
   decisions: z.array(z.string()).default([]),
   keyFiles: z.array(z.string()).default([]),
   keyFacts: z.array(z.string()).default([]),
-  readyReplies: z.array(z.union([z.string(), COMPACT_READY_REPLY_SCHEMA])).default([]),
   unresolvedWork: z.array(z.string()).default([]),
   nextSteps: z.array(z.string()).default([]),
 });
@@ -372,158 +369,11 @@ const pushUniqueCompactText = (target: string[], value: string): void => {
   target.push(normalized);
 };
 
-const normalizeReadyReply = (
-  value: string | z.infer<typeof COMPACT_READY_REPLY_SCHEMA>,
-): AgentPromptWindowReadyReply | null => {
-  if (typeof value === "string") {
-    const reply = normalizeCompactText(value);
-    if (reply.length === 0) {
-      return null;
-    }
-    return {
-      channelId: "",
-      topic: "",
-      triggerPhrases: [],
-      reply,
-      reuseWhen: "",
-    };
-  }
-
-  const reply = normalizeCompactText(value.reply);
-  if (reply.length === 0) {
-    return null;
-  }
-  return {
-    channelId: normalizeCompactText(value.channelId),
-    topic: normalizeCompactText(value.topic),
-    triggerPhrases: value.triggerPhrases.map(normalizeCompactText).filter((item) => item.length > 0),
-    reply,
-    reuseWhen: normalizeCompactText(value.reuseWhen),
-  };
-};
-
-const mergeReadyReplies = (items: readonly AgentPromptWindowReadyReply[]): AgentPromptWindowReadyReply[] => {
-  const merged = new Map<string, AgentPromptWindowReadyReply>();
-  for (const item of items) {
-    const normalized = normalizeReadyReply(item);
-    if (!normalized) {
-      continue;
-    }
-    const key = [normalized.channelId, normalized.reply].join("::");
-    const existing = merged.get(key);
-    if (!existing) {
-      merged.set(key, {
-        ...normalized,
-        triggerPhrases: [...normalized.triggerPhrases],
-      });
-      continue;
-    }
-    existing.topic = existing.topic.length > 0 ? existing.topic : normalized.topic;
-    existing.reuseWhen = existing.reuseWhen.length > 0 ? existing.reuseWhen : normalized.reuseWhen;
-    for (const phrase of normalized.triggerPhrases) {
-      pushUniqueCompactText(existing.triggerPhrases, phrase);
-    }
-  }
-  return [...merged.values()];
-};
-
-const matchesReadyReplyCandidate = (candidate: string, fact: AgentPromptWindowReadyReply): boolean => {
-  const normalizedCandidate = normalizeCompactText(candidate);
-  if (normalizedCandidate.length === 0) {
-    return false;
-  }
-  const phrases = [fact.topic, ...fact.triggerPhrases].map(normalizeCompactText).filter((item) => item.length > 0);
-  return phrases.some(
-    (phrase) =>
-      normalizedCandidate === phrase ||
-      normalizedCandidate.includes(phrase) ||
-      phrase.includes(normalizedCandidate),
-  );
-};
-
 type ExecutableTool = Tool & {
   execute?: (
     input: unknown,
     context?: { toolCallId: string; emitCustomEvent: (event: unknown) => void },
   ) => Promise<unknown>;
-};
-
-const extractFocusedReplyChatIds = (promptWindow: readonly TextOnlyModelMessage[]): Set<string> => {
-  const chatIds = new Set<string>();
-  for (const message of promptWindow) {
-    const content = historyContentToText(message.content);
-    if (!content.includes("chatFocused: true")) {
-      continue;
-    }
-    for (const match of content.matchAll(/channelId:\s+([^\n]+)/g)) {
-      const chatId = parseYamlScalarText(match[1] ?? "");
-      if (chatId.length > 0) {
-        chatIds.add(chatId);
-      }
-    }
-  }
-  return chatIds;
-};
-
-const extractAttentionPromptWindowFocus = (
-  content: string,
-  focusedChatIds: ReadonlySet<string>,
-): Array<{ chatId: string; triggerPhrases: string[] }> => {
-  if (!content.includes("yaml+attention_items") || !content.includes("chatFocused: true")) {
-    return [];
-  }
-  const chatIds = [...content.matchAll(/channelId:\s+([^\n]+)/g)]
-    .map((match) => parseYamlScalarText(match[1] ?? ""))
-    .filter((chatId) => chatId.length > 0 && (focusedChatIds.size === 0 || focusedChatIds.has(chatId)));
-  if (chatIds.length === 0) {
-    return [];
-  }
-  const triggerPhrases: string[] = [];
-  for (const match of content.matchAll(/content:\s+([^\n]+)/g)) {
-    pushUniqueCompactText(triggerPhrases, parseYamlScalarText(match[1] ?? ""));
-  }
-  if (triggerPhrases.length === 0) {
-    return [];
-  }
-  return chatIds.map((chatId) => ({
-    chatId,
-    triggerPhrases: [...triggerPhrases],
-  }));
-};
-
-const extractMessageSendReadyReplies = (
-  promptWindow: readonly TextOnlyModelMessage[],
-  focusedChatIds: ReadonlySet<string>,
-): AgentPromptWindowReadyReply[] => {
-  const readyReplies: AgentPromptWindowReadyReply[] = [];
-  const latestTriggerPhrasesByChatId = new Map<string, string[]>();
-  for (const message of promptWindow) {
-    const content = historyContentToText(message.content);
-    for (const entry of extractAttentionPromptWindowFocus(content, focusedChatIds)) {
-      latestTriggerPhrasesByChatId.set(entry.chatId, entry.triggerPhrases);
-    }
-    if (!isPromptWindowToolTraceEntry(content) || !content.includes("tool: message_send")) {
-      continue;
-    }
-    const inputSection = content.match(/\ninput:\n([\s\S]*?)\n(?:output|error):/);
-    const chatId = parseYamlScalarText(inputSection?.[1]?.match(/^\s+chatId:\s+([^\n]+)$/m)?.[1] ?? "");
-    if (focusedChatIds.size > 0 && !focusedChatIds.has(chatId)) {
-      continue;
-    }
-    const reply = parseYamlScalarText(inputSection?.[1]?.match(/^\s+content:\s+([^\n]+)$/m)?.[1] ?? "");
-    if (reply.length > 0) {
-      const triggerPhrases = [...(latestTriggerPhrasesByChatId.get(chatId) ?? [])];
-      readyReplies.push({
-        channelId: chatId,
-        topic: triggerPhrases.at(-1) ?? reply,
-        triggerPhrases,
-        reply,
-        reuseWhen:
-          "If the same focused chat asks the same question again after compact, send this reply directly before lookup tools.",
-      });
-    }
-  }
-  return mergeReadyReplies(readyReplies);
 };
 
 const extractJsonObjectText = (value: string): string | null => {
@@ -546,12 +396,6 @@ const parseCompactSummary = (value: string): AgentPromptWindowCompactSummary => 
       const parsed = COMPACT_SUMMARY_SCHEMA.parse(JSON.parse(jsonText));
       return {
         ...parsed,
-        readyReplies: mergeReadyReplies(
-          parsed.readyReplies.flatMap((item) => {
-            const normalized = normalizeReadyReply(item);
-            return normalized ? [normalized] : [];
-          }),
-        ),
         raw: value.trim(),
       };
     } catch {
@@ -563,7 +407,6 @@ const parseCompactSummary = (value: string): AgentPromptWindowCompactSummary => 
     decisions: [],
     keyFiles: [],
     keyFacts: [],
-    readyReplies: [],
     unresolvedWork: [],
     nextSteps: [],
     raw: value.trim(),
@@ -663,17 +506,17 @@ export class AgenterAI {
       "You are rewriting a bounded model prompt window for an attention-first runtime.",
       "Do not return prose outside the required JSON object.",
       "Summarize prior prompt-window evidence without preserving tool-call transcripts.",
-      "Focus on stable decisions, key files, key facts, reusable ready replies, unresolved work, and next steps.",
-      "If an earlier relay or lookup already produced a final user-visible answer, preserve it as a structured readyReplies fact.",
-      "When a ready reply comes from an already-dispatched visible message, preserve the exact original reply text instead of paraphrasing or translating it.",
-      "Each readyReplies fact must include channelId, topic, triggerPhrases, reply, and reuseWhen.",
-      "readyReplies facts must make it obvious when a later follow-up can send the saved reply without reopening a resolved relay.",
+      "Focus on stable decisions, key files, key facts, unresolved work, and next steps.",
+      "Preserve durable outcomes as facts, not as replay-only relay text caches.",
+      "For resolved external questions, preserve the settled answer and enough context so a later follow-up can answer directly without reopening finished relay or lookup work.",
+      "When a follow-up should directly reuse an already settled outcome, state that explicitly in decisions and nextSteps instead of leaving it implicit.",
+      'Example decision format: "When chat-main asks the same lunch follow-up again, answer directly that gaubee said egg fried rice; do not relay again."',
+      'Example next step format for resolved work: "Answer the same follow-up directly from compact memory; no new relay is needed."',
       "Return strict JSON with keys:",
       "- overview: string",
       "- decisions: string[]",
       "- keyFiles: string[]",
       "- keyFacts: string[]",
-      "- readyReplies: Array<{ channelId: string; topic: string; triggerPhrases: string[]; reply: string; reuseWhen: string }>",
       "- unresolvedWork: string[]",
       "- nextSteps: string[]",
     ].join("\n");
@@ -683,8 +526,6 @@ export class AgenterAI {
     const requestTimestamp = Date.now();
     const requestId = createId();
     const compactInput = this.buildCompactInput();
-    const focusedChatIds = extractFocusedReplyChatIds(this.promptWindow);
-    const derivedReadyReplies = extractMessageSendReadyReplies(this.promptWindow, focusedChatIds);
     const requestRecord = {
       systemPrompt: this.buildCompactSystemPrompt(),
       messages: [
@@ -724,9 +565,6 @@ export class AgenterAI {
       const parsedSummary = parseCompactSummary(response.text);
       const summary = {
         ...parsedSummary,
-        // Tool-derived replies are durable facts because they reflect exact user-visible
-        // messages that were already dispatched. Keep them ahead of model paraphrases.
-        readyReplies: mergeReadyReplies([...derivedReadyReplies, ...parsedSummary.readyReplies]),
       } satisfies AgentPromptWindowCompactSummary;
       this.lastCompactSummary = summary;
       this.rebuildPromptWindowFromCompact(summary);
@@ -813,164 +651,51 @@ export class AgenterAI {
     return tool as ExecutableTool;
   }
 
-  private async collectReadyReplyCandidates(message: LoopBusMessage): Promise<{
-    channelId: string | null;
-    contextId: string | null;
-    parentCommitId: string | null;
-    texts: string[];
-  }> {
-    const texts: string[] = [];
-    if (message.source === "chat") {
-      pushUniqueCompactText(texts, message.text);
-      const channelId = typeof message.meta?.chatId === "string" ? message.meta.chatId : null;
-      return {
-        channelId,
-        contextId: null,
-        parentCommitId: null,
-        texts,
-      };
-    }
-
-    if (message.source !== "attention") {
-      return {
-        channelId: null,
-        contextId: null,
-        parentCommitId: null,
-        texts,
-      };
-    }
-
-    const contextId = typeof message.meta?.attentionContextId === "string" ? message.meta.attentionContextId : null;
-    const channelId = typeof message.meta?.chatId === "string" ? message.meta.chatId : null;
-    const headCommitId = typeof message.meta?.attentionHeadCommitId === "string" ? message.meta.attentionHeadCommitId : null;
-
-    if (contextId) {
-      const matches = await this.deps.attentionGateway.query({
-        contextId,
-        minScore: 1,
-        limit: 20,
-      });
-      const headMatch =
-        (headCommitId ? matches.find((match) => match.commit.commitId === headCommitId) : null) ?? matches.at(-1) ?? null;
-      if (headMatch) {
-        pushUniqueCompactText(texts, headMatch.commit.summary);
-        pushUniqueCompactText(texts, headMatch.context.content);
-        if (headMatch.commit.change.type !== "clean") {
-          pushUniqueCompactText(texts, headMatch.commit.change.value);
-        }
-        if (typeof headMatch.commit.meta.content === "string") {
-          pushUniqueCompactText(texts, headMatch.commit.meta.content);
-        }
-        return {
-          channelId,
-          contextId,
-          parentCommitId: headMatch.commit.commitId,
-          texts,
-        };
-      }
-    }
-
-    for (const match of message.text.matchAll(/summary:\s+([^\n]+)/g)) {
-      pushUniqueCompactText(texts, parseYamlScalarText(match[1] ?? ""));
-    }
-    for (const match of message.text.matchAll(/content:\s+([^\n]+)/g)) {
-      pushUniqueCompactText(texts, parseYamlScalarText(match[1] ?? ""));
-    }
-    return {
-      channelId,
-      contextId,
-      parentCommitId: headCommitId,
-      texts,
-    };
-  }
-
-  private async tryResolveReadyReplyFastPath(input: {
-    messages: readonly LoopBusMessage[];
-    tools: readonly Tool[];
-    attentionUpdates: AttentionUpdateCall[];
-    toolTrace: AgentToolTraceEntry[];
-  }): Promise<boolean> {
-    const summary = this.lastCompactSummary;
-    if (!summary || summary.readyReplies.length === 0 || summary.unresolvedWork.length > 0) {
-      return false;
-    }
-
-    const messageSend = this.getExecutableTool(input.tools, "message_send");
-    const attentionCommit = this.getExecutableTool(input.tools, "attention_commit");
-    if (!messageSend || !attentionCommit) {
-      return false;
-    }
-
-    for (const message of input.messages) {
-      const candidate = await this.collectReadyReplyCandidates(message);
-      if (!candidate.contextId || !candidate.channelId || candidate.texts.length === 0) {
-        continue;
-      }
-      const fact =
-        summary.readyReplies.find(
-          (item) =>
-            item.channelId === candidate.channelId &&
-            candidate.texts.some((text) => matchesReadyReplyCandidate(text, item)),
-        ) ?? null;
-      if (!fact) {
-        continue;
-      }
-
-      await messageSend.execute?.(
-        {
-          chatId: fact.channelId,
-          content: fact.reply,
-        },
-        {
-          toolCallId: `fastpath-message-send:${createId()}`,
-          emitCustomEvent: () => {
-            // no-op
-          },
-        },
-      );
-      await attentionCommit.execute?.(
-        {
-          contextId: candidate.contextId,
-          parentCommitIds: candidate.parentCommitId ? [candidate.parentCommitId] : undefined,
-          summary: `answered from compact memory: ${fact.reply}`,
-          done: true,
-        },
-        {
-          toolCallId: `fastpath-attention-commit:${createId()}`,
-          emitCustomEvent: () => {
-            // no-op
-          },
-        },
-      );
-      this.deps.logger.log({
-        channel: "agent",
-        level: "info",
-        message: "prompt_window.ready_reply.fast_path",
-        meta: {
-          channelId: fact.channelId,
-          contextId: candidate.contextId,
-        },
-      });
-      this.pushAssistantTurnToPromptWindow({
-        text: "",
-        toolTrace: input.toolTrace,
-        attentionUpdates: input.attentionUpdates,
-      });
-      return true;
-    }
-
-    return false;
-  }
-
   async send(messages: LoopBusMessage[], context?: { signal?: AbortSignal }): Promise<void> {
     const orderedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
     if (orderedMessages.length === 0) {
       return;
     }
     this.stats.loops += 1;
-    await this.pushIncomingBatchToPromptWindow(orderedMessages);
+    let roundMessages = orderedMessages;
+    await this.pushIncomingBatchToPromptWindow(roundMessages);
+    let externalRoundCount = 0;
 
-    const attentionRound = roundHasAttentionInput(orderedMessages);
+    while (true) {
+      const result = await this.runModelRound(roundMessages, context);
+      if (!result.continueModelRound) {
+        return;
+      }
+      externalRoundCount += 1;
+      if (externalRoundCount >= MAX_EXTERNAL_MODEL_ROUNDS) {
+        this.deps.logger.log({
+          channel: "error",
+          level: "error",
+          message: `agenter-ai exceeded ${MAX_EXTERNAL_MODEL_ROUNDS} external continuation rounds`,
+        });
+        return;
+      }
+      roundMessages = result.interleavedMessages;
+      if (roundMessages.length > 0) {
+        await this.pushIncomingBatchToPromptWindow(roundMessages);
+      }
+    }
+  }
+
+  private async persistModelCall(record: AgentModelCallRecord): Promise<void> {
+    this.deps.sessionStore?.appendCall({
+      ...record,
+      timestamp: new Date(record.timestamp).toISOString(),
+      completedAt: record.completedAt ? new Date(record.completedAt).toISOString() : undefined,
+    });
+    await this.deps.onModelCall?.(record);
+  }
+
+  private async runModelRound(
+    roundMessages: readonly LoopBusMessage[],
+    context?: { signal?: AbortSignal },
+  ): Promise<{ continueModelRound: boolean; interleavedMessages: LoopBusMessage[] }> {
+    const attentionRound = roundHasAttentionInput(roundMessages);
     const toolTrace: AgentToolTraceEntry[] = [];
     const attentionUpdates: AttentionUpdateCall[] = [];
     const tools = ENABLE_AGENT_TOOLS
@@ -984,17 +709,6 @@ export class AgenterAI {
           context?.signal,
         )
       : [];
-    if (
-      await this.tryResolveReadyReplyFastPath({
-        messages: orderedMessages,
-        tools,
-        attentionUpdates,
-        toolTrace,
-      })
-    ) {
-      return;
-    }
-
     const promptSnapshot = this.deps.promptStore.getSnapshot();
     const promptDocs = promptSnapshot.docs;
     const agenterSystem = await this.deps.promptStore.buildMd(promptDocs.AGENTER_SYSTEM);
@@ -1042,6 +756,25 @@ export class AgenterAI {
       status: "running",
     });
 
+    const interleavedMessages: LoopBusMessage[] = [];
+    const seenInterleavedIds = new Set<string>();
+    let shouldYieldAfterToolPhase = false;
+    const collectInterleavedMessages = async (): Promise<void> => {
+      const nextInputs = await this.deps.collectInterleavedInputs?.();
+      const nextMessages = normalizeLoopInputs(nextInputs);
+      if (nextMessages.length === 0) {
+        return;
+      }
+      for (const message of nextMessages) {
+        if (seenInterleavedIds.has(message.id)) {
+          continue;
+        }
+        seenInterleavedIds.add(message.id);
+        interleavedMessages.push(message);
+      }
+      shouldYieldAfterToolPhase = interleavedMessages.length > 0;
+    };
+
     try {
       const response = await this.withModelCallTimeout({
         signal: context?.signal,
@@ -1051,8 +784,12 @@ export class AgenterAI {
             messages: promptWindowSnapshot,
             tools,
             abortController,
+            shouldYieldAfterToolPhase: () => shouldYieldAfterToolPhase,
             onUpdate: async (update) => {
               await this.deps.onAssistantStream?.(update);
+              if (update.kind === "tool_result") {
+                await collectInterleavedMessages();
+              }
             },
           }),
       });
@@ -1115,7 +852,7 @@ export class AgenterAI {
           },
         });
         this.queueCompactRequest("attention_retry");
-        return;
+        return { continueModelRound: false, interleavedMessages: [] };
       }
 
       await this.persistModelCall({
@@ -1132,6 +869,8 @@ export class AgenterAI {
             attentionMutation,
             toolTraceCount: toolTrace.length,
             promptWindowText: normalizedResponseText.length > 0 && toolTrace.length === 0 && !attentionRound,
+            yieldedAfterToolPhase: response.yieldedAfterToolPhase ?? false,
+            interleavedInputCount: interleavedMessages.length,
           },
           usage: response.usage,
           toolTrace,
@@ -1148,7 +887,11 @@ export class AgenterAI {
         toolTrace,
         attentionUpdates,
       });
-      return;
+      const continueFromToolPhase = response.finishReason === "tool_calls";
+      return {
+        continueModelRound: continueFromToolPhase || interleavedMessages.length > 0,
+        interleavedMessages,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const name = error instanceof Error ? error.name : "Error";
@@ -1196,7 +939,7 @@ export class AgenterAI {
       });
       if (!aborted && contextOverflow) {
         this.queueCompactRequest("error");
-        return;
+        return { continueModelRound: false, interleavedMessages: [] };
       }
       if (aborted) {
         throw error;
@@ -1206,17 +949,8 @@ export class AgenterAI {
         level: "error",
         message: `agenter-ai failed: ${message}`,
       });
-      return;
+      return { continueModelRound: false, interleavedMessages: [] };
     }
-  }
-
-  private async persistModelCall(record: AgentModelCallRecord): Promise<void> {
-    this.deps.sessionStore?.appendCall({
-      ...record,
-      timestamp: new Date(record.timestamp).toISOString(),
-      completedAt: record.completedAt ? new Date(record.completedAt).toISOString() : undefined,
-    });
-    await this.deps.onModelCall?.(record);
   }
 
   private async pushIncomingBatchToPromptWindow(messages: LoopBusMessage[]): Promise<void> {
@@ -1327,41 +1061,8 @@ export class AgenterAI {
               decisions: summary.decisions,
               keyFiles: summary.keyFiles,
               keyFacts: summary.keyFacts,
-              readyReplies: summary.readyReplies.map((item) => ({
-                channelId: item.channelId,
-                topic: item.topic,
-                triggerPhrases: item.triggerPhrases,
-                reply: item.reply,
-                reuseWhen: item.reuseWhen,
-              })),
               unresolvedWork: summary.unresolvedWork,
               nextSteps: summary.nextSteps,
-            }),
-          ),
-        ),
-      ],
-    };
-  }
-
-  private buildCompactReadyRepliesPromptWindowMessage(summary: AgentPromptWindowCompactSummary): TextOnlyModelMessage | null {
-    if (summary.readyReplies.length === 0) {
-      return null;
-    }
-    return {
-      role: "assistant",
-      content: [
-        toTextPart(
-          mdFence(
-            "yaml+ready_replies",
-            toYaml({
-              mustSendBeforeLookup: true,
-              facts: summary.readyReplies.map((item) => ({
-                channelId: item.channelId,
-                topic: item.topic,
-                triggerPhrases: item.triggerPhrases,
-                reply: item.reply,
-                reuseWhen: item.reuseWhen,
-              })),
             }),
           ),
         ),
@@ -1403,10 +1104,6 @@ export class AgenterAI {
   private rebuildPromptWindowFromCompact(summary: AgentPromptWindowCompactSummary): void {
     this.lastCompactSummary = summary;
     const nextPromptWindow: TextOnlyModelMessage[] = [this.buildCompactSummaryPromptWindowMessage(summary)];
-    const readyReplies = this.buildCompactReadyRepliesPromptWindowMessage(summary);
-    if (readyReplies) {
-      nextPromptWindow.push(readyReplies);
-    }
     const activeAttention = this.buildActiveAttentionPromptWindowMessage();
     if (activeAttention) {
       nextPromptWindow.push(activeAttention);
@@ -1643,15 +1340,9 @@ export class AgenterAI {
       name: "attention_query",
       description: this.runtimeText.t("tool.attention_query.description"),
       inputSchema: z.object({
-        contextId: z.string().optional(),
-        hash: z.string().optional(),
-        depth: z.number().int().min(0).max(8).optional(),
-        author: z.string().optional(),
-        source: z.string().optional(),
-        text: z.string().optional(),
+        query: z.string(),
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional(),
-        minScore: z.number().int().min(0).max(100).optional(),
       }),
       outputSchema: z.object({
         items: z.array(attentionMatchSchema),
@@ -1659,15 +1350,9 @@ export class AgenterAI {
     }).server(async (rawInput) => {
       const input = z
         .object({
-          contextId: z.string().optional(),
-          hash: z.string().optional(),
-          depth: z.number().int().min(0).max(8).optional(),
-          author: z.string().optional(),
-          source: z.string().optional(),
-          text: z.string().optional(),
+          query: z.string(),
           offset: z.number().int().min(0).optional(),
           limit: z.number().int().min(1).max(200).optional(),
-          minScore: z.number().int().min(0).max(100).optional(),
         })
         .parse(rawInput);
       return traceTool("attention_query", input, async () => ({

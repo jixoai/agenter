@@ -1,5 +1,6 @@
 import {
   chat,
+  maxIterations,
   summarize,
   type AnySummarizeAdapter,
   type AnyTextAdapter,
@@ -43,6 +44,7 @@ export interface AssistantTurn {
   text: string;
   usage?: DecisionUsage;
   finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
+  yieldedAfterToolPhase?: boolean;
 }
 
 export type AssistantStreamUpdate =
@@ -85,6 +87,7 @@ interface RespondInput {
   tools: Tool[];
   abortController?: AbortController;
   onUpdate?: (update: AssistantStreamUpdate) => void | Promise<void>;
+  shouldYieldAfterToolPhase?: () => boolean;
 }
 
 const appendChunk = (current: string, chunk: string | undefined): string => {
@@ -182,7 +185,9 @@ export class ModelClient {
         let thinking = "";
         let usage: DecisionUsage | undefined;
         let finishReason: AssistantTurn["finishReason"];
+        let yieldedAfterToolPhase = false;
         const toolCalls = new Map<string, { toolName: string; argsText: string }>();
+        const defaultLoopStrategy = maxIterations(5);
 
         for await (const chunk of chat({
           adapter: this.textAdapter,
@@ -191,6 +196,19 @@ export class ModelClient {
           tools: this.capabilities.tools ? input.tools : [],
           temperature: this.config.temperature,
           abortController: input.abortController,
+          agentLoopStrategy: (state) => {
+            if (!defaultLoopStrategy(state)) {
+              return false;
+            }
+            if (
+              state.finishReason === "tool_calls" &&
+              input.shouldYieldAfterToolPhase?.()
+            ) {
+              yieldedAfterToolPhase = true;
+              return false;
+            }
+            return true;
+          },
           stream: true,
         })) {
           if (isTextChunk(chunk)) {
@@ -279,6 +297,7 @@ export class ModelClient {
           text: text.trim(),
           usage,
           finishReason,
+          yieldedAfterToolPhase,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

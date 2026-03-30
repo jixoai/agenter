@@ -122,6 +122,13 @@ const createSnapshot = (
   },
 });
 
+const emptyNotificationSnapshot = () => ({
+  items: [],
+  unreadBySession: {},
+  unreadByChat: {},
+  unreadByTerminal: {},
+});
+
 const createMockClient = (input: {
   snapshotQuery: () => Promise<RuntimeSnapshot>;
   onSubscribe?: (handlers: { onData?: (event: unknown) => void; onError?: () => void }) => void;
@@ -133,6 +140,7 @@ const createMockClient = (input: {
   ) => { unsubscribe: () => void };
   createSessionResult?: RuntimeSnapshot["sessions"][number];
   workspaceRecentQuery?: () => Promise<{ items: string[] }>;
+  profileServiceQuery?: () => Promise<{ endpoint: string }>;
   workspaceListAllQuery?: () => Promise<{
     items: Array<{
       path: string;
@@ -148,15 +156,20 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
+      sourceType: "chat" | "terminal";
+      sourceId: string;
       chatId?: string;
+      terminalId?: string;
       workspacePath: string;
       sessionName: string;
-      messageId: string;
-      messageSeq: number;
+      messageId?: string;
+      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
+    unreadByChat: Record<string, Record<string, number>>;
+    unreadByTerminal: Record<string, Record<string, number>>;
   }>;
   setChatVisibilityMutate?: (input: {
     sessionId: string;
@@ -167,29 +180,68 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
+      sourceType: "chat" | "terminal";
+      sourceId: string;
       chatId?: string;
+      terminalId?: string;
       workspacePath: string;
       sessionName: string;
-      messageId: string;
-      messageSeq: number;
+      messageId?: string;
+      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
+    unreadByChat: Record<string, Record<string, number>>;
+    unreadByTerminal: Record<string, Record<string, number>>;
   }>;
-  consumeNotificationsMutate?: (input: { sessionId: string; chatId?: string; upToMessageId?: string }) => Promise<{
+  setTerminalVisibilityMutate?: (input: {
+    sessionId: string;
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }) => Promise<{
     items: Array<{
       id: string;
       sessionId: string;
+      sourceType: "chat" | "terminal";
+      sourceId: string;
       chatId?: string;
+      terminalId?: string;
       workspacePath: string;
       sessionName: string;
-      messageId: string;
-      messageSeq: number;
+      messageId?: string;
+      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
+    unreadByChat: Record<string, Record<string, number>>;
+    unreadByTerminal: Record<string, Record<string, number>>;
+  }>;
+  consumeNotificationsMutate?: (input: {
+    sessionId: string;
+    chatId?: string;
+    terminalId?: string;
+    upToMessageId?: string;
+  }) => Promise<{
+    items: Array<{
+      id: string;
+      sessionId: string;
+      sourceType: "chat" | "terminal";
+      sourceId: string;
+      chatId?: string;
+      terminalId?: string;
+      workspacePath: string;
+      sessionName: string;
+      messageId?: string;
+      messageSeq?: number;
+      content: string;
+      timestamp: number;
+    }>;
+    unreadBySession: Record<string, number>;
+    unreadByChat: Record<string, Record<string, number>>;
+    unreadByTerminal: Record<string, Record<string, number>>;
   }>;
   listSettingsLayersQuery?: (input: { workspacePath: string }) => Promise<{
     effective: { content: string };
@@ -329,15 +381,9 @@ const createMockClient = (input: {
   attentionStateQuery?: (input: { sessionId: string }) => Promise<unknown>;
   attentionQueryQuery?: (input: {
     sessionId: string;
-    contextId?: string;
-    hash?: string;
-    depth?: number;
-    author?: string;
-    source?: string;
-    text?: string;
+    query?: string;
     offset?: number;
     limit?: number;
-    minScore?: number;
   }) => Promise<{ items: unknown[] }>;
 }): AgenterClient => {
   return {
@@ -355,15 +401,9 @@ const createMockClient = (input: {
         attentionQuery: {
           query: async (payload: {
             sessionId: string;
-            contextId?: string;
-            hash?: string;
-            depth?: number;
-            author?: string;
-            source?: string;
-            text?: string;
+            query?: string;
             offset?: number;
             limit?: number;
-            minScore?: number;
           }) => (input.attentionQueryQuery ? await input.attentionQueryQuery(payload) : { items: [] }),
         },
         events: {
@@ -632,24 +672,84 @@ const createMockClient = (input: {
           },
         },
       },
+      profile: {
+        service: {
+          query: async () =>
+            input.profileServiceQuery ? await input.profileServiceQuery() : { endpoint: "http://127.0.0.1:4591" },
+        },
+        list: {
+          query: async () => ({ items: [] }),
+        },
+        get: {
+          query: async () => ({
+            profileId: null,
+            identifiers: [],
+            metadata: {},
+            iconUrl: "http://127.0.0.1:4591/media/profiles/temp%3Ademo/icon",
+            isVirtual: true,
+          }),
+        },
+        update: {
+          mutate: async (payload: {
+            reference: string;
+            token: string;
+            patch: Record<string, unknown>;
+          }) => ({
+            profileId: payload.reference,
+            identifiers: [],
+            metadata: payload.patch,
+            iconUrl: `http://127.0.0.1:4591/media/profiles/${encodeURIComponent(payload.reference)}/icon`,
+            isVirtual: false,
+          }),
+        },
+        auth: {
+          emailStart: {
+            mutate: async (payload: { email: string }) => ({
+              challengeId: `challenge:${payload.email}`,
+              delivery: "console",
+              expiresAt: new Date().toISOString(),
+            }),
+          },
+          emailVerify: {
+            mutate: async (payload: { email: string; code: string; token?: string }) => ({
+              profile: {
+                profileId: payload.email,
+                identifiers: [{ kind: "email", value: payload.email }],
+                metadata: {},
+                iconUrl: `http://127.0.0.1:4591/media/profiles/${encodeURIComponent(payload.email)}/icon`,
+                isVirtual: false,
+              },
+              registrationTicket: `ticket:${payload.code}`,
+              expiresAt: new Date().toISOString(),
+              registrationUrl: `http://127.0.0.1:4591/auth/webauthn/register?ticket=${encodeURIComponent(`ticket:${payload.code}`)}`,
+            }),
+          },
+        },
+      },
       notification: {
         snapshot: {
           query: async () =>
             input.notificationSnapshotQuery
               ? await input.notificationSnapshotQuery()
-              : { items: [], unreadBySession: {} },
+              : emptyNotificationSnapshot(),
         },
         setChatVisibility: {
           mutate: async (payload: { sessionId: string; visible: boolean; focused: boolean }) =>
             input.setChatVisibilityMutate
               ? await input.setChatVisibilityMutate(payload)
-              : { items: [], unreadBySession: {} },
+              : emptyNotificationSnapshot(),
+        },
+        setTerminalVisibility: {
+          mutate: async (payload: { sessionId: string; terminalId?: string; visible: boolean; focused: boolean }) =>
+            input.setTerminalVisibilityMutate
+              ? await input.setTerminalVisibilityMutate(payload)
+              : emptyNotificationSnapshot(),
         },
         consume: {
-          mutate: async (payload: { sessionId: string; upToMessageId?: string }) =>
+          mutate: async (payload: { sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }) =>
             input.consumeNotificationsMutate
               ? await input.consumeNotificationsMutate(payload)
-              : { items: [], unreadBySession: {} },
+              : emptyNotificationSnapshot(),
         },
       },
       task: {
@@ -1143,15 +1243,20 @@ describe("Feature: runtime store synchronization", () => {
       items: Array<{
         id: string;
         sessionId: string;
+        sourceType: "chat" | "terminal";
+        sourceId: string;
         chatId?: string;
+        terminalId?: string;
         workspacePath: string;
         sessionName: string;
-        messageId: string;
-        messageSeq: number;
+        messageId?: string;
+        messageSeq?: number;
         content: string;
         timestamp: number;
       }>;
       unreadBySession: Record<string, number>;
+      unreadByChat: Record<string, Record<string, number>>;
+      unreadByTerminal: Record<string, Record<string, number>>;
     }>();
     const client = createMockClient({
       snapshotQuery: async () =>
@@ -1203,6 +1308,8 @@ describe("Feature: runtime store synchronization", () => {
         {
           id: "notif-1",
           sessionId: "i-1",
+          sourceType: "chat",
+          sourceId: "chat-main",
           chatId: "chat-main",
           workspacePath: process.cwd(),
           sessionName: "workspace",
@@ -1213,6 +1320,8 @@ describe("Feature: runtime store synchronization", () => {
         },
       ],
       unreadBySession: { "i-1": 1 },
+      unreadByChat: { "i-1": { "chat-main": 1 } },
+      unreadByTerminal: {},
     });
 
     await waitFor(() => store.getState().workspaces.length === 1 && store.getState().notifications.length === 1);
@@ -1781,7 +1890,7 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];
-    const consumeInputs: Array<{ sessionId: string; chatId?: string; upToMessageId?: string }> = [];
+    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }> = [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(800),
       notificationSnapshotQuery: async () => ({
@@ -1789,6 +1898,8 @@ describe("Feature: runtime store synchronization", () => {
           {
             id: "i-1:9",
             sessionId: "i-1",
+            sourceType: "chat",
+            sourceId: "chat-main",
             chatId: "chat-main",
             workspacePath: "/repo/demo",
             sessionName: "workspace",
@@ -1799,6 +1910,8 @@ describe("Feature: runtime store synchronization", () => {
           },
         ],
         unreadBySession: { "i-1": 1 },
+        unreadByChat: { "i-1": { "chat-main": 1 } },
+        unreadByTerminal: {},
       }),
       setChatVisibilityMutate: async (input) => {
         visibilityInputs.push(input);
@@ -1807,6 +1920,8 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:9",
               sessionId: "i-1",
+              sourceType: "chat",
+              sourceId: "chat-main",
               chatId: "chat-main",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
@@ -1817,14 +1932,13 @@ describe("Feature: runtime store synchronization", () => {
             },
           ],
           unreadBySession: { "i-1": 1 },
+          unreadByChat: { "i-1": { "chat-main": 1 } },
+          unreadByTerminal: {},
         };
       },
       consumeNotificationsMutate: async (input) => {
         consumeInputs.push(input);
-        return {
-          items: [],
-          unreadBySession: {},
-        };
+        return emptyNotificationSnapshot();
       },
       onSubscribe: (handlers) => {
         onData = handlers.onData;
@@ -1853,6 +1967,8 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:10",
               sessionId: "i-1",
+              sourceType: "chat",
+              sourceId: "chat-main",
               chatId: "chat-main",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
@@ -1863,6 +1979,8 @@ describe("Feature: runtime store synchronization", () => {
             },
           ],
           unreadBySession: { "i-1": 1 },
+          unreadByChat: { "i-1": { "chat-main": 1 } },
+          unreadByTerminal: {},
         },
       },
     });
@@ -2225,6 +2343,25 @@ describe("Feature: runtime store synchronization", () => {
     }
   });
 
+  test("Scenario: Given profile-service endpoint discovery When building icon and WebAuthn URLs Then runtime store targets the independent service", async () => {
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(701),
+      profileServiceQuery: async () => ({ endpoint: "http://127.0.0.1:4591" }),
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+
+    expect(store.sessionIconUrl("i-1")).toBe("http://127.0.0.1:4591/media/sessions/i-1/icon");
+    expect(store.profileIconUrl("gaubee")).toBe("http://127.0.0.1:4591/media/profiles/gaubee/icon");
+    expect(store.webauthnRegistrationUrl("ticket-1")).toBe("http://127.0.0.1:4591/auth/webauthn/register?ticket=ticket-1");
+    expect(store.webauthnAuthenticationUrl("profile-1")).toBe(
+      "http://127.0.0.1:4591/auth/webauthn/authenticate?reference=profile-1",
+    );
+
+    store.disconnect();
+  });
+
   test("Scenario: Given hydrateRuntime no longer sees a runtime When stopSession completes Then paused runtime scaffolding is kept while persisted cycles remain visible", async () => {
     let snapshotCalls = 0;
     const pausedSession = {
@@ -2340,7 +2477,7 @@ describe("Feature: runtime store synchronization", () => {
       running: true,
       paused: false,
       runtimeStatus: "backoff" as const,
-      phase: "waiting_commits",
+      phase: "waiting_commits" as const,
       gate: "waiting_input" as const,
       queueSize: 0,
       cycle: 7,
@@ -2361,7 +2498,7 @@ describe("Feature: runtime store synchronization", () => {
       blockedReason: null,
       lastProgressAt: 1699999999000,
       lastError: null,
-    };
+    } satisfies NonNullable<RuntimeSnapshot["runtimes"][string]["schedulerState"]>;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(950, { schedulerState }),

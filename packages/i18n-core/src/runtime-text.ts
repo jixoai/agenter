@@ -13,6 +13,7 @@ export const RUNTIME_TEXT_KEYS = [
   "tool.message_channel_list.description",
   "tool.message_channel_get.description",
   "tool.message_send.description",
+  "tool.message_send.origin_ack_fallback",
   "tool.terminal_list.description",
   "tool.terminal_create.description",
   "tool.terminal_focus.description",

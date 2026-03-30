@@ -1,6 +1,6 @@
 import type { RuntimeClientState } from "@agenter/client-sdk";
 import { Crosshair, MonitorCog, Plus, ScanLine, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
@@ -20,9 +20,17 @@ interface TerminalPanelProps {
   snapshots: RuntimeClientState["terminalSnapshotsBySession"][string] | undefined;
   terminalReads?: RuntimeClientState["terminalReadsBySession"][string] | undefined;
   terminalActivityByTerminal?: RuntimeClientState["terminalActivityBySession"][string] | undefined;
+  unreadByTerminal?: Record<string, number>;
   getTerminalActivityPagingState: (terminalId: string) => LongListPagingState;
   onLoadTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
   onLoadMoreTerminalActivity: (sessionId: string, terminalId: string) => Promise<void>;
+  onSetTerminalVisibility?: (input: {
+    sessionId: string;
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }) => Promise<void>;
+  onConsumeNotifications?: (input: { sessionId: string; terminalId?: string }) => Promise<void>;
   onCreateTerminal?: (input: {
     sessionId: string;
     terminalId?: string;
@@ -130,9 +138,12 @@ export const TerminalPanel = ({
   snapshots,
   terminalReads,
   terminalActivityByTerminal,
+  unreadByTerminal = {},
   getTerminalActivityPagingState,
   onLoadTerminalActivity,
   onLoadMoreTerminalActivity,
+  onSetTerminalVisibility,
+  onConsumeNotifications,
   onCreateTerminal,
   onFocusTerminals,
   onDeleteTerminal,
@@ -149,6 +160,7 @@ export const TerminalPanel = ({
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const pageFocusedRef = useRef(true);
   const focused = useMemo(() => (runtime ? getFocusedTerminal(runtime) : undefined), [runtime]);
   const selectedTerminal = useMemo(
     () => (terminals.find((terminal) => terminal.terminalId === selectedTerminalId) ?? focused ?? terminals[0]) || undefined,
@@ -183,8 +195,61 @@ export const TerminalPanel = ({
     void onLoadTerminalActivity(sessionId, selectedTerminal.terminalId);
   }, [getTerminalActivityPagingState, onLoadTerminalActivity, selectedTerminal, sessionId]);
 
-  const handleFocusTerminal = async (terminalId: string) => {
+  useEffect(() => {
+    const terminalId = selectedTerminal?.terminalId;
+    if (!terminalId || !onSetTerminalVisibility) {
+      return;
+    }
+
+    pageFocusedRef.current =
+      typeof document.hasFocus === "function" ? document.hasFocus() || document.visibilityState === "visible" : true;
+
+    const syncVisibility = (focused = pageFocusedRef.current) => {
+      const visible = document.visibilityState === "visible";
+      const nextFocused = visible && focused;
+      void onSetTerminalVisibility({ sessionId, terminalId, visible, focused: nextFocused });
+      if (visible && nextFocused) {
+        void onConsumeNotifications?.({ sessionId, terminalId });
+      }
+    };
+
+    const handleFocus = () => {
+      pageFocusedRef.current = true;
+      syncVisibility(true);
+    };
+
+    const handleBlur = () => {
+      pageFocusedRef.current = false;
+      syncVisibility(false);
+    };
+
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === "visible";
+      const nextFocused = isVisible
+        ? pageFocusedRef.current || (typeof document.hasFocus === "function" ? document.hasFocus() : true)
+        : false;
+      pageFocusedRef.current = nextFocused;
+      syncVisibility(nextFocused);
+    };
+
+    syncVisibility();
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      void onSetTerminalVisibility({ sessionId, terminalId, visible: false, focused: false });
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [onConsumeNotifications, onSetTerminalVisibility, selectedTerminal?.terminalId, sessionId]);
+
+  const handleSelectTerminal = (terminalId: string) => {
     setSelectedTerminalId(terminalId);
+  };
+
+  const handleToggleTerminalFocus = async (terminalId: string, currentlyFocused: boolean) => {
     if (!onFocusTerminals) {
       return;
     }
@@ -193,7 +258,7 @@ export const TerminalPanel = ({
     try {
       const result = await onFocusTerminals({
         sessionId,
-        op: "replace",
+        op: currentlyFocused ? "remove" : "add",
         terminalIds: [terminalId],
       });
       if (!result.ok) {
@@ -370,11 +435,14 @@ export const TerminalPanel = ({
                 if (!selectedTerminal) {
                   return;
                 }
-                void handleFocusTerminal(selectedTerminal.terminalId);
+                void handleToggleTerminalFocus(
+                  selectedTerminal.terminalId,
+                  (runtime?.focusedTerminalIds ?? []).includes(selectedTerminal.terminalId),
+                );
               }}
             >
               <Crosshair className="h-3.5 w-3.5" />
-              Focus
+              {(runtime?.focusedTerminalIds ?? []).includes(selectedTerminal?.terminalId ?? "") ? "Unfocus" : "Focus"}
             </Button>
             <Button
               type="button"
@@ -425,16 +493,21 @@ export const TerminalPanel = ({
               type="button"
               key={terminal.terminalId}
               onClick={() => {
-                void handleFocusTerminal(terminal.terminalId);
+                handleSelectTerminal(terminal.terminalId);
               }}
               className={cn(
-                "rounded-md border px-2 py-1 text-[11px]",
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]",
                 terminal.terminalId === selectedTerminal.terminalId
                   ? "border-teal-300 bg-teal-100 text-teal-900"
                   : "border-slate-200 bg-slate-50 text-slate-700",
               )}
             >
-              {terminal.terminalId}
+              <span>{terminal.terminalId}</span>
+              {(unreadByTerminal[terminal.terminalId] ?? 0) > 0 ? (
+                <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                  {unreadByTerminal[terminal.terminalId]}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

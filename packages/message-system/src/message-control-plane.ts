@@ -6,6 +6,7 @@ import { MessageDb } from "./message-db";
 import type {
   CommitWaitHandle,
   MessageAppendInput,
+  MessageAuthorizedEditInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
   MessageAuthorizedWriteInput,
@@ -144,6 +145,10 @@ export class MessageControlPlane {
     return channel ? this.withProjection(channel, this.issueTrustedBootstrapAccess(chatId)) : undefined;
   }
 
+  getMessage(chatId: string, messageId: string): MessageRecord | undefined {
+    return this.db.getMessage(chatId, messageId);
+  }
+
   createChannel(input: MessageCreateInput): MessageControlPlaneEntry {
     const expectedPrefix = input.kind === "room" ? "room-" : "chat-";
     if (!input.chatId.startsWith(expectedPrefix)) {
@@ -204,7 +209,15 @@ export class MessageControlPlane {
   }
 
   send(input: MessageAppendInput): MessageRecord {
-    const message = this.db.appendMessage(input);
+    const createdAt = input.createdAt ?? Date.now();
+    const message = this.db.appendMessage({
+      ...input,
+      createdAt,
+      attentionState: input.attentionState ?? "loaded",
+      visibleAt: input.visibleAt ?? (input.attentionState === "queued" ? undefined : createdAt),
+      attentionLoadedAt:
+        input.attentionLoadedAt ?? (input.attentionState === "queued" ? undefined : createdAt),
+    });
     this.bumpVersion();
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
@@ -241,10 +254,34 @@ export class MessageControlPlane {
       kind: input.kind,
       content: input.content,
       createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+      attentionState: input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued"),
+      visibleAt: input.visibleAt ?? (input.kind && input.kind !== "text" ? input.createdAt ?? Date.now() : undefined),
+      attentionLoadedAt:
+        input.attentionLoadedAt ?? (input.kind && input.kind !== "text" ? input.createdAt ?? Date.now() : undefined),
       metadata: input.metadata,
       attachments: input.attachments,
       payload: input.payload,
     });
+  }
+
+  editAuthorized(input: MessageAuthorizedEditInput): MessageRecord {
+    this.requireAccess(input.chatId, input.accessToken, "member");
+    const message = this.db.editQueuedMessage(input);
+    this.bumpVersion();
+    for (const listener of this.messageListeners) {
+      listener({ chatId: input.chatId, message });
+    }
+    return message;
+  }
+
+  markMessageAttentionLoaded(input: { chatId: string; messageId: string; loadedAt?: number }): MessageRecord {
+    const message = this.db.markMessageAttentionLoaded(input);
+    this.bumpVersion();
+    for (const listener of this.messageListeners) {
+      listener({ chatId: input.chatId, message });
+    }
+    return message;
   }
 
   sendErrorAuthorized(
@@ -264,6 +301,10 @@ export class MessageControlPlane {
       kind: "error",
       content: input.content,
       createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+      attentionState: "loaded",
+      visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
+      attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
       metadata: input.metadata,
       attachments: input.attachments,
       payload: {
@@ -289,6 +330,10 @@ export class MessageControlPlane {
       kind: "interactive",
       content: input.content,
       createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+      attentionState: "loaded",
+      visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
+      attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
       metadata: input.metadata,
       attachments: input.attachments,
       payload: {
@@ -561,6 +606,15 @@ export class MessageControlPlane {
           try {
             if (message.type === "send") {
               this.sendAuthorized({ chatId, accessToken, ...message.message });
+              return;
+            }
+            if (message.type === "edit") {
+              this.editAuthorized({
+                chatId,
+                accessToken,
+                messageId: message.messageId,
+                content: message.content,
+              });
               return;
             }
             if (message.type === "page") {

@@ -13,7 +13,6 @@ import {
   type AttentionCycleFrame,
   type AttentionHookRecord,
   type AttentionProtocolMode,
-  type AttentionQueryInput,
   type AttentionSystemSnapshot,
 } from "@agenter/attention-system";
 import {
@@ -61,8 +60,8 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
-  type TerminalControlPlaneConfig,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
+  type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
   type TerminalProcessProfile,
@@ -74,6 +73,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { createRuntimeAttentionPreview } from "./attention-runtime-view";
+import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 
 import { AgentRuntime } from "./agent-runtime";
 import {
@@ -952,6 +952,7 @@ export class SessionRuntime {
   private settingsEditor: SettingsEditor | null = null;
   private sessionStore: SessionStore | null = null;
   private sessionDb: SessionDb | null = null;
+  private attentionSearchEngine: AttentionSearchEngine | null = null;
   private attentionStore: AttentionStore | null = null;
   private attentionHashAliasStore: AttentionHashAliasStore | null = null;
   private attentionSystem = new AttentionSystem();
@@ -1053,6 +1054,7 @@ export class SessionRuntime {
       reason: "message-committed",
       meta: {
         chatId: input.chatId,
+        messageId: input.messageId,
         rootId: input.rootId,
         from: input.from,
         to: input.to,
@@ -1364,6 +1366,7 @@ export class SessionRuntime {
     rootId?: string;
     from?: string;
     to?: string;
+    originAckFallback?: string;
   }): Promise<{ ok: boolean; messageId: string }> {
     const channel = this.messageSystem.getChannel(input.chatId);
     if (!channel) {
@@ -1371,10 +1374,57 @@ export class SessionRuntime {
     }
     const replyCycleId = this.activeCycleId;
     const author = input.from ?? this.getAvatarName();
+    const originChatId = this.getOriginChatIdForCycle(replyCycleId);
+    if (
+      originChatId &&
+      input.chatId !== originChatId &&
+      !this.hasDeliveredMessageSendForCycle(originChatId, replyCycleId)
+    ) {
+      const originChannel = this.messageSystem.getChannel(originChatId);
+      const originAckFallback = input.originAckFallback?.trim();
+      if (originChannel) {
+        this.deliverMessageSend({
+          chatId: originChatId,
+          content:
+            originAckFallback && originAckFallback.length > 0
+              ? originAckFallback
+              : this.getMessageSendOriginAckFallback(),
+          from: author,
+          cycleId: replyCycleId,
+          metadata: {
+            autoOriginAck: true,
+            relayTargetChatId: input.chatId,
+          },
+        });
+      }
+    }
+    return this.deliverMessageSend({
+      chatId: input.chatId,
+      content: input.content,
+      rootId: input.rootId,
+      from: author,
+      to: input.to,
+      cycleId: replyCycleId,
+    });
+  }
+
+  private getMessageSendOriginAckFallback(): string {
+    return this.config?.lang === "zh-Hans" ? "收到，我先处理一下。" : "Understood. I'll handle it and report back.";
+  }
+
+  private deliverMessageSend(input: {
+    chatId: string;
+    content: string;
+    rootId?: string;
+    from: string;
+    to?: string;
+    cycleId: number | null;
+    metadata?: Record<string, unknown>;
+  }): { ok: boolean; messageId: string } {
     const redundant = this.findRedundantVisibleReply({
       chatId: input.chatId,
       content: input.content,
-      from: author,
+      from: input.from,
     });
     if (redundant) {
       return {
@@ -1384,14 +1434,15 @@ export class SessionRuntime {
     }
     const message = this.messageSystem.reply({
       chatId: input.chatId,
-      rootId: input.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
-      from: author,
+      rootId: input.rootId ?? (input.cycleId !== null ? String(input.cycleId) : undefined),
+      from: input.from,
       to: input.to,
       content: input.content,
       metadata: {
         channel: "to_user",
         source: "message_send",
-        cycleId: replyCycleId,
+        cycleId: input.cycleId,
+        ...(input.metadata ?? {}),
       },
     });
     return {
@@ -1743,6 +1794,10 @@ export class SessionRuntime {
     return message.kind === "text" && this.resolveMessageRole(message) === "user";
   }
 
+  private isQueuedInboundMessage(message: MessageRecord): boolean {
+    return this.isInboundMessage(message) && message.attentionState === "queued";
+  }
+
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
     const meta =
       message.metadata && typeof message.metadata === "object"
@@ -1790,6 +1845,11 @@ export class SessionRuntime {
       messageKind: message.kind,
       messagePayload: message.payload,
       timestamp: message.createdAt,
+      updatedAt: message.updatedAt,
+      visibleAt: message.visibleAt,
+      attentionState: message.attentionState,
+      attentionLoadedAt: message.attentionLoadedAt,
+      editable: message.editable,
       cycleId:
         typeof metadata.cycleId === "number" && Number.isInteger(metadata.cycleId) ? metadata.cycleId : undefined,
       channel:
@@ -1818,7 +1878,7 @@ export class SessionRuntime {
           return;
         }
         this.recordChatMessage(this.toChatMessageFromChannel(message));
-        if (!this.isInboundMessage(message)) {
+        if (!this.isQueuedInboundMessage(message)) {
           return;
         }
         this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
@@ -1912,6 +1972,13 @@ export class SessionRuntime {
       );
   }
 
+  private getOriginChatIdForCycle(cycleId: number | null): string | null {
+    if (cycleId === null) {
+      return null;
+    }
+    return this.cycleReplyChatIds.get(cycleId) ?? null;
+  }
+
   private findRedundantVisibleReply(input: { chatId: string; content: string; from: string }): MessageRecord | null {
     const normalizedContent = input.content.trim();
     if (normalizedContent.length === 0) {
@@ -1947,6 +2014,18 @@ export class SessionRuntime {
             read: async (request) => this.readMessageSource(request),
             toAttentionDrafts: async (result, request) => this.toMessageAttentionDrafts(result, request),
           });
+        },
+        attentionShouldLoad: ({ request }) => {
+          if (request.ref.systemId !== "message") {
+            return null;
+          }
+          const chatId =
+            typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+          const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
+          return {
+            allow: message?.attentionState === "queued",
+            reason: message ? `message.${message.attentionState}` : "message.missing",
+          };
         },
         attentionCommitted: async ({ contextId, commit }) => {
           const replyTarget = readAttentionReplyTarget(commit.meta.replyTarget);
@@ -2092,9 +2171,14 @@ export class SessionRuntime {
     }
     if (
       trace.some((entry) =>
-        ["message_send", "terminal_create", "terminal_focus", "terminal_kill", "terminal_write", "terminal_set_config"].includes(
-          entry.tool,
-        ),
+        [
+          "message_send",
+          "terminal_create",
+          "terminal_focus",
+          "terminal_kill",
+          "terminal_write",
+          "terminal_set_config",
+        ].includes(entry.tool),
       )
     ) {
       return "act";
@@ -2155,24 +2239,20 @@ export class SessionRuntime {
           },
           bullets: {
             en: [
-              "Treat message-system as an asynchronous multi-channel communication network, not as a generic chat transcript.",
-              "Decide your role before sending: direct reply, relay, follow-up question, coordinator, judge, moderator, or notifier.",
-              "A relay message must be composed for the target participant; do not mechanically forward the user's raw sentence when context or intent needs reframing.",
-              "When acting as judge or coordinator, do not speak as another participant or invent their move or opinion.",
-              "When a secondary-channel reply satisfies an earlier request from a focused origin channel, treat that reply as evidence for the origin task and answer back in the origin channel before stopping.",
-              "Judge or moderator flows are origin-owned work: collect the other participants' moves in their own channels, then publish the ruling yourself in the originating channel.",
-              "A missing reply in one channel does not stop unrelated work elsewhere; you can continue other attention while waiting.",
-              "If a channel needs external facts, fetch or verify them through terminal or other tools before messaging the result.",
+              "Treat message-system as an asynchronous communication network with multiple channels and roles, not as a generic chat transcript.",
+              "Work like a proactive assistant: acknowledge work in the origin room, keep the requester informed while it is in flight, and bring the result back there.",
+              "If you need another room, the first visible step still belongs in the origin room before you relay outward. For relay work, make that acknowledgement the first visible message.",
+              "Before sending, decide whether you are replying, relaying, asking, coordinating, judging, or notifying, and compose the message for that role instead of mechanically forwarding raw user text.",
+              "When another channel supplies the answer to an origin-room request, treat that reply as evidence and close the loop back in the origin room.",
+              "If a message needs external facts, verify them through terminal or other tools before you send the result.",
             ],
             zhHans: [
               "把 message-system 视为异步、多频道、多角色的通信网络，而不是普通聊天记录。",
-              "发送消息前先判断自己的角色：直接回复、relay、追问、协调者、裁判、主持者或通知者。",
-              "relay 要为目标对象重新组织信息；当上下文和意图需要重述时，不要机械转发用户原话。",
-              "当你是裁判或协调者时，不要代替其他参与者发言，也不要凭空替他们出招或表态。",
-              "当次级频道的回复满足了某个聚焦主频道里的原始请求时，要把这条回复当成主任务证据，先回到原始频道给出结果，再决定是否结束。",
-              "裁判或主持流程的所有权属于原始频道：你应当在各参与者所在频道收集输入，然后由你自己回到原始频道发布裁决。",
-              "某个频道暂时没人回复，不代表整个系统停止；等待期间仍可继续处理其他 attention 工作。",
-              "如果某个频道的问题依赖外部事实，先通过 terminal 或其他工具获取和验证，再把结果发回对应频道。",
+              "像一个主动负责的超级助理那样工作：先在原始房间确认接手，等待时保持同步，拿到结果后再带回原始房间。",
+              "如果需要去另一个房间办事，第一条用户可见动作也必须先落在原始房间，再向外 relay。对于 relay，这条确认必须就是第一条用户可见消息。",
+              "发送前先判断自己的角色是回复、relay、追问、协调、裁决还是通知，并按照这个角色组织消息，不要机械转发用户原话。",
+              "当另一个频道给出了原始房间所需的答案时，要把它当成证据，先回到原始房间闭环。",
+              "如果消息依赖外部事实，先通过 terminal 或其它工具验证，再把结果发出去。",
             ],
           },
         }),
@@ -2262,7 +2342,15 @@ export class SessionRuntime {
               to: z.string().optional(),
             })
             .parse(rawInput);
-          return traceTool("message_send", input, async () => await this.sendMessageTool(input));
+          return traceTool(
+            "message_send",
+            input,
+            async () =>
+              await this.sendMessageTool({
+                ...input,
+                originAckFallback: runtimeText.t("tool.message_send.origin_ack_fallback"),
+              }),
+          );
         });
 
         return [listTool, getTool, sendTool];
@@ -2282,17 +2370,17 @@ export class SessionRuntime {
           bullets: {
             en: [
               "Treat terminal as your professional operating-system workbench for Linux or Windows level problem solving.",
+              "For user-facing fact work, briefly acknowledge that you are checking, then use terminal to gather evidence before answering.",
               "When work depends on external facts, files, processes, commands, source code, environment state, or network access, prefer terminal tools over memory or hallucination.",
-              "Work like a strong shell user: analyze the problem, decompose it, find tools, combine commands, and author temporary scripts when needed.",
-              "Unverified weather, network, filesystem, or process claims are not finished facts until terminal or another tool confirms them.",
-              "If terminal work is blocked by missing context, failed commands, or missing permissions, use other systems such as message-system to ask for what you need instead of inventing results.",
+              "Work like a strong shell user: analyze the problem, decompose it, find tools, combine commands, and create temporary scripts when needed.",
+              "If terminal work is blocked by missing context, failed commands, or missing permissions, ask for what you need instead of inventing results.",
             ],
             zhHans: [
               "把 terminal 视为你与操作系统交互的专业工作台，像熟练的 Linux 或 Windows 用户一样解决问题。",
+              "对于面向用户的事实查询，先简短确认你正在处理，再用 terminal 获取证据后再回答。",
               "当任务依赖外部事实、文件、进程、命令、源码、环境状态或网络访问时，优先使用 terminal 工具，而不是凭记忆或幻觉回答。",
               "要像强 shell 用户那样工作：分析问题、拆解步骤、寻址工具、组合命令，并在必要时发明临时脚本。",
-              "没有经过 terminal 或其他工具验证的天气、网络、文件系统、进程结果，都不能当作已确认事实。",
-              "如果 terminal 因缺少上下文、命令失败或权限不足而受阻，就通过 message-system 等其它系统追问或协调，不要编造结果。",
+              "如果 terminal 因缺少上下文、命令失败或权限不足而受阻，就去追问需要的信息，不要编造结果。",
             ],
           },
         }),
@@ -2584,11 +2672,10 @@ export class SessionRuntime {
               patch: terminalControlPlaneConfigPatchSchema,
             })
             .parse(rawInput);
-      return traceTool(
+          return traceTool(
             "terminal_set_config",
             input,
-            async () =>
-              await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch),
+            async () => await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch),
           );
         });
 
@@ -2933,7 +3020,9 @@ export class SessionRuntime {
   }
 
   private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
-    const content = typeof request.ref.meta?.content === "string" ? request.ref.meta.content : "";
+    const chatId = typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+    const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
+    const content = message?.content ?? (typeof request.ref.meta?.content === "string" ? request.ref.meta.content : "");
     const bytes = Buffer.byteLength(content, "utf8");
     return {
       kind: "snapshot",
@@ -2944,7 +3033,20 @@ export class SessionRuntime {
         typeof request.ref.versionHint === "string" || typeof request.ref.versionHint === "number"
           ? String(request.ref.versionHint)
           : null,
-      meta: request.ref.meta ? { ...request.ref.meta } : undefined,
+      meta: {
+        ...(request.ref.meta ? { ...request.ref.meta } : {}),
+        ...(message
+          ? {
+              chatId: message.chatId,
+              messageId: message.messageId,
+              updatedAt: message.updatedAt,
+              visibleAt: message.visibleAt ?? null,
+              attentionState: message.attentionState,
+              attentionLoadedAt: message.attentionLoadedAt ?? null,
+              attachments: message.attachments ?? [],
+            }
+          : {}),
+      },
     };
   }
 
@@ -2953,24 +3055,52 @@ export class SessionRuntime {
     request: LoopSourceReadRequest,
   ): Promise<AttentionDraft[]> {
     const chatId = typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+    const loadedMessage = this.messageSystem.markMessageAttentionLoaded({
+      chatId,
+      messageId: request.ref.subjectId,
+    });
     const channel = this.messageSystem.getChannel(chatId);
-    if (result.content.trim().length === 0 || result.content.trim() === "/compact") {
+    if (loadedMessage.content.trim().length === 0 || loadedMessage.content.trim() === "/compact") {
       return [];
     }
     return [
       {
-        sourceRef: request.ref,
-        content: result.content,
-        from: typeof request.ref.meta?.from === "string" ? request.ref.meta.from : (channel?.title ?? chatId),
+        sourceRef: this.createMessageSourceRef({
+          chatId: loadedMessage.chatId,
+          messageId: loadedMessage.messageId,
+          rootId: loadedMessage.rootId,
+          from: loadedMessage.from,
+          to: loadedMessage.to,
+          content: loadedMessage.content,
+          attachments:
+            loadedMessage.attachments?.map((attachment) => ({
+              assetId: attachment.assetId,
+              kind: attachment.kind,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              url: attachment.url,
+            })) ?? [],
+          meta:
+            loadedMessage.metadata && typeof loadedMessage.metadata === "object"
+              ? (loadedMessage.metadata as Record<string, string | number | boolean | null>)
+              : undefined,
+        }),
+        content: loadedMessage.content,
+        from: loadedMessage.from || (channel?.title ?? chatId),
         score: 100,
         meta: {
-          ...(request.ref.meta ? { ...request.ref.meta } : {}),
+          ...(loadedMessage.metadata && typeof loadedMessage.metadata === "object"
+            ? (loadedMessage.metadata as Record<string, unknown>)
+            : {}),
           source: "message",
           chatId,
           chatTitle: channel?.title ?? chatId,
           chatKind: channel?.kind ?? "direct",
           chatContextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
           chatFocused: channel?.focused ?? false,
+          messageId: loadedMessage.messageId,
+          visibleAt: loadedMessage.visibleAt ?? loadedMessage.createdAt,
         },
       },
     ];
@@ -4098,6 +4228,7 @@ export class SessionRuntime {
       this.mergeBootAttentionHashAliases(persistedHashAliases),
     );
     this.attentionSystem = AttentionSystem.fromSnapshot(this.mergeBootAttentionSnapshot(persistedAttentionSnapshot));
+    this.attentionSearchEngine = new AttentionSearchEngine(join(this.options.sessionRoot, "attention-search.duckdb"));
     await this.persistAttentionSystem();
     if (this.attentionSystem.listActiveContexts().length > 0) {
       this.attentionFactsVersion += 1;
@@ -4195,6 +4326,9 @@ export class SessionRuntime {
     const restoredChat = this.sessionDb.listBlocksAfter(0, 200);
     const restoredChatIds = new Map<number, string>();
     const resolveRestoredChatId = (item: SessionDbChatMessageRecord): string => {
+      if (typeof item.chatId === "string" && item.chatId.trim().length > 0) {
+        return item.chatId;
+      }
       if (item.cycleId === null) {
         return DEFAULT_CHAT_ID;
       }
@@ -4227,6 +4361,7 @@ export class SessionRuntime {
       promptStore,
       sessionStore,
       resolveImageAttachment: async (attachment) => this.readImageAttachmentSource(attachment.assetId),
+      collectInterleavedInputs: async () => await this.collectInterleavedAgentInputs(),
       onAssistantStream: (stream) => {
         this.handleAssistantStreamUpdate(stream);
       },
@@ -4239,7 +4374,7 @@ export class SessionRuntime {
       attentionGateway: {
         listContexts: () => this.attentionSystem.listContexts(),
         listActive: () => this.attentionSystem.listActiveContexts(),
-        query: async (input: AttentionQueryInput) => this.attentionSystem.query(input),
+        query: async (input: AttentionSearchRequest) => await this.queryAttention(input),
         commit: async (input: AttentionCommitToolInput) => {
           const existing = this.attentionSystem.getContext(input.contextId);
           if (!existing) {
@@ -4278,7 +4413,9 @@ export class SessionRuntime {
         try {
           const compactTrigger = this.readCompactCycleTriggerFromInputs(messages);
           const result = this.isCompactCycleInputMessage(messages[0] ?? {})
-            ? await agent.runCompactCycle({ trigger: compactTrigger ?? "manual", signal: context?.signal }).then(() => undefined)
+            ? await agent
+                .runCompactCycle({ trigger: compactTrigger ?? "manual", signal: context?.signal })
+                .then(() => undefined)
             : await agent.send(messages, context);
           const pendingCompactTrigger = agent.consumePendingCompactRequest();
           if (pendingCompactTrigger) {
@@ -4712,8 +4849,17 @@ export class SessionRuntime {
     return this.buildAttentionRuntimeState();
   }
 
-  queryAttention(input: AttentionQueryInput): AttentionCommitMatch[] {
-    return this.attentionSystem.query(input);
+  async queryAttention(input: AttentionSearchRequest): Promise<AttentionCommitMatch[]> {
+    const engine =
+      this.attentionSearchEngine ??
+      (this.attentionSearchEngine = new AttentionSearchEngine(
+        join(this.options.sessionRoot, "attention-search.duckdb"),
+      ));
+    return await engine.query({
+      attentionSystem: this.attentionSystem,
+      snapshot: this.attentionSystem.snapshot(),
+      request: input,
+    });
   }
 
   pageModelCalls(input?: {
@@ -5565,6 +5711,11 @@ export class SessionRuntime {
   private async waitForAnyInput(): Promise<LoopInputKind> {
     const loopPaused = this.runtime?.getLoopState().paused ?? false;
     const hasPendingAttention = this.hasPendingAttentionInputs();
+    const now = Date.now();
+    const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
+      const entry = this.attentionContainment.get(match.contextId);
+      return entry ? entry.nextWakeAt <= now : false;
+    });
     if (this.hasPendingCompactCycle()) {
       this.loopKernelLastWakeCause = "compact_cycle";
       this.resetAttentionDebtBackoff();
@@ -5584,6 +5735,11 @@ export class SessionRuntime {
       this.loopKernelLastWakeCause = "task_input";
       this.resetAttentionDebtBackoff();
       return "task";
+    }
+    if (hasDueAttentionContainmentWake) {
+      this.attentionForceCollect = true;
+      this.loopKernelLastWakeCause = "attention_backoff";
+      return "attention";
     }
     if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
       this.loopKernelLastWakeCause = "task_input";
@@ -5803,6 +5959,47 @@ export class SessionRuntime {
       this.inputSignalCursor[kind] = this.inputSignals[kind].current();
     }
     return outputs.length > 0 ? outputs : undefined;
+  }
+
+  private markInputSignalsObserved(kinds: readonly LoopInputKind[]): void {
+    for (const kind of kinds) {
+      this.inputSignalCursor[kind] = this.inputSignals[kind].current();
+    }
+  }
+
+  private drainInterleavedInboundQueue(): boolean {
+    if (this.inboundMessageQueue.length === 0) {
+      return false;
+    }
+    const retained = this.inboundMessageQueue.filter((item) => item.text.trim() === "/compact");
+    const consumed = retained.length !== this.inboundMessageQueue.length;
+    if (consumed) {
+      this.inboundMessageQueue.splice(0, this.inboundMessageQueue.length, ...retained);
+    }
+    return consumed;
+  }
+
+  private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
+    const consumedUserInputs = this.drainInterleavedInboundQueue();
+    const pluginChanged = await this.flushPluginAttentionDrafts();
+    const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
+    const taskChanged = pendingTaskDrafts.length > 0 ? await this.commitAttentionDrafts(pendingTaskDrafts) : false;
+    const attentionInputs = this.collectAttentionInputs();
+
+    const observedKinds: LoopInputKind[] = [];
+    if (consumedUserInputs) {
+      observedKinds.push("user");
+    }
+    if (pendingTaskDrafts.length > 0) {
+      observedKinds.push("task");
+    }
+    if (pluginChanged || taskChanged || (attentionInputs?.length ?? 0) > 0) {
+      observedKinds.push("attention");
+    }
+    if (observedKinds.length > 0) {
+      this.markInputSignalsObserved(observedKinds);
+    }
+    return attentionInputs;
   }
 
   private collectPendingCompactCycleInputs(): LoopBusInput[] | undefined {
@@ -6333,7 +6530,12 @@ export class SessionRuntime {
           }
         : undefined,
     };
-    this.chatMessages.push(nextMessage);
+    const existingIndex = this.chatMessages.findIndex((candidate) => candidate.id === nextMessage.id);
+    if (existingIndex === -1) {
+      this.chatMessages.push(nextMessage);
+    } else {
+      this.chatMessages.splice(existingIndex, 1, nextMessage);
+    }
     this.trimChat();
     this.emit("chat", nextMessage);
     if (!this.sessionDb) {
@@ -6341,20 +6543,35 @@ export class SessionRuntime {
     }
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
-    const block = this.sessionDb.appendBlock({
+    const blockInput = {
       cycleId: persistedCycleId,
       createdAt: nextMessage.timestamp,
+      updatedAt: nextMessage.updatedAt ?? nextMessage.timestamp,
+      messageId: nextMessage.attentionState ? nextMessage.id : undefined,
+      visibleAt: nextMessage.visibleAt,
+      attentionState: nextMessage.attentionState,
+      attentionLoadedAt: nextMessage.attentionLoadedAt,
       role: nextMessage.role,
       channel,
+      chatId: nextMessage.chatId,
       format: nextMessage.format ?? "markdown",
       content: nextMessage.content,
       tool: nextMessage.tool,
-    });
+    } as const;
+    const block =
+      typeof blockInput.messageId === "string"
+        ? this.sessionDb.upsertMessageBlock({
+            ...blockInput,
+            messageId: blockInput.messageId,
+          })
+        : this.sessionDb.appendBlock(blockInput);
     if (nextMessage.attachments && nextMessage.attachments.length > 0) {
-      this.sessionDb.linkBlockAssets(
+      this.sessionDb.replaceBlockAssets(
         block.id,
         nextMessage.attachments.map((attachment) => attachment.assetId),
       );
+    } else if (blockInput.messageId) {
+      this.sessionDb.replaceBlockAssets(block.id, []);
     }
     this.appendTerminalActivityForMessage(nextMessage, persistedCycleId, channel);
     if (
@@ -6370,12 +6587,19 @@ export class SessionRuntime {
   }
 
   private toChatMessage(record: SessionDbChatMessageRecord, chatId = DEFAULT_CHAT_ID): ChatMessage {
+    const effectiveChatId =
+      typeof record.chatId === "string" && record.chatId.trim().length > 0 ? record.chatId : chatId;
     return {
-      id: `${record.id}`,
-      chatId,
+      id: record.messageId ?? `${record.id}`,
+      chatId: effectiveChatId,
       role: record.role,
       content: record.content,
       timestamp: record.createdAt,
+      updatedAt: record.updatedAt,
+      visibleAt: record.visibleAt,
+      attentionState: record.attentionState,
+      attentionLoadedAt: record.attentionLoadedAt,
+      editable: record.attentionState === "queued",
       cycleId: record.cycleId,
       channel: record.channel === "user_input" ? undefined : record.channel,
       format: record.format,
@@ -6891,9 +7115,11 @@ export class SessionRuntime {
     if (!this.attentionStore || !this.attentionHashAliasStore) {
       return;
     }
+    const snapshot = this.attentionSystem.snapshot();
     await Promise.all([
-      this.attentionStore.save(this.attentionSystem.snapshot()),
+      this.attentionStore.save(snapshot),
       this.attentionHashAliasStore.save(this.attentionHashAliases.snapshot()),
+      this.attentionSearchEngine?.sync(snapshot) ?? Promise.resolve(),
     ]);
   }
 

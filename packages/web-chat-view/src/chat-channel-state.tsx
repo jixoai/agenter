@@ -20,6 +20,15 @@ const compareMessages = (left: WebChatMessage, right: WebChatMessage): number =>
   return left.messageId.localeCompare(right.messageId);
 };
 
+const compareVisibleMessages = (left: WebChatMessage, right: WebChatMessage): number => {
+  const leftVisibleAt = left.visibleAt ?? left.createdAt;
+  const rightVisibleAt = right.visibleAt ?? right.createdAt;
+  if (leftVisibleAt !== rightVisibleAt) {
+    return leftVisibleAt - rightVisibleAt;
+  }
+  return compareMessages(left, right);
+};
+
 const isBootstrapMessageId = (messageId: string): boolean => /^\d+$/.test(messageId);
 
 const sameAttachmentSet = (left: WebChatMessage["attachments"], right: WebChatMessage["attachments"]): boolean => {
@@ -98,6 +107,20 @@ const parseServerMessage = (raw: unknown): MessageTransportServerMessage | null 
 
 const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
 
+const normalizeMessageRecord = (message: WebChatMessage): WebChatMessage => {
+  const attentionState = message.attentionState ?? "loaded";
+  const visibleAt = message.visibleAt ?? (attentionState === "loaded" ? message.createdAt : undefined);
+  return {
+    ...message,
+    attentionState,
+    visibleAt,
+    attentionLoadedAt: message.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt ?? message.createdAt : undefined),
+    editable: message.editable ?? attentionState === "queued",
+  };
+};
+
+const normalizeMessageRecords = (messages: WebChatMessage[]): WebChatMessage[] => messages.map(normalizeMessageRecord);
+
 const resolveUserSender = (channel: WebChatChannel): { from: string; to?: string } => {
   const userParticipant = channel.participants.find((participant) => participant.role === "user");
   return {
@@ -114,7 +137,7 @@ export const useWebChatChannel = (input: {
   const socketFactory = input.socketFactory ?? defaultSocketFactory;
   const socketRef = useRef<WebChatSocketLike | null>(null);
   const nextBeforeRef = useRef<ReverseTimeCursor | null>(null);
-  const [messages, setMessages] = useState<WebChatMessage[]>(input.initialMessages ?? []);
+  const [messages, setMessages] = useState<WebChatMessage[]>(normalizeMessageRecords(input.initialMessages ?? []));
   const [connectionState, setConnectionState] = useState<WebChatChannelState["connectionState"]>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
@@ -130,7 +153,7 @@ export const useWebChatChannel = (input: {
   }, [channelId, input.channel?.focused]);
 
   useEffect(() => {
-    setMessages(input.initialMessages ?? []);
+    setMessages(normalizeMessageRecords(input.initialMessages ?? []));
     setHasMoreBefore(false);
     nextBeforeRef.current = null;
     setErrorMessage(null);
@@ -176,7 +199,7 @@ export const useWebChatChannel = (input: {
           return;
         }
         if (serverMessage.type === "snapshot") {
-          setMessages(serverMessage.snapshot.items);
+          setMessages(normalizeMessageRecords(serverMessage.snapshot.items));
           nextBeforeRef.current = serverMessage.snapshot.nextBefore;
           setHasMoreBefore(serverMessage.snapshot.hasMoreBefore);
           setFocused(serverMessage.snapshot.channel.focused);
@@ -186,13 +209,13 @@ export const useWebChatChannel = (input: {
           return;
         }
         if (serverMessage.type === "messages") {
-          setMessages((current) => mergeMessages(current, serverMessage.items));
+          setMessages((current) => mergeMessages(current, normalizeMessageRecords(serverMessage.items)));
           return;
         }
         if (serverMessage.type === "page") {
           nextBeforeRef.current = serverMessage.page.nextBefore;
           setHasMoreBefore(serverMessage.page.hasMoreBefore);
-          setMessages((current) => mergeMessages(current, serverMessage.page.items));
+          setMessages((current) => mergeMessages(current, normalizeMessageRecords(serverMessage.page.items)));
           setLoadingMore(false);
           return;
         }
@@ -314,10 +337,38 @@ export const useWebChatChannel = (input: {
     [input.channel],
   );
 
+  const editMessage = useCallback(async (messageId: string, text: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== OPEN_READY_STATE) {
+      throw new Error("chat transport is not connected");
+    }
+    const normalized = text.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+    const payload: MessageTransportClientMessage = {
+      type: "edit",
+      messageId,
+      content: normalized,
+    };
+    socket.send(JSON.stringify(payload));
+  }, []);
+
+  const pendingMessages = useMemo(
+    () => messages.filter((message) => message.visibleAt === undefined).sort(compareMessages),
+    [messages],
+  );
+  const transcriptMessages = useMemo(
+    () => messages.filter((message) => message.visibleAt !== undefined).sort(compareVisibleMessages),
+    [messages],
+  );
+
   return useMemo(
     () => ({
       connectionState,
       messages,
+      pendingMessages,
+      transcriptMessages,
       focused,
       hasMoreBefore,
       loadingInitial,
@@ -325,7 +376,21 @@ export const useWebChatChannel = (input: {
       errorMessage,
       loadOlder,
       sendText,
+      editMessage,
     }),
-    [connectionState, errorMessage, focused, hasMoreBefore, loadOlder, loadingInitial, loadingMore, messages, sendText],
+    [
+      connectionState,
+      editMessage,
+      errorMessage,
+      focused,
+      hasMoreBefore,
+      loadOlder,
+      loadingInitial,
+      loadingMore,
+      messages,
+      pendingMessages,
+      sendText,
+      transcriptMessages,
+    ],
   );
 };

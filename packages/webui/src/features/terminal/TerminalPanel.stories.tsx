@@ -280,7 +280,7 @@ export const LifecycleControls: Story = {
       expect(args.onCreateTerminal).toHaveBeenCalledTimes(1);
     });
 
-    await userEvent.click(canvas.getByRole("button", { name: "Focus" }));
+    await userEvent.click(canvas.getByRole("button", { name: /focus/i }));
     await waitFor(() => {
       expect(args.onFocusTerminals).toHaveBeenCalled();
     });

@@ -194,19 +194,24 @@ export interface AppController {
     visible: boolean;
     focused: boolean;
   }) => Promise<void>;
-  consumeNotifications: (input: { sessionId: string; chatId?: string; upToMessageId?: string | null }) => Promise<void>;
+  setTerminalVisibility: (input: {
+    sessionId: string;
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }) => Promise<void>;
+  consumeNotifications: (input: {
+    sessionId: string;
+    chatId?: string;
+    terminalId?: string;
+    upToMessageId?: string | null;
+  }) => Promise<void>;
   hydrateSession: (sessionId: string) => Promise<void>;
   queryAttention: (input: {
     sessionId: string;
-    contextId?: string;
-    hash?: string;
-    depth?: number;
-    author?: string;
-    source?: string;
-    text?: string;
+    query: string;
     offset?: number;
     limit?: number;
-    minScore?: number;
   }) => Promise<AttentionQueryItem[]>;
   listDirectories: (input?: {
     path?: string;

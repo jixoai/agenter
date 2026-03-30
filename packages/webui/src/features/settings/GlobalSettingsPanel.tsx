@@ -1,5 +1,5 @@
-import type { AvatarCatalogItem } from "@agenter/client-sdk";
-import { Plus, Upload } from "lucide-react";
+import type { ProfileListItem } from "@agenter/client-sdk";
+import { KeyRound, Mail, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/button";
@@ -13,67 +13,113 @@ import type { SettingsEffectiveGraph, SettingsLayerItem } from "./settings-graph
 
 const GLOBAL_TABS: TabItem[] = [
   { id: "user", label: "User Settings" },
-  { id: "avatars", label: "Avatars" },
+  { id: "profile", label: "Profile" },
 ];
 
-const patchActiveAvatar = (content: string, nickname: string): string => {
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    parsed.avatar = nickname;
-    return `${JSON.stringify(parsed, null, 2)}\n`;
-  } catch {
-    return `{\n  "avatar": "${nickname}"\n}\n`;
-  }
-};
+export interface GlobalProfileDraft {
+  nickname: string;
+  displayName: string;
+  phone: string;
+  address: string;
+}
+
+type DurableProfileItem = ProfileListItem & { profileId: string };
+
+const formatIdentifierLabel = (kind: string, value: string): string => `${kind}:${value}`;
+
+const resolveProfileTitle = (profile: DurableProfileItem): string =>
+  profile.metadata.displayName?.trim() ||
+  profile.metadata.nickname?.trim() ||
+  profile.identifiers[0]?.value ||
+  profile.profileId;
+
+const resolveProfileSubtitle = (profile: DurableProfileItem): string =>
+  profile.metadata.nickname?.trim() || profile.identifiers[0]?.value || profile.profileId;
 
 interface GlobalSettingsPanelProps {
   loading: boolean;
   saving: boolean;
   status: string;
+  profileStatus: string;
   detailMode?: "split" | "sheet";
   effective: SettingsEffectiveGraph;
   layers: SettingsLayerItem[];
   selectedLayerId: string | null;
   layerContent: string;
-  avatars: AvatarCatalogItem[];
-  activeAvatar: string;
+  profiles: DurableProfileItem[];
+  activeProfileReference: string;
+  selectedProfileReference: string | null;
+  profileDraft: GlobalProfileDraft;
+  emailDraft: string;
+  verificationCodeDraft: string;
+  authToken: string;
+  authenticatedProfileId: string | null;
+  pendingRegistrationTicket: string | null;
   onSelectLayer: (layerId: string) => void;
   onLayerContentChange: (content: string) => void;
   onRefreshLayers: () => void;
   onLoadLayer: (layerId: string) => void;
   onSaveLayer: () => void;
-  onCreateAvatar: (nickname: string) => Promise<void> | void;
-  onUploadAvatarIcon: (nickname: string, file: File) => Promise<void> | void;
+  onSelectProfile: (reference: string) => void;
+  onSetActiveProfile: (reference: string) => void;
+  onProfileDraftChange: (draft: GlobalProfileDraft) => void;
+  onEmailDraftChange: (value: string) => void;
+  onVerificationCodeDraftChange: (value: string) => void;
+  onStartEmailChallenge: () => Promise<void> | void;
+  onVerifyEmailChallenge: () => Promise<void> | void;
+  onOpenPasskeyRegistration: () => void;
+  onOpenPasskeyAuthentication: () => void;
+  onUploadProfileIcon: (reference: string, file: File) => Promise<void> | void;
+  onSaveProfile: () => Promise<void> | void;
+  onClearProfileAuth: () => void;
 }
 
 export const GlobalSettingsPanel = ({
   loading,
   saving,
   status,
+  profileStatus,
   detailMode = "split",
   effective,
   layers,
   selectedLayerId,
   layerContent,
-  avatars,
-  activeAvatar,
+  profiles,
+  activeProfileReference,
+  selectedProfileReference,
+  profileDraft,
+  emailDraft,
+  verificationCodeDraft,
+  authToken,
+  authenticatedProfileId,
+  pendingRegistrationTicket,
   onSelectLayer,
   onLayerContentChange,
   onRefreshLayers,
   onLoadLayer,
   onSaveLayer,
-  onCreateAvatar,
-  onUploadAvatarIcon,
+  onSelectProfile,
+  onSetActiveProfile,
+  onProfileDraftChange,
+  onEmailDraftChange,
+  onVerificationCodeDraftChange,
+  onStartEmailChallenge,
+  onVerifyEmailChallenge,
+  onOpenPasskeyRegistration,
+  onOpenPasskeyAuthentication,
+  onUploadProfileIcon,
+  onSaveProfile,
+  onClearProfileAuth,
 }: GlobalSettingsPanelProps) => {
-  const [activeTab, setActiveTab] = useState<"user" | "avatars">("user");
-  const [newAvatar, setNewAvatar] = useState("");
+  const [activeTab, setActiveTab] = useState<"user" | "profile">("user");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedAvatarRef = useRef<string | null>(null);
-  const sortedAvatars = useMemo(() => avatars.slice(), [avatars]);
+  const sortedProfiles = useMemo(() => profiles.slice().sort((left, right) => left.profileId.localeCompare(right.profileId)), [profiles]);
+  const selectedProfile = sortedProfiles.find((profile) => profile.profileId === selectedProfileReference) ?? null;
+  const canMutateSelectedProfile = Boolean(selectedProfile?.profileId && authenticatedProfileId === selectedProfile.profileId && authToken);
 
   return (
     <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
-      <Tabs items={GLOBAL_TABS} value={activeTab} onValueChange={(value) => setActiveTab(value as "user" | "avatars")} />
+      <Tabs items={GLOBAL_TABS} value={activeTab} onValueChange={(value) => setActiveTab(value as "user" | "profile")} />
 
       {activeTab === "user" ? (
         <SettingsPanel
@@ -81,7 +127,7 @@ export const GlobalSettingsPanel = ({
           loading={loading}
           status={saving ? "Saving..." : status}
           title="Global Settings"
-          description="Global user settings share the same source/view workbench. Avatar catalog management stays in the Avatars tab."
+          description="User settings stay responsible for prompt persona and global defaults. Durable profile identity now lives in the Profile tab."
           descriptionHelpId="settings:global:overview"
           effective={effective}
           layers={layers}
@@ -96,93 +142,169 @@ export const GlobalSettingsPanel = ({
         />
       ) : (
         <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white/96 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <Input
-              value={newAvatar}
-              onChange={(event) => setNewAvatar(event.target.value)}
-              placeholder="new-avatar"
-              className="max-w-[16rem]"
-            />
-            <Button
-              variant="secondary"
-              onClick={() => {
-                const nickname = newAvatar.trim();
-                if (!nickname) {
-                  return;
-                }
-                void Promise.resolve(onCreateAvatar(nickname)).then(() => {
-                  setNewAvatar("");
-                });
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Create avatar
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                const nickname = selectedAvatarRef.current;
-                event.currentTarget.value = "";
-                if (!file || !nickname) {
-                  return;
-                }
-                void onUploadAvatarIcon(nickname, file);
-              }}
-            />
+          <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={emailDraft} onChange={(event) => onEmailDraftChange(event.target.value)} placeholder="name@example.com" className="max-w-[16rem]" />
+              <Input
+                value={verificationCodeDraft}
+                onChange={(event) => onVerificationCodeDraftChange(event.target.value)}
+                placeholder="123456"
+                inputMode="numeric"
+                className="max-w-[10rem]"
+              />
+              <Button variant="secondary" onClick={() => void onStartEmailChallenge()}>
+                <Mail className="h-4 w-4" />
+                Start OTP
+              </Button>
+              <Button variant="secondary" onClick={() => void onVerifyEmailChallenge()} disabled={!emailDraft || !verificationCodeDraft}>
+                <ShieldCheck className="h-4 w-4" />
+                Verify email
+              </Button>
+              <Button variant="outline" onClick={onOpenPasskeyRegistration} disabled={!pendingRegistrationTicket}>
+                <KeyRound className="h-4 w-4" />
+                Register passkey
+              </Button>
+              <Button variant="outline" onClick={onOpenPasskeyAuthentication} disabled={!selectedProfile}>
+                <KeyRound className="h-4 w-4" />
+                Passkey login
+              </Button>
+              {authToken ? (
+                <Button variant="ghost" onClick={onClearProfileAuth}>
+                  <Trash2 className="h-4 w-4" />
+                  Clear token
+                </Button>
+              ) : null}
+            </div>
+
+            <p className="text-xs text-slate-500">
+              V1 email codes are printed by the endpoint log. Verify email first, then finish durable auth with passkey registration or passkey login.
+            </p>
+
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">
+                Auth profile: {authenticatedProfileId ?? "none"}
+              </span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">
+                Pending registration: {pendingRegistrationTicket ?? "none"}
+              </span>
+            </div>
+
+            <p className="text-sm text-slate-700">{profileStatus}</p>
           </div>
 
-          <ScrollViewport className="h-full pr-1" data-testid="global-settings-avatars-scroll-viewport">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {sortedAvatars.map((avatar) => (
-                <article
-                  key={avatar.nickname}
-                  className={cn(
-                    "rounded-2xl border px-3 py-3",
-                    avatar.active ? "border-teal-300 bg-teal-50/70" : "border-slate-200 bg-white",
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <ProfileImage src={avatar.iconUrl} label={avatar.nickname} className="h-14 w-14 rounded-2xl" />
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-slate-900">{avatar.nickname}</p>
-                        {avatar.nickname === activeAvatar ? (
-                          <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                            active
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="text-[11px] text-slate-500">Used for assistant identity, prompts, and default avatar rendering.</p>
-                    </div>
-                  </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.currentTarget.value = "";
+              if (!file || !selectedProfile) {
+                return;
+              }
+              void onUploadProfileIcon(selectedProfile.profileId, file);
+            }}
+          />
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant={avatar.nickname === activeAvatar ? "secondary" : "outline"}
-                      onClick={() => onLayerContentChange(patchActiveAvatar(layerContent, avatar.nickname))}
+          <ScrollViewport className="h-full pr-1" data-testid="global-settings-profiles-scroll-viewport">
+            {sortedProfiles.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-6 text-sm text-slate-600">
+                No durable profiles yet. Start with email OTP, then complete passkey registration to create a profile you can edit and bind.
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {sortedProfiles.map((profile) => {
+                  const selected = profile.profileId === selectedProfileReference;
+                  const active = profile.profileId === activeProfileReference;
+                  const authenticated = profile.profileId === authenticatedProfileId;
+                  return (
+                    <article
+                      key={profile.profileId}
+                      className={cn(
+                        "rounded-2xl border px-3 py-3",
+                        selected ? "border-sky-300 bg-sky-50/70" : "border-slate-200 bg-white",
+                      )}
                     >
-                      Set active
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        selectedAvatarRef.current = avatar.nickname;
-                        fileInputRef.current?.click();
-                      }}
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload icon
-                    </Button>
-                  </div>
-                </article>
-              ))}
-            </div>
+                      <div className="flex items-start gap-3">
+                        <ProfileImage src={profile.iconUrl} label={resolveProfileTitle(profile)} className="h-14 w-14 rounded-2xl" />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-medium text-slate-900">{resolveProfileTitle(profile)}</p>
+                            {active ? (
+                              <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">active</span>
+                            ) : null}
+                            {authenticated ? (
+                              <span className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700">authenticated</span>
+                            ) : null}
+                          </div>
+                          <p className="truncate text-[11px] text-slate-500">{resolveProfileSubtitle(profile)}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {profile.identifiers.map((identifier) => (
+                              <span key={formatIdentifierLabel(identifier.kind, identifier.value)} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
+                                {formatIdentifierLabel(identifier.kind, identifier.value)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" variant={selected ? "secondary" : "outline"} onClick={() => onSelectProfile(profile.profileId)}>
+                          Select
+                        </Button>
+                        <Button size="sm" variant={active ? "secondary" : "outline"} onClick={() => onSetActiveProfile(profile.profileId)}>
+                          Set active
+                        </Button>
+                      </div>
+
+                      {selected ? (
+                        <div className="mt-3 grid gap-3 rounded-xl border border-slate-200 bg-white/80 p-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="grid gap-1 text-xs text-slate-600">
+                              <span>Display name</span>
+                              <Input value={profileDraft.displayName} onChange={(event) => onProfileDraftChange({ ...profileDraft, displayName: event.target.value })} placeholder="Display name" />
+                            </label>
+                            <label className="grid gap-1 text-xs text-slate-600">
+                              <span>Nickname</span>
+                              <Input value={profileDraft.nickname} onChange={(event) => onProfileDraftChange({ ...profileDraft, nickname: event.target.value })} placeholder="nickname" />
+                            </label>
+                            <label className="grid gap-1 text-xs text-slate-600">
+                              <span>Phone</span>
+                              <Input value={profileDraft.phone} onChange={(event) => onProfileDraftChange({ ...profileDraft, phone: event.target.value })} placeholder="+86 ..." />
+                            </label>
+                            <label className="grid gap-1 text-xs text-slate-600">
+                              <span>Address</span>
+                              <Input value={profileDraft.address} onChange={(event) => onProfileDraftChange({ ...profileDraft, address: event.target.value })} placeholder="Address" />
+                            </label>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" onClick={() => void onSaveProfile()} disabled={!canMutateSelectedProfile}>
+                              <Save className="h-4 w-4" />
+                              Save metadata
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={!canMutateSelectedProfile}
+                            >
+                              <Upload className="h-4 w-4" />
+                              Upload icon
+                            </Button>
+                          </div>
+
+                          {!canMutateSelectedProfile ? (
+                            <p className="text-xs text-slate-500">Authenticate this profile with a passkey before editing metadata or replacing the icon.</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </ScrollViewport>
         </section>
       )}

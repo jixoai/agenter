@@ -52,6 +52,15 @@ const messageInteractivePayloadSchema = z.object({
   submitLabel: z.string().trim().min(1).optional(),
   fields: z.array(messageInteractiveFieldSchema).min(1),
 });
+const profileMetadataPatchSchema = z
+  .object({
+    nickname: z.string().trim().min(1).max(64).optional(),
+    displayName: z.string().trim().min(1).max(128).optional(),
+    phone: z.string().trim().min(1).max(64).optional(),
+    address: z.string().trim().min(1).max(256).optional(),
+    extra: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
 
 export const appRouter = t.router({
   session: t.router({
@@ -488,15 +497,43 @@ export const appRouter = t.router({
         .mutation(async ({ ctx, input }) => ctx.kernel.saveSettingsLayer(input)),
     }),
   }),
-  avatar: t.router({
-    list: t.procedure.query(async ({ ctx }) => await ctx.kernel.listAvatarCatalog()),
-    create: t.procedure
+  profile: t.router({
+    service: t.procedure.query(async ({ ctx }) => await ctx.kernel.getProfileServiceDescriptor()),
+    list: t.procedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listProfiles() })),
+    get: t.procedure
       .input(
         z.object({
-          nickname: z.string().min(1),
+          reference: z.string().trim().min(1),
         }),
       )
-      .mutation(async ({ ctx, input }) => await ctx.kernel.createAvatar(input)),
+      .query(async ({ ctx, input }) => await ctx.kernel.getProfile(input.reference)),
+    update: t.procedure
+      .input(
+        z.object({
+          reference: z.string().trim().min(1),
+          token: z.string().trim().min(1),
+          patch: profileMetadataPatchSchema,
+        }),
+      )
+      .mutation(async ({ ctx, input }) => await ctx.kernel.updateProfile(input)),
+    auth: t.router({
+      emailStart: t.procedure
+        .input(
+          z.object({
+            email: z.string().email(),
+          }),
+        )
+        .mutation(async ({ ctx, input }) => await ctx.kernel.startProfileEmailChallenge(input.email)),
+      emailVerify: t.procedure
+        .input(
+          z.object({
+            email: z.string().email(),
+            code: z.string().trim().regex(/^\d{6}$/),
+            token: z.string().trim().min(1).optional(),
+          }),
+        )
+        .mutation(async ({ ctx, input }) => await ctx.kernel.verifyProfileEmailChallenge(input)),
+    }),
   }),
   notification: t.router({
     snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getNotificationSnapshot()),
@@ -510,12 +547,26 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.setChatVisibility(input)),
+    setTerminalVisibility: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          terminalId: z.string().min(1).optional(),
+          visible: z.boolean(),
+          focused: z.boolean(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.setTerminalVisibility(input)),
     consume: t.procedure
       .input(
         z.object({
           sessionId: z.string().min(1),
           chatId: z.string().min(1).optional(),
+          terminalId: z.string().min(1).optional(),
           upToMessageId: z.string().min(1).optional(),
+        }).refine((value) => !(value.chatId && value.terminalId), {
+          message: "chatId and terminalId cannot be used together",
+          path: ["terminalId"],
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.consumeNotifications(input)),
@@ -567,28 +618,16 @@ export const appRouter = t.router({
       .input(
         z.object({
           sessionId: z.string().min(1),
-          contextId: z.string().optional(),
-          hash: z.string().optional(),
-          depth: z.number().int().min(0).max(8).optional(),
-          author: z.string().optional(),
-          source: z.string().optional(),
-          text: z.string().optional(),
+          query: z.string(),
           offset: z.number().int().min(0).optional(),
           limit: z.number().int().min(1).max(200).optional(),
-          minScore: z.number().int().min(0).max(100).optional(),
         }),
       )
       .query(async ({ ctx, input }) => ({
         items: await ctx.kernel.queryAttention(input.sessionId, {
-          contextId: input.contextId,
-          hash: input.hash,
-          depth: input.depth,
-          author: input.author,
-          source: input.source,
-          text: input.text,
+          query: input.query,
           offset: input.offset,
           limit: input.limit,
-          minScore: input.minScore,
         }),
       })),
     schedulerLogs: t.procedure

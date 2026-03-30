@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@agenter/client-sdk": "workspace:*",
+    "@types/ws": "^8.18.1",
     "@types/yargs": "^17.0.35"
   }
 }

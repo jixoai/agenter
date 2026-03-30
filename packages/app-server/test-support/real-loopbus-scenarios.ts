@@ -1,10 +1,12 @@
 import type { MessageControlPlaneEntry } from "@agenter/message-system";
 
 import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
+import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import { waitForRealValue } from "./real-kernel-harness";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
 
 const getRuntimeSnapshot = (harness: RealKernelHarness): SessionRuntimeSnapshot | null =>
   harness.kernel.getSnapshot().runtimes[harness.session.id] ?? null;
@@ -20,6 +22,30 @@ const getUserMessages = (runtime: SessionRuntimeSnapshot, predicate: (message: C
 
 const countAssistantMessages = (runtime: SessionRuntimeSnapshot, chatId: string): number =>
   runtime.chatMessages.filter((message) => message.role === "assistant" && message.chatId === chatId).length;
+
+const waitForNextAssistantMessageInChat = async (
+  harness: RealKernelHarness,
+  input: {
+    chatId: string;
+    afterCount: number;
+    label: string;
+    timeoutMs?: number;
+  },
+): Promise<ChatMessage> =>
+  await waitForRealValue(
+    () => {
+      const runtime = getRuntimeSnapshot(harness);
+      if (!runtime) {
+        return null;
+      }
+      const messages = getAssistantMessages(runtime, (message) => message.chatId === input.chatId);
+      return messages.length > input.afterCount ? (messages[input.afterCount] ?? null) : null;
+    },
+    {
+      label: input.label,
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    },
+  );
 
 const waitForAssistantMessage = async (
   harness: RealKernelHarness,
@@ -44,15 +70,11 @@ const waitForAssistantMessage = async (
   );
 
 const waitForAttentionSettled = async (harness: RealKernelHarness, timeoutMs = DEFAULT_TIMEOUT_MS) =>
-  await waitForRealValue(
-    async () => {
-      const attention = await harness.kernel.inspectAttentionState(harness.session.id);
-      return attention.active.length === 0 ? attention : null;
-    },
-    {
-      label: "attention convergence",
-      timeoutMs,
-    },
+  await waitForScopedAttentionSettled(
+    async () => await harness.kernel.inspectAttentionState(harness.session.id),
+    waitForRealValue,
+    chatScenarioAttentionScope,
+    timeoutMs,
   );
 
 const waitForCompactCycle = async (
@@ -143,6 +165,15 @@ const extractToolTraceTools = (call: { response?: unknown }): string[] => {
   );
 };
 
+const extractModelDecision = (call: { response?: unknown }): Record<string, unknown> | null => {
+  const response = call.response;
+  if (!response || typeof response !== "object" || !("decision" in response)) {
+    return null;
+  }
+  const decision = response.decision;
+  return decision && typeof decision === "object" ? (decision as Record<string, unknown>) : null;
+};
+
 const waitForLatestModelCallCompletion = async (
   harness: RealKernelHarness,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -200,6 +231,7 @@ export const runRealSimpleReplyScenario = async (
 };
 
 export interface RealLunchRelayScenarioResult {
+  originAcknowledgement: ChatMessage;
   relayChannel: MessageControlPlaneEntry;
   relayPromptMessage: ChatMessage;
   relayParticipantReply: ChatMessage;
@@ -217,6 +249,8 @@ export interface RealLunchRelayScenarioResult {
 export const runRealLunchRelayScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealLunchRelayScenarioResult> => {
+  const runtimeBefore = getRuntimeSnapshot(harness);
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
   const relayChannel = harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "direct",
@@ -227,16 +261,23 @@ export const runRealLunchRelayScenario = async (
     ],
     focus: false,
   });
+  const relayAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, relayChannel.chatId) : 0;
 
-  const startAt = Date.now();
   const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
   if (!sent.ok) {
     throw new Error(`failed to send lunch relay prompt: ${sent.reason ?? "unknown"}`);
   }
 
-  const relayPromptMessage = await waitForAssistantMessage(harness, {
+  const originAcknowledgement = await waitForNextAssistantMessageInChat(harness, {
+    chatId: "chat-main",
+    afterCount: originAssistantCountBefore,
+    label: "origin acknowledgement on chat-main",
+  });
+
+  const relayPromptMessage = await waitForNextAssistantMessageInChat(harness, {
+    chatId: relayChannel.chatId,
+    afterCount: relayAssistantCountBefore,
     label: "relay prompt to secondary chat",
-    predicate: (message) => message.chatId === relayChannel.chatId && message.timestamp >= startAt,
   });
 
   const activeAfterRelay = await waitForRealValue(
@@ -285,6 +326,7 @@ export const runRealLunchRelayScenario = async (
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
 
   return {
+    originAcknowledgement,
     relayChannel,
     relayPromptMessage,
     relayParticipantReply,
@@ -358,6 +400,7 @@ export const runRealCompactFollowUpScenario = async (
 };
 
 export interface RealWeatherTerminalScenarioResult {
+  acknowledgement: ChatMessage;
   reply: ChatMessage;
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
@@ -372,11 +415,13 @@ export interface RealWeatherTerminalScenarioResult {
 export const runRealWeatherThroughTerminalScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealWeatherTerminalScenarioResult> => {
+  const runtimeBefore = getRuntimeSnapshot(harness);
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
   const startAt = Date.now();
   const prompt = [
-    "请回答一个需要外部事实的问题。",
-    "必须先使用 terminal 工具联网查询厦门未来至少 3 天的天气，禁止凭记忆回答。",
-    "最终只在 chat-main 发送一条以 WEATHER-RESULT: 开头的简短中文消息。",
+    "用户问：厦门天气如何？天气预报未来 15 天天气。",
+    "先在 chat-main 发一条简短确认消息，再使用 terminal 工具联网查询，禁止凭记忆回答。",
+    "最终在 chat-main 再发送一条以 WEATHER-RESULT: 开头的简短中文消息。",
     "完成后把 attention 收敛到 0。",
   ].join("\n");
   const sent = await harness.kernel.sendChat(harness.session.id, prompt);
@@ -384,11 +429,18 @@ export const runRealWeatherThroughTerminalScenario = async (
     throw new Error(`failed to send weather prompt: ${sent.reason ?? "unknown"}`);
   }
 
+  const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
+    chatId: "chat-main",
+    afterCount: originAssistantCountBefore,
+    label: "weather acknowledgement on chat-main",
+    timeoutMs: 180_000,
+  });
+
   const reply = await waitForAssistantMessage(harness, {
     label: "weather result on chat-main",
     predicate: (message) =>
       message.chatId === "chat-main" &&
-      message.timestamp >= startAt &&
+      message.timestamp > acknowledgement.timestamp &&
       message.content.trim().startsWith("WEATHER-RESULT:"),
     timeoutMs: 180_000,
   });
@@ -401,6 +453,7 @@ export const runRealWeatherThroughTerminalScenario = async (
   const settledAttention = await waitForAttentionSettled(harness, 180_000);
 
   return {
+    acknowledgement,
     reply,
     settledAttention,
     recentModelCalls: modelCallRecords.map((call) => ({
@@ -410,6 +463,135 @@ export const runRealWeatherThroughTerminalScenario = async (
       outcome: call.outcome?.code ?? null,
     })),
     toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+  };
+};
+
+export interface RealInterleavedCanInputScenarioResult {
+  acknowledgement: ChatMessage;
+  followUpPrompt: string;
+  finalReply: ChatMessage;
+  yieldedCall: {
+    id: number;
+    cycleId: number;
+    interleavedInputCount: number;
+  };
+  interleavedRequestCall: {
+    id: number;
+    cycleId: number;
+    requestText: string;
+  };
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+}
+
+export const runRealInterleavedCanInputScenario = async (
+  harness: RealKernelHarness,
+): Promise<RealInterleavedCanInputScenarioResult> => {
+  const runtimeBefore = getRuntimeSnapshot(harness);
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
+  const startAt = Date.now();
+  const initialPrompt = [
+    "我们正在验证你是否能在工具阶段接收新的输入。",
+    "1. 先立刻在 chat-main 回复一条只包含 INTERLEAVED-ACK 的消息。",
+    "2. 然后必须使用 terminal 工具执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
+    "3. 在终端命令运行期间，我可能会再发一条以“补充要求:”开头的新消息。你必须在最终结果里处理这条补充要求。",
+    "4. 最终只在 chat-main 回复一条以 INTERLEAVED-RESULT: 开头的中文消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。",
+    "5. 禁止跳过 terminal，禁止凭空回答，完成后收敛 attention。",
+  ].join("\n");
+
+  const sent = await harness.kernel.sendChat(harness.session.id, initialPrompt);
+  if (!sent.ok) {
+    throw new Error(`failed to send interleaved prompt: ${sent.reason ?? "unknown"}`);
+  }
+
+  const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
+    chatId: "chat-main",
+    afterCount: originAssistantCountBefore,
+    label: "interleaved acknowledgement on chat-main",
+    timeoutMs: 180_000,
+  });
+
+  const followUpPrompt = "补充要求: 最终消息必须包含 SECOND-CLAUSE";
+  const followUpSent = await harness.kernel.sendChat(harness.session.id, followUpPrompt);
+  if (!followUpSent.ok) {
+    throw new Error(`failed to send interleaved follow-up: ${followUpSent.reason ?? "unknown"}`);
+  }
+  const followUpSentAt = Date.now();
+
+  const finalReply = await waitForAssistantMessage(harness, {
+    label: "interleaved final reply on chat-main",
+    predicate: (message) =>
+      message.chatId === "chat-main" &&
+      message.timestamp > acknowledgement.timestamp &&
+      message.content.includes("INTERLEAVED-RESULT:") &&
+      message.content.includes("TOOL-PHASE-DONE") &&
+      message.content.includes("SECOND-CLAUSE"),
+    timeoutMs: 180_000,
+  });
+
+  const callInspection = await waitForRealValue(
+    async () => {
+      const calls = await listRecentModelCallRecords(harness);
+      const relevant = calls.filter((call) => call.createdAt >= startAt && call.status !== "running");
+      const yieldedCall = relevant.find((call) => {
+        const decision = extractModelDecision(call);
+        return (
+          decision?.kind === "model" &&
+          decision.yieldedAfterToolPhase === true &&
+          typeof decision.interleavedInputCount === "number" &&
+          Number(decision.interleavedInputCount) > 0
+        );
+      });
+      if (!yieldedCall) {
+        return null;
+      }
+      const interleavedRequestCall = relevant.find((call) => {
+        const requestText = JSON.stringify(call.request);
+        return (
+          call.cycleId === yieldedCall.cycleId &&
+          call.createdAt >= followUpSentAt &&
+          requestText.includes("SECOND-CLAUSE")
+        );
+      });
+      if (!interleavedRequestCall) {
+        return null;
+      }
+      return {
+        relevant,
+        yieldedCall,
+        interleavedRequestCall,
+      };
+    },
+    {
+      label: "interleaved model call inspection",
+      timeoutMs: 180_000,
+    },
+  );
+
+  return {
+    acknowledgement,
+    followUpPrompt,
+    finalReply,
+    yieldedCall: {
+      id: callInspection.yieldedCall.id,
+      cycleId: callInspection.yieldedCall.cycleId,
+      interleavedInputCount: Number(extractModelDecision(callInspection.yieldedCall)?.interleavedInputCount ?? 0),
+    },
+    interleavedRequestCall: {
+      id: callInspection.interleavedRequestCall.id,
+      cycleId: callInspection.interleavedRequestCall.cycleId,
+      requestText: JSON.stringify(callInspection.interleavedRequestCall.request),
+    },
+    recentModelCalls: callInspection.relevant.map((call) => ({
+      id: call.id,
+      cycleId: call.cycleId,
+      status: call.status,
+      outcome: call.outcome?.code ?? null,
+    })),
   };
 };
 

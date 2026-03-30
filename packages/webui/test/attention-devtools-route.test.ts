@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { buildSessionDevtoolsSearch, validateSessionDevtoolsSearch } from "../src/features/attention/attention-devtools-route";
+import {
+  buildSessionDevtoolsSearch,
+  validateSessionDevtoolsSearch,
+} from "../src/features/attention/attention-devtools-route";
 
 describe("Feature: Session Devtools route search", () => {
   test("Scenario: Given a bare Devtools deep link When search is validated Then attention becomes the default panel and context becomes the default detail view", () => {
@@ -53,6 +56,39 @@ describe("Feature: Session Devtools route search", () => {
       commitId: "commit-3",
       attentionView: "items",
       attentionQuery: "score:abc123 deep:2",
+    });
+  });
+
+  test("Scenario: Given sequential attention route patches When selection and detail view update in the same interaction Then the latest patch preserves the selected context and commit", () => {
+    const afterSelection = buildSessionDevtoolsSearch(
+      {
+        contextId: "ctx-chat-chat-2",
+        commitId: "commit-7",
+      },
+      {
+        panel: "attention",
+        cycleId: undefined,
+        contextId: undefined,
+        commitId: undefined,
+        attentionView: "items",
+        attentionQuery: undefined,
+      },
+    );
+
+    expect(
+      buildSessionDevtoolsSearch(
+        {
+          attentionView: "context",
+        },
+        afterSelection,
+      ),
+    ).toEqual({
+      panel: "attention",
+      cycleId: undefined,
+      contextId: "ctx-chat-chat-2",
+      commitId: "commit-7",
+      attentionView: "context",
+      attentionQuery: undefined,
     });
   });
 });

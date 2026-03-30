@@ -120,6 +120,9 @@ describe("Feature: message-chat-control-plane", () => {
       content: "member message",
     });
     expect(sent.content).toBe("member message");
+    expect(sent.attentionState).toBe("queued");
+    expect(sent.visibleAt).toBeUndefined();
+    expect(sent.editable).toBe(true);
     const interactive = plane.sendAuthorized({
       chatId: channel.chatId,
       accessToken: member.accessToken,
@@ -169,6 +172,8 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(adminError.kind).toBe("error");
     expect(adminError.payload?.error?.code).toBe("E_RUNTIME");
+    expect(adminError.attentionState).toBe("loaded");
+    expect(adminError.visibleAt).toBeDefined();
 
     expect(() =>
       plane.updateChannelAuthorized({
@@ -201,6 +206,58 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: channel.accessToken,
     });
     expect(grants.map((grant) => grant.label)).toEqual(["Relay member", "QA viewer"]);
+  });
+
+  test("Scenario: Given a queued chat message When it is edited before attention reads it Then the same messageId stays pending until it is marked loaded", () => {
+    const plane = createPlane();
+    const channel = createChannel(plane);
+    const member = plane.issueChannelGrantAuthorized({
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      role: "member",
+      label: "User",
+    });
+
+    const queued = plane.sendAuthorized({
+      chatId: channel.chatId,
+      accessToken: member.accessToken,
+      from: "user:kzf",
+      content: "first draft",
+    });
+    expect(queued.attentionState).toBe("queued");
+    expect(queued.visibleAt).toBeUndefined();
+    expect(queued.editable).toBe(true);
+
+    const edited = plane.editAuthorized({
+      chatId: channel.chatId,
+      accessToken: member.accessToken,
+      messageId: queued.messageId,
+      content: "edited draft",
+    });
+    expect(edited.messageId).toBe(queued.messageId);
+    expect(edited.content).toBe("edited draft");
+    expect(edited.attentionState).toBe("queued");
+    expect(edited.visibleAt).toBeUndefined();
+
+    const loaded = plane.markMessageAttentionLoaded({
+      chatId: channel.chatId,
+      messageId: queued.messageId,
+      loadedAt: 1234,
+    });
+    expect(loaded.messageId).toBe(queued.messageId);
+    expect(loaded.attentionState).toBe("loaded");
+    expect(loaded.visibleAt).toBe(1234);
+    expect(loaded.attentionLoadedAt).toBe(1234);
+    expect(loaded.editable).toBe(false);
+
+    expect(() =>
+      plane.editAuthorized({
+        chatId: channel.chatId,
+        accessToken: member.accessToken,
+        messageId: queued.messageId,
+        content: "too late",
+      }),
+    ).toThrow("queued message can no longer be edited");
   });
 
   test("Scenario: Given an issued channel token When admin revokes it Then later reads and writes are rejected and admin listings stay clean", () => {

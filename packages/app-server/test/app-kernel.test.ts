@@ -661,6 +661,75 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given one persisted cycle with replies to two chats When reading session history Then each block keeps its own chatId instead of inheriting one cycle room", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: process.cwd(),
+      name: "multi-chat-cycle",
+      autoStart: false,
+    });
+
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    const cycle = db.appendCycle({
+      wake: { source: "attention" },
+      collectedInputs: [
+        {
+          source: "message",
+          role: "user",
+          name: "Gaubee",
+          parts: [{ type: "text", text: "ask kzf dinner" }],
+          meta: { chatId: "chat-main", createdAt: new Date(100).toISOString() },
+        },
+        {
+          source: "message",
+          role: "user",
+          name: "kzf",
+          parts: [{ type: "text", text: "eat fried rice" }],
+          meta: { chatId: "chat-chat-2", createdAt: new Date(200).toISOString() },
+        },
+      ],
+      result: { kind: "model" },
+    });
+    db.appendBlock({
+      cycleId: cycle.id,
+      role: "assistant",
+      channel: "to_user",
+      chatId: "chat-chat-2",
+      content: "好的，那就吃蛋炒饭吧！",
+    });
+    db.appendBlock({
+      cycleId: cycle.id,
+      role: "assistant",
+      channel: "to_user",
+      chatId: "chat-main",
+      content: "我问了 kzf，他说今天晚上吃蛋炒饭。",
+    });
+    db.setHead(cycle.id);
+    db.close();
+
+    const messages = kernel.listChatMessages(session.id, 0, 20);
+    expect(messages.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
+      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
+      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
+    ]);
+
+    const beforeMessages = kernel.listChatMessagesBefore(session.id, Number.MAX_SAFE_INTEGER, 20);
+    expect(beforeMessages.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
+      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
+      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
+    ]);
+
+    const cycles = kernel.listChatCycles(session.id, 20);
+    expect(cycles[0]?.outputs.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
+      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
+      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
+    ]);
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given legacy orphan user_input blocks When listing chat cycles Then the first matching cycle backfills those user messages", async () => {
     const kernel = createKernel();
     await kernel.start();

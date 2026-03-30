@@ -91,4 +91,55 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
       { hook: "abort", aborted: true },
     ]);
   });
+
+  test("Scenario: Given an attentionShouldLoad denial When drafts are read Then the ref stays invalidated until a later round allows it", async () => {
+    let allow = false;
+    const runtime = new LoopBusPluginRuntime([
+      {
+        name: "message-source",
+        setup: (api) => {
+          api.registerSource({
+            systemId: "message",
+            match: (ref) => ref.systemId === "message",
+            read: async (request) => ({
+              kind: "snapshot",
+              content: String(request.ref.meta?.content ?? ""),
+              bytes: 0,
+              fromHash: null,
+              toHash: null,
+            }),
+            toAttentionDrafts: async (result, request) => [
+              {
+                sourceRef: request.ref,
+                content: result.content,
+                from: "User",
+              },
+            ],
+          });
+        },
+      },
+      {
+        name: "gate",
+        attentionShouldLoad: () => ({ allow }),
+      },
+    ]);
+
+    await runtime.setup();
+    runtime.invalidate({
+      systemId: "message",
+      subjectId: "msg-1",
+      reason: "message-committed",
+      meta: { content: "hello" },
+    });
+
+    const deferred = await runtime.readInvalidatedAttentionDrafts();
+    expect(deferred).toEqual([]);
+    expect(runtime.hasInvalidations()).toBe(true);
+
+    allow = true;
+    const drafts = await runtime.readInvalidatedAttentionDrafts();
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.content).toBe("hello");
+    expect(runtime.hasInvalidations()).toBe(false);
+  });
 });

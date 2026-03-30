@@ -53,11 +53,12 @@ describe("Feature: session-system ledger persistence", () => {
         response: { id: "resp-1" },
       });
 
-      const block1 = db.appendBlock({ role: "user", channel: "user_input", content: "hello" });
+      const block1 = db.appendBlock({ role: "user", channel: "user_input", chatId: "chat-main", content: "hello" });
       const block2 = db.appendBlock({
         cycleId: cycle.id,
         role: "assistant",
         channel: "tool",
+        chatId: "chat-tools",
         content: "```yaml\nok: true\n```",
         tool: {
           invocationId: "call-terminal-read",
@@ -87,11 +88,13 @@ describe("Feature: session-system ledger persistence", () => {
       expect(db.listBlocksBefore(block2.id + 1).map((item) => item.id)).toEqual([block1.id, block2.id]);
       expect(db.getModelCallByCycleId(cycle.id)?.id).toBe(model.id);
       expect(db.listApiCallsByModelCall(model.id).map((item) => item.id)).toEqual([api.id]);
+      expect(db.getBlockById(block1.id)?.chatId).toBe("chat-main");
       expect(db.getBlockById(block2.id)?.tool).toMatchObject({
         invocationId: "call-terminal-read",
         name: "terminal_read",
         status: "success",
       });
+      expect(db.getBlockById(block2.id)?.chatId).toBe("chat-tools");
     } finally {
       db.close();
     }
@@ -181,6 +184,60 @@ describe("Feature: session-system ledger persistence", () => {
       expect(second.id).toBeGreaterThan(1);
       expect(db.getModelCallByCycleId(1)?.id).toBe(second.id);
       expect(db.listModelCalls().map((item) => item.cycleId)).toEqual([1, 1]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given a legacy session db without session_block chat ids When the db migrates Then old blocks remain readable and new blocks can persist chatId", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agenter-session-db-legacy-blocks-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "session.db");
+    const legacy = new Database(filePath, { create: true, strict: true });
+    legacy.exec(`
+      create table session_head (
+        id integer primary key check (id = 1),
+        head_cycle_id integer,
+        updated_at integer not null
+      );
+      insert into session_head (id, head_cycle_id, updated_at) values (1, null, 0);
+      create table session_cycle (
+        id integer primary key autoincrement,
+        seq integer not null unique,
+        prev_cycle_id integer,
+        created_at integer not null,
+        wake_json text not null,
+        collected_inputs_json text not null,
+        extends_json text not null,
+        result_json text not null
+      );
+      create table session_block (
+        id integer primary key autoincrement,
+        seq integer not null unique,
+        cycle_id integer,
+        created_at integer not null,
+        role text not null,
+        channel text not null,
+        format text not null,
+        content text not null,
+        tool_json text
+      );
+      insert into session_block (seq, cycle_id, created_at, role, channel, format, content, tool_json)
+      values (1, null, 1000, 'user', 'user_input', 'markdown', 'legacy hello', null);
+    `);
+    legacy.close();
+
+    const db = new SessionDb(filePath);
+    try {
+      expect(db.getBlockById(1)?.chatId).toBeNull();
+      const inserted = db.appendBlock({
+        role: "assistant",
+        channel: "to_user",
+        chatId: "chat-main",
+        content: "modern hello",
+      });
+      expect(inserted.chatId).toBe("chat-main");
+      expect(db.listBlocksAfter(0).map((item) => item.chatId)).toEqual([null, "chat-main"]);
     } finally {
       db.close();
     }

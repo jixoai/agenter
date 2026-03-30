@@ -25,8 +25,12 @@ export type MessageChannelEntry = MessageChannelListOutput["items"][number];
 export type MessageChannelGrantsOutput = RouterOutputs["message"]["listChannelGrants"];
 export type MessageChannelGrantEntry = MessageChannelGrantsOutput["items"][number];
 export type MessageChannelGrantIssueOutput = RouterOutputs["message"]["issueChannelGrant"];
-export type AvatarCatalogOutput = RouterOutputs["avatar"]["list"];
-export type AvatarCatalogItem = AvatarCatalogOutput["items"][number];
+export type ProfileListOutput = RouterOutputs["profile"]["list"];
+export type ProfileProjectionOutput = RouterOutputs["profile"]["get"];
+export type ProfileServiceInfoOutput = RouterOutputs["profile"]["service"];
+export type ProfileListItem = ProfileListOutput["items"][number];
+export type ProfileEmailChallengeStartOutput = RouterOutputs["profile"]["auth"]["emailStart"];
+export type ProfileEmailChallengeVerifyOutput = RouterOutputs["profile"]["auth"]["emailVerify"];
 export type SettingsLayersOutput = RouterOutputs["settings"]["layers"]["list"];
 export type SettingsLayerEntry = SettingsLayersOutput["layers"][number];
 export type ScopedSettingsOutput = RouterOutputs["settings"]["scope"]["list"];
@@ -101,6 +105,7 @@ export interface UploadedSessionAsset {
 export interface RuntimeClientState {
   connected: boolean;
   connectionStatus: RuntimeConnectionStatus;
+  profileService: ProfileServiceInfoOutput | null;
   lastEventId: number;
   sessions: SessionEntry[];
   runtimes: RuntimeSnapshot["runtimes"];
@@ -123,4 +128,6 @@ export interface RuntimeClientState {
   apiCallRecordingBySession: Record<string, { enabled: boolean; refCount: number }>;
   notifications: SessionNotificationItem[];
   unreadBySession: Record<string, number>;
+  unreadByChat: Record<string, Record<string, number>>;
+  unreadByTerminal: Record<string, Record<string, number>>;
 }

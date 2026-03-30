@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
 
 import { __clearHelpHintPersistenceForTests } from "../../components/ui/help-hint-store";
 import { ComposerStatusBar } from "./ComposerStatusBar";
@@ -33,6 +33,14 @@ const getHelpHintPopup = (titleNode: HTMLElement) => {
   return popup;
 };
 
+const dismissAutoOpenedHelpHint = (popup: HTMLElement) => {
+  const rect = popup.getBoundingClientRect();
+  fireEvent.pointerDown(document.body, {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  });
+};
+
 export const WideStatusBarAutoOpensHelpHint: Story = {
   render: (args) => (
     <div className="w-[720px] bg-white p-6">
@@ -60,9 +68,26 @@ export const WideStatusBarAutoOpensHelpHint: Story = {
       expect(window.getComputedStyle(popup).animationName).toBe("help-hint-breathe");
     });
 
+    const popup = getHelpHintPopup(portal.getByText("Composer help"));
+    await waitFor(() => {
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "passive-auto");
+    });
+
+    dismissAutoOpenedHelpHint(popup);
+    await waitFor(() => {
+      expect(helpTrigger).not.toHaveAttribute("data-popup-open");
+    });
+
+    await userEvent.click(helpTrigger);
+    await waitFor(() => {
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
+      expect(popup).toHaveAttribute("data-help-hint-presentation", "active-open");
+    });
+
+    await userEvent.click(popup);
     await userEvent.hover(helpTrigger);
     await waitFor(() => {
-      const popup = getHelpHintPopup(portal.getByText("Composer help"));
+      expect(helpTrigger).toHaveAttribute("data-popup-open");
       expect(popup).toHaveAttribute("data-help-hint-presentation", "active-open");
       expect(window.getComputedStyle(popup).animationName).toBe("none");
     });

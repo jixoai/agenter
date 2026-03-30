@@ -1,5 +1,15 @@
-import { Tooltip as TooltipPrimitive, type TooltipRootChangeEventDetails } from "@base-ui-components/react/tooltip";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FocusEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { cn } from "../../lib/utils";
 import { dismissHelpHint, readHelpHintDismissed } from "./help-hint-store";
@@ -21,6 +31,47 @@ interface HelpHintProps {
   testId?: string;
 }
 
+const VIEWPORT_PADDING = 8;
+const HIDDEN_POSITION = -10_000;
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+const isPointInsideElement = (element: HTMLElement, clientX: number, clientY: number): boolean => {
+  const rect = element.getBoundingClientRect();
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+};
+
+const hasPopoverApi = (element: HTMLElement): element is HTMLElement & { showPopover: () => void; hidePopover: () => void } =>
+  typeof (element as HTMLElement & { showPopover?: unknown }).showPopover === "function" &&
+  typeof (element as HTMLElement & { hidePopover?: unknown }).hidePopover === "function";
+
+const isPopoverOpen = (element: HTMLElement): boolean => {
+  try {
+    return element.matches(":popover-open");
+  } catch {
+    return false;
+  }
+};
+
+const resolveAlignedOffset = ({
+  align,
+  anchorStart,
+  anchorSize,
+  popupSize,
+}: {
+  align: HelpHintAlign;
+  anchorStart: number;
+  anchorSize: number;
+  popupSize: number;
+}): number => {
+  if (align === "start") {
+    return anchorStart;
+  }
+  if (align === "end") {
+    return anchorStart + anchorSize - popupSize;
+  }
+  return anchorStart + (anchorSize - popupSize) / 2;
+};
+
 export const HelpHint = ({
   textContext,
   content,
@@ -35,131 +86,355 @@ export const HelpHint = ({
 }: HelpHintProps) => {
   const [dismissed, setDismissed] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
-  const [presentationMode, setPresentationMode] = useState<HelpHintPresentationMode>("closed");
-  const skipNextOpenChangeRef = useRef(false);
-  const suppressOpenUntilRef = useRef(0);
+  const [hasUserIntent, setHasUserIntent] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<CSSProperties>({
+    left: HIDDEN_POSITION,
+    top: HIDDEN_POSITION,
+  });
   const identity = useMemo(() => ({ helpId, textContext }), [helpId, textContext]);
+  const popupId = useId();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const manualOpenRef = useRef(false);
+
+  const dismissPersistentHint = useCallback(() => {
+    manualOpenRef.current = false;
+    setDismissed(true);
+    setOpen(false);
+    setHasUserIntent(false);
+    void dismissHelpHint(identity);
+  }, [identity]);
+
+  const cancelScheduledPositioning = useCallback(() => {
+    if (frameRef.current === null) {
+      return;
+    }
+    window.cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+  }, []);
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const popup = popupRef.current;
+    if (!trigger || !popup || !open) {
+      return;
+    }
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+
+    let top = 0;
+    let left = 0;
+
+    if (side === "top" || side === "bottom") {
+      top =
+        side === "top" ? triggerRect.top - popupRect.height - sideOffset : triggerRect.bottom + sideOffset;
+      left = resolveAlignedOffset({
+        align,
+        anchorStart: triggerRect.left,
+        anchorSize: triggerRect.width,
+        popupSize: popupRect.width,
+      });
+    } else {
+      left =
+        side === "left" ? triggerRect.left - popupRect.width - sideOffset : triggerRect.right + sideOffset;
+      top = resolveAlignedOffset({
+        align,
+        anchorStart: triggerRect.top,
+        anchorSize: triggerRect.height,
+        popupSize: popupRect.height,
+      });
+    }
+
+    const maxLeft = Math.max(VIEWPORT_PADDING, viewportWidth - popupRect.width - VIEWPORT_PADDING);
+    const maxTop = Math.max(VIEWPORT_PADDING, viewportHeight - popupRect.height - VIEWPORT_PADDING);
+
+    setPopupStyle({
+      left: clamp(left, VIEWPORT_PADDING, maxLeft),
+      top: clamp(top, VIEWPORT_PADDING, maxTop),
+    });
+  }, [align, open, side, sideOffset]);
+
+  const schedulePositioning = useCallback(() => {
+    cancelScheduledPositioning();
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      updatePosition();
+    });
+  }, [cancelScheduledPositioning, updatePosition]);
 
   useEffect(() => {
     let canceled = false;
+    manualOpenRef.current = false;
     if (disabled) {
       setDismissed(true);
       setOpen(false);
-      setPresentationMode("closed");
+      setHasUserIntent(false);
+      setPopupStyle({ left: HIDDEN_POSITION, top: HIDDEN_POSITION });
       return;
     }
     setDismissed(null);
     setOpen(false);
-    setPresentationMode("closed");
+    setHasUserIntent(false);
     void readHelpHintDismissed(identity).then((value) => {
       if (canceled) {
         return;
       }
       setDismissed(value);
-      const nextOpen = !value;
-      setOpen(nextOpen);
-      setPresentationMode(nextOpen ? "passive-auto" : "closed");
+      setOpen(!value);
+      setHasUserIntent(false);
     });
     return () => {
       canceled = true;
     };
   }, [disabled, identity]);
 
+  useEffect(
+    () => () => {
+      cancelScheduledPositioning();
+    },
+    [cancelScheduledPositioning],
+  );
+
+  useEffect(() => {
+    const popup = popupRef.current;
+    if (!popup) {
+      return;
+    }
+
+    if (open) {
+      popup.hidden = false;
+      if (hasPopoverApi(popup) && !isPopoverOpen(popup)) {
+        popup.showPopover();
+      }
+      schedulePositioning();
+      return;
+    }
+
+    cancelScheduledPositioning();
+    if (hasPopoverApi(popup) && isPopoverOpen(popup)) {
+      popup.hidePopover();
+    }
+    popup.hidden = true;
+    setPopupStyle({ left: HIDDEN_POSITION, top: HIDDEN_POSITION });
+  }, [cancelScheduledPositioning, open, schedulePositioning]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleViewportChange = () => {
+      schedulePositioning();
+    };
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            schedulePositioning();
+          });
+
+    const trigger = triggerRef.current;
+    const popup = popupRef.current;
+    if (trigger && resizeObserver) {
+      resizeObserver.observe(trigger);
+    }
+    if (popup && resizeObserver) {
+      resizeObserver.observe(popup);
+    }
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    schedulePositioning();
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [open, schedulePositioning]);
+
+  useEffect(() => {
+    if (!open || dismissed === false) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (triggerRef.current?.contains(target) || popupRef.current?.contains(target)) {
+        return;
+      }
+      manualOpenRef.current = false;
+      setOpen(false);
+      setHasUserIntent(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      manualOpenRef.current = false;
+      setOpen(false);
+      setHasUserIntent(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [dismissed, open]);
+
+  useEffect(() => {
+    if (!open || dismissed !== false) {
+      return;
+    }
+
+    const handlePointerDownCapture = (event: PointerEvent) => {
+      const trigger = triggerRef.current;
+      const popup = popupRef.current;
+      if (!trigger || !popup) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Node && trigger.contains(target)) {
+        return;
+      }
+      if (!isPointInsideElement(popup, event.clientX, event.clientY)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      dismissPersistentHint();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownCapture, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownCapture, true);
+    };
+  }, [dismissPersistentHint, dismissed, open]);
+
   if (disabled) {
     return null;
   }
 
-  const promoteToActiveOpen = () => {
-    if (!open || presentationMode === "active-open") {
+  const presentationMode: HelpHintPresentationMode = !open
+    ? "closed"
+    : dismissed === false && !hasUserIntent
+      ? "passive-auto"
+      : "active-open";
+
+  const markUserIntent = () => {
+    if (!open || dismissed !== false) {
       return;
     }
-    setPresentationMode("active-open");
+    setHasUserIntent(true);
   };
 
-  const handleOpenChange = (next: boolean, eventDetails: TooltipRootChangeEventDetails) => {
-    if (next && Date.now() < suppressOpenUntilRef.current) {
+  const openTransientHint = () => {
+    if (dismissed === false || manualOpenRef.current) {
+      markUserIntent();
       return;
     }
-    if (skipNextOpenChangeRef.current) {
-      skipNextOpenChangeRef.current = false;
+    setOpen(true);
+    setHasUserIntent(true);
+  };
+
+  const closeTransientHint = () => {
+    if (dismissed === false || manualOpenRef.current) {
       return;
     }
-    if (dismissed === false) {
-      setOpen(true);
-      if (next && eventDetails.reason !== "none") {
-        setPresentationMode(
-          eventDetails.reason === "trigger-hover" ||
-            eventDetails.reason === "trigger-focus" ||
-            eventDetails.reason === "trigger-press"
-            ? "active-open"
-            : "passive-auto",
-        );
-      }
+    setOpen(false);
+    setHasUserIntent(false);
+  };
+
+  const handleTriggerBlur = (event: FocusEvent<HTMLButtonElement>) => {
+    if (manualOpenRef.current || dismissed === false) {
       return;
     }
-    setOpen(next);
-    setPresentationMode(next ? "active-open" : "closed");
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && popupRef.current?.contains(nextTarget)) {
+      return;
+    }
+    closeTransientHint();
   };
 
   const handleTriggerClick = (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
     event.stopPropagation();
     if (dismissed === false) {
-      skipNextOpenChangeRef.current = true;
-      // On touch devices tooltip libraries may emit a follow-up open event after trigger click.
-      // Keep a short suppression window so "dismiss on click" stays deterministic.
-      suppressOpenUntilRef.current = Date.now() + 480;
-      setDismissed(true);
-      setOpen(false);
-      setPresentationMode("closed");
-      void dismissHelpHint(identity);
+      dismissPersistentHint();
       return;
     }
-    skipNextOpenChangeRef.current = true;
-    const nextOpen = !open;
+    const nextOpen = !manualOpenRef.current;
+    manualOpenRef.current = nextOpen;
     setOpen(nextOpen);
-    setPresentationMode(nextOpen ? "active-open" : "closed");
+    setHasUserIntent(nextOpen);
+  };
+
+  const handlePopupClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (dismissed !== false) {
+      return;
+    }
+    dismissPersistentHint();
   };
 
   return (
-    <TooltipPrimitive.Root open={open} onOpenChange={handleOpenChange}>
-      <TooltipPrimitive.Trigger
-        delay={250}
-        render={
-          <button
-            type="button"
-            aria-label={ariaLabel}
-            title={ariaLabel}
-            data-testid={testId}
-            data-help-hint-presentation={presentationMode}
-            onClick={handleTriggerClick}
-            onFocus={promoteToActiveOpen}
-            onMouseEnter={promoteToActiveOpen}
-            className={cn(
-              "help-hint-trigger inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] leading-none font-semibold text-slate-600 shadow-xs transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-teal-200 focus-visible:ring-offset-1 focus-visible:outline-none",
-              "data-[popup-open]:border-teal-300 data-[popup-open]:bg-teal-50 data-[popup-open]:text-teal-700 data-[popup-open]:shadow-sm",
-              className,
-            )}
-          >
-            ?
-          </button>
-        }
-      />
-      <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Positioner side={side} align={align} sideOffset={sideOffset}>
-          <TooltipPrimitive.Popup
-            data-help-hint-presentation={presentationMode}
-            onFocusCapture={promoteToActiveOpen}
-            onMouseEnter={promoteToActiveOpen}
-            className={cn(
-              "help-hint-popup z-50 max-w-[30rem] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] leading-5 text-slate-700 shadow-sm",
-              "data-[ending-style]:animate-out data-[starting-style]:animate-in",
-            )}
-          >
-            {content}
-          </TooltipPrimitive.Popup>
-        </TooltipPrimitive.Positioner>
-      </TooltipPrimitive.Portal>
-    </TooltipPrimitive.Root>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        aria-controls={popupId}
+        aria-describedby={open ? popupId : undefined}
+        aria-expanded={open}
+        data-testid={testId}
+        data-help-hint-presentation={presentationMode}
+        data-popup-open={open ? "" : undefined}
+        onClick={handleTriggerClick}
+        onFocus={openTransientHint}
+        onBlur={handleTriggerBlur}
+        onMouseEnter={openTransientHint}
+        onMouseLeave={closeTransientHint}
+        className={cn(
+          "help-hint-trigger inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] leading-none font-semibold text-slate-600 shadow-xs transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-teal-200 focus-visible:ring-offset-1 focus-visible:outline-none",
+          "data-[popup-open]:border-teal-300 data-[popup-open]:bg-teal-50 data-[popup-open]:text-teal-700 data-[popup-open]:shadow-sm",
+          className,
+        )}
+      >
+        ?
+      </button>
+      <div
+        ref={popupRef}
+        id={popupId}
+        popover="manual"
+        role="tooltip"
+        hidden={!open}
+        aria-hidden={!open}
+        data-help-hint-presentation={presentationMode}
+        className={cn(
+          "help-hint-popup fixed z-[60] max-w-[30rem] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] leading-5 text-slate-700 shadow-sm outline-none",
+          presentationMode === "active-open" ? "pointer-events-auto" : "pointer-events-none",
+          "data-[ending-style]:animate-out data-[starting-style]:animate-in",
+        )}
+        onClick={handlePopupClick}
+        style={popupStyle}
+      >
+        {content}
+      </div>
+    </>
   );
 };

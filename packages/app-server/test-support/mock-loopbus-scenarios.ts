@@ -1,11 +1,13 @@
 import type { MessageControlPlaneEntry } from "@agenter/message-system";
 
 import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
+import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { MockKernelHarness } from "./mock-kernel-harness";
 import { waitForMockValue } from "./mock-kernel-harness";
 import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "./mock-model-server";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
 
 const getRuntimeSnapshot = (harness: MockKernelHarness): SessionRuntimeSnapshot | null =>
   harness.kernel.getSnapshot().runtimes[harness.session.id] ?? null;
@@ -68,15 +70,11 @@ export const waitForAttentionSettled = async (
   harness: MockKernelHarness,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<SessionRuntimeAttentionState> =>
-  await waitForMockValue(
-    async () => {
-      const attention = await harness.kernel.inspectAttentionState(harness.session.id);
-      return attention.active.length === 0 ? attention : null;
-    },
-    {
-      label: "attention convergence",
-      timeoutMs,
-    },
+  await waitForScopedAttentionSettled(
+    async () => await harness.kernel.inspectAttentionState(harness.session.id),
+    waitForMockValue,
+    chatScenarioAttentionScope,
+    timeoutMs,
   );
 
 export const waitForCompactCycle = async (
@@ -92,7 +90,10 @@ export const waitForCompactCycle = async (
       return (
         cycles.find(
           (cycle) =>
-            cycle.kind === "compact" && cycle.compactTrigger === "manual" && cycle.cycleId > input.afterCycleId,
+            cycle.kind === "compact" &&
+            cycle.compactTrigger === "manual" &&
+            cycle.cycleId !== null &&
+            cycle.cycleId > input.afterCycleId,
         ) ?? null
       );
     },

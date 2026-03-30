@@ -8,6 +8,7 @@ import { useRuntimeStoreSelector } from "../src/app-context";
 const createState = (): RuntimeClientState => ({
   connected: true,
   connectionStatus: "connected",
+  profileService: { endpoint: "http://127.0.0.1:4591" },
   lastEventId: 0,
   sessions: [],
   runtimes: {},
@@ -28,6 +29,8 @@ const createState = (): RuntimeClientState => ({
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
+  unreadByChat: {},
+  unreadByTerminal: {},
 });
 
 type Listener = (state: RuntimeClientState) => void;

@@ -282,7 +282,7 @@ const buildAttentionCommitToolCalls = (
       if (!latestCommit?.commitId) {
         return null;
       }
-      return {
+      const toolCall: ChatToolCall = {
         id: randomUUID(),
         type: "function",
         function: {
@@ -305,7 +305,8 @@ const buildAttentionCommitToolCalls = (
             stage: input.stage,
           }),
         },
-      } satisfies ChatToolCall;
+      };
+      return toolCall;
     })
     .filter((call): call is ChatToolCall => call !== null);
 

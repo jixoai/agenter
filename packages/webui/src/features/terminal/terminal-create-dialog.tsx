@@ -77,7 +77,7 @@ export const TerminalCreateDialog = ({ open, defaultCwd, onClose, onCreate }: Te
   const [processKind, setProcessKind] = useState("shell");
   const [commandDraft, setCommandDraft] = useState("");
   const [cwd, setCwd] = useState(defaultCwd ?? "");
-  const [focus, setFocus] = useState(true);
+  const [focus, setFocus] = useState(false);
   const [profileCommandDraft, setProfileCommandDraft] = useState("");
   const [profileCwd, setProfileCwd] = useState("");
   const [profileCols, setProfileCols] = useState("");
@@ -98,7 +98,7 @@ export const TerminalCreateDialog = ({ open, defaultCwd, onClose, onCreate }: Te
     setProcessKind("shell");
     setCommandDraft("");
     setCwd(defaultCwd ?? "");
-    setFocus(true);
+    setFocus(false);
     setProfileCommandDraft("");
     setProfileCwd("");
     setProfileCols("");

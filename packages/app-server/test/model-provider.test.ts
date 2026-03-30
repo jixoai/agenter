@@ -67,11 +67,15 @@ describe("Feature: canonical model provider routing", () => {
 
   test("Scenario: Given the provider returns RUN_ERROR When responding Then the client throws a model decision error instead of silently returning no-progress", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response(JSON.stringify({ error: { message: "Insufficient Balance", code: "invalid_request_error" } }), {
-        status: 402,
-        headers: { "content-type": "application/json" },
-      });
+    const mockedFetch: typeof fetch = Object.assign(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ error: { message: "Insufficient Balance", code: "invalid_request_error" } }), {
+          status: 402,
+          headers: { "content-type": "application/json" },
+        }),
+      originalFetch,
+    );
+    globalThis.fetch = mockedFetch;
 
     try {
       const client = new ModelClient({
