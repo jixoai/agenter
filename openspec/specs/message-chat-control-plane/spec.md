@@ -11,6 +11,16 @@ The message control plane SHALL allow multiple chat-channel instances to coexist
 - **THEN** both channels can receive and query messages independently
 - **THEN** focus state can include one or both channel ids
 
+#### Scenario: Queued user input stays pending until attention reads it
+- **WHEN** a member sends a text message through an authorized chat transport
+- **THEN** the message is persisted in a queued attention state
+- **AND** it remains editable and out of the main transcript until attention loads it
+
+#### Scenario: Assistant-visible output is immediately visible
+- **WHEN** the runtime or assistant writes a visible reply or structured error through the control plane
+- **THEN** the message is persisted as already loaded and visible
+- **AND** it does not enter the queued pending strip
+
 ### Requirement: Chat channels SHALL use canonical id prefixes
 One-to-one channels SHALL use `chat-` ids and group channels SHALL use `room-` ids.
 
@@ -26,6 +36,11 @@ A chat transport endpoint SHALL deliver an initial snapshot followed by incremen
 - **WHEN** a websocket client connects to `/chat/$CHAT_ID`
 - **THEN** the server sends the channel snapshot first
 - **THEN** later sends append events for new messages in that channel
+
+#### Scenario: Message lifecycle updates arrive as incremental upserts
+- **WHEN** a queued message is later edited or marked as attention-loaded
+- **THEN** the transport pushes the updated message record with the same `messageId`
+- **AND** the client can update pending/transcript placement without reloading the whole channel
 
 ### Requirement: Message-system SHALL define communication semantics for model work
 The message control plane SHALL contribute provider-owned system guidance that describes message-system as an asynchronous multi-channel communication surface. That guidance SHALL teach role-aware dispatch instead of reducing message tools to mechanical quote forwarding.

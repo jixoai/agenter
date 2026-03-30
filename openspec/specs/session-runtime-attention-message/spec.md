@@ -31,6 +31,16 @@ Session runtime SHALL ingest chat-channel inputs into attention and route reply 
 - **THEN** the assistant answers correctly in the original `kzf` room from compacted factual history
 - **AND** the assistant does not need a fresh relay through the `gaubee` room to answer that follow-up
 
+#### Scenario: A queued user message becomes read only when the load gate passes
+- **WHEN** a queued chat message is invalidated for attention
+- **THEN** session runtime asks LoopBus whether that source should load now
+- **AND** the message is marked as read and visible only after the gate allows it
+
+#### Scenario: Deferred queued messages survive active tool work
+- **WHEN** a new queued chat message arrives while the runtime is still working on other attention
+- **THEN** the message remains pending instead of being falsely marked complete
+- **AND** the runtime may load it in a later eligible round through the same attention ingress gate
+
 ### Requirement: Stop and abort SHALL have different runtime scopes
 The runtime SHALL distinguish between stopping LoopBus work and destroying runtime-owned systems.
 

@@ -27,6 +27,11 @@ The WebUI SHALL provide a workspace-scoped shell for `Chats`, `Terminals`, `Devt
 - **THEN** the active route surface owns its own local notices and primary actions without pushing them into the top header
 - **THEN** the top header does not repeat the workspace path or route-local notices already rendered inside the workspace shell
 
+#### Scenario: Selecting a tab does not mutate semantic focus
+- **WHEN** the user switches between chat tabs or terminal tabs
+- **THEN** the UI only changes the visible detail pane
+- **AND** runtime focus remains unchanged until the user explicitly presses focus or unfocus
+
 ### Requirement: Workspace shell chrome SHALL preserve a fixed hierarchy
 The WebUI SHALL preserve a fixed shell hierarchy where the left application sidebar owns the outermost navigation chrome, the main shell owns the unified top header and route region, and the workspace route surface owns route content plus route-local notices and actions. Adjacent shell layers MUST NOT repeat the same passive state as visible text if an icon signal or tooltip already owns that fact, and desktop SHALL NOT introduce a second status trigger model that differs from compact layouts.
 
@@ -85,4 +90,3 @@ The WebUI SHALL expose the active session's primary run control through the Chat
 #### Scenario: Route-local notices stay in the Chat surface
 - **WHEN** the active Chat route has a local notice such as missing terminal configuration or a route-specific runtime warning
 - **THEN** the notice is rendered inside the Chat surface instead of the top header
-

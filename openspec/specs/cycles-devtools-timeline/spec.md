@@ -18,6 +18,11 @@ The WebUI SHALL expose the cycle-oriented Devtools surface as a live timeline th
 - **THEN** the cycle timeline uses compact typography and restrained color emphasis
 - **THEN** it reads as an expert inspection surface instead of competing with the Chat transcript
 
+#### Scenario: Compact cycles are visually distinct special rounds
+- **WHEN** the timeline renders a cycle whose kind is `compact`
+- **THEN** that row uses a distinct icon or color treatment from normal rounds
+- **AND** the user can identify compact cycles directly from navigation without opening the detail pane
+
 ### Requirement: Cycle detail SHALL mount richer inspection on selection
 The cycle timeline SHALL keep the list compact and mount richer cycle detail only for the selected cycle.
 

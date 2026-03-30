@@ -15,6 +15,11 @@ The runtime SHALL expose an attention-first plugin pipeline where external syste
 - **THEN** it can contribute source invalidation behavior, attention transforms, cycle policies, or egress dispatch behavior through the same pipeline
 - **THEN** the session runtime does not need private hand-written integration code for that system
 
+#### Scenario: Deferred attention refs stay invalidated until the load gate opens
+- **WHEN** a plugin denies `attentionShouldLoad` for an invalidated source ref
+- **THEN** that ref is not converted into attention drafts in the current round
+- **AND** the runtime keeps the ref invalidated for the next eligible round instead of dropping it
+
 ### Requirement: LoopBus hooks SHALL use explicit execution kinds
 Each LoopBus hook type SHALL define a stable execution kind such as `first`, `sequential`, `parallel`, or `sequential-waterfall`, and plugin registration SHALL preserve those semantics consistently across ingress and egress phases.
 
@@ -28,6 +33,11 @@ Each LoopBus hook type SHALL define a stable execution kind such as `first`, `se
 - **THEN** the runtime accepts the first non-null authoritative result
 - **THEN** later handlers are not invoked for that hook execution
 
+#### Scenario: The attention load gate stops at the first authoritative decision
+- **WHEN** multiple plugins participate in `attentionShouldLoad`
+- **THEN** the runtime accepts the first non-null authoritative decision
+- **AND** later handlers are not invoked for that source ref
+
 ### Requirement: LoopBus plugins SHALL expose shared services safely
 The plugin runtime SHALL allow plugins to expose and consume named services through a typed service registry so future system integrations can cooperate without reaching into session internals.
 
@@ -35,4 +45,3 @@ The plugin runtime SHALL allow plugins to expose and consume named services thro
 - **WHEN** a plugin exposes a named service during setup
 - **THEN** another plugin can resolve that service through the plugin API
 - **THEN** the interaction does not require direct access to `SessionRuntime` private state
-
