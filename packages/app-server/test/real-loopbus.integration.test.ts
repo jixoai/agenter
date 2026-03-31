@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
@@ -24,9 +25,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealSimpleReplyScenario(harness);
 
-        expect(result.reply.chatId).toBe("chat-main");
+        expect(result.reply.chatId).toBe(primaryRoomId);
         expect(result.reply.content).toBe("REAL-AI-OK");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
@@ -47,16 +49,16 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealLunchRelayScenario(harness);
 
-        expect(result.originAcknowledgement.chatId).toBe("chat-main");
+        expect(result.originAcknowledgement.chatId).toBe(primaryRoomId);
         expect(result.originAcknowledgement.content.length).toBeGreaterThan(0);
-        expect(result.relayChannel.chatId).toBe("chat-gaubee");
-        expect(result.relayPromptMessage.chatId).toBe("chat-gaubee");
+        expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);
         expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
-        expect(result.relayParticipantReply.chatId).toBe("chat-gaubee");
+        expect(result.relayParticipantReply.chatId).toBe(result.relayChannel.chatId);
         expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
-        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.chatId).toBe(primaryRoomId);
         expect(result.finalReply.content).toContain("蛋炒饭");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
@@ -76,28 +78,28 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealLunchRelayScenario(harness);
         const followUp = await runRealCompactFollowUpScenario(harness, {
           relayChannel: result.relayChannel,
           afterReplyTimestamp: result.finalReply.timestamp,
         });
 
-        expect(result.originAcknowledgement.chatId).toBe("chat-main");
+        expect(result.originAcknowledgement.chatId).toBe(primaryRoomId);
         expect(result.originAcknowledgement.content.length).toBeGreaterThan(0);
-        expect(result.relayChannel.chatId).toBe("chat-gaubee");
-        expect(result.relayPromptMessage.chatId).toBe("chat-gaubee");
+        expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);
         expect(result.relayPromptMessage.content.length).toBeGreaterThan(0);
         expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
         expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
-        expect(result.relayParticipantReply.chatId).toBe("chat-gaubee");
+        expect(result.relayParticipantReply.chatId).toBe(result.relayChannel.chatId);
         expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
-        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.chatId).toBe(primaryRoomId);
         expect(result.finalReply.content).toContain("蛋炒饭");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
         expect(followUp.compactCycle.kind).toBe("compact");
         expect(followUp.compactCycle.compactTrigger).toBe("manual");
-        expect(followUp.followUpReply.chatId).toBe("chat-main");
+        expect(followUp.followUpReply.chatId).toBe(primaryRoomId);
         expect(followUp.followUpReply.content).toContain("蛋炒饭");
         expect(followUp.relayMessageCountAfter).toBe(followUp.relayMessageCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);
@@ -118,11 +120,12 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealWeatherThroughTerminalScenario(harness);
 
-        expect(result.acknowledgement.chatId).toBe("chat-main");
+        expect(result.acknowledgement.chatId).toBe(primaryRoomId);
         expect(result.acknowledgement.content.length).toBeGreaterThan(0);
-        expect(result.reply.chatId).toBe("chat-main");
+        expect(result.reply.chatId).toBe(primaryRoomId);
         expect(result.reply.content.startsWith("WEATHER-RESULT:")).toBe(true);
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
@@ -145,11 +148,12 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealInterleavedCanInputScenario(harness);
 
-        expect(result.acknowledgement.chatId).toBe("chat-main");
+        expect(result.acknowledgement.chatId).toBe(primaryRoomId);
         expect(result.acknowledgement.content).toContain("INTERLEAVED-ACK");
-        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.chatId).toBe(primaryRoomId);
         expect(result.finalReply.content).toContain("INTERLEAVED-RESULT:");
         expect(result.finalReply.content).toContain("TOOL-PHASE-DONE");
         expect(result.finalReply.content).toContain("SECOND-CLAUSE");
@@ -173,15 +177,15 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const result = await runRealJudgeRelayScenario(harness);
 
-        expect(result.relayChannel.chatId).toBe("chat-kzf");
-        expect(result.relayPromptMessage.chatId).toBe("chat-kzf");
+        expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);
         expect(result.relayPromptMessage.content).not.toBe(
           [
             "和 kzf 玩个剪刀石头布，你做裁判，我出布。",
             "请先联系 kzf 获取他的出招，不要代替 kzf 出招，也不要把我的整句话原样转发。",
-            "等 kzf 回复后，只把比赛结果发回 chat-main，并收敛 attention。",
+            `等 kzf 回复后，只把比赛结果发回 ${primaryRoomId}，并收敛 attention。`,
           ].join("\n"),
         );
         expect(result.relayPromptMessage.content.includes("我出剪刀")).toBe(false);

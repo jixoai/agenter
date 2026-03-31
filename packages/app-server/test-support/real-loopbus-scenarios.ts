@@ -1,12 +1,14 @@
 import type { MessageControlPlaneEntry } from "@agenter/message-system";
 
 import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
+import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import { waitForRealValue } from "./real-kernel-harness";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
+const getPrimaryRoomId = (harness: RealKernelHarness): string => resolvePrimaryRoomId(harness.session.id);
 
 const getRuntimeSnapshot = (harness: RealKernelHarness): SessionRuntimeSnapshot | null =>
   harness.kernel.getSnapshot().runtimes[harness.session.id] ?? null;
@@ -92,6 +94,7 @@ const waitForCompactCycle = async (
           (cycle) =>
             cycle.kind === "compact" &&
             cycle.compactTrigger === "manual" &&
+            cycle.status === "done" &&
             typeof cycle.cycleId === "number" &&
             cycle.cycleId > input.afterCycleId,
         ) ?? null
@@ -207,9 +210,10 @@ export interface RealSimpleReplyScenarioResult {
 export const runRealSimpleReplyScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealSimpleReplyScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const prompt = [
     "请完成一个最小的 attention-first 闭环。",
-    "只向 chat-main 发送一条用户可见消息，内容必须精确等于：REAL-AI-OK。",
+    `只向 ${primaryRoomId} 发送一条用户可见消息，内容必须精确等于：REAL-AI-OK。`,
     "完成后把相关 attention score 收敛到 0。",
   ].join("\n");
   const sent = await harness.kernel.sendChat(harness.session.id, prompt);
@@ -218,8 +222,8 @@ export const runRealSimpleReplyScenario = async (
   }
 
   const reply = await waitForAssistantMessage(harness, {
-    label: "simple reply on chat-main",
-    predicate: (message) => message.chatId === "chat-main" && message.content.trim() === "REAL-AI-OK",
+    label: "simple reply on primary room",
+    predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === "REAL-AI-OK",
   });
   const settledAttention = await waitForAttentionSettled(harness);
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
@@ -249,8 +253,9 @@ export interface RealLunchRelayScenarioResult {
 export const runRealLunchRelayScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealLunchRelayScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
   const relayChannel = harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
@@ -269,9 +274,9 @@ export const runRealLunchRelayScenario = async (
   }
 
   const originAcknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: "chat-main",
+    chatId: primaryRoomId,
     afterCount: originAssistantCountBefore,
-    label: "origin acknowledgement on chat-main",
+    label: "origin acknowledgement on primary room",
   });
 
   const relayPromptMessage = await waitForNextAssistantMessageInChat(harness, {
@@ -319,8 +324,11 @@ export const runRealLunchRelayScenario = async (
   );
 
   const finalReply = await waitForAssistantMessage(harness, {
-    label: "final reply on chat-main",
-    predicate: (message) => message.chatId === "chat-main" && message.timestamp > relayParticipantReply.timestamp && message.content.includes("蛋炒饭"),
+    label: "final reply on primary room",
+    predicate: (message) =>
+      message.chatId === primaryRoomId &&
+      message.timestamp > relayParticipantReply.timestamp &&
+      message.content.includes("蛋炒饭"),
   });
   const settledAttention = await waitForAttentionSettled(harness);
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
@@ -358,6 +366,7 @@ export const runRealCompactFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<RealCompactFollowUpScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
   const runtimeBefore = getRuntimeSnapshot(harness);
@@ -379,7 +388,7 @@ export const runRealCompactFollowUpScenario = async (
   const followUpReply = await waitForAssistantMessage(harness, {
     label: "post-compact follow-up answer",
     predicate: (message) =>
-      message.chatId === "chat-main" &&
+      message.chatId === primaryRoomId &&
       message.timestamp > input.afterReplyTimestamp &&
       message.content.includes("蛋炒饭"),
   });
@@ -415,13 +424,14 @@ export interface RealWeatherTerminalScenarioResult {
 export const runRealWeatherThroughTerminalScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealWeatherTerminalScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
   const startAt = Date.now();
   const prompt = [
     "用户问：厦门天气如何？天气预报未来 15 天天气。",
-    "先在 chat-main 发一条简短确认消息，再使用 terminal 工具联网查询，禁止凭记忆回答。",
-    "最终在 chat-main 再发送一条以 WEATHER-RESULT: 开头的简短中文消息。",
+    `先在 ${primaryRoomId} 发一条简短确认消息，再使用 terminal 工具联网查询，禁止凭记忆回答。`,
+    `最终在 ${primaryRoomId} 再发送一条以 WEATHER-RESULT: 开头的简短中文消息。`,
     "完成后把 attention 收敛到 0。",
   ].join("\n");
   const sent = await harness.kernel.sendChat(harness.session.id, prompt);
@@ -430,16 +440,16 @@ export const runRealWeatherThroughTerminalScenario = async (
   }
 
   const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: "chat-main",
+    chatId: primaryRoomId,
     afterCount: originAssistantCountBefore,
-    label: "weather acknowledgement on chat-main",
+    label: "weather acknowledgement on primary room",
     timeoutMs: 180_000,
   });
 
   const reply = await waitForAssistantMessage(harness, {
-    label: "weather result on chat-main",
+    label: "weather result on primary room",
     predicate: (message) =>
-      message.chatId === "chat-main" &&
+      message.chatId === primaryRoomId &&
       message.timestamp > acknowledgement.timestamp &&
       message.content.trim().startsWith("WEATHER-RESULT:"),
     timeoutMs: 180_000,
@@ -491,15 +501,16 @@ export interface RealInterleavedCanInputScenarioResult {
 export const runRealInterleavedCanInputScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealInterleavedCanInputScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
+  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
   const startAt = Date.now();
   const initialPrompt = [
     "我们正在验证你是否能在工具阶段接收新的输入。",
-    "1. 先立刻在 chat-main 回复一条只包含 INTERLEAVED-ACK 的消息。",
+    `1. 先立刻在 ${primaryRoomId} 回复一条只包含 INTERLEAVED-ACK 的消息。`,
     "2. 然后必须使用 terminal 工具执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
     "3. 在终端命令运行期间，我可能会再发一条以“补充要求:”开头的新消息。你必须在最终结果里处理这条补充要求。",
-    "4. 最终只在 chat-main 回复一条以 INTERLEAVED-RESULT: 开头的中文消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。",
+    `4. 最终只在 ${primaryRoomId} 回复一条以 INTERLEAVED-RESULT: 开头的中文消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
     "5. 禁止跳过 terminal，禁止凭空回答，完成后收敛 attention。",
   ].join("\n");
 
@@ -509,9 +520,9 @@ export const runRealInterleavedCanInputScenario = async (
   }
 
   const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: "chat-main",
+    chatId: primaryRoomId,
     afterCount: originAssistantCountBefore,
-    label: "interleaved acknowledgement on chat-main",
+    label: "interleaved acknowledgement on primary room",
     timeoutMs: 180_000,
   });
 
@@ -523,9 +534,9 @@ export const runRealInterleavedCanInputScenario = async (
   const followUpSentAt = Date.now();
 
   const finalReply = await waitForAssistantMessage(harness, {
-    label: "interleaved final reply on chat-main",
+    label: "interleaved final reply on primary room",
     predicate: (message) =>
-      message.chatId === "chat-main" &&
+      message.chatId === primaryRoomId &&
       message.timestamp > acknowledgement.timestamp &&
       message.content.includes("INTERLEAVED-RESULT:") &&
       message.content.includes("TOOL-PHASE-DONE") &&
@@ -611,6 +622,7 @@ export interface RealJudgeRelayScenarioResult {
 export const runRealJudgeRelayScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealJudgeRelayScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
   const relayChannel = harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
@@ -626,7 +638,7 @@ export const runRealJudgeRelayScenario = async (
   const prompt = [
     "和 kzf 玩个剪刀石头布，你做裁判，我出布。",
     "请先联系 kzf 获取他的出招，不要代替 kzf 出招，也不要把我的整句话原样转发。",
-    "等 kzf 回复后，只把比赛结果发回 chat-main，并收敛 attention。",
+    `等 kzf 回复后，只把比赛结果发回 ${primaryRoomId}，并收敛 attention。`,
   ].join("\n");
   const sent = await harness.kernel.sendChat(harness.session.id, prompt);
   if (!sent.ok) {

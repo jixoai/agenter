@@ -1,6 +1,7 @@
 import type { MessageControlPlaneEntry } from "@agenter/message-system";
 
 import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
+import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { MockKernelHarness } from "./mock-kernel-harness";
 import { waitForMockValue } from "./mock-kernel-harness";
@@ -92,6 +93,7 @@ export const waitForCompactCycle = async (
           (cycle) =>
             cycle.kind === "compact" &&
             cycle.compactTrigger === "manual" &&
+            cycle.status === "done" &&
             cycle.cycleId !== null &&
             cycle.cycleId > input.afterCycleId,
         ) ?? null
@@ -159,6 +161,7 @@ export const runTwoRoomRelayScenario = async (
   harness: MockKernelHarness,
   relayChannel = createGaubeeRoom(harness),
 ): Promise<TwoRoomRelayScenarioResult> => {
+  const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
   const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
   if (!sent.ok) {
     throw new Error(`failed to send relay prompt: ${sent.reason ?? "unknown"}`);
@@ -186,7 +189,7 @@ export const runTwoRoomRelayScenario = async (
 
   const finalReply = await waitForAssistantMessage(harness, {
     label: "final reply on main room",
-    predicate: (message) => message.chatId === "chat-main" && message.content.trim() === MOCK_FINAL_ANSWER,
+    predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === MOCK_FINAL_ANSWER,
   });
 
   const settledAttention = await waitForAttentionSettled(harness);
@@ -217,6 +220,7 @@ export const runCompactFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<CompactFollowUpScenarioResult> => {
+  const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
   const relayPromptCountBefore = countRelayPrompts(harness, input.relayChannel.chatId);
@@ -237,7 +241,7 @@ export const runCompactFollowUpScenario = async (
   const followUpReply = await waitForAssistantMessage(harness, {
     label: "post-compact follow-up answer",
     predicate: (message) =>
-      message.chatId === "chat-main" &&
+      message.chatId === primaryRoomId &&
       message.content.trim() === MOCK_FINAL_ANSWER &&
       message.timestamp > input.afterReplyTimestamp,
   });

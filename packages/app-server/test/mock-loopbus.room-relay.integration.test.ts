@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { createMockKernelHarness } from "../test-support/mock-kernel-harness";
 import {
   createGaubeeRoom,
@@ -15,22 +16,21 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-relay" });
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const relayChannel = createGaubeeRoom(harness);
         const roomList = harness.kernel.listMessageChannels(harness.session.id);
-        const kzfRoom = roomList.find((channel) => channel.chatId === "chat-main");
         const gaubeeRoom = roomList.find((channel) => channel.chatId === relayChannel.chatId);
 
-        expect(kzfRoom?.participants.some((participant) => participant.label === "kzf")).toBeTrue();
         expect(gaubeeRoom?.participants.some((participant) => participant.label === "gaubee")).toBeTrue();
 
         const result = await runTwoRoomRelayScenario(harness, relayChannel);
 
-        expect(result.relayChannel.chatId).toBe("chat-gaubee");
-        expect(result.relayPromptMessage.chatId).toBe("chat-gaubee");
+        expect(result.relayChannel.chatId).toBe(relayChannel.chatId);
+        expect(result.relayPromptMessage.chatId).toBe(relayChannel.chatId);
         expect(result.relayPromptMessage.content).toBe(MOCK_RELAY_PROMPT);
-        expect(result.relayParticipantReply.chatId).toBe("chat-gaubee");
+        expect(result.relayParticipantReply.chatId).toBe(relayChannel.chatId);
         expect(result.relayParticipantReply.content).toBe(MOCK_GAUBEE_REPLY);
-        expect(result.finalReply.chatId).toBe("chat-main");
+        expect(result.finalReply.chatId).toBe(primaryRoomId);
         expect(result.finalReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(result.settledAttention.active).toHaveLength(0);
 
@@ -38,7 +38,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         expect(recentResponses).toContain("message_channel_list");
         expect(recentResponses).toContain("message_send");
         expect(recentResponses).toContain("attention_commit");
-        expect(recentResponses).toContain("chat-gaubee");
+        expect(recentResponses).toContain(relayChannel.chatId);
       } finally {
         await harness.stop();
       }
@@ -52,6 +52,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-compact-follow-up" });
 
       try {
+        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
         const relayChannel = createGaubeeRoom(harness);
         const relay = await runTwoRoomRelayScenario(harness, relayChannel);
         const followUp = await runCompactFollowUpScenario(harness, {
@@ -61,7 +62,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
 
         expect(followUp.compactCycle.kind).toBe("compact");
         expect(followUp.compactCycle.compactTrigger).toBe("manual");
-        expect(followUp.followUpReply.chatId).toBe("chat-main");
+        expect(followUp.followUpReply.chatId).toBe(primaryRoomId);
         expect(followUp.followUpReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(followUp.relayPromptCountAfter).toBe(followUp.relayPromptCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);

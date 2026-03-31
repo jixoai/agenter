@@ -71,6 +71,9 @@ interface ToolResult {
   data: unknown;
 }
 
+const PRIMARY_ROOM_CONTEXT_PREFIX = "ctx-room-main-";
+const PRIMARY_ROOM_ID_PREFIX = "room-main-";
+
 export interface MockModelServerHandle {
   baseUrl: string;
   stop: () => Promise<void>;
@@ -253,6 +256,33 @@ const findGaubeeChatId = (results: readonly ToolResult[]): string | null => {
   return null;
 };
 
+const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly AttentionFrame[]): string | null => {
+  const channelList = findLatestToolResult(results, "message_channel_list");
+  if (channelList && channelList.data && typeof channelList.data === "object") {
+    const channels = (channelList.data as { channels?: unknown }).channels;
+    if (Array.isArray(channels)) {
+      for (const channel of channels) {
+        if (!channel || typeof channel !== "object") {
+          continue;
+        }
+        const record = channel as {
+          chatId?: unknown;
+          metadata?: Record<string, unknown>;
+        };
+        const chatId = typeof record.chatId === "string" ? record.chatId : null;
+        if (!chatId) {
+          continue;
+        }
+        if (record.metadata?.primaryRoom === true || chatId.startsWith(PRIMARY_ROOM_ID_PREFIX)) {
+          return chatId;
+        }
+      }
+    }
+  }
+  const frame = frames.find((item) => item.contextId.startsWith(PRIMARY_ROOM_CONTEXT_PREFIX));
+  return frame ? frame.contextId.slice(4) : null;
+};
+
 const pickCurrentFrames = (frames: readonly AttentionFrame[]): AttentionFrame[] =>
   frames.map((frame) => ({
     contextId: frame.contextId,
@@ -338,20 +368,23 @@ const isSummaryRequest = (request: ChatCompletionRequest): boolean => (request.t
 const decideSummary = (request: ChatCompletionRequest) => {
   const history = request.messages.map((message) => message.content ?? "").join("\n");
   const hasLunchConclusion = history.includes(MOCK_GAUBEE_REPLY) || history.includes("蛋炒饭");
+  const frames = pickCurrentFrames(extractAttentionFrames(request.messages));
+  const toolResults = extractToolResults(request.messages);
+  const primaryRoomChatId = findPrimaryRoomChatId(toolResults, frames);
   return createResponse(request, {
     content: JSON.stringify({
       overview: hasLunchConclusion ? "gaubee lunch relay compacted" : "lunch relay still unresolved",
       decisions: hasLunchConclusion ? ["gaubee said lunch is egg fried rice"] : [],
       keyFiles: [],
       keyFacts: hasLunchConclusion ? [MOCK_GAUBEE_REPLY, MOCK_FINAL_ANSWER] : [],
-      readyReplies: hasLunchConclusion
+      readyReplies: hasLunchConclusion && primaryRoomChatId
         ? [
             {
-              channelId: "chat-main",
+              channelId: primaryRoomChatId,
               topic: "gaubee lunch answer",
               triggerPhrases: ["gaubee在吗？问他中午吃什么？", "中午吃什么"],
               reply: MOCK_FINAL_ANSWER,
-              reuseWhen: "Send directly when chat-main asks the same lunch question again after compact.",
+              reuseWhen: "Send directly when the primary room asks the same lunch question again after compact.",
             },
           ]
         : [],
@@ -365,8 +398,14 @@ const decideChat = (request: ChatCompletionRequest) => {
   const { users, afterUsers } = extractCurrentCycleUserMessages(request.messages);
   const currentText = users.map((message) => message.content ?? "").join("\n");
   const currentFrames = pickCurrentFrames(extractAttentionFrames(users));
+  const allFrames = pickCurrentFrames(extractAttentionFrames(request.messages));
   const toolResults = extractToolResults(afterUsers);
   const assistantHistory = listAssistantTexts(request.messages).join("\n");
+  const allUserText = request.messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content ?? "")
+    .join("\n");
+  const primaryRoomChatId = findPrimaryRoomChatId(toolResults, allFrames);
 
   const hasReportedHistory =
     assistantHistory.includes(MOCK_REPORTED_SUMMARY) ||
@@ -375,11 +414,11 @@ const decideChat = (request: ChatCompletionRequest) => {
   const hasWaitingHistory = assistantHistory.includes(MOCK_WAITING_SUMMARY);
 
   const followUpQuestion = currentText.includes("中午吃什么") && !currentText.includes("gaubee在吗");
-  const includesGaubeeReply = currentText.includes(MOCK_GAUBEE_REPLY);
+  const includesGaubeeReply = allUserText.includes(MOCK_GAUBEE_REPLY);
   const initialQuestion = currentText.includes("gaubee在吗") || currentText.includes(MOCK_WAITING_SUMMARY);
 
   if (followUpQuestion) {
-    if (hasToolResult(toolResults, "message_send") || currentFrames.length === 0) {
+    if (hasToolResult(toolResults, "message_send") || !primaryRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
@@ -390,7 +429,7 @@ const decideChat = (request: ChatCompletionRequest) => {
           function: {
             name: "message_send",
             arguments: JSON.stringify({
-              chatId: "chat-main",
+              chatId: primaryRoomChatId,
               content: MOCK_FINAL_ANSWER,
             }),
           },
@@ -407,7 +446,7 @@ const decideChat = (request: ChatCompletionRequest) => {
   }
 
   if (includesGaubeeReply) {
-    if (hasToolResult(toolResults, "message_send") || currentFrames.length === 0) {
+    if (hasToolResult(toolResults, "message_send") || !primaryRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
@@ -418,7 +457,7 @@ const decideChat = (request: ChatCompletionRequest) => {
           function: {
             name: "message_send",
             arguments: JSON.stringify({
-              chatId: "chat-main",
+              chatId: primaryRoomChatId,
               content: MOCK_FINAL_ANSWER,
             }),
           },
