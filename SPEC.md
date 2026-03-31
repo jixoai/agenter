@@ -36,6 +36,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
+- room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。
 - 新能力优先以“新增原子 + 复用平台法则”的方式接入；当现有法则无法优雅容纳时，应优先升级法则，而不是补 source-specific glue。
 
 ## 4. Durable Runtime Contract
@@ -48,10 +49,17 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 ## 5. 产品表面长期法则
 
+- 一级导航固定为 `Chats`、`Terminals`、`Workspaces`；`Quick Start` 与 standalone `GlobalSettings` 不再是 durable primary routes。
+- `Workspaces` 是统一的 global/workspace shell：固定包含 `Welcome` 与 `History`，并承载 workspace-scoped `Settings` / `Avatars` 等 detail tabs。
+- `~/` 是 special global workspace。用户级 settings、auth-adjacent controls 与 canonical avatar catalog 通过它暴露，而不是通过独立 global-settings 页面暴露。
+- `Welcome` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar、global room ref、global terminal ref 与 grant intent，并在用户 detour 到 `Chats` / `Terminals` 后继续保留当前草稿。
+- `Running Avatars` 是 secondary runtime rail。进入单个 avatar 后，默认页固定为 `Attention`，runtime tabs 在同一层打平，`Chats` / `Terminals` 只作为 link-out 的全局资源页存在。
+- `workspace + avatar` 是 durable active-session identity；再次启动同一 pair 时必须复用同一个稳定 session id，而不是创建重复 session。
+- `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
 - `Terminals` 是 app-level global workbench，不是 session-private surface；session route 只允许链接或投影该工作台，不能重新定义第二套 terminal truth。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
-- Global settings 属于 app-level navigation，不与 workspace-scoped route 混层；durable profile 管理、identifier linking 与 app-level profile selection 都归这个 surface。
+- regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
 - Session icon 与 profile/avatar icon 必须通过 profile-service 的语义 URL 消费，fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 
