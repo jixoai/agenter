@@ -8,6 +8,10 @@ export { createProfileServiceApp } from "./server/app";
 export { createProfileServiceRuntime } from "./server/runtime";
 export { startProfileServiceServer } from "./server/start-server";
 export type {
+  AuthChallengeDescriptor,
+  AuthDescriptor,
+  AuthSessionClaims,
+  AuthSessionProjection,
   EmailChallengeIssuedEvent,
   IconAssetRecord,
   IconOwnerKind,

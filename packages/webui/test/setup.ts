@@ -20,6 +20,10 @@ if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 }
 
+if (!window.scrollTo) {
+  window.scrollTo = vi.fn();
+}
+
 const emptyRectList = {
   length: 0,
   item: () => null,

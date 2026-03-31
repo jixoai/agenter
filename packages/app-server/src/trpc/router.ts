@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
@@ -61,8 +62,54 @@ const profileMetadataPatchSchema = z
     extra: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
+const authChallengeStartInput = z.object({
+  authId: z.string().trim().min(1),
+});
+const authChallengeVerifyInput = z.object({
+  challengeId: z.string().uuid(),
+  signature: z.string().trim().min(1),
+});
+
+const requireAuth = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "auth token required",
+    });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      auth: ctx.auth,
+    },
+  });
+});
+
+const requireSuperadmin = requireAuth.use(({ ctx, next }) => {
+  if (!ctx.auth.claims.superadmin) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "superadmin auth required",
+    });
+  }
+  return next();
+});
 
 export const appRouter = t.router({
+  auth: t.router({
+    service: t.procedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
+    challengeStart: t.procedure
+      .input(authChallengeStartInput)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.startAuthChallenge(input.authId)),
+    challengeVerify: t.procedure
+      .input(authChallengeVerifyInput)
+      .mutation(async ({ ctx, input }) => await ctx.kernel.verifyAuthChallenge({ ...input, token: ctx.auth?.token ?? undefined })),
+    session: requireAuth.query(({ ctx }) => ctx.auth),
+    superadminStatus: requireSuperadmin.query(({ ctx }) => ({
+      ok: true,
+      claims: ctx.auth.claims,
+    })),
+  }),
   session: t.router({
     list: t.procedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
     create: t.procedure
@@ -507,15 +554,20 @@ export const appRouter = t.router({
         }),
       )
       .query(async ({ ctx, input }) => await ctx.kernel.getProfile(input.reference)),
-    update: t.procedure
+    update: requireAuth
       .input(
         z.object({
           reference: z.string().trim().min(1),
-          token: z.string().trim().min(1),
           patch: profileMetadataPatchSchema,
         }),
       )
-      .mutation(async ({ ctx, input }) => await ctx.kernel.updateProfile(input)),
+      .mutation(async ({ ctx, input }) =>
+        await ctx.kernel.updateProfile({
+          reference: input.reference,
+          token: ctx.auth.token,
+          patch: input.patch,
+        }),
+      ),
     auth: t.router({
       emailStart: t.procedure
         .input(

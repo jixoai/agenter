@@ -17,7 +17,16 @@ const originalWebSocket = globalThis.WebSocket;
 const createState = (): RuntimeClientState => ({
   connected: true,
   connectionStatus: "connected",
-  profileService: { endpoint: "http://127.0.0.1:4591" },
+  profileService: {
+    endpoint: "http://127.0.0.1:4591",
+    authMode: "wallet_challenge_jwt",
+    rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+    rootIdentifier: {
+      kind: "wallet_evm",
+      value: "0x0000000000000000000000000000000000000001",
+    },
+    jwtTtlSeconds: 3600,
+  },
   lastEventId: 0,
   sessions: [],
   runtimes: {},
@@ -179,6 +188,7 @@ class WebSocketMock {
 
 let mockState: RuntimeClientState = createState();
 let stateListeners: Array<(state: RuntimeClientState) => void> = [];
+let mockAuthToken = "";
 const ensureMessageChannelsMock = vi.fn<(sessionId: string) => Promise<void>>();
 const listWorkspaceSessionsMock = vi.fn<
   (input: { path: string; tab: string; cursor?: number; limit?: number }) => Promise<{
@@ -311,7 +321,18 @@ const loadChatCyclesMock = vi.fn(async () => {});
 const sessionIconUrlMock = vi.fn((sessionId: string) => `http://127.0.0.1:4591/media/sessions/${sessionId}/icon`);
 const profileIconUrlMock = vi.fn((reference: string) => `http://127.0.0.1:4591/media/profiles/${reference}/icon`);
 const uploadSessionIconMock = vi.fn(async () => ({ ok: true }));
-const listProfilesMock = vi.fn(async () => ({ items: [] }));
+const listProfilesMock = vi.fn(
+  async () =>
+    ({
+      items: [] as Array<{
+        profileId: string;
+        identifiers: Array<{ kind: string; value: string }>;
+        metadata: Record<string, unknown>;
+        iconUrl: string;
+        isVirtual: boolean;
+      }>,
+    }) as const,
+);
 const getProfileMock = vi.fn(async (reference: string) => ({
   profileId: reference,
   identifiers: [],
@@ -326,6 +347,35 @@ const updateProfileMock = vi.fn(async (input: { reference: string; patch: Record
   iconUrl: `http://127.0.0.1:4591/media/profiles/${input.reference}/icon`,
   isVirtual: false,
 }));
+const createAuthSessionMock = (profileId = "profile-1") => ({
+  token: "jwt-auth-1",
+  issuedAt: new Date(0).toISOString(),
+  expiresAt: new Date(60_000).toISOString(),
+  claims: {
+    authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
+    profileId,
+    admin: true,
+    superadmin: false,
+  },
+  profile: {
+    profileId,
+    identifiers: [{ kind: "wallet_evm", value: "0x00000000000000000000000000000000000000aa" }],
+    metadata: { displayName: "Nova Ops", nickname: "nova" },
+    iconUrl: `http://127.0.0.1:4591/media/profiles/${profileId}/icon`,
+    isVirtual: false,
+  },
+});
+const startAuthChallengeMock = vi.fn(async (authId: string) => ({
+  challengeId: "challenge-auth-1",
+  challengeText: `challenge:${authId}`,
+  authId,
+  expiresAt: new Date(0).toISOString(),
+}));
+const verifyAuthChallengeMock = vi.fn(async () => createAuthSessionMock());
+const getAuthSessionMock = vi.fn(async () => (mockAuthToken ? createAuthSessionMock() : null));
+const setAuthTokenMock = vi.fn((token: string | null | undefined) => {
+  mockAuthToken = token?.trim() ?? "";
+});
 const startProfileEmailChallengeMock = vi.fn(async () => ({
   challengeId: "challenge-1",
   delivery: "console",
@@ -387,7 +437,11 @@ const writeMessageChannels = (sessionId: string, channels: MessageChannelEntry[]
 };
 
 vi.mock("@agenter/client-sdk", () => ({
-  createAgenterClient: () => ({ close: () => {} }),
+  createAgenterClient: () => ({
+    close: () => {},
+    setAuthToken: setAuthTokenMock,
+    getAuthToken: () => mockAuthToken || null,
+  }),
   createRuntimeStore: () => ({
     getState: () => mockState,
     subscribe: (listener: (state: RuntimeClientState) => void) => {
@@ -469,6 +523,13 @@ vi.mock("@agenter/client-sdk", () => ({
     listProfiles: listProfilesMock,
     getProfile: getProfileMock,
     updateProfile: updateProfileMock,
+    setAuthToken: setAuthTokenMock,
+    clearAuthToken: () => setAuthTokenMock(null),
+    getAuthToken: () => mockAuthToken || null,
+    startAuthChallenge: startAuthChallengeMock,
+    verifyAuthChallenge: verifyAuthChallengeMock,
+    getAuthSession: getAuthSessionMock,
+    getAuthServiceDescriptor: async () => mockState.profileService,
     startProfileEmailChallenge: startProfileEmailChallengeMock,
     verifyProfileEmailChallenge: verifyProfileEmailChallengeMock,
     uploadProfileIcon: uploadProfileIconMock,
@@ -508,8 +569,10 @@ vi.mock("@agenter/client-sdk", () => ({
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
   stubMatchMedia(false);
+  window.localStorage.clear();
   mockState = createState();
   stateListeners = [];
+  mockAuthToken = "";
   listWorkspaceSessionsMock.mockReset();
   cleanMissingWorkspacesMock.mockReset();
   createSessionMock.mockClear();
@@ -545,6 +608,10 @@ beforeEach(() => {
   listProfilesMock.mockClear();
   getProfileMock.mockClear();
   updateProfileMock.mockClear();
+  startAuthChallengeMock.mockReset();
+  verifyAuthChallengeMock.mockReset();
+  getAuthSessionMock.mockReset();
+  setAuthTokenMock.mockClear();
   startProfileEmailChallengeMock.mockClear();
   verifyProfileEmailChallengeMock.mockClear();
   uploadProfileIconMock.mockClear();
@@ -553,6 +620,14 @@ beforeEach(() => {
   readGlobalSettingsMock.mockClear();
   saveGlobalSettingsMock.mockClear();
   listProfilesMock.mockResolvedValue({ items: [] });
+  startAuthChallengeMock.mockResolvedValue({
+    challengeId: "challenge-auth-1",
+    challengeText: "challenge:wallet_evm:0x00000000000000000000000000000000000000aa",
+    authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
+    expiresAt: new Date(0).toISOString(),
+  });
+  verifyAuthChallengeMock.mockResolvedValue(createAuthSessionMock());
+  getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? createAuthSessionMock() : null));
   listWorkspaceSessionsMock.mockResolvedValue({
     items: [],
     nextCursor: null,
@@ -670,6 +745,51 @@ describe("Feature: web ui app shell", () => {
     });
     expect(await screen.findByRole("heading", { name: "Global Settings" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open global settings" })).not.toBeInTheDocument();
+  });
+
+  test("Scenario: Given private-key auth When the operator signs in and reopens settings Then the JWT-backed auth session is restored without browser-side private-key persistence", async () => {
+    const authSession = createAuthSessionMock();
+    listProfilesMock.mockResolvedValue({
+      items: [authSession.profile],
+    });
+    verifyAuthChallengeMock.mockResolvedValue(authSession);
+    getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? authSession : null));
+
+    const firstRender = render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Global Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Profile" }));
+    fireEvent.change(screen.getByPlaceholderText("0x-prefixed private key"), {
+      target: {
+        value: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign challenge" }));
+
+    await waitFor(() => {
+      expect(startAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(verifyAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(mockAuthToken).toBe(authSession.token);
+      expect(window.localStorage.getItem("agenter:webui:auth-session")).toContain(authSession.token);
+    });
+
+    firstRender.unmount();
+    stateListeners = [];
+    setAuthTokenMock.mockClear();
+    getAuthSessionMock.mockClear();
+    getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? authSession : null));
+
+    render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Global Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Profile" }));
+
+    await waitFor(() => {
+      expect(setAuthTokenMock).toHaveBeenCalledWith(authSession.token);
+      expect(getAuthSessionMock).toHaveBeenCalled();
+    });
+    expect(screen.getByText(`Auth profile: ${authSession.profile.profileId}`)).toBeInTheDocument();
+    expect(screen.getByText("Claims: admin")).toBeInTheDocument();
   });
 
   test("Scenario: Given quick start workspace picker When selecting a folder Then the chosen workspace becomes visible before session creation", async () => {

@@ -37,6 +37,9 @@
     "superjson": "^2.2.2",
     "zod": "^4.0.0"
   },
+  "devDependencies": {
+    "viem": "^2.47.6"
+  },
   "peerDependencies": {
     "@agenter/i18n-en": "workspace:*",
     "@agenter/i18n-zh-hans": "workspace:*"

@@ -1,4 +1,7 @@
 import {
+  type AuthChallengeDescriptor,
+  type AuthDescriptor,
+  type AuthSessionProjection,
   buildProfileIconUrl,
   buildSessionIconUrl,
   startProfileServiceServer,
@@ -12,6 +15,7 @@ export interface ProfileServiceBridgeOptions {
   dataDir?: string;
   host?: string;
   port?: number;
+  rootAuthPrivateKey?: string;
 }
 
 export interface ProfileServiceMedia {
@@ -33,9 +37,15 @@ export interface EmailChallengeVerifyResult {
   registrationUrl: string;
 }
 
-export interface ProfileServiceDescriptor {
+export interface AuthChallengeStartResult extends AuthChallengeDescriptor {}
+
+export interface AuthChallengeVerifyResult extends AuthSessionProjection {}
+
+export interface AuthServiceDescriptor extends AuthDescriptor {
   endpoint: string;
 }
+
+export type ProfileServiceDescriptor = AuthServiceDescriptor;
 
 const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 const jsonHeaders = { "content-type": "application/json" };
@@ -54,6 +64,7 @@ export class ProfileServiceBridge {
       dataDir: this.options.dataDir,
       host: this.options.host,
       port: this.options.port ?? 0,
+      rootAuthPrivateKey: this.options.rootAuthPrivateKey,
     });
   }
 
@@ -109,8 +120,17 @@ export class ProfileServiceBridge {
     return await this.resolveBaseUrl();
   }
 
-  async describe(): Promise<ProfileServiceDescriptor> {
-    return { endpoint: await this.resolveBaseUrl() };
+  async describe(): Promise<AuthServiceDescriptor> {
+    const baseUrl = await this.resolveBaseUrl();
+    const response = await fetch(`${baseUrl}/auth/descriptor`);
+    if (!response.ok) {
+      throw new Error(`profile-service auth descriptor failed (${response.status})`);
+    }
+    const descriptor = (await response.json()) as AuthDescriptor;
+    return {
+      endpoint: baseUrl,
+      ...descriptor,
+    };
   }
 
   private async buildAbsoluteUrl(pathname: string): Promise<string> {
@@ -257,6 +277,50 @@ export class ProfileServiceBridge {
       profileId: payload.profileId,
       iconUrl: payload.iconUrl ?? (await this.buildAbsoluteUrl(buildProfileIconUrl(payload.profileId))),
     };
+  }
+
+  async startAuthChallenge(authId: string): Promise<AuthChallengeDescriptor> {
+    const response = await this.request("/auth/challenge", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ authId }),
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service auth challenge failed (${response.status})`);
+    }
+    return (await response.json()) as AuthChallengeDescriptor;
+  }
+
+  async verifyAuthChallenge(input: {
+    challengeId: string;
+    signature: string;
+    token?: string;
+  }): Promise<AuthSessionProjection> {
+    const response = await this.request("/auth/verify", {
+      method: "POST",
+      headers: withBearerToken(input.token, jsonHeaders),
+      body: JSON.stringify({
+        challengeId: input.challengeId,
+        signature: input.signature,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service auth verify failed (${response.status})`);
+    }
+    return (await response.json()) as AuthSessionProjection;
+  }
+
+  async authenticateAuthToken(token: string): Promise<AuthSessionProjection | null> {
+    const response = await this.request("/auth/session", {
+      headers: withBearerToken(token),
+    });
+    if (response.status === 401) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`profile-service auth session failed (${response.status})`);
+    }
+    return (await response.json()) as AuthSessionProjection;
   }
 
   async readProfileIcon(

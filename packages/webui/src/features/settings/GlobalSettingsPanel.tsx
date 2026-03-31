@@ -1,10 +1,11 @@
-import type { ProfileListItem } from "@agenter/client-sdk";
-import { KeyRound, Mail, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
+import type { AuthServiceInfoOutput, AuthSessionOutput, ProfileListItem } from "@agenter/client-sdk";
+import { KeyRound, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { PasswordInput } from "../../components/ui/password-input";
 import { ProfileImage } from "../../components/ui/profile-image";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
@@ -36,11 +37,24 @@ const resolveProfileTitle = (profile: DurableProfileItem): string =>
 const resolveProfileSubtitle = (profile: DurableProfileItem): string =>
   profile.metadata.nickname?.trim() || profile.identifiers[0]?.value || profile.profileId;
 
+const resolveAuthRoleLabel = (authSession: AuthSessionOutput | null): string => {
+  if (!authSession) {
+    return "none";
+  }
+  if (authSession.claims.superadmin) {
+    return "superadmin";
+  }
+  return authSession.claims.admin ? "admin" : "member";
+};
+
 interface GlobalSettingsPanelProps {
   loading: boolean;
   saving: boolean;
   status: string;
-  profileStatus: string;
+  authStatus: string;
+  authService: AuthServiceInfoOutput | null;
+  authSession: AuthSessionOutput | null;
+  privateKeyDraft: string;
   detailMode?: "split" | "sheet";
   effective: SettingsEffectiveGraph;
   layers: SettingsLayerItem[];
@@ -50,11 +64,6 @@ interface GlobalSettingsPanelProps {
   activeProfileReference: string;
   selectedProfileReference: string | null;
   profileDraft: GlobalProfileDraft;
-  emailDraft: string;
-  verificationCodeDraft: string;
-  authToken: string;
-  authenticatedProfileId: string | null;
-  pendingRegistrationTicket: string | null;
   onSelectLayer: (layerId: string) => void;
   onLayerContentChange: (content: string) => void;
   onRefreshLayers: () => void;
@@ -63,22 +72,21 @@ interface GlobalSettingsPanelProps {
   onSelectProfile: (reference: string) => void;
   onSetActiveProfile: (reference: string) => void;
   onProfileDraftChange: (draft: GlobalProfileDraft) => void;
-  onEmailDraftChange: (value: string) => void;
-  onVerificationCodeDraftChange: (value: string) => void;
-  onStartEmailChallenge: () => Promise<void> | void;
-  onVerifyEmailChallenge: () => Promise<void> | void;
-  onOpenPasskeyRegistration: () => void;
-  onOpenPasskeyAuthentication: () => void;
+  onPrivateKeyDraftChange: (value: string) => void;
+  onAuthenticate: () => Promise<void> | void;
   onUploadProfileIcon: (reference: string, file: File) => Promise<void> | void;
   onSaveProfile: () => Promise<void> | void;
-  onClearProfileAuth: () => void;
+  onClearAuthSession: () => void;
 }
 
 export const GlobalSettingsPanel = ({
   loading,
   saving,
   status,
-  profileStatus,
+  authStatus,
+  authService,
+  authSession,
+  privateKeyDraft,
   detailMode = "split",
   effective,
   layers,
@@ -88,11 +96,6 @@ export const GlobalSettingsPanel = ({
   activeProfileReference,
   selectedProfileReference,
   profileDraft,
-  emailDraft,
-  verificationCodeDraft,
-  authToken,
-  authenticatedProfileId,
-  pendingRegistrationTicket,
   onSelectLayer,
   onLayerContentChange,
   onRefreshLayers,
@@ -101,21 +104,20 @@ export const GlobalSettingsPanel = ({
   onSelectProfile,
   onSetActiveProfile,
   onProfileDraftChange,
-  onEmailDraftChange,
-  onVerificationCodeDraftChange,
-  onStartEmailChallenge,
-  onVerifyEmailChallenge,
-  onOpenPasskeyRegistration,
-  onOpenPasskeyAuthentication,
+  onPrivateKeyDraftChange,
+  onAuthenticate,
   onUploadProfileIcon,
   onSaveProfile,
-  onClearProfileAuth,
+  onClearAuthSession,
 }: GlobalSettingsPanelProps) => {
   const [activeTab, setActiveTab] = useState<"user" | "profile">("user");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sortedProfiles = useMemo(() => profiles.slice().sort((left, right) => left.profileId.localeCompare(right.profileId)), [profiles]);
   const selectedProfile = sortedProfiles.find((profile) => profile.profileId === selectedProfileReference) ?? null;
-  const canMutateSelectedProfile = Boolean(selectedProfile?.profileId && authenticatedProfileId === selectedProfile.profileId && authToken);
+  const authenticatedProfileId = authSession?.profile.profileId ?? null;
+  const canMutateSelectedProfile = Boolean(
+    selectedProfile?.profileId && authenticatedProfileId === selectedProfile.profileId && authSession?.token,
+  );
 
   return (
     <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
@@ -127,7 +129,7 @@ export const GlobalSettingsPanel = ({
           loading={loading}
           status={saving ? "Saving..." : status}
           title="Global Settings"
-          description="User settings stay responsible for prompt persona and global defaults. Durable profile identity now lives in the Profile tab."
+          description="User settings stay responsible for prompt persona and global defaults. Durable auth identity and profile editing now live in the Profile tab."
           descriptionHelpId="settings:global:overview"
           effective={effective}
           layers={layers}
@@ -144,32 +146,19 @@ export const GlobalSettingsPanel = ({
         <section className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-white/96 p-4 shadow-sm">
           <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={emailDraft} onChange={(event) => onEmailDraftChange(event.target.value)} placeholder="name@example.com" className="max-w-[16rem]" />
-              <Input
-                value={verificationCodeDraft}
-                onChange={(event) => onVerificationCodeDraftChange(event.target.value)}
-                placeholder="123456"
-                inputMode="numeric"
-                className="max-w-[10rem]"
+              <PasswordInput
+                value={privateKeyDraft}
+                onChange={(event) => onPrivateKeyDraftChange(event.target.value)}
+                placeholder="0x-prefixed private key"
+                className="min-w-[18rem] flex-1 basis-[18rem]"
+                toggleLabel={{ show: "Show private key", hide: "Hide private key" }}
               />
-              <Button variant="secondary" onClick={() => void onStartEmailChallenge()}>
-                <Mail className="h-4 w-4" />
-                Start OTP
-              </Button>
-              <Button variant="secondary" onClick={() => void onVerifyEmailChallenge()} disabled={!emailDraft || !verificationCodeDraft}>
-                <ShieldCheck className="h-4 w-4" />
-                Verify email
-              </Button>
-              <Button variant="outline" onClick={onOpenPasskeyRegistration} disabled={!pendingRegistrationTicket}>
+              <Button variant="secondary" onClick={() => void onAuthenticate()} disabled={!privateKeyDraft}>
                 <KeyRound className="h-4 w-4" />
-                Register passkey
+                Sign challenge
               </Button>
-              <Button variant="outline" onClick={onOpenPasskeyAuthentication} disabled={!selectedProfile}>
-                <KeyRound className="h-4 w-4" />
-                Passkey login
-              </Button>
-              {authToken ? (
-                <Button variant="ghost" onClick={onClearProfileAuth}>
+              {authSession ? (
+                <Button variant="ghost" onClick={onClearAuthSession}>
                   <Trash2 className="h-4 w-4" />
                   Clear token
                 </Button>
@@ -177,19 +166,19 @@ export const GlobalSettingsPanel = ({
             </div>
 
             <p className="text-xs text-slate-500">
-              V1 email codes are printed by the endpoint log. Verify email first, then finish durable auth with passkey registration or passkey login.
+              Private key input is only used locally to sign one challenge. The browser stores only the short-lived JWT.
             </p>
 
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-              <span className="rounded border border-slate-200 bg-white px-2 py-1">
-                Auth profile: {authenticatedProfileId ?? "none"}
-              </span>
-              <span className="rounded border border-slate-200 bg-white px-2 py-1">
-                Pending registration: {pendingRegistrationTicket ?? "none"}
-              </span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">Mode: {authService?.authMode ?? "unavailable"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">Root auth: {authService?.rootAuthId ?? "unavailable"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">JWT TTL: {authService ? `${authService.jwtTtlSeconds}s` : "unknown"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">Auth identity: {authSession?.claims.authId ?? "none"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">Auth profile: {authenticatedProfileId ?? "none"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">Claims: {resolveAuthRoleLabel(authSession)}</span>
             </div>
 
-            <p className="text-sm text-slate-700">{profileStatus}</p>
+            <p className="text-sm text-slate-700">{authStatus}</p>
           </div>
 
           <input
@@ -210,7 +199,7 @@ export const GlobalSettingsPanel = ({
           <ScrollViewport className="h-full pr-1" data-testid="global-settings-profiles-scroll-viewport">
             {sortedProfiles.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-6 text-sm text-slate-600">
-                No durable profiles yet. Start with email OTP, then complete passkey registration to create a profile you can edit and bind.
+                No durable profiles yet. Authenticate with a private key first, then edit whichever durable profile the auth session resolves.
               </div>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
@@ -241,7 +230,10 @@ export const GlobalSettingsPanel = ({
                           <p className="truncate text-[11px] text-slate-500">{resolveProfileSubtitle(profile)}</p>
                           <div className="flex flex-wrap gap-1">
                             {profile.identifiers.map((identifier) => (
-                              <span key={formatIdentifierLabel(identifier.kind, identifier.value)} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
+                              <span
+                                key={formatIdentifierLabel(identifier.kind, identifier.value)}
+                                className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600"
+                              >
                                 {formatIdentifierLabel(identifier.kind, identifier.value)}
                               </span>
                             ))}
@@ -263,19 +255,35 @@ export const GlobalSettingsPanel = ({
                           <div className="grid gap-3 sm:grid-cols-2">
                             <label className="grid gap-1 text-xs text-slate-600">
                               <span>Display name</span>
-                              <Input value={profileDraft.displayName} onChange={(event) => onProfileDraftChange({ ...profileDraft, displayName: event.target.value })} placeholder="Display name" />
+                              <Input
+                                value={profileDraft.displayName}
+                                onChange={(event) => onProfileDraftChange({ ...profileDraft, displayName: event.target.value })}
+                                placeholder="Display name"
+                              />
                             </label>
                             <label className="grid gap-1 text-xs text-slate-600">
                               <span>Nickname</span>
-                              <Input value={profileDraft.nickname} onChange={(event) => onProfileDraftChange({ ...profileDraft, nickname: event.target.value })} placeholder="nickname" />
+                              <Input
+                                value={profileDraft.nickname}
+                                onChange={(event) => onProfileDraftChange({ ...profileDraft, nickname: event.target.value })}
+                                placeholder="nickname"
+                              />
                             </label>
                             <label className="grid gap-1 text-xs text-slate-600">
                               <span>Phone</span>
-                              <Input value={profileDraft.phone} onChange={(event) => onProfileDraftChange({ ...profileDraft, phone: event.target.value })} placeholder="+86 ..." />
+                              <Input
+                                value={profileDraft.phone}
+                                onChange={(event) => onProfileDraftChange({ ...profileDraft, phone: event.target.value })}
+                                placeholder="+86 ..."
+                              />
                             </label>
                             <label className="grid gap-1 text-xs text-slate-600">
                               <span>Address</span>
-                              <Input value={profileDraft.address} onChange={(event) => onProfileDraftChange({ ...profileDraft, address: event.target.value })} placeholder="Address" />
+                              <Input
+                                value={profileDraft.address}
+                                onChange={(event) => onProfileDraftChange({ ...profileDraft, address: event.target.value })}
+                                placeholder="Address"
+                              />
                             </label>
                           </div>
 
@@ -296,8 +304,15 @@ export const GlobalSettingsPanel = ({
                           </div>
 
                           {!canMutateSelectedProfile ? (
-                            <p className="text-xs text-slate-500">Authenticate this profile with a passkey before editing metadata or replacing the icon.</p>
-                          ) : null}
+                            <p className="text-xs text-slate-500">
+                              Authenticate the selected profile with a private-key-signed auth session before editing metadata or replacing the icon.
+                            </p>
+                          ) : (
+                            <div className="flex items-center gap-2 text-xs text-emerald-700">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              Auth session matches this profile.
+                            </div>
+                          )}
                         </div>
                       ) : null}
                     </article>

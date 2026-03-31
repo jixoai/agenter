@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { resolveProfileServiceConfig } from "../config";
+import { resolveRootAuthMaterial } from "../auth/root-auth";
 import { ProfileService } from "../service/profile-service";
 import { openProfileDatabase } from "../store/database";
 import { ProfileStore } from "../store/profile-store";
@@ -27,12 +30,22 @@ export const createProfileServiceRuntime = async (
   options: ProfileServiceOptions = {},
 ): Promise<ProfileServiceRuntime> => {
   const config = resolveProfileServiceConfig(options);
+  const rootAuth = resolveRootAuthMaterial({
+    dataDir: config.dataDir,
+    privateKey: options.rootAuthPrivateKey,
+  });
   const database = await openProfileDatabase(config.dbPath);
   const store = new ProfileStore(database.connection, config.publicBaseUrl);
   await store.initialize();
   const service = new ProfileService(
     store,
     {
+      publicBaseUrl: config.publicBaseUrl,
+      authJwtIssuer: config.publicBaseUrl,
+      authJwtSecret: createHash("sha256").update(rootAuth.privateKey).digest("hex"),
+      authJwtTtlMs: config.authJwtTtlMs,
+      rootAuthId: rootAuth.authId,
+      rootIdentifier: rootAuth.identifier,
       webauthnOrigin: config.webauthnOrigin,
       webauthnRpId: config.webauthnRpId,
       webauthnRpName: config.webauthnRpName,

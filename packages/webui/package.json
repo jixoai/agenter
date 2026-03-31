@@ -46,6 +46,7 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1",
     "tw-animate-css": "^1.3.7",
+    "viem": "^2.47.6",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

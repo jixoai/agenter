@@ -19,7 +19,7 @@
   "dependencies": {
     "@opentui/core": "latest",
     "@opentui/react": "latest",
-    "@xterm/headless": "^6.1.0-beta.167",
+    "@xterm/headless": "6.1.0-beta.167",
     "react": "^19.0.0",
     "yargs": "^17.7.2"
   },

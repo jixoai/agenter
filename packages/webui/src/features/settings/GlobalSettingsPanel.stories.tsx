@@ -1,4 +1,4 @@
-import type { ProfileListItem } from "@agenter/client-sdk";
+import type { AuthSessionOutput, ProfileListItem } from "@agenter/client-sdk";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { useState } from "react";
@@ -13,17 +13,47 @@ const profileSvgUrl = (fill: string) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="32" fill="${fill}"/></svg>`,
   )}`;
 
+const authService = {
+  endpoint: "http://127.0.0.1:4591",
+  authMode: "wallet_challenge_jwt" as const,
+  rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+  rootIdentifier: {
+    kind: "wallet_evm" as const,
+    value: "0x0000000000000000000000000000000000000001",
+  },
+  jwtTtlSeconds: 3600,
+};
+
+const authSession: AuthSessionOutput = {
+  token: "auth-token-nova",
+  issuedAt: "2026-03-20T10:00:00.000Z",
+  expiresAt: "2026-03-20T11:00:00.000Z",
+  claims: {
+    authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
+    profileId: "profile-nova",
+    admin: true,
+    superadmin: false,
+  },
+  profile: {
+    profileId: "profile-nova",
+    identifiers: [{ kind: "wallet_evm", value: "0x00000000000000000000000000000000000000aa" }],
+    metadata: { displayName: "Nova Ops", nickname: "nova" },
+    iconUrl: profileSvgUrl("#ea580c"),
+    isVirtual: false,
+  },
+};
+
 const baseProfiles: DurableProfileItem[] = [
   {
     profileId: "profile-jon",
-    identifiers: [{ kind: "email", value: "jon@example.com" }],
+    identifiers: [{ kind: "wallet_evm", value: "0x0000000000000000000000000000000000000011" }],
     metadata: { displayName: "Jon", nickname: "jon" },
     iconUrl: profileSvgUrl("#0f766e"),
     isVirtual: false,
   },
   {
     profileId: "profile-nova",
-    identifiers: [{ kind: "email", value: "nova-ops@example.com" }],
+    identifiers: [{ kind: "wallet_evm", value: "0x00000000000000000000000000000000000000aa" }],
     metadata: { displayName: "Nova Ops", nickname: "nova" },
     iconUrl: profileSvgUrl("#ea580c"),
     isVirtual: false,
@@ -49,7 +79,7 @@ const globalEffective: SettingsEffectiveGraph = {
       },
       profileReference: {
         type: "string",
-        description: "Durable profile selected for profile-service identity and icon flows.",
+        description: "Durable profile selected for auth identity and icon flows.",
       },
       lang: {
         type: "string",
@@ -121,7 +151,10 @@ const meta = {
     loading: false,
     saving: false,
     status: "Loaded 2 durable profiles",
-    profileStatus: "Authenticated durable profile profile-nova.",
+    authStatus: "Authenticated wallet_evm:0x00000000000000000000000000000000000000aa.",
+    authService,
+    authSession,
+    privateKeyDraft: "",
     effective: globalEffective,
     layers: settingsLayers,
     selectedLayerId: "global:user",
@@ -130,11 +163,6 @@ const meta = {
     activeProfileReference: "profile-jon",
     selectedProfileReference: "profile-jon",
     profileDraft: toDraft(baseProfiles[0] ?? null),
-    emailDraft: "jon@example.com",
-    verificationCodeDraft: "123456",
-    authToken: "profile-token-jon",
-    authenticatedProfileId: "profile-nova",
-    pendingRegistrationTicket: "ticket-123",
     onSelectLayer: fn(),
     onLayerContentChange: fn(),
     onRefreshLayers: fn(),
@@ -143,15 +171,11 @@ const meta = {
     onSelectProfile: fn(),
     onSetActiveProfile: fn(),
     onProfileDraftChange: fn(),
-    onEmailDraftChange: fn(),
-    onVerificationCodeDraftChange: fn(),
-    onStartEmailChallenge: fn(async () => undefined),
-    onVerifyEmailChallenge: fn(async () => undefined),
-    onOpenPasskeyRegistration: fn(),
-    onOpenPasskeyAuthentication: fn(),
+    onPrivateKeyDraftChange: fn(),
+    onAuthenticate: fn(async () => undefined),
     onUploadProfileIcon: fn(async () => undefined),
     onSaveProfile: fn(async () => undefined),
-    onClearProfileAuth: fn(),
+    onClearAuthSession: fn(),
   },
   render: (args) => {
     const [layerContent, setLayerContent] = useState(args.layerContent);
@@ -161,12 +185,16 @@ const meta = {
     const [selectedProfileReference, setSelectedProfileReference] = useState<string | null>(args.selectedProfileReference);
     const [profileDraft, setProfileDraft] = useState(args.profileDraft);
     const [effective, setEffective] = useState(args.effective);
-    const [profileStatus, setProfileStatus] = useState(args.profileStatus);
+    const [authStatus, setAuthStatus] = useState(args.authStatus);
+    const [privateKeyDraft, setPrivateKeyDraft] = useState(args.privateKeyDraft);
+    const [authSessionState, setAuthSessionState] = useState(args.authSession);
 
     return (
       <div className="h-[960px] p-6">
         <GlobalSettingsPanel
           {...args}
+          authStatus={authStatus}
+          authSession={authSessionState}
           effective={effective}
           selectedLayerId={selectedLayerId}
           layerContent={layerContent}
@@ -174,7 +202,7 @@ const meta = {
           activeProfileReference={activeProfileReference}
           selectedProfileReference={selectedProfileReference}
           profileDraft={profileDraft}
-          profileStatus={profileStatus}
+          privateKeyDraft={privateKeyDraft}
           onSelectLayer={(layerId) => {
             setSelectedLayerId(layerId);
             args.onSelectLayer(layerId);
@@ -211,6 +239,14 @@ const meta = {
             setProfileDraft(draft);
             args.onProfileDraftChange(draft);
           }}
+          onPrivateKeyDraftChange={(value) => {
+            setPrivateKeyDraft(value);
+            args.onPrivateKeyDraftChange(value);
+          }}
+          onAuthenticate={async () => {
+            setAuthStatus("Challenge signed.");
+            await args.onAuthenticate();
+          }}
           onSaveProfile={async () => {
             if (!selectedProfileReference) {
               return;
@@ -231,8 +267,13 @@ const meta = {
                   : profile,
               ),
             );
-            setProfileStatus(`Saved metadata for ${selectedProfileReference}.`);
+            setAuthStatus(`Saved metadata for ${selectedProfileReference}.`);
             await args.onSaveProfile();
+          }}
+          onClearAuthSession={() => {
+            setAuthSessionState(null);
+            setAuthStatus("Cleared stored auth session token.");
+            args.onClearAuthSession();
           }}
         />
       </div>
@@ -278,5 +319,21 @@ export const ManageDurableProfiles: Story = {
     const sourceDoc = canvasElement.querySelector('[data-testid="settings-layer-source-editor"] .cm-content');
     await expect(sourceDoc).not.toBeNull();
     await expect(sourceDoc?.textContent?.includes('"profileReference": "profile-nova"')).toBe(true);
+  },
+};
+
+export const AuthenticateWithPrivateKey: Story = {
+  args: {
+    authSession: null,
+    authStatus: "No stored auth session token.",
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("tab", { name: "Profile" }));
+    await userEvent.type(canvas.getByPlaceholderText("0x-prefixed private key"), "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1");
+    await userEvent.click(canvas.getByRole("button", { name: "Sign challenge" }));
+
+    await expect(args.onPrivateKeyDraftChange).toHaveBeenCalled();
+    await expect(args.onAuthenticate).toHaveBeenCalled();
   },
 };

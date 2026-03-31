@@ -95,13 +95,19 @@ const webauthnAuthenticationResponseSchema = z
   })
   .strict();
 
+const authChallengeStartSchema = z
+  .object({
+    authId: z.string().trim().min(1),
+  })
+  .strict();
+
 const walletStartSchema = z
   .object({
     identifier: z.string().trim().min(1),
   })
   .strict();
 
-const walletVerifySchema = z
+const authChallengeVerifySchema = z
   .object({
     challengeId: z.string().uuid(),
     signature: z.string().trim().min(1),
@@ -271,6 +277,30 @@ export const createProfileServiceApp = ({
 
   app.get("/health", (context) => context.json({ ok: true }));
 
+  app.get("/auth/descriptor", (context) => context.json(service.describeAuth()));
+
+  app.get("/auth/session", async (context) => {
+    const token = readBearerToken(context.req.header("authorization"));
+    const session = await service.authenticateAuthToken(token);
+    if (!session) {
+      return jsonErrorResponse("invalid auth token", 401);
+    }
+    return context.json(session);
+  });
+
+  app.post("/auth/challenge", async (context) => {
+    const payload = await readJson(context.req.raw, authChallengeStartSchema);
+    const result = await service.createAuthChallenge(payload.authId);
+    return context.json(result);
+  });
+
+  app.post("/auth/verify", async (context) => {
+    const payload = await readJson(context.req.raw, authChallengeVerifySchema);
+    const token = readBearerToken(context.req.header("authorization"));
+    const result = await service.verifyAuthChallenge(payload.challengeId, payload.signature, token);
+    return context.json(result);
+  });
+
   app.get("/profiles", async (context) => {
     const profiles = await service.listProfiles();
     return context.json({ profiles });
@@ -420,14 +450,14 @@ export const createProfileServiceApp = ({
 
   app.post("/auth/wallet/start", async (context) => {
     const payload = await readJson(context.req.raw, walletStartSchema);
-    const result = await service.createWalletChallenge(payload.identifier);
+    const result = await service.createAuthChallenge(payload.identifier);
     return context.json(result);
   });
 
   app.post("/auth/wallet/verify", async (context) => {
-    const payload = await readJson(context.req.raw, walletVerifySchema);
+    const payload = await readJson(context.req.raw, authChallengeVerifySchema);
     const token = readBearerToken(context.req.header("authorization"));
-    const result = await service.verifyWalletChallenge(payload.challengeId, payload.signature, token);
+    const result = await service.verifyAuthChallenge(payload.challengeId, payload.signature, token);
     return context.json(result);
   });
 

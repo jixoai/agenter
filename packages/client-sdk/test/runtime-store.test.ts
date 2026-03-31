@@ -386,8 +386,93 @@ const createMockClient = (input: {
     limit?: number;
   }) => Promise<{ items: unknown[] }>;
 }): AgenterClient => {
+  let authToken: string | null = null;
+
   return {
     trpc: {
+      auth: {
+        service: {
+          query: async () =>
+            input.profileServiceQuery
+              ? await input.profileServiceQuery()
+              : {
+                  endpoint: "http://127.0.0.1:4591",
+                  authMode: "wallet_challenge_jwt",
+                  rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+                  rootIdentifier: {
+                    kind: "wallet_evm",
+                    value: "0x0000000000000000000000000000000000000001",
+                  },
+                  jwtTtlSeconds: 3600,
+                },
+        },
+        challengeStart: {
+          mutate: async (payload: { authId: string }) => ({
+            challengeId: crypto.randomUUID(),
+            challengeText: `challenge:${payload.authId}`,
+            authId: payload.authId,
+            expiresAt: new Date().toISOString(),
+          }),
+        },
+        challengeVerify: {
+          mutate: async (payload: { challengeId: string; signature: string }) => ({
+            token: `token:${payload.challengeId}:${payload.signature}`,
+            issuedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            claims: {
+              authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+              profileId: "profile-1",
+              admin: true,
+              superadmin: false,
+            },
+            profile: {
+              profileId: "profile-1",
+              identifiers: [{ kind: "wallet_evm", value: "0x0000000000000000000000000000000000000001" }],
+              metadata: {},
+              iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+              isVirtual: false,
+            },
+          }),
+        },
+        session: {
+          query: async () => {
+            if (!authToken) {
+              const error = new Error("UNAUTHORIZED") as Error & { data?: { code: string } };
+              error.data = { code: "UNAUTHORIZED" };
+              throw error;
+            }
+            return {
+              token: authToken,
+              issuedAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              claims: {
+                authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+                profileId: "profile-1",
+                admin: true,
+                superadmin: false,
+              },
+              profile: {
+                profileId: "profile-1",
+                identifiers: [{ kind: "wallet_evm", value: "0x0000000000000000000000000000000000000001" }],
+                metadata: {},
+                iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+                isVirtual: false,
+              },
+            };
+          },
+        },
+        superadminStatus: {
+          query: async () => ({
+            ok: true,
+            claims: {
+              authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+              profileId: "profile-1",
+              admin: true,
+              superadmin: true,
+            },
+          }),
+        },
+      },
       runtime: {
         snapshot: {
           query: input.snapshotQuery,
@@ -675,7 +760,18 @@ const createMockClient = (input: {
       profile: {
         service: {
           query: async () =>
-            input.profileServiceQuery ? await input.profileServiceQuery() : { endpoint: "http://127.0.0.1:4591" },
+            input.profileServiceQuery
+              ? await input.profileServiceQuery()
+              : {
+                  endpoint: "http://127.0.0.1:4591",
+                  authMode: "wallet_challenge_jwt",
+                  rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+                  rootIdentifier: {
+                    kind: "wallet_evm",
+                    value: "0x0000000000000000000000000000000000000001",
+                  },
+                  jwtTtlSeconds: 3600,
+                },
         },
         list: {
           query: async () => ({ items: [] }),
@@ -692,7 +788,6 @@ const createMockClient = (input: {
         update: {
           mutate: async (payload: {
             reference: string;
-            token: string;
             patch: Record<string, unknown>;
           }) => ({
             profileId: payload.reference,
@@ -783,6 +878,11 @@ const createMockClient = (input: {
     } as unknown as AgenterClient["trpc"],
     wsUrl: "ws://127.0.0.1:3000/trpc",
     httpUrl: "http://127.0.0.1:3000",
+    setAuthToken: (token) => {
+      const normalized = token?.trim() ?? "";
+      authToken = normalized.length > 0 ? normalized : null;
+    },
+    getAuthToken: () => authToken,
     subscribeTransport: (listener: (event: AgenterTransportEvent) => void) => {
       input.onTransportSubscribe?.(listener);
       return () => {};

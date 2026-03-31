@@ -34,7 +34,7 @@ import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleC
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
-import { ProfileServiceBridge, type ProfileServiceBridgeOptions } from "./profile-service-bridge";
+import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -339,7 +339,7 @@ export interface AppKernelOptions {
   archiveSessionRoot?: string;
   workspacesPath?: string;
   initialWorkspace?: string;
-  profileService?: ProfileServiceBridgeOptions;
+  profileService?: AuthServiceBridgeOptions;
   logger?: {
     log: (line: {
       channel: "agent" | "error";
@@ -399,7 +399,7 @@ export class AppKernel {
   private readonly notifications = new SessionNotificationRegistry();
   private readonly terminalStatusByKey = new Map<string, { running: boolean; status: "IDLE" | "BUSY" }>();
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
-  private readonly profileService: ProfileServiceBridge;
+  private readonly authService: AuthServiceBridge;
   private eventSeq = 0;
   private sessionsCatalogLoaded = false;
 
@@ -409,7 +409,7 @@ export class AppKernel {
       archiveRoot: options.archiveSessionRoot,
     });
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
-    this.profileService = new ProfileServiceBridge({
+    this.authService = new AuthServiceBridge({
       ...options.profileService,
       dataDir: options.profileService?.dataDir ?? join(this.sessions.getGlobalRoot(), "..", "profile-service"),
     });
@@ -430,7 +430,7 @@ export class AppKernel {
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
     this.terminalStatusByKey.clear();
-    await this.profileService.stop();
+    await this.authService.stop();
   }
 
   private ensureSessionCatalogLoaded(): void {
@@ -442,7 +442,7 @@ export class AppKernel {
   }
 
   private async syncSessionIconSeed(session: Pick<SessionMeta, "id" | "cwd">): Promise<void> {
-    await this.profileService.upsertSessionSeed({
+    await this.authService.upsertSessionSeed({
       sessionId: session.id,
       workspacePath: session.cwd,
       label: buildSessionIconLabel(session.id),
@@ -1257,7 +1257,7 @@ export class AppKernel {
       throw new Error(`session not found: ${sessionId}`);
     }
     await this.syncSessionIconSeed(session);
-    const result = await this.profileService.uploadSessionIcon(sessionId, file);
+    const result = await this.authService.uploadSessionIcon(sessionId, file);
     return {
       ok: true,
       url: result.iconUrl,
@@ -1265,15 +1265,15 @@ export class AppKernel {
   }
 
   async listProfiles(): Promise<ProfileProjection[]> {
-    return await this.profileService.listProfiles();
+    return await this.authService.listProfiles();
   }
 
   async getProfile(reference: string): Promise<ProfileProjection> {
-    return await this.profileService.getProfile(reference);
+    return await this.authService.getProfile(reference);
   }
 
   async updateProfile(input: { reference: string; token: string; patch: ProfileMetadata }): Promise<ProfileProjection> {
-    return await this.profileService.updateProfile(input.reference, input.patch, input.token);
+    return await this.authService.updateProfile(input.reference, input.patch, input.token);
   }
 
   async uploadProfileIcon(input: {
@@ -1282,7 +1282,7 @@ export class AppKernel {
     bytes: Uint8Array;
     mimeType: string;
   }): Promise<{ ok: true; url: string }> {
-    const result = await this.profileService.uploadProfileIcon(input.reference, input, input.token);
+    const result = await this.authService.uploadProfileIcon(input.reference, input, input.token);
     return {
       ok: true,
       url: result.iconUrl,
@@ -1290,15 +1290,34 @@ export class AppKernel {
   }
 
   async startProfileEmailChallenge(email: string) {
-    return await this.profileService.startEmailChallenge(email);
+    return await this.authService.startEmailChallenge(email);
   }
 
   async verifyProfileEmailChallenge(input: { email: string; code: string; token?: string }) {
-    return await this.profileService.verifyEmailChallenge(input.email, input.code, input.token);
+    return await this.authService.verifyEmailChallenge(input.email, input.code, input.token);
+  }
+
+  async getAuthServiceDescriptor() {
+    return await this.authService.describe();
+  }
+
+  async startAuthChallenge(authId: string) {
+    return await this.authService.startAuthChallenge(authId);
+  }
+
+  async verifyAuthChallenge(input: { challengeId: string; signature: string; token?: string }) {
+    return await this.authService.verifyAuthChallenge(input);
+  }
+
+  async authenticateAuthToken(token: string | null | undefined) {
+    if (!token) {
+      return null;
+    }
+    return await this.authService.authenticateAuthToken(token);
   }
 
   async getProfileServiceDescriptor() {
-    return await this.profileService.describe();
+    return await this.getAuthServiceDescriptor();
   }
 
   listCurrentBranchCycles(sessionId: string, limit = 200) {

@@ -17,13 +17,22 @@ const EXPECTED_PROFILE_FALLBACK_SVG =
 const EXPECTED_SESSION_FALLBACK_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><defs><radialGradient id="bg" cx="39%" cy="58%" r="58%"><stop offset="0%" stop-color="oklch(0.871 0.141 110)" /><stop offset="48%" stop-color="oklch(0.791 0.161 187)" /><stop offset="100%" stop-color="oklch(0.352 0.115 110)" /></radialGradient><radialGradient id="fg" cx="50%" cy="42%" r="58%"><stop offset="0%" stop-color="oklch(0.891 0.172 117)" stop-opacity="0.98" /><stop offset="100%" stop-color="oklch(0.358 0.100 117)" stop-opacity="0.9" /></radialGradient><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" seed="938" /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="table" tableValues="0 0.18" /></feComponentTransfer></filter></defs><rect width="96" height="96" rx="26" fill="url(#bg)" /><circle cx="79%" cy="32%" r="19" fill="oklch(0.811 0.192 188)" fill-opacity="0.42" /><rect x="0" y="0" width="96" height="96" rx="26" filter="url(#noise)" opacity="0.34" /><path d="M18 70c0-12 10-22 22-22h16c12 0 22 10 22 22v8H18z" fill="url(#fg)" fill-opacity="0.88" /><circle cx="48" cy="35" r="18" fill="url(#fg)" /><text x="48" y="55" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="42" font-weight="700" fill="white">42</text></svg>`;
 
-const startServer = async (port: number, emailCodes = new Map<string, string>()) => {
+const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
+
+const startServer = async (
+  port: number,
+  emailCodes = new Map<string, string>(),
+  options: {
+    rootAuthPrivateKey?: string;
+  } = {},
+) => {
   const handle = await startProfileServiceServer({
     dataDir: mkdtempSync(join(tmpdir(), "profile-service-test-")),
     onEmailChallengeIssued: async (event) => {
       emailCodes.set(event.email, event.code);
     },
     port,
+    rootAuthPrivateKey: options.rootAuthPrivateKey,
   });
   handles.push(handle);
   return { emailCodes, handle };
@@ -41,6 +50,115 @@ describe("Feature: profile-service control plane", () => {
     const response = await fetch(`http://${handle.host}:${handle.port}/health`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  test("Scenario: Given auth service startup When the descriptor is requested Then wallet challenge JWT mode and root identity are exposed", async () => {
+    const { handle } = await startServer(4598, new Map(), {
+      rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+    });
+    const response = await fetch(`http://${handle.host}:${handle.port}/auth/descriptor`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      authMode: "wallet_challenge_jwt",
+      rootAuthId: `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`,
+      rootIdentifier: {
+        kind: "wallet_evm",
+        value: privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase(),
+      },
+    });
+  });
+
+  test("Scenario: Given wallet auth challenge When the signature is valid Then the auth service returns a JWT session and replays it from /auth/session", async () => {
+    const { handle } = await startServer(4597);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const account = privateKeyToAccount(generatePrivateKey());
+    const authId = `wallet_evm:${account.address}`;
+    const startResponse = await fetch(`${baseUrl}/auth/challenge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authId }),
+    });
+    expect(startResponse.status).toBe(200);
+    const challenge = (await startResponse.json()) as {
+      challengeId: string;
+      challengeText: string;
+      authId: string;
+    };
+    expect(challenge.authId).toBe(authId.toLowerCase());
+
+    const signature = await account.signMessage({ message: challenge.challengeText });
+    const verifyResponse = await fetch(`${baseUrl}/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        signature,
+      }),
+    });
+    expect(verifyResponse.status).toBe(200);
+    const session = (await verifyResponse.json()) as {
+      token: string;
+      claims: {
+        authId: string;
+        admin: boolean;
+        superadmin: boolean;
+      };
+      profile: {
+        profileId: string;
+      };
+    };
+    expect(session.token).toBeTruthy();
+    expect(session.claims.authId).toBe(authId.toLowerCase());
+    expect(session.claims.admin).toBeTrue();
+    expect(session.claims.superadmin).toBeFalse();
+    expect(session.profile.profileId).toBeTruthy();
+
+    const sessionResponse = await fetch(`${baseUrl}/auth/session`, {
+      headers: {
+        authorization: `Bearer ${session.token}`,
+      },
+    });
+    expect(sessionResponse.status).toBe(200);
+    await expect(sessionResponse.json()).resolves.toMatchObject({
+      token: session.token,
+      claims: {
+        authId: authId.toLowerCase(),
+      },
+    });
+  });
+
+  test("Scenario: Given wallet auth challenge When the signature does not match Then the auth service rejects the verification", async () => {
+    const { handle } = await startServer(4596);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const account = privateKeyToAccount(generatePrivateKey());
+    const wrongAccount = privateKeyToAccount(generatePrivateKey());
+    const authId = `wallet_evm:${account.address}`;
+    const startResponse = await fetch(`${baseUrl}/auth/challenge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authId }),
+    });
+    expect(startResponse.status).toBe(200);
+    const challenge = (await startResponse.json()) as {
+      challengeId: string;
+      challengeText: string;
+    };
+
+    const wrongSignature = await wrongAccount.signMessage({ message: challenge.challengeText });
+    const verifyResponse = await fetch(`${baseUrl}/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        signature: wrongSignature,
+      }),
+    });
+    expect(verifyResponse.status).toBe(400);
+    await expect(verifyResponse.json()).resolves.toMatchObject({
+      error: "invalid wallet signature",
+    });
   });
 
   test("Scenario: Given a temporary identifier When profile icon is requested Then the default response is rasterized png", async () => {

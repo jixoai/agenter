@@ -137,7 +137,11 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
 
   const trpcHandler = createHTTPHandler({
     router: appRouter,
-    createContext: () => createTrpcContext(kernel),
+    createContext: async ({ req }) =>
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: req.headers.authorization ?? null,
+      }),
   });
 
   const server = createServer((req, res) => {
@@ -235,7 +239,11 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   const wsHandler = applyWSSHandler({
     wss,
     router: appRouter,
-    createContext: () => createTrpcContext(kernel),
+    createContext: async ({ req }) =>
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: req.headers.authorization ?? null,
+      }),
   });
 
   server.on("upgrade", (req, socket, head) => {

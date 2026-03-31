@@ -13,6 +13,7 @@ import superjson from "superjson";
 
 export interface AgenterClientOptions {
   wsUrl: string;
+  initialAuthToken?: string | null;
   onOpen?: () => void;
   onClose?: () => void;
   onError?: (error: TRPCClientErrorLike<AppRouter> | Error) => void;
@@ -24,6 +25,8 @@ export interface AgenterClient {
   trpc: ReturnType<typeof createTRPCProxyClient<AppRouter>>;
   wsUrl: string;
   httpUrl: string;
+  setAuthToken: (token: string | null | undefined) => void;
+  getAuthToken: () => string | null;
   subscribeTransport: (listener: (event: AgenterTransportEvent) => void) => () => void;
   close: () => void;
 }
@@ -39,13 +42,19 @@ const toHttpUrl = (wsUrl: string): string => {
 
 export const createAgenterClient = (options: AgenterClientOptions): AgenterClient => {
   const transportListeners = new Set<(event: AgenterTransportEvent) => void>();
+  let authToken = options.initialAuthToken?.trim() ? options.initialAuthToken.trim() : null;
   const emitTransport = (event: AgenterTransportEvent) => {
     for (const listener of transportListeners) {
       listener(event);
     }
   };
+  const readAuthorizationHeader = (): string | null => (authToken ? `Bearer ${authToken}` : null);
   const wsClient = createWSClient({
     url: options.wsUrl,
+    connectionParams: async () => {
+      const authorization = readAuthorizationHeader();
+      return authorization ? { authorization } : {};
+    },
     onOpen: () => {
       options.onOpen?.();
       emitTransport({ type: "open" });
@@ -77,6 +86,10 @@ export const createAgenterClient = (options: AgenterClientOptions): AgenterClien
       false: httpBatchLink({
         url: `${httpUrl}/trpc`,
         transformer: superjson,
+        headers: async () => {
+          const authorization = readAuthorizationHeader();
+          return authorization ? { authorization } : {};
+        },
       }),
     }),
   ];
@@ -89,6 +102,11 @@ export const createAgenterClient = (options: AgenterClientOptions): AgenterClien
     trpc,
     wsUrl: options.wsUrl,
     httpUrl,
+    setAuthToken: (token) => {
+      const normalized = token?.trim() ?? "";
+      authToken = normalized.length > 0 ? normalized : null;
+    },
+    getAuthToken: () => authToken,
     subscribeTransport: (listener) => {
       transportListeners.add(listener);
       return () => {

@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { issueAuthJwt, verifyAuthJwt } from "../auth/jwt";
 import { parseWalletIdentifier, verifyWalletSignature } from "../auth/wallet-auth";
 import {
   type AuthenticationResponseJson,
@@ -9,6 +10,10 @@ import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toIde
 import { buildSessionIconUrl, renderProfileFallbackSvg, renderSessionFallbackSvg } from "../render/fallback-icons";
 import { fetchGravatar } from "../render/gravatar";
 import type {
+  AuthChallengeDescriptor,
+  AuthDescriptor,
+  AuthSessionClaims,
+  AuthSessionProjection,
   EmailChallengeIssuedEvent,
   IconAssetRecord,
   IconOwnerKind,
@@ -24,6 +29,12 @@ export interface ProfileServiceHooks {
 }
 
 export interface ProfileServiceAuthOptions {
+  publicBaseUrl: string;
+  authJwtIssuer: string;
+  authJwtSecret: string;
+  authJwtTtlMs: number;
+  rootAuthId: string;
+  rootIdentifier: ProfileIdentifier;
   webauthnOrigin: string;
   webauthnRpId: string;
   webauthnRpName: string;
@@ -34,7 +45,7 @@ export class ProfileService {
 
   constructor(
     private readonly store: ProfileStore,
-    authOptions: ProfileServiceAuthOptions,
+    private readonly authOptions: ProfileServiceAuthOptions,
     private readonly hooks: ProfileServiceHooks = {},
   ) {
     this.webauthn = new ProfileWebAuthnControlPlane({
@@ -43,6 +54,45 @@ export class ProfileService {
       webauthnRpId: authOptions.webauthnRpId,
       webauthnRpName: authOptions.webauthnRpName,
     });
+  }
+
+  private buildClaims(profileId: string, authId: string): AuthSessionClaims {
+    const superadmin = authId === this.authOptions.rootAuthId;
+    return {
+      authId,
+      profileId,
+      admin: true,
+      superadmin,
+    };
+  }
+
+  private issueAuthSession(profile: ProfileProjection, authId: string): AuthSessionProjection {
+    if (!profile.profileId) {
+      throw new Error("cannot issue auth session for virtual profile");
+    }
+    const claims = this.buildClaims(profile.profileId, authId);
+    const issued = issueAuthJwt({
+      claims,
+      issuer: this.authOptions.authJwtIssuer,
+      secret: this.authOptions.authJwtSecret,
+      ttlMs: this.authOptions.authJwtTtlMs,
+    });
+    return {
+      token: issued.token,
+      issuedAt: new Date().toISOString(),
+      expiresAt: issued.expiresAt,
+      claims,
+      profile,
+    };
+  }
+
+  describeAuth(): AuthDescriptor {
+    return {
+      authMode: "wallet_challenge_jwt",
+      rootAuthId: this.authOptions.rootAuthId,
+      rootIdentifier: normalizeIdentifier(this.authOptions.rootIdentifier),
+      jwtTtlSeconds: Math.max(1, Math.floor(this.authOptions.authJwtTtlMs / 1000)),
+    };
   }
 
   private async resolveReference(reference: string): Promise<ProfileProjection> {
@@ -57,15 +107,15 @@ export class ProfileService {
     if (!token) {
       throw new Error("auth token required");
     }
-    const authorizedProfile = await this.authenticateToken(token);
-    if (!authorizedProfile?.profileId) {
+    const authorizedSession = await this.authenticateAuthToken(token);
+    if (!authorizedSession?.profile.profileId) {
       throw new Error("invalid auth token");
     }
     const targetProfile = await this.resolveReference(reference);
     if (!targetProfile.profileId) {
       throw new Error("virtual profiles are read-only");
     }
-    if (targetProfile.profileId !== authorizedProfile.profileId) {
+    if (targetProfile.profileId !== authorizedSession.profile.profileId) {
       throw new Error("auth token does not match target profile");
     }
     return targetProfile;
@@ -79,12 +129,51 @@ export class ProfileService {
     return await this.resolveReference(reference);
   }
 
-  async authenticateToken(token: string | null | undefined): Promise<ProfileProjection | null> {
+  async authenticateAuthToken(token: string | null | undefined): Promise<AuthSessionProjection | null> {
     if (!token) {
       return null;
     }
+    const verifiedJwt = verifyAuthJwt(token, {
+      issuer: this.authOptions.authJwtIssuer,
+      secret: this.authOptions.authJwtSecret,
+    });
+    if (verifiedJwt) {
+      const profile = await this.store.getProfileById(verifiedJwt.claims.profileId);
+      if (!profile?.profileId) {
+        return null;
+      }
+      return {
+        token,
+        issuedAt: verifiedJwt.issuedAt,
+        expiresAt: verifiedJwt.expiresAt,
+        claims: verifiedJwt.claims,
+        profile,
+      };
+    }
+
     const profileId = await this.store.getProfileIdForToken(token);
-    return profileId ? await this.store.getProfileById(profileId) : null;
+    if (!profileId) {
+      return null;
+    }
+    const profile = await this.store.getProfileById(profileId);
+    if (!profile?.profileId) {
+      return null;
+    }
+    const primaryAuthIdentifier = profile.identifiers.find((identifier) => isDurableIdentifierKind(identifier.kind)) ?? {
+      kind: "temp",
+      value: profile.profileId,
+    };
+    return {
+      token,
+      issuedAt: new Date().toISOString(),
+      expiresAt: null,
+      claims: this.buildClaims(profile.profileId, toIdentifierKey(primaryAuthIdentifier)),
+      profile,
+    };
+  }
+
+  async authenticateToken(token: string | null | undefined): Promise<ProfileProjection | null> {
+    return (await this.authenticateAuthToken(token))?.profile ?? null;
   }
 
   async createOrResolveDurableProfile(identifier: ProfileIdentifier): Promise<ProfileProjection> {
@@ -245,22 +334,32 @@ export class ProfileService {
     return await this.webauthn.verifyAuthentication(ticketId, response);
   }
 
-  async createWalletChallenge(identifierInput: string): Promise<{ challengeId: string; challengeText: string }> {
+  async createAuthChallenge(identifierInput: string): Promise<AuthChallengeDescriptor> {
     const identifier = parseWalletIdentifier(identifierInput);
-    const challengeText = `agenter profile-service wallet auth\nidentifier=${toIdentifierKey(identifier)}\nnonce=${crypto.randomUUID()}`;
+    const authId = toIdentifierKey(identifier);
+    const challengeText = `agenter auth-service challenge\nauthId=${authId}\nnonce=${crypto.randomUUID()}`;
+    const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
     const challengeId = await this.store.createWalletChallenge(
-      toIdentifierKey(identifier),
+      authId,
       challengeText,
-      new Date(Date.now() + 10 * 60_000).toISOString(),
+      expiresAt,
     );
-    return { challengeId, challengeText };
+    return { challengeId, challengeText, authId, expiresAt };
   }
 
-  async verifyWalletChallenge(
+  async createWalletChallenge(identifierInput: string): Promise<{ challengeId: string; challengeText: string }> {
+    const challenge = await this.createAuthChallenge(identifierInput);
+    return {
+      challengeId: challenge.challengeId,
+      challengeText: challenge.challengeText,
+    };
+  }
+
+  async verifyAuthChallenge(
     challengeId: string,
     signature: string,
     existingToken: string | null | undefined,
-  ): Promise<{ profile: ProfileProjection; token: string }> {
+  ): Promise<AuthSessionProjection> {
     const challenge = await this.store.getWalletChallenge(challengeId);
     if (!challenge) {
       throw new Error("wallet challenge not found or expired");
@@ -286,7 +385,15 @@ export class ProfileService {
     if (!profile.profileId) {
       throw new Error("failed to resolve durable wallet profile");
     }
-    const token = await this.store.issueAuthToken(profile.profileId);
-    return { profile, token };
+    return this.issueAuthSession(profile, toIdentifierKey(identifier));
+  }
+
+  async verifyWalletChallenge(
+    challengeId: string,
+    signature: string,
+    existingToken: string | null | undefined,
+  ): Promise<{ profile: ProfileProjection; token: string }> {
+    const session = await this.verifyAuthChallenge(challengeId, signature, existingToken);
+    return { profile: session.profile, token: session.token };
   }
 }

@@ -1,4 +1,4 @@
-import type { ProfileServiceHandle } from "@agenter/profile-service";
+import type { AuthServiceDescriptor, ProfileServiceHandle } from "@agenter/profile-service";
 import { describe, expect, test } from "bun:test";
 import { ProfileServiceBridge } from "../src/profile-service-bridge";
 
@@ -15,6 +15,20 @@ class TestProfileServiceBridge extends ProfileServiceBridge {
       stop: async () => {
         this.stopCount += 1;
       },
+    };
+  }
+
+  override async describe(): Promise<AuthServiceDescriptor> {
+    const endpoint = await this.getBaseUrl();
+    return {
+      endpoint,
+      authMode: "wallet_challenge_jwt",
+      rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+      rootIdentifier: {
+        kind: "wallet_evm",
+        value: "0x0000000000000000000000000000000000000001",
+      },
+      jwtTtlSeconds: 3600,
     };
   }
 }

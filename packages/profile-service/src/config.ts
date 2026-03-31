@@ -9,6 +9,7 @@ export interface ResolvedProfileServiceConfig {
   host: string;
   port: number;
   publicBaseUrl: string;
+  authJwtTtlMs: number;
   resvgLibraryPath?: string;
   webauthnOrigin: string;
   webauthnRpId: string;
@@ -18,6 +19,7 @@ export interface ResolvedProfileServiceConfig {
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4591;
+const DEFAULT_AUTH_JWT_TTL_MS = 1000 * 60 * 60;
 
 export const resolveProfileServiceConfig = (options: ProfileServiceOptions = {}): ResolvedProfileServiceConfig => {
   const dataDir = resolve(options.dataDir ?? join(homedir(), ".agenter", "profile-service"));
@@ -32,6 +34,7 @@ export const resolveProfileServiceConfig = (options: ProfileServiceOptions = {})
     host,
     port,
     publicBaseUrl,
+    authJwtTtlMs: options.authJwtTtlMs ?? DEFAULT_AUTH_JWT_TTL_MS,
     resvgLibraryPath: options.resvgLibraryPath ? resolve(options.resvgLibraryPath) : undefined,
     webauthnOrigin,
     webauthnRpId: options.webauthnRpId ?? new URL(webauthnOrigin).hostname,

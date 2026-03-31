@@ -23,6 +23,35 @@ export interface ProfileProjection {
   isVirtual: boolean;
 }
 
+export interface AuthSessionClaims {
+  authId: string;
+  profileId: string;
+  admin: boolean;
+  superadmin: boolean;
+}
+
+export interface AuthDescriptor {
+  authMode: "wallet_challenge_jwt";
+  rootAuthId: string;
+  rootIdentifier: ProfileIdentifier;
+  jwtTtlSeconds: number;
+}
+
+export interface AuthChallengeDescriptor {
+  challengeId: string;
+  challengeText: string;
+  authId: string;
+  expiresAt: string;
+}
+
+export interface AuthSessionProjection {
+  token: string;
+  issuedAt: string;
+  expiresAt: string | null;
+  claims: AuthSessionClaims;
+  profile: ProfileProjection;
+}
+
 export interface IconAssetRecord {
   ownerKind: IconOwnerKind;
   ownerKey: string;
@@ -47,6 +76,8 @@ export interface ProfileServiceOptions {
   publicBaseUrl?: string;
   host?: string;
   port?: number;
+  rootAuthPrivateKey?: string;
+  authJwtTtlMs?: number;
   resvgLibraryPath?: string;
   webauthnOrigin?: string;
   webauthnRpId?: string;

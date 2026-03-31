@@ -109,6 +109,12 @@ export {
 } from "./loopbus-kernel";
 export { resolveModelCapabilities } from "./model-capabilities";
 export {
+  AuthServiceBridge,
+  type AuthServiceBridgeOptions,
+  type AuthServiceDescriptor,
+  type AuthServiceMedia,
+} from "./auth-service-bridge";
+export {
   canCallModel as canCallConfiguredModel,
   resolveApiEnvHint,
   type ModelProviderConfig,

@@ -1,8 +1,14 @@
-import { Terminal } from "@xterm/headless";
+import "./xterm-headless-runtime";
+import { createRequire } from "node:module";
 import { DEFAULTS } from "./types";
 
+type HeadlessTerminalCtor = typeof import("@xterm/headless")["Terminal"];
+
+const require = createRequire(import.meta.url);
+const { Terminal } = require("@xterm/headless") as { Terminal: HeadlessTerminalCtor };
+
 export class XtermBridge {
-  private readonly terminal: Terminal;
+  private readonly terminal: InstanceType<HeadlessTerminalCtor>;
 
   constructor(cols: number = DEFAULTS.cols, rows: number = DEFAULTS.rows) {
     this.terminal = new Terminal({

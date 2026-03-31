@@ -1,4 +1,4 @@
-import type { CachedResourceState, MessageChannelEntry, ProfileListItem } from "@agenter/client-sdk";
+import type { AuthSessionOutput, CachedResourceState, MessageChannelEntry, ProfileListItem } from "@agenter/client-sdk";
 import type { WebChatMessage } from "@agenter/web-chat-view";
 import { createRootRoute, createRoute, createRouter, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
@@ -26,6 +26,8 @@ import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
 import { QuickStartView } from "./features/quickstart/QuickStartView";
 import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
 import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
+import { readStoredAuthToken, writeStoredAuthToken } from "./features/settings/auth-session-storage";
+import { resolveWalletAuthIdentity, signWalletAuthChallenge } from "./features/settings/private-key-auth";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import type { SettingsEffectiveGraph, SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { AppRoot } from "./features/shell/AppRoot";
@@ -81,9 +83,6 @@ const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
   },
   provenance: {},
 };
-const PROFILE_AUTH_STORAGE_KEY = "agenter:webui:profile-auth";
-const PROFILE_AUTH_MESSAGE_SOURCE = "agenter-profile-service";
-
 type DurableProfileItem = ProfileListItem & { profileId: string };
 
 type ProfileEditorDraft = {
@@ -91,11 +90,6 @@ type ProfileEditorDraft = {
   displayName: string;
   phone: string;
   address: string;
-};
-
-type StoredProfileAuth = {
-  token: string;
-  profileId: string | null;
 };
 
 const readSearchString = (value: unknown): string | undefined => {
@@ -146,45 +140,6 @@ const selectPreferredProfileReference = (
     }
   }
   return profiles[0]?.profileId ?? null;
-};
-
-const readStoredProfileAuth = (): StoredProfileAuth => {
-  if (typeof window === "undefined") {
-    return { token: "", profileId: null };
-  }
-  try {
-    const raw = window.localStorage.getItem(PROFILE_AUTH_STORAGE_KEY);
-    if (!raw) {
-      return { token: "", profileId: null };
-    }
-    const parsed = JSON.parse(raw) as { token?: unknown; profileId?: unknown };
-    return {
-      token: typeof parsed.token === "string" ? parsed.token : "",
-      profileId: typeof parsed.profileId === "string" && parsed.profileId.trim().length > 0 ? parsed.profileId : null,
-    };
-  } catch {
-    return { token: "", profileId: null };
-  }
-};
-
-const writeStoredProfileAuth = (auth: StoredProfileAuth): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  if (!auth.token) {
-    window.localStorage.removeItem(PROFILE_AUTH_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(PROFILE_AUTH_STORAGE_KEY, JSON.stringify(auth));
-};
-
-const openProfilePopup = (url: string): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const popupUrl = new URL(url, window.location.origin);
-  popupUrl.searchParams.set("openerOrigin", window.location.origin);
-  window.open(popupUrl.toString(), "_blank", "popup=yes,width=560,height=720");
 };
 
 const validateSessionChatSearch = (search: Record<string, unknown>) => ({
@@ -1394,22 +1349,12 @@ const SessionSettingsRouteView = () => {
 const GlobalSettingsRouteView = () => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
-  const profileServiceOrigin = useRuntimeSelector((state) => {
-    const endpoint = state.profileService?.endpoint;
-    if (!endpoint) {
-      return null;
-    }
-    try {
-      return new URL(endpoint).origin;
-    } catch {
-      return null;
-    }
-  });
+  const authService = useRuntimeSelector((state) => state.profileService);
   const adaptiveViewport = useAdaptiveViewport();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("idle");
-  const [profileStatus, setProfileStatus] = useState("No stored durable profile auth token.");
+  const [authStatus, setAuthStatus] = useState("No stored auth session token.");
   const [effective, setEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
   const [layers, setLayers] = useState<SettingsLayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -1419,30 +1364,13 @@ const GlobalSettingsRouteView = () => {
   const [activeProfileReference, setActiveProfileReference] = useState("");
   const [selectedProfileReference, setSelectedProfileReference] = useState<string | null>(null);
   const [profileDraft, setProfileDraft] = useState<ProfileEditorDraft>(createEmptyProfileDraft());
-  const [emailDraft, setEmailDraft] = useState("");
-  const [verificationCodeDraft, setVerificationCodeDraft] = useState("");
-  const [pendingRegistrationTicket, setPendingRegistrationTicket] = useState<string | null>(null);
-  const [pendingRegistrationUrl, setPendingRegistrationUrl] = useState<string | null>(null);
-  const [profileAuth, setProfileAuth] = useState<StoredProfileAuth>(() => readStoredProfileAuth());
-  const pendingRegistrationOrigin = useMemo(() => {
-    if (!pendingRegistrationUrl) {
-      return null;
-    }
-    try {
-      return new URL(pendingRegistrationUrl).origin;
-    } catch {
-      return null;
-    }
-  }, [pendingRegistrationUrl]);
+  const [privateKeyDraft, setPrivateKeyDraft] = useState("");
+  const [authSession, setAuthSession] = useState<AuthSessionOutput | null>(null);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.profileId === selectedProfileReference) ?? null,
     [profiles, selectedProfileReference],
   );
-
-  useEffect(() => {
-    writeStoredProfileAuth(profileAuth);
-  }, [profileAuth]);
 
   useEffect(() => {
     setProfileDraft(toProfileDraft(selectedProfile));
@@ -1472,6 +1400,39 @@ const GlobalSettingsRouteView = () => {
     }
     return items.find((layer) => layer.editable)?.layerId ?? items[0]?.layerId ?? null;
   };
+
+  const applyAuthToken = useCallback(
+    async (token: string | null | undefined, input?: { status?: string; clearPrivateKeyDraft?: boolean }) => {
+      const normalized = token?.trim() ?? "";
+      controller.runtimeStore.setAuthToken(normalized || null);
+      writeStoredAuthToken(normalized || null);
+      if (normalized.length === 0) {
+        setAuthSession(null);
+        setAuthStatus(input?.status ?? "Cleared stored auth session token.");
+        return null;
+      }
+      const session = await controller.runtimeStore.getAuthSession();
+      if (!session) {
+        controller.runtimeStore.clearAuthToken();
+        writeStoredAuthToken(null);
+        setAuthSession(null);
+        setAuthStatus("Stored auth session is invalid or expired.");
+        return null;
+      }
+      if (input?.clearPrivateKeyDraft) {
+        setPrivateKeyDraft("");
+      }
+      setAuthSession(session);
+      setAuthStatus(
+        input?.status ??
+          (session.claims.superadmin
+            ? `Authenticated ${session.claims.authId} as superadmin.`
+            : `Authenticated ${session.claims.authId}.`),
+      );
+      return session;
+    },
+    [controller],
+  );
 
   const refresh = useCallback(
     async (preferredProfileReference?: string | null) => {
@@ -1508,7 +1469,7 @@ const GlobalSettingsRouteView = () => {
         const nextSelectedProfileReference = selectPreferredProfileReference(durableProfiles, {
           preferred: preferredProfileReference ?? selectedProfileReference,
           active: effectiveProfileReference,
-          authenticated: profileAuth.profileId,
+          authenticated: authSession?.profile.profileId ?? null,
         });
         setSelectedProfileReference(nextSelectedProfileReference);
         setStatus(`Loaded ${durableProfiles.length} durable profiles`);
@@ -1519,56 +1480,41 @@ const GlobalSettingsRouteView = () => {
         setLoading(false);
       }
     },
-    [controller, profileAuth.profileId, selectedLayerId, selectedProfileReference],
+    [authSession?.profile.profileId, controller, selectedLayerId, selectedProfileReference],
   );
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const onMessage = (event: MessageEvent) => {
-      if (
-        event.origin !== window.location.origin &&
-        event.origin !== profileServiceOrigin &&
-        event.origin !== pendingRegistrationOrigin
-      ) {
-        return;
-      }
-      const data = event.data;
-      if (!data || typeof data !== "object") {
-        return;
-      }
-      const message = data as { source?: unknown; kind?: unknown; token?: unknown; profileId?: unknown };
-      if (message.source !== PROFILE_AUTH_MESSAGE_SOURCE || message.kind !== "auth-success" || typeof message.token !== "string") {
-        return;
-      }
-      const nextAuth: StoredProfileAuth = {
-        token: message.token,
-        profileId: typeof message.profileId === "string" && message.profileId.trim().length > 0 ? message.profileId : null,
-      };
-      setProfileAuth(nextAuth);
-      setPendingRegistrationTicket(null);
-      setPendingRegistrationUrl(null);
-      setProfileStatus(nextAuth.profileId ? `Authenticated durable profile ${nextAuth.profileId}.` : "Authenticated durable profile.");
-      if (nextAuth.profileId) {
-        setSelectedProfileReference(nextAuth.profileId);
-        setActiveProfileReference((current) => current || nextAuth.profileId!);
-        setLayerDraft((current) => patchActiveProfileReference(current, nextAuth.profileId!));
-      }
-      void refresh(nextAuth.profileId);
-    };
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("message", onMessage);
-    };
-  }, [pendingRegistrationOrigin, profileServiceOrigin, refresh]);
 
   useEffect(() => {
     if (!connected) {
       return;
     }
-    void refresh();
-  }, [connected, refresh]);
+    let cancelled = false;
+    const storedToken = readStoredAuthToken();
+    const hydrate = async () => {
+      try {
+        if (storedToken) {
+          const session = await applyAuthToken(storedToken, { status: "Restored stored auth session." });
+          if (!cancelled) {
+            await refresh(session?.profile.profileId ?? null);
+          }
+          return;
+        }
+        controller.runtimeStore.clearAuthToken();
+        setAuthSession(null);
+        setAuthStatus("No stored auth session token.");
+        await refresh();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        controller.setNotice(String(error instanceof Error ? error.message : error));
+        setAuthStatus("auth restore failed");
+      }
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyAuthToken, connected, controller, refresh]);
 
   return (
     <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col")}>
@@ -1576,7 +1522,10 @@ const GlobalSettingsRouteView = () => {
         loading={loading}
         saving={saving}
         status={status}
-        profileStatus={profileStatus}
+        authStatus={authStatus}
+        authService={authService}
+        authSession={authSession}
+        privateKeyDraft={privateKeyDraft}
         detailMode={adaptiveViewport.compact ? "sheet" : "split"}
         effective={effective}
         layers={layers}
@@ -1586,11 +1535,6 @@ const GlobalSettingsRouteView = () => {
         activeProfileReference={activeProfileReference}
         selectedProfileReference={selectedProfileReference}
         profileDraft={profileDraft}
-        emailDraft={emailDraft}
-        verificationCodeDraft={verificationCodeDraft}
-        authToken={profileAuth.token}
-        authenticatedProfileId={profileAuth.profileId}
-        pendingRegistrationTicket={pendingRegistrationTicket}
         onSelectLayer={(layerId) => {
           setSelectedLayerId(layerId);
         }}
@@ -1646,79 +1590,50 @@ const GlobalSettingsRouteView = () => {
           setLayerDraft((current) => patchActiveProfileReference(current, reference));
         }}
         onProfileDraftChange={setProfileDraft}
-        onEmailDraftChange={setEmailDraft}
-        onVerificationCodeDraftChange={setVerificationCodeDraft}
-        onStartEmailChallenge={async () => {
-          const email = emailDraft.trim();
-          if (!email) {
-            setProfileStatus("Email is required before starting OTP.");
-            return;
+        onPrivateKeyDraftChange={setPrivateKeyDraft}
+        onAuthenticate={async () => {
+          try {
+            const identity = resolveWalletAuthIdentity(privateKeyDraft);
+            setAuthStatus(`Requesting challenge for ${identity.authId}...`);
+            const challenge = await controller.runtimeStore.startAuthChallenge(identity.authId);
+            setAuthStatus(`Signing challenge for ${identity.authId}...`);
+            const signed = await signWalletAuthChallenge(privateKeyDraft, challenge.challengeText);
+            const verified = await controller.runtimeStore.verifyAuthChallenge({
+              challengeId: challenge.challengeId,
+              signature: signed.signature,
+            });
+            const session =
+              (await applyAuthToken(verified.token, {
+                clearPrivateKeyDraft: true,
+              })) ?? verified;
+            const profileId = typeof session.profile.profileId === "string" ? session.profile.profileId : null;
+            if (profileId) {
+              setSelectedProfileReference(profileId);
+              setActiveProfileReference((current) => current || profileId);
+              setLayerDraft((current) => patchActiveProfileReference(current, profileId));
+            }
+            await refresh(profileId);
+          } catch (error) {
+            controller.setNotice(String(error instanceof Error ? error.message : error));
+            setAuthStatus(error instanceof Error ? error.message : String(error));
           }
-          const result = await controller.runtimeStore.startProfileEmailChallenge(email);
-          setProfileStatus(`OTP issued for ${email}. Check the endpoint log. challenge=${result.challengeId}`);
-        }}
-        onVerifyEmailChallenge={async () => {
-          const email = emailDraft.trim();
-          const code = verificationCodeDraft.trim();
-          if (!email || !code) {
-            setProfileStatus("Email and verification code are required.");
-            return;
-          }
-          const result = await controller.runtimeStore.verifyProfileEmailChallenge({
-            email,
-            code,
-            token: profileAuth.token || undefined,
-          });
-          const verifiedProfileId = typeof result.profile.profileId === "string" ? result.profile.profileId : null;
-          setPendingRegistrationTicket(result.registrationTicket);
-          setPendingRegistrationUrl(result.registrationUrl);
-          setProfileStatus("Email verified. Open passkey registration to finish durable auth.");
-          if (verifiedProfileId) {
-            setSelectedProfileReference(verifiedProfileId);
-            setActiveProfileReference((current) => current || verifiedProfileId);
-            setLayerDraft((current) => patchActiveProfileReference(current, verifiedProfileId));
-          }
-          await refresh(verifiedProfileId);
-          openProfilePopup(result.registrationUrl);
-        }}
-        onOpenPasskeyRegistration={() => {
-          const registrationUrl =
-            pendingRegistrationUrl ??
-            (pendingRegistrationTicket ? controller.runtimeStore.webauthnRegistrationUrl(pendingRegistrationTicket) : null);
-          if (!registrationUrl) {
-            setProfileStatus("Profile-service endpoint is not ready yet.");
-            return;
-          }
-          openProfilePopup(registrationUrl);
-        }}
-        onOpenPasskeyAuthentication={() => {
-          if (!selectedProfileReference) {
-            return;
-          }
-          const authenticationUrl = controller.runtimeStore.webauthnAuthenticationUrl(selectedProfileReference);
-          if (!authenticationUrl) {
-            setProfileStatus("Profile-service endpoint is not ready yet.");
-            return;
-          }
-          openProfilePopup(authenticationUrl);
         }}
         onUploadProfileIcon={async (reference, file) => {
-          if (!profileAuth.token || profileAuth.profileId !== reference) {
-            setProfileStatus("Authenticate the selected profile before uploading its icon.");
+          if (!authSession?.token || authSession.profile.profileId !== reference) {
+            setAuthStatus("Authenticate the selected profile before uploading its icon.");
             return;
           }
-          await controller.runtimeStore.uploadProfileIcon(reference, profileAuth.token, file);
-          setProfileStatus(`Uploaded icon for ${reference}.`);
+          await controller.runtimeStore.uploadProfileIcon(reference, file);
+          setAuthStatus(`Uploaded icon for ${reference}.`);
           await refresh(reference);
         }}
         onSaveProfile={async () => {
-          if (!selectedProfile || !profileAuth.token || profileAuth.profileId !== selectedProfile.profileId) {
-            setProfileStatus("Authenticate the selected profile before saving metadata.");
+          if (!selectedProfile || !authSession?.token || authSession.profile.profileId !== selectedProfile.profileId) {
+            setAuthStatus("Authenticate the selected profile before saving metadata.");
             return;
           }
           await controller.runtimeStore.updateProfile({
             reference: selectedProfile.profileId,
-            token: profileAuth.token,
             patch: {
               ...(profileDraft.nickname.trim() ? { nickname: profileDraft.nickname.trim() } : {}),
               ...(profileDraft.displayName.trim() ? { displayName: profileDraft.displayName.trim() } : {}),
@@ -1726,14 +1641,11 @@ const GlobalSettingsRouteView = () => {
               ...(profileDraft.address.trim() ? { address: profileDraft.address.trim() } : {}),
             },
           });
-          setProfileStatus(`Saved metadata for ${selectedProfile.profileId}.`);
+          setAuthStatus(`Saved metadata for ${selectedProfile.profileId}.`);
           await refresh(selectedProfile.profileId);
         }}
-        onClearProfileAuth={() => {
-          setProfileAuth({ token: "", profileId: null });
-          setPendingRegistrationTicket(null);
-          setPendingRegistrationUrl(null);
-          setProfileStatus("Cleared stored durable profile auth token.");
+        onClearAuthSession={() => {
+          void applyAuthToken(null);
         }}
       />
     </section>

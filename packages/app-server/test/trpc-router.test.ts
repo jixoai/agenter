@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { privateKeyToAccount } from "viem/accounts";
 
 import { AppKernel, appRouter, createTrpcContext } from "../src";
 
@@ -19,6 +20,8 @@ afterEach(() => {
   }
 });
 
+const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
+
 describe("Feature: app-server trpc procedures", () => {
   test("Scenario: Given caller creates session When listing and deleting Then lifecycle is reflected", async () => {
     const root = makeTempDir();
@@ -28,7 +31,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(createTrpcContext(kernel));
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
 
     const created = await caller.session.create({
       cwd: root,
@@ -69,7 +72,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(createTrpcContext(kernel));
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
 
     const createdA = await caller.session.create({ cwd: workspaceA, name: "A", autoStart: false });
     await caller.session.create({ cwd: workspaceB, name: "B", autoStart: false });
@@ -123,7 +126,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(createTrpcContext(kernel));
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
 
     const created = await caller.session.create({
       cwd: workspace,
@@ -205,6 +208,57 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(rejectedAfterRevoke.ok).toBeFalse();
     expect(rejectedAfterRevoke.reason).toBe("message channel access denied");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given root auth identity When bearer JWT reaches the router Then superadmin-only procedures resolve through TRPC auth context", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const descriptor = await caller.auth.service();
+    expect(descriptor.authMode).toBe("wallet_challenge_jwt");
+
+    const challenge = await caller.auth.challengeStart({
+      authId: descriptor.rootAuthId,
+    });
+    const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
+      message: challenge.challengeText,
+    });
+    const session = await caller.auth.challengeVerify({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+
+    expect(session.claims.superadmin).toBeTrue();
+    expect(session.claims.authId).toBe(descriptor.rootAuthId);
+
+    const authedCaller = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${session.token}`,
+      }),
+    );
+    const authSession = await authedCaller.auth.session();
+    expect(authSession.claims.superadmin).toBeTrue();
+    expect(authSession.token).toBe(session.token);
+
+    const superadminStatus = await authedCaller.auth.superadminStatus();
+    expect(superadminStatus.ok).toBeTrue();
+    expect(superadminStatus.claims.superadmin).toBeTrue();
+
+    await expect(caller.auth.superadminStatus()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
 
     await kernel.stop();
   });

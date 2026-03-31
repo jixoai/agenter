@@ -1,6 +1,11 @@
 export { RuntimeStore, createRuntimeStore } from "./runtime-store";
 export { createAgenterClient, type AgenterClient, type AgenterClientOptions } from "./trpc-client";
 export type {
+  AuthChallengeStartOutput,
+  AuthChallengeVerifyOutput,
+  AuthServiceInfoOutput,
+  AuthSessionOutput,
+  AuthSuperadminStatusOutput,
   AttentionQueryItem,
   AttentionQueryOutput,
   AttentionStateOutput,

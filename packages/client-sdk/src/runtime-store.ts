@@ -1,5 +1,7 @@
 import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
+  AuthServiceInfoOutput,
+  AuthSessionOutput,
   AttentionQueryItem,
   CachedResourceState,
   ChatCycleItem,
@@ -144,6 +146,17 @@ const createHydratedCachedResourceState = <T>(data: T): CachedResourceState<T> =
 });
 
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
+
+const isTrpcErrorCode = (error: unknown, code: string): boolean =>
+  Boolean(
+    error &&
+      typeof error === "object" &&
+      "data" in error &&
+      error.data &&
+      typeof error.data === "object" &&
+      "code" in error.data &&
+      error.data.code === code,
+  );
 
 const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
   if (left.timestamp !== right.timestamp) {
@@ -306,11 +319,11 @@ export class RuntimeStore {
     return endpoint ? `${withTrailingSlashTrimmed(endpoint)}${pathname}` : null;
   }
 
-  private async ensureProfileServiceInfo(): Promise<ProfileServiceInfoOutput> {
+  private async ensureProfileServiceInfo(): Promise<AuthServiceInfoOutput> {
     if (this.state.profileService) {
       return this.state.profileService;
     }
-    const profileService = await this.client.trpc.profile.service.query();
+    const profileService = await this.client.trpc.auth.service.query();
     this.state = {
       ...this.state,
       profileService,
@@ -322,6 +335,45 @@ export class RuntimeStore {
   private async resolveProfileServiceUrl(pathname: string): Promise<string> {
     const profileService = await this.ensureProfileServiceInfo();
     return `${withTrailingSlashTrimmed(profileService.endpoint)}${pathname}`;
+  }
+
+  setAuthToken(token: string | null | undefined): void {
+    this.client.setAuthToken(token);
+  }
+
+  clearAuthToken(): void {
+    this.client.setAuthToken(null);
+  }
+
+  getAuthToken(): string | null {
+    return this.client.getAuthToken();
+  }
+
+  async getAuthServiceDescriptor(): Promise<AuthServiceInfoOutput> {
+    return await this.ensureProfileServiceInfo();
+  }
+
+  async startAuthChallenge(authId: string) {
+    return await this.client.trpc.auth.challengeStart.mutate({ authId });
+  }
+
+  async verifyAuthChallenge(input: { challengeId: string; signature: string }) {
+    return await this.client.trpc.auth.challengeVerify.mutate(input);
+  }
+
+  async getAuthSession(): Promise<AuthSessionOutput | null> {
+    try {
+      return await this.client.trpc.auth.session.query();
+    } catch (error) {
+      if (isTrpcErrorCode(error, "UNAUTHORIZED")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async getSuperadminStatus() {
+    return await this.client.trpc.auth.superadminStatus.query();
   }
 
   private normalizeRuntimeChatMessage(message: RuntimeChatMessage): RuntimeChatMessage {
@@ -903,7 +955,7 @@ export class RuntimeStore {
       const [snapshot, recentWorkspaces, profileService] = await Promise.all([
         this.client.trpc.runtime.snapshot.query(),
         this.client.trpc.workspace.recent.query({ limit: 8 }),
-        this.client.trpc.profile.service.query().catch(() => previousState.profileService),
+        this.client.trpc.auth.service.query().catch(() => previousState.profileService),
       ]);
       const runtimes = Object.fromEntries(
         Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
@@ -1278,13 +1330,17 @@ export class RuntimeStore {
 
   async uploadProfileIcon(
     reference: string,
-    token: string,
     file: File,
+    token?: string,
   ): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const authorizationToken = token ?? this.client.getAuthToken();
+    if (!authorizationToken) {
+      throw new Error("auth token required");
+    }
     const response = await fetch(await this.resolveProfileServiceUrl(`/profiles/${encodeURIComponent(reference)}/icon`), {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${authorizationToken}`,
         "content-type": file.type || "application/octet-stream",
       },
       body: file,
@@ -1640,7 +1696,6 @@ export class RuntimeStore {
 
   async updateProfile(input: {
     reference: string;
-    token: string;
     patch: {
       nickname?: string;
       displayName?: string;
@@ -1657,7 +1712,10 @@ export class RuntimeStore {
   }
 
   async verifyProfileEmailChallenge(input: { email: string; code: string; token?: string }) {
-    return await this.client.trpc.profile.auth.emailVerify.mutate(input);
+    return await this.client.trpc.profile.auth.emailVerify.mutate({
+      ...input,
+      token: input.token ?? this.client.getAuthToken() ?? undefined,
+    });
   }
 
   webauthnRegistrationUrl(ticketId: string): string | null {

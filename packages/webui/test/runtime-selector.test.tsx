@@ -8,7 +8,16 @@ import { useRuntimeStoreSelector } from "../src/app-context";
 const createState = (): RuntimeClientState => ({
   connected: true,
   connectionStatus: "connected",
-  profileService: { endpoint: "http://127.0.0.1:4591" },
+  profileService: {
+    endpoint: "http://127.0.0.1:4591",
+    authMode: "wallet_challenge_jwt",
+    rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+    rootIdentifier: {
+      kind: "wallet_evm",
+      value: "0x0000000000000000000000000000000000000001",
+    },
+    jwtTtlSeconds: 3600,
+  },
   lastEventId: 0,
   sessions: [],
   runtimes: {},
