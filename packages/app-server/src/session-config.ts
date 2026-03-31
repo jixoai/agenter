@@ -267,10 +267,7 @@ export const resolveSessionConfig = async (
     focusedTerminalIds: focusedTerminalIds.length > 0 ? focusedTerminalIds : [primaryTerminalId],
     bootTerminals,
     tasks: {
-      sources: settings.tasks?.sources ?? [
-        { name: "user", path: resolve(homeDir, ".agenter", "tasks") },
-        { name: "workspace", path: resolve(agentCwd, ".agenter", "tasks") },
-      ],
+      sources: settings.tasks?.sources ?? [],
     },
     message: {
       chatMainDefaults: settings.features?.message?.chatMainDefaults

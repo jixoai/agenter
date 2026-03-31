@@ -3,16 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { resolveTaskSources } from "../src/task-addressing";
 
 describe("Feature: task source addressing", () => {
-  test("Scenario: Given no custom sources When resolving Then defaults are user + workspace paths", () => {
+  test("Scenario: Given no custom sources When resolving Then task-system stays dormant until sources are configured", () => {
     const sources = resolveTaskSources({
       homeDir: "/home/dev",
       projectRoot: "/work/project-a",
     });
 
-    expect(sources).toEqual([
-      { name: "user", path: "/home/dev/.agenter/tasks" },
-      { name: "workspace", path: "/work/project-a/.agenter/tasks" },
-    ]);
+    expect(sources).toEqual([]);
   });
 
   test("Scenario: Given custom sources When resolving Then order is preserved and relative paths are normalized", () => {

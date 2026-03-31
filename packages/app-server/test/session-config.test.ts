@@ -82,4 +82,14 @@ describe("Feature: session config provider resolution", () => {
     expect(config.bootTerminals).toEqual([]);
     expect(config.focusedTerminalIds).toEqual(["iflow"]);
   });
+
+  test("Scenario: Given no task source settings When resolving session config Then runtime keeps task-system dormant by default", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-session-config-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    const config = await resolveSessionConfig(projectRoot, { homeDir });
+
+    expect(config.tasks.sources).toEqual([]);
+  });
 });

@@ -30,11 +30,7 @@ const normalizePath = (value: string, projectRoot: string, homeDir: string): str
 };
 
 export const resolveTaskSources = (config: TaskAddressingConfig): TaskSourceResolved[] => {
-  const defaults: TaskSourceInput[] = [
-    { name: "user", path: "~/.agenter/tasks" },
-    { name: "workspace", path: ".agenter/tasks" },
-  ];
-  const sourceList = config.sources && config.sources.length > 0 ? config.sources : defaults;
+  const sourceList = config.sources ?? [];
   const dedup = new Set<string>();
   const output: TaskSourceResolved[] = [];
   for (const source of sourceList) {

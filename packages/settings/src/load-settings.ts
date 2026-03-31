@@ -53,12 +53,6 @@ const defaultSettings = (): AgenterSettings => ({
       },
     },
   },
-  tasks: {
-    sources: [
-      { name: "user", path: "~/.agenter/tasks" },
-      { name: "workspace", path: ".agenter/tasks" },
-    ],
-  },
 });
 
 const parseJsonText = (text: string): AgenterSettings => {

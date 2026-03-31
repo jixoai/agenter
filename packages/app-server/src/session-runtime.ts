@@ -983,6 +983,7 @@ export class SessionRuntime {
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
   private started = false;
+  private abortWakeRequested = false;
   private loopPhase: LoopBusPhase = "waiting_commits";
   private stage: TaskStage = "idle";
   private readonly taskHeartbeatIntervalMs = 30_000;
@@ -1654,7 +1655,7 @@ export class SessionRuntime {
       channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true,
     );
     if (channel.chatId === this.getDefaultChatId() || builtIn) {
-      throw new Error("chat-main is protected and cannot be archived");
+      throw new Error("built-in room is protected and cannot be archived");
     }
     const archived = this.messageSystem.archiveChannelAuthorized({
       chatId: input.chatId,
@@ -4310,6 +4311,7 @@ export class SessionRuntime {
     if (this.started) {
       return;
     }
+    this.abortWakeRequested = false;
     this.messageSystem.setActorPresence(this.messageActorId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
@@ -4666,6 +4668,7 @@ export class SessionRuntime {
     if (!this.started) {
       return;
     }
+    this.abortWakeRequested = true;
     if (this.activeCycle && this.loopPhase !== "waiting_commits") {
       this.abortingActiveCycle = true;
     }
@@ -5836,6 +5839,10 @@ export class SessionRuntime {
   }
 
   private async waitForAnyInput(): Promise<LoopInputKind> {
+    if (this.abortWakeRequested) {
+      this.loopKernelLastWakeCause = "attention_commit";
+      return "attention";
+    }
     const loopPaused = this.runtime?.getLoopState().paused ?? false;
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
