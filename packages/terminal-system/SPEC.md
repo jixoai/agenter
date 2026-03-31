@@ -238,6 +238,63 @@ git-log 约束：
 
 - 开启 `--git-log` 后，workspace 若无 `.git` 必须自动 `git init`
 - git 提交失败不得中断终端主流程（fail-open），但必须记录到 `debug/git-log.ndjson`
+
+## 7. Global Collaboration Control Plane
+
+`@agenter/terminal-system` 同时承担全局 terminal collaboration control plane 的 durable contract。该层与前文的 PTY / xterm 机械层是两个正交原子：
+
+- `terminal-core`：负责 PTY 生命周期、读写、resize、snapshot/diff、renderer host 所需 title/status/transport 机械事实。
+- `terminal-system` control plane：负责全局 terminal catalog、grant、approval、write lease、focus、presence、activity history、session projection。
+
+长期法则：
+
+- terminal durable truth 存在于全局 `.terminal` authority，而不是某个 workspace/session 目录。
+- terminal lifecycle（list/create/focus/kill）必须独立于 session startup order 工作。
+- 所有终端输入路径都必须经过同一 write policy gate：
+  - direct write
+  - raw write
+  - websocket transport input
+- grant 固定四级：`admin | writer | requester | readonly`
+- superadmin 可以越过 local grant 做恢复性管理，但不改变 terminal-local durable truth 的 owner。
+
+### 7.1 Single Current Admin
+
+- 每个 terminal 同时只能有一个 current local admin。
+- terminal 可以配置按优先级排序的 admin-group candidates。
+- current admin 下线时，必须把下一个 eligible candidate 升格成 current admin。
+- 更高优先级 candidate 上线时，必须立即抢占 current admin。
+- pending approval requests 必须随着 current admin 切换而重新分配，不允许悬挂到旧 admin。
+
+### 7.2 Base Write Semantics vs Admin Routing
+
+- admin routing authority 与 actor 自身的基础写能力是两个独立维度。
+- `readonly` candidate 被升格为 current admin 后，仍然保持 readonly PTY write 语义。
+- `requester` candidate 被升格为 current admin 后，可以直接写自己的 terminal，不需要给自己走审批回路。
+
+### 7.3 Approval and Lease
+
+- `requester` 写入失败时必须创建 approval request，而不是直接透传到 PTY。
+- approval timeout 默认 `90s`，并且属于 terminal authority 的状态机，不属于 attention item。
+- attention 只允许投影 approval work，不能成为 approval durable owner。
+- approved request 必须 mint timeboxed write lease。
+- lease 过期后，所有输入路径立即恢复拒绝。
+
+### 7.4 Session Projection and UI Contract
+
+- session runtime 只允许保存 terminal refs、focus bindings、activity refs、approval subscription 等 projection facts。
+- session stop / delete 不得删除 global terminal truth、grant 或 activity history。
+- terminal listing / transport contract 必须显式携带：
+  - global terminal id
+  - title
+  - status
+  - renderer engine
+  - actor seats / admin state
+  - transport endpoint
+- WebUI 的 `Terminals` 页面是 terminal-system 的正式消费面：
+  - 顶层 tabs 表示 global terminal catalog
+  - terminal-local toolbar 承载 focus / viewport / access / approval 操作
+  - AvatarGroup 用 badge color 表示 offline / online / focused，用 border color 表示 `readonly / requester / writer / admin`
+  - 当授予第二个 `writer` 时，UI 必须先给出 downgrade prompt，允许把旧 writer 降级成 requester
 - commit message 必须结构化，标题格式：
   - `ati(log): <event> <mode>`
 - commit 正文至少包含：
