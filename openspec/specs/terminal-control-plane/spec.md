@@ -1,16 +1,21 @@
 ## Purpose
 
-Define the canonical control plane for terminal lifecycle, focus, and inspection operations.
+Define the canonical control plane for global terminal lifecycle, focus, inspection, and operating-system execution guidance.
 
 ## Requirements
 
 ### Requirement: Terminal focus SHALL be managed as a declarative focus set
-The terminal control plane SHALL manage focused terminals through a declarative `terminal_focus` operation that supports `add`, `remove`, `replace`, and `clear` semantics over a terminal id set.
+The global terminal control plane SHALL manage focused terminals through a declarative `terminal_focus` operation that supports `add`, `remove`, `replace`, and `clear` semantics over globally durable terminal ids, and it SHALL preserve actor-scoped focus or presence state without requiring terminal ownership to match a single session runtime.
 
-#### Scenario: Clear the focus set
-- **WHEN** a caller invokes `terminal_focus` with `op = clear`
-- **THEN** the focused-terminal set becomes empty
-- **THEN** later reads or attention rules can distinguish between "no focused terminal" and "one focused terminal"
+#### Scenario: Clear the focus set for an attached actor
+- **WHEN** a caller invokes terminal focus with `op = clear`
+- **THEN** that caller's focused-terminal set becomes empty
+- **THEN** later attention or UI rules can distinguish between "no focused terminal" and "one or more focused terminals"
+
+#### Scenario: Focus does not transfer terminal ownership to a session
+- **WHEN** a session actor focuses an existing global terminal
+- **THEN** the terminal remains part of the global terminal catalog
+- **THEN** stopping that session does not delete the terminal or its durable grants
 
 #### Scenario: Focused terminals feed the attention-source pipeline
 - **WHEN** the focused-terminal set includes one or more running terminals
@@ -26,16 +31,16 @@ The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` 
 - **THEN** the payload still declares that the returned representation is a snapshot
 
 ### Requirement: Terminal control plane SHALL own terminal lifecycle operations
-The terminal control plane SHALL expose lifecycle operations for listing, creating, and killing terminal instances through one canonical API family.
+The terminal control plane SHALL expose lifecycle operations for listing, creating, attaching, and killing globally durable terminal instances through one canonical API family independent of session startup order.
 
-#### Scenario: Create a default shell terminal
-- **WHEN** a caller invokes `terminal_create` without an explicit process descriptor
-- **THEN** the control plane creates a terminal using the default shell profile
-- **THEN** the response returns the terminal id and the applied process profile metadata
+#### Scenario: Create a global shell terminal without first booting a session
+- **WHEN** an authorized caller invokes terminal create without an explicit process descriptor
+- **THEN** the control plane creates a terminal using the default shell profile in the global terminal catalog
+- **THEN** the response returns the terminal id and applied process profile metadata
 
-#### Scenario: Kill a created terminal
-- **WHEN** a caller invokes `terminal_kill` for an existing terminal id
-- **THEN** the process is stopped and removed from the active terminal list
+#### Scenario: Kill a global terminal
+- **WHEN** a caller with sufficient rights invokes terminal kill for an existing terminal id
+- **THEN** the process is stopped and removed from the active global terminal list
 - **THEN** later reads for that terminal id fail with a terminal-not-found style error
 
 ### Requirement: Terminal control plane SHALL define operating-system execution semantics for model work
