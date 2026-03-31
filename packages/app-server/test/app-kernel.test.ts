@@ -767,11 +767,30 @@ describe("Feature: app kernel event replay", () => {
       if (!block?.messageId) {
         throw new Error("expected persisted room-backed block");
       }
+      const cycle = db.appendCycle({
+        wake: { source: "message" },
+        collectedInputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "room truth wins" }],
+            meta: { chatId: room.chatId, createdAt: new Date(block.createdAt).toISOString() },
+          },
+        ],
+        result: { kind: "model" },
+      });
+      expect(block.projection).toEqual({
+        source: "room-message-ref",
+        roomId: room.chatId,
+        messageId: block.messageId,
+      });
       db.upsertMessageBlock({
-        cycleId: block.cycleId,
+        cycleId: cycle.id,
         createdAt: block.createdAt,
         updatedAt: block.updatedAt,
         messageId: block.messageId,
+        projection: block.projection,
         visibleAt: block.visibleAt,
         attentionState: block.attentionState,
         attentionLoadedAt: block.attentionLoadedAt,
@@ -782,6 +801,7 @@ describe("Feature: app kernel event replay", () => {
         content: "stale local copy",
         tool: block.tool,
       });
+      db.setHead(cycle.id);
     } finally {
       db.close();
     }
@@ -789,6 +809,9 @@ describe("Feature: app kernel event replay", () => {
     const messages = kernel.listChatMessages(session.id, 0, 20);
     expect(messages.some((item) => item.content === "room truth wins")).toBeTrue();
     expect(messages.some((item) => item.content === "stale local copy")).toBeFalse();
+    const cycles = kernel.listChatCycles(session.id, 20);
+    expect(cycles.some((cycle) => cycle.outputs.some((item) => item.content === "room truth wins"))).toBeTrue();
+    expect(cycles.some((cycle) => cycle.outputs.some((item) => item.content === "stale local copy"))).toBeFalse();
 
     await kernel.stop();
   });

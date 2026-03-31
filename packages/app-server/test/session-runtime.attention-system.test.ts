@@ -10,6 +10,7 @@ import {
   type AttentionCommit,
   type AttentionCommitChange,
 } from "@agenter/attention-system";
+import { SessionDb } from "@agenter/session-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import { SessionRuntime } from "../src/session-runtime";
@@ -1905,6 +1906,63 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(second.messageId).toBe(first.messageId);
 
     await runtime.stop();
+  });
+
+  test("Scenario: Given room-backed chat blocks only store refs When the runtime restarts Then chat history is rebuilt from room truth instead of stale session copies", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-restart-"));
+    const sessionRoot = join(root, "session");
+    const options = {
+      sessionId: "s-room-restart",
+      cwd: root,
+      sessionRoot,
+      sessionName: "room-restart",
+      storeTarget: "workspace" as const,
+      primaryRoomId: PRIMARY_ROOM_ID,
+    };
+    const runtime = new SessionRuntime(options);
+
+    await runtime.start();
+    await runtime.pause();
+    runtime.pushUserChat("restore from room truth");
+
+    const db = new SessionDb(join(sessionRoot, "session.db"));
+    try {
+      const block = db.listBlocksAfter(0, 20).find((item) => item.projection?.source === "room-message-ref");
+      if (!block?.messageId || !block.projection) {
+        throw new Error("expected persisted room-backed block");
+      }
+      expect(block.content).toBe("");
+      expect(block.attachments).toEqual([]);
+      db.upsertMessageBlock({
+        cycleId: block.cycleId,
+        createdAt: block.createdAt,
+        updatedAt: block.updatedAt + 1,
+        messageId: block.messageId,
+        projection: block.projection,
+        visibleAt: block.visibleAt,
+        attentionState: block.attentionState,
+        attentionLoadedAt: block.attentionLoadedAt,
+        role: block.role,
+        channel: block.channel,
+        chatId: block.chatId,
+        format: block.format,
+        content: "stale local copy",
+        tool: block.tool,
+      });
+    } finally {
+      db.close();
+    }
+    await runtime.stop();
+
+    const restarted = new SessionRuntime(options);
+    await restarted.start();
+    await restarted.pause();
+
+    const restored = restarted.snapshot().chatMessages;
+    expect(restored.some((item) => item.content === "restore from room truth")).toBeTrue();
+    expect(restored.some((item) => item.content === "stale local copy")).toBeFalse();
+
+    await restarted.stop();
   });
 
   test("Scenario: Given a cycle originates from the primary room When message_send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {

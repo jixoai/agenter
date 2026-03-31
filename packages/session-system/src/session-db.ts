@@ -591,6 +591,7 @@ export class SessionDb {
           created_at,
           updated_at,
           message_id,
+          projection_json,
           visible_at,
           attention_state,
           attention_loaded_at,
@@ -600,7 +601,7 @@ export class SessionDb {
           format,
           content,
           tool_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         seq,
@@ -608,6 +609,7 @@ export class SessionDb {
         createdAt,
         updatedAt,
         input.messageId ?? null,
+        input.projection === undefined ? null : toJson(input.projection),
         input.visibleAt ?? null,
         input.attentionState ?? null,
         input.attentionLoadedAt ?? null,
@@ -644,7 +646,8 @@ export class SessionDb {
              chat_id = ?,
              format = ?,
              content = ?,
-             tool_json = ?
+             tool_json = ?,
+             projection_json = ?
          where id = ?`,
       )
       .run(
@@ -660,6 +663,7 @@ export class SessionDb {
         input.format ?? current.format,
         input.content,
         input.tool === undefined ? null : toJson(input.tool),
+        input.projection === undefined ? (current.projection === undefined ? null : toJson(current.projection)) : toJson(input.projection),
         current.id,
       );
     const row = this.getBlockById(current.id);
@@ -679,7 +683,7 @@ export class SessionDb {
   getBlockById(id: number): SessionBlockRecord | null {
     const row = this.db
       .query(
-        `select id, seq, cycle_id, created_at, updated_at, message_id, visible_at, attention_state, attention_loaded_at, role, channel, chat_id, format, content, tool_json
+        `select id, seq, cycle_id, created_at, updated_at, message_id, projection_json, visible_at, attention_state, attention_loaded_at, role, channel, chat_id, format, content, tool_json
          from session_block where id = ?`,
       )
       .get(id) as
@@ -690,6 +694,7 @@ export class SessionDb {
           created_at: number;
           updated_at: number;
           message_id: string | null;
+          projection_json: string | null;
           visible_at: number | null;
           attention_state: 'queued' | 'loaded' | null;
           attention_loaded_at: number | null;
@@ -711,6 +716,7 @@ export class SessionDb {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageId: row.message_id ?? undefined,
+      projection: row.projection_json ? parseJson(row.projection_json, undefined) : undefined,
       visibleAt: row.visible_at ?? undefined,
       attentionState: row.attention_state ?? undefined,
       attentionLoadedAt: row.attention_loaded_at ?? undefined,
@@ -1368,6 +1374,7 @@ export class SessionDb {
         created_at integer not null,
         updated_at integer not null,
         message_id text,
+        projection_json text,
         visible_at integer,
         attention_state text,
         attention_loaded_at integer,
@@ -1464,6 +1471,7 @@ export class SessionDb {
     this.ensureColumn("session_block", "chat_id", "alter table session_block add column chat_id text");
     this.ensureColumn("session_block", "updated_at", "alter table session_block add column updated_at integer");
     this.ensureColumn("session_block", "message_id", "alter table session_block add column message_id text");
+    this.ensureColumn("session_block", "projection_json", "alter table session_block add column projection_json text");
     this.ensureColumn("session_block", "visible_at", "alter table session_block add column visible_at integer");
     this.ensureColumn("session_block", "attention_state", "alter table session_block add column attention_state text");
     this.ensureColumn("session_block", "attention_loaded_at", "alter table session_block add column attention_loaded_at integer");

@@ -18,7 +18,6 @@ import {
   type MessageFocusOp,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
-  type MessageRecord,
 } from "@agenter/message-system";
 import {
   SessionDb,
@@ -53,7 +52,8 @@ import {
   resolveSessionRoomActorId,
 } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
-import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
+import { projectPersistedBlockToChatMessage, readPersistedBlockChatId } from "./session-room-read-model";
+import { buildSessionAssetUrl } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import type { TerminalControlPlaneEntry, TerminalProcessProfile } from "@agenter/terminal-system";
 import {
@@ -154,27 +154,6 @@ const readChatCycleCompactTrigger = (result: Record<string, unknown>): ChatCycle
   return CHAT_CYCLE_COMPACT_TRIGGERS.has(trigger as ChatCycleCompactTrigger) ? (trigger as ChatCycleCompactTrigger) : null;
 };
 
-const readPersistedBlockChatId = (block: Pick<SessionBlockRecord, "chatId">): string | null => {
-  if (typeof block.chatId !== "string") {
-    return null;
-  }
-  const normalized = block.chatId.trim();
-  return normalized.length > 0 ? normalized : null;
-};
-
-const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = resolvePrimaryRoomId(sessionId)): ChatMessage => ({
-  id: `${block.id}`,
-  chatId: readPersistedBlockChatId(block) ?? chatId,
-  role: block.role,
-  content: block.content,
-  timestamp: block.createdAt,
-  cycleId: block.cycleId,
-  channel: block.channel === "user_input" ? undefined : block.channel,
-  format: block.format,
-  tool: block.tool,
-  attachments: block.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
-});
-
 type PersistedChatMessage = ChatMessage & {
   sessionId: string;
   messageId: string;
@@ -184,7 +163,7 @@ const toChatCycle = (input: {
   sessionId: string;
   cycle: SessionCycleRecord;
   inputs: SessionCollectedInput[];
-  outputs: SessionBlockRecord[];
+  outputs: ChatMessage[];
   modelCallId: number | null;
 }): ChatCycle => {
   const cycleResult =
@@ -201,9 +180,7 @@ const toChatCycle = (input: {
     status: "done",
     clientMessageIds: collectClientMessageIds(input.inputs),
     inputs: structuredClone(input.inputs),
-    outputs: input.outputs.map((block) =>
-      toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, resolvePrimaryRoomId(input.sessionId))),
-    ),
+    outputs: structuredClone(input.outputs),
     liveMessages: [],
     streaming: null,
     modelCallId: input.modelCallId,
@@ -1956,56 +1933,12 @@ export class AppKernel {
     block: SessionBlockRecord,
     chatId: string,
   ): ChatMessage {
-    if (typeof block.messageId === "string") {
-      const roomMessage = this.messageControlPlane.getMessage(chatId, block.messageId);
-      if (roomMessage) {
-        return this.toChatMessageFromRoomRecord(sessionId, roomMessage);
-      }
-    }
-    return toChatMessage(sessionId, block, chatId);
-  }
-
-  private toChatMessageFromRoomRecord(
-    sessionId: string,
-    message: MessageRecord,
-  ): ChatMessage {
-    const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata : {};
-    const session = this.sessions.get(sessionId);
-    const role = session && message.from === session.avatar ? "assistant" : "user";
-    return {
-      id: message.messageId,
-      chatId: message.chatId,
-      role,
-      content: message.content,
-      messageKind: message.kind,
-      messagePayload: message.payload,
-      timestamp: message.createdAt,
-      updatedAt: message.updatedAt,
-      visibleAt: message.visibleAt,
-      attentionState: message.attentionState,
-      attentionLoadedAt: message.attentionLoadedAt,
-      editable: message.editable,
-      cycleId:
-        typeof metadata.cycleId === "number" && Number.isInteger(metadata.cycleId) ? metadata.cycleId : undefined,
-      channel:
-        metadata.channel === "to_user" || metadata.channel === "self_talk" || metadata.channel === "tool"
-          ? metadata.channel
-          : role === "assistant"
-            ? "to_user"
-            : undefined,
-      format:
-        typeof metadata.format === "string"
-          ? (metadata.format as ReturnType<SessionRuntime["listChatMessages"]>[number]["format"])
-          : undefined,
-      attachments: message.attachments?.map((attachment) => ({
-        assetId: attachment.assetId,
-        kind: attachment.kind,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: attachment.url,
-      })),
-    };
+    return projectPersistedBlockToChatMessage({
+      sessionId,
+      block,
+      fallbackRoomId: chatId,
+      lookupRoomMessage: (roomId, messageId) => this.messageControlPlane.getMessage(roomId, messageId),
+    });
   }
 
   private async readPersistedModelDebug(session: SessionMeta): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
@@ -2132,7 +2065,7 @@ export class AppKernel {
           sessionId,
           cycle,
           inputs,
-          outputs: db.listBlocksByCycleId(cycle.id),
+          outputs: this.projectPersistedCycleOutputs(db, sessionId, cycle.id, inputs),
           modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
         }),
       );
@@ -2160,7 +2093,7 @@ export class AppKernel {
             sessionId,
             cycle,
             inputs,
-            outputs: db.listBlocksByCycleId(cycle.id),
+            outputs: this.projectPersistedCycleOutputs(db, sessionId, cycle.id, inputs),
             modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
           }),
         ),
@@ -2191,13 +2124,25 @@ export class AppKernel {
           sessionId,
           cycle,
           inputs,
-          outputs: db.listBlocksByCycleId(cycle.id),
+          outputs: this.projectPersistedCycleOutputs(db, sessionId, cycle.id, inputs),
           modelCallId: db.getModelCallByCycleId(cycle.id)?.id ?? null,
         }),
       );
     } finally {
       db.close();
     }
+  }
+
+  private projectPersistedCycleOutputs(
+    db: SessionDb,
+    sessionId: string,
+    cycleId: number,
+    inputs: SessionCollectedInput[],
+  ): ChatMessage[] {
+    const fallbackRoomId = resolveCollectedInputsChatId(inputs, resolvePrimaryRoomId(sessionId));
+    return db.listBlocksByCycleId(cycleId).map((block) =>
+      this.projectPersistedChatMessage(sessionId, block, readPersistedBlockChatId(block) ?? fallbackRoomId),
+    );
   }
 
   private readLoopbusStateLogsPageFromDb(

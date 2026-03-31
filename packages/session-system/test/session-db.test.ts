@@ -230,14 +230,80 @@ describe("Feature: session-system ledger persistence", () => {
     const db = new SessionDb(filePath);
     try {
       expect(db.getBlockById(1)?.chatId).toBeNull();
+      expect(db.getBlockById(1)?.projection).toBeUndefined();
       const inserted = db.appendBlock({
         role: "assistant",
         channel: "to_user",
         chatId: "chat-main",
+        messageId: "msg-room-1",
+        projection: {
+          source: "room-message-ref",
+          roomId: "chat-main",
+          messageId: "msg-room-1",
+        },
         content: "modern hello",
       });
       expect(inserted.chatId).toBe("chat-main");
-      expect(db.listBlocksAfter(0).map((item) => item.chatId)).toEqual([null, "chat-main"]);
+      expect(inserted.projection).toEqual({
+        source: "room-message-ref",
+        roomId: "chat-main",
+        messageId: "msg-room-1",
+      });
+      expect(db.listBlocksAfter(0).map((item) => ({ chatId: item.chatId, projection: item.projection }))).toEqual([
+        { chatId: null, projection: undefined },
+        {
+          chatId: "chat-main",
+          projection: {
+            source: "room-message-ref",
+            roomId: "chat-main",
+            messageId: "msg-room-1",
+          },
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given a room-backed block projection When the block is updated Then the ref contract stays durable without needing room content in session db", () => {
+    const db = createDb();
+    try {
+      const inserted = db.appendBlock({
+        role: "assistant",
+        channel: "to_user",
+        chatId: "room-main",
+        messageId: "msg-1",
+        projection: {
+          source: "room-message-ref",
+          roomId: "room-main",
+          messageId: "msg-1",
+        },
+        content: "",
+      });
+
+      const updated = db.upsertMessageBlock({
+        cycleId: 11,
+        createdAt: inserted.createdAt,
+        updatedAt: inserted.updatedAt + 1,
+        role: "assistant",
+        channel: "to_user",
+        chatId: "room-main",
+        messageId: "msg-1",
+        projection: {
+          source: "room-message-ref",
+          roomId: "room-main",
+          messageId: "msg-1",
+        },
+        content: "",
+      });
+
+      expect(updated.id).toBe(inserted.id);
+      expect(updated.projection).toEqual({
+        source: "room-message-ref",
+        roomId: "room-main",
+        messageId: "msg-1",
+      });
+      expect(updated.content).toBe("");
     } finally {
       db.close();
     }

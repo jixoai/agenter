@@ -141,6 +141,13 @@ export type SessionBlockRole = "user" | "assistant";
 export type SessionBlockChannel = "to_user" | "self_talk" | "tool" | "user_input";
 export type SessionBlockFormat = "plain" | "markdown";
 export type SessionBlockAttentionState = "queued" | "loaded";
+export type SessionBlockProjection = SessionBlockRoomMessageProjection;
+
+export interface SessionBlockRoomMessageProjection {
+  source: "room-message-ref";
+  roomId: string;
+  messageId: string;
+}
 
 export type ToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
 
@@ -167,6 +174,7 @@ export interface SessionBlockRecord {
   createdAt: number;
   updatedAt: number;
   messageId?: string;
+  projection?: SessionBlockProjection;
   visibleAt?: number;
   attentionState?: SessionBlockAttentionState;
   attentionLoadedAt?: number;
@@ -184,6 +192,7 @@ export interface SessionBlockInsert {
   createdAt?: number;
   updatedAt?: number;
   messageId?: string;
+  projection?: SessionBlockProjection;
   visibleAt?: number;
   attentionState?: SessionBlockAttentionState;
   attentionLoadedAt?: number;

@@ -12,7 +12,7 @@
 
 ## 3. Session projection and Web room view
 
-- [ ] 3.1 Define room-to-session projection facts so `session.db` stores refs instead of full room history truth.
+- [x] 3.1 Define room-to-session projection facts so `session.db` stores refs instead of full room history truth.
 - [x] 3.2 Update the Web chat view contract from channel-first to room-first transport and paging semantics.
 - [x] 3.3 Define app-server read-model joining behavior for room truth plus session facts.
 

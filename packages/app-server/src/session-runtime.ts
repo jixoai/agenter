@@ -32,6 +32,7 @@ import {
 import {
   SessionDb,
   type SessionAssetRecord,
+  type SessionBlockProjection,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
   type SessionCycleRecord,
@@ -118,6 +119,7 @@ import {
   resolveSessionRoomActorId,
 } from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
+import { projectPersistedBlockToChatMessage } from "./session-room-read-model";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
@@ -4401,7 +4403,14 @@ export class SessionRuntime {
       restoredChatIds.set(item.cycleId, chatId);
       return chatId;
     };
-    this.chatMessages = restoredChat.map((item) => this.toChatMessage(item, resolveRestoredChatId(item)));
+    this.chatMessages = restoredChat.map((item) =>
+      projectPersistedBlockToChatMessage({
+        sessionId: this.options.sessionId,
+        block: item,
+        fallbackRoomId: resolveRestoredChatId(item),
+        lookupRoomMessage: (roomId, messageId) => this.messageSystem.getMessage(roomId, messageId),
+      }),
+    );
     const head = this.sessionDb.getHead();
     this.activeCycleId = head.headCycleId;
     this.activeModelCallId = null;
@@ -6607,11 +6616,23 @@ export class SessionRuntime {
     }
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
+    const roomProjection: SessionBlockProjection | undefined =
+      nextMessage.messageKind !== undefined &&
+      typeof nextMessage.chatId === "string" &&
+      nextMessage.chatId.trim().length > 0 &&
+      nextMessage.id.trim().length > 0
+        ? {
+            source: "room-message-ref",
+            roomId: nextMessage.chatId,
+            messageId: nextMessage.id,
+          }
+        : undefined;
     const blockInput = {
       cycleId: persistedCycleId,
       createdAt: nextMessage.timestamp,
       updatedAt: nextMessage.updatedAt ?? nextMessage.timestamp,
-      messageId: nextMessage.attentionState ? nextMessage.id : undefined,
+      messageId: roomProjection?.messageId ?? (nextMessage.attentionState ? nextMessage.id : undefined),
+      projection: roomProjection,
       visibleAt: nextMessage.visibleAt,
       attentionState: nextMessage.attentionState,
       attentionLoadedAt: nextMessage.attentionLoadedAt,
@@ -6619,8 +6640,8 @@ export class SessionRuntime {
       channel,
       chatId: nextMessage.chatId,
       format: nextMessage.format ?? "markdown",
-      content: nextMessage.content,
-      tool: nextMessage.tool,
+      content: roomProjection ? "" : nextMessage.content,
+      tool: roomProjection ? undefined : nextMessage.tool,
     } as const;
     const block =
       typeof blockInput.messageId === "string"
@@ -6629,7 +6650,7 @@ export class SessionRuntime {
             messageId: blockInput.messageId,
           })
         : this.sessionDb.appendBlock(blockInput);
-    if (nextMessage.attachments && nextMessage.attachments.length > 0) {
+    if (!roomProjection && nextMessage.attachments && nextMessage.attachments.length > 0) {
       this.sessionDb.replaceBlockAssets(
         block.id,
         nextMessage.attachments.map((attachment) => attachment.assetId),
@@ -6648,29 +6669,6 @@ export class SessionRuntime {
         appendOutput: nextMessage,
       });
     }
-  }
-
-  private toChatMessage(record: SessionDbChatMessageRecord, chatId?: string): ChatMessage {
-    const fallbackChatId = chatId ?? this.getDefaultChatId();
-    const effectiveChatId =
-      typeof record.chatId === "string" && record.chatId.trim().length > 0 ? record.chatId : fallbackChatId;
-    return {
-      id: record.messageId ?? `${record.id}`,
-      chatId: effectiveChatId,
-      role: record.role,
-      content: record.content,
-      timestamp: record.createdAt,
-      updatedAt: record.updatedAt,
-      visibleAt: record.visibleAt,
-      attentionState: record.attentionState,
-      attentionLoadedAt: record.attentionLoadedAt,
-      editable: record.attentionState === "queued",
-      cycleId: record.cycleId,
-      channel: record.channel === "user_input" ? undefined : record.channel,
-      format: record.format,
-      tool: record.tool,
-      attachments: record.attachments.map((attachment) => toChatSessionAsset(this.options.sessionId, attachment)),
-    };
   }
 
   private appendTerminalActivity(input: {
