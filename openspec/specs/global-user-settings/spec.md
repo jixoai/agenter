@@ -1,25 +1,27 @@
 # global-user-settings Specification
 
 ## Purpose
-Define the durable app-level settings surface for user identity, profile selection, and other global preferences that must stay outside any workspace route.
+Define the durable user-level settings contract as surfaced through the special global workspace rooted at `~/`.
+
 ## Requirements
-### Requirement: Global user settings SHALL be reachable from global navigation
-The WebUI SHALL expose a GlobalSettings entry from the application navigation rail, and that entry SHALL open the user-level settings surface without depending on any current workspace route header.
 
-#### Scenario: Left navigation opens global settings
-- **WHEN** the user activates the GlobalSettings entry in the application navigation rail
-- **THEN** the application navigates to the global user-settings surface
-- **THEN** the current page header does not need to provide a duplicate global-settings trigger
+### Requirement: Global user settings SHALL be surfaced through the global workspace
+The system SHALL expose app-level user preferences, auth-adjacent controls, and default-avatar selection through the special global workspace rooted at `~/` rather than through a standalone global-settings route.
 
-### Requirement: Global user settings SHALL own avatar management
-The system SHALL expose durable profile management through global user settings rather than workspace settings. That surface SHALL list canonical profiles, indicate the active app-level profile selection where applicable, expose bound identifiers, and allow profile metadata plus icon uploads to be managed without requiring an active session.
+#### Scenario: User manages app-level settings from the global workspace
+- **WHEN** the user opens the global workspace rooted at `~/`
+- **THEN** the application shows user-level settings and app-wide controls through that workspace detail surface
+- **THEN** the user does not need a separate primary navigation route to reach them
 
-#### Scenario: User manages durable profiles globally
-- **WHEN** the user opens global user settings
-- **THEN** the surface shows available durable profiles and the current app-level profile selection
-- **THEN** profile icon upload and presentation changes are applied at the user level instead of the workspace level
+#### Scenario: Global workspace remains reachable without a running avatar
+- **WHEN** the user has no running avatar selected
+- **THEN** the global workspace can still be opened from `Workspaces`
+- **THEN** user-level settings remain available without requiring an active session
 
-#### Scenario: User links identifiers from global settings flows
-- **WHEN** the user completes a supported identifier-linking flow from global settings
-- **THEN** the resulting email or wallet identifier is attached to the selected canonical profile
-- **AND** the updated identifier list is visible from the same global user-settings surface
+### Requirement: Global user settings SHALL preserve local-machine storage boundaries
+The global workspace settings flow SHALL keep local-machine secrets and auth tokens in a local editable layer instead of writing them into the shared global settings file.
+
+#### Scenario: Global auth token writes to local settings
+- **WHEN** the user saves a JWT, auth token, or private-key-derived local credential from the global workspace
+- **THEN** the system writes that value into the editable global local layer
+- **THEN** the shared global settings layer remains unchanged for that sensitive field

@@ -1,92 +1,84 @@
+# webui-chat-navigation Specification
+
 ## Purpose
+Define the durable WebUI navigation shell, the `Workspaces` master-detail model, and the boundary between primary global resource pages and secondary running-avatar runtime detail surfaces.
 
-Define the WebUI navigation shell, workspace-scoped routes, and shared master-detail interaction model around Quick Start and Workspaces.
 ## Requirements
-### Requirement: Quick Start is a primary application view
-The WebUI SHALL expose Quick Start as a dedicated primary view that is separate from Workspaces and the workspace shell, and it SHALL provide the current workspace controls and recent session entry points needed to start work immediately.
-
-#### Scenario: No active session opens on Quick Start
-- **WHEN** the application opens without an active session selected
-- **THEN** the main content shows the Quick Start view instead of a workspace shell or empty Chat view
-
-#### Scenario: Quick Start shows recent sessions
-- **WHEN** recent sessions are available for the selected workspace context
-- **THEN** Quick Start shows up to three recent session entries that can be used to resume work
-
-#### Scenario: Compact Quick Start keeps the primary composer and start action in the first viewport
-- **WHEN** the application is rendered on a compact viewport
-- **THEN** the selected workspace control, shared AI input composer, and primary `Start` action remain visible without scrolling past provider or helper metadata
-- **THEN** secondary provider details and helper hints are visually subordinate to the start flow
 
 ### Requirement: Workspace routes SHALL provide a scoped application shell
-The WebUI SHALL provide a workspace-scoped shell for `Chats`, `Terminals`, `Devtools`, and `Settings`, and it SHALL provide a separate global `Settings` route for user-level settings and avatar management. The top header SHALL be one unified, passive, compact surface that keeps only navigation, location, passive state signals, workspace basename, and route switching visible, while route-local actions stay inside the route body.
+The WebUI SHALL provide `Workspaces` as a primary application surface that integrates fixed `Welcome` and `History` entries, the special global workspace rooted at `~/`, and workspace-scoped tabs such as `Settings` and `Avatars`. `Chats` and `Terminals` SHALL remain separate primary resource surfaces instead of being folded back into workspace detail routes.
 
-#### Scenario: Open a workspace shell route
-- **WHEN** the user enters a workspace-scoped route
-- **THEN** the page shows the current workspace context and the shell navigation for `Chats`, `Terminals`, `Devtools`, and `Settings`
-- **THEN** the active route surface owns its own local notices and primary actions without pushing them into the top header
-- **THEN** the top header does not repeat the workspace path or route-local notices already rendered inside the workspace shell
+#### Scenario: Workspaces opens with fixed welcome and history entries
+- **WHEN** the user opens the `Workspaces` primary view
+- **THEN** the surface shows fixed `Welcome` and `History` entries before workspace-scoped tabs
+- **THEN** the user does not need to leave `Workspaces` to reach the start flow or workspace history
 
-#### Scenario: Selecting a tab does not mutate semantic focus
-- **WHEN** the user switches between chat tabs or terminal tabs
-- **THEN** the UI only changes the visible detail pane
-- **AND** runtime focus remains unchanged until the user explicitly presses focus or unfocus
+#### Scenario: Global workspace uses the same shell model
+- **WHEN** the user opens the special global workspace rooted at `~/`
+- **THEN** the application renders it through the same Workspaces detail shell as other workspaces
+- **THEN** global settings and avatar management are expressed through that workspace model instead of a separate primary route
 
 ### Requirement: Workspace shell chrome SHALL preserve a fixed hierarchy
-The WebUI SHALL preserve a fixed shell hierarchy where the left application sidebar owns the outermost navigation chrome, the main shell owns the unified top header and route region, and the workspace route surface owns route content plus route-local notices and actions. Adjacent shell layers MUST NOT repeat the same passive state as visible text if an icon signal or tooltip already owns that fact, and desktop SHALL NOT introduce a second status trigger model that differs from compact layouts.
+The WebUI SHALL preserve a fixed shell hierarchy where the outer application shell owns the primary `Chats / Terminals / Workspaces` navigation and the secondary `Running Avatars` rail, while the `Workspaces` surface owns its own local tabs, notices, and actions. GlobalSettings MUST NOT reappear as a separate app-level route or as duplicated header chrome.
 
-#### Scenario: Workspace route content is not wrapped by duplicate padding stacks
-- **WHEN** a workspace route renders Chat, Devtools, or Settings content
-- **THEN** the outer application shell does not inject a second competing content padding layer inside the workspace scaffold
-- **THEN** the workspace route keeps visual priority over surrounding shell chrome
+#### Scenario: Primary shell and workspace shell stay visually distinct
+- **WHEN** the user is browsing the `Workspaces` surface
+- **THEN** the outer shell keeps only global navigation and runtime rail responsibilities
+- **THEN** workspace-local actions such as avatar start, topology edits, and settings tabs remain inside the Workspaces surface
 
-#### Scenario: Passive state signals avoid redundant text stacks
-- **WHEN** the shell renders connection or AI state in the top header
-- **THEN** those facts are expressed through compact signals with accessible tooltip-backed labels
-- **THEN** the header does not also repeat the same passive state as additional long text lines unless the signal itself is unavailable
-
-#### Scenario: Session status affordance stays consistent across viewports
-- **WHEN** the user opens Chat on desktop or mobile
-- **THEN** the session status trigger uses the same compact signal-driven model in both layouts
-- **THEN** the shell does not add a separate desktop-only pill or select trigger for the same status fact
+#### Scenario: Global settings does not reappear as duplicate chrome
+- **WHEN** the shell renders desktop or mobile navigation
+- **THEN** there is no separate `GlobalSettings` primary destination or header shortcut
+- **THEN** the global workspace rooted at `~/` remains the single navigation entry point for global settings behavior
 
 ### Requirement: The application SHALL provide stable primary and secondary session navigation
-The WebUI SHALL render a stable primary navigation that only exposes `Quick Start` and `Workspaces`, and it SHALL render running-session entry points through a secondary running-session section inside the application sidebar model instead of adding dynamic session shortcuts to the primary sidebar or header.
+The WebUI SHALL render `Chats`, `Terminals`, and `Workspaces` as the only primary navigation destinations, and it SHALL render running avatars through a secondary `Running Avatars` navigation model on both desktop and compact layouts.
 
-#### Scenario: Primary navigation stays fixed
-- **WHEN** the application renders its global navigation
-- **THEN** the primary sidebar shows `Quick Start` and `Workspaces` as the only primary entries
+#### Scenario: Primary navigation stays fixed to three destinations
+- **WHEN** the application renders its primary navigation
+- **THEN** the only primary entries are `Chats`, `Terminals`, and `Workspaces`
+- **THEN** neither running avatars nor global settings are promoted into that primary destination set
 
-#### Scenario: Running sessions use a sidebar secondary section
-- **WHEN** one or more sessions are running
-- **THEN** the application exposes those sessions through a secondary running-session section in the sidebar on desktop and in the shared navigation drawer on mobile
-- **THEN** the application does not add separate session shortcuts to the primary navigation or dedicate a header-only session switcher to them
+#### Scenario: Running avatars stay secondary across viewports
+- **WHEN** one or more avatars are running
+- **THEN** the application exposes them through a secondary `Running Avatars` surface on desktop and mobile
+- **THEN** opening or closing avatars does not mutate the primary navigation model
 
 ### Requirement: Chat and workspace auxiliary panels SHALL share one master-detail model
-The WebUI SHALL keep one shared master-detail model for the `Workspaces ↔ Sessions` flow, while workspace `Chat`, `Devtools`, and `Settings` are rendered inside the workspace shell without duplicating outer page chrome or padding. The master-detail shell MUST preserve one explicit detail viewport instead of stacking hidden wrappers across desktop and compact layouts.
+The WebUI SHALL keep one shared master-detail model inside `Workspaces`, where the master side owns `Welcome`, `History`, the global workspace, and regular workspace entries, while the detail side owns the selected workspace or runtime-facing surface. Global `Chats` and `Terminals` SHALL NOT be embedded back into that master-detail stack.
 
-#### Scenario: Desktop keeps workspace-session split behavior
-- **WHEN** the application is rendered on a desktop-sized viewport
-- **THEN** the Workspaces view uses the shared resizable master-detail layout for workspace and session inspection
+#### Scenario: Desktop Workspaces keeps one master-detail layout
+- **WHEN** the application renders `Workspaces` on a desktop-sized viewport
+- **THEN** the workspace selector and the selected detail surface are visible within one shared master-detail layout
+- **THEN** global `Chats` and `Terminals` remain separate primary pages instead of nested panes inside that layout
 
-#### Scenario: Compact workspace selection opens the Sessions detail flow
-- **WHEN** the application is rendered on a compact viewport and the user selects a workspace from the Workspaces list
-- **THEN** the shared mobile detail flow opens the Sessions detail surface for that workspace
-- **THEN** the user does not need a separate double-click or secondary activation gesture to inspect that workspace's sessions
+#### Scenario: Compact Workspaces uses one detail flow
+- **WHEN** the application renders `Workspaces` on a compact viewport and the user selects `Welcome`, `History`, or a workspace entry
+- **THEN** the selected detail surface opens through the shared compact detail flow
+- **THEN** the user does not need a second navigation model to inspect global workspace or regular workspace details
 
-#### Scenario: Master-detail detail pane keeps one scroll owner
-- **WHEN** the desktop detail pane or compact sheet contains long content
-- **THEN** the detail surface exposes one deliberate primary scroll viewport
-- **THEN** outer master-detail wrappers do not clip or suppress that scrolling behavior
+### Requirement: Workspaces History SHALL list workspaces instead of session timelines
+The `History` entry inside `Workspaces` SHALL list all known workspaces rather than individual session rows. It SHALL sort by the last time a session was started in that workspace by default, and it SHALL allow alternate sorts by path and by workspace name.
 
-### Requirement: Chat route SHALL own the primary session action surface
-The WebUI SHALL expose the active session's primary run control through the Chat route toolbar, and that surface SHALL use one state-driven action instead of separate Start and Stop actions in outer shell chrome.
+#### Scenario: History defaults to last-used ordering
+- **WHEN** the user opens `Workspaces / History`
+- **THEN** the surface lists known workspaces ordered by the most recent session-start activity in each workspace
+- **THEN** the newest active workspace appears before older ones by default
 
-#### Scenario: Chat toolbar renders one state-driven session control
-- **WHEN** the user opens a workspace Chat route with an active session
-- **THEN** the Chat toolbar shows the session identity and one primary session action
-- **THEN** the action label and enabled state reflect whether the session can currently be started or stopped
+#### Scenario: History can change sort mode
+- **WHEN** the user changes the History sort mode
+- **THEN** the surface can reorder the same workspace list by path or by workspace name
+- **THEN** the page still remains a workspace list instead of switching into session-history rows
 
-#### Scenario: Route-local notices stay in the Chat surface
-- **WHEN** the active Chat route has a local notice such as missing terminal configuration or a route-specific runtime warning
-- **THEN** the notice is rendered inside the Chat surface instead of the top header
+### Requirement: Session runtime detail shells SHALL remain runtime-only surfaces
+The WebUI SHALL expose running-avatar detail shells as secondary runtime surfaces that focus on runtime panels such as `Devtools` and `Settings`, and those shells MUST NOT duplicate the primary global `Chats` or `Terminals` browsing experience.
+
+#### Scenario: Running avatar detail excludes global resource tabs
+- **WHEN** the user opens a running-avatar detail shell
+- **THEN** the shell exposes runtime-specific panels instead of `Chats` and `Terminals` peer tabs
+- **THEN** any room or terminal deep link leaves that shell and navigates to the corresponding global page
+
+#### Scenario: Running avatar detail can be opened from secondary entry points
+- **WHEN** the user activates a running-avatar entry from the secondary rail or from a workspace avatar list
+- **THEN** the application opens the same runtime detail shell model for that session
+- **THEN** the shell behavior does not depend on which entry point launched it

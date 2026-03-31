@@ -1,22 +1,19 @@
+# workspace-chat-surface Specification
+
 ## Purpose
+Define the durable boundary between global conversation browsing and workspace or running-avatar runtime surfaces.
 
-Define the primary workspace chat transcript contract.
 ## Requirements
-### Requirement: Chat SHALL only show user-facing assistant output
-The Chat surface SHALL render user input and assistant replies intended for users, while internal attention-system activity remains outside the primary transcript.
 
-#### Scenario: Attention updates stay out of Chat
-- **WHEN** the runtime processes an internal attention update during a cycle
-- **THEN** the Chat transcript does not render that update as an assistant reply
-- **THEN** only explicit user-facing assistant output appears in Chat
+### Requirement: Workspace runtime shells SHALL defer conversation browsing to global Chats
+The `Workspaces` surface and running-avatar runtime detail shell SHALL not own the primary room-browsing experience. Global room-first `Chats` SHALL remain the conversation browsing surface, while workspace and runtime shells focus on orchestration, runtime inspection, and source jumps.
 
-#### Scenario: Optimistic user messages deduplicate by identity
-- **WHEN** an optimistic user turn and a persisted cycle share the same `clientMessageId`
-- **THEN** Chat renders exactly one user message row for that turn
-- **THEN** the optimistic row is replaced by the persisted one without a duplicate transcript entry
+#### Scenario: Runtime detail links out to global Chats
+- **WHEN** the user requests room inspection from a running-avatar detail shell
+- **THEN** the application navigates to the global `Chats` surface
+- **THEN** the runtime shell does not render a duplicate embedded room browser
 
-#### Scenario: Long history opens on the latest persisted turns
-- **WHEN** the user opens a session with a long persisted transcript
-- **THEN** the Chat route initially shows the latest persisted turns instead of landing in the middle of the conversation
-- **THEN** reverse-scrolling still reveals the oldest persisted turns and their attachments without duplicate transcript rows
-
+#### Scenario: Workspaces stays focused on orchestration instead of transcript browsing
+- **WHEN** the user opens `Workspaces`
+- **THEN** the detail surface prioritizes `Welcome`, `History`, `Settings`, and `Avatars`
+- **THEN** conversation-first browsing remains a responsibility of the global `Chats` page

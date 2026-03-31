@@ -1,14 +1,21 @@
 # client-runtime-store Specification
 
 ## Purpose
-Define the client-side runtime normalization and long-history paging contract.
-## Requirements
-### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
-The client runtime store SHALL treat `focusedTerminalIds` and terminal read representation metadata as first-class fields and SHALL not collapse them into legacy single-value assumptions.
+Define the durable client-side runtime normalization, long-history paging contract, and Welcome access-state derivation across workspaces, running avatars, and global resources.
 
-#### Scenario: Store receives multiple focused terminals
-- **WHEN** the runtime store ingests a snapshot or event containing several focused terminal ids
-- **THEN** the store preserves the full ordered id set
+## Requirements
+
+### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
+The client runtime store SHALL normalize workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment bindings as first-class resource maps. It SHALL NOT collapse those resources back into session-owned `*BySession` stores as the primary identity axis, and it SHALL continue to preserve terminal focus-set semantics.
+
+#### Scenario: Store receives global resources plus running avatars
+- **WHEN** the runtime store ingests snapshots containing workspaces, running avatars, global rooms, global terminals, and attachment metadata
+- **THEN** it preserves workspace ids, avatar/session ids, room ids, and terminal ids as distinct primary identities
+- **THEN** selectors can derive workspace and running-avatar views without copying those resources into session-owned authority maps
+
+#### Scenario: Store preserves multiple focused terminals
+- **WHEN** the runtime store ingests focus state containing several focused terminal ids
+- **THEN** it preserves the full ordered id set
 - **THEN** selectors can derive a primary terminal view without discarding the rest of the set
 
 #### Scenario: Store receives a terminal diff representation
@@ -17,17 +24,17 @@ The client runtime store SHALL treat `focusedTerminalIds` and terminal read repr
 - **THEN** UI selectors can distinguish compact diff reads from full snapshots
 
 ### Requirement: Client runtime store SHALL track reverse-time paging state per long-history resource
-The client runtime store SHALL maintain explicit reverse-time page state for each long-history session resource and SHALL hydrate only recent windows by default.
+The client runtime store SHALL maintain explicit reverse-time page state for each long-history global resource and each long-history running-avatar detail resource, and SHALL hydrate only recent windows by default.
 
-#### Scenario: Hydration keeps a recent window
-- **WHEN** the client hydrates a session with existing chat, cycles, LoopBus, or model history
-- **THEN** it loads only the newest configured window for each resource
-- **THEN** older history remains available through the resource paging state
+#### Scenario: Paging workspace history is independent from room history
+- **WHEN** the client prepends an older page for workspace history
+- **THEN** the workspace-history cursor advances for that workspace target only
+- **THEN** room or terminal history cursors remain unchanged
 
-#### Scenario: Loading older pages preserves order and identity
-- **WHEN** the client prepends an older history page for a session resource
-- **THEN** the merged list remains ordered from oldest to newest
-- **THEN** already-known items are not duplicated
+#### Scenario: Running-avatar detail paging stays runtime-scoped
+- **WHEN** the client loads older cycle or model-call history for a running-avatar detail shell
+- **THEN** the resource window for that running avatar expands according to its own cursor
+- **THEN** unrelated workspace history, room history, or terminal history windows are not mutated
 
 #### Scenario: Persisted history replaces equivalent runtime chat rows
 - **WHEN** `runtime.snapshot` already contains in-memory chat rows and `chat.list` later hydrates the same messages with persisted ids
@@ -35,15 +42,27 @@ The client runtime store SHALL maintain explicit reverse-time page state for eac
 - **THEN** the persisted record wins over the in-memory runtime copy
 
 ### Requirement: Client runtime store SHALL keep bounded windows for long-list resources
-The client runtime store SHALL maintain bounded in-memory windows for long-history resources and SHALL keep pagination state separate from the visible list projection.
+The client runtime store SHALL maintain bounded in-memory windows for workspace history, room timelines, terminal activity, and running-avatar detail resources, and SHALL keep pagination state separate from the visible list projection.
 
 #### Scenario: Recent windows stay hydrated without loading full history
-- **WHEN** a route hydrates a long-history resource for the active session
+- **WHEN** a route hydrates a workspace history list, room timeline, terminal activity list, or running-avatar detail history
 - **THEN** the store keeps only the configured recent window in memory by default
-- **THEN** older history remains available through explicit pagination state instead of implicit eager hydration
+- **THEN** older history remains available through explicit pagination state instead of eager full hydration
 
-#### Scenario: Loading older pages does not duplicate or unbound the resource window
-- **WHEN** the store prepends older pages for a long-history resource
+#### Scenario: Loading older pages does not duplicate the visible window
+- **WHEN** the store prepends older pages for a workspace, room, terminal, or running-avatar detail resource
 - **THEN** existing rows are not duplicated
 - **THEN** the resource window remains bounded according to the shared controller policy
 
+### Requirement: Client runtime store SHALL derive Welcome access state from current catalogs and avatar-local credential validation
+The client runtime store SHALL derive `Welcome` room and terminal access state from the current global catalogs plus the validation outcome of any avatar-local room or terminal credential for the target AvatarSession. It SHALL distinguish at least `joined`, `available`, and `credential-invalid`, and it SHALL NOT require a separate durable Welcome preset or draft stack to remember prior selections.
+
+#### Scenario: Welcome selection reflects current validated joins
+- **WHEN** the client hydrates `Welcome` for a workspace and avatar target
+- **THEN** the selected rooms and terminals are derived from the current catalogs plus currently valid avatar-local credentials for that AvatarSession
+- **THEN** the UI reflects joined state without inventing a second remembered preset model
+
+#### Scenario: Invalid credential remains visible as an explicit invalid state
+- **WHEN** a previously stored room or terminal token fails validation during hydration
+- **THEN** the runtime store does not treat that room or terminal as joined
+- **THEN** the corresponding room or terminal remains visible with a `credential-invalid` state while the stale credential record is preserved until a fresh credential replaces it

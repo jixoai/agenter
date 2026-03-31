@@ -1,22 +1,30 @@
+# workspace-devtools-surface Specification
+
 ## Purpose
+Define the durable technical inspection contract for the running-avatar runtime shell.
 
-Define the dedicated technical inspection surface for workspace Devtools.
 ## Requirements
-### Requirement: Workspace Devtools SHALL own technical session inspection
-The WebUI SHALL provide a dedicated Devtools route for technical session inspection, and that route SHALL own cycle-oriented, terminal-oriented, task-oriented, LoopBus-oriented, and model-oriented inspection details that are not part of the default Chat narrative. The cycle-oriented inspection surface SHALL be presented as a live timeline instead of a default accordion dump, and Devtools typography, color density, and tooltips SHALL remain optimized for compact technical reading.
 
-#### Scenario: Devtools opens as the technical inspection surface
-- **WHEN** the user opens the Devtools route for a workspace session
-- **THEN** the route exposes technical inspection panels for the active session instead of conversation-first chat content
-- **THEN** technical details removed from the default Chat route remain available in Devtools
+### Requirement: Workspace Devtools SHALL own technical session inspection
+The WebUI SHALL continue to expose technical session inspection panels, but those panels SHALL be flattened into the running-avatar detail shell as peer runtime tabs instead of being hidden behind a separate `Devtools` wrapper tab. `Attention` SHALL remain the default entry point, while cycle-oriented, terminal-oriented, LoopBus-oriented, and model-oriented inspection details remain available as sibling runtime tabs.
+
+#### Scenario: Technical inspection panels are flattened into runtime tabs
+- **WHEN** the user opens a running-avatar detail shell
+- **THEN** technical inspection panels such as `Cycles`, `Systems`, `Observability`, and related runtime tabs are available directly at the shell tab level
+- **THEN** the user does not need to first enter a `Devtools` wrapper tab before reaching them
+
+#### Scenario: Attention remains the default technical entry
+- **WHEN** the user opens a running-avatar detail shell
+- **THEN** the shell selects `Attention` by default
+- **THEN** deeper technical inspection tabs remain available without changing the default landing priority
+
+### Requirement: Devtools SHALL expose a cycle-oriented inspection view
+The WebUI SHALL expose a cycle-oriented inspection view inside the running-avatar detail shell that allows the user to inspect session cycles and related factual inputs or internal assistant records without requiring those facts to appear in the global conversation flow.
 
 #### Scenario: Cycle inspection shows a live timeline
 - **WHEN** the active session contains persisted or active cycles
-- **THEN** Devtools exposes the cycle-oriented view as a live timeline with cycle identity, status, and related inspection access
-- **THEN** those details remain available even though they are no longer the default structure of Chat
-
-### Requirement: Devtools SHALL expose a cycle-oriented inspection view
-The WebUI SHALL expose a Devtools view that allows the user to inspect session cycles and related factual inputs or internal assistant records without requiring those facts to appear in the default Chat flow.
+- **THEN** the runtime shell exposes the cycle-oriented view as a live timeline with cycle identity, status, and related inspection access
+- **THEN** those details remain available even though they are no longer the default structure of user-facing conversation browsing
 
 #### Scenario: Multi-context attention facts preserve context ownership
 - **WHEN** a cycle fact contains an `attention-system-active` payload with multiple attention contexts
@@ -25,12 +33,12 @@ The WebUI SHALL expose a Devtools view that allows the user to inspect session c
 - **THEN** structured inspection remains available for exact payload review
 
 ### Requirement: Devtools SHALL keep technical panels independently operable
-The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and its cycle, LoopBus, and model-facing panels SHALL remain independently operable within that route instead of relying on one oversized mixed-responsibility panel.
+The WebUI SHALL keep technical panels independently operable within the running-avatar detail shell, and its cycle, LoopBus, and model-facing panels SHALL remain independently operable instead of relying on one oversized mixed-responsibility panel.
 
 #### Scenario: LoopBus tabs remain independently operable
-- **WHEN** the user opens the LoopBus surface inside Devtools
+- **WHEN** the user opens the LoopBus-oriented surface inside the running-avatar detail shell
 - **THEN** the flow, trace, and model tabs remain independently operable
-- **THEN** changing one tab's rendering details does not require restructuring the rest of the Devtools route
+- **THEN** changing one tab's rendering details does not require restructuring the rest of the technical shell
 
 #### Scenario: Technical panels preserve compact scroll behavior
 - **WHEN** the user browses long technical records in Devtools
@@ -38,9 +46,9 @@ The WebUI SHALL keep Devtools as the dedicated technical inspection surface, and
 - **THEN** headers and tab chrome remain outside the scrolled content region
 
 #### Scenario: Inactive tabs do not keep heavy runtime subscriptions alive
-- **WHEN** the user views one Devtools tab while other tabs remain inactive
+- **WHEN** the user views one runtime tab while other technical tabs remain inactive
 - **THEN** only the active tab subscribes to its heavy runtime slices and derived view-models
-- **THEN** inactive tabs do not retain model/API stream work or hot list projections unnecessarily
+- **THEN** inactive tabs do not retain model or API stream work or hot list projections unnecessarily
 
 ### Requirement: Devtools long-history panels SHALL use the shared reverse-time loading model
 Cycle, LoopBus, Terminal Activity, and Model history panels SHALL all expose the same older-page loading semantics instead of bespoke list contracts.
@@ -54,17 +62,17 @@ Cycle, LoopBus, Terminal Activity, and Model history panels SHALL all expose the
 The WebUI SHALL present cycle inspection as a desktop-or-landscape split pane and as a portrait compact right-sheet detail flow. Devtools MUST keep the technical tab strip fixed in route-local chrome while the selected panel owns its own scrolling behavior.
 
 #### Scenario: Desktop or landscape Devtools uses split cycle detail
-- **WHEN** the user opens Devtools on an expanded viewport or any landscape viewport
+- **WHEN** the user opens the running-avatar technical shell on an expanded viewport or any landscape viewport
 - **THEN** the cycle timeline and selected cycle detail are visible side by side
 - **THEN** selecting a cycle updates the detail pane without opening a sheet
 
 #### Scenario: Portrait compact Devtools uses right-sheet cycle detail
-- **WHEN** the user opens Devtools on a compact or medium portrait viewport and selects a cycle
+- **WHEN** the user opens the running-avatar technical shell on a compact or medium portrait viewport and selects a cycle
 - **THEN** the cycle detail opens in a right-side sheet
 - **THEN** the timeline remains the primary in-page panel behind that sheet
 
 ### Requirement: Workspace Devtools SHALL preserve route-local tab and panel ownership
-The WebUI SHALL keep Devtools tabs in route-local chrome outside the active panel viewport, and each active Devtools panel SHALL own its own primary scrolling surface without depending on outer route wrappers for scrolling.
+The WebUI SHALL keep runtime tabs in shell-local chrome outside the active panel viewport, and each active technical panel SHALL own its own primary scrolling surface without depending on outer route wrappers for scrolling.
 
 #### Scenario: Active Devtools panel owns scrolling
 - **WHEN** a Devtools panel contains content taller than the available route viewport
@@ -101,5 +109,4 @@ Tool lifecycle records SHALL be represented by one structured invocation message
 #### Scenario: Structured invocation drives cycle detail
 - **WHEN** a cycle contains tool lifecycle output
 - **THEN** cycle detail renders invocation cards from structured invocation metadata
-- **THEN** the UI does not need markdown fence pairing or timestamp heuristics to merge call/result
-
+- **THEN** the UI does not need markdown fence pairing or timestamp heuristics to merge call and result
