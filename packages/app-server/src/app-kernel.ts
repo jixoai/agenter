@@ -20,6 +20,15 @@ import {
   type MessageIssuedGrant,
 } from "@agenter/message-system";
 import {
+  TerminalControlPlane,
+  type TerminalActorId,
+  type TerminalApprovalRequestRecord,
+  type TerminalControlPlaneEntry,
+  type TerminalGrantRecord,
+  type TerminalIssueGrantInput,
+  type TerminalProcessProfile,
+} from "@agenter/terminal-system";
+import {
   SessionDb,
   type ApiCallRecord,
   type LoopbusStateLogRecord,
@@ -55,7 +64,6 @@ import { resolveSessionConfig } from "./session-config";
 import { projectPersistedBlockToChatMessage, readPersistedBlockChatId } from "./session-room-read-model";
 import { buildSessionAssetUrl } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
-import type { TerminalControlPlaneEntry, TerminalProcessProfile } from "@agenter/terminal-system";
 import {
   listScopedSettingsGraph,
   readScopedSettingsLayer,
@@ -105,6 +113,42 @@ const parseGitOwnerFromUrl = (raw: string): string | null => {
 
 const isInternalFailurePreviewText = (content: string): boolean =>
   INTERNAL_FAILURE_PREFIXES.some((prefix) => content.trim().startsWith(prefix));
+
+const isTerminalEventRefDetail = (
+  value: unknown,
+): value is { source: "terminal-event-ref"; eventId: number; terminalId: string } => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.source === "terminal-event-ref" &&
+    typeof record.eventId === "number" &&
+    Number.isInteger(record.eventId) &&
+    typeof record.terminalId === "string"
+  );
+};
+
+const projectTerminalEventToActivityRecord = (event: {
+  eventId: number;
+  terminalId: string;
+  createdAt: number;
+  kind: "terminal_read" | "terminal_write";
+  payload: {
+    title: string;
+    content: string;
+    detail?: unknown;
+  };
+}): TerminalActivityRecord => ({
+  id: event.eventId,
+  terminalId: event.terminalId,
+  createdAt: event.createdAt,
+  kind: event.kind,
+  cycleId: null,
+  title: event.payload.title,
+  content: event.payload.content,
+  detail: event.payload.detail,
+});
 
 const resolveWorkspaceGroup = (workspacePath: string): string => {
   const gitConfigPath = join(workspacePath, ".git", "config");
@@ -363,6 +407,7 @@ export class AppKernel {
   private readonly sessions: SessionCatalog;
   private readonly workspaces: WorkspacesStore;
   private readonly messageControlPlane: MessageControlPlane;
+  private readonly terminalControlPlane: TerminalControlPlane;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -382,6 +427,10 @@ export class AppKernel {
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
     this.messageControlPlane = new MessageControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".message", "message.db"),
+    });
+    this.terminalControlPlane = new TerminalControlPlane({
+      dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
+      outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
     });
     this.authService = new AuthServiceBridge({
       ...options.profileService,
@@ -405,6 +454,7 @@ export class AppKernel {
     this.runtimeStopListeners.clear();
     this.terminalStatusByKey.clear();
     this.messageControlPlane.close();
+    await this.terminalControlPlane.dispose();
     await this.authService.stop();
   }
 
@@ -426,6 +476,10 @@ export class AppKernel {
 
   private resolveSessionRoomActorId(sessionId: string): MessageActorId {
     return resolveSessionRoomActorId(sessionId);
+  }
+
+  private resolveSessionTerminalActorId(sessionId: string): TerminalActorId {
+    return resolveSessionRoomActorId(sessionId) as TerminalActorId;
   }
 
   private ensureSessionPrimaryRoom(
@@ -840,6 +894,8 @@ export class AppKernel {
       storeTarget: meta.storeTarget,
       messageSystem: this.messageControlPlane,
       messageActorId: this.resolveSessionRoomActorId(meta.id),
+      terminalSystem: this.terminalControlPlane,
+      terminalActorId: this.resolveSessionTerminalActorId(meta.id),
       primaryRoomId: resolvePrimaryRoomId(meta.id),
       logger: this.options.logger,
     });
@@ -1021,6 +1077,168 @@ export class AppKernel {
       accessToken: input.accessToken,
       grantId: input.grantId,
     });
+  }
+
+  listGlobalTerminals(input: {
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  } = {}): TerminalControlPlaneEntry[] {
+    if (input.superadminActorId || !input.actorId) {
+      return this.terminalControlPlane.list();
+    }
+    return this.terminalControlPlane.listForActor(input.actorId, {
+      touchPresence: false,
+    });
+  }
+
+  async createGlobalTerminal(input: {
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: TerminalProcessProfile;
+    focus?: boolean;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<{ ok: boolean; message: string; terminal?: TerminalControlPlaneEntry }> {
+    const created =
+      input.actorId && !input.superadminActorId
+        ? await this.terminalControlPlane.createForActor(input.actorId, {
+            terminalId: input.terminalId,
+            processKind: input.processKind,
+            command: input.command,
+            cwd: input.cwd,
+            profile: input.profile,
+          })
+        : await this.terminalControlPlane.create({
+            terminalId: input.terminalId,
+            processKind: input.processKind,
+            command: input.command,
+            cwd: input.cwd,
+            profile: input.profile,
+          });
+
+    if (input.actorId && !input.superadminActorId) {
+      if (input.focus ?? true) {
+        this.terminalControlPlane.focusForActor(input.actorId, "replace", [created.terminalId]);
+      }
+      const terminal = this.terminalControlPlane
+        .listForActor(input.actorId, { touchPresence: false })
+        .find((entry) => entry.terminalId === created.terminalId);
+      return {
+        ok: true,
+        message: terminal ? "terminal created" : "terminal created but unavailable to actor",
+        terminal,
+      };
+    }
+    if (input.focus ?? true) {
+      this.terminalControlPlane.focus("replace", [created.terminalId]);
+    }
+    const terminal = this.terminalControlPlane.list().find((entry) => entry.terminalId === created.terminalId);
+    return {
+      ok: true,
+      message: terminal ? "terminal created" : "terminal created but unavailable in catalog",
+      terminal,
+    };
+  }
+
+  focusGlobalTerminals(input: {
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): { ok: boolean; message: string; focusedTerminalIds: string[] } {
+    const focusedTerminalIds =
+      input.actorId && !input.superadminActorId
+        ? this.terminalControlPlane.focusForActor(input.actorId, input.op, input.terminalIds)
+        : this.terminalControlPlane.focus(input.op, input.terminalIds);
+    return {
+      ok: true,
+      message: `focus ${input.op}`,
+      focusedTerminalIds,
+    };
+  }
+
+  async deleteGlobalTerminal(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<{ ok: boolean; message: string }> {
+    return await this.terminalControlPlane.killAuthorized(input);
+  }
+
+  listGlobalTerminalGrants(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalGrantRecord[] {
+    return this.terminalControlPlane.listGrantsAuthorized(input);
+  }
+
+  issueGlobalTerminalGrant(
+    input: {
+      terminalId: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } & TerminalIssueGrantInput,
+  ) {
+    return this.terminalControlPlane.issueGrantAuthorized(input);
+  }
+
+  revokeGlobalTerminalGrant(input: {
+    terminalId: string;
+    grantId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): { ok: boolean } {
+    return this.terminalControlPlane.revokeGrantAuthorized(input);
+  }
+
+  listGlobalTerminalApprovalRequests(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+    participantId?: TerminalActorId;
+    assignedAdminId?: TerminalActorId;
+    statuses?: TerminalApprovalRequestRecord["status"][];
+  }): TerminalApprovalRequestRecord[] {
+    return this.terminalControlPlane.listApprovalRequestsAuthorized(input);
+  }
+
+  approveGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+    durationMs: number;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }) {
+    return this.terminalControlPlane.approveRequestAuthorized(input);
+  }
+
+  denyGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }) {
+    return this.terminalControlPlane.denyRequestAuthorized(input);
+  }
+
+  pageGlobalTerminalActivity(
+    input: {
+      terminalId: string;
+      before?: ReverseTimeCursor;
+      limit?: number;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    },
+  ): ReversePage<TerminalActivityRecord> {
+    const page = this.terminalControlPlane.pageEventsAuthorized(input);
+    return {
+      items: page.items.map(projectTerminalEventToActivityRecord),
+      nextBefore: page.nextBefore,
+      hasMoreBefore: page.hasMoreBefore,
+    };
   }
 
   listTerminals(sessionId: string): TerminalControlPlaneEntry[] {
@@ -2220,10 +2438,30 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      return db.listTerminalActivityPage(terminalId, input);
+      const page = db.listTerminalActivityPage(terminalId, input);
+      return {
+        ...page,
+        items: page.items.map((item) => this.hydrateTerminalActivityRecord(item)),
+      };
     } finally {
       db.close();
     }
+  }
+
+  private hydrateTerminalActivityRecord(item: TerminalActivityRecord): TerminalActivityRecord {
+    if (!isTerminalEventRefDetail(item.detail)) {
+      return item;
+    }
+    const event = this.terminalControlPlane.getEvent(item.detail.eventId);
+    if (!event || event.terminalId !== item.terminalId) {
+      return item;
+    }
+    return {
+      ...item,
+      title: event.payload.title,
+      content: event.payload.content,
+      detail: event.payload.detail,
+    };
   }
 
   private detachRuntime(sessionId: string): void {

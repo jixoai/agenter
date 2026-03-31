@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { TerminalControlPlane, type TerminalTransportServerMessage } from "../src/terminal-control-plane";
+import { TerminalControlPlane, type TerminalTransportServerMessage } from "../src";
 
 const workspaces: string[] = [];
 
@@ -12,6 +12,7 @@ const createPlane = () => {
   const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-"));
   workspaces.push(outputRoot);
   return new TerminalControlPlane({
+    dbPath: join(outputRoot, "terminal.db"),
     outputRoot,
     defaultShellCommand: ["sh", "-lc", "cat"],
     initialConfig: {
@@ -180,6 +181,244 @@ describe("Feature: terminal control plane", () => {
     await plane.kill(created.terminalId);
     await closed;
     plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given requester and readonly grants When writes require approval Then readonly stays blocked and approved leases unlock requester writes", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "collab",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    const requester = plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:requester",
+      role: "requester",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:readonly",
+      role: "readonly",
+    });
+
+    const readonlyWrite = await plane.write({
+      terminalId: created.terminalId,
+      text: "blocked",
+      submit: false,
+      actorId: "session:readonly",
+    });
+    expect(readonlyWrite.ok).toBe(false);
+    expect(readonlyWrite.message).toContain("readonly");
+
+    const pending = await plane.write({
+      terminalId: created.terminalId,
+      text: "needs-lease",
+      submit: false,
+      actorId: "session:requester",
+    });
+    expect(pending.ok).toBe(false);
+    expect(pending.approvalRequest?.assignedAdminId).toBe("session:admin");
+
+    const requestId = pending.approvalRequest?.requestId;
+    if (!requestId) {
+      throw new Error("expected approval request");
+    }
+
+    const lease = plane.approveRequestAuthorized({
+      terminalId: created.terminalId,
+      requestId,
+      durationMs: 60_000,
+      actorId: "session:admin",
+    });
+    expect(lease.participantId).toBe("session:requester");
+
+    const approved = await plane.write({
+      terminalId: created.terminalId,
+      text: "needs-lease",
+      submit: false,
+      actorId: "session:requester",
+      accessToken: requester.accessToken,
+    });
+    expect(approved.ok).toBe(true);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given admin-group failover When higher-priority admins move online Then pending work is reassigned without changing readonly base writes", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:alpha", true);
+    const created = await plane.create({
+      terminalId: "admin-failover",
+      bootstrapActorId: "session:alpha",
+      bootstrapRole: "admin",
+    });
+
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:alpha",
+      participantId: "session:bravo",
+      role: "readonly",
+      adminCandidateRank: 1,
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:alpha",
+      participantId: "session:charlie",
+      role: "requester",
+    });
+
+    const initialRequest = await plane.write({
+      terminalId: created.terminalId,
+      text: "handoff",
+      submit: false,
+      actorId: "session:charlie",
+    });
+    expect(initialRequest.approvalRequest?.assignedAdminId).toBe("session:alpha");
+
+    plane.setActorPresence("session:bravo", true);
+    plane.setActorPresence("session:alpha", false);
+
+    const reassigned = plane.listApprovalRequests({
+      terminalId: created.terminalId,
+      participantId: "session:charlie",
+    });
+    expect(reassigned[0]?.assignedAdminId).toBe("session:bravo");
+
+    const bravoView = plane.listForActor("session:bravo")[0];
+    expect(bravoView?.access?.currentAdmin).toBe(true);
+    const bravoWrite = await plane.write({
+      terminalId: created.terminalId,
+      text: "still blocked",
+      submit: false,
+      actorId: "session:bravo",
+    });
+    expect(bravoWrite.ok).toBe(false);
+    expect(bravoWrite.message).toContain("readonly");
+
+    plane.setActorPresence("session:alpha", true);
+    const preempted = plane.listApprovalRequests({
+      terminalId: created.terminalId,
+      participantId: "session:charlie",
+    });
+    expect(preempted[0]?.assignedAdminId).toBe("session:alpha");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given requester transport input When no lease exists Then websocket input is rejected until an admin approves a write lease", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "transport-acl",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const requester = plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:requester",
+      role: "requester",
+    });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId, requester.accessToken);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain("token=");
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      messages.push(JSON.parse(String(event.data)) as TerminalTransportServerMessage);
+    });
+    await opened;
+
+    socket.send(JSON.stringify({ type: "input", data: "blocked transport\n" }));
+    await Bun.sleep(120);
+    expect(messages.some((message) => message.type === "error" && message.message.includes("approval"))).toBe(true);
+
+    const pending = plane.listApprovalRequests({
+      terminalId: created.terminalId,
+      participantId: "session:requester",
+    })[0];
+    if (!pending) {
+      throw new Error("expected pending transport request");
+    }
+    plane.approveRequestAuthorized({
+      terminalId: created.terminalId,
+      requestId: pending.requestId,
+      durationMs: 60_000,
+      actorId: "session:admin",
+    });
+
+    socket.send(JSON.stringify({ type: "input", data: "allowed transport\n" }));
+    await Bun.sleep(150);
+    expect(messages.some((message) => message.type === "output" && message.data.includes("allowed transport"))).toBe(true);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given current local admin When paging events and killing through authorized APIs Then history stays cursor-addressable and lifecycle stays admin-gated", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "event-page",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "first event\n",
+      submit: false,
+      actorId: "session:admin",
+    });
+    await Bun.sleep(80);
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "second event\n",
+      submit: false,
+      actorId: "session:admin",
+    });
+    await Bun.sleep(80);
+
+    const firstPage = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      limit: 1,
+    });
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.items[0]?.kind).toBe("terminal_write");
+    expect(firstPage.hasMoreBefore).toBeTrue();
+    expect(firstPage.nextBefore).not.toBeNull();
+
+    const secondPage = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      before: firstPage.nextBefore ?? undefined,
+      limit: 4,
+    });
+    expect(secondPage.items.length).toBeGreaterThan(0);
+    expect(secondPage.items.at(-1)?.createdAt).toBeLessThanOrEqual(firstPage.items[0]!.createdAt);
+
+    await expect(
+      plane.killAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:admin",
+      }),
+    ).resolves.toEqual({ ok: true, message: "terminal stopped" });
+    expect(plane.list()).toHaveLength(0);
+
     await plane.dispose();
   });
 });

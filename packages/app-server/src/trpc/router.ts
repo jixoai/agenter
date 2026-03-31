@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
+import type { TerminalActorId } from "@agenter/terminal-system";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
 import { t } from "./init";
@@ -21,6 +22,13 @@ const channelAccessInput = z.object({
   accessToken: z.string().min(1),
 });
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
+const TERMINAL_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const terminalActorIdSchema = z.custom<TerminalActorId>(
+  (value) => typeof value === "string" && TERMINAL_ACTOR_ID_PATTERN.test(value),
+  {
+    message: "terminal actor id must start with auth:, session:, or system:",
+  },
+);
 const terminalProcessProfileSchema = z.object({
   command: z.array(z.string().min(1)).min(1).optional(),
   cwd: z.string().min(1).optional(),
@@ -94,6 +102,16 @@ const requireSuperadmin = requireAuth.use(({ ctx, next }) => {
   }
   return next();
 });
+
+const resolveTerminalCallerScope = (
+  auth: { claims: { authId: string; superadmin: boolean } } | null | undefined,
+): { actorId?: TerminalActorId; superadminActorId?: TerminalActorId } => {
+  if (!auth?.claims.authId) {
+    return {};
+  }
+  const actorId = `auth:${auth.claims.authId}` as TerminalActorId;
+  return auth.claims.superadmin ? { superadminActorId: actorId } : { actorId };
+};
 
 export const appRouter = t.router({
   auth: t.router({
@@ -441,6 +459,155 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.deleteTerminal(input)),
+    globalList: t.procedure.query(({ ctx }) => ({
+      items: ctx.kernel.listGlobalTerminals(resolveTerminalCallerScope(ctx.auth)),
+    })),
+    globalCreate: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1).optional(),
+          processKind: z.string().trim().min(1).optional(),
+          command: z.array(z.string().min(1)).min(1).optional(),
+          cwd: z.string().min(1).optional(),
+          profile: terminalProcessProfileSchema.optional(),
+          focus: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        result: await ctx.kernel.createGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    globalFocus: t.procedure
+      .input(
+        z.object({
+          op: z.enum(["add", "remove", "replace", "clear"]),
+          terminalIds: z.array(z.string().min(1)).default([]),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.focusGlobalTerminals({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    globalDelete: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) =>
+        await ctx.kernel.deleteGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    activityPage: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          before: reverseTimeCursorSchema.optional(),
+          limit: z.number().int().positive().max(500).optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageGlobalTerminalActivity({
+          terminalId: input.terminalId,
+          before: input.before,
+          limit: input.limit ?? 120,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    listGrants: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listGlobalTerminalGrants({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    issueGrant: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          role: z.enum(["admin", "writer", "requester", "readonly"]),
+          participantId: terminalActorIdSchema,
+          label: z.string().trim().min(1).optional(),
+          accessTokenHint: z
+            .string()
+            .trim()
+            .regex(ACCESS_TOKEN_PATTERN, "accessTokenHint must be 16-128 chars [A-Za-z0-9._-]")
+            .optional(),
+          adminCandidateRank: z.number().int().nonnegative().nullable().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        grant: ctx.kernel.issueGlobalTerminalGrant({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    revokeGrant: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          grantId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.revokeGlobalTerminalGrant({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    listApprovalRequests: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          assignedAdminId: terminalActorIdSchema.optional(),
+          participantId: terminalActorIdSchema.optional(),
+          statuses: z.array(z.enum(["pending", "approved", "denied", "expired"])).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listGlobalTerminalApprovalRequests({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    approveRequest: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          requestId: z.string().min(1),
+          durationMs: z.number().int().positive(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.approveGlobalTerminalRequest({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    denyRequest: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          requestId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.denyGlobalTerminalRequest({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
   }),
   draft: t.router({
     resolve: t.procedure

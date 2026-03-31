@@ -48,16 +48,18 @@ const meta = {
     primaryItems: defaultPrimaryNavItems({
       quickStartActive: true,
       workspacesActive: false,
+      terminalsActive: false,
       settingsActive: false,
       unreadWorkspaces: 4,
       onSelectQuickStart: () => {},
       onSelectWorkspaces: () => {},
+      onSelectTerminals: () => {},
       onSelectSettings: () => {},
     }),
     runningSessions: baseSessions,
   },
   render: () => {
-    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "settings">("quickstart");
+    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "terminals" | "settings">("quickstart");
     const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
 
     return (
@@ -67,10 +69,12 @@ const meta = {
           primaryItems={defaultPrimaryNavItems({
             quickStartActive: activePrimary === "quickstart",
             workspacesActive: activePrimary === "workspaces",
+            terminalsActive: activePrimary === "terminals",
             settingsActive: activePrimary === "settings",
             unreadWorkspaces: 4,
             onSelectQuickStart: () => setActivePrimary("quickstart"),
             onSelectWorkspaces: () => setActivePrimary("workspaces"),
+            onSelectTerminals: () => setActivePrimary("terminals"),
             onSelectSettings: () => setActivePrimary("settings"),
           })}
           runningSessions={baseSessions.map((item) => ({
@@ -125,10 +129,12 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
           primaryItems={defaultPrimaryNavItems({
             quickStartActive: false,
             workspacesActive: true,
+            terminalsActive: false,
             settingsActive: false,
             unreadWorkspaces: 9,
             onSelectQuickStart: () => {},
             onSelectWorkspaces: () => {},
+            onSelectTerminals: () => {},
             onSelectSettings: () => {},
           })}
           runningSessions={longRunningSessions.map((item) => ({
@@ -152,7 +158,7 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
 export const DesktopRailCanCollapseToIconWidth: Story = {
   render: () => {
     const [collapsed, setCollapsed] = useState(false);
-    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "settings">("workspaces");
+    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "terminals" | "settings">("workspaces");
     const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
 
     return (
@@ -164,10 +170,12 @@ export const DesktopRailCanCollapseToIconWidth: Story = {
           primaryItems={defaultPrimaryNavItems({
             quickStartActive: activePrimary === "quickstart",
             workspacesActive: activePrimary === "workspaces",
+            terminalsActive: activePrimary === "terminals",
             settingsActive: activePrimary === "settings",
             unreadWorkspaces: 4,
             onSelectQuickStart: () => setActivePrimary("quickstart"),
             onSelectWorkspaces: () => setActivePrimary("workspaces"),
+            onSelectTerminals: () => setActivePrimary("terminals"),
             onSelectSettings: () => setActivePrimary("settings"),
           })}
           runningSessions={baseSessions.map((item) => ({

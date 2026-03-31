@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { TerminalControlPlane } from "@agenter/terminal-system";
 import { SessionRuntime } from "../src/session-runtime";
 
 interface RuntimeInternals {
@@ -49,6 +50,10 @@ const createRuntime = (): SessionRuntime => {
     sessionRoot: join(root, "session"),
     sessionName: "cycle-stream",
     storeTarget: "workspace",
+    terminalSystem: new TerminalControlPlane({
+      dbPath: join(root, "terminal.db"),
+      outputRoot: join(root, "terminals"),
+    }),
   });
 };
 

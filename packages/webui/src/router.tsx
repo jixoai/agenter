@@ -43,7 +43,7 @@ import {
   selectWorkspaceChromeState,
 } from "./features/shell/runtime-selectors";
 import { useAdaptiveViewport } from "./features/shell/useAdaptiveViewport";
-import { SessionTerminalsSurface } from "./features/terminal/SessionTerminalsSurface";
+import { GlobalTerminalsRoute } from "./features/terminal/GlobalTerminalsRoute";
 import { WorkspaceSessionsPanel } from "./features/workspaces/WorkspaceSessionsPanel";
 import { WorkspacesPanel } from "./features/workspaces/WorkspacesPanel";
 import { cn } from "./lib/utils";
@@ -572,6 +572,10 @@ const WorkspacesRouteView = () => {
   );
 };
 
+const GlobalTerminalsRouteView = () => {
+  return <GlobalTerminalsRoute />;
+};
+
 const SessionChatsRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
@@ -658,8 +662,7 @@ const SessionChatsRouteView = () => {
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/session/$sessionId/terminals",
-          params: { sessionId },
+          to: "/terminals",
         });
         return;
       }
@@ -950,90 +953,18 @@ const SessionChatsRouteView = () => {
 };
 
 const SessionTerminalsRouteView = () => {
-  const controller = useAppController();
   const navigate = useNavigate();
   const params = sessionTerminalsRoute.useParams();
   const sessionId = params.sessionId;
-  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
-  const workspacePath = session?.cwd ?? "";
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
-  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
-  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
-  const hasRuntime = useRuntimeSelector((state) => Boolean(state.runtimes[sessionId]));
-  const routeNotice = resolveChatRouteNotice({
-    notice: controller.notice,
-    session,
-    runtime: routeRuntime ?? undefined,
-  });
-  const terminalsSurfaceLoading =
-    !hasRuntime && session?.status !== "stopped" && session?.status !== "paused" && session?.status !== "error";
 
-  const handleSessionTerminalsNavigate = useCallback(
-    (tab: "chat" | "terminals" | "devtools" | "settings") => {
-      if (tab === "settings") {
-        void navigate({
-          to: "/session/$sessionId/settings",
-          params: { sessionId },
-        });
-        return;
-      }
-      if (tab === "chat") {
-        void navigate({
-          to: "/session/$sessionId/chats",
-          params: { sessionId },
-          search: { chatId: undefined },
-        });
-        return;
-      }
-      if (tab === "devtools") {
-        void navigate({
-          to: "/session/$sessionId/devtools",
-          params: { sessionId },
-          search: buildSessionDevtoolsSearch({ panel: "attention" }),
-        });
-      }
-    },
-    [navigate, sessionId],
-  );
-  const handleSessionPrimaryAction = useCallback(() => {
-    if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(sessionId);
-      return;
-    }
-    void controller.startSession(sessionId);
-  }, [controller, sessionId, sessionStatusPill.primaryAction]);
-  const handleAbortSession = useCallback(() => {
-    void controller.abortSession(sessionId);
-  }, [controller, sessionId]);
+  useEffect(() => {
+    void navigate({
+      to: "/terminals",
+      replace: true,
+    });
+  }, [navigate, sessionId]);
 
-  return (
-    <WorkspaceShellFrame
-      workspacePath={workspacePath}
-      workspaceMissing={workspace?.missing ?? false}
-      activeTab="terminals"
-      onNavigate={handleSessionTerminalsNavigate}
-      headerStatusSlot={
-        <SessionStatusPillMenu
-          triggerVariant="icon"
-          statusLabel={sessionStatusPill.label}
-          tone={sessionStatusPill.tone}
-          primaryActionLabel={sessionStatusPill.primaryActionLabel}
-          primaryActionDisabled={sessionStatusPill.disabled}
-          onPrimaryAction={handleSessionPrimaryAction}
-          onAbort={handleAbortSession}
-        />
-      }
-    >
-      <section
-        className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5 p-2.5 md:p-3")}
-      >
-        {routeNotice ? <NoticeBanner tone={routeNotice.tone}>{routeNotice.message}</NoticeBanner> : null}
-        <ViewportMask className="h-full">
-          <SessionTerminalsSurface sessionId={sessionId} loading={terminalsSurfaceLoading} />
-        </ViewportMask>
-      </section>
-    </WorkspaceShellFrame>
-  );
+  return null;
 };
 
 const SessionDevtoolsRouteView = () => {
@@ -1113,8 +1044,7 @@ const SessionDevtoolsRouteView = () => {
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/session/$sessionId/terminals",
-          params: { sessionId },
+          to: "/terminals",
         });
         return;
       }
@@ -1251,8 +1181,7 @@ const SessionSettingsRouteView = () => {
       }
       if (tab === "terminals") {
         void navigate({
-          to: "/session/$sessionId/terminals",
-          params: { sessionId },
+          to: "/terminals",
         });
         return;
       }
@@ -1667,6 +1596,12 @@ const workspacesRoute = createRoute({
   component: WorkspacesRouteView,
 });
 
+const terminalsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/terminals",
+  component: GlobalTerminalsRouteView,
+});
+
 const globalSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -1702,6 +1637,7 @@ const sessionSettingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   quickStartRoute,
   workspacesRoute,
+  terminalsRoute,
   globalSettingsRoute,
   sessionChatsRoute,
   sessionTerminalsRoute,

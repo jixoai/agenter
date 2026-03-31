@@ -2,6 +2,7 @@ import {
   createAgenterClient,
   createRuntimeStore,
   type DraftResolutionOutput,
+  type GlobalTerminalActorId,
   type WorkspaceSessionCounts,
   type WorkspaceSessionEntry,
   type WorkspaceSessionTab,
@@ -1057,6 +1058,171 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [setError, store],
   );
 
+  const listGlobalTerminals = useCallback(async () => {
+    try {
+      return await store.listGlobalTerminals();
+    } catch (error) {
+      setError(error);
+      throw error;
+    }
+  }, [setError, store]);
+
+  const createGlobalTerminal = useCallback(
+    async (input: {
+      terminalId?: string;
+      processKind?: string;
+      command?: string[];
+      cwd?: string;
+      profile?: {
+        command?: string[];
+        cwd?: string;
+        cols?: number;
+        rows?: number;
+        gitLog?: false | "none" | "normal" | "verbose";
+        logStyle?: "plain" | "rich";
+        icon?: string;
+        title?: string;
+        shortcuts?: Record<string, string>;
+      };
+      focus?: boolean;
+    }) => {
+      try {
+        return await store.createGlobalTerminal(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const focusGlobalTerminals = useCallback(
+    async (input: {
+      op: "add" | "remove" | "replace" | "clear";
+      terminalIds: string[];
+    }) => {
+      try {
+        return await store.focusGlobalTerminals(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const deleteGlobalTerminal = useCallback(
+    async (input: { terminalId: string }) => {
+      try {
+        return await store.deleteGlobalTerminal(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listGlobalTerminalGrants = useCallback(
+    async (terminalId: string) => {
+      try {
+        return await store.listGlobalTerminalGrants(terminalId);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const issueGlobalTerminalGrant = useCallback(
+    async (input: {
+      terminalId: string;
+      role: "admin" | "writer" | "requester" | "readonly";
+      participantId: GlobalTerminalActorId;
+      label?: string;
+      accessTokenHint?: string;
+      adminCandidateRank?: number | null;
+    }) => {
+      try {
+        return await store.issueGlobalTerminalGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const revokeGlobalTerminalGrant = useCallback(
+    async (input: { terminalId: string; grantId: string }) => {
+      try {
+        return await store.revokeGlobalTerminalGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listGlobalTerminalApprovalRequests = useCallback(
+    async (input: {
+      terminalId: string;
+      assignedAdminId?: GlobalTerminalActorId;
+      participantId?: GlobalTerminalActorId;
+      statuses?: Array<"pending" | "approved" | "denied" | "expired">;
+    }) => {
+      try {
+        return await store.listGlobalTerminalApprovalRequests(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const approveGlobalTerminalRequest = useCallback(
+    async (input: { terminalId: string; requestId: string; durationMs: number }) => {
+      try {
+        return await store.approveGlobalTerminalRequest(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const denyGlobalTerminalRequest = useCallback(
+    async (input: { terminalId: string; requestId: string }) => {
+      try {
+        return await store.denyGlobalTerminalRequest(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const loadGlobalTerminalActivity = useCallback(
+    async (input: {
+      terminalId: string;
+      before?: { beforeTimeMs: number; beforeId: number } | null;
+      limit?: number;
+    }) => {
+      try {
+        return await store.loadGlobalTerminalActivity(input.terminalId, input.before, input.limit ?? 120);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
   const loadMoreChatCycles = useCallback(
     async (sessionId: string): Promise<void> => {
       await runLongListLoad({
@@ -1484,6 +1650,17 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       createTerminal,
       focusTerminals,
       deleteTerminal,
+      listGlobalTerminals,
+      createGlobalTerminal,
+      focusGlobalTerminals,
+      deleteGlobalTerminal,
+      listGlobalTerminalGrants,
+      issueGlobalTerminalGrant,
+      revokeGlobalTerminalGrant,
+      listGlobalTerminalApprovalRequests,
+      approveGlobalTerminalRequest,
+      denyGlobalTerminalRequest,
+      loadGlobalTerminalActivity,
       loadMoreChatMessages,
       loadMoreChatCycles,
       loadMoreTrace,
@@ -1558,9 +1735,15 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       saveSelectedLayer,
       createMessageChannel,
       deleteTerminal,
+      deleteGlobalTerminal,
       focusTerminals,
+      focusGlobalTerminals,
       updateMessageChannel,
+      issueGlobalTerminalGrant,
+      approveGlobalTerminalRequest,
+      createGlobalTerminal,
       revokeMessageChannelGrant,
+      revokeGlobalTerminalGrant,
       sendMessageChannel,
       searchWorkspacePaths,
       selectedLayerId,
@@ -1580,6 +1763,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       toggleSessionFavorite,
       toggleWorkspaceFavorite,
       store,
+      listGlobalTerminalApprovalRequests,
+      listGlobalTerminalGrants,
+      listGlobalTerminals,
+      loadGlobalTerminalActivity,
+      denyGlobalTerminalRequest,
       validateDirectory,
       workspaceSessionCounts,
       workspaceSessionCursor,

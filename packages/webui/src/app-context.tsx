@@ -1,10 +1,16 @@
 import type {
   AttentionQueryItem,
   DraftResolutionOutput,
+  GlobalTerminalApprovalRequest,
+  GlobalTerminalActorId,
+  GlobalTerminalEntry,
+  GlobalTerminalGrantEntry,
+  GlobalTerminalGrantIssueOutput,
   MessageChannelEntry,
   MessageChannelGrantEntry,
   RuntimeClientState,
   RuntimeStore,
+  TerminalActivityItem,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
@@ -162,6 +168,66 @@ export interface AppController {
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   deleteTerminal: (input: { sessionId: string; terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  listGlobalTerminals: () => Promise<GlobalTerminalEntry[]>;
+  createGlobalTerminal: (input: {
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: {
+      command?: string[];
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+      gitLog?: false | "none" | "normal" | "verbose";
+      logStyle?: "plain" | "rich";
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+    };
+    focus?: boolean;
+  }) => Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
+  focusGlobalTerminals: (input: {
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
+  deleteGlobalTerminal: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  listGlobalTerminalGrants: (terminalId: string) => Promise<GlobalTerminalGrantEntry[]>;
+  issueGlobalTerminalGrant: (input: {
+    terminalId: string;
+    role: "admin" | "writer" | "requester" | "readonly";
+    participantId: GlobalTerminalActorId;
+    label?: string;
+    accessTokenHint?: string;
+    adminCandidateRank?: number | null;
+  }) => Promise<GlobalTerminalGrantIssueOutput["grant"]>;
+  revokeGlobalTerminalGrant: (input: { terminalId: string; grantId: string }) => Promise<{ ok: boolean }>;
+  listGlobalTerminalApprovalRequests: (input: {
+    terminalId: string;
+    assignedAdminId?: GlobalTerminalActorId;
+    participantId?: GlobalTerminalActorId;
+    statuses?: GlobalTerminalApprovalRequest["status"][];
+  }) => Promise<GlobalTerminalApprovalRequest[]>;
+  approveGlobalTerminalRequest: (input: { terminalId: string; requestId: string; durationMs: number }) => Promise<{
+    leaseId: string;
+    terminalId: string;
+    participantId: string;
+    grantedBy?: string;
+    requestId?: string;
+    createdAt: number;
+    expiresAt: number;
+    revokedAt?: number;
+  }>;
+  denyGlobalTerminalRequest: (input: { terminalId: string; requestId: string }) => Promise<GlobalTerminalApprovalRequest>;
+  loadGlobalTerminalActivity: (input: {
+    terminalId: string;
+    before?: { beforeTimeMs: number; beforeId: number } | null;
+    limit?: number;
+  }) => Promise<{
+    items: TerminalActivityItem[];
+    hasMore: boolean;
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+  }>;
   revokeMessageChannelGrant: (input: {
     sessionId: string;
     chatId: string;

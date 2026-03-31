@@ -84,6 +84,9 @@ const routeLabelFromPath = (pathname: string): string => {
   if (pathname === "/workspaces") {
     return "Workspaces";
   }
+  if (pathname === "/terminals") {
+    return "Terminals";
+  }
   if (pathname === "/settings") {
     return "Settings";
   }
@@ -152,6 +155,11 @@ export const AppRoot = () => {
     setMobileSidebarOpen(false);
   }, [navigate]);
 
+  const handleSelectTerminals = useCallback(() => {
+    void navigate({ to: "/terminals" });
+    setMobileSidebarOpen(false);
+  }, [navigate]);
+
   useEffect(() => {
     if (!connected || !routeSessionId) {
       return;
@@ -175,13 +183,15 @@ export const AppRoot = () => {
       defaultPrimaryNavItems({
         quickStartActive: location.pathname === "/",
         workspacesActive: location.pathname === "/workspaces",
+        terminalsActive: location.pathname === "/terminals",
         settingsActive: location.pathname === "/settings",
         unreadWorkspaces: unreadTotal,
         onSelectQuickStart: handleSelectQuickStart,
         onSelectWorkspaces: handleSelectWorkspaces,
+        onSelectTerminals: handleSelectTerminals,
         onSelectSettings: handleSelectSettings,
       }),
-    [handleSelectQuickStart, handleSelectSettings, handleSelectWorkspaces, location.pathname, unreadTotal],
+    [handleSelectQuickStart, handleSelectSettings, handleSelectTerminals, handleSelectWorkspaces, location.pathname, unreadTotal],
   );
 
   const runningSessions = useMemo<RunningSessionNavItem[]>(() => {

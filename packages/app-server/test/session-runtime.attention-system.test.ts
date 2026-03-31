@@ -11,6 +11,7 @@ import {
   type AttentionCommitChange,
 } from "@agenter/attention-system";
 import { SessionDb } from "@agenter/session-system";
+import { TerminalControlPlane } from "@agenter/terminal-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import { SessionRuntime } from "../src/session-runtime";
@@ -270,6 +271,12 @@ const appendAttentionCommit = (
     change: buildCommitChange(internal, contextId, input),
   }).commit;
 
+const createTerminalSystem = (root: string): TerminalControlPlane =>
+  new TerminalControlPlane({
+    dbPath: join(root, "terminal.db"),
+    outputRoot: join(root, "terminals"),
+  });
+
 const createRuntime = (): SessionRuntime => {
   const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-"));
   return new SessionRuntime({
@@ -279,6 +286,7 @@ const createRuntime = (): SessionRuntime => {
     sessionName: "test",
     storeTarget: "workspace",
     primaryRoomId: PRIMARY_ROOM_ID,
+    terminalSystem: createTerminalSystem(root),
   });
 };
 
@@ -930,6 +938,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot,
       sessionName: "migrate",
       storeTarget: "workspace",
+      terminalSystem: createTerminalSystem(root),
     });
 
     await runtime.start();
@@ -1918,6 +1927,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionName: "room-restart",
       storeTarget: "workspace" as const,
       primaryRoomId: PRIMARY_ROOM_ID,
+      terminalSystem: createTerminalSystem(root),
     };
     const runtime = new SessionRuntime(options);
 

@@ -7,11 +7,17 @@ import type {
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
+  GlobalTerminalApprovalRequest,
+  GlobalTerminalActorId,
+  GlobalTerminalEntry,
+  GlobalTerminalGrantEntry,
+  GlobalTerminalGrantIssueOutput,
   HistoryPageCursor,
   MessageChannelEntry,
   MessageChannelGrantEntry,
   NotificationSnapshotOutput,
   RuntimeAttentionState,
+  TerminalActivityItem,
   RuntimeChatCycle,
   RuntimeChatMessage,
   RuntimeClientState,
@@ -1664,6 +1670,111 @@ export class RuntimeStore {
     await this.hydrateRuntime(input.sessionId);
     this.emit();
     return output;
+  }
+
+  async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
+    const output = await this.client.trpc.terminal.globalList.query();
+    return output.items;
+  }
+
+  async createGlobalTerminal(input: {
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: {
+      command?: string[];
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+      gitLog?: false | "none" | "normal" | "verbose";
+      logStyle?: "plain" | "rich";
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+    };
+    focus?: boolean;
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+    const output = await this.client.trpc.terminal.globalCreate.mutate(input);
+    return output.result;
+  }
+
+  async focusGlobalTerminals(input: {
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
+    return await this.client.trpc.terminal.globalFocus.mutate(input);
+  }
+
+  async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    return await this.client.trpc.terminal.globalDelete.mutate(input);
+  }
+
+  async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
+    const output = await this.client.trpc.terminal.listGrants.query({ terminalId });
+    return output.items;
+  }
+
+  async issueGlobalTerminalGrant(input: {
+    terminalId: string;
+    role: "admin" | "writer" | "requester" | "readonly";
+    participantId: GlobalTerminalActorId;
+    label?: string;
+    accessTokenHint?: string;
+    adminCandidateRank?: number | null;
+  }): Promise<GlobalTerminalGrantIssueOutput["grant"]> {
+    const output = await this.client.trpc.terminal.issueGrant.mutate(input);
+    return output.grant;
+  }
+
+  async revokeGlobalTerminalGrant(input: {
+    terminalId: string;
+    grantId: string;
+  }): Promise<{ ok: boolean }> {
+    return await this.client.trpc.terminal.revokeGrant.mutate(input);
+  }
+
+  async listGlobalTerminalApprovalRequests(input: {
+    terminalId: string;
+    assignedAdminId?: GlobalTerminalActorId;
+    participantId?: GlobalTerminalActorId;
+    statuses?: GlobalTerminalApprovalRequest["status"][];
+  }): Promise<GlobalTerminalApprovalRequest[]> {
+    const output = await this.client.trpc.terminal.listApprovalRequests.query(input);
+    return output.items;
+  }
+
+  async approveGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+    durationMs: number;
+  }) {
+    return await this.client.trpc.terminal.approveRequest.mutate(input);
+  }
+
+  async denyGlobalTerminalRequest(input: { terminalId: string; requestId: string }) {
+    return await this.client.trpc.terminal.denyRequest.mutate(input);
+  }
+
+  async loadGlobalTerminalActivity(
+    terminalId: string,
+    before?: HistoryPageCursor | null,
+    limit = 120,
+  ): Promise<{
+    items: TerminalActivityItem[];
+    hasMore: boolean;
+    nextBefore: HistoryPageCursor | null;
+  }> {
+    const output = await this.client.trpc.terminal.activityPage.query({
+      terminalId,
+      before: before ?? undefined,
+      limit,
+    });
+    return {
+      items: output.items,
+      hasMore: output.hasMoreBefore,
+      nextBefore: output.nextBefore,
+    };
   }
 
   async readSettings(sessionId: string, kind: "settings" | "agenter" | "system" | "template" | "contract") {

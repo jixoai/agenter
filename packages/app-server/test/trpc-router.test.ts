@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 
+import type { TerminalControlPlane } from "@agenter/terminal-system";
 import { AppKernel, appRouter, createTrpcContext } from "../src";
 
 const tempDirs: string[] = [];
@@ -208,6 +209,94 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(rejectedAfterRevoke.ok).toBeFalse();
     expect(rejectedAfterRevoke.reason).toBe("message room credential-invalid");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given global terminal routes When creating granting approving and deleting Then the terminal stays independent from session startup order", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const created = await caller.terminal.globalCreate({
+      terminalId: "global-ops",
+      processKind: "shell",
+      cwd: root,
+      focus: true,
+    });
+    const terminalId = created.result.terminal?.terminalId;
+    if (!terminalId) {
+      throw new Error("expected global terminal id");
+    }
+
+    const listed = await caller.terminal.globalList();
+    expect(listed.items.some((item) => item.terminalId === terminalId)).toBeTrue();
+    expect(listed.items.find((item) => item.terminalId === terminalId)?.focused).toBeTrue();
+
+    const issued = await caller.terminal.issueGrant({
+      terminalId,
+      role: "requester",
+      participantId: "session:avatar-pair",
+      label: "Pair operator",
+    });
+    expect(issued.grant.accessToken).toStartWith("termtok_");
+
+    const terminalSystem = Reflect.get(kernel, "terminalControlPlane") as TerminalControlPlane;
+    const blocked = await terminalSystem.write({
+      terminalId,
+      text: "pending approval",
+      submit: false,
+      actorId: "session:avatar-pair",
+      accessToken: issued.grant.accessToken,
+    });
+    expect(blocked.ok).toBeFalse();
+    expect(blocked.approvalRequest?.terminalId).toBe(terminalId);
+
+    const approvals = await caller.terminal.listApprovalRequests({
+      terminalId,
+      statuses: ["pending"],
+    });
+    expect(approvals.items).toHaveLength(1);
+
+    const lease = await caller.terminal.approveRequest({
+      terminalId,
+      requestId: approvals.items[0]!.requestId,
+      durationMs: 30 * 60 * 1000,
+    });
+    expect(lease.participantId).toBe("session:avatar-pair");
+
+    const allowed = await terminalSystem.write({
+      terminalId,
+      text: "approved write",
+      submit: false,
+      actorId: "session:avatar-pair",
+      accessToken: issued.grant.accessToken,
+      returnRead: false,
+    });
+    expect(allowed.ok).toBeTrue();
+
+    const activity = await caller.terminal.activityPage({
+      terminalId,
+      limit: 20,
+    });
+    expect(activity.items.some((item) => item.kind === "terminal_write")).toBeTrue();
+
+    const focused = await caller.terminal.globalFocus({
+      op: "clear",
+      terminalIds: [],
+    });
+    expect(focused.focusedTerminalIds).toEqual([]);
+
+    const deleted = await caller.terminal.globalDelete({
+      terminalId,
+    });
+    expect(deleted.ok).toBeTrue();
+    expect((await caller.terminal.globalList()).items.some((item) => item.terminalId === terminalId)).toBeFalse();
 
     await kernel.stop();
   });

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, Settings2, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, Settings2, Sparkles, TerminalSquare } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
@@ -10,7 +10,7 @@ import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { sessionStatusMeta } from "../../shared/status-meta";
 
-type SidebarPrimaryKey = "quickstart" | "workspaces" | "settings";
+type SidebarPrimaryKey = "quickstart" | "workspaces" | "terminals" | "settings";
 
 interface NavAvatar {
   label: string;
@@ -413,10 +413,12 @@ export const SidebarNav = ({ className, compact = false, collapsed = false, ...p
 export const defaultPrimaryNavItems = (input: {
   quickStartActive: boolean;
   workspacesActive: boolean;
+  terminalsActive: boolean;
   settingsActive: boolean;
   unreadWorkspaces?: number;
   onSelectQuickStart: () => void;
   onSelectWorkspaces: () => void;
+  onSelectTerminals: () => void;
   onSelectSettings: () => void;
 }): PrimaryNavItem[] => [
   {
@@ -433,6 +435,13 @@ export const defaultPrimaryNavItems = (input: {
     active: input.workspacesActive,
     badgeCount: input.unreadWorkspaces,
     onSelect: input.onSelectWorkspaces,
+  },
+  {
+    key: "terminals",
+    label: "Terminals",
+    icon: TerminalSquare,
+    active: input.terminalsActive,
+    onSelect: input.onSelectTerminals,
   },
   {
     key: "settings",

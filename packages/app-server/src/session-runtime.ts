@@ -62,6 +62,7 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalActorId,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
@@ -906,6 +907,8 @@ export interface SessionRuntimeOptions {
   storeTarget: "global" | "workspace";
   messageSystem?: MessageControlPlane;
   messageActorId?: MessageActorId;
+  terminalSystem: TerminalControlPlane;
+  terminalActorId?: TerminalActorId;
   primaryRoomId?: string;
   logger?: {
     log: (line: {
@@ -970,11 +973,13 @@ export class SessionRuntime {
   private readonly messageSystem: MessageControlPlane;
   private readonly ownsMessageSystem: boolean;
   private readonly messageActorId: MessageActorId;
+  private readonly terminalActorId: TerminalActorId;
   private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
   private readonly messageSystemCleanup: Array<() => void> = [];
+  private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
-  private terminalControlPlane: TerminalControlPlane | null = null;
+  private readonly terminalControlPlane: TerminalControlPlane;
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
   private started = false;
@@ -1040,7 +1045,9 @@ export class SessionRuntime {
 
   constructor(private readonly options: SessionRuntimeOptions) {
     this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
+    this.terminalActorId = options.terminalActorId ?? (resolveSessionRoomActorId(options.sessionId) as TerminalActorId);
     this.primaryRoomId = options.primaryRoomId ?? resolvePrimaryRoomId(options.sessionId);
+    this.terminalControlPlane = options.terminalSystem;
     if (options.messageSystem) {
       this.messageSystem = options.messageSystem;
       this.ownsMessageSystem = false;
@@ -1713,7 +1720,7 @@ export class SessionRuntime {
   }
 
   listRuntimeTerminals(): TerminalControlPlaneEntry[] {
-    return this.requireTerminalControlPlane().list();
+    return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
   }
 
   async createRuntimeTerminal(input: {
@@ -1737,7 +1744,7 @@ export class SessionRuntime {
         this.terminalDirtyState[targetTerminalId] = false;
         createdTerminalId = targetTerminalId;
       } else {
-        const created = await controlPlane.create({
+        const created = await controlPlane.createForActor(this.terminalActorId, {
           terminalId: input.terminalId,
           processKind: input.processKind,
           command: input.command,
@@ -1773,7 +1780,7 @@ export class SessionRuntime {
         });
       }
 
-      const terminal = controlPlane.list().find((item) => item.terminalId === createdTerminalId);
+      const terminal = controlPlane.listForActor(this.terminalActorId).find((item) => item.terminalId === createdTerminalId);
       return {
         ok: true,
         message: terminal ? "terminal created" : "terminal created but unavailable in snapshot",
@@ -1792,7 +1799,8 @@ export class SessionRuntime {
     focusedTerminalIds: string[];
   } {
     const controlPlane = this.requireTerminalControlPlane();
-    const unknown = input.terminalIds.filter((terminalId) => !controlPlane.has(terminalId));
+    const visibleIds = new Set(controlPlane.listForActor(this.terminalActorId).map((terminal) => terminal.terminalId));
+    const unknown = input.terminalIds.filter((terminalId) => !visibleIds.has(terminalId));
     if (unknown.length > 0) {
       return {
         ok: false,
@@ -1812,7 +1820,10 @@ export class SessionRuntime {
 
   async deleteRuntimeTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
-    const result = await controlPlane.kill(terminalId);
+    const result = await controlPlane.killAuthorized({
+      terminalId,
+      actorId: this.terminalActorId,
+    });
     if (!result.ok) {
       return result;
     }
@@ -1829,7 +1840,7 @@ export class SessionRuntime {
         this.config.primaryTerminalId = Object.keys(this.config.terminals)[0] ?? this.config.primaryTerminalId;
       }
     }
-    this.focusedTerminalIds = controlPlane.getFocusedTerminalIds();
+    this.focusedTerminalIds = controlPlane.getFocusedTerminalIds(this.terminalActorId);
     this.emitFocusedTerminal();
     this.enqueueLifecycleAttentionCommit({
       systemId: "terminal",
@@ -1964,12 +1975,69 @@ export class SessionRuntime {
     );
   }
 
+  private bindTerminalSystem(): void {
+    this.terminalSystemCleanup.push(
+      this.terminalControlPlane.onFocus(({ actorId, terminalIds }) => {
+        if (actorId !== this.terminalActorId) {
+          return;
+        }
+        const next = this.normalizeFocusedTerminalIds(terminalIds);
+        if (next.join("\u0000") === this.focusedTerminalIds.join("\u0000")) {
+          return;
+        }
+        this.focusedTerminalIds = next;
+        this.emitFocusedTerminal();
+        this.invalidateFocusedTerminals("focus-sync");
+      }),
+    );
+    this.terminalSystemCleanup.push(
+      this.terminalControlPlane.onApprovalRequest(({ terminalId, request }) => {
+        const isAdminWork = request.assignedAdminId === this.terminalActorId && request.status === "pending";
+        const isRequesterUpdate = request.participantId === this.terminalActorId && request.status !== "pending";
+        if (!isAdminWork && !isRequesterUpdate) {
+          return;
+        }
+        this.enqueueLifecycleAttentionCommit({
+          systemId: "terminal",
+          subjectId: terminalId,
+          contextId: this.getTerminalControlPlaneAttentionContextId(),
+          event: isAdminWork ? "terminal_write_request" : "terminal_write_request_update",
+          summary: isAdminWork
+            ? `Terminal ${terminalId} has a pending write request`
+            : `Terminal ${terminalId} write request is ${request.status}`,
+          payload: {
+            requestId: request.requestId,
+            participantId: request.participantId,
+            assignedAdminId: request.assignedAdminId ?? null,
+            status: request.status,
+            expiresAt: request.expiresAt,
+            leaseId: request.leaseId ?? null,
+          },
+        });
+        this.notifyInput("attention");
+      }),
+    );
+  }
+
   private createTerminalSourceRef(terminalId: string, reason: string, versionHint?: string | number): LoopSourceRef {
     return {
       systemId: "terminal",
       subjectId: terminalId,
       reason,
       versionHint,
+    };
+  }
+
+  private createTerminalActivityRefDetail(
+    terminalId: string,
+    eventId: number,
+    eventKind: "terminal_read" | "terminal_write",
+  ): Record<string, unknown> {
+    return {
+      source: "terminal-event-ref",
+      terminalId,
+      eventId,
+      eventKind,
     };
   }
 
@@ -2491,7 +2559,8 @@ export class SessionRuntime {
         }).server(async () =>
           traceTool("terminal_list", {}, async () => {
             const plane = this.requireTerminalControlPlane();
-            const planeEntries = new Map(plane.list().map((entry) => [entry.terminalId, entry] as const));
+            const actorEntries = plane.listForActor(this.terminalActorId);
+            const planeEntries = new Map(actorEntries.map((entry) => [entry.terminalId, entry] as const));
             const configured = Object.values(this.config?.terminals ?? {}).map((terminal) => {
               const entry = planeEntries.get(terminal.terminalId);
               return {
@@ -2509,8 +2578,7 @@ export class SessionRuntime {
                 transportUrl: entry?.transportUrl,
               };
             });
-            const dynamic = plane
-              .list()
+            const dynamic = actorEntries
               .filter((entry) => !this.config?.terminals[entry.terminalId])
               .map((entry) => ({
                 terminalId: entry.terminalId,
@@ -2641,6 +2709,7 @@ export class SessionRuntime {
                 submit: input.submit,
                 submitKey: input.submitKey,
                 submitGapMs,
+                actorId: this.terminalActorId,
               });
               if (result.ok) {
                 this.appendTerminalActivity({
@@ -2648,11 +2717,13 @@ export class SessionRuntime {
                   kind: "terminal_write",
                   cycleId: this.activeCycleId,
                   title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
-                  content: input.text,
-                  detail: {
-                    submit: input.submit,
-                    submitKey: input.submitKey ?? null,
-                  },
+                  content: result.eventId ? "" : input.text,
+                  detail: result.eventId
+                    ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_write")
+                    : {
+                        submit: input.submit,
+                        submitKey: input.submitKey ?? null,
+                      },
                 });
               }
               return { ok: result.ok, message: result.message };
@@ -3236,10 +3307,15 @@ export class SessionRuntime {
   }
 
   private normalizeFocusedTerminalIds(input: Iterable<string>): string[] {
+    const visibleIds = new Set(this.terminalControlPlane.listForActor(this.terminalActorId).map((terminal) => terminal.terminalId));
     const deduped = new Set<string>();
     for (const terminalId of input) {
-      if (!this.terminals.has(terminalId) || deduped.has(terminalId)) {
+      if (!visibleIds.has(terminalId) || deduped.has(terminalId)) {
         continue;
+      }
+      const managed = this.terminalControlPlane.getManagedTerminal(terminalId);
+      if (managed) {
+        this.attachRuntimeTerminal(terminalId, managed);
       }
       deduped.add(terminalId);
     }
@@ -3268,40 +3344,12 @@ export class SessionRuntime {
   }
 
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
-    if (this.terminalControlPlane) {
-      const next = this.terminalControlPlane.focus(op, terminalIds);
-      this.focusedTerminalIds = [...next];
-      this.emitFocusedTerminal();
-      this.invalidateFocusedTerminals(`focus-${op}`);
-      return next;
-    }
     const incoming = this.normalizeFocusedTerminalIds(terminalIds);
-    const current = new Set(this.focusedTerminalIds);
-    switch (op) {
-      case "add":
-        for (const terminalId of incoming) {
-          current.add(terminalId);
-        }
-        break;
-      case "remove":
-        for (const terminalId of incoming) {
-          current.delete(terminalId);
-        }
-        break;
-      case "replace":
-        current.clear();
-        for (const terminalId of incoming) {
-          current.add(terminalId);
-        }
-        break;
-      case "clear":
-        current.clear();
-        break;
-    }
-    this.focusedTerminalIds = [...current];
+    const next = this.terminalControlPlane.focusForActor(this.terminalActorId, op, incoming);
+    this.focusedTerminalIds = [...next];
     this.emitFocusedTerminal();
     this.invalidateFocusedTerminals(`focus-${op}`);
-    return [...this.focusedTerminalIds];
+    return next;
   }
 
   private resolveAttentionContextId(draft: AttentionDraft): string {
@@ -4263,18 +4311,11 @@ export class SessionRuntime {
       return;
     }
     this.messageSystem.setActorPresence(this.messageActorId, true);
+    this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
     });
     this.focusedTerminalIds = [...this.config.focusedTerminalIds];
-    this.terminalControlPlane = new TerminalControlPlane({
-      outputRoot: join(this.options.sessionRoot, "logs", "terminals"),
-      initialConfig: {
-        transport: {
-          port: 0,
-        },
-      },
-    });
     this.loopPluginRuntime = await this.createLoopPluginRuntime();
     await this.migrateLegacyAttentionStoreDir();
     const attentionRoot = join(this.options.sessionRoot, "attention-system");
@@ -4296,6 +4337,9 @@ export class SessionRuntime {
     if (this.messageSystemCleanup.length === 0) {
       this.bindMessageSystem();
     }
+    if (this.terminalSystemCleanup.length === 0) {
+      this.bindTerminalSystem();
+    }
     this.ensureDefaultChatChannel();
     this.settingsEditor = new SettingsEditor(this.config.agentCwd, {
       agenterPath: this.config.prompt.agenterPath,
@@ -4308,7 +4352,7 @@ export class SessionRuntime {
     for (const [terminalId, terminalConfig] of Object.entries(this.config.terminals)) {
       await this.createTerminal(terminalId, terminalConfig);
     }
-    this.requireTerminalControlPlane().focus("replace", this.focusedTerminalIds);
+    this.requireTerminalControlPlane().focusForActor(this.terminalActorId, "replace", this.focusedTerminalIds);
     try {
       await this.terminalControlPlane.startTransport({ port: 0 });
     } catch (error) {
@@ -4603,6 +4647,7 @@ export class SessionRuntime {
     this.notifyInput("attention");
     if (status === "stopped") {
       this.messageSystem.setActorPresence(this.messageActorId, false);
+      this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     }
     this.sessionStore?.setLifecycle({ status });
   }
@@ -4612,6 +4657,7 @@ export class SessionRuntime {
       return;
     }
     this.messageSystem.setActorPresence(this.messageActorId, true);
+    this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.runtime?.resume();
     this.sessionStore?.setLifecycle({ status: "running" });
   }
@@ -4630,11 +4676,10 @@ export class SessionRuntime {
     this.agent = null;
     this.loopPluginRuntime = null;
     this.messageSystem.setActorPresence(this.messageActorId, false);
+    this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
     this.apiCallRecordingRefCount = 0;
 
-    await this.terminalControlPlane?.dispose();
-    this.terminalControlPlane = null;
     this.terminals.clear();
     this.taskAttentionDraftQueue.length = 0;
     this.inboundMessageQueue.length = 0;
@@ -4653,6 +4698,9 @@ export class SessionRuntime {
       delete this.terminalSemanticFingerprint[terminalId];
     }
     for (const cleanup of this.messageSystemCleanup.splice(0, this.messageSystemCleanup.length)) {
+      cleanup();
+    }
+    for (const cleanup of this.terminalSystemCleanup.splice(0, this.terminalSystemCleanup.length)) {
       cleanup();
     }
     if (this.ownsMessageSystem) {
@@ -5255,7 +5303,7 @@ export class SessionRuntime {
 
   snapshot(): SessionRuntimeSnapshot {
     const planeEntries = new Map(
-      this.terminalControlPlane?.list().map((entry) => [entry.terminalId, entry] as const) ?? [],
+      this.terminalControlPlane.listForActor(this.terminalActorId).map((entry) => [entry.terminalId, entry] as const),
     );
     const configuredIds = new Set<string>();
     const terminals = Object.values(this.config?.terminals ?? {}).map((terminal) => {
@@ -5382,8 +5430,10 @@ export class SessionRuntime {
               kind: "terminal_read",
               cycleId: this.activeCycleId,
               title: "Terminal read",
-              content: JSON.stringify(diffPayload),
-              detail: diffPayload,
+              content: diffPayload.eventId ? "" : JSON.stringify(diffPayload),
+              detail: diffPayload.eventId
+                ? this.createTerminalActivityRefDetail(terminalId, diffPayload.eventId, "terminal_read")
+                : diffPayload,
             });
             return diffPayload;
           }
@@ -5401,12 +5451,19 @@ export class SessionRuntime {
         kind: "terminal_read",
         cycleId: this.activeCycleId,
         title: "Terminal read",
-        content: JSON.stringify(snapshotPayload),
-        detail: snapshotPayload,
+        content: snapshotPayload.eventId ? "" : JSON.stringify(snapshotPayload),
+        detail: snapshotPayload.eventId
+          ? this.createTerminalActivityRefDetail(terminalId, snapshotPayload.eventId, "terminal_read")
+          : snapshotPayload,
       });
       return snapshotPayload;
     }
-    const payload = await controlPlane.read(terminalId, input.mode, { remark: input.remark });
+    const payload = await controlPlane.readAuthorized({
+      terminalId,
+      mode: input.mode,
+      remark: input.remark,
+      actorId: this.terminalActorId,
+    });
     if (input.remark) {
       this.terminalDirtyState[terminalId] = false;
       this.dirtyQueue.delete(terminalId);
@@ -5418,8 +5475,8 @@ export class SessionRuntime {
       kind: "terminal_read",
       cycleId: this.activeCycleId,
       title: "Terminal read",
-      content: JSON.stringify(payload),
-      detail: payload,
+      content: payload.eventId ? "" : JSON.stringify(payload),
+      detail: payload.eventId ? this.createTerminalActivityRefDetail(terminalId, payload.eventId, "terminal_read") : payload,
     });
     return payload;
   }
@@ -5427,7 +5484,7 @@ export class SessionRuntime {
   private async createTerminal(terminalId: string, config: SessionTerminalConfig): Promise<void> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(terminalId)) {
-      await controlPlane.create({
+      await controlPlane.createForActor(this.terminalActorId, {
         terminalId,
         command: config.command,
         cwd: config.cwd,
@@ -5482,9 +5539,6 @@ export class SessionRuntime {
   }
 
   private requireTerminalControlPlane(): TerminalControlPlane {
-    if (!this.terminalControlPlane) {
-      throw new Error("terminal control plane is not initialized");
-    }
     return this.terminalControlPlane;
   }
 

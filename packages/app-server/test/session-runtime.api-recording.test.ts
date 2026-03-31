@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { TerminalControlPlane } from "@agenter/terminal-system";
 import { SessionRuntime } from "../src/session-runtime";
 
 const tempDirs: string[] = [];
@@ -28,6 +29,10 @@ describe("Feature: api call recording reference counting", () => {
       sessionRoot: root,
       sessionName: "test",
       storeTarget: "global",
+      terminalSystem: new TerminalControlPlane({
+        dbPath: join(root, "terminal.db"),
+        outputRoot: join(root, "terminals"),
+      }),
     });
 
     expect(runtime.isApiCallRecordingEnabled()).toBeFalse();
