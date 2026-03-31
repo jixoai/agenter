@@ -171,7 +171,7 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: channel.accessToken,
       role: "readonly",
       label: "Viewer",
-      participantId: "user:gaubee",
+      participantId: "auth:gaubee",
     });
     expect(issued.grant.accessRole).toBe("readonly");
     expect(issued.grant.accessToken).toStartWith("msgtok_");
@@ -207,7 +207,7 @@ describe("Feature: app-server trpc procedures", () => {
       text: "still blocked",
     });
     expect(rejectedAfterRevoke.ok).toBeFalse();
-    expect(rejectedAfterRevoke.reason).toBe("message channel access denied");
+    expect(rejectedAfterRevoke.reason).toBe("message room credential-invalid");
 
     await kernel.stop();
   });

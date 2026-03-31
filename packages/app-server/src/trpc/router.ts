@@ -219,7 +219,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           sessionId: z.string().min(1),
-          kind: z.enum(["direct", "room"]),
+          kind: z.literal("room"),
           title: z.string().trim().min(1).optional(),
           participants: z
             .array(

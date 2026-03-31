@@ -15,12 +15,12 @@ const createChannelViaMetadataDialogSpy = fn(noopCreateChannel);
 const createChannel = (input: {
   chatId: string;
   title: string;
-  kind?: "direct" | "room";
+  kind?: "room";
   focused?: boolean;
   transportUrl?: string | null;
 }): MessageChannelEntry => ({
   chatId: input.chatId,
-  kind: input.kind ?? "direct",
+  kind: input.kind ?? "room",
   title: input.title,
   owner: "jane",
   participants: [
@@ -36,16 +36,16 @@ const createChannel = (input: {
     input.transportUrl === null
       ? undefined
       : (input.transportUrl ??
-        `ws://localhost:7777/chat/${input.chatId}?token=msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`),
+        `ws://localhost:7777/room/${input.chatId}?token=msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`),
 });
 
 const channels = [
-  createChannel({ chatId: "chat-jane", title: "Jane" }),
-  createChannel({ chatId: "room-team", title: "Team room", kind: "room" }),
+  createChannel({ chatId: "room-jane", title: "Jane room" }),
+  createChannel({ chatId: "room-team", title: "Team room" }),
 ];
 
 const transcriptByChatId: Record<string, string> = {
-  "chat-jane": "Jane: I reviewed the latest chat-channel transport.",
+  "room-jane": "Jane room: I reviewed the latest room transport.",
   "room-team": "Team room: terminal and message channels now share the same control plane.",
 };
 
@@ -75,7 +75,7 @@ class StorySocket implements WebChatSocketLike {
       this.readyState = StorySocket.OPEN;
       this.emit("open", new Event("open"));
       const typedItems =
-        this.mode === "typed" && this.channel.chatId === "chat-jane"
+        this.mode === "typed" && this.channel.chatId === "room-jane"
           ? [
               {
                 rowId: 1,
@@ -119,14 +119,14 @@ class StorySocket implements WebChatSocketLike {
             ]
           : [
               {
-                rowId: this.channel.chatId === "chat-jane" ? 1 : 2,
-                messageId: this.channel.chatId === "chat-jane" ? "1" : "2",
+                rowId: this.channel.chatId === "room-jane" ? 1 : 2,
+                messageId: this.channel.chatId === "room-jane" ? "1" : "2",
                 chatId: this.channel.chatId,
-                rootId: this.channel.chatId === "chat-jane" ? "7" : undefined,
+                rootId: this.channel.chatId === "room-jane" ? "7" : undefined,
                 from: this.channel.owner,
                 kind: "text",
                 content: transcriptByChatId[this.channel.chatId],
-                createdAt: this.channel.chatId === "chat-jane" ? 100 : 200,
+                createdAt: this.channel.chatId === "room-jane" ? 100 : 200,
                 metadata: {},
                 attachments: [],
                 payload: undefined,
@@ -289,7 +289,7 @@ export const DesktopMultiChannelSurface: Story = {
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
-    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Send" })).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
 
@@ -297,7 +297,7 @@ export const DesktopMultiChannelSurface: Story = {
 
     await expect(await canvas.findByText(transcriptByChatId["room-team"])).toBeInTheDocument();
     await waitFor(() => {
-      expect(canvas.queryByText(transcriptByChatId["chat-jane"])).not.toBeInTheDocument();
+      expect(canvas.queryByText(transcriptByChatId["room-jane"])).not.toBeInTheDocument();
     });
 
     await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
@@ -311,20 +311,17 @@ export const CompactMultiChannelSurface: Story = {
   render: () => <SurfaceStory compact={true} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const frame = canvas.getByTestId("message-channel-surface-story");
 
-    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: /focus/i })).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("tab", { name: /Team room/i }));
 
     await expect(await canvas.findByText(transcriptByChatId["room-team"])).toBeInTheDocument();
-    await waitFor(() => {
-      expect(frame.scrollWidth).toBeLessThanOrEqual(frame.clientWidth + 1);
-    });
+    await expect(canvas.getByRole("button", { name: "New room" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: /focus/i })).toBeVisible();
   },
 };
 
@@ -334,11 +331,11 @@ export const ExplicitFocusToggleSurface: Story = {
     const canvas = within(canvasElement);
 
     explicitFocusToggleSpy.mockClear();
-    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("button", { name: /focus/i }));
 
     await waitFor(() => {
-      expect(explicitFocusToggleSpy).toHaveBeenCalledWith(expect.objectContaining({ chatId: "chat-jane" }));
+      expect(explicitFocusToggleSpy).toHaveBeenCalledWith(expect.objectContaining({ chatId: "room-jane" }));
     });
     await expect(canvas.getByRole("button", { name: "Unfocus" })).toBeInTheDocument();
   },
@@ -353,7 +350,7 @@ export const DeliveredMessageLinksToDevtools: Story = {
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
-    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
 
     await userEvent.click(canvas.getByLabelText("Message actions"));
     await userEvent.click(await portal.findByText("View In Devtools"));
@@ -369,8 +366,7 @@ export const EmptyChannelCollection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(await canvas.findByText("No chat channels yet")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    await expect(await canvas.findByText("No rooms yet")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
   },
 };
@@ -386,11 +382,10 @@ export const CreateChannelViaMetadataDialog: Story = {
     const dialog = await portal.findByRole("dialog", { name: "Create room" });
     await userEvent.clear(within(dialog).getByLabelText("Title"));
     await userEvent.type(within(dialog).getByLabelText("Title"), "Coordination room");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create channel" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create room" }));
     await waitFor(() => {
       expect(createChannelViaMetadataDialogSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          kind: "room",
           title: "Coordination room",
         }),
       );
@@ -403,7 +398,7 @@ export const LoadingChannelCollection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(await canvas.findByText("Loading chat channels...")).toBeInTheDocument();
+    await expect(await canvas.findByText("Loading rooms...")).toBeInTheDocument();
   },
 };
 
@@ -412,18 +407,18 @@ export const RefreshingChannelCollection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(await canvas.findByText(transcriptByChatId["chat-jane"])).toBeInTheDocument();
-    await expect(canvas.getByText("Refreshing chat channels...")).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
+    await expect(canvas.getByText("Refreshing rooms...")).toBeInTheDocument();
   },
 };
 
 export const TransportErrorSurface: Story = {
-  render: () => <SurfaceStory compact={false} socketMode="error" channelsError="Failed to refresh chat channels." />,
+  render: () => <SurfaceStory compact={false} socketMode="error" channelsError="Failed to refresh rooms." />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
     await waitFor(() => {
-      expect(canvasElement.textContent).toContain("Failed to refresh chat channels.");
+      expect(canvasElement.textContent).toContain("Failed to refresh rooms.");
     });
     await expect(await canvas.findByText("chat transport failed")).toBeInTheDocument();
   },

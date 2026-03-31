@@ -24,9 +24,9 @@ describe("Feature: native help-hint popover", () => {
     render(
       <Dialog
         open
-        title="Create chat"
-        description="Configure metadata, participants, and optional admin credentials before creation."
-        descriptionHelpId="dialog:create-chat"
+        title="Create room"
+        description="Configure room metadata, participants, and optional admin credentials before creation."
+        descriptionHelpId="dialog:create-room"
         onClose={() => undefined}
       >
         <div>Body</div>
@@ -38,7 +38,7 @@ describe("Feature: native help-hint popover", () => {
     expect(popup).toBeInstanceOf(HTMLDivElement);
 
     await waitFor(() => {
-      expect(popup).toHaveTextContent("Configure metadata, participants, and optional admin credentials before creation.");
+      expect(popup).toHaveTextContent("Configure room metadata, participants, and optional admin credentials before creation.");
       expect(popup).toBeVisible();
     });
 
@@ -55,9 +55,9 @@ describe("Feature: native help-hint popover", () => {
     render(
       <div>
         <HelpHint
-          helpId="dialog:create-chat-click"
-          textContext="Configure metadata, participants, and optional admin credentials before creation."
-          content="Configure metadata, participants, and optional admin credentials before creation."
+          helpId="dialog:create-room-click"
+          textContext="Configure room metadata, participants, and optional admin credentials before creation."
+          content="Configure room metadata, participants, and optional admin credentials before creation."
           ariaLabel="Dialog help"
         />
       </div>,

@@ -106,15 +106,15 @@ const createDeferred = <T,>() => {
 
 const createMessageChannel = (input: {
   chatId: string;
-  kind?: "direct" | "room";
+  kind?: "room";
   title?: string;
   owner?: string;
   focused?: boolean;
   transportUrl?: string;
 }): MessageChannelEntry => ({
   chatId: input.chatId,
-  kind: input.kind ?? "direct",
-  title: input.title ?? "Chat",
+  kind: input.kind ?? "room",
+  title: input.title ?? "Room",
   owner: input.owner ?? "jon",
   participants: [
     { id: "avatar:jon", label: "jon", role: "avatar" },
@@ -127,7 +127,7 @@ const createMessageChannel = (input: {
   accessToken: `msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`,
   transportUrl:
     input.transportUrl ??
-    `ws://localhost:7777/chat/${input.chatId}?token=msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`,
+    `ws://localhost:7777/room/${input.chatId}?token=msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`,
 });
 
 class WebSocketMock {
@@ -208,7 +208,7 @@ const createMessageChannelMock =
   vi.fn<
     (input: {
       sessionId: string;
-      kind: "direct" | "room";
+      kind: "room";
       title?: string;
       focus?: boolean;
     }) => Promise<MessageChannelEntry>
@@ -465,7 +465,7 @@ vi.mock("@agenter/client-sdk", () => ({
     },
     createMessageChannel: async (input: {
       sessionId: string;
-      kind: "direct" | "room";
+      kind: "room";
       title?: string;
       focus?: boolean;
     }) => {
@@ -664,7 +664,7 @@ beforeEach(() => {
   });
   createMessageChannelMock.mockImplementation(async (input) =>
     createMessageChannel({
-      chatId: `${input.kind === "room" ? "room" : "chat"}-new`,
+      chatId: "room-new",
       kind: input.kind,
       title: input.title,
       focused: input.focus ?? true,
@@ -679,7 +679,7 @@ beforeEach(() => {
   updateMessageChannelMock.mockImplementation(async (input) =>
     createMessageChannel({
       chatId: input.chatId,
-      title: input.patch.title ?? "Chat",
+      title: input.patch.title ?? "Room",
     }),
   );
   listMessageChannelGrantsMock.mockResolvedValue([]);
@@ -692,7 +692,7 @@ beforeEach(() => {
     createdAt: 1,
     accessRole: input.role,
     accessToken: "msgtok_grant",
-    transportUrl: `ws://localhost:7777/chat/${input.chatId}?token=msgtok_grant`,
+    transportUrl: `ws://localhost:7777/room/${input.chatId}?token=msgtok_grant`,
   }));
   revokeMessageChannelGrantMock.mockResolvedValue({ ok: true });
   WebSocketMock.instances.length = 0;
@@ -1066,11 +1066,11 @@ describe("Feature: web ui app shell", () => {
   test("Scenario: Given a long-history chat route When the route becomes visible Then hydration runs without consuming unread replies before the viewport reports a visible boundary", async () => {
     const workspacePath = "/repo/real-history";
     const sessionId = "session-real-history";
-    const chatId = "chat-main";
+    const chatId = "room-main";
     const channel = createMessageChannel({
       chatId,
-      title: "Main chat",
-      transportUrl: `ws://localhost:7777/chat/${chatId}`,
+      title: "Main room",
+      transportUrl: `ws://localhost:7777/room/${chatId}`,
     });
 
     window.history.replaceState(
@@ -1153,14 +1153,14 @@ describe("Feature: web ui app shell", () => {
     ).toBeInTheDocument();
   });
 
-  test("Scenario: Given a direct chat route with hydrated channel and chat history When the shell opens Then persisted messages render immediately without waiting for transport history", async () => {
-    const workspacePath = "/repo/direct-bootstrap";
-    const sessionId = "session-direct-bootstrap";
-    const chatId = "chat-main";
+  test("Scenario: Given a room route with hydrated room history When the shell opens Then persisted messages render immediately without waiting for transport history", async () => {
+    const workspacePath = "/repo/room-bootstrap";
+    const sessionId = "session-room-bootstrap";
+    const chatId = "room-main";
     const channel = createMessageChannel({
       chatId,
-      title: "Chat",
-      transportUrl: `ws://localhost:7777/chat/${chatId}`,
+      title: "Main room",
+      transportUrl: `ws://localhost:7777/room/${chatId}`,
     });
 
     window.history.replaceState(
@@ -1176,14 +1176,14 @@ describe("Feature: web ui app shell", () => {
       sessions: [
         {
           id: sessionId,
-          name: "Direct bootstrap",
+          name: "Room bootstrap",
           cwd: workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
           status: "running",
           storageState: "active",
-          sessionRoot: "/tmp/session-direct-bootstrap",
+          sessionRoot: "/tmp/session-room-bootstrap",
           storeTarget: "global",
         },
       ],
@@ -1239,7 +1239,7 @@ describe("Feature: web ui app shell", () => {
     expect(await screen.findByText("Bootstrap hello")).toBeInTheDocument();
     expect(screen.getByText("Bootstrap reply")).toBeInTheDocument();
     expect(profileIconUrlMock).toHaveBeenCalledWith("jon");
-    expect(screen.queryByText("Loading chat channels...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading rooms...")).not.toBeInTheDocument();
     expect(ensureMessageChannelsMock).not.toHaveBeenCalled();
   });
 
@@ -1247,15 +1247,15 @@ describe("Feature: web ui app shell", () => {
     const workspacePath = "/repo/channel-switch";
     const sessionId = "session-channel-switch";
     const mainChannel = createMessageChannel({
-      chatId: "chat-main",
-      title: "Chat",
-      transportUrl: "ws://localhost:7777/chat/chat-main",
+      chatId: "room-main",
+      title: "Main room",
+      transportUrl: "ws://localhost:7777/room/room-main",
     });
     const relayChannel = createMessageChannel({
-      chatId: "chat-chat-2",
-      title: "Chat 2",
+      chatId: "room-relay-2",
+      title: "Relay room 2",
       focused: false,
-      transportUrl: "ws://localhost:7777/chat/chat-chat-2",
+      transportUrl: "ws://localhost:7777/room/room-relay-2",
     });
     const listChannels = [mainChannel, relayChannel];
 
@@ -1378,7 +1378,7 @@ describe("Feature: web ui app shell", () => {
       expect(mainConversation).toHaveTextContent("稍等，我去问一下。");
     });
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Chat 2" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Relay room 2" }));
 
     await waitFor(() => {
       expect(WebSocketMock.instances).toHaveLength(2);
@@ -1426,7 +1426,7 @@ describe("Feature: web ui app shell", () => {
     });
     expect(relayConversation).not.toHaveTextContent("稍等，我去问一下。");
 
-    fireEvent.click((await screen.findAllByRole("tab", { name: "Chat" })).at(-1)!);
+    fireEvent.click((await screen.findAllByRole("tab", { name: "Main room" })).at(-1)!);
 
     await waitFor(() => {
       expect(WebSocketMock.instances).toHaveLength(3);
@@ -1475,15 +1475,15 @@ describe("Feature: web ui app shell", () => {
     expect(switchedConversation).not.toHaveTextContent("中午吃蛋炒饭。");
   }, 15_000);
 
-  test("Scenario: Given two running sessions that both select chat-main When the route switches sessions Then message-channel focus is refreshed for the new session", async () => {
+  test("Scenario: Given two running sessions that both select room-main When the route switches sessions Then message-channel focus is refreshed for the new session", async () => {
     const workspacePath = "/repo/focus";
     const firstSessionId = "session-focus-a";
     const secondSessionId = "session-focus-b";
-    const chatId = "chat-main";
+    const chatId = "room-main";
     const channel = createMessageChannel({
       chatId,
-      title: "Chat",
-      transportUrl: `ws://localhost:7777/chat/${chatId}`,
+      title: "Main room",
+      transportUrl: `ws://localhost:7777/room/${chatId}`,
     });
 
     window.history.replaceState(

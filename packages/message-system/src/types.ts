@@ -14,14 +14,25 @@ export interface MessageControlPlaneConfigPatch {
   transport?: Partial<MessageTransportConfig>;
 }
 
-export type MessageChannelKind = "direct" | "room";
+export type MessageChannelKind = "room";
 export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
+export type MessageActorId = `auth:${string}` | `session:${string}` | `system:${string}`;
+export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
 
 export interface MessageParticipant {
   id: string;
   label?: string;
   role?: "avatar" | "user" | "system";
+}
+
+export interface MessageAdminWorkItem {
+  workId: string;
+  kind: MessageAdminWorkKind;
+  createdAt: number;
+  requestedBy: MessageActorId;
+  assignedAdminId?: MessageActorId;
+  payload?: Record<string, unknown>;
 }
 
 export type MessageKind = "text" | "error" | "interactive";
@@ -94,6 +105,7 @@ export interface MessageChannelGrantRecord {
   role: MessageChannelAccessRole;
   label?: string;
   participantId?: string;
+  accessToken?: string;
   createdAt: number;
   revokedAt?: number;
 }
@@ -131,7 +143,7 @@ export interface ReversePage<T> {
 
 export interface MessageControlPlaneEntry extends MessageChannelRecord, MessageChannelAccessProjection {}
 
-export interface MessageIssuedGrant extends MessageChannelGrantRecord, MessageChannelAccessProjection {}
+export interface MessageIssuedGrant extends Omit<MessageChannelGrantRecord, "accessToken">, MessageChannelAccessProjection {}
 
 export interface MessageSnapshot {
   channel: MessageControlPlaneEntry;
@@ -157,6 +169,7 @@ export interface MessageCreateInput {
   participants?: MessageParticipant[];
   metadata?: Record<string, unknown>;
   adminToken?: string;
+  bootstrapActorId?: MessageActorId;
 }
 
 export interface MessageAppendInput {
@@ -208,6 +221,7 @@ export interface MessageChannelPatchInput {
   title?: string;
   participants?: MessageParticipant[];
   metadata?: Record<string, unknown>;
+  adminGroupCandidateIds?: MessageActorId[];
 }
 
 export interface MessageIssueGrantInput {

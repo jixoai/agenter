@@ -1,5 +1,5 @@
 import type { MessageChannelEntry, MessageChannelGrantEntry, MessageChannelGrantIssueOutput } from "@agenter/client-sdk";
-import { CircleDot, Copy, Info, MessageCircleMore, Plus, Signal, Trash2, Users } from "lucide-react";
+import { CircleDot, Copy, Info, Plus, Signal, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../../components/ui/button";
@@ -135,7 +135,7 @@ export const MessageChannelMetadataDisclosure = ({
   const isBuiltIn =
     channel.chatId === "chat-main" ||
     (isRecord(channel.metadata) && typeof channel.metadata.builtIn === "boolean" && channel.metadata.builtIn === true);
-  const ChannelIcon = channel.kind === "room" ? Users : MessageCircleMore;
+  const ChannelIcon = Users;
   const transportState = channel.transportUrl ? (channel.focused ? "connected and focused" : "connected") : "offline";
 
   const loadGrants = useCallback(async () => {
@@ -315,7 +315,7 @@ export const MessageChannelMetadataDisclosure = ({
       tone={rowTone(channel)}
       label={`Open details for ${channel.title}`}
       title={channel.title}
-      description={channel.kind === "room" ? "Room metadata" : "Direct chat metadata"}
+      description="Room metadata"
       testId="message-channel-metadata-trigger"
       contentClassName="text-sm"
       open={open}
@@ -325,7 +325,7 @@ export const MessageChannelMetadataDisclosure = ({
         <Section title="Channel" icon={ChannelIcon}>
           <div className="space-y-2.5">
             <FieldRow label="ID" value={channel.chatId} />
-            <FieldRow label="Kind" value={channel.kind === "room" ? "Room" : "Direct chat"} />
+            <FieldRow label="Kind" value="Room" />
             <FieldRow label="Owner" value={channel.owner} />
             <FieldRow label="Role" value={channel.accessRole} />
             <FieldRow label="Status" value={transportState} />

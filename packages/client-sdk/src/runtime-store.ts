@@ -217,6 +217,15 @@ const sameChatToolInvocation = (left: RuntimeChatMessage["tool"], right: Runtime
 
 const isPersistedChatMessageId = (messageId: string): boolean => /^\d+$/.test(messageId);
 
+const normalizeChatChannel = (
+  channel: RuntimeChatMessage["channel"] | "user_input" | null | undefined,
+): RuntimeChatMessage["channel"] => {
+  if (channel === "to_user" || channel === "self_talk" || channel === "tool") {
+    return channel;
+  }
+  return undefined;
+};
+
 const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessage): boolean => {
   const leftFormat = left.format ?? "markdown";
   const rightFormat = right.format ?? "markdown";
@@ -424,7 +433,7 @@ export class RuntimeStore {
       attentionLoadedAt: item.attentionLoadedAt,
       editable: item.attentionState === "queued",
       cycleId: item.cycleId ?? null,
-      channel: item.channel === "user_input" ? undefined : item.channel,
+      channel: normalizeChatChannel(item.channel as RuntimeChatMessage["channel"] | "user_input" | null | undefined),
       format: item.format,
       tool: item.tool,
       attachments: item.attachments?.map((attachment) => ({
@@ -1407,7 +1416,7 @@ export class RuntimeStore {
 
   async createMessageChannel(input: {
     sessionId: string;
-    kind: "direct" | "room";
+    kind: "room";
     title?: string;
     participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
     metadata?: Record<string, unknown>;

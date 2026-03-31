@@ -65,7 +65,7 @@ const switchToChatChannel = async (
     hiddenTexts?: string[];
   },
 ) => {
-  const channelTabs = page.getByRole("tablist", { name: "Chat channels" });
+  const channelTabs = page.getByRole("tablist", { name: "Rooms" });
   const tab = channelTabs.getByRole("tab", { name: new RegExp(`^${escapeRegExp(input.title)}$`) });
   await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
@@ -153,7 +153,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await quickStartViewport.getByRole("button", { name: "Start", exact: true }).click();
 
     await page.waitForURL(/\/session\/[^/]+\/chats/, { timeout: 20_000 });
-    await expect(page.getByText("Loading chat channels...")).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText("Loading rooms...")).toHaveCount(0, { timeout: 20_000 });
     const userMessage = articleByExactText(page, firstPrompt);
     if (fixture.modelMode !== "real") {
       await waitForAssistantArticle(page, fixture, fixture.mockReply);
@@ -163,7 +163,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(userMessage.getByText("notes.txt")).toBeVisible();
     await expect(page.getByText("Technical records")).toHaveCount(0);
     await expect(page.getByTestId("message-channel-metadata-trigger")).toBeVisible();
-    await expect(page.getByRole("button", { name: "New chat" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New room" })).toBeVisible();
 
     const workspaceTabs = page.getByRole("tablist", { name: "Workspace routes" });
     await expect(workspaceTabs.getByRole("tab", { name: "Chats", exact: true })).toBeVisible();
@@ -393,31 +393,27 @@ test.describe("Feature: Workspace-first browser shell", () => {
     await expect(page.getByText(exactTextPattern(originPrompt)).first()).toBeVisible({ timeout: 20_000 });
     await waitForAssistantArticle(page, fixture, fixture.modelMode === "real" ? undefined : originReply);
 
-    await expect(
-      page.getByRole("tablist", { name: "Chat channels" }).getByRole("tab", { name: /^Chat$/ }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "New chat" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Rooms" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New room" })).toBeVisible();
 
-    await page.getByRole("button", { name: "New chat" }).click();
-    const createChatDialog = page.getByRole("dialog", { name: "Create chat" });
+    await page.getByRole("button", { name: "New room" }).click();
+    const createChatDialog = page.getByRole("dialog", { name: "Create room" });
     await expect(createChatDialog).toBeVisible({ timeout: 20_000 });
-    await expect(createChatDialog.getByLabel("Title")).toHaveValue("Chat 2");
-    await createChatDialog.getByRole("button", { name: "Create channel" }).click();
-    await expect(
-      page.getByRole("tablist", { name: "Chat channels" }).getByRole("tab", { name: /^Chat 2$/ }),
-    ).toBeVisible({
+    await expect(createChatDialog.getByLabel("Title")).toHaveValue("Room 2");
+    await createChatDialog.getByRole("button", { name: "Create room" }).click();
+    await expect(page.getByRole("tablist", { name: "Rooms" }).getByRole("tab", { name: /^Room 2$/ })).toBeVisible({
       timeout: 20_000,
     });
 
     await switchToChatChannel(page, {
-      title: "Chat 2",
+      title: "Room 2",
       chatId: "chat-chat-2",
     });
     await sendChatMessage(page, relayPrompt);
     await waitForAssistantArticle(page, fixture, fixture.modelMode === "real" ? undefined : relayReply);
 
     await switchToChatChannel(page, {
-      title: "Chat",
+      title: "Room",
       chatId: "chat-main",
       visibleTexts: fixture.modelMode === "real" ? [originPrompt] : [originPrompt, originReply],
       hiddenTexts: [relayPrompt],
@@ -429,7 +425,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     }
 
     await switchToChatChannel(page, {
-      title: "Chat 2",
+      title: "Room 2",
       chatId: "chat-chat-2",
       visibleTexts: fixture.modelMode === "real" ? [relayPrompt] : [relayPrompt, relayReply],
       hiddenTexts: fixture.modelMode === "real" ? [originPrompt] : [originPrompt, originReply],
@@ -441,7 +437,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     }
 
     await switchToChatChannel(page, {
-      title: "Chat",
+      title: "Room",
       chatId: "chat-main",
       visibleTexts: fixture.modelMode === "real" ? [originPrompt] : [originPrompt, originReply],
       hiddenTexts: [relayPrompt],
@@ -455,7 +451,7 @@ test.describe("Feature: Workspace-first browser shell", () => {
     }
 
     await switchToChatChannel(page, {
-      title: "Chat 2",
+      title: "Room 2",
       chatId: "chat-chat-2",
       visibleTexts: fixture.modelMode === "real" ? [relayPrompt] : [relayPrompt, relayReply],
       hiddenTexts:

@@ -126,10 +126,10 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
               <h3 className="typo-title-3 text-slate-900">Messages</h3>
               <HelpHint
                 helpId="systems-panel:messages-overview"
-                textContext="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
-                content="Chat channels are message-system instances. Only message egress that lands here becomes visible to users."
+                textContext="Rooms are message-system instances. Only message egress that lands here becomes visible to users."
+                content="Rooms are message-system instances. Only message egress that lands here becomes visible to users."
               />
-              <Badge variant="secondary">{channels.length} channels</Badge>
+              <Badge variant="secondary">{channels.length} rooms</Badge>
               {channels.filter((entry) => entry.focused).length > 0 ? (
                 <Badge className="bg-emerald-100 text-emerald-700">
                   {channels.filter((entry) => entry.focused).length} focused

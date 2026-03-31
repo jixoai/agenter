@@ -853,7 +853,6 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const createMessageChannel = useCallback(
     async (input: {
       sessionId: string;
-      kind: "direct" | "room";
       title?: string;
       participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
       metadata?: Record<string, unknown>;
@@ -861,7 +860,10 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       focus?: boolean;
     }) => {
       try {
-        return await store.createMessageChannel(input);
+        return await store.createMessageChannel({
+          ...input,
+          kind: "room",
+        });
       } catch (error) {
         setError(error);
         throw error;

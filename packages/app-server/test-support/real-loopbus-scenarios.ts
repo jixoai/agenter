@@ -253,7 +253,7 @@ export const runRealLunchRelayScenario = async (
   const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, "chat-main") : 0;
   const relayChannel = harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
-    kind: "direct",
+    kind: "room",
     title: "gaubee",
     participants: [
       { id: `avatar:${harness.session.avatar}`, label: harness.session.avatar, role: "avatar" },
@@ -613,7 +613,7 @@ export const runRealJudgeRelayScenario = async (
 ): Promise<RealJudgeRelayScenarioResult> => {
   const relayChannel = harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
-    kind: "direct",
+    kind: "room",
     title: "kzf",
     participants: [
       { id: `avatar:${harness.session.avatar}`, label: harness.session.avatar, role: "avatar" },

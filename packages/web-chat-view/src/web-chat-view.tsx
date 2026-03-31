@@ -659,4 +659,4 @@ export const WebChatView = ({
   );
 };
 
-const DEFAULT_MESSAGE_CHAT_TITLE = "Chat";
+const DEFAULT_MESSAGE_CHAT_TITLE = "Room";

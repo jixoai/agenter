@@ -304,7 +304,7 @@ const createMockClient = (input: {
   messageListChannelsQuery?: (input: { sessionId: string; includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
   messageCreateChannelMutate?: (input: {
     sessionId: string;
-    kind: "direct" | "room";
+    kind: "room";
     title?: string;
     focus?: boolean;
   }) => Promise<{ channel: unknown }>;
@@ -582,7 +582,7 @@ const createMockClient = (input: {
             input.messageListChannelsQuery ? await input.messageListChannelsQuery(payload) : { items: [] },
         },
         createChannel: {
-          mutate: async (payload: { sessionId: string; kind: "direct" | "room"; title?: string; focus?: boolean }) =>
+          mutate: async (payload: { sessionId: string; kind: "room"; title?: string; focus?: boolean }) =>
             input.messageCreateChannelMutate ? await input.messageCreateChannelMutate(payload) : { channel: null },
         },
         focus: {
@@ -1363,9 +1363,9 @@ describe("Feature: runtime store synchronization", () => {
         createSnapshot(26, {
           messageChannels: [
             {
-              chatId: "chat-main",
-              kind: "direct",
-              title: "Chat",
+              chatId: "room-main",
+              kind: "room",
+              title: "Main room",
               owner: "tester-bot",
               participants: [
                 { id: "avatar:tester-bot", label: "tester-bot", role: "avatar" },
@@ -1375,8 +1375,8 @@ describe("Feature: runtime store synchronization", () => {
               updatedAt: 2,
               focused: true,
               accessRole: "admin",
-              accessToken: "msgtok_chatmain",
-              transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_chatmain",
+              accessToken: "msgtok_roommain",
+              transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_roommain",
             },
           ],
         }),
@@ -2877,9 +2877,9 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given runtime snapshot already contains focused chat-channel descriptors When the store hydrates a started session Then chat bootstrap does not need a second list call", async () => {
     let listChannelsCalls = 0;
     const channel = {
-      chatId: "chat-main",
-      kind: "direct" as const,
-      title: "Chat",
+      chatId: "room-main",
+      kind: "room" as const,
+      title: "Main room",
       owner: "jane",
       participants: [
         { id: "avatar:jane", label: "jane", role: "avatar" as const },
@@ -2890,7 +2890,7 @@ describe("Feature: runtime store synchronization", () => {
       focused: true,
       accessRole: "admin" as const,
       accessToken: "msgtok_admin",
-      transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_admin",
     };
     const store = new RuntimeStore(
       createMockClient({
@@ -2951,9 +2951,9 @@ describe("Feature: runtime store synchronization", () => {
       revoke?: { sessionId: string; chatId: string; accessToken: string; grantId: string };
     } = {};
     const channel = {
-      chatId: "chat-main",
-      kind: "direct" as const,
-      title: "Chat",
+      chatId: "room-main",
+      kind: "room" as const,
+      title: "Main room",
       owner: "jane",
       participants: [
         { id: "avatar:jane", label: "jane", role: "avatar" as const },
@@ -2964,7 +2964,7 @@ describe("Feature: runtime store synchronization", () => {
       focused: true,
       accessRole: "admin" as const,
       accessToken: "msgtok_admin",
-      transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_admin",
     };
     const store = new RuntimeStore(
       createMockClient({
@@ -3014,7 +3014,7 @@ describe("Feature: runtime store synchronization", () => {
               createdAt: 3,
               accessRole: input.role,
               accessToken: "msgtok_member",
-              transportUrl: "ws://127.0.0.1:7777/chat/chat-main?token=msgtok_member",
+              transportUrl: "ws://127.0.0.1:7777/room/chat-main?token=msgtok_member",
             },
           };
         },

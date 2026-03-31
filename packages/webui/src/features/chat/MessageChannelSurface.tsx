@@ -7,7 +7,7 @@ import {
   type WebChatNotice,
   type WebChatSocketFactory,
 } from "@agenter/web-chat-view";
-import { Crosshair, Plus, Users } from "lucide-react";
+import { Crosshair, Plus } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
@@ -97,18 +97,17 @@ export const MessageChannelSurface = ({
   );
   const [collapseActionLabels, setCollapseActionLabels] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createDialogKind, setCreateDialogKind] = useState<"direct" | "room">("direct");
   const showEmptyChannelState = !channelsLoading && !channelsError && channels.length === 0;
   const emptyTitle = channelsError
-    ? "Unable to load chat channels"
+    ? "Unable to load rooms"
     : showEmptyChannelState
-      ? "No chat channels yet"
-      : "No messages yet";
+      ? "No rooms yet"
+      : "No room messages yet";
   const emptyMessage = channelsError
     ? channelsError
     : showEmptyChannelState
-      ? "Create a direct chat or room to start the conversation."
-      : "Send a message to start this chat channel.";
+      ? "Create a room to start the conversation."
+      : "Send a message to start this room.";
 
   useLayoutEffect(() => {
     const container = actionGroupRef.current;
@@ -132,7 +131,7 @@ export const MessageChannelSurface = ({
     <div className="border-t border-slate-200 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
       <AIInput
         workspacePath={workspacePath}
-        placeholder={selectedChannel ? "Message Agenter and use @ to reference files..." : "Create a chat channel to start messaging."}
+        placeholder={selectedChannel ? "Message Agenter and use @ to reference files..." : "Create a room to start messaging."}
         disabled={props.disabled}
         imageEnabled
         imageCompatible={imageCompatible}
@@ -173,7 +172,7 @@ export const MessageChannelSurface = ({
             badgeCount: unreadByChat[channel.chatId] ?? 0,
           }))}
           value={selectedChannel?.chatId ?? ""}
-          ariaLabel="Chat channels"
+          ariaLabel="Rooms"
           onValueChange={onSelectChannel}
           trailing={
             <>
@@ -215,28 +214,10 @@ export const MessageChannelSurface = ({
                   variant="outline"
                   disabled={disabled}
                   icon={Plus}
-                  label="New chat"
-                  tooltip="Create a direct chat channel"
-                  labelPriority={collapseActionLabels ? "icon-only" : "always"}
-                  onClick={() => {
-                    setCreateDialogKind("direct");
-                    setCreateDialogOpen(true);
-                  }}
-                  containerClassName="min-w-0"
-                />
-                <AdaptiveIconButton
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={disabled}
-                  icon={Users}
                   label="New room"
-                  tooltip="Create a room chat channel"
+                  tooltip="Create a room"
                   labelPriority={collapseActionLabels ? "icon-only" : "always"}
-                  onClick={() => {
-                    setCreateDialogKind("room");
-                    setCreateDialogOpen(true);
-                  }}
+                  onClick={() => setCreateDialogOpen(true)}
                   containerClassName="min-w-0"
                 />
               </div>
@@ -249,8 +230,8 @@ export const MessageChannelSurface = ({
         state={asyncState}
         className="min-h-0"
         viewportClassName="h-full min-h-0"
-        emptyLoadingLabel="Loading chat channels..."
-        loadingOverlayLabel="Refreshing chat channels..."
+        emptyLoadingLabel="Loading rooms..."
+        loadingOverlayLabel="Refreshing rooms..."
         empty={
           <div className="flex h-full min-h-[20rem] items-center justify-center px-6 py-8 text-center">
             <div className="space-y-2">
@@ -285,9 +266,8 @@ export const MessageChannelSurface = ({
       </AsyncSurface>
       <MessageChannelCreateDialog
         open={createDialogOpen}
-        kind={createDialogKind}
         ownerHint={selectedChannel?.owner ?? assistantAvatarLabel ?? "agenter"}
-        existingCount={channels.filter((channel) => channel.kind === createDialogKind).length}
+        existingCount={channels.length}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={async (input) => {
           await onCreateChannel(input);

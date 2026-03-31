@@ -1,3 +1,4 @@
+import { MessageControlPlane } from "@agenter/message-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -337,13 +338,14 @@ describe("Feature: app kernel event replay", () => {
     }
 
     const page = kernel.pageChatMessages(session.id, { limit: 16 });
+    const primaryRoomId = `room-main-${session.id}`;
 
     expect(page.items.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
       { content: "main prompt", chatId: "chat-main" },
       { content: "main reply", chatId: "chat-main" },
       { content: "relay prompt", chatId: "chat-chat-2" },
       { content: "relay reply", chatId: "chat-chat-2" },
-      { content: "legacy fallback prompt", chatId: "chat-main" },
+      { content: "legacy fallback prompt", chatId: primaryRoomId },
     ]);
   });
 
@@ -726,6 +728,110 @@ describe("Feature: app kernel event replay", () => {
       { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
       { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
     ]);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a stopped session with room-backed message refs When listing session history Then app-server joins the global room truth instead of trusting a stale session copy", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "room-read-model", autoStart: true });
+    const room = kernel.listMessageChannels(session.id)[0];
+    if (!room) {
+      throw new Error("expected primary room");
+    }
+
+    const sent = await kernel.sendMessageChannelError({
+      sessionId: session.id,
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      content: "room truth wins",
+      error: {
+        title: "room truth wins",
+      },
+    });
+    expect(sent.ok).toBeTrue();
+
+    await kernel.stopSession(session.id);
+
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      const block = db.listBlocksAfter(0, 20).find((item) => item.messageId);
+      if (!block?.messageId) {
+        throw new Error("expected persisted room-backed block");
+      }
+      db.upsertMessageBlock({
+        cycleId: block.cycleId,
+        createdAt: block.createdAt,
+        updatedAt: block.updatedAt,
+        messageId: block.messageId,
+        visibleAt: block.visibleAt,
+        attentionState: block.attentionState,
+        attentionLoadedAt: block.attentionLoadedAt,
+        role: block.role,
+        channel: block.channel,
+        chatId: block.chatId,
+        format: block.format,
+        content: "stale local copy",
+        tool: block.tool,
+      });
+    } finally {
+      db.close();
+    }
+
+    const messages = kernel.listChatMessages(session.id, 0, 20);
+    expect(messages.some((item) => item.content === "room truth wins")).toBeTrue();
+    expect(messages.some((item) => item.content === "stale local copy")).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a room created by a session When that session is deleted Then the global room truth remains in .message", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "room-survival", autoStart: true });
+    const room = kernel.listMessageChannels(session.id)[0];
+    if (!room) {
+      throw new Error("expected primary room");
+    }
+
+    const sent = await kernel.sendMessageChannelError({
+      sessionId: session.id,
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      content: "still here",
+      error: {
+        title: "still here",
+      },
+    });
+    expect(sent.ok).toBeTrue();
+
+    await kernel.deleteSession(session.id);
+
+    const globalPlane = new MessageControlPlane({
+      dbPath: join(root, ".message", "message.db"),
+    });
+    try {
+      const persistedRoom = globalPlane.getChannel(room.chatId, { includeArchived: true });
+      expect(persistedRoom?.chatId).toBe(room.chatId);
+      expect(globalPlane.snapshot(room.chatId, 20).items.some((item) => item.content === "still here")).toBeTrue();
+    } finally {
+      globalPlane.close();
+    }
 
     await kernel.stop();
   });

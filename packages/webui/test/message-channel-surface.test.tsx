@@ -11,11 +11,11 @@ import { MessageChannelSurface } from "../src/features/chat/MessageChannelSurfac
 const createChannel = (input: {
   chatId: string;
   title: string;
-  kind?: "direct" | "room";
+  kind?: "room";
   focused?: boolean;
 }): MessageChannelEntry => ({
   chatId: input.chatId,
-  kind: input.kind ?? "direct",
+  kind: input.kind ?? "room",
   title: input.title,
   owner: "jon",
   participants: [
@@ -24,17 +24,17 @@ const createChannel = (input: {
   ],
   createdAt: 1,
   updatedAt: 1,
-  focused: input.focused ?? input.chatId === "chat-main",
+  focused: input.focused ?? input.chatId === "room-main",
   accessRole: "admin",
   accessToken: `msgtok_${input.chatId}`,
-  transportUrl: `ws://localhost:7777/chat/${input.chatId}`,
+  transportUrl: `ws://localhost:7777/room/${input.chatId}`,
 });
 
 describe("Feature: message-channel room tabs", () => {
   test("Scenario: Given per-room unread counts When rendering channel tabs Then each room shows its own unread badge", () => {
     const channels = [
-      createChannel({ chatId: "chat-main", title: "Chat" }),
-      createChannel({ chatId: "room-ops", title: "Ops room", kind: "room" }),
+      createChannel({ chatId: "room-main", title: "Main room" }),
+      createChannel({ chatId: "room-ops", title: "Ops room" }),
     ];
 
     render(
@@ -43,10 +43,10 @@ describe("Feature: message-channel room tabs", () => {
         workspacePath="/repo/demo"
         channels={channels}
         unreadByChat={{
-          "chat-main": 2,
+          "room-main": 2,
           "room-ops": 1,
         }}
-        selectedChatId="chat-main"
+        selectedChatId="room-main"
         disabled={false}
         imageCompatible={false}
         onSelectChannel={() => {}}
@@ -56,7 +56,7 @@ describe("Feature: message-channel room tabs", () => {
       />,
     );
 
-    const mainTab = screen.getByRole("tab", { name: /chat/i });
+    const mainTab = screen.getByRole("tab", { name: /main room/i });
     expect(within(mainTab).getByText("2")).toBeInTheDocument();
 
     const roomTab = screen.getByRole("tab", { name: /ops room/i });
@@ -65,8 +65,8 @@ describe("Feature: message-channel room tabs", () => {
 
   test("Scenario: Given a selected room channel When rendering Then the room exposes an explicit focus toggle beside create actions", () => {
     const channels = [
-      createChannel({ chatId: "chat-main", title: "Chat", focused: false }),
-      createChannel({ chatId: "room-ops", title: "Ops room", kind: "room", focused: false }),
+      createChannel({ chatId: "room-main", title: "Main room", focused: false }),
+      createChannel({ chatId: "room-ops", title: "Ops room", focused: false }),
     ];
     const onFocusChannel = vi.fn(async () => undefined);
 

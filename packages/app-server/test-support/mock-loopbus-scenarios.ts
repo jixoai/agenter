@@ -146,7 +146,7 @@ export interface TwoRoomRelayScenarioResult {
 export const createGaubeeRoom = (harness: MockKernelHarness): MessageControlPlaneEntry =>
   harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
-    kind: "direct",
+    kind: "room",
     title: "gaubee",
     participants: [
       { id: "avatar:relay-bot", label: "relay-bot", role: "avatar" },

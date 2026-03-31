@@ -1,6 +1,8 @@
 import type { SessionBlockRecord, SessionCollectedInput, SessionCycleRecord } from "@agenter/session-system";
 
-export const DEFAULT_MESSAGE_CHAT_ID = "chat-main";
+export const DEFAULT_MESSAGE_CHAT_ID = "room-main";
+export const resolveSessionRoomActorId = (sessionId: string): `session:${string}` => `session:${sessionId}`;
+export const resolvePrimaryRoomId = (sessionId: string): string => `room-main-${sessionId}`;
 
 const normalizeChatId = (value: string | null | undefined): string | null => {
   if (typeof value !== "string") {

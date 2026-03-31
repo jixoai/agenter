@@ -124,8 +124,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -136,7 +136,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           renderComposer={() => <button type="button">Host composer</button>}
         />
@@ -147,7 +147,7 @@ describe("Feature: web-chat-view package", () => {
       expect(WebSocketMock.instances).toHaveLength(1);
     });
     const socket = WebSocketMock.instances[0]!;
-    expect(socket.url).toBe("ws://localhost:7777/chat/chat-main?token=msgtok_admin");
+    expect(socket.url).toBe("ws://localhost:7777/room/chat-main?token=msgtok_admin");
 
     socket?.open();
     socket?.message(
@@ -157,8 +157,8 @@ describe("Feature: web-chat-view package", () => {
         snapshot: {
           channel: {
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -169,7 +169,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           },
               items: [
             {
@@ -243,8 +243,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -255,7 +255,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           renderComposer={({ onSubmit }) => (
             <button
@@ -283,8 +283,8 @@ describe("Feature: web-chat-view package", () => {
         snapshot: {
           channel: {
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -295,7 +295,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           },
           items: [],
           nextBefore: null,
@@ -320,8 +320,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -332,7 +332,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           renderComposer={() => <button type="button">Host composer</button>}
         />
@@ -351,8 +351,8 @@ describe("Feature: web-chat-view package", () => {
         snapshot: {
           channel: {
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -363,7 +363,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           },
           items: [
             {
@@ -436,8 +436,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -448,7 +448,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           initialMessages={[
             {
@@ -484,8 +484,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -496,7 +496,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           initialMessages={[
             {
@@ -548,8 +548,8 @@ describe("Feature: web-chat-view package", () => {
         snapshot: {
           channel: {
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -560,7 +560,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           },
           items: [
             {
@@ -602,8 +602,8 @@ describe("Feature: web-chat-view package", () => {
   test("Scenario: Given the active channel metadata refreshes without changing chatId When the host rerenders Then the existing transcript stays mounted and the websocket is not recreated", async () => {
     const initialChannel = {
       chatId: "chat-main",
-      kind: "direct" as const,
-      title: "Chat",
+      kind: "room" as const,
+      title: "Room",
       owner: "jane",
       participants: [
         { id: "avatar:jane", label: "jane", role: "avatar" as const },
@@ -614,7 +614,7 @@ describe("Feature: web-chat-view package", () => {
       focused: true,
       accessRole: "admin" as const,
       accessToken: "msgtok_admin",
-      transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+      transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
     };
     const view = render(
       <div style={{ height: 520 }}>
@@ -680,8 +680,8 @@ describe("Feature: web-chat-view package", () => {
             socketFactory={socketFactory}
             channel={{
               chatId: "chat-main",
-              kind: "direct",
-              title: "Chat",
+              kind: "room",
+              title: "Room",
               owner: "jane",
               participants: [
                 { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -692,7 +692,7 @@ describe("Feature: web-chat-view package", () => {
               focused: true,
               accessRole: "admin",
               accessToken: "msgtok_admin",
-              transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+              transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
             }}
             renderComposer={() => <button type="button">Host composer</button>}
           />
@@ -712,8 +712,8 @@ describe("Feature: web-chat-view package", () => {
           socketFactory={socketFactory}
           channel={{
             chatId: "chat-main",
-            kind: "direct",
-            title: "Chat",
+            kind: "room",
+            title: "Room",
             owner: "jane",
             participants: [
               { id: "avatar:jane", label: "jane", role: "avatar" },
@@ -724,7 +724,7 @@ describe("Feature: web-chat-view package", () => {
             focused: true,
             accessRole: "admin",
             accessToken: "msgtok_admin",
-            transportUrl: "ws://localhost:7777/chat/chat-main?token=msgtok_admin",
+            transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           }}
           renderComposer={() => <button type="button">Host composer</button>}
         />

@@ -6,8 +6,8 @@ import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-disclosure";
 
 const createChannel = (input: { accessRole: "admin" | "member" | "readonly"; title?: string }): MessageChannelEntry => ({
-  chatId: "chat-lunch",
-  kind: "direct",
+  chatId: "room-lunch",
+  kind: "room",
   title: input.title ?? "Lunch relay",
   owner: "jane",
   participants: [
@@ -20,13 +20,13 @@ const createChannel = (input: { accessRole: "admin" | "member" | "readonly"; tit
   focused: true,
   accessRole: input.accessRole,
   accessToken: `msgtok_${input.accessRole}`,
-  transportUrl: `ws://localhost:7777/chat/chat-lunch?token=msgtok_${input.accessRole}`,
+  transportUrl: `ws://localhost:7777/room/room-lunch?token=msgtok_${input.accessRole}`,
 });
 
 const grantsFixture: MessageChannelGrantEntry[] = [
   {
     grantId: "grant-viewer",
-    chatId: "chat-lunch",
+    chatId: "room-lunch",
     role: "readonly",
     label: "Viewer",
     participantId: "user:gaubee",
@@ -103,7 +103,7 @@ const DisclosureStory = ({
                   ...nextGrant,
                   accessRole: input.role,
                   accessToken: "msgtok_member",
-                  transportUrl: `ws://localhost:7777/chat/${channel.chatId}?token=msgtok_member`,
+                  transportUrl: `ws://localhost:7777/room/${channel.chatId}?token=msgtok_member`,
                 };
               }
             : undefined

@@ -835,7 +835,6 @@ const SessionChatsRouteView = () => {
         onCreateChannel={async (input) => {
           const created = await controller.createMessageChannel({
             sessionId,
-            kind: input.kind,
             title: input.title,
             participants: input.participants,
             metadata: input.metadata,

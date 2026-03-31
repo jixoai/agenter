@@ -10,6 +10,7 @@ import {
 } from "@agenter/attention-system";
 import {
   MessageControlPlane,
+  type MessageActorId,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
@@ -17,6 +18,7 @@ import {
   type MessageFocusOp,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
+  type MessageRecord,
 } from "@agenter/message-system";
 import {
   SessionDb,
@@ -44,7 +46,12 @@ import {
 } from "./realtime-types";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { SessionNotificationRegistry, type SessionNotificationSnapshot } from "./session-notifications";
-import { DEFAULT_MESSAGE_CHAT_ID, resolveCollectedInputsChatId, resolveSessionBlockChatId } from "./session-chat-projection";
+import {
+  resolveCollectedInputsChatId,
+  resolvePrimaryRoomId,
+  resolveSessionBlockChatId,
+  resolveSessionRoomActorId,
+} from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { buildSessionAssetUrl, toChatSessionAsset } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
@@ -66,7 +73,7 @@ import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
 import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 
 const now = (): number => Date.now();
-const DEFAULT_MESSAGE_CHAT_TITLE = "Chat";
+const DEFAULT_MESSAGE_CHAT_TITLE = "Room";
 const INTERNAL_FAILURE_PREFIXES = ["agenter-ai call failed:", "agenter-ai 调用失败:", "agenter-ai 调用失败："];
 
 const hashNumericLabel = (value: string): string => {
@@ -78,25 +85,6 @@ const hashNumericLabel = (value: string): string => {
 };
 
 const buildSessionIconLabel = (sessionId: string): string => sessionId.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(sessionId);
-
-const createFallbackMessageChannel = (session: SessionMeta): MessageControlPlaneEntry => ({
-  chatId: DEFAULT_MESSAGE_CHAT_ID,
-  kind: "direct",
-  title: DEFAULT_MESSAGE_CHAT_TITLE,
-  owner: session.avatar,
-  contextId: `ctx-${DEFAULT_MESSAGE_CHAT_ID}`,
-  participants: [
-    { id: `avatar:${session.avatar}`, label: session.avatar, role: "avatar" },
-    { id: "user", label: "User", role: "user" },
-  ],
-  metadata: { builtIn: true },
-  createdAt: Date.parse(session.createdAt) || Date.now(),
-  updatedAt: Date.parse(session.updatedAt) || Date.now(),
-  focused: true,
-  accessRole: "readonly",
-  accessToken: "",
-  transportUrl: undefined,
-});
 
 const parseGitOwnerFromUrl = (raw: string): string | null => {
   const value = raw.trim().replace(/\.git$/, "");
@@ -174,7 +162,7 @@ const readPersistedBlockChatId = (block: Pick<SessionBlockRecord, "chatId">): st
   return normalized.length > 0 ? normalized : null;
 };
 
-const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = DEFAULT_MESSAGE_CHAT_ID): ChatMessage => ({
+const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = resolvePrimaryRoomId(sessionId)): ChatMessage => ({
   id: `${block.id}`,
   chatId: readPersistedBlockChatId(block) ?? chatId,
   role: block.role,
@@ -186,6 +174,11 @@ const toChatMessage = (sessionId: string, block: SessionBlockRecord, chatId = DE
   tool: block.tool,
   attachments: block.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
 });
+
+type PersistedChatMessage = ChatMessage & {
+  sessionId: string;
+  messageId: string;
+};
 
 const toChatCycle = (input: {
   sessionId: string;
@@ -209,7 +202,7 @@ const toChatCycle = (input: {
     clientMessageIds: collectClientMessageIds(input.inputs),
     inputs: structuredClone(input.inputs),
     outputs: input.outputs.map((block) =>
-      toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, DEFAULT_MESSAGE_CHAT_ID)),
+      toChatMessage(input.sessionId, block, resolveCollectedInputsChatId(input.inputs, resolvePrimaryRoomId(input.sessionId))),
     ),
     liveMessages: [],
     streaming: null,
@@ -392,6 +385,7 @@ export interface WorkspaceListItem extends WorkspaceEntry {
 export class AppKernel {
   private readonly sessions: SessionCatalog;
   private readonly workspaces: WorkspacesStore;
+  private readonly messageControlPlane: MessageControlPlane;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -409,6 +403,9 @@ export class AppKernel {
       archiveRoot: options.archiveSessionRoot,
     });
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
+    this.messageControlPlane = new MessageControlPlane({
+      dbPath: join(this.sessions.getGlobalRoot(), "..", ".message", "message.db"),
+    });
     this.authService = new AuthServiceBridge({
       ...options.profileService,
       dataDir: options.profileService?.dataDir ?? join(this.sessions.getGlobalRoot(), "..", "profile-service"),
@@ -430,6 +427,7 @@ export class AppKernel {
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
     this.terminalStatusByKey.clear();
+    this.messageControlPlane.close();
     await this.authService.stop();
   }
 
@@ -446,6 +444,52 @@ export class AppKernel {
       sessionId: session.id,
       workspacePath: session.cwd,
       label: buildSessionIconLabel(session.id),
+    });
+  }
+
+  private resolveSessionRoomActorId(sessionId: string): MessageActorId {
+    return resolveSessionRoomActorId(sessionId);
+  }
+
+  private ensureSessionPrimaryRoom(
+    session: Pick<SessionMeta, "id" | "avatar" | "createdAt" | "updatedAt">,
+  ): MessageControlPlaneEntry {
+    const actorId = this.resolveSessionRoomActorId(session.id);
+    const roomId = resolvePrimaryRoomId(session.id);
+    const existing = this.messageControlPlane.getChannelForActor(roomId, actorId, { touchPresence: false });
+    if (existing) {
+      return existing;
+    }
+    const bootstrap = this.messageControlPlane.getChannel(roomId, { includeArchived: true });
+    if (bootstrap) {
+      this.messageControlPlane.issueChannelGrantAuthorized({
+        chatId: roomId,
+        accessToken: bootstrap.accessToken,
+        role: "admin",
+        label: session.avatar,
+        participantId: actorId,
+      });
+      return (
+        this.messageControlPlane.getChannelForActor(roomId, actorId, { includeArchived: true, touchPresence: false }) ??
+        bootstrap
+      );
+    }
+    return this.messageControlPlane.createChannel({
+      chatId: roomId,
+      kind: "room",
+      title: DEFAULT_MESSAGE_CHAT_TITLE,
+      owner: session.avatar,
+      contextId: `ctx-${roomId}`,
+      participants: [
+        { id: `avatar:${session.avatar}`, label: session.avatar, role: "avatar" },
+        { id: "user", label: "User", role: "user" },
+      ],
+      metadata: {
+        builtIn: true,
+        primaryRoom: true,
+        sessionId: session.id,
+      },
+      bootstrapActorId: actorId,
     });
   }
 
@@ -575,14 +619,7 @@ export class AppKernel {
     sessionId: string,
     afterId = 0,
     limit = 200,
-  ): Array<
-    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): PersistedChatMessage[] {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -594,14 +631,7 @@ export class AppKernel {
   pageChatMessages(
     sessionId: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
-  ): ReversePage<
-    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): ReversePage<PersistedChatMessage> {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -614,14 +644,7 @@ export class AppKernel {
     sessionId: string,
     beforeId: number,
     limit = 200,
-  ): Array<
-    Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): PersistedChatMessage[] {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -758,6 +781,7 @@ export class AppKernel {
       storeTarget: resolved.sessionStoreTarget,
     });
     await this.syncSessionIconSeed(session);
+    this.ensureSessionPrimaryRoom(session);
     this.emit("session.updated", { session }, session.id);
 
     if (input.autoStart === false) {
@@ -829,6 +853,7 @@ export class AppKernel {
     }
 
     this.sessions.update(sessionId, { status: "starting", lastError: undefined });
+    this.ensureSessionPrimaryRoom(meta);
     const runtime = new SessionRuntime({
       sessionId: meta.id,
       cwd: meta.cwd,
@@ -836,6 +861,9 @@ export class AppKernel {
       sessionRoot: meta.sessionRoot,
       sessionName: meta.name,
       storeTarget: meta.storeTarget,
+      messageSystem: this.messageControlPlane,
+      messageActorId: this.resolveSessionRoomActorId(meta.id),
+      primaryRoomId: resolvePrimaryRoomId(meta.id),
       logger: this.options.logger,
     });
     runtime.setSessionStatus("starting");
@@ -903,17 +931,11 @@ export class AppKernel {
     if (!session) {
       return [];
     }
-    const dbPath = join(session.sessionRoot, "message-system", "chat.db");
-    if (!existsSync(dbPath)) {
-      return [createFallbackMessageChannel(session)];
-    }
-    const plane = new MessageControlPlane({ dbPath });
-    try {
-      const channels = plane.listChannels({ includeArchived: input.includeArchived });
-      return channels.length > 0 ? channels : [createFallbackMessageChannel(session)];
-    } finally {
-      plane.close();
-    }
+    this.ensureSessionPrimaryRoom(session);
+    return this.messageControlPlane.listChannelsForActor(this.resolveSessionRoomActorId(sessionId), {
+      includeArchived: input.includeArchived,
+      touchPresence: false,
+    });
   }
 
   createMessageChannel(input: {
@@ -1777,14 +1799,7 @@ export class AppKernel {
     sessionId: string,
     afterId: number,
     limit: number,
-  ): Array<
-    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): PersistedChatMessage[] {
     const dbPath = join(sessionRoot, "session.db");
     if (!existsSync(dbPath)) {
       return [];
@@ -1792,6 +1807,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
+      const defaultRoomId = resolvePrimaryRoomId(sessionId);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
         const explicitChatId = readPersistedBlockChatId(item);
@@ -1799,7 +1815,7 @@ export class AppKernel {
           return explicitChatId;
         }
         if (item.cycleId === null) {
-          return DEFAULT_MESSAGE_CHAT_ID;
+          return defaultRoomId;
         }
         const cached = cycleChatIds.get(item.cycleId);
         if (cached) {
@@ -1808,19 +1824,19 @@ export class AppKernel {
         const chatId = resolveSessionBlockChatId({
           block: item,
           getCycleById: (cycleId) => db.getCycleById(cycleId),
-          fallback: DEFAULT_MESSAGE_CHAT_ID,
+          fallback: defaultRoomId,
         });
         cycleChatIds.set(item.cycleId, chatId);
         return chatId;
       };
-      return db.listBlocksAfter(afterId, limit).map((item) => ({
-        ...item,
-        chatId: resolveBlockChatId(item),
-        attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
-        sessionId,
-        messageId: `${item.id}`,
-        timestamp: item.createdAt,
-      }));
+      return db.listBlocksAfter(afterId, limit).map((item) => {
+        const projected = this.projectPersistedChatMessage(sessionId, item, resolveBlockChatId(item));
+        return {
+          ...projected,
+          sessionId,
+          messageId: item.messageId ?? `${item.id}`,
+        };
+      });
     } finally {
       db.close();
     }
@@ -1830,14 +1846,7 @@ export class AppKernel {
     sessionRoot: string,
     sessionId: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
-  ): ReversePage<
-    Omit<ReturnType<SessionRuntime["listChatMessages"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): ReversePage<PersistedChatMessage> {
     const dbPath = join(sessionRoot, "session.db");
     if (!existsSync(dbPath)) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
@@ -1845,6 +1854,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
+      const defaultRoomId = resolvePrimaryRoomId(sessionId);
       const page = db.listBlocksPage(input);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
@@ -1853,7 +1863,7 @@ export class AppKernel {
           return explicitChatId;
         }
         if (item.cycleId === null) {
-          return DEFAULT_MESSAGE_CHAT_ID;
+          return defaultRoomId;
         }
         const cached = cycleChatIds.get(item.cycleId);
         if (cached) {
@@ -1862,20 +1872,20 @@ export class AppKernel {
         const chatId = resolveSessionBlockChatId({
           block: item,
           getCycleById: (cycleId) => db.getCycleById(cycleId),
-          fallback: DEFAULT_MESSAGE_CHAT_ID,
+          fallback: defaultRoomId,
         });
         cycleChatIds.set(item.cycleId, chatId);
         return chatId;
       };
       return {
-        items: page.items.map((item) => ({
-          ...item,
-          chatId: resolveBlockChatId(item),
-          attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
-          sessionId,
-          messageId: `${item.id}`,
-          timestamp: item.createdAt,
-        })),
+        items: page.items.map((item) => {
+          const projected = this.projectPersistedChatMessage(sessionId, item, resolveBlockChatId(item));
+          return {
+            ...projected,
+            sessionId,
+            messageId: item.messageId ?? `${item.id}`,
+          };
+        }),
         nextBefore: page.nextBefore,
         hasMoreBefore: page.hasMoreBefore,
       };
@@ -1938,6 +1948,63 @@ export class AppKernel {
       active: attentionSystem.listActiveContexts(),
       cycleFrames,
       hooks,
+    };
+  }
+
+  private projectPersistedChatMessage(
+    sessionId: string,
+    block: SessionBlockRecord,
+    chatId: string,
+  ): ChatMessage {
+    if (typeof block.messageId === "string") {
+      const roomMessage = this.messageControlPlane.getMessage(chatId, block.messageId);
+      if (roomMessage) {
+        return this.toChatMessageFromRoomRecord(sessionId, roomMessage);
+      }
+    }
+    return toChatMessage(sessionId, block, chatId);
+  }
+
+  private toChatMessageFromRoomRecord(
+    sessionId: string,
+    message: MessageRecord,
+  ): ChatMessage {
+    const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata : {};
+    const session = this.sessions.get(sessionId);
+    const role = session && message.from === session.avatar ? "assistant" : "user";
+    return {
+      id: message.messageId,
+      chatId: message.chatId,
+      role,
+      content: message.content,
+      messageKind: message.kind,
+      messagePayload: message.payload,
+      timestamp: message.createdAt,
+      updatedAt: message.updatedAt,
+      visibleAt: message.visibleAt,
+      attentionState: message.attentionState,
+      attentionLoadedAt: message.attentionLoadedAt,
+      editable: message.editable,
+      cycleId:
+        typeof metadata.cycleId === "number" && Number.isInteger(metadata.cycleId) ? metadata.cycleId : undefined,
+      channel:
+        metadata.channel === "to_user" || metadata.channel === "self_talk" || metadata.channel === "tool"
+          ? metadata.channel
+          : role === "assistant"
+            ? "to_user"
+            : undefined,
+      format:
+        typeof metadata.format === "string"
+          ? (metadata.format as ReturnType<SessionRuntime["listChatMessages"]>[number]["format"])
+          : undefined,
+      attachments: message.attachments?.map((attachment) => ({
+        assetId: attachment.assetId,
+        kind: attachment.kind,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        url: attachment.url,
+      })),
     };
   }
 
@@ -2008,14 +2075,7 @@ export class AppKernel {
     sessionId: string,
     beforeId: number,
     limit: number,
-  ): Array<
-    Omit<ReturnType<SessionRuntime["listChatMessagesBefore"]>[number], "attachments"> & {
-      attachments: ChatSessionAsset[];
-      sessionId: string;
-      messageId: string;
-      timestamp: number;
-    }
-  > {
+  ): PersistedChatMessage[] {
     const dbPath = join(sessionRoot, "session.db");
     if (!existsSync(dbPath)) {
       return [];
@@ -2023,6 +2083,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
+      const defaultRoomId = resolvePrimaryRoomId(sessionId);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
         const explicitChatId = readPersistedBlockChatId(item);
@@ -2030,7 +2091,7 @@ export class AppKernel {
           return explicitChatId;
         }
         if (item.cycleId === null) {
-          return DEFAULT_MESSAGE_CHAT_ID;
+          return defaultRoomId;
         }
         const cached = cycleChatIds.get(item.cycleId);
         if (cached) {
@@ -2039,19 +2100,19 @@ export class AppKernel {
         const chatId = resolveSessionBlockChatId({
           block: item,
           getCycleById: (cycleId) => db.getCycleById(cycleId),
-          fallback: DEFAULT_MESSAGE_CHAT_ID,
+          fallback: defaultRoomId,
         });
         cycleChatIds.set(item.cycleId, chatId);
         return chatId;
       };
-      return db.listBlocksBefore(beforeId, limit).map((item) => ({
-        ...item,
-        chatId: resolveBlockChatId(item),
-        attachments: item.attachments.map((attachment) => toChatSessionAsset(sessionId, attachment)),
-        sessionId,
-        messageId: `${item.id}`,
-        timestamp: item.createdAt,
-      }));
+      return db.listBlocksBefore(beforeId, limit).map((item) => {
+        const projected = this.projectPersistedChatMessage(sessionId, item, resolveBlockChatId(item));
+        return {
+          ...projected,
+          sessionId,
+          messageId: item.messageId ?? `${item.id}`,
+        };
+      });
     } finally {
       db.close();
     }

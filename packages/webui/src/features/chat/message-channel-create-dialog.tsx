@@ -17,7 +17,6 @@ interface ParticipantDraft {
 }
 
 export interface MessageChannelCreateInput {
-  kind: "direct" | "room";
   title: string;
   participants: Array<{ id: string; label?: string; role?: ParticipantRole }>;
   metadata?: Record<string, unknown>;
@@ -26,7 +25,6 @@ export interface MessageChannelCreateInput {
 
 interface MessageChannelCreateDialogProps {
   open: boolean;
-  kind: "direct" | "room";
   ownerHint: string;
   existingCount: number;
   onClose: () => void;
@@ -50,9 +48,9 @@ const parseMetadataDraft = (input: string): Record<string, unknown> => {
   return parsed;
 };
 
-const defaultTitle = (kind: "direct" | "room", existingCount: number): string => {
+const defaultTitle = (existingCount: number): string => {
   const number = Math.max(1, existingCount + 1);
-  return kind === "room" ? `Room ${number}` : `Chat ${number}`;
+  return `Room ${number}`;
 };
 
 const createToken = (): string => {
@@ -95,13 +93,12 @@ const toParticipantRole = (value: string): ParticipantRole => {
 
 export const MessageChannelCreateDialog = ({
   open,
-  kind,
   ownerHint,
   existingCount,
   onClose,
   onCreate,
 }: MessageChannelCreateDialogProps) => {
-  const [title, setTitle] = useState(() => defaultTitle(kind, existingCount));
+  const [title, setTitle] = useState(() => defaultTitle(existingCount));
   const [participants, setParticipants] = useState<ParticipantDraft[]>(() => toParticipantDefaults(ownerHint));
   const [metadataDraft, setMetadataDraft] = useState("{}\n");
   const [adminToken, setAdminToken] = useState("");
@@ -113,12 +110,12 @@ export const MessageChannelCreateDialog = ({
     if (!open) {
       return;
     }
-    setTitle(defaultTitle(kind, existingCount));
+    setTitle(defaultTitle(existingCount));
     setParticipants(toParticipantDefaults(ownerHint));
     setMetadataDraft("{}\n");
     setAdminToken("");
     setError(null);
-  }, [existingCount, kind, open, ownerHint]);
+  }, [existingCount, open, ownerHint]);
 
   const normalizedParticipants = useMemo(
     () =>
@@ -166,7 +163,6 @@ export const MessageChannelCreateDialog = ({
     setError(null);
     try {
       await onCreate({
-        kind,
         title: nextTitle,
         participants: normalizedParticipants,
         metadata,
@@ -183,8 +179,8 @@ export const MessageChannelCreateDialog = ({
   return (
     <Dialog
       open={open}
-      title={kind === "room" ? "Create room" : "Create chat"}
-      description="Configure metadata, participants, and optional admin credentials before creation."
+      title="Create room"
+      description="Configure room metadata, participants, and optional admin credentials before creation."
       onClose={() => {
         if (creating) {
           return;
@@ -197,7 +193,7 @@ export const MessageChannelCreateDialog = ({
             Cancel
           </Button>
           <Button type="button" onClick={() => void handleCreate()} disabled={creating}>
-            {creating ? "Creating..." : "Create channel"}
+            {creating ? "Creating..." : "Create room"}
           </Button>
         </>
       }

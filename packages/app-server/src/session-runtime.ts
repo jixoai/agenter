@@ -17,6 +17,7 @@ import {
 } from "@agenter/attention-system";
 import {
   MessageControlPlane,
+  type MessageActorId,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
@@ -110,7 +111,12 @@ import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
 import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
-import { DEFAULT_MESSAGE_CHAT_ID, resolveSessionBlockChatId } from "./session-chat-projection";
+import {
+  DEFAULT_MESSAGE_CHAT_ID,
+  resolvePrimaryRoomId,
+  resolveSessionBlockChatId,
+  resolveSessionRoomActorId,
+} from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
@@ -125,7 +131,6 @@ import {
 } from "./workspace-settings";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const DEFAULT_CHAT_ID = DEFAULT_MESSAGE_CHAT_ID;
 const DEFAULT_CHAT_OWNER = "agenter";
 
 const slugifyMessageChannelTitle = (value: string, fallback: string): string => {
@@ -897,6 +902,9 @@ export interface SessionRuntimeOptions {
   sessionRoot: string;
   sessionName: string;
   storeTarget: "global" | "workspace";
+  messageSystem?: MessageControlPlane;
+  messageActorId?: MessageActorId;
+  primaryRoomId?: string;
   logger?: {
     log: (line: {
       channel: "agent" | "error";
@@ -958,6 +966,9 @@ export class SessionRuntime {
   private attentionSystem = new AttentionSystem();
   private attentionHashAliases = new AttentionHashAliasRegistry();
   private readonly messageSystem: MessageControlPlane;
+  private readonly ownsMessageSystem: boolean;
+  private readonly messageActorId: MessageActorId;
+  private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
   private readonly messageSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
@@ -1026,15 +1037,23 @@ export class SessionRuntime {
   private loopPluginRuntime: LoopBusPluginRuntime | null = null;
 
   constructor(private readonly options: SessionRuntimeOptions) {
-    this.messageSystem = new MessageControlPlane({
-      dbPath: join(options.sessionRoot, "message-system", "chat.db"),
-      initialConfig: {
-        defaultOwner: DEFAULT_CHAT_OWNER,
-        transport: {
-          port: 0,
+    this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
+    this.primaryRoomId = options.primaryRoomId ?? resolvePrimaryRoomId(options.sessionId);
+    if (options.messageSystem) {
+      this.messageSystem = options.messageSystem;
+      this.ownsMessageSystem = false;
+    } else {
+      this.messageSystem = new MessageControlPlane({
+        dbPath: join(options.sessionRoot, "message-system", "chat.db"),
+        initialConfig: {
+          defaultOwner: DEFAULT_CHAT_OWNER,
+          transport: {
+            port: 0,
+          },
         },
-      },
-    });
+      });
+      this.ownsMessageSystem = true;
+    }
     this.bindMessageSystem();
   }
 
@@ -1066,11 +1085,22 @@ export class SessionRuntime {
   }
 
   private getDefaultChatId(): string {
-    return DEFAULT_CHAT_ID;
+    return this.primaryRoomId;
   }
 
   private getAvatarName(): string {
     return this.config?.avatar?.nickname ?? this.options.avatar ?? DEFAULT_CHAT_OWNER;
+  }
+
+  private listActorRooms(input: { includeArchived?: boolean; touchPresence?: boolean } = {}): MessageControlPlaneEntry[] {
+    return this.messageSystem.listChannelsForActor(this.messageActorId, input);
+  }
+
+  private getActorRoom(
+    chatId: string,
+    input: { includeArchived?: boolean; touchPresence?: boolean } = {},
+  ): MessageControlPlaneEntry | undefined {
+    return this.messageSystem.getChannelForActor(chatId, this.messageActorId, input);
   }
 
   private getDefaultAttentionContextId(chatId: string): string {
@@ -1212,17 +1242,32 @@ export class SessionRuntime {
   private ensureDefaultChatChannel(): MessageControlPlaneEntry {
     const chatId = this.getDefaultChatId();
     const context = this.ensureAttentionContextForChannel(chatId);
-    const existing = this.messageSystem.getChannel(chatId);
+    const existing = this.getActorRoom(chatId);
     if (existing) {
-      this.messageSystem.focus("add", [chatId]);
+      this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
       return existing;
+    }
+    const sharedRoom = this.messageSystem.getChannel(chatId);
+    if (sharedRoom) {
+      this.messageSystem.issueChannelGrantAuthorized({
+        chatId,
+        accessToken: sharedRoom.accessToken,
+        role: "admin",
+        label: this.getAvatarName(),
+        participantId: this.messageActorId,
+      });
+      this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
+      const granted = this.getActorRoom(chatId);
+      if (granted) {
+        return granted;
+      }
     }
     const avatar = this.getAvatarName();
     const defaults = this.config?.message?.chatMainDefaults;
     const created = this.messageSystem.createChannel({
       chatId,
-      kind: "direct",
-      title: defaults?.title ?? "Chat",
+      kind: "room",
+      title: defaults?.title ?? "Room",
       owner: avatar,
       contextId: context.contextId,
       participants:
@@ -1234,17 +1279,19 @@ export class SessionRuntime {
             ],
       metadata: {
         builtIn: true,
+        primaryRoom: true,
+        sessionId: this.options.sessionId,
         ...(defaults?.metadata ?? {}),
       },
       adminToken: defaults?.adminToken,
+      bootstrapActorId: this.messageActorId,
     });
-    this.messageSystem.focus("add", [chatId]);
+    this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
     return created;
   }
 
   private allocateMessageChannelId(kind: MessageChannelKind, title?: string): string {
-    const prefix = kind === "room" ? "room-" : "chat-";
-    const base = `${prefix}${slugifyMessageChannelTitle(title ?? "", kind === "room" ? "room" : "chat")}`;
+    const base = `room-${slugifyMessageChannelTitle(title ?? "", kind === "room" ? "room" : "chat")}`;
     if (!this.messageSystem.getChannel(base)) {
       return base;
     }
@@ -1279,7 +1326,7 @@ export class SessionRuntime {
 
   private projectMessageChannelForTooling(channel: MessageControlPlaneEntry): {
     chatId: string;
-    kind: "direct" | "room";
+    kind: "room";
     title: string;
     owner: string;
     contextId?: string;
@@ -1316,7 +1363,7 @@ export class SessionRuntime {
 
   private listMessageChannelsForTooling(input: { includeArchived?: boolean } = {}): Array<{
     chatId: string;
-    kind: "direct" | "room";
+    kind: "room";
     title: string;
     owner: string;
     contextId?: string;
@@ -1337,7 +1384,7 @@ export class SessionRuntime {
 
   private getMessageChannelForTooling(input: { chatId: string; includeArchived?: boolean }): {
     chatId: string;
-    kind: "direct" | "room";
+    kind: "room";
     title: string;
     owner: string;
     contextId?: string;
@@ -1354,9 +1401,13 @@ export class SessionRuntime {
     if (input.chatId === this.getDefaultChatId()) {
       this.ensureDefaultChatChannel();
     }
-    const channel = this.messageSystem.getChannel(input.chatId, {
-      includeArchived: input.includeArchived ?? false,
-    });
+    const channel =
+      this.getActorRoom(input.chatId, {
+        includeArchived: input.includeArchived ?? false,
+      }) ??
+      this.messageSystem.getChannel(input.chatId, {
+        includeArchived: input.includeArchived ?? false,
+      });
     return channel ? this.projectMessageChannelForTooling(channel) : null;
   }
 
@@ -1368,7 +1419,7 @@ export class SessionRuntime {
     to?: string;
     originAckFallback?: string;
   }): Promise<{ ok: boolean; messageId: string }> {
-    const channel = this.messageSystem.getChannel(input.chatId);
+    const channel = this.getActorRoom(input.chatId) ?? this.messageSystem.getChannel(input.chatId);
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -1380,7 +1431,7 @@ export class SessionRuntime {
       input.chatId !== originChatId &&
       !this.hasDeliveredMessageSendForCycle(originChatId, replyCycleId)
     ) {
-      const originChannel = this.messageSystem.getChannel(originChatId);
+      const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
       const originAckFallback = input.originAckFallback?.trim();
       if (originChannel) {
         this.deliverMessageSend({
@@ -1453,7 +1504,7 @@ export class SessionRuntime {
 
   listMessageChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     this.ensureDefaultChatChannel();
-    return this.messageSystem.listChannels({ includeArchived: input.includeArchived });
+    return this.listActorRooms({ includeArchived: input.includeArchived });
   }
 
   createMessageChannel(input: {
@@ -1473,8 +1524,8 @@ export class SessionRuntime {
     const context = this.ensureAttentionContextForChannel(chatId);
     const channel = this.messageSystem.createChannel({
       chatId,
-      kind: input.kind,
-      title: input.title ?? (input.kind === "room" ? "Room" : "Chat"),
+      kind: "room",
+      title: input.title ?? "Room",
       owner: avatar,
       contextId: context.contextId,
       participants:
@@ -1486,13 +1537,14 @@ export class SessionRuntime {
             ],
       metadata: input.metadata ?? { builtIn: false },
       adminToken: input.adminToken,
+      bootstrapActorId: this.messageActorId,
     });
     this.enqueueLifecycleAttentionCommit({
       systemId: "message",
       subjectId: chatId,
       contextId: context.contextId,
       event: "channel_create",
-      summary: `Created chat channel ${chatId}`,
+      summary: `Created room ${chatId}`,
       payload: {
         kind: input.kind,
         title: channel.title,
@@ -1501,13 +1553,13 @@ export class SessionRuntime {
       },
     });
     if (input.focus ?? true) {
-      this.messageSystem.focus("replace", [chatId]);
+      this.messageSystem.focusForActor(this.messageActorId, "replace", [chatId]);
       this.enqueueLifecycleAttentionCommit({
         systemId: "message",
         subjectId: chatId,
         contextId: context.contextId,
         event: "channel_focus",
-        summary: `Focused chat channel ${chatId}`,
+        summary: `Focused room ${chatId}`,
         payload: {
           op: "replace",
           channels: [chatId],
@@ -1515,18 +1567,19 @@ export class SessionRuntime {
           channel: this.projectMessageChannelForAttention(channel),
         },
       });
-      return this.messageSystem.getChannel(chatId) ?? channel;
+      return this.getActorRoom(chatId) ?? channel;
     }
-    return channel;
+    this.messageSystem.focusForActor(this.messageActorId, "remove", [chatId]);
+    return this.getActorRoom(chatId) ?? channel;
   }
 
   focusMessageChannels(input: {
     op: MessageFocusOp;
     channels: Array<{ chatId: string; accessToken: string }>;
   }): MessageControlPlaneEntry[] {
-    const focusedBefore = new Set(this.messageSystem.getFocusedChatIds());
+    const focusedBefore = new Set(this.messageSystem.getFocusedChatIds(this.messageActorId));
     const focusedAfter = new Set(this.messageSystem.focusAuthorized(input.op, input.channels));
-    const channels = this.messageSystem.listChannels();
+    const channels = this.listActorRooms();
     const touchedChatIds = new Set<string>([
       ...focusedBefore,
       ...focusedAfter,
@@ -1584,7 +1637,7 @@ export class SessionRuntime {
   }
 
   archiveMessageChannel(input: { chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
-    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+    const channel = this.getActorRoom(input.chatId, { includeArchived: true }) ?? this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -1803,7 +1856,9 @@ export class SessionRuntime {
       message.metadata && typeof message.metadata === "object"
         ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
         : {};
-    const channel = this.messageSystem.getChannel(message.chatId, { includeArchived: true });
+    const channel =
+      this.getActorRoom(message.chatId, { includeArchived: true }) ??
+      this.messageSystem.getChannel(message.chatId, { includeArchived: true });
     if (message.chatId) {
       meta.chatId = message.chatId;
     }
@@ -3059,7 +3114,7 @@ export class SessionRuntime {
       chatId,
       messageId: request.ref.subjectId,
     });
-    const channel = this.messageSystem.getChannel(chatId);
+    const channel = this.getActorRoom(chatId) ?? this.messageSystem.getChannel(chatId);
     if (loadedMessage.content.trim().length === 0 || loadedMessage.content.trim() === "/compact") {
       return [];
     }
@@ -4205,6 +4260,7 @@ export class SessionRuntime {
     if (this.started) {
       return;
     }
+    this.messageSystem.setActorPresence(this.messageActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
     });
@@ -4325,12 +4381,13 @@ export class SessionRuntime {
     this.restoreAttentionRuntimeHistory();
     const restoredChat = this.sessionDb.listBlocksAfter(0, 200);
     const restoredChatIds = new Map<number, string>();
+    const defaultChatId = this.getDefaultChatId();
     const resolveRestoredChatId = (item: SessionDbChatMessageRecord): string => {
       if (typeof item.chatId === "string" && item.chatId.trim().length > 0) {
         return item.chatId;
       }
       if (item.cycleId === null) {
-        return DEFAULT_CHAT_ID;
+        return defaultChatId;
       }
       const cached = restoredChatIds.get(item.cycleId);
       if (cached) {
@@ -4339,7 +4396,7 @@ export class SessionRuntime {
       const chatId = resolveSessionBlockChatId({
         block: item,
         getCycleById: (cycleId) => this.sessionDb?.getCycleById(cycleId) ?? null,
-        fallback: DEFAULT_CHAT_ID,
+        fallback: defaultChatId,
       });
       restoredChatIds.set(item.cycleId, chatId);
       return chatId;
@@ -4535,6 +4592,9 @@ export class SessionRuntime {
     this.runtime?.pause(status === "stopped" ? "session.stop" : "session.pause");
     // Wake commit waiters so the paused loop can settle without waiting for new external input.
     this.notifyInput("attention");
+    if (status === "stopped") {
+      this.messageSystem.setActorPresence(this.messageActorId, false);
+    }
     this.sessionStore?.setLifecycle({ status });
   }
 
@@ -4542,6 +4602,7 @@ export class SessionRuntime {
     if (!this.started) {
       return;
     }
+    this.messageSystem.setActorPresence(this.messageActorId, true);
     this.runtime?.resume();
     this.sessionStore?.setLifecycle({ status: "running" });
   }
@@ -4559,6 +4620,7 @@ export class SessionRuntime {
     this.runtime = null;
     this.agent = null;
     this.loopPluginRuntime = null;
+    this.messageSystem.setActorPresence(this.messageActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
     this.apiCallRecordingRefCount = 0;
 
@@ -4584,7 +4646,9 @@ export class SessionRuntime {
     for (const cleanup of this.messageSystemCleanup.splice(0, this.messageSystemCleanup.length)) {
       cleanup();
     }
-    this.messageSystem.close();
+    if (this.ownsMessageSystem) {
+      this.messageSystem.close();
+    }
     this.sessionDb?.close();
     this.sessionDb = null;
     this.loopKernelSnapshot = null;
@@ -6104,7 +6168,7 @@ export class SessionRuntime {
   }
 
   private resolveMessageChannelForContext(contextId: string): MessageControlPlaneEntry | null {
-    return this.messageSystem.listChannels().find((entry) => entry.contextId === contextId) ?? null;
+    return this.listActorRooms().find((entry) => entry.contextId === contextId) ?? null;
   }
 
   private resolveMessageChatIdForContext(contextId: string): string | null {
@@ -6586,9 +6650,10 @@ export class SessionRuntime {
     }
   }
 
-  private toChatMessage(record: SessionDbChatMessageRecord, chatId = DEFAULT_CHAT_ID): ChatMessage {
+  private toChatMessage(record: SessionDbChatMessageRecord, chatId?: string): ChatMessage {
+    const fallbackChatId = chatId ?? this.getDefaultChatId();
     const effectiveChatId =
-      typeof record.chatId === "string" && record.chatId.trim().length > 0 ? record.chatId : chatId;
+      typeof record.chatId === "string" && record.chatId.trim().length > 0 ? record.chatId : fallbackChatId;
     return {
       id: record.messageId ?? `${record.id}`,
       chatId: effectiveChatId,

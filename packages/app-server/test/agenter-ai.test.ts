@@ -583,8 +583,8 @@ const createMessageGateway = () => {
   const channels = [
     {
       chatId: "chat-main",
-      kind: "direct" as const,
-      title: "Main Chat",
+      kind: "room" as const,
+      title: "Main Room",
       owner: "agenter",
       contextId: "ctx-chat-main",
       participants: [
@@ -820,7 +820,7 @@ describe("Feature: AgenterAI behavior", () => {
           emitCustomEvent: () => {},
         },
       )) as {
-        channel: { chatId: string; title: string; kind: "direct" | "room" } | null;
+        channel: { chatId: string; title: string; kind: "room" } | null;
       };
       if (!getResult.channel) {
         throw new Error("message_channel_get returned null");

@@ -98,7 +98,7 @@ const mapChannel = (
   focused: boolean,
 ): MessageChannelRecord => ({
   chatId: row.chat_id,
-  kind: row.kind === "room" ? "room" : "direct",
+  kind: "room",
   title: row.title,
   owner: row.owner,
   contextId: row.context_id ?? undefined,
@@ -117,6 +117,7 @@ const mapGrant = (row: {
   role: string;
   label: string | null;
   participant_id: string | null;
+  access_token: string | null;
   created_at: number;
   revoked_at: number | null;
 }): MessageChannelGrantRecord => ({
@@ -125,6 +126,7 @@ const mapGrant = (row: {
   role: row.role === "readonly" ? "readonly" : row.role === "member" ? "member" : "admin",
   label: row.label ?? undefined,
   participantId: row.participant_id ?? undefined,
+  accessToken: row.access_token ?? undefined,
   createdAt: row.created_at,
   revokedAt: row.revoked_at ?? undefined,
 });
@@ -265,18 +267,19 @@ export class MessageDb {
     return this.getChannel(chatId, focused)!;
   }
 
-  issueGrant(input: MessageIssueGrantInput & { chatId: string; tokenHash: string }): MessageChannelGrantRecord {
+  issueGrant(input: MessageIssueGrantInput & { chatId: string; accessToken: string; tokenHash: string }): MessageChannelGrantRecord {
     const now = Date.now();
     const grantId = `grant-${crypto.randomUUID()}`;
     this.db
       .query(
         `insert into chat_channel_grant (
-          grant_id, chat_id, token_hash, role, label, participant_id, created_at, revoked_at
-        ) values (?, ?, ?, ?, ?, ?, ?, null)`,
+          grant_id, chat_id, access_token, token_hash, role, label, participant_id, created_at, revoked_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, null)`,
       )
       .run(
         grantId,
         input.chatId,
+        input.accessToken,
         input.tokenHash,
         input.role,
         input.label ?? null,
@@ -289,21 +292,23 @@ export class MessageDb {
   getGrantById(chatId: string, grantId: string): MessageChannelGrantRecord | undefined {
     const row = this.db
       .query(
-        `select grant_id, chat_id, role, label, participant_id, created_at, revoked_at
+        `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
          from chat_channel_grant where chat_id = ? and grant_id = ?`,
       )
       .get(chatId, grantId) as Parameters<typeof mapGrant>[0] | null;
     return row ? mapGrant(row) : undefined;
   }
 
-  findActiveGrantByToken(chatId: string, tokenHash: string): MessageChannelGrantRecord | undefined {
+  findActiveGrantByToken(chatId: string, accessToken: string, tokenHash: string): MessageChannelGrantRecord | undefined {
     const row = this.db
       .query(
-        `select grant_id, chat_id, role, label, participant_id, created_at, revoked_at
+        `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
          from chat_channel_grant
-         where chat_id = ? and token_hash = ? and revoked_at is null`,
+         where chat_id = ?
+           and revoked_at is null
+           and ((access_token is not null and access_token = ?) or token_hash = ?)`,
       )
-      .get(chatId, tokenHash) as Parameters<typeof mapGrant>[0] | null;
+      .get(chatId, accessToken, tokenHash) as Parameters<typeof mapGrant>[0] | null;
     return row ? mapGrant(row) : undefined;
   }
 
@@ -315,7 +320,7 @@ export class MessageDb {
   }): MessageChannelGrantRecord | undefined {
     const row = this.db
       .query(
-        `select grant_id, chat_id, role, label, participant_id, created_at, revoked_at
+        `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
          from chat_channel_grant
          where chat_id = ?
            and role = ?
@@ -332,13 +337,78 @@ export class MessageDb {
   listActiveGrants(chatId: string): MessageChannelGrantRecord[] {
     const rows = this.db
       .query(
-         `select grant_id, chat_id, role, label, participant_id, created_at, revoked_at
+         `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
          from chat_channel_grant
          where chat_id = ? and revoked_at is null
          order by created_at desc, rowid desc`,
       )
       .all(chatId) as Array<Parameters<typeof mapGrant>[0]>;
     return rows.map(mapGrant);
+  }
+
+  listActorChannelAccess(actorId: string, includeArchived = false): Array<{
+    channel: MessageChannelRecord;
+    grant: MessageChannelGrantRecord;
+  }> {
+    const rows = this.db
+      .query(
+        `select
+           channel.chat_id,
+           channel.kind,
+           channel.title,
+           channel.owner,
+           channel.context_id,
+           channel.participants_json,
+           channel.metadata_json,
+           channel.created_at,
+           channel.updated_at,
+           channel.archived_at,
+           channel.archived_by,
+           grant.grant_id,
+           grant.role,
+           grant.label,
+           grant.participant_id,
+           grant.access_token,
+           grant.created_at as grant_created_at,
+           grant.revoked_at
+         from chat_channel_grant as grant
+         join chat_channel as channel on channel.chat_id = grant.chat_id
+         where grant.participant_id = ?
+           and grant.revoked_at is null
+           and (? = 1 or channel.archived_at is null)
+         order by channel.updated_at desc, channel.chat_id asc, grant.created_at desc, grant.rowid desc`,
+      )
+      .all(actorId, includeArchived ? 1 : 0) as Array<
+      Parameters<typeof mapChannel>[0] & {
+        grant_id: string;
+        role: string;
+        label: string | null;
+        participant_id: string | null;
+        access_token: string | null;
+        grant_created_at: number;
+        revoked_at: number | null;
+      }
+    >;
+    const entries = new Map<string, { channel: MessageChannelRecord; grant: MessageChannelGrantRecord }>();
+    for (const row of rows) {
+      if (entries.has(row.chat_id)) {
+        continue;
+      }
+      entries.set(row.chat_id, {
+        channel: mapChannel(row, false),
+        grant: mapGrant({
+          grant_id: row.grant_id,
+          chat_id: row.chat_id,
+          role: row.role,
+          label: row.label,
+          participant_id: row.participant_id,
+          access_token: row.access_token,
+          created_at: row.grant_created_at,
+          revoked_at: row.revoked_at,
+        }),
+      });
+    }
+    return [...entries.values()];
   }
 
   revokeGrant(chatId: string, grantId: string): boolean {
@@ -367,6 +437,19 @@ export class MessageDb {
            and revoked_at is null`,
       )
       .run(now, input.chatId, input.role, input.label ?? null, input.participantId ?? null);
+  }
+
+  revokeActiveGrantsByParticipant(chatId: string, participantId: string): void {
+    const now = Date.now();
+    this.db
+      .query(
+        `update chat_channel_grant
+         set revoked_at = ?
+         where chat_id = ?
+           and participant_id = ?
+           and revoked_at is null`,
+      )
+      .run(now, chatId, participantId);
   }
 
   appendMessage(input: MessageAppendInput): MessageRecord {
@@ -553,6 +636,7 @@ export class MessageDb {
       create table if not exists chat_channel_grant (
         grant_id text primary key,
         chat_id text not null,
+        access_token text unique,
         token_hash text not null unique,
         role text not null,
         label text,
@@ -631,6 +715,14 @@ export class MessageDb {
     const hasArchivedBy = channelColumns.some((column) => column.name === "archived_by");
     if (!hasArchivedBy) {
       this.db.exec(`alter table chat_channel add column archived_by text;`);
+    }
+
+    const grantColumns = this.db
+      .query(`pragma table_info(chat_channel_grant)`)
+      .all() as Array<{ name: string }>;
+    const hasAccessTokenColumn = grantColumns.some((column) => column.name === "access_token");
+    if (!hasAccessTokenColumn) {
+      this.db.exec(`alter table chat_channel_grant add column access_token text;`);
     }
   }
 }

@@ -63,7 +63,6 @@ export interface AppController {
   listMessageChannels: (sessionId: string, input?: { includeArchived?: boolean }) => Promise<MessageChannelEntry[]>;
   createMessageChannel: (input: {
     sessionId: string;
-    kind: "direct" | "room";
     title?: string;
     participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
     metadata?: Record<string, unknown>;
