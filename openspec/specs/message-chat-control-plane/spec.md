@@ -1,15 +1,25 @@
 # message-chat-control-plane Specification
 
 ## Purpose
-TBD - created by archiving change message-system-chat-control-plane. Update Purpose after archive.
+Define the global room-first message control plane, its transport contract, and the model-facing semantics for collaboration across auth actors and session actors.
 ## Requirements
 ### Requirement: Message-system SHALL manage multiple chat channels
-The message control plane SHALL allow multiple chat-channel instances to coexist under one runtime.
+The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, and room durability SHALL NOT depend on any single session remaining alive.
 
-#### Scenario: One avatar owns two active channels
-- **WHEN** two chat channels are created for the same avatar owner
-- **THEN** both channels can receive and query messages independently
-- **THEN** focus state can include one or both channel ids
+#### Scenario: One room is shared by human and session actors
+- **WHEN** an auth actor and one or more session actors are granted access to the same room
+- **THEN** each actor can observe or contribute according to its grant
+- **THEN** the room history remains one shared durable timeline instead of per-session copies
+
+#### Scenario: Same avatar label can appear as separate session seats
+- **WHEN** two different session actors that happen to share the same avatar label join one room
+- **THEN** the room transport and access model still treat them as separate session actors
+- **THEN** collaboration state is keyed by actor identity rather than by the visible label alone
+
+#### Scenario: Room survives session stop
+- **WHEN** the last attached session for a room stops or is deleted
+- **THEN** the room definition, grants, history, and assets remain available in the global message store
+- **THEN** a later auth actor or session actor can reattach to that same room
 
 #### Scenario: Queued user input stays pending until attention reads it
 - **WHEN** a member sends a text message through an authorized chat transport
@@ -21,21 +31,18 @@ The message control plane SHALL allow multiple chat-channel instances to coexist
 - **THEN** the message is persisted as already loaded and visible
 - **AND** it does not enter the queued pending strip
 
-### Requirement: Chat channels SHALL use canonical id prefixes
-One-to-one channels SHALL use `chat-` ids and group channels SHALL use `room-` ids.
-
-#### Scenario: Invalid group prefix is rejected
-- **WHEN** a caller tries to create a group channel with a `chat-` id
-- **THEN** the control plane rejects the request
-- **THEN** persisted metadata remains prefix-consistent
-
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
-A chat transport endpoint SHALL deliver an initial snapshot followed by incremental message updates.
+A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.
 
-#### Scenario: Web client connects to a chat endpoint
-- **WHEN** a websocket client connects to `/chat/$CHAT_ID`
-- **THEN** the server sends the channel snapshot first
-- **THEN** later sends append events for new messages in that channel
+#### Scenario: Web client connects to a room endpoint
+- **WHEN** a websocket client connects to an authorized room transport endpoint
+- **THEN** the server sends the room snapshot first
+- **THEN** later sends append or upsert events for new or updated messages in that room
+
+#### Scenario: Room transport stays available without a running session
+- **WHEN** a client reads or pages a room whose prior contributing session is no longer running
+- **THEN** the message control plane still returns the durable room snapshot and history
+- **THEN** the client does not depend on reviving the old session to read that room
 
 #### Scenario: Message lifecycle updates arrive as incremental upserts
 - **WHEN** a queued message is later edited or marked as attention-loaded
