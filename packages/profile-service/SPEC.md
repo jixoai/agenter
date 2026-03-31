@@ -4,10 +4,10 @@
 
 ## 1. 范围与目标
 
-`@agenter/profile-service` 是 Agenter 的 profile / identity / icon canonical service：
+`@agenter/profile-service` 目前仍沿用兼容包名，但长期语义已经收口为 auth / identity / icon canonical service：
 
-- 管理 canonical profile、identifier binding、public projection 与 metadata
-- 管理 email OTP、WebAuthn、wallet proof 这些 ownership/auth flows
+- 管理 canonical auth identity、reference binding、public projection 与 metadata
+- 管理 challenge、signature verify、JWT、control-plane claims 这些 auth flows
 - 管理 `profile` / `session` 两类 icon owner 的上传、fallback 与 rasterization
 - 既可独立运行，也可由 `app-server` 作为 child service 托管
 
@@ -15,25 +15,24 @@
 
 - 不接管 `@agenter/avatar` 的 prompt/persona 目录职责
 - 不让 WebUI 或 `app-server` 成为第二套 profile/icon authority
+- 不把 Avatar prompt/persona/workspace 行为写回 auth state
 - 不把任意临时字符串直接升级成 durable account
 
 ## 2. 身份模型
 
-- durable identity 由 `profile` + `profile_identifier` 组成，而不是“一个 identifier 对应一个 profile”
-- 首批 durable identifier family 固定为：
-  - `email`
-  - `wallet_evm`
-  - `wallet_solana`
+- durable identity 由 canonical auth identity 组成，默认锚定到一个 canonical address / public key
+- `email` 等字符串标识在当前法则里只作为 reference metadata 或后续可升级的辅助证明入口，不自动成为并列 durable login identity
 - `temp` 只用于 public projection / fallback seed，不创建 durable row，除非后续被显式认领
-- metadata 写入 canonical profile；任一已绑定 identifier 的读取都必须看到同一份 metadata 与 icon state
+- metadata 写入 canonical auth identity；reference 读取看到的是同一份 public metadata 与 icon state
+- Avatar 是业务角色层，不属于 auth identity 本体
 
 ## 3. 认证与绑定法则
 
-- email flow 固定为：`OTP start -> OTP verify -> registration ticket -> WebAuthn register/authenticate -> auth token`
-- OTP 本身不是 durable bearer；在完成 WebAuthn 之前，只能得到短期 registration ticket
-- wallet flow 固定为：`challenge start -> signature verify -> auth token`
-- 已认证 profile 追加绑定新 identifier 时，必须重新提交该 identifier 的 fresh proof
-- 同一 durable identifier 只能绑定到一个 canonical profile，禁止被第二个 profile 抢占
+- 默认登录主链路固定为：`challenge start -> signature verify -> short-lived JWT`
+- root auth key 是 app-server 与全局控制面的上游 superadmin 身份来源
+- email / WebAuthn 可以作为后续备选能力，但不再是默认主链路
+- 已认证 auth identity 追加 reference identifier 时，必须经过显式授权写入，且不得把 reference 提升成并列 durable login identity
+- JWT / claim state 属于 private auth facts，不得泄漏到 public projection
 
 ## 4. Icon 与媒体法则
 
@@ -51,7 +50,7 @@
 
 ## 5. 存储与运行时法则
 
-- DuckDB 是 durable fact store，负责 profile、identifier、challenge、credential、token、icon asset 等事实
+- DuckDB 是 durable fact store，负责 auth identity、reference、challenge、credential、token、icon asset 等事实
 - uploaded icon bytes 在首个切片中直接存入 DuckDB blob，不分裂到第二套 sidecar file authority
-- profile-service 作为 single writer 维护 profile/icon/auth 事实；`app-server` 只能做 child-runtime 生命周期管理与 session seed 同步，不得并发写第二份真源
+- profile-service 作为 single writer 维护 auth/icon/public-identity 事实；`app-server` 只能做 child-runtime 生命周期管理、root-auth bootstrap 与 session seed 同步，不得并发写第二份真源
 - child-runtime 模式下，`app-server` 负责生命周期与 endpoint 发现；客户端消费 icon/auth URL 时必须直连发现到的 profile-service endpoint。external endpoint 模式下，不得重复 spawn 本地实例

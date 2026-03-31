@@ -33,6 +33,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `message-system`、`terminal-system`、`task-system`、未来的 `browser-system` / `os-system` 都是 source adapter，不得把自己的私有语义硬编码进 LoopBus core。
 - `AgenterAI` 是 attention-first decision engine，不应直接绑定 terminal/task 等 source-specific gateway、payload 结构或 stage 语义。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
+- Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - 新能力优先以“新增原子 + 复用平台法则”的方式接入；当现有法则无法优雅容纳时，应优先升级法则，而不是补 source-specific glue。
 

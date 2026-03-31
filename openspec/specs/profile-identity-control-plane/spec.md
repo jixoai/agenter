@@ -1,34 +1,39 @@
 # profile-identity-control-plane Specification
 
 ## Purpose
-Define canonical profile identity, identifier binding, and public projection rules so one durable profile can be addressed through multiple proofs without duplicating state.
+Define canonical auth identity, reference binding, and public projection rules so one durable auth record can be addressed without collapsing Avatar semantics into auth state. The legacy `profile-*` capability id is retained only for compatibility.
 
 ## Requirements
 ### Requirement: Profile service SHALL bind multiple durable identifiers to one profile
-The profile service SHALL represent durable identity as a canonical profile record with one or more bound authenticated identifiers. The first slice SHALL support `email`, `wallet_evm`, and `wallet_solana` as durable identifier families, and later bindings SHALL attach to the existing profile instead of forcing per-identifier duplicate profiles.
+Auth service SHALL represent durable login identity as one canonical auth record anchored by a canonical address or public key. Email and other references MAY be attached for display or interoperability, but they SHALL NOT create alternate durable login identities or parallel canonical auth records.
 
-#### Scenario: One profile owns email and wallet identifiers
-- **WHEN** a user authenticates an email identifier and later links an EVM or Solana wallet identifier
-- **THEN** the service binds both identifiers to the same canonical profile
-- **AND** profile reads through either identifier resolve the same profile metadata and icon state
+#### Scenario: Canonical auth id survives metadata expansion
+- **WHEN** an auth identity later adds display metadata or reference identifiers
+- **THEN** the canonical auth id remains the same address-derived identity
+- **THEN** all authenticated reads resolve the same canonical auth record
 
-#### Scenario: Re-authenticating an existing identifier resolves the bound profile
-- **WHEN** a caller authenticates an identifier that is already bound to a profile
-- **THEN** the service resolves that canonical profile instead of creating a duplicate profile
-- **AND** identifier uniqueness is preserved across the service
+#### Scenario: Reference identifier does not mint a second auth identity
+- **WHEN** a caller stores an email or other reference on an existing auth identity
+- **THEN** the service does not create a second durable auth identity keyed by that reference
+- **THEN** the reference remains subordinate to the canonical auth identity
 
 ### Requirement: Profile service SHALL provide durable metadata control for canonical profiles
-The profile service SHALL expose canonical read/write APIs for profile metadata including nickname, display label, phones, addresses, and extensible structured metadata. Metadata writes SHALL target the canonical profile, not an identifier-specific shadow copy.
+Auth service SHALL expose canonical read and write APIs only for auth-scoped metadata, including display label and public identity fields. Avatar prompt, persona, and workspace-scoped behavior SHALL remain outside this metadata surface.
 
-#### Scenario: Metadata update is visible through all bound identifiers
-- **WHEN** an authenticated caller updates the nickname or metadata for a profile
-- **THEN** later reads through any identifier bound to that profile return the updated metadata
-- **AND** the service does not require the caller to update each identifier separately
+#### Scenario: Auth metadata is visible through public projection
+- **WHEN** an authenticated caller updates the auth display label or public metadata
+- **THEN** later reads of that auth projection return the updated values
+- **THEN** the service does not require separate per-reference metadata updates
+
+#### Scenario: Avatar configuration is not written into auth metadata
+- **WHEN** a caller edits Avatar prompt or workspace behavior for a session
+- **THEN** those changes are stored outside the auth metadata record
+- **THEN** later auth reads do not expose workspace-scoped Avatar behavior as auth state
 
 #### Scenario: Public projection omits private auth state
-- **WHEN** an unauthenticated caller resolves a public profile projection or icon owner
+- **WHEN** an unauthenticated caller resolves a public auth projection or icon owner
 - **THEN** the service returns public metadata and media projection only
-- **AND** WebAuthn credentials, challenges, and auth-token records are not exposed in the response
+- **THEN** challenges, JWT state, and other private auth records are not exposed in the response
 
 ### Requirement: Temporary identifiers SHALL resolve as fallback-only virtual profiles
 The profile service SHALL accept arbitrary string identifiers as temporary identity seeds for deterministic fallback rendering and public projection. Temporary identifiers SHALL NOT create durable profiles or durable identifier bindings until an authenticated identifier claims or links them through an explicit mutation flow.
