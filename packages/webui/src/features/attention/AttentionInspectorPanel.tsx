@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
+import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
@@ -46,6 +47,16 @@ interface AttentionInspectorPanelProps {
   queryText?: string;
   onQueryTextChange?: (query: string) => void;
   onSelectionChange?: (selection: AttentionSelectionState) => void;
+  resolveSourceLink?: (commit: AttentionCommitView) => AttentionSourceLink | null;
+  onOpenSourceLink?: (source: AttentionSourceLink) => void;
+}
+
+export interface AttentionSourceLink {
+  systemId: string;
+  subjectId: string;
+  label: string;
+  description: string;
+  available: boolean;
 }
 
 interface QueryListItem {
@@ -144,6 +155,8 @@ export const AttentionInspectorPanel = ({
   queryText: controlledQueryText,
   onQueryTextChange,
   onSelectionChange,
+  resolveSourceLink,
+  onOpenSourceLink,
 }: AttentionInspectorPanelProps) => {
   const contexts = useMemo(() => sortAttentionContexts(attention), [attention]);
   const asyncState = resolveAsyncSurfaceState({ loading, hasData: contexts.length > 0 });
@@ -312,6 +325,10 @@ export const AttentionInspectorPanel = ({
     ? (contexts.find((context) => context.contextId === selectedQueryEntry?.contextId) ?? undefined)
     : selectedContext;
   const detailCommit = isSearchTab ? selectedQueryEntry?.commit : selectedCommit;
+  const detailCommitSourceLink = useMemo(
+    () => (detailCommit ? resolveSourceLink?.(detailCommit) ?? null : null),
+    [detailCommit, resolveSourceLink],
+  );
   const selectedCommitScoreSummary = useMemo(
     () => (detailCommit ? buildAttentionScoreSummary(detailCommit.scores) : null),
     [detailCommit],
@@ -381,6 +398,45 @@ export const AttentionInspectorPanel = ({
         {selectedContext.contextId}
       </span>
     ) : null;
+
+  const renderSourceLink = (source: AttentionSourceLink | null) => {
+    if (!source) {
+      return null;
+    }
+    return (
+      <section className={cn(surfaceClassName, "space-y-3 p-3")}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Source</h4>
+            <HelpHint
+              helpId="attention-panel:source"
+              textContext="Source jump follows the original room or terminal that emitted this attention item."
+              content="Source jump follows the original room or terminal that emitted this attention item."
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!source.available}
+            onClick={() => {
+              if (!source.available) {
+                return;
+              }
+              onOpenSourceLink?.(source);
+            }}
+          >
+            {source.label}
+          </Button>
+        </div>
+        <p className="text-xs text-slate-500">{source.description}</p>
+        {!source.available ? (
+          <p className="text-xs text-amber-700">
+            Source unavailable. Keep the attention item for history, then archive it when the source is no longer useful.
+          </p>
+        ) : null}
+      </section>
+    );
+  };
 
   return (
     <section className={cn("grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-xl bg-white p-3 shadow-xs", className)}>
@@ -631,6 +687,8 @@ export const AttentionInspectorPanel = ({
                           </div>
                           <JSONViewer value={detailCommit.meta} />
                         </section>
+
+                        {renderSourceLink(detailCommitSourceLink)}
 
                         <section className={cn(surfaceClassName, "space-y-3 p-3")}>
                           <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
@@ -1014,6 +1072,8 @@ export const AttentionInspectorPanel = ({
                               </div>
                               <JSONViewer value={selectedCommit.meta} />
                             </section>
+
+                            {renderSourceLink(detailCommitSourceLink)}
 
                             <section className={cn(surfaceClassName, "space-y-3 p-3")}>
                               <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">

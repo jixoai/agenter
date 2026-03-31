@@ -1,24 +1,27 @@
 import { type ReactNode } from "react";
 
+import type { TabItem } from "../../components/ui/tabs";
 import { ViewportMask } from "../../components/ui/overflow-surface";
 import { useShellLayout } from "./shell-layout-context";
 import { TopHeader } from "./TopHeader";
 
-type WorkspaceShellTab = "chat" | "terminals" | "devtools" | "settings";
-
 interface WorkspaceShellFrameProps {
+  locationLabel: string;
   workspacePath: string;
   workspaceMissing?: boolean;
-  activeTab: WorkspaceShellTab;
-  onNavigate: (tab: WorkspaceShellTab) => void;
+  activeTab: string;
+  tabs: TabItem[];
+  onNavigate: (tab: string) => void;
   headerStatusSlot?: ReactNode;
   children: ReactNode;
 }
 
 export const WorkspaceShellFrame = ({
+  locationLabel,
   workspacePath,
   workspaceMissing = false,
   activeTab,
+  tabs,
   onNavigate,
   headerStatusSlot,
   children,
@@ -28,15 +31,7 @@ export const WorkspaceShellFrame = ({
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <TopHeader
-        locationLabel={
-          activeTab === "terminals"
-            ? "Terminals"
-            : activeTab === "devtools"
-              ? "Devtools"
-              : activeTab === "settings"
-                ? "Settings"
-                : "Chats"
-        }
+        locationLabel={locationLabel}
         showNavigationTrigger={shellLayout.showNavigationTrigger}
         connectionStatus={shellLayout.connectionStatus}
         aiStatus={shellLayout.aiStatus}
@@ -45,6 +40,7 @@ export const WorkspaceShellFrame = ({
         workspace={{
           workspacePath,
           activeTab,
+          tabs,
           workspaceMissing,
           onNavigate,
         }}

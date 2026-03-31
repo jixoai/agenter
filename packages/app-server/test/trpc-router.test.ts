@@ -79,7 +79,9 @@ describe("Feature: app-server trpc procedures", () => {
     await caller.session.create({ cwd: workspaceB, name: "B", autoStart: false });
 
     const recent = await caller.workspace.recent({ limit: 8 });
-    expect(recent.items[0]).toBe(workspaceB);
+    const recentProjectWorkspaces = recent.items.filter((item) => item !== "~/");
+    expect(recent.items[0]).toBe("~/");
+    expect(recentProjectWorkspaces[0]).toBe(workspaceB);
     expect(recent.items.includes(workspaceA)).toBeTrue();
 
     const all = await caller.workspace.listAll();
@@ -209,6 +211,102 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(rejectedAfterRevoke.ok).toBeFalse();
     expect(rejectedAfterRevoke.reason).toBe("message room credential-invalid");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given global room routes When creating paging granting and archiving Then the room stays independent from any session route", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const created = await caller.message.globalCreate({
+      chatId: "room-ops",
+      kind: "room",
+      title: "Ops room",
+      focus: true,
+    });
+    const room = created.channel;
+    expect(room.chatId).toBe("room-ops");
+
+    const listed = await caller.message.globalList({ includeArchived: false });
+    expect(listed.items.some((item) => item.chatId === room.chatId)).toBeTrue();
+    expect(listed.items.find((item) => item.chatId === room.chatId)?.focused).toBeTrue();
+
+    const sent = await caller.message.globalSend({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      text: "hello ops",
+    });
+    expect(sent.ok).toBeTrue();
+
+    const snapshot = await caller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    expect(snapshot.channel.chatId).toBe(room.chatId);
+    expect(snapshot.items.some((item) => item.content === "hello ops")).toBeTrue();
+
+    const page = await caller.message.globalPage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    expect(page.items.some((item) => item.content === "hello ops")).toBeTrue();
+
+    const focused = await caller.message.globalFocus({
+      op: "replace",
+      channels: [{ chatId: room.chatId }],
+    });
+    expect(focused.focusedChatIds).toEqual([room.chatId]);
+
+    const updated = await caller.message.globalUpdate({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      patch: {
+        title: "Ops bridge",
+        metadata: { topic: "ops" },
+        adminGroupCandidateIds: ["auth:ops-admin"],
+      },
+    });
+    expect(updated.channel.title).toBe("Ops bridge");
+    expect(updated.channel.metadata.topic).toBe("ops");
+
+    const issued = await caller.message.globalIssueGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "session:avatar-pair",
+      label: "Pair operator",
+    });
+    expect(issued.grant.accessToken).toStartWith("msgtok_");
+
+    const grants = await caller.message.globalListGrants({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(grants.items.map((grant) => grant.participantId)).toContain("session:avatar-pair");
+
+    const revoked = await caller.message.globalRevokeGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      grantId: issued.grant.grantId,
+    });
+    expect(revoked.ok).toBeTrue();
+
+    const archived = await caller.message.globalDelete({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      archivedBy: "ops-admin",
+    });
+    expect(archived.channel.archivedBy).toBe("ops-admin");
+    expect((await caller.message.globalList({ includeArchived: false })).items.some((item) => item.chatId === room.chatId)).toBeFalse();
 
     await kernel.stop();
   });

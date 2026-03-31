@@ -46,20 +46,18 @@ const meta = {
   args: {
     compact: true,
     primaryItems: defaultPrimaryNavItems({
-      quickStartActive: true,
+      chatsActive: true,
       workspacesActive: false,
       terminalsActive: false,
-      settingsActive: false,
       unreadWorkspaces: 4,
-      onSelectQuickStart: () => {},
+      onSelectChats: () => {},
       onSelectWorkspaces: () => {},
       onSelectTerminals: () => {},
-      onSelectSettings: () => {},
     }),
     runningSessions: baseSessions,
   },
   render: () => {
-    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "terminals" | "settings">("quickstart");
+    const [activePrimary, setActivePrimary] = useState<"chats" | "workspaces" | "terminals">("chats");
     const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
 
     return (
@@ -67,15 +65,13 @@ const meta = {
         <SidebarNavContent
           compact
           primaryItems={defaultPrimaryNavItems({
-            quickStartActive: activePrimary === "quickstart",
+            chatsActive: activePrimary === "chats",
             workspacesActive: activePrimary === "workspaces",
             terminalsActive: activePrimary === "terminals",
-            settingsActive: activePrimary === "settings",
             unreadWorkspaces: 4,
-            onSelectQuickStart: () => setActivePrimary("quickstart"),
+            onSelectChats: () => setActivePrimary("chats"),
             onSelectWorkspaces: () => setActivePrimary("workspaces"),
             onSelectTerminals: () => setActivePrimary("terminals"),
-            onSelectSettings: () => setActivePrimary("settings"),
           })}
           runningSessions={baseSessions.map((item) => ({
             ...item,
@@ -99,10 +95,10 @@ export const SidebarShowsPrimaryAndRunningSessions: Story = {
     const sessionButton = canvas.getByRole("button", { name: /Review bugfix .*session-running-2 .*openspecui/i });
 
     await expect(canvas.getByText("Navigate")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: /^Quick Start$/ })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /^Chats$/ })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: /^Workspaces\b/i })).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: /^Global Settings$/ })).toBeInTheDocument();
-    await expect(canvas.getByText("Running Sessions")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /^Terminals$/ })).toBeInTheDocument();
+    await expect(canvas.getByText("Running Avatars")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-1")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-2")).toBeInTheDocument();
     await expect(canvas.getByRole("img", { name: "Fix layout drift" })).toBeInTheDocument();
@@ -127,15 +123,13 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
         <SidebarNavContent
           compact={false}
           primaryItems={defaultPrimaryNavItems({
-            quickStartActive: false,
+            chatsActive: false,
             workspacesActive: true,
             terminalsActive: false,
-            settingsActive: false,
             unreadWorkspaces: 9,
-            onSelectQuickStart: () => {},
+            onSelectChats: () => {},
             onSelectWorkspaces: () => {},
             onSelectTerminals: () => {},
-            onSelectSettings: () => {},
           })}
           runningSessions={longRunningSessions.map((item) => ({
             ...item,
@@ -148,9 +142,9 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const viewport = canvas.getByTestId("sidebar-running-sessions-viewport");
+    const viewport = canvas.getByTestId("sidebar-running-avatars-viewport");
 
-    await expect(canvas.getByText("Running Sessions")).toBeInTheDocument();
+    await expect(canvas.getByText("Running Avatars")).toBeInTheDocument();
     await expect(["auto", "scroll"]).toContain(getComputedStyle(viewport).overflowY);
   },
 };
@@ -158,7 +152,7 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
 export const DesktopRailCanCollapseToIconWidth: Story = {
   render: () => {
     const [collapsed, setCollapsed] = useState(false);
-    const [activePrimary, setActivePrimary] = useState<"quickstart" | "workspaces" | "terminals" | "settings">("workspaces");
+    const [activePrimary, setActivePrimary] = useState<"chats" | "workspaces" | "terminals">("workspaces");
     const [activeSessionId, setActiveSessionId] = useState(baseSessions[0]?.sessionId ?? null);
 
     return (
@@ -168,15 +162,13 @@ export const DesktopRailCanCollapseToIconWidth: Story = {
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((current) => !current)}
           primaryItems={defaultPrimaryNavItems({
-            quickStartActive: activePrimary === "quickstart",
+            chatsActive: activePrimary === "chats",
             workspacesActive: activePrimary === "workspaces",
             terminalsActive: activePrimary === "terminals",
-            settingsActive: activePrimary === "settings",
             unreadWorkspaces: 4,
-            onSelectQuickStart: () => setActivePrimary("quickstart"),
+            onSelectChats: () => setActivePrimary("chats"),
             onSelectWorkspaces: () => setActivePrimary("workspaces"),
             onSelectTerminals: () => setActivePrimary("terminals"),
-            onSelectSettings: () => setActivePrimary("settings"),
           })}
           runningSessions={baseSessions.map((item) => ({
             ...item,
@@ -198,7 +190,7 @@ export const DesktopRailCanCollapseToIconWidth: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Collapse sidebar" }));
     await expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "true");
     await expect(canvas.queryByText("Workspace-first shell")).not.toBeInTheDocument();
-    await expect(canvas.queryByText("Quick Start")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Chats")).not.toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Workspaces" })).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("button", { name: "Expand sidebar" }));

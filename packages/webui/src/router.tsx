@@ -1,30 +1,47 @@
-import type { AuthSessionOutput, CachedResourceState, MessageChannelEntry, ProfileListItem } from "@agenter/client-sdk";
+import type {
+  AuthSessionOutput,
+  CachedResourceState,
+  GlobalRoomActorId,
+  GlobalTerminalActorId,
+  MessageChannelEntry,
+  ProfileListItem,
+  RuntimeChatCycle,
+  WorkspaceAvatarCatalogEntry,
+  WorkspaceEntry,
+  WorkspaceWelcomeSnapshotOutput,
+} from "@agenter/client-sdk";
 import type { WebChatMessage } from "@agenter/web-chat-view";
 import { createRootRoute, createRoute, createRouter, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useAppController, useRuntimeSelector } from "./app-context";
+import { useAppController, useRuntimeSelector, type WorkspaceWelcomeDraft } from "./app-context";
 import { NoticeBanner } from "./components/ui/notice-banner";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
 import { ViewportMask } from "./components/ui/overflow-surface";
 import { surfaceToneClassName } from "./components/ui/surface";
 import { Tabs, type TabItem } from "./components/ui/tabs";
-import { AttentionInspectorPanel } from "./features/attention/AttentionInspectorPanel";
+import { AttentionInspectorPanel, type AttentionSourceLink } from "./features/attention/AttentionInspectorPanel";
 import {
   buildSessionDevtoolsSearch,
   validateSessionDevtoolsSearch,
   type DevtoolsPanelId,
 } from "./features/attention/attention-devtools-route";
-import { EMPTY_RUNTIME_ATTENTION_STATE, type AttentionSelectionState } from "./features/attention/attention-view-model";
+import {
+  EMPTY_RUNTIME_ATTENTION_STATE,
+  type AttentionCommitView,
+  type AttentionSelectionState,
+} from "./features/attention/attention-view-model";
+import { GlobalChatsRoute } from "./features/chat/GlobalChatsRoute";
 import { MessageChannelSurface } from "./features/chat/MessageChannelSurface";
+import { getCycleStatusMeta as getCycleBadgeStatusMeta } from "./features/chat/cycle-meta";
 import { resolveChatRouteNotice, resolveSessionStatusPillState } from "./features/chat/chat-route-status";
 import { extractInternalFailureNotice, isInternalFailureMessage } from "./features/chat/internal-system-messages";
 import { SystemsPanel } from "./features/devtools/SystemsPanel";
 import { ObservabilityPanel } from "./features/devtools/observability/ObservabilityPanel";
 import { useIconServiceUrls } from "./features/profile/icon-service";
 import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
-import { QuickStartView } from "./features/quickstart/QuickStartView";
-import { WorkspacePickerDialog } from "./features/sessions/WorkspacePickerDialog";
 import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
 import { readStoredAuthToken, writeStoredAuthToken } from "./features/settings/auth-session-storage";
 import { resolveWalletAuthIdentity, signWalletAuthChallenge } from "./features/settings/private-key-auth";
@@ -44,17 +61,17 @@ import {
 } from "./features/shell/runtime-selectors";
 import { useAdaptiveViewport } from "./features/shell/useAdaptiveViewport";
 import { GlobalTerminalsRoute } from "./features/terminal/GlobalTerminalsRoute";
-import { WorkspaceSessionsPanel } from "./features/workspaces/WorkspaceSessionsPanel";
-import { WorkspacesPanel } from "./features/workspaces/WorkspacesPanel";
+import { WorkspaceAvatarSurface } from "./features/workspaces/WorkspaceAvatarSurface";
+import { WorkspacesCatalogSurface } from "./features/workspaces/WorkspacesCatalogSurface";
+import { WorkspaceHistorySurface } from "./features/workspaces/WorkspaceHistorySurface";
+import { WorkspaceWelcomeSurface } from "./features/workspaces/WorkspaceWelcomeSurface";
+import type {
+  WorkspaceDetailTab,
+  WorkspaceHistorySortMode,
+  WorkspaceMasterSelection,
+} from "./features/workspaces/workspace-surface-types";
 import { cn } from "./lib/utils";
 import { normalizeUserNotice } from "./shared/notice";
-
-const DETAIL_TABS: TabItem[] = [
-  { id: "attention", label: "Attention" },
-  { id: "cycles", label: "Cycles" },
-  { id: "systems", label: "Systems" },
-  { id: "observability", label: "Observability" },
-];
 
 const WORKSPACES_SESSIONS_SPLIT_STORAGE_KEY = "agenter:webui:workspaces-sessions-split-percent";
 const EMPTY_MESSAGES: never[] = [];
@@ -83,6 +100,18 @@ const EMPTY_SETTINGS_EFFECTIVE: SettingsEffectiveGraph = {
   },
   provenance: {},
 };
+const GLOBAL_WORKSPACE_PATH = "~/" as const;
+const RUNTIME_PANEL_LABELS: Record<DevtoolsPanelId, string> = {
+  attention: "Attention",
+  cycles: "Cycles",
+  systems: "Systems",
+  observability: "Observability",
+  settings: "Settings",
+};
+const WORKSPACE_DETAIL_TABS: TabItem[] = [
+  { id: "settings", label: "Settings" },
+  { id: "avatars", label: "Avatars" },
+];
 type DurableProfileItem = ProfileListItem & { profileId: string };
 
 type ProfileEditorDraft = {
@@ -101,6 +130,167 @@ const readSearchString = (value: unknown): string | undefined => {
 };
 
 const readProfileReference = (value: unknown): string => (typeof value === "string" && value.trim().length > 0 ? value.trim() : "");
+const resolveRuntimePanelLabel = (panel: DevtoolsPanelId): string => RUNTIME_PANEL_LABELS[panel] ?? "Attention";
+const normalizeWorkspaceDetailTab = (value: unknown): WorkspaceDetailTab => (value === "avatars" ? "avatars" : "settings");
+const normalizeWorkspaceHistorySortMode = (value: unknown): WorkspaceHistorySortMode =>
+  value === "path" || value === "name" ? value : "recent";
+const validateWorkspacesSearch = (search: Record<string, unknown>) => {
+  const view = search.view === "history" || search.view === "workspace" ? search.view : "welcome";
+  return {
+    view,
+    workspacePath: readSearchString(search.workspacePath),
+    tab: normalizeWorkspaceDetailTab(search.tab),
+    sort: normalizeWorkspaceHistorySortMode(search.sort),
+  };
+};
+const buildWorkspacesSearch = (
+  patch: Partial<ReturnType<typeof validateWorkspacesSearch>>,
+  current?: ReturnType<typeof validateWorkspacesSearch>,
+) => {
+  const next = {
+    view: patch.view ?? current?.view ?? "welcome",
+    workspacePath: patch.workspacePath ?? current?.workspacePath,
+    tab: patch.tab ?? current?.tab ?? "settings",
+    sort: patch.sort ?? current?.sort ?? "recent",
+  };
+  return {
+    view: next.view,
+    workspacePath: next.workspacePath,
+    tab: next.tab,
+    sort: next.sort,
+  };
+};
+const basenameWorkspace = (workspacePath: string): string =>
+  workspacePath === GLOBAL_WORKSPACE_PATH
+    ? GLOBAL_WORKSPACE_PATH
+    : workspacePath.split(/[\\/]+/).filter(Boolean).at(-1) ?? workspacePath;
+const resolveKnownWorkspacePath = (workspacePath: string | undefined, workspaces: WorkspaceEntry[]): string => {
+  if (workspacePath && workspaces.some((item) => item.path === workspacePath)) {
+    return workspacePath;
+  }
+  return workspaces.find((item) => item.path === GLOBAL_WORKSPACE_PATH)?.path ?? workspaces[0]?.path ?? GLOBAL_WORKSPACE_PATH;
+};
+const resolveWorkspaceMasterSelection = (
+  search: ReturnType<typeof validateWorkspacesSearch>,
+  workspaces: WorkspaceEntry[],
+): WorkspaceMasterSelection => {
+  if (search.view === "history") {
+    return { kind: "history" };
+  }
+  if (search.view === "workspace") {
+    return {
+      kind: "workspace",
+      workspacePath: resolveKnownWorkspacePath(search.workspacePath, workspaces),
+    };
+  }
+  return { kind: "welcome" };
+};
+const buildWorkspaceSelectionKey = (selection: WorkspaceMasterSelection): string => {
+  if (selection.kind === "workspace") {
+    return `workspace:${selection.workspacePath}`;
+  }
+  return selection.kind;
+};
+const sortHistoryWorkspaces = (
+  workspaces: WorkspaceEntry[],
+  mode: WorkspaceHistorySortMode,
+  recentPaths: string[],
+): WorkspaceEntry[] => {
+  const recentRanks = new Map(recentPaths.map((path, index) => [path, index] as const));
+  return workspaces.slice().sort((left, right) => {
+    if (mode === "path") {
+      return left.path.localeCompare(right.path);
+    }
+    if (mode === "name") {
+      return basenameWorkspace(left.path).localeCompare(basenameWorkspace(right.path));
+    }
+    const leftRank = recentRanks.get(left.path);
+    const rightRank = recentRanks.get(right.path);
+    if (leftRank != null || rightRank != null) {
+      if (leftRank == null) {
+        return 1;
+      }
+      if (rightRank == null) {
+        return -1;
+      }
+      return leftRank - rightRank;
+    }
+    return (right.lastSessionActivityAt ?? "").localeCompare(left.lastSessionActivityAt ?? "");
+  });
+};
+const resolveCycleTabBadgeClassName = (cycle: RuntimeChatCycle | null, active: boolean): string | undefined => {
+  if (!cycle) {
+    return undefined;
+  }
+  if (cycle.status === "error") {
+    return "bg-rose-500";
+  }
+  if (cycle.kind === "compact") {
+    return active ? "bg-amber-500" : "bg-amber-400";
+  }
+  const statusMeta = getCycleBadgeStatusMeta(cycle);
+  return statusMeta.label === "Done" ? "bg-emerald-500" : "bg-teal-600";
+};
+const buildRuntimeTabs = (input: {
+  activeCycle: RuntimeChatCycle | null;
+  latestCycle: RuntimeChatCycle | null;
+}): TabItem[] => {
+  const cycle = input.activeCycle ?? input.latestCycle;
+  return [
+    { id: "attention", label: "Attention" },
+    {
+      id: "cycles",
+      label: "Cycles",
+      badgeLabel: cycle ? (cycle.cycleId === null ? "P" : String(cycle.cycleId)) : undefined,
+      badgeClassName: resolveCycleTabBadgeClassName(cycle, Boolean(input.activeCycle)),
+      badgeAnimated: Boolean(input.activeCycle),
+    },
+    { id: "systems", label: "Systems" },
+    { id: "observability", label: "Observability" },
+    { id: "settings", label: "Settings" },
+  ];
+};
+const buildWorkspaceWelcomeDraftFromSnapshot = (
+  snapshot: WorkspaceWelcomeSnapshotOutput,
+): WorkspaceWelcomeDraft => ({
+  workspacePath: snapshot.workspacePath,
+  avatar: snapshot.avatar,
+  selectedRoomIds: snapshot.rooms.filter((room) => room.accessState !== "available").map((room) => room.channel.chatId),
+  selectedTerminalIds: snapshot.terminals
+    .filter((terminal) => terminal.accessState !== "available")
+    .map((terminal) => terminal.terminal.terminalId),
+  roomRoles: Object.fromEntries(
+    snapshot.rooms.map((room) => [room.channel.chatId, room.seatRole ?? "member"] as const),
+  ),
+  terminalRoles: Object.fromEntries(
+    snapshot.terminals.map((terminal) => [terminal.terminal.terminalId, terminal.seatRole ?? "writer"] as const),
+  ),
+});
+const mergeWorkspaceWelcomeDraft = (
+  snapshot: WorkspaceWelcomeSnapshotOutput,
+  draft: WorkspaceWelcomeDraft | null,
+): WorkspaceWelcomeDraft => {
+  const base = buildWorkspaceWelcomeDraftFromSnapshot(snapshot);
+  if (!draft) {
+    return base;
+  }
+  const roomIds = new Set(snapshot.rooms.map((room) => room.channel.chatId));
+  const terminalIds = new Set(snapshot.terminals.map((terminal) => terminal.terminal.terminalId));
+  return {
+    workspacePath: snapshot.workspacePath,
+    avatar: snapshot.avatar,
+    selectedRoomIds: draft.selectedRoomIds.filter((chatId) => roomIds.has(chatId)),
+    selectedTerminalIds: draft.selectedTerminalIds.filter((terminalId) => terminalIds.has(terminalId)),
+    roomRoles: {
+      ...base.roomRoles,
+      ...Object.fromEntries(Object.entries(draft.roomRoles).filter(([chatId]) => roomIds.has(chatId))),
+    },
+    terminalRoles: {
+      ...base.terminalRoles,
+      ...Object.fromEntries(Object.entries(draft.terminalRoles).filter(([terminalId]) => terminalIds.has(terminalId))),
+    },
+  };
+};
 
 const patchActiveProfileReference = (content: string, profileReference: string): string => {
   try {
@@ -144,6 +334,12 @@ const selectPreferredProfileReference = (
 
 const validateSessionChatSearch = (search: Record<string, unknown>) => ({
   chatId: readSearchString(search.chatId),
+});
+const validateGlobalChatsSearch = (search: Record<string, unknown>) => ({
+  chatId: readSearchString(search.chatId),
+});
+const validateGlobalTerminalsSearch = (search: Record<string, unknown>) => ({
+  terminalId: readSearchString(search.terminalId),
 });
 
 const toBootstrapChannelMessages = (
@@ -320,6 +516,96 @@ const DevtoolsAttentionSurface = ({
 }) => {
   const attention = useRuntimeSelector((state) => state.attentionBySession?.[sessionId] ?? EMPTY_ATTENTION);
   const controller = useAppController();
+  const navigate = useNavigate();
+  const [availableRoomIds, setAvailableRoomIds] = useState<string[]>([]);
+  const [availableTerminalIds, setAvailableTerminalIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [rooms, terminals] = await Promise.all([controller.listGlobalRooms(), controller.listGlobalTerminals()]);
+        if (cancelled) {
+          return;
+        }
+        setAvailableRoomIds(rooms.map((room) => room.chatId));
+        setAvailableTerminalIds(terminals.map((terminal) => terminal.terminalId));
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setAvailableRoomIds([]);
+        setAvailableTerminalIds([]);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [controller]);
+
+  const resolveSourceLink = useCallback(
+    (commit: AttentionCommitView) => {
+      const systemId = typeof commit.meta.systemId === "string" ? commit.meta.systemId : null;
+      const subjectId = typeof commit.meta.subjectId === "string" ? commit.meta.subjectId : null;
+      if (!systemId || !subjectId) {
+        return null;
+      }
+      if (systemId === "message") {
+        const available = availableRoomIds.includes(subjectId);
+        return {
+          systemId,
+          subjectId,
+          label: "Open Room",
+          description: available
+            ? `Open global room ${subjectId} in Chats.`
+            : `Source unavailable: global room ${subjectId} is not present in Chats.`,
+          available,
+        } satisfies AttentionSourceLink;
+      }
+      if (systemId === "terminal") {
+        const available = availableTerminalIds.includes(subjectId);
+        return {
+          systemId,
+          subjectId,
+          label: "Open Terminal",
+          description: available
+            ? `Open global terminal ${subjectId} in Terminals.`
+            : `Source unavailable: global terminal ${subjectId} is not present in Terminals.`,
+          available,
+        } satisfies AttentionSourceLink;
+      }
+      return null;
+    },
+    [availableRoomIds, availableTerminalIds],
+  );
+
+  const openSourceLink = useCallback(
+    (source: AttentionSourceLink) => {
+      if (!source.available) {
+        return;
+      }
+      if (source.systemId === "message") {
+        void navigate({
+          to: "/chats",
+          search: {
+            chatId: source.subjectId,
+          },
+        });
+        return;
+      }
+      if (source.systemId === "terminal") {
+        void navigate({
+          to: "/terminals",
+          search: {
+            terminalId: source.subjectId,
+          },
+        });
+      }
+    },
+    [navigate],
+  );
+
   return (
     <AttentionInspectorPanel
       sessionId={sessionId}
@@ -333,6 +619,8 @@ const DevtoolsAttentionSurface = ({
       queryText={queryText}
       onQueryTextChange={onQueryTextChange}
       onSelectionChange={onSelectionChange}
+      resolveSourceLink={resolveSourceLink}
+      onOpenSourceLink={openSourceLink}
     />
   );
 };
@@ -381,73 +669,23 @@ const DevtoolsObservabilitySurface = ({ sessionId }: { sessionId: string }) => {
   );
 };
 
-const QuickStartRouteView = () => {
-  const controller = useAppController();
+const HomeRouteView = () => {
   const navigate = useNavigate();
-  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
-  const recentWorkspaces = useRuntimeSelector((state) => state.recentWorkspaces);
-
-  return (
-    <>
-      <QuickStartView
-        workspacePath={controller.quickstartWorkspacePath}
-        draftResolution={controller.quickstartDraft}
-        recentSessions={controller.quickstartRecentSessions}
-        loadingDraft={controller.quickstartDraftLoading}
-        starting={controller.quickstartBusy}
-        bootstrapConfig={controller.quickstartBootstrapConfig}
-        bootstrapLoading={controller.quickstartBootstrapLoading}
-        onOpenWorkspacePicker={() => setWorkspacePickerOpen(true)}
-        onEnterWorkspace={async () => {
-          const sessionId = await controller.enterWorkspace();
-          if (!sessionId) {
-            return;
-          }
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: undefined },
-          });
-        }}
-        onSaveBootstrapConfig={controller.saveQuickstartBootstrapConfig}
-        onSubmit={async (payload) => {
-          const sessionId = await controller.quickstartSubmit(payload);
-          if (!sessionId) {
-            return;
-          }
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: undefined },
-          });
-        }}
-        onSearchPaths={controller.searchWorkspacePaths}
-        onResumeSession={async (sessionId) => {
-          await controller.resumeSession(sessionId, controller.quickstartWorkspacePath);
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: undefined },
-          });
-        }}
-      />
-
-      <WorkspacePickerDialog
-        open={workspacePickerOpen}
-        initialPath={controller.quickstartWorkspacePath}
-        recentWorkspaces={recentWorkspaces}
-        onClose={() => setWorkspacePickerOpen(false)}
-        onPick={(path) => controller.setQuickstartWorkspacePath(path)}
-        listDirectories={controller.listDirectories}
-        validateDirectory={controller.validateDirectory}
-      />
-    </>
-  );
+  useEffect(() => {
+    void navigate({
+      to: "/workspaces",
+      replace: true,
+      search: buildWorkspacesSearch({}),
+    });
+  }, [navigate]);
+  return null;
 };
 
 const WorkspacesRouteView = () => {
   const controller = useAppController();
   const navigate = useNavigate();
+  const search = workspacesRoute.useSearch();
+  const adaptiveViewport = useAdaptiveViewport();
   const connected = useRuntimeSelector((state) => state.connected);
   const workspaces = useRuntimeSelector((state) => state.workspaces);
   const recentWorkspaces = useRuntimeSelector((state) => state.recentWorkspaces);
@@ -461,107 +699,664 @@ const WorkspacesRouteView = () => {
       if (count === 0) {
         continue;
       }
-      result[session.cwd] = (result[session.cwd] ?? 0) + count;
+      result[session.workspacePath] = (result[session.workspacePath] ?? 0) + count;
     }
     return result;
   }, [sessions, unreadBySession]);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [welcomeWorkspacePath, setWelcomeWorkspacePath] = useState<string>(
+    controller.workspaceWelcomeSelection?.workspacePath ?? controller.selectedWorkspacePath ?? GLOBAL_WORKSPACE_PATH,
+  );
+  const [welcomeAvatar, setWelcomeAvatar] = useState(() => {
+    const avatar = controller.workspaceWelcomeSelection?.avatar?.trim();
+    return avatar && avatar.length > 0 ? avatar : "default";
+  });
+  const [welcomeSnapshot, setWelcomeSnapshot] = useState<WorkspaceWelcomeSnapshotOutput | null>(null);
+  const [welcomeLoading, setWelcomeLoading] = useState(false);
+  const [welcomeBusy, setWelcomeBusy] = useState(false);
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
+  const [selectedTerminalIds, setSelectedTerminalIds] = useState<string[]>([]);
+  const [roomRoles, setRoomRoles] = useState<Record<string, "admin" | "member" | "readonly">>({});
+  const [terminalRoles, setTerminalRoles] = useState<Record<string, "admin" | "writer" | "requester" | "readonly">>(
+    {},
+  );
+  const [avatarCatalog, setAvatarCatalog] = useState<WorkspaceAvatarCatalogEntry[]>([]);
+  const [avatarCatalogLoading, setAvatarCatalogLoading] = useState(false);
+  const [selectedAvatarByWorkspace, setSelectedAvatarByWorkspace] = useState<Record<string, string>>({});
+  const selection = useMemo(() => resolveWorkspaceMasterSelection(search, workspaces), [search, workspaces]);
+  const detailTab = search.tab;
+  const historySortMode = search.sort;
+  const normalizedWelcomeWorkspacePath = welcomeWorkspacePath.trim().length > 0 ? welcomeWorkspacePath : GLOBAL_WORKSPACE_PATH;
+  const normalizedWelcomeAvatar = welcomeAvatar.trim().length > 0 ? welcomeAvatar.trim() : "default";
+  const selectedWorkspace =
+    selection.kind === "workspace" ? (workspaces.find((item) => item.path === selection.workspacePath) ?? null) : null;
+  const selectedWorkspaceAvatar =
+    selection.kind === "workspace" ? selectedAvatarByWorkspace[selection.workspacePath] ?? avatarCatalog[0]?.nickname ?? "default" : null;
+  const selectedWorkspaceAvatarEntry =
+    selection.kind === "workspace"
+      ? avatarCatalog.find((avatar) => avatar.nickname === selectedWorkspaceAvatar) ?? null
+      : null;
+  const historyWorkspaces = useMemo(
+    () => sortHistoryWorkspaces(workspaces, historySortMode, recentWorkspaces),
+    [historySortMode, recentWorkspaces, workspaces],
+  );
+  const defaultWelcomeWorkspacePath = useMemo(
+    () =>
+      resolveKnownWorkspacePath(
+        controller.workspaceWelcomeSelection?.workspacePath ?? controller.selectedWorkspacePath ?? undefined,
+        workspaces,
+      ),
+    [controller.selectedWorkspacePath, controller.workspaceWelcomeSelection, workspaces],
+  );
 
-  const selectedWorkspace = controller.selectedWorkspacePath
-    ? (workspaces.find((item) => item.path === controller.selectedWorkspacePath) ?? null)
-    : null;
+  const navigateWorkspaces = useCallback(
+    (patch: Partial<ReturnType<typeof validateWorkspacesSearch>>, options?: { replace?: boolean }) => {
+      void navigate({
+        to: "/workspaces",
+        replace: options?.replace,
+        search: buildWorkspacesSearch(patch, search),
+      });
+    },
+    [navigate, search],
+  );
+
+  const openRuntimeShell = useCallback(
+    (sessionId: string) => {
+      void navigate({
+        to: "/session/$sessionId/devtools",
+        params: { sessionId },
+        search: buildSessionDevtoolsSearch({ panel: "attention" }),
+      });
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (search.view !== "workspace") {
+      return;
+    }
+    const resolvedWorkspacePath = resolveKnownWorkspacePath(search.workspacePath, workspaces);
+    if (resolvedWorkspacePath === search.workspacePath) {
+      return;
+    }
+    navigateWorkspaces({ workspacePath: resolvedWorkspacePath }, { replace: true });
+  }, [navigateWorkspaces, search.view, search.workspacePath, workspaces]);
+
+  useEffect(() => {
+    setWelcomeWorkspacePath((current) => {
+      if (workspaces.some((workspace) => workspace.path === current)) {
+        return current;
+      }
+      return defaultWelcomeWorkspacePath;
+    });
+  }, [defaultWelcomeWorkspacePath, workspaces]);
+
+  useEffect(() => {
+    controller.setWorkspaceWelcomeSelection({
+      workspacePath: normalizedWelcomeWorkspacePath,
+      avatar: normalizedWelcomeAvatar,
+    });
+  }, [controller, normalizedWelcomeAvatar, normalizedWelcomeWorkspacePath]);
+
+  useEffect(() => {
+    if (selection.kind === "workspace") {
+      controller.setSelectedWorkspacePath(selection.workspacePath);
+    }
+  }, [controller, selection]);
+
+  const loadWelcomeSnapshot = useCallback(
+    async (draftOverride?: WorkspaceWelcomeDraft | null) => {
+      const workspacePath = resolveKnownWorkspacePath(welcomeWorkspacePath, workspaces);
+      const avatar = normalizedWelcomeAvatar;
+      setWelcomeLoading(true);
+      try {
+        const snapshot = await controller.inspectWorkspaceWelcome({
+          workspacePath,
+          avatar,
+        });
+        setWelcomeSnapshot(snapshot);
+        const mergedDraft = mergeWorkspaceWelcomeDraft(
+          snapshot,
+          draftOverride ?? controller.getWorkspaceWelcomeDraft(workspacePath, avatar),
+        );
+        setSelectedRoomIds(mergedDraft.selectedRoomIds);
+        setSelectedTerminalIds(mergedDraft.selectedTerminalIds);
+        setRoomRoles(mergedDraft.roomRoles);
+        setTerminalRoles(mergedDraft.terminalRoles);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        controller.setNotice(normalizeUserNotice(message, "Failed to inspect the Welcome workspace."));
+      } finally {
+        setWelcomeLoading(false);
+      }
+    },
+    [controller, normalizedWelcomeAvatar, welcomeWorkspacePath, workspaces],
+  );
+
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+    void loadWelcomeSnapshot();
+  }, [connected, loadWelcomeSnapshot]);
+
+  useEffect(() => {
+    if (!welcomeSnapshot) {
+      return;
+    }
+    controller.saveWorkspaceWelcomeDraft({
+      workspacePath: welcomeSnapshot.workspacePath,
+      avatar: normalizedWelcomeAvatar,
+      selectedRoomIds,
+      selectedTerminalIds,
+      roomRoles,
+      terminalRoles,
+    });
+  }, [
+    controller,
+    normalizedWelcomeAvatar,
+    roomRoles,
+    selectedRoomIds,
+    selectedTerminalIds,
+    terminalRoles,
+    welcomeSnapshot,
+  ]);
+
+  const refreshAvatarCatalog = useCallback(
+    async (workspacePath: string) => {
+      setAvatarCatalogLoading(true);
+      try {
+        const avatars = await controller.listWorkspaceAvatarCatalog(workspacePath);
+        setAvatarCatalog(avatars);
+        setSelectedAvatarByWorkspace((current) => {
+          const existing = current[workspacePath];
+          const nextAvatar =
+            existing && avatars.some((avatar) => avatar.nickname === existing)
+              ? existing
+              : (avatars[0]?.nickname ?? "default");
+          if (current[workspacePath] === nextAvatar) {
+            return current;
+          }
+          return {
+            ...current,
+            [workspacePath]: nextAvatar,
+          };
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        controller.setNotice(normalizeUserNotice(message, "Failed to load the workspace avatar catalog."));
+      } finally {
+        setAvatarCatalogLoading(false);
+      }
+    },
+    [controller],
+  );
+
+  useEffect(() => {
+    if (!connected || selection.kind !== "workspace" || detailTab !== "avatars") {
+      return;
+    }
+    void refreshAvatarCatalog(selection.workspacePath);
+  }, [connected, detailTab, refreshAvatarCatalog, selection]);
+
+  useEffect(() => {
+    if (!connected || selection.kind !== "workspace") {
+      return;
+    }
+    if (detailTab === "settings") {
+      if (selection.workspacePath !== GLOBAL_WORKSPACE_PATH) {
+        void controller.ensureSettingsLayers(selection.workspacePath);
+      }
+      return;
+    }
+    if (!selectedWorkspaceAvatar) {
+      return;
+    }
+    if (
+      selection.workspacePath !== GLOBAL_WORKSPACE_PATH &&
+      selectedWorkspaceAvatarEntry?.sourceScope === "global" &&
+      !selectedWorkspaceAvatarEntry.workspaceAvailable
+    ) {
+      return;
+    }
+    void controller.ensureSettingsLayers(selection.workspacePath, selectedWorkspaceAvatar);
+  }, [connected, controller, detailTab, selectedWorkspaceAvatar, selectedWorkspaceAvatarEntry, selection]);
+
+  const startWorkspaceAvatar = useCallback(
+    async (workspacePath: string, avatar: string) => {
+      const sessionId = await controller.createWorkspaceSession(workspacePath, avatar);
+      if (!sessionId) {
+        return;
+      }
+      openRuntimeShell(sessionId);
+    },
+    [controller, openRuntimeShell],
+  );
+
+  const handleStartWelcome = useCallback(async () => {
+    const workspacePath = resolveKnownWorkspacePath(welcomeWorkspacePath, workspaces);
+    const avatar = normalizedWelcomeAvatar;
+    setWelcomeBusy(true);
+    try {
+      const snapshot =
+        welcomeSnapshot && welcomeSnapshot.workspacePath === workspacePath && welcomeSnapshot.avatar === avatar
+          ? welcomeSnapshot
+          : await controller.inspectWorkspaceWelcome({ workspacePath, avatar });
+      if (snapshot !== welcomeSnapshot) {
+        setWelcomeSnapshot(snapshot);
+      }
+
+      const sessionId = await controller.createWorkspaceSession(workspacePath, avatar);
+      if (!sessionId) {
+        return;
+      }
+
+      const skippedRooms: string[] = [];
+      const skippedTerminals: string[] = [];
+      const roomParticipantId = `session:${sessionId}` as GlobalRoomActorId;
+      const terminalParticipantId = `session:${sessionId}` as GlobalTerminalActorId;
+
+      for (const room of snapshot.rooms.filter((item) => selectedRoomIds.includes(item.channel.chatId))) {
+        if (room.accessState === "joined") {
+          continue;
+        }
+        if (!room.canAuthorize || !room.channel.accessToken) {
+          skippedRooms.push(room.channel.title || room.channel.chatId);
+          continue;
+        }
+        const grant = await controller.issueGlobalRoomGrant({
+          chatId: room.channel.chatId,
+          accessToken: room.channel.accessToken,
+          role: roomRoles[room.channel.chatId] ?? room.seatRole ?? "member",
+          participantId: roomParticipantId,
+        });
+        await controller.saveWorkspaceAvatarRoomSeat({
+          workspacePath,
+          avatar,
+          chatId: room.channel.chatId,
+          accessToken: grant.accessToken,
+          accessRole: grant.accessRole,
+          state: "active",
+        });
+      }
+
+      const visibleChannels = await controller.listMessageChannels(sessionId, {
+        includeArchived: true,
+      });
+      const focusableChannels = selectedRoomIds
+        .map((chatId) => visibleChannels.find((channel) => channel.chatId === chatId))
+        .filter((channel): channel is MessageChannelEntry => channel != null)
+        .map((channel) => ({
+          chatId: channel.chatId,
+          accessToken: channel.accessToken,
+        }));
+      await controller.focusMessageChannels({
+        sessionId,
+        op: "replace",
+        channels: focusableChannels,
+      });
+
+      for (const terminal of snapshot.terminals.filter((item) => selectedTerminalIds.includes(item.terminal.terminalId))) {
+        if (terminal.accessState === "joined") {
+          continue;
+        }
+        if (!terminal.canAuthorize) {
+          skippedTerminals.push(terminal.terminal.title || terminal.terminal.terminalId);
+          continue;
+        }
+        const grant = await controller.issueGlobalTerminalGrant({
+          terminalId: terminal.terminal.terminalId,
+          role: terminalRoles[terminal.terminal.terminalId] ?? terminal.seatRole ?? "writer",
+          participantId: terminalParticipantId,
+        });
+        await controller.saveWorkspaceAvatarTerminalSeat({
+          workspacePath,
+          avatar,
+          terminalId: terminal.terminal.terminalId,
+          accessToken: grant.accessToken,
+          accessRole: grant.role,
+          state: "active",
+        });
+      }
+
+      await controller.focusTerminals({
+        sessionId,
+        op: "replace",
+        terminalIds: selectedTerminalIds,
+      });
+
+      const skippedParts = [
+        skippedRooms.length > 0 ? `Skipped rooms: ${skippedRooms.join(", ")}` : null,
+        skippedTerminals.length > 0 ? `Skipped terminals: ${skippedTerminals.join(", ")}` : null,
+      ].filter((value): value is string => value !== null);
+      controller.setNotice(skippedParts.join(" · "));
+      openRuntimeShell(sessionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      controller.setNotice(normalizeUserNotice(message, "Failed to start the selected avatar."));
+    } finally {
+      setWelcomeBusy(false);
+    }
+  }, [
+    controller,
+    normalizedWelcomeAvatar,
+    openRuntimeShell,
+    roomRoles,
+    selectedRoomIds,
+    selectedTerminalIds,
+    terminalRoles,
+    welcomeSnapshot,
+    welcomeWorkspacePath,
+    workspaces,
+  ]);
+
+  const detailTitle =
+    selection.kind === "welcome"
+      ? "Welcome"
+      : selection.kind === "history"
+        ? "History"
+        : basenameWorkspace(selection.workspacePath);
+
+  const workspaceDetailSurface =
+    selection.kind === "welcome" ? (
+      <WorkspaceWelcomeSurface
+        loading={welcomeLoading}
+        busy={welcomeBusy}
+        workspaces={workspaces}
+        workspacePath={welcomeWorkspacePath}
+        avatar={normalizedWelcomeAvatar}
+        snapshot={welcomeSnapshot}
+        selectedRoomIds={selectedRoomIds}
+        selectedTerminalIds={selectedTerminalIds}
+        roomRoles={roomRoles}
+        terminalRoles={terminalRoles}
+        onWorkspacePathChange={setWelcomeWorkspacePath}
+        onAvatarChange={(avatar) => setWelcomeAvatar(avatar.trim().length > 0 ? avatar.trim() : "default")}
+        onToggleRoom={(chatId) => {
+          setSelectedRoomIds((current) =>
+            current.includes(chatId) ? current.filter((value) => value !== chatId) : [...current, chatId],
+          );
+        }}
+        onToggleTerminal={(terminalId) => {
+          setSelectedTerminalIds((current) =>
+            current.includes(terminalId) ? current.filter((value) => value !== terminalId) : [...current, terminalId],
+          );
+        }}
+        onRoomRoleChange={(chatId, role) => {
+          setRoomRoles((current) => ({
+            ...current,
+            [chatId]: role,
+          }));
+        }}
+        onTerminalRoleChange={(terminalId, role) => {
+          setTerminalRoles((current) => ({
+            ...current,
+            [terminalId]: role,
+          }));
+        }}
+        onRefresh={() => {
+          void loadWelcomeSnapshot({
+            workspacePath: welcomeWorkspacePath,
+            avatar: normalizedWelcomeAvatar,
+            selectedRoomIds,
+            selectedTerminalIds,
+            roomRoles,
+            terminalRoles,
+          });
+        }}
+        onOpenChats={() => {
+          void navigate({
+            to: "/chats",
+            search: {
+              chatId: undefined,
+            },
+          });
+        }}
+        onOpenTerminals={() => {
+          void navigate({
+            to: "/terminals",
+            search: {
+              terminalId: undefined,
+            },
+          });
+        }}
+        onStart={() => {
+          void handleStartWelcome();
+        }}
+      />
+    ) : selection.kind === "history" ? (
+      <WorkspaceHistorySurface
+        workspaces={historyWorkspaces}
+        unreadByWorkspace={unreadByWorkspace}
+        sortMode={historySortMode}
+        onSortModeChange={(mode) => navigateWorkspaces({ sort: mode })}
+        onOpenWorkspace={(workspacePath) => {
+          navigateWorkspaces({
+            view: "workspace",
+            workspacePath,
+            tab: "settings",
+          });
+        }}
+      />
+    ) : (
+      <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm")}>
+        <div className="space-y-3 border-b border-slate-200 pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className="typo-title-3 text-slate-900">{selectedWorkspace?.path ?? selection.workspacePath}</h2>
+              <p className="text-xs text-slate-500">
+                {selection.workspacePath === GLOBAL_WORKSPACE_PATH
+                  ? "The global workspace owns shared settings and the canonical avatar catalog."
+                  : "Regular workspaces inherit from the global workspace and can fork avatars into local copies."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              {selectedWorkspace?.missing ? <Badge variant="destructive">missing</Badge> : null}
+              <Badge variant="secondary">{selectedWorkspace?.counts.all ?? 0} sessions</Badge>
+              <Badge variant="secondary">{selectedWorkspace?.counts.running ?? 0} running</Badge>
+            </div>
+          </div>
+          <Tabs
+            items={WORKSPACE_DETAIL_TABS}
+            value={detailTab}
+            onValueChange={(value) => {
+              navigateWorkspaces({
+                view: "workspace",
+                workspacePath: selection.workspacePath,
+                tab: normalizeWorkspaceDetailTab(value),
+              });
+            }}
+          />
+        </div>
+
+        <ViewportMask className="h-full pt-3">
+          {detailTab === "settings" ? (
+            selection.workspacePath === GLOBAL_WORKSPACE_PATH ? (
+              <GlobalSettingsRouteView />
+            ) : (
+              <SettingsPanel
+                disabled={false}
+                loading={controller.settingsLoading}
+                status={controller.settingsStatus}
+                title={`Workspace Settings · ${basenameWorkspace(selection.workspacePath)}`}
+                description="Workspace settings stay on the same API surface as the global workspace, but resolve with workspace-local layers."
+                descriptionHelpId="settings:workspace"
+                effective={controller.settingsEffective}
+                layers={controller.settingsLayers}
+                selectedLayerId={controller.selectedLayerId}
+                layerContent={controller.layerDraft}
+                detailMode={adaptiveViewport.compact ? "sheet" : "split"}
+                onSelectLayer={(layerId) => {
+                  controller.setSelectedLayerId(layerId);
+                  controller.setLayerDraft("");
+                }}
+                onLayerContentChange={controller.setLayerDraft}
+                onRefreshLayers={() => {
+                  void controller.refreshSettingsLayers(selection.workspacePath);
+                }}
+                onLoadLayer={(layerId) => {
+                  void controller.loadSelectedLayer(selection.workspacePath, layerId);
+                }}
+                onSaveLayer={() => {
+                  if (!controller.selectedLayerId) {
+                    return;
+                  }
+                  void controller.saveSelectedLayer(selection.workspacePath, controller.selectedLayerId);
+                }}
+              />
+            )
+          ) : (
+            <WorkspaceAvatarSurface
+              workspacePath={selection.workspacePath}
+              loading={avatarCatalogLoading}
+              avatars={avatarCatalog}
+              selectedAvatar={selectedWorkspaceAvatar}
+              onSelectAvatar={(avatar) => {
+                setSelectedAvatarByWorkspace((current) => ({
+                  ...current,
+                  [selection.workspacePath]: avatar,
+                }));
+              }}
+              onStartAvatar={(avatar) => {
+                void startWorkspaceAvatar(selection.workspacePath, avatar);
+              }}
+              onForkAvatar={(avatar) => {
+                void controller
+                  .forkWorkspaceAvatar({
+                    workspacePath: selection.workspacePath,
+                    avatar,
+                  })
+                  .then(async () => {
+                    setSelectedAvatarByWorkspace((current) => ({
+                      ...current,
+                      [selection.workspacePath]: avatar,
+                    }));
+                    await refreshAvatarCatalog(selection.workspacePath);
+                    await controller.ensureSettingsLayers(selection.workspacePath, avatar);
+                  })
+                  .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    controller.setNotice(normalizeUserNotice(message, "Failed to fork the selected avatar."));
+                  });
+              }}
+              detail={
+                selectedWorkspaceAvatarEntry &&
+                selection.workspacePath !== GLOBAL_WORKSPACE_PATH &&
+                selectedWorkspaceAvatarEntry.sourceScope === "global" &&
+                !selectedWorkspaceAvatarEntry.workspaceAvailable ? (
+                  <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col justify-center rounded-2xl p-6 shadow-sm")}>
+                    <div className="mx-auto max-w-md space-y-3 text-center">
+                      <h3 className="text-base font-semibold text-slate-900">{selectedWorkspaceAvatarEntry.nickname}</h3>
+                      <p className="text-sm text-slate-500">
+                        This workspace is still reading the global avatar source. Fork a full copy before editing workspace-local
+                        settings.
+                      </p>
+                      <div className="flex justify-center">
+                        <Button
+                          onClick={() => {
+                            void controller
+                              .forkWorkspaceAvatar({
+                                workspacePath: selection.workspacePath,
+                                avatar: selectedWorkspaceAvatarEntry.nickname,
+                              })
+                              .then(async () => {
+                                await refreshAvatarCatalog(selection.workspacePath);
+                                await controller.ensureSettingsLayers(selection.workspacePath, selectedWorkspaceAvatarEntry.nickname);
+                              })
+                              .catch((error) => {
+                                const message = error instanceof Error ? error.message : String(error);
+                                controller.setNotice(normalizeUserNotice(message, "Failed to fork the selected avatar."));
+                              });
+                          }}
+                        >
+                          Fork Avatar Copy
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
+                ) : (
+                  <SettingsPanel
+                    disabled={!selectedWorkspaceAvatar}
+                    loading={controller.settingsLoading}
+                    status={controller.settingsStatus}
+                    title={`Avatar Settings · ${selectedWorkspaceAvatar ?? "default"}`}
+                    description="Avatar settings flatten avatar-local layers with workspace defaults so one avatar can be inspected or edited at a time."
+                    descriptionHelpId="settings:avatar"
+                    effective={controller.settingsEffective}
+                    layers={controller.settingsLayers}
+                    selectedLayerId={controller.selectedLayerId}
+                    layerContent={controller.layerDraft}
+                    detailMode={adaptiveViewport.compact ? "sheet" : "split"}
+                    onSelectLayer={(layerId) => {
+                      controller.setSelectedLayerId(layerId);
+                      controller.setLayerDraft("");
+                    }}
+                    onLayerContentChange={controller.setLayerDraft}
+                    onRefreshLayers={() => {
+                      if (!selectedWorkspaceAvatar) {
+                        return;
+                      }
+                      void controller.refreshSettingsLayers(selection.workspacePath, selectedWorkspaceAvatar);
+                    }}
+                    onLoadLayer={(layerId) => {
+                      if (!selectedWorkspaceAvatar) {
+                        return;
+                      }
+                      void controller.loadSelectedLayer(selection.workspacePath, layerId, selectedWorkspaceAvatar);
+                    }}
+                    onSaveLayer={() => {
+                      if (!controller.selectedLayerId || !selectedWorkspaceAvatar) {
+                        return;
+                      }
+                      void controller.saveSelectedLayer(selection.workspacePath, controller.selectedLayerId, selectedWorkspaceAvatar);
+                    }}
+                  />
+                )
+              }
+            />
+          )}
+        </ViewportMask>
+      </section>
+    );
 
   return (
     <MasterDetailPage
       main={
-        <WorkspacesPanel
+        <WorkspacesCatalogSurface
           loading={workspacesLoading}
           recentPaths={recentWorkspaces}
           workspaces={workspaces}
           unreadByWorkspace={unreadByWorkspace}
-          selectedPath={controller.selectedWorkspacePath}
-          onSelectPath={(path) => controller.setSelectedWorkspacePath(path)}
+          selection={selection}
+          onSelectSelection={(nextSelection) => {
+            if (nextSelection.kind === "workspace") {
+              navigateWorkspaces({
+                view: "workspace",
+                workspacePath: nextSelection.workspacePath,
+                tab: detailTab,
+              });
+              return;
+            }
+            navigateWorkspaces({
+              view: nextSelection.kind,
+            });
+          }}
           onToggleFavorite={(path) => {
             void controller.toggleWorkspaceFavorite(path);
           }}
           onDeleteWorkspace={(path) => {
             void controller.deleteWorkspace(path);
           }}
-          onCreateSessionInWorkspace={(path) => {
-            void controller.createWorkspaceSession(path).then((sessionId) => {
-              if (!sessionId) {
-                return;
-              }
-              void navigate({
-                to: "/session/$sessionId/chats",
-                params: { sessionId },
-                search: { chatId: undefined },
-              });
-            });
-          }}
           onCleanMissing={() => {
             void controller.cleanMissingWorkspaces();
           }}
         />
       }
-      detail={
-        <WorkspaceSessionsPanel
-          workspace={selectedWorkspace}
-          sessions={controller.workspaceSessions}
-          unreadBySession={unreadBySession}
-          counts={controller.workspaceSessionCounts}
-          tab={controller.workspaceSessionsTab}
-          selectedSessionId={controller.selectedWorkspaceSessionId}
-          loading={controller.workspaceSessionsLoading}
-          loadingMore={controller.workspaceSessionsLoadingMore}
-          hasMore={controller.workspaceSessionCursor !== null}
-          onChangeTab={controller.setWorkspaceSessionsTab}
-          onSelectSession={controller.setSelectedWorkspaceSessionId}
-          onLoadMore={() => {
-            void controller.loadMoreWorkspaceSessions();
-          }}
-          onCreateSessionInWorkspace={(path) => {
-            void controller.createWorkspaceSession(path).then((sessionId) => {
-              if (!sessionId) {
-                return;
-              }
-              void navigate({
-                to: "/session/$sessionId/chats",
-                params: { sessionId },
-                search: { chatId: undefined },
-              });
-            });
-          }}
-          onOpenSession={(sessionId) => {
-            void controller.resumeSession(sessionId, selectedWorkspace?.path).then(() => {
-              void navigate({
-                to: "/session/$sessionId/chats",
-                params: { sessionId },
-                search: { chatId: undefined },
-              });
-            });
-          }}
-          onStopSession={(sessionId) => {
-            void controller.stopWorkspaceSession(sessionId);
-          }}
-          onToggleSessionFavorite={(sessionId) => {
-            void controller.toggleSessionFavorite(sessionId);
-          }}
-          onArchiveSession={(sessionId) => {
-            void controller.archiveWorkspaceSession(sessionId);
-          }}
-          onRestoreSession={(sessionId) => {
-            void controller.restoreWorkspaceSession(sessionId);
-          }}
-          onDeleteSession={(sessionId) => {
-            void controller.deleteWorkspaceSession(sessionId);
-          }}
-        />
-      }
-      detailTitle="Sessions"
+      detail={workspaceDetailSurface}
+      detailTitle={detailTitle}
       mobileDetailOpen={mobileDetailOpen}
       onMobileDetailOpenChange={setMobileDetailOpen}
-      detailSelectionKey={controller.selectedWorkspacePath}
+      detailSelectionKey={buildWorkspaceSelectionKey(selection)}
       autoOpenMobileOnSelection
       desktopResizable
       desktopSplitStorageKey={WORKSPACES_SESSIONS_SPLIT_STORAGE_KEY}
@@ -573,383 +1368,29 @@ const WorkspacesRouteView = () => {
 };
 
 const GlobalTerminalsRouteView = () => {
-  return <GlobalTerminalsRoute />;
+  const search = terminalsRoute.useSearch();
+  return <GlobalTerminalsRoute preferredTerminalId={search.terminalId} />;
+};
+
+const GlobalChatsRouteView = () => {
+  const search = chatsRoute.useSearch();
+  return <GlobalChatsRoute preferredRoomId={search.chatId} />;
 };
 
 const SessionChatsRouteView = () => {
-  const controller = useAppController();
   const navigate = useNavigate();
   const params = sessionChatsRoute.useParams();
-  const search = sessionChatsRoute.useSearch();
   const sessionId = params.sessionId;
-  const connected = useRuntimeSelector((state) => state.connected);
-  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
-  const workspacePath = session?.cwd ?? "";
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
-  const runtime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
-  const runtimeChatMessages = useRuntimeSelector((state) => state.chatsBySession[sessionId] ?? EMPTY_MESSAGES);
-  const unreadByChat = useRuntimeSelector((state) => state.unreadByChat[sessionId] ?? EMPTY_UNREAD_COUNTS);
-  const channelsResource = useRuntimeSelector(
-    (state) => state.messageChannelsBySession[sessionId] ?? EMPTY_MESSAGE_CHANNELS_RESOURCE,
-  );
-  const setChatVisibility = controller.setChatVisibility;
-  const consumeNotifications = controller.consumeNotifications;
-  const routeRuntime = runtime ?? undefined;
-  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime);
-  const baseRouteNotice = resolveChatRouteNotice({
-    notice: controller.notice,
-    session,
-    runtime: routeRuntime,
-  });
-  const [latestVisibleMessageId, setLatestVisibleMessageId] = useState<string | null>(null);
-  const pageFocusedRef = useRef(true);
-  const routeFocusSyncRef = useRef<string | null>(null);
-  const channels = channelsResource.data;
-  const channelsLoading = channelsResource.loading || channelsResource.refreshing;
-  const channelsError = channelsResource.error;
-  const iconUrls = useIconServiceUrls(controller.runtimeStore);
-  const selectedChannel = useMemo(
-    () => channels.find((channel) => channel.chatId === search.chatId) ?? channels[0] ?? null,
-    [channels, search.chatId],
-  );
-  const selectedChatId = selectedChannel?.chatId ?? null;
-  const bootstrapMessages = useMemo(
-    () => toBootstrapChannelMessages(selectedChannel, runtimeChatMessages),
-    [runtimeChatMessages, selectedChannel],
-  );
-  const legacyRouteNotice = useMemo(() => {
-    const message = extractInternalFailureNotice(
-      runtimeChatMessages.filter((chatMessage) => (selectedChatId ? chatMessage.chatId === selectedChatId : true)),
-    );
-    return message
-      ? {
-          tone: "destructive" as const,
-          message: normalizeUserNotice(message, "Something failed while preparing this session."),
-        }
-      : null;
-  }, [runtimeChatMessages, selectedChatId]);
-  const routeNotice =
-    channelsError && !baseRouteNotice
-      ? { tone: "destructive" as const, message: channelsError }
-      : (baseRouteNotice ?? legacyRouteNotice);
-  const handleChatHeaderAction = useCallback(() => {
-    if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(sessionId);
-      return;
-    }
-    void controller.startSession(sessionId);
-  }, [controller, sessionId, sessionStatusPill.primaryAction]);
-  const handleAbortSession = useCallback(() => {
-    void controller.abortSession(sessionId);
-  }, [controller, sessionId]);
-
-  const handleSessionChatsNavigate = useCallback(
-    (tab: "chat" | "terminals" | "devtools" | "settings") => {
-      if (tab === "chat") {
-        void navigate({
-          to: "/session/$sessionId/chats",
-          params: { sessionId },
-          search: { chatId: selectedChannel?.chatId },
-        });
-        return;
-      }
-      if (tab === "settings") {
-        void navigate({
-          to: "/session/$sessionId/settings",
-          params: { sessionId },
-        });
-        return;
-      }
-      if (tab === "terminals") {
-        void navigate({
-          to: "/terminals",
-        });
-        return;
-      }
-      void navigate({
-        to: "/session/$sessionId/devtools",
-        params: { sessionId },
-        search: buildSessionDevtoolsSearch({ panel: "attention" }),
-      });
-    },
-    [navigate, selectedChannel?.chatId, sessionId],
-  );
-
   useEffect(() => {
-    setLatestVisibleMessageId(null);
-  }, [sessionId]);
+    void navigate({
+      to: "/session/$sessionId/devtools",
+      params: { sessionId },
+      replace: true,
+      search: buildSessionDevtoolsSearch({ panel: "attention" }),
+    });
+  }, [navigate, sessionId]);
 
-  useEffect(() => {
-    if (!connected || channelsResource.loaded || channelsResource.loading || channelsResource.refreshing) {
-      return;
-    }
-    void controller.ensureMessageChannels(sessionId);
-  }, [
-    channelsResource.loaded,
-    channelsResource.loading,
-    channelsResource.refreshing,
-    connected,
-    controller,
-    sessionId,
-  ]);
-
-  useEffect(() => {
-    if (!channelsResource.loaded) {
-      return;
-    }
-    const selected = channels.find((item) => item.chatId === search.chatId) ?? channels[0] ?? null;
-    if (selected && selected.chatId !== search.chatId) {
-      void navigate({
-        to: "/session/$sessionId/chats",
-        params: { sessionId },
-        replace: true,
-        search: { chatId: selected.chatId },
-      });
-    }
-  }, [channels, channelsResource.loaded, navigate, search.chatId, sessionId]);
-
-  useEffect(() => {
-    if (!connected || !channelsResource.loaded || !search.chatId || !selectedChannel) {
-      return;
-    }
-    if (selectedChannel.chatId !== search.chatId) {
-      return;
-    }
-    const syncKey = `${sessionId}:${selectedChannel.chatId}:${selectedChannel.accessToken}`;
-    if (routeFocusSyncRef.current === syncKey) {
-      return;
-    }
-    routeFocusSyncRef.current = syncKey;
-    void controller
-      .focusMessageChannels({
-        sessionId,
-        op: "replace",
-        channels: [{ chatId: selectedChannel.chatId, accessToken: selectedChannel.accessToken }],
-      })
-      .catch(() => {
-        if (routeFocusSyncRef.current === syncKey) {
-          routeFocusSyncRef.current = null;
-        }
-      });
-  }, [
-    channelsResource.loaded,
-    connected,
-    controller,
-    search.chatId,
-    selectedChannel?.accessToken,
-    selectedChannel?.chatId,
-    sessionId,
-  ]);
-
-  useEffect(() => {
-    const chatId = selectedChannel?.chatId;
-    if (!connected || !chatId) {
-      return;
-    }
-
-    pageFocusedRef.current =
-      typeof document.hasFocus === "function" ? document.hasFocus() || document.visibilityState === "visible" : true;
-
-    const syncVisibility = (focused = pageFocusedRef.current) => {
-      const visible = document.visibilityState === "visible";
-      const nextFocused = visible && focused;
-      void setChatVisibility({ sessionId, chatId, visible, focused: nextFocused });
-      if (visible && nextFocused && latestVisibleMessageId) {
-        void consumeNotifications({
-          sessionId,
-          chatId,
-          upToMessageId: latestVisibleMessageId,
-        });
-      }
-    };
-
-    const handleFocus = () => {
-      pageFocusedRef.current = true;
-      syncVisibility(true);
-    };
-
-    const handleBlur = () => {
-      pageFocusedRef.current = false;
-      syncVisibility(false);
-    };
-
-    const handleVisibilityChange = () => {
-      const isVisible = document.visibilityState === "visible";
-      const nextFocused = isVisible
-        ? pageFocusedRef.current || (typeof document.hasFocus === "function" ? document.hasFocus() : true)
-        : false;
-      pageFocusedRef.current = nextFocused;
-      syncVisibility(nextFocused);
-    };
-
-    syncVisibility();
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("blur", handleBlur);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      void setChatVisibility({ sessionId, chatId, visible: false, focused: false });
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("blur", handleBlur);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [connected, consumeNotifications, latestVisibleMessageId, selectedChannel?.chatId, sessionId, setChatVisibility]);
-
-  return (
-    <WorkspaceShellFrame
-      workspacePath={workspacePath}
-      workspaceMissing={workspace?.missing ?? false}
-      activeTab="chat"
-      onNavigate={handleSessionChatsNavigate}
-      headerStatusSlot={
-        <SessionStatusPillMenu
-          triggerVariant="icon"
-          statusLabel={sessionStatusPill.label}
-          tone={sessionStatusPill.tone}
-          primaryActionLabel={sessionStatusPill.primaryActionLabel}
-          primaryActionDisabled={sessionStatusPill.disabled}
-          onPrimaryAction={handleChatHeaderAction}
-          onAbort={handleAbortSession}
-        />
-      }
-    >
-      <MessageChannelSurface
-        sessionId={sessionId}
-        workspacePath={workspacePath}
-        channels={channels}
-        unreadByChat={unreadByChat}
-        selectedChatId={selectedChannel?.chatId ?? null}
-        channelsLoading={channelsLoading}
-        channelsError={channelsError}
-        disabled={!routeRuntime?.started}
-        imageCompatible={runtime?.imageInput ?? false}
-        routeNotice={routeNotice}
-        initialMessages={bootstrapMessages}
-        assistantAvatarUrl={iconUrls.profile(session?.avatar)}
-        assistantAvatarLabel={session?.avatar ?? "Assistant"}
-        userAvatarLabel="You"
-        onSelectChannel={(chatId) => {
-          void navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId },
-          });
-        }}
-        onCreateChannel={async (input) => {
-          const created = await controller.createMessageChannel({
-            sessionId,
-            title: input.title,
-            participants: input.participants,
-            metadata: input.metadata,
-            adminToken: input.adminToken,
-            focus: false,
-          });
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: created.chatId },
-          });
-        }}
-        onFocusChannel={async (channel) => {
-          await controller.focusMessageChannels({
-            sessionId,
-            op: channel.focused ? "remove" : "add",
-            channels: [{ chatId: channel.chatId, accessToken: channel.accessToken }],
-          });
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: channel.chatId },
-          });
-        }}
-        onArchiveChannel={async (channel) => {
-          await controller.archiveMessageChannel({
-            sessionId,
-            chatId: channel.chatId,
-            accessToken: channel.accessToken,
-          });
-          const remaining = await controller.listMessageChannels(sessionId);
-          const nextSelected = remaining.find((item) => item.focused) ?? remaining[0] ?? null;
-          await navigate({
-            to: "/session/$sessionId/chats",
-            params: { sessionId },
-            search: { chatId: nextSelected?.chatId },
-          });
-        }}
-        onSendMessage={({ channel, payload }) =>
-          controller.sendMessageChannel({
-            sessionId,
-            chatId: channel.chatId,
-            accessToken: channel.accessToken,
-            payload,
-          })
-        }
-        onUpdateChannel={async (input) =>
-          await controller.updateMessageChannel({
-            sessionId,
-            chatId: input.channel.chatId,
-            accessToken: input.channel.accessToken,
-            patch: input.patch,
-          })
-        }
-        onListChannelGrants={async (channel) =>
-          await controller.listMessageChannelGrants({
-            sessionId,
-            chatId: channel.chatId,
-            accessToken: channel.accessToken,
-          })
-        }
-        onIssueChannelGrant={async (input) =>
-          await controller.issueMessageChannelGrant({
-            sessionId,
-            chatId: input.channel.chatId,
-            accessToken: input.channel.accessToken,
-            role: input.role,
-            label: input.label,
-            participantId: input.participantId,
-          })
-        }
-        onRevokeChannelGrant={async (input) =>
-          await controller.revokeMessageChannelGrant({
-            sessionId,
-            chatId: input.channel.chatId,
-            accessToken: input.channel.accessToken,
-            grantId: input.grantId,
-          })
-        }
-        onCommand={async (command) => {
-          if (command === "/start") {
-            await controller.startSession(sessionId);
-            return;
-          }
-          if (command === "/stop") {
-            await controller.stopSession(sessionId);
-            return;
-          }
-          if (command === "/compact" && selectedChannel) {
-            await controller.sendMessageChannel({
-              sessionId,
-              chatId: selectedChannel.chatId,
-              accessToken: selectedChannel.accessToken,
-              payload: { text: "/compact", assets: [] },
-            });
-          }
-        }}
-        onSearchPaths={controller.searchWorkspacePaths}
-        onLatestVisibleAssistantMessageIdChange={setLatestVisibleMessageId}
-        onOpenDevtools={(cycleId) => {
-          void navigate({
-            to: "/session/$sessionId/devtools",
-            params: { sessionId },
-            search: buildSessionDevtoolsSearch({
-              panel: cycleId ? "cycles" : "attention",
-              cycleId,
-            }),
-          });
-        }}
-      />
-    </WorkspaceShellFrame>
-  );
+  return null;
 };
 
 const SessionTerminalsRouteView = () => {
@@ -961,6 +1402,9 @@ const SessionTerminalsRouteView = () => {
     void navigate({
       to: "/terminals",
       replace: true,
+      search: {
+        terminalId: undefined,
+      },
     });
   }, [navigate, sessionId]);
 
@@ -974,10 +1418,13 @@ const SessionDevtoolsRouteView = () => {
   const params = sessionDevtoolsRoute.useParams();
   const search = sessionDevtoolsRoute.useSearch();
   const sessionId = params.sessionId;
+  const connected = useRuntimeSelector((state) => state.connected);
   const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
-  const workspacePath = session?.cwd ?? "";
+  const workspacePath = session?.workspacePath ?? "";
   const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
   const routeRuntime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
+  const cycles = useRuntimeSelector((state) => state.chatCyclesBySession[sessionId] ?? EMPTY_CYCLES);
+  const activeCycle = useRuntimeSelector((state) => state.runtimes[sessionId]?.activeCycle ?? null);
   const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
   const hasRuntime = useRuntimeSelector((state) => Boolean(state.runtimes[sessionId]));
   const routeNotice = resolveChatRouteNotice({
@@ -1007,10 +1454,15 @@ const SessionDevtoolsRouteView = () => {
     [navigate, search, sessionId],
   );
 
+  const runtimeTabs = useMemo(
+    () => buildRuntimeTabs({ activeCycle, latestCycle: cycles[cycles.length - 1] ?? null }),
+    [activeCycle, cycles],
+  );
+
   const handleDetailsTabChange = useCallback(
     (value: string) => {
       const panel: DevtoolsPanelId =
-        value === "cycles" || value === "systems" || value === "observability" || value === "attention"
+        value === "cycles" || value === "systems" || value === "observability" || value === "settings" || value === "attention"
           ? value
           : "attention";
       navigateDevtools({ panel });
@@ -1030,33 +1482,6 @@ const SessionDevtoolsRouteView = () => {
     void controller.abortSession(sessionId);
   }, [controller, sessionId]);
 
-  const handleSessionDevtoolsNavigate = useCallback(
-    (tab: "chat" | "terminals" | "devtools" | "settings") => {
-      if (tab === "devtools") {
-        return;
-      }
-      if (tab === "settings") {
-        void navigate({
-          to: "/session/$sessionId/settings",
-          params: { sessionId },
-        });
-        return;
-      }
-      if (tab === "terminals") {
-        void navigate({
-          to: "/terminals",
-        });
-        return;
-      }
-      void navigate({
-        to: "/session/$sessionId/chats",
-        params: { sessionId },
-        search: { chatId: undefined },
-      });
-    },
-    [navigate, sessionId],
-  );
-
   const handleOpenAttentionRef = useCallback(
     (selection: AttentionSelectionState) => {
       navigateDevtools({
@@ -1068,6 +1493,13 @@ const SessionDevtoolsRouteView = () => {
     },
     [navigateDevtools],
   );
+
+  useEffect(() => {
+    if (!connected || search.panel !== "settings" || !workspacePath) {
+      return;
+    }
+    void controller.ensureSettingsLayers(workspacePath, session?.avatar);
+  }, [connected, controller, search.panel, session?.avatar, workspacePath]);
 
   const renderPanel = () => {
     if (search.panel === "attention") {
@@ -1114,15 +1546,58 @@ const SessionDevtoolsRouteView = () => {
         />
       );
     }
+    if (search.panel === "settings") {
+      return workspacePath ? (
+        <SettingsPanel
+          disabled={false}
+          loading={controller.settingsLoading}
+          status={controller.settingsStatus}
+          title={`Avatar Settings · ${session?.avatar ?? "default"}`}
+          description="Running-avatar settings flatten avatar-scoped layers and workspace defaults into one runtime-facing editor."
+          descriptionHelpId="settings:avatar:runtime"
+          effective={controller.settingsEffective}
+          layers={controller.settingsLayers}
+          selectedLayerId={controller.selectedLayerId}
+          layerContent={controller.layerDraft}
+          detailMode={adaptiveViewport.compact ? "sheet" : "split"}
+          onSelectLayer={(layerId) => {
+            controller.setSelectedLayerId(layerId);
+            controller.setLayerDraft("");
+          }}
+          onLayerContentChange={controller.setLayerDraft}
+          onRefreshLayers={() => {
+            void controller.refreshSettingsLayers(workspacePath, session?.avatar);
+          }}
+          onLoadLayer={(layerId) => {
+            void controller.loadSelectedLayer(workspacePath, layerId, session?.avatar);
+          }}
+          onSaveLayer={() => {
+            if (!controller.selectedLayerId) {
+              return;
+            }
+            void controller.saveSelectedLayer(workspacePath, controller.selectedLayerId, session?.avatar);
+          }}
+        />
+      ) : (
+        <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
+          <div className="space-y-3 text-center">
+            <AlertTriangle className="mx-auto h-5 w-5 text-amber-600" />
+            <p className="text-sm text-slate-600">Choose a workspace before editing settings.</p>
+          </div>
+        </section>
+      );
+    }
     return <DevtoolsObservabilitySurface sessionId={sessionId} />;
   };
 
   return (
     <WorkspaceShellFrame
+      locationLabel={resolveRuntimePanelLabel(search.panel)}
       workspacePath={workspacePath}
       workspaceMissing={workspace?.missing ?? false}
-      activeTab="devtools"
-      onNavigate={handleSessionDevtoolsNavigate}
+      activeTab={search.panel}
+      tabs={runtimeTabs}
+      onNavigate={handleDetailsTabChange}
       headerStatusSlot={
         <SessionStatusPillMenu
           triggerVariant="icon"
@@ -1136,9 +1611,6 @@ const SessionDevtoolsRouteView = () => {
       }
     >
       <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col gap-2.5 p-2.5 md:p-3")}>
-        <div className="shrink-0">
-          <Tabs items={DETAIL_TABS} value={search.panel} onValueChange={handleDetailsTabChange} />
-        </div>
         <div
           className={cn(
             "grid min-h-0 flex-1",
@@ -1154,124 +1626,34 @@ const SessionDevtoolsRouteView = () => {
 };
 
 const SessionSettingsRouteView = () => {
-  const controller = useAppController();
   const navigate = useNavigate();
-  const adaptiveViewport = useAdaptiveViewport();
   const params = sessionSettingsRoute.useParams();
   const sessionId = params.sessionId;
-  const connected = useRuntimeSelector((state) => state.connected);
-  const session = useRuntimeSelector(selectSessionChromeState(sessionId), equalSessionChromeState);
-  const workspacePath = session?.cwd ?? "";
-  const routeRuntime = useRuntimeSelector(selectChatRuntimeState(sessionId), equalChatRuntimeState);
-  const workspace = useRuntimeSelector(selectWorkspaceChromeState(workspacePath), equalWorkspaceChromeState);
-  const sessionStatusPill = resolveSessionStatusPillState(session, routeRuntime ?? undefined);
-  const ensureSettingsLayers = controller.ensureSettingsLayers;
-  const refreshSettingsLayers = controller.refreshSettingsLayers;
-
   useEffect(() => {
-    if (!connected || !workspacePath) {
-      return;
-    }
-    void ensureSettingsLayers(workspacePath);
-  }, [connected, ensureSettingsLayers, workspacePath]);
-  const handleSessionSettingsNavigate = useCallback(
-    (tab: "chat" | "terminals" | "devtools" | "settings") => {
-      if (tab === "settings") {
-        return;
-      }
-      if (tab === "terminals") {
-        void navigate({
-          to: "/terminals",
-        });
-        return;
-      }
-      if (tab === "devtools") {
-        void navigate({
-          to: "/session/$sessionId/devtools",
-          params: { sessionId },
-          search: buildSessionDevtoolsSearch({ panel: "attention" }),
-        });
-        return;
-      }
       void navigate({
-        to: "/session/$sessionId/chats",
+        to: "/session/$sessionId/devtools",
         params: { sessionId },
-        search: { chatId: undefined },
+        replace: true,
+        search: buildSessionDevtoolsSearch({ panel: "settings" }),
       });
-    },
-    [navigate, sessionId],
-  );
-  const handleSessionPrimaryAction = useCallback(() => {
-    if (sessionStatusPill.primaryAction === "stop") {
-      void controller.stopSession(sessionId);
-      return;
-    }
-    void controller.startSession(sessionId);
-  }, [controller, sessionId, sessionStatusPill.primaryAction]);
-  const handleAbortSession = useCallback(() => {
-    void controller.abortSession(sessionId);
-  }, [controller, sessionId]);
+  }, [navigate, sessionId]);
+  return null;
+};
 
-  return (
-    <WorkspaceShellFrame
-      workspacePath={workspacePath}
-      workspaceMissing={workspace?.missing ?? false}
-      activeTab="settings"
-      onNavigate={handleSessionSettingsNavigate}
-      headerStatusSlot={
-        <SessionStatusPillMenu
-          triggerVariant="icon"
-          statusLabel={sessionStatusPill.label}
-          tone={sessionStatusPill.tone}
-          primaryActionLabel={sessionStatusPill.primaryActionLabel}
-          primaryActionDisabled={sessionStatusPill.disabled}
-          onPrimaryAction={handleSessionPrimaryAction}
-          onAbort={handleAbortSession}
-        />
-      }
-    >
-      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2.5">
-        <ViewportMask className="h-full">
-          {workspacePath ? (
-            <SettingsPanel
-              disabled={!workspacePath}
-              loading={controller.settingsLoading}
-              status={controller.settingsStatus}
-              effective={controller.settingsEffective}
-              layers={controller.settingsLayers}
-              selectedLayerId={controller.selectedLayerId}
-              layerContent={controller.layerDraft}
-              detailMode={adaptiveViewport.compact ? "sheet" : "split"}
-              onSelectLayer={(layerId) => {
-                controller.setSelectedLayerId(layerId);
-                controller.setLayerDraft("");
-              }}
-              onLayerContentChange={controller.setLayerDraft}
-              onRefreshLayers={() => {
-                void refreshSettingsLayers(workspacePath);
-              }}
-              onLoadLayer={(layerId) => {
-                void controller.loadSelectedLayer(workspacePath, layerId);
-              }}
-              onSaveLayer={() => {
-                if (!controller.selectedLayerId) {
-                  return;
-                }
-                void controller.saveSelectedLayer(workspacePath, controller.selectedLayerId);
-              }}
-            />
-          ) : (
-            <section className={cn(surfaceToneClassName("panel"), "flex h-full items-center justify-center p-6")}>
-              <div className="space-y-3 text-center">
-                <AlertTriangle className="mx-auto h-5 w-5 text-amber-600" />
-                <p className="text-sm text-slate-600">Choose a workspace before editing settings.</p>
-              </div>
-            </section>
-          )}
-        </ViewportMask>
-      </div>
-    </WorkspaceShellFrame>
-  );
+const LegacyGlobalSettingsRouteView = () => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate({
+      to: "/workspaces",
+      replace: true,
+      search: buildWorkspacesSearch({
+        view: "workspace",
+        workspacePath: GLOBAL_WORKSPACE_PATH,
+        tab: "settings",
+      }),
+    });
+  }, [navigate]);
+  return null;
 };
 
 const GlobalSettingsRouteView = () => {
@@ -1587,25 +1969,34 @@ const rootRoute = createRootRoute({
 const quickStartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: QuickStartRouteView,
+  component: HomeRouteView,
+});
+
+const chatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chats",
+  validateSearch: validateGlobalChatsSearch,
+  component: GlobalChatsRouteView,
 });
 
 const workspacesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workspaces",
+  validateSearch: validateWorkspacesSearch,
   component: WorkspacesRouteView,
 });
 
 const terminalsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/terminals",
+  validateSearch: validateGlobalTerminalsSearch,
   component: GlobalTerminalsRouteView,
 });
 
 const globalSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
-  component: GlobalSettingsRouteView,
+  component: LegacyGlobalSettingsRouteView,
 });
 
 const sessionDevtoolsRoute = createRoute({
@@ -1636,6 +2027,7 @@ const sessionSettingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   quickStartRoute,
+  chatsRoute,
   workspacesRoute,
   terminalsRoute,
   globalSettingsRoute,

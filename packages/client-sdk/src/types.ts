@@ -1,8 +1,9 @@
-import type { inferRouterOutputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
 import type { AppRouter, RuntimeEventEnvelope, RuntimeSnapshotPayload, SessionRuntimeModelDebug } from "@agenter/app-server";
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
+export type RouterInputs = inferRouterInputs<AppRouter>;
 
 export type SessionListOutput = RouterOutputs["session"]["list"];
 export type SessionEntry = SessionListOutput["sessions"][number];
@@ -12,6 +13,12 @@ export type WorkspaceSessionListOutput = RouterOutputs["workspace"]["listSession
 export type WorkspaceSessionEntry = WorkspaceSessionListOutput["items"][number];
 export type WorkspaceSessionCounts = WorkspaceSessionListOutput["counts"];
 export type WorkspaceSessionCursor = WorkspaceSessionListOutput["nextCursor"];
+export type WorkspaceAvatarCatalogOutput = RouterOutputs["workspace"]["avatarCatalog"];
+export type WorkspaceAvatarCatalogEntry = WorkspaceAvatarCatalogOutput["items"][number];
+export type WorkspaceAvatarForkOutput = RouterOutputs["workspace"]["forkAvatar"];
+export type WorkspaceWelcomeSnapshotOutput = RouterOutputs["workspace"]["welcomeSnapshot"];
+export type WorkspaceWelcomeRoomItem = WorkspaceWelcomeSnapshotOutput["rooms"][number];
+export type WorkspaceWelcomeTerminalItem = WorkspaceWelcomeSnapshotOutput["terminals"][number];
 export type WorkspacePathSearchOutput = RouterOutputs["workspace"]["searchPaths"];
 export type DraftResolutionOutput = RouterOutputs["draft"]["resolve"];
 export type GlobalSettingsFileOutput = RouterOutputs["settings"]["global"]["read"];
@@ -25,6 +32,15 @@ export type MessageChannelEntry = MessageChannelListOutput["items"][number];
 export type MessageChannelGrantsOutput = RouterOutputs["message"]["listChannelGrants"];
 export type MessageChannelGrantEntry = MessageChannelGrantsOutput["items"][number];
 export type MessageChannelGrantIssueOutput = RouterOutputs["message"]["issueChannelGrant"];
+export type GlobalRoomListOutput = RouterOutputs["message"]["globalList"];
+export type GlobalRoomEntry = GlobalRoomListOutput["items"][number];
+export type GlobalRoomSnapshotOutput = RouterOutputs["message"]["globalSnapshot"];
+export type GlobalRoomMessage = GlobalRoomSnapshotOutput["items"][number];
+export type GlobalRoomPageOutput = RouterOutputs["message"]["globalPage"];
+export type GlobalRoomGrantsOutput = RouterOutputs["message"]["globalListGrants"];
+export type GlobalRoomGrantEntry = GlobalRoomGrantsOutput["items"][number];
+export type GlobalRoomActorId = RouterInputs["message"]["globalIssueGrant"]["participantId"];
+export type GlobalRoomGrantIssueOutput = RouterOutputs["message"]["globalIssueGrant"];
 export type ProfileListOutput = RouterOutputs["profile"]["list"];
 export type ProfileProjectionOutput = RouterOutputs["profile"]["get"];
 export type AuthServiceInfoOutput = RouterOutputs["auth"]["service"];
@@ -68,7 +84,7 @@ export type GlobalTerminalEntry = GlobalTerminalListOutput["items"][number];
 export type GlobalTerminalActivityOutput = RouterOutputs["terminal"]["activityPage"];
 export type GlobalTerminalGrantListOutput = RouterOutputs["terminal"]["listGrants"];
 export type GlobalTerminalGrantEntry = GlobalTerminalGrantListOutput["items"][number];
-export type GlobalTerminalActorId = NonNullable<GlobalTerminalGrantEntry["participantId"]>;
+export type GlobalTerminalActorId = RouterInputs["terminal"]["issueGrant"]["participantId"];
 export type GlobalTerminalGrantIssueOutput = RouterOutputs["terminal"]["issueGrant"];
 export type GlobalTerminalApprovalRequestsOutput = RouterOutputs["terminal"]["listApprovalRequests"];
 export type GlobalTerminalApprovalRequest = GlobalTerminalApprovalRequestsOutput["items"][number];

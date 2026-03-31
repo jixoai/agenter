@@ -2,6 +2,7 @@ import {
   createAgenterClient,
   createRuntimeStore,
   type DraftResolutionOutput,
+  type GlobalRoomActorId,
   type GlobalTerminalActorId,
   type WorkspaceSessionCounts,
   type WorkspaceSessionEntry,
@@ -10,7 +11,13 @@ import {
 import { RouterProvider } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AppControllerContext, useRuntimeStoreSelector, type AppController } from "./app-context";
+import {
+  AppControllerContext,
+  useRuntimeStoreSelector,
+  type AppController,
+  type WorkspaceWelcomeDraft,
+  type WorkspaceWelcomeSelection,
+} from "./app-context";
 import { TooltipProvider } from "./components/ui/tooltip";
 import {
   applyQuickstartBootstrapConfigToSettings,
@@ -99,6 +106,52 @@ const parseSettingsLayerContent = (content: string): Record<string, unknown> => 
 };
 
 const toSettingsLayerContent = (value: Record<string, unknown>): string => `${JSON.stringify(value, null, 2)}\n`;
+const normalizeWelcomeAvatar = (avatar?: string): string => {
+  const normalized = avatar?.trim();
+  return normalized && normalized.length > 0 ? normalized : "default";
+};
+const resolveWorkspaceWelcomeDraftKey = (workspacePath: string, avatar?: string): string =>
+  `${workspacePath}::${normalizeWelcomeAvatar(avatar)}`;
+const resolveSettingsCatalogKey = (workspacePath: string, avatar?: string): string =>
+  `${workspacePath}::${avatar?.trim() ?? ""}`;
+const stringArrayEquals = (left: string[], right: string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+const recordEquals = (left: Record<string, string>, right: Record<string, string>): boolean => {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) {
+    return false;
+  }
+  return leftEntries.every(([key, value]) => right[key] === value);
+};
+const workspaceWelcomeDraftEquals = (
+  left: WorkspaceWelcomeDraft | null | undefined,
+  right: WorkspaceWelcomeDraft,
+): boolean => {
+  if (!left) {
+    return false;
+  }
+  return (
+    left.workspacePath === right.workspacePath &&
+    left.avatar === right.avatar &&
+    stringArrayEquals(left.selectedRoomIds, right.selectedRoomIds) &&
+    stringArrayEquals(left.selectedTerminalIds, right.selectedTerminalIds) &&
+    recordEquals(left.roomRoles, right.roomRoles) &&
+    recordEquals(left.terminalRoles, right.terminalRoles)
+  );
+};
+const workspaceWelcomeSelectionEquals = (
+  left: WorkspaceWelcomeSelection | null,
+  right: WorkspaceWelcomeSelection | null,
+): boolean => {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return left.workspacePath === right.workspacePath && left.avatar === right.avatar;
+};
 
 export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [router] = useState(() => createAppRouter());
@@ -112,6 +165,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [quickstartBootstrapLoading, setQuickstartBootstrapLoading] = useState(false);
   const [quickstartRecentSessions, setQuickstartRecentSessions] = useState<WorkspaceSessionEntry[]>([]);
   const [quickstartBusy, setQuickstartBusy] = useState(false);
+  const [workspaceWelcomeSelection, setWorkspaceWelcomeSelectionState] = useState<WorkspaceWelcomeSelection | null>(null);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
   const [selectedWorkspaceSessionId, setSelectedWorkspaceSessionId] = useState<string | null>(null);
   const [workspaceSessionsTab, setWorkspaceSessionsTab] = useState<WorkspaceSessionTab>("all");
@@ -121,6 +175,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [workspaceSessionCursor, setWorkspaceSessionCursor] = useState<number | null>(null);
   const [workspaceSessionsLoading, setWorkspaceSessionsLoading] = useState(false);
   const [workspaceSessionsLoadingMore, setWorkspaceSessionsLoadingMore] = useState(false);
+  const [workspaceWelcomeDrafts, setWorkspaceWelcomeDrafts] = useState<Record<string, WorkspaceWelcomeDraft>>({});
   const [settingsLayers, setSettingsLayers] = useState<SettingsLayerItem[]>([]);
   const [settingsEffective, setSettingsEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -134,7 +189,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const quickstartRecentSessionsSyncKeyRef = useRef<string | null>(null);
   const seenNotificationIdsRef = useRef<string[]>([]);
   const longListPagingByKeyRef = useRef<Record<string, LongListPagingState>>({});
-  const settingsCatalogWorkspaceRef = useRef<string | null>(null);
+  const settingsCatalogTargetRef = useRef<string | null>(null);
   const settingsCatalogLoadedRef = useRef(false);
 
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
@@ -368,11 +423,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       return null;
     }
     return runtimeSessions
-      .filter((session) => session.cwd === quickstartWorkspacePath)
+      .filter((session) => session.workspacePath === quickstartWorkspacePath)
       .map((session) =>
         [
           session.id,
-          session.cwd,
+          session.workspacePath,
           session.name,
           session.avatar,
           session.status,
@@ -678,10 +733,33 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [store],
   );
 
+  const sendGlobalRoomMessagePayload = useCallback(
+    async (input: {
+      chatId: string;
+      accessToken?: string;
+      payload: { text: string; assets: File[] };
+    }): Promise<{ ok: boolean; reason?: string }> => {
+      if (input.payload.assets.length > 0) {
+        throw new Error("Global room attachments are not supported yet.");
+      }
+      const result = await store.sendGlobalRoomMessage({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        text: input.payload.text,
+      });
+      if (!result.ok) {
+        throw new Error(result.reason ?? "global room message send failed");
+      }
+      setNotice("");
+      return result;
+    },
+    [store],
+  );
+
   const createWorkspaceSession = useCallback(
-    async (workspacePath: string): Promise<string | null> => {
+    async (workspacePath: string, avatar?: string): Promise<string | null> => {
       try {
-        const session = await store.createSession({ cwd: workspacePath, autoStart: true });
+        const session = await store.createSession({ cwd: workspacePath, avatar, autoStart: true });
         setSelectedWorkspacePath(workspacePath);
         setSelectedWorkspaceSessionId(session.id);
         setQuickstartWorkspacePath(workspacePath);
@@ -727,6 +805,47 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       setQuickstartBusy(false);
     }
   }, [createWorkspaceSession, quickstartWorkspacePath]);
+
+  const getWorkspaceWelcomeDraft = useCallback(
+    (workspacePath: string, avatar: string): WorkspaceWelcomeDraft | null => {
+      return workspaceWelcomeDrafts[resolveWorkspaceWelcomeDraftKey(workspacePath, avatar)] ?? null;
+    },
+    [workspaceWelcomeDrafts],
+  );
+
+  const saveWorkspaceWelcomeDraft = useCallback((draft: WorkspaceWelcomeDraft): void => {
+    setWorkspaceWelcomeDrafts((current) => {
+      const key = resolveWorkspaceWelcomeDraftKey(draft.workspacePath, draft.avatar);
+      const existing = current[key];
+      if (workspaceWelcomeDraftEquals(existing, draft)) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: draft,
+      };
+    });
+  }, []);
+
+  const clearWorkspaceWelcomeDraft = useCallback((workspacePath: string, avatar: string): void => {
+    const key = resolveWorkspaceWelcomeDraftKey(workspacePath, avatar);
+    setWorkspaceWelcomeDrafts((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const { [key]: _removed, ...rest } = current;
+      return rest;
+    });
+  }, []);
+
+  const setWorkspaceWelcomeSelection = useCallback((selection: WorkspaceWelcomeSelection | null): void => {
+    setWorkspaceWelcomeSelectionState((current) => {
+      if (workspaceWelcomeSelectionEquals(current, selection)) {
+        return current;
+      }
+      return selection;
+    });
+  }, []);
 
   const saveQuickstartBootstrapConfig = useCallback(
     async (config: QuickstartBootstrapConfig): Promise<void> => {
@@ -980,6 +1099,173 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }) => {
       try {
         return await store.archiveMessageChannel(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listGlobalRooms = useCallback(
+    async (input: { includeArchived?: boolean } = {}) => {
+      try {
+        return await store.listGlobalRooms(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const createGlobalRoom = useCallback(
+    async (input: {
+      chatId?: string;
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+      adminToken?: string;
+      focus?: boolean;
+    }) => {
+      try {
+        return await store.createGlobalRoom(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const focusGlobalRooms = useCallback(
+    async (input: {
+      op: "add" | "remove" | "replace" | "clear";
+      channels: Array<{ chatId: string; accessToken?: string }>;
+    }) => {
+      try {
+        return await store.focusGlobalRooms(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const snapshotGlobalRoom = useCallback(
+    async (input: { chatId: string; accessToken?: string; limit?: number }) => {
+      try {
+        return await store.snapshotGlobalRoom(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const pageGlobalRoomMessages = useCallback(
+    async (input: {
+      chatId: string;
+      accessToken?: string;
+      before?: { beforeTimeMs: number; beforeId: number } | null;
+      limit?: number;
+    }) => {
+      try {
+        return await store.pageGlobalRoomMessages(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const sendGlobalRoomMessage = useCallback(
+    async (input: {
+      chatId: string;
+      accessToken?: string;
+      payload: { text: string; assets: File[] };
+    }) => {
+      try {
+        return await sendGlobalRoomMessagePayload(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [sendGlobalRoomMessagePayload, setError],
+  );
+
+  const updateGlobalRoom = useCallback(
+    async (input: {
+      chatId: string;
+      accessToken?: string;
+      patch: {
+        title?: string;
+        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        metadata?: Record<string, unknown>;
+        adminGroupCandidateIds?: GlobalRoomActorId[];
+      };
+    }) => {
+      try {
+        return await store.updateGlobalRoom(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const listGlobalRoomGrants = useCallback(
+    async (input: { chatId: string; accessToken?: string }) => {
+      try {
+        return await store.listGlobalRoomGrants(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const issueGlobalRoomGrant = useCallback(
+    async (input: {
+      chatId: string;
+      accessToken?: string;
+      role: "admin" | "member" | "readonly";
+      label?: string;
+      participantId: GlobalRoomActorId;
+      accessTokenHint?: string;
+    }) => {
+      try {
+        return await store.issueGlobalRoomGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const revokeGlobalRoomGrant = useCallback(
+    async (input: { chatId: string; accessToken?: string; grantId: string }) => {
+      try {
+        return await store.revokeGlobalRoomGrant(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const archiveGlobalRoom = useCallback(
+    async (input: { chatId: string; accessToken?: string; archivedBy?: string }) => {
+      try {
+        return await store.archiveGlobalRoom(input);
       } catch (error) {
         setError(error);
         throw error;
@@ -1430,8 +1716,9 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   ]);
 
   const refreshSettingsLayers = useCallback(
-    async (workspacePath: string, force = true): Promise<void> => {
-      const sameWorkspace = settingsCatalogWorkspaceRef.current === workspacePath;
+    async (workspacePath: string, avatar?: string, force = true): Promise<void> => {
+      const targetKey = resolveSettingsCatalogKey(workspacePath, avatar);
+      const sameWorkspace = settingsCatalogTargetRef.current === targetKey;
       if (!force && sameWorkspace && settingsCatalogLoadedRef.current) {
         return;
       }
@@ -1440,6 +1727,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         const data = await store.listScopedSettings({
           scope: "workspace",
           workspacePath,
+          avatar,
         });
         setSettingsLayers(data.layers);
         setSettingsEffective(data.effective);
@@ -1450,11 +1738,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           setLayerDraft("");
           setLayerMtimeMs(0);
         }
-        settingsCatalogWorkspaceRef.current = workspacePath;
+        settingsCatalogTargetRef.current = targetKey;
         settingsCatalogLoadedRef.current = true;
         setSettingsStatus("layers refreshed");
       } catch (error) {
-        settingsCatalogWorkspaceRef.current = workspacePath;
+        settingsCatalogTargetRef.current = targetKey;
         settingsCatalogLoadedRef.current = false;
         setError(error);
       } finally {
@@ -1465,20 +1753,21 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const ensureSettingsLayers = useCallback(
-    async (workspacePath: string): Promise<void> => {
-      await refreshSettingsLayers(workspacePath, false);
+    async (workspacePath: string, avatar?: string): Promise<void> => {
+      await refreshSettingsLayers(workspacePath, avatar, false);
     },
     [refreshSettingsLayers],
   );
 
   const loadSelectedLayer = useCallback(
-    async (workspacePath: string, layerId: string): Promise<void> => {
+    async (workspacePath: string, layerId: string, avatar?: string): Promise<void> => {
       setSettingsLoading(true);
       try {
         const file = await store.readScopedSettingsLayer({
           scope: "workspace",
           workspacePath,
           layerId,
+          avatar,
         });
         setLayerDraft(file.content);
         setLayerMtimeMs(file.mtimeMs);
@@ -1493,7 +1782,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   );
 
   const saveSelectedLayer = useCallback(
-    async (workspacePath: string, layerId: string): Promise<void> => {
+    async (workspacePath: string, layerId: string, avatar?: string): Promise<void> => {
       setSettingsLoading(true);
       try {
         const result = await store.saveScopedSettingsLayer({
@@ -1502,6 +1791,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
           layerId,
           content: layerDraft,
           baseMtimeMs: layerMtimeMs,
+          avatar,
         });
         if (!result.ok) {
           if (result.reason === "conflict") {
@@ -1516,7 +1806,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
         setLayerMtimeMs(result.file.mtimeMs);
         setSettingsEffective(result.effective);
         setSettingsStatus(`saved: ${result.file.path}`);
-        await refreshSettingsLayers(workspacePath);
+        await refreshSettingsLayers(workspacePath, avatar);
       } catch (error) {
         setError(error);
       } finally {
@@ -1524,6 +1814,42 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       }
     },
     [layerDraft, layerMtimeMs, refreshSettingsLayers, setError, store],
+  );
+
+  const listWorkspaceAvatarCatalog = useCallback(async (workspacePath: string) => await store.listWorkspaceAvatarCatalog(workspacePath), [store]);
+
+  const forkWorkspaceAvatar = useCallback(
+    async (input: { workspacePath: string; avatar: string }) => await store.forkWorkspaceAvatar(input),
+    [store],
+  );
+
+  const inspectWorkspaceWelcome = useCallback(
+    async (input: { workspacePath: string; avatar?: string }) => await store.inspectWorkspaceWelcome(input),
+    [store],
+  );
+
+  const saveWorkspaceAvatarRoomSeat = useCallback(
+    async (input: {
+      workspacePath: string;
+      avatar: string;
+      chatId: string;
+      accessToken: string;
+      accessRole: "admin" | "member" | "readonly";
+      state?: "active" | "credential-invalid";
+    }) => await store.saveWorkspaceAvatarRoomSeat(input),
+    [store],
+  );
+
+  const saveWorkspaceAvatarTerminalSeat = useCallback(
+    async (input: {
+      workspacePath: string;
+      avatar: string;
+      terminalId: string;
+      accessToken: string;
+      accessRole: "admin" | "writer" | "requester" | "readonly";
+      state?: "active" | "credential-invalid";
+    }) => await store.saveWorkspaceAvatarTerminalSeat(input),
+    [store],
   );
 
   const setChatVisibility = useCallback(
@@ -1605,6 +1931,12 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       quickstartBootstrapLoading,
       quickstartRecentSessions,
       quickstartBusy,
+      workspaceWelcomeSelection,
+      setWorkspaceWelcomeSelection,
+      workspaceWelcomeDrafts,
+      getWorkspaceWelcomeDraft,
+      saveWorkspaceWelcomeDraft,
+      clearWorkspaceWelcomeDraft,
       selectedWorkspacePath,
       setSelectedWorkspacePath,
       selectedWorkspaceSessionId,
@@ -1646,6 +1978,17 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       issueMessageChannelGrant,
       revokeMessageChannelGrant,
       archiveMessageChannel,
+      listGlobalRooms,
+      createGlobalRoom,
+      focusGlobalRooms,
+      snapshotGlobalRoom,
+      pageGlobalRoomMessages,
+      sendGlobalRoomMessage,
+      updateGlobalRoom,
+      listGlobalRoomGrants,
+      issueGlobalRoomGrant,
+      revokeGlobalRoomGrant,
+      archiveGlobalRoom,
       listTerminals,
       createTerminal,
       focusTerminals,
@@ -1676,6 +2019,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       restoreWorkspaceSession,
       deleteWorkspaceSession,
       loadMoreWorkspaceSessions,
+      listWorkspaceAvatarCatalog,
+      forkWorkspaceAvatar,
+      inspectWorkspaceWelcome,
+      saveWorkspaceAvatarRoomSeat,
+      saveWorkspaceAvatarTerminalSeat,
       ensureSettingsLayers,
       refreshSettingsLayers,
       loadSelectedLayer,
@@ -1692,8 +2040,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       archiveWorkspaceSession,
       archiveMessageChannel,
       cleanMissingWorkspaces,
+      clearWorkspaceWelcomeDraft,
       consumeNotifications,
       createWorkspaceSession,
+      createGlobalRoom,
+      forkWorkspaceAvatar,
       deleteSession,
       deleteWorkspace,
       deleteWorkspaceSession,
@@ -1701,12 +2052,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       ensureMessageChannels,
       ensureSettingsLayers,
       focusMessageChannels,
+      focusGlobalRooms,
       getLongListPagingState,
+      getWorkspaceWelcomeDraft,
       hydrateSession,
+      inspectWorkspaceWelcome,
       issueMessageChannelGrant,
+      issueGlobalRoomGrant,
       createTerminal,
       layerDraft,
+      listGlobalRoomGrants,
       listMessageChannelGrants,
+      listGlobalRooms,
       loadMoreChatCycles,
       loadMoreChatMessages,
       listMessageChannels,
@@ -1717,6 +2074,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       loadMoreTrace,
       loadMoreWorkspaceSessions,
       loadSelectedLayer,
+      listWorkspaceAvatarCatalog,
       listDirectories,
       notice,
       quickstartBusy,
@@ -1736,23 +2094,33 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       createMessageChannel,
       deleteTerminal,
       deleteGlobalTerminal,
+      archiveGlobalRoom,
       focusTerminals,
       focusGlobalTerminals,
+      pageGlobalRoomMessages,
+      snapshotGlobalRoom,
       updateMessageChannel,
+      updateGlobalRoom,
       issueGlobalTerminalGrant,
       approveGlobalTerminalRequest,
       createGlobalTerminal,
       revokeMessageChannelGrant,
+      revokeGlobalRoomGrant,
       revokeGlobalTerminalGrant,
+      sendGlobalRoomMessage,
       sendMessageChannel,
       searchWorkspacePaths,
       selectedLayerId,
       selectedWorkspacePath,
       selectedWorkspaceSessionId,
+      setWorkspaceWelcomeSelection,
       abortSession,
       sendChat,
       setChatVisibility,
       setTerminalVisibility,
+      saveWorkspaceAvatarRoomSeat,
+      saveWorkspaceAvatarTerminalSeat,
+      saveWorkspaceWelcomeDraft,
       settingsEffective,
       settingsLayers,
       settingsLoading,
@@ -1775,6 +2143,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       workspaceSessionsLoading,
       workspaceSessionsLoadingMore,
       workspaceSessionsTab,
+      workspaceWelcomeSelection,
+      workspaceWelcomeDrafts,
     ],
   );
 

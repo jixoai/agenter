@@ -356,6 +356,76 @@ const createMockClient = (input: {
     accessToken: string;
     archivedBy?: string;
   }) => Promise<{ channel: unknown }>;
+  messageGlobalListQuery?: (input: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
+  messageGlobalCreateMutate?: (input: {
+    chatId?: string;
+    kind: "room";
+    title?: string;
+    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
+    focus?: boolean;
+  }) => Promise<{ channel: unknown }>;
+  messageGlobalFocusMutate?: (input: {
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken?: string }>;
+  }) => Promise<{ ok: boolean; message: string; focusedChatIds: string[] }>;
+  messageGlobalSnapshotQuery?: (input: {
+    chatId: string;
+    accessToken?: string;
+    limit?: number;
+  }) => Promise<{
+    channel: unknown;
+    items: unknown[];
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+    hasMoreBefore: boolean;
+    headVersion: string;
+  }>;
+  messageGlobalPageQuery?: (input: {
+    chatId: string;
+    accessToken?: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  messageGlobalSendMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }) => Promise<{ ok: boolean; reason?: string }>;
+  messageGlobalUpdateMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+      adminGroupCandidateIds?: string[];
+    };
+  }) => Promise<{ channel: unknown }>;
+  messageGlobalListGrantsQuery?: (input: {
+    chatId: string;
+    accessToken?: string;
+  }) => Promise<{ items: unknown[] }>;
+  messageGlobalIssueGrantMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    role: "admin" | "member" | "readonly";
+    participantId: string;
+    label?: string;
+    accessTokenHint?: string;
+  }) => Promise<{ grant: unknown }>;
+  messageGlobalRevokeGrantMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    grantId: string;
+  }) => Promise<{ ok: boolean }>;
+  messageGlobalDeleteMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    archivedBy?: string;
+  }) => Promise<{ channel: unknown }>;
   terminalListQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
   terminalCreateMutate?: (input: {
     sessionId: string;
@@ -639,6 +709,99 @@ const createMockClient = (input: {
         deleteChannel: {
           mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; archivedBy?: string }) =>
             input.messageDeleteChannelMutate ? await input.messageDeleteChannelMutate(payload) : { channel: null },
+        },
+        globalList: {
+          query: async (payload: { includeArchived?: boolean }) =>
+            input.messageGlobalListQuery ? await input.messageGlobalListQuery(payload) : { items: [] },
+        },
+        globalCreate: {
+          mutate: async (payload: {
+            chatId?: string;
+            kind: "room";
+            title?: string;
+            participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+            metadata?: Record<string, unknown>;
+            adminToken?: string;
+            focus?: boolean;
+          }) => (input.messageGlobalCreateMutate ? await input.messageGlobalCreateMutate(payload) : { channel: null }),
+        },
+        globalFocus: {
+          mutate: async (payload: {
+            op: "add" | "remove" | "replace" | "clear";
+            channels: Array<{ chatId: string; accessToken?: string }>;
+          }) =>
+            input.messageGlobalFocusMutate
+              ? await input.messageGlobalFocusMutate(payload)
+              : { ok: true, message: "ok", focusedChatIds: payload.channels.map((channel) => channel.chatId) },
+        },
+        globalSnapshot: {
+          query: async (payload: { chatId: string; accessToken?: string; limit?: number }) =>
+            input.messageGlobalSnapshotQuery
+              ? await input.messageGlobalSnapshotQuery(payload)
+              : {
+                  channel: null,
+                  items: [],
+                  nextBefore: null,
+                  hasMoreBefore: false,
+                  headVersion: "0",
+                },
+        },
+        globalPage: {
+          query: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.messageGlobalPageQuery
+              ? await input.messageGlobalPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
+        globalSend: {
+          mutate: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            text: string;
+            assetIds?: string[];
+            clientMessageId?: string;
+          }) => (input.messageGlobalSendMutate ? await input.messageGlobalSendMutate(payload) : { ok: true }),
+        },
+        globalUpdate: {
+          mutate: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            patch: {
+              title?: string;
+              participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+              metadata?: Record<string, unknown>;
+              adminGroupCandidateIds?: string[];
+            };
+          }) => (input.messageGlobalUpdateMutate ? await input.messageGlobalUpdateMutate(payload) : { channel: null }),
+        },
+        globalListGrants: {
+          query: async (payload: { chatId: string; accessToken?: string }) =>
+            input.messageGlobalListGrantsQuery ? await input.messageGlobalListGrantsQuery(payload) : { items: [] },
+        },
+        globalIssueGrant: {
+          mutate: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            role: "admin" | "member" | "readonly";
+            participantId: string;
+            label?: string;
+            accessTokenHint?: string;
+          }) =>
+            input.messageGlobalIssueGrantMutate
+              ? await input.messageGlobalIssueGrantMutate(payload)
+              : { grant: null },
+        },
+        globalRevokeGrant: {
+          mutate: async (payload: { chatId: string; accessToken?: string; grantId: string }) =>
+            input.messageGlobalRevokeGrantMutate ? await input.messageGlobalRevokeGrantMutate(payload) : { ok: true },
+        },
+        globalDelete: {
+          mutate: async (payload: { chatId: string; accessToken?: string; archivedBy?: string }) =>
+            input.messageGlobalDeleteMutate ? await input.messageGlobalDeleteMutate(payload) : { channel: null },
         },
       },
       terminal: {
@@ -3084,5 +3247,311 @@ describe("Feature: runtime store synchronization", () => {
     expect(grants[0]?.role).toBe("readonly");
     expect(issued.accessToken).toBe("msgtok_member");
     expect(revoked).toEqual({ ok: true });
+  });
+
+  test("Scenario: Given global room authority APIs When runtime store proxies room-first calls Then room refs stay independent from session routes", async () => {
+    const requests: {
+      list?: { includeArchived?: boolean };
+      create?: {
+        chatId?: string;
+        kind: "room";
+        title?: string;
+        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        metadata?: Record<string, unknown>;
+        adminToken?: string;
+        focus?: boolean;
+      };
+      focus?: { op: string; channels: Array<{ chatId: string; accessToken?: string }> };
+      snapshot?: { chatId: string; accessToken?: string; limit?: number };
+      page?: {
+        chatId: string;
+        accessToken?: string;
+        before?: { beforeTimeMs: number; beforeId: number };
+        limit?: number;
+      };
+      send?: {
+        chatId: string;
+        accessToken?: string;
+        text: string;
+        assetIds?: string[];
+        clientMessageId?: string;
+      };
+      update?: {
+        chatId: string;
+        accessToken?: string;
+        patch: {
+          title?: string;
+          participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+          metadata?: Record<string, unknown>;
+          adminGroupCandidateIds?: string[];
+        };
+      };
+      listGrants?: { chatId: string; accessToken?: string };
+      issue?: {
+        chatId: string;
+        accessToken?: string;
+        role: "admin" | "member" | "readonly";
+        participantId: string;
+        label?: string;
+        accessTokenHint?: string;
+      };
+      revoke?: { chatId: string; accessToken?: string; grantId: string };
+      archive?: { chatId: string; accessToken?: string; archivedBy?: string };
+    } = {};
+    const room = {
+      chatId: "room-ops",
+      kind: "room" as const,
+      title: "Ops room",
+      owner: "ops-bot",
+      participants: [
+        { id: "avatar:ops-bot", label: "ops-bot", role: "avatar" as const },
+        { id: "user:kzf", label: "kzf", role: "user" as const },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_ops_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-ops?token=msgtok_ops_admin",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalListQuery: async (input) => {
+          requests.list = input;
+          return { items: [room] };
+        },
+        messageGlobalCreateMutate: async (input) => {
+          requests.create = input;
+          return { channel: room };
+        },
+        messageGlobalFocusMutate: async (input) => {
+          requests.focus = input;
+          return { ok: true, message: "focused", focusedChatIds: input.channels.map((channel) => channel.chatId) };
+        },
+        messageGlobalSnapshotQuery: async (input) => {
+          requests.snapshot = input;
+          return {
+            channel: room,
+            items: [
+              {
+                rowId: 11,
+                messageId: "11",
+                chatId: room.chatId,
+                from: "ops-bot",
+                kind: "text" as const,
+                content: "snapshot",
+                createdAt: 2,
+                updatedAt: 2,
+                attentionState: "loaded" as const,
+                editable: false,
+              },
+            ],
+            nextBefore: { beforeTimeMs: 2, beforeId: 11 },
+            hasMoreBefore: true,
+            headVersion: "7",
+          };
+        },
+        messageGlobalPageQuery: async (input) => {
+          requests.page = input;
+          return {
+            items: [
+              {
+                rowId: 10,
+                messageId: "10",
+                chatId: room.chatId,
+                from: "ops-bot",
+                kind: "text" as const,
+                content: "older",
+                createdAt: 1,
+                updatedAt: 1,
+                attentionState: "loaded" as const,
+                editable: false,
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+        messageGlobalSendMutate: async (input) => {
+          requests.send = input;
+          return { ok: true };
+        },
+        messageGlobalUpdateMutate: async (input) => {
+          requests.update = input;
+          return {
+            channel: {
+              ...room,
+              title: input.patch.title ?? room.title,
+            },
+          };
+        },
+        messageGlobalListGrantsQuery: async (input) => {
+          requests.listGrants = input;
+          return {
+            items: [
+              {
+                grantId: "grant-ops",
+                chatId: room.chatId,
+                role: "member" as const,
+                label: "Observer",
+                participantId: "auth:observer",
+                createdAt: 3,
+              },
+            ],
+          };
+        },
+        messageGlobalIssueGrantMutate: async (input) => {
+          requests.issue = input;
+          return {
+            grant: {
+              grantId: "grant-member",
+              chatId: input.chatId,
+              role: input.role,
+              label: input.label,
+              participantId: input.participantId,
+              createdAt: 4,
+              accessRole: input.role,
+              accessToken: "msgtok_member",
+              transportUrl: "ws://127.0.0.1:7777/room/room-ops?token=msgtok_member",
+            },
+          };
+        },
+        messageGlobalRevokeGrantMutate: async (input) => {
+          requests.revoke = input;
+          return { ok: true };
+        },
+        messageGlobalDeleteMutate: async (input) => {
+          requests.archive = input;
+          return { channel: { ...room, archivedAt: 9, archivedBy: input.archivedBy ?? "ops-bot" } };
+        },
+      }),
+    );
+
+    expect(await store.listGlobalRooms()).toEqual([room]);
+    expect(await store.createGlobalRoom({ title: "Ops room" })).toEqual(room);
+    expect(
+      await store.focusGlobalRooms({
+        op: "replace",
+        channels: [{ chatId: room.chatId, accessToken: room.accessToken }],
+      }),
+    ).toEqual({
+      ok: true,
+      message: "focused",
+      focusedChatIds: [room.chatId],
+    });
+    expect(await store.snapshotGlobalRoom({ chatId: room.chatId, accessToken: room.accessToken, limit: 20 })).toEqual({
+      channel: room,
+      items: [
+        {
+          rowId: 11,
+          messageId: "11",
+          chatId: room.chatId,
+          from: "ops-bot",
+          kind: "text",
+          content: "snapshot",
+          createdAt: 2,
+          updatedAt: 2,
+          attentionState: "loaded",
+          editable: false,
+        },
+      ],
+      nextBefore: { beforeTimeMs: 2, beforeId: 11 },
+      hasMoreBefore: true,
+      headVersion: "7",
+    });
+    expect(
+      await store.pageGlobalRoomMessages({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        before: { beforeTimeMs: 2, beforeId: 11 },
+        limit: 20,
+      }),
+    ).toEqual({
+      items: [
+        {
+          rowId: 10,
+          messageId: "10",
+          chatId: room.chatId,
+          from: "ops-bot",
+          kind: "text",
+          content: "older",
+          createdAt: 1,
+          updatedAt: 1,
+          attentionState: "loaded",
+          editable: false,
+        },
+      ],
+      hasMore: false,
+      nextBefore: null,
+    });
+    expect(
+      await store.sendGlobalRoomMessage({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        text: "hello ops",
+        assetIds: ["asset-1"],
+      }),
+    ).toEqual({ ok: true });
+    const updated = await store.updateGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      patch: { title: "Ops renamed", adminGroupCandidateIds: ["auth:admin-a"] },
+    });
+    const grants = await store.listGlobalRoomGrants({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    const issued = await store.issueGlobalRoomGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "auth:observer",
+      label: "Observer",
+    });
+    const revoked = await store.revokeGlobalRoomGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      grantId: "grant-member",
+    });
+    const archived = await store.archiveGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      archivedBy: "ops-bot",
+    });
+
+    expect(requests.list).toEqual({});
+    expect(requests.create?.title).toBe("Ops room");
+    expect(requests.focus).toEqual({
+      op: "replace",
+      channels: [{ chatId: room.chatId, accessToken: room.accessToken }],
+    });
+    expect(requests.snapshot).toEqual({ chatId: room.chatId, accessToken: room.accessToken, limit: 20 });
+    expect(requests.page).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      before: { beforeTimeMs: 2, beforeId: 11 },
+      limit: 20,
+    });
+    expect(requests.send?.text).toBe("hello ops");
+    expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(requests.update?.patch.adminGroupCandidateIds).toEqual(["auth:admin-a"]);
+    expect(requests.listGrants?.accessToken).toBe(room.accessToken);
+    expect(requests.issue?.participantId).toBe("auth:observer");
+    expect(requests.revoke).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      grantId: "grant-member",
+    });
+    expect(requests.archive).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      archivedBy: "ops-bot",
+    });
+    expect(updated.title).toBe("Ops renamed");
+    expect(grants[0]?.participantId).toBe("auth:observer");
+    expect(issued.accessToken).toBe("msgtok_member");
+    expect(revoked).toEqual({ ok: true });
+    expect(archived.archivedBy).toBe("ops-bot");
   });
 });

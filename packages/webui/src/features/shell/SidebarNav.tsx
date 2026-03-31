@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, Settings2, Sparkles, TerminalSquare } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, MessagesSquare, TerminalSquare } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
@@ -10,7 +10,7 @@ import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { sessionStatusMeta } from "../../shared/status-meta";
 
-type SidebarPrimaryKey = "quickstart" | "workspaces" | "terminals" | "settings";
+type SidebarPrimaryKey = "chats" | "workspaces" | "terminals";
 
 interface NavAvatar {
   label: string;
@@ -317,7 +317,7 @@ const SidebarNavBrand = ({ collapsed, onToggleCollapsed }: { collapsed: boolean;
     return (
       <div className="flex flex-col items-center gap-3 px-1">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-700 text-white">
-          <Sparkles className="h-4 w-4" />
+          <MessagesSquare className="h-4 w-4" />
         </span>
         {toggleButton}
       </div>
@@ -328,7 +328,7 @@ const SidebarNavBrand = ({ collapsed, onToggleCollapsed }: { collapsed: boolean;
     <div className="flex items-start justify-between gap-2 px-1">
       <div className="inline-flex items-center gap-2">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-700 text-white">
-          <Sparkles className="h-4 w-4" />
+          <MessagesSquare className="h-4 w-4" />
         </span>
         <div>
           <p className="font-nav text-sm font-semibold tracking-tight text-slate-900">agenter</p>
@@ -373,9 +373,9 @@ export const SidebarNavContent = ({
       </section>
 
       <section className={cn("grid grid-rows-[auto_minmax(0,1fr)] gap-2", iconRail && "w-full")}>
-        <SidebarSection label="Running Sessions" collapsed={iconRail} />
+        <SidebarSection label="Running Avatars" collapsed={iconRail} />
         <ScrollViewport
-          data-testid="sidebar-running-sessions-viewport"
+          data-testid="sidebar-running-avatars-viewport"
           className={cn("h-full pr-1", iconRail ? "" : "space-y-1")}
         >
           {runningSessions.length === 0 ? (
@@ -411,22 +411,20 @@ export const SidebarNav = ({ className, compact = false, collapsed = false, ...p
 );
 
 export const defaultPrimaryNavItems = (input: {
-  quickStartActive: boolean;
+  chatsActive: boolean;
   workspacesActive: boolean;
   terminalsActive: boolean;
-  settingsActive: boolean;
   unreadWorkspaces?: number;
-  onSelectQuickStart: () => void;
+  onSelectChats: () => void;
   onSelectWorkspaces: () => void;
   onSelectTerminals: () => void;
-  onSelectSettings: () => void;
 }): PrimaryNavItem[] => [
   {
-    key: "quickstart",
-    label: "Quick Start",
-    icon: Sparkles,
-    active: input.quickStartActive,
-    onSelect: input.onSelectQuickStart,
+    key: "chats",
+    label: "Chats",
+    icon: MessagesSquare,
+    active: input.chatsActive,
+    onSelect: input.onSelectChats,
   },
   {
     key: "workspaces",
@@ -442,12 +440,5 @@ export const defaultPrimaryNavItems = (input: {
     icon: TerminalSquare,
     active: input.terminalsActive,
     onSelect: input.onSelectTerminals,
-  },
-  {
-    key: "settings",
-    label: "Global Settings",
-    icon: Settings2,
-    active: input.settingsActive,
-    onSelect: input.onSelectSettings,
   },
 ];

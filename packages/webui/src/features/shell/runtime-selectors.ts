@@ -3,7 +3,7 @@ import type { RuntimeClientState, RuntimeSchedulerContainmentState, RuntimeSnaps
 export interface SessionChromeState {
   id: string;
   name: string;
-  cwd: string;
+  workspacePath: string;
   status: SessionEntry["status"];
   lastError?: string;
   avatar: string;
@@ -30,6 +30,7 @@ export interface ChatRuntimeState extends HeaderRuntimeState {
 export interface RunningSessionState {
   sessionId: string;
   name: string;
+  avatar: string;
   workspacePath: string;
   status: SessionEntry["status"];
   unreadCount: number;
@@ -48,7 +49,7 @@ export const selectSessionChromeState =
     return {
       id: session.id,
       name: session.name,
-      cwd: session.cwd,
+      workspacePath: session.workspacePath,
       status: session.status,
       lastError: session.lastError,
       avatar: session.avatar,
@@ -68,7 +69,7 @@ export const equalSessionChromeState = (
   return (
     left.id === right.id &&
     left.name === right.name &&
-    left.cwd === right.cwd &&
+    left.workspacePath === right.workspacePath &&
     left.status === right.status &&
     left.lastError === right.lastError &&
     left.avatar === right.avatar
@@ -221,7 +222,8 @@ export const selectRunningSessionsState = (state: RuntimeClientState): RunningSe
     .map((session) => ({
       sessionId: session.id,
       name: session.name,
-      workspacePath: session.cwd,
+      avatar: session.avatar,
+      workspacePath: session.workspacePath,
       status: session.status,
       unreadCount: state.unreadBySession[session.id] ?? 0,
     }));
@@ -242,6 +244,7 @@ export const equalRunningSessionsState = (
     return (
       item?.sessionId === other?.sessionId &&
       item?.name === other?.name &&
+      item?.avatar === other?.avatar &&
       item?.workspacePath === other?.workspacePath &&
       item?.status === other?.status &&
       item?.unreadCount === other?.unreadCount

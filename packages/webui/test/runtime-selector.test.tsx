@@ -111,6 +111,7 @@ describe("Feature: runtime selector isolation", () => {
             id: "session-1",
             name: "Shell",
             cwd: "/repo/demo",
+            workspacePath: "/repo/demo",
             avatar: "jon",
             createdAt: "2026-03-20T01:00:00.000Z",
             updatedAt: "2026-03-20T01:00:00.000Z",

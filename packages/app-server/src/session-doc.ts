@@ -8,6 +8,7 @@ export interface PersistedSession {
   id: string;
   name: string;
   cwd: string;
+  workspacePath?: string;
   avatar: string;
   storeTarget: "global" | "workspace";
   status: PersistedSessionStatus;

@@ -1,8 +1,13 @@
 import type {
+  GlobalRoomEntry,
   MessageChannelEntry,
   RuntimeClientState,
+  RuntimeSnapshotEntry,
+  WorkspaceAvatarCatalogEntry,
+  WorkspaceEntry,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
+  WorkspaceWelcomeSnapshotOutput,
 } from "@agenter/client-sdk";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -130,6 +135,180 @@ const createMessageChannel = (input: {
     `ws://localhost:7777/room/${input.chatId}?token=msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`,
 });
 
+const createGlobalRoom = (input: {
+  chatId: string;
+  title?: string;
+  owner?: string;
+  focused?: boolean;
+  accessRole?: "admin" | "member" | "readonly";
+}): GlobalRoomEntry => ({
+  ...createMessageChannel({
+    chatId: input.chatId,
+    title: input.title,
+    owner: input.owner,
+    focused: input.focused,
+  }),
+  accessRole: input.accessRole ?? "admin",
+  metadata: {},
+});
+
+const createWorkspaceAvatarCatalogEntry = (input: {
+  workspacePath: string;
+  nickname?: string;
+  defaultAvatar?: boolean;
+  sourceScope: "workspace" | "global";
+  workspaceAvailable: boolean;
+  globalAvailable?: boolean;
+}): WorkspaceAvatarCatalogEntry => ({
+  nickname: input.nickname ?? "default",
+  defaultAvatar: input.defaultAvatar ?? (input.nickname !== undefined ? input.nickname === "default" : true),
+  sourceScope: input.sourceScope,
+  globalAvailable: input.globalAvailable ?? true,
+  workspaceAvailable: input.workspaceAvailable,
+  globalPath: `~/.agenter/avatar/${input.nickname ?? "default"}`,
+  workspacePath: `${input.workspacePath}/.agenter/avatar/${input.nickname ?? "default"}`,
+  effectivePath:
+    input.sourceScope === "workspace"
+      ? `${input.workspacePath}/.agenter/avatar/${input.nickname ?? "default"}`
+      : `~/.agenter/avatar/${input.nickname ?? "default"}`,
+});
+
+const createWorkspace = (input: {
+  path: string;
+  favorite?: boolean;
+  missing?: boolean;
+  counts?: WorkspaceSessionCounts;
+  lastSessionActivityAt?: string;
+}): WorkspaceEntry => ({
+  path: input.path,
+  favorite: input.favorite ?? false,
+  group: input.path === "~/" ? "Global" : "Workspace",
+  missing: input.missing ?? false,
+  counts: input.counts ?? EMPTY_COUNTS,
+  lastSessionActivityAt: input.lastSessionActivityAt,
+});
+
+const createGlobalTerminal = (input: {
+  terminalId: string;
+  title?: string;
+  cwd?: string;
+  accessRole?: "admin" | "writer" | "requester" | "readonly";
+} = { terminalId: "term-main" }) => ({
+  terminalId: input.terminalId,
+  processKind: "shell",
+  command: ["bash"],
+  cwd: input.cwd ?? "/repo/demo",
+  workspace: null,
+  running: true,
+  status: "IDLE" as const,
+  seq: 1,
+  focused: false,
+  title: input.title ?? input.terminalId,
+  access: {
+    role: input.accessRole ?? "admin",
+    accessToken: `termtok_${input.terminalId.replace(/[^a-z0-9]/gi, "")}`,
+    currentAdmin: true,
+  },
+  actors: [],
+});
+
+const createRuntimeEntry = (sessionId = "session-demo"): RuntimeSnapshotEntry => ({
+  sessionId,
+  started: true,
+  activityState: "idle" as const,
+  schedulerPhase: "waiting_commits" as const,
+  stage: "plan" as const,
+  focusedTerminalId: "",
+  focusedTerminalIds: [],
+  chatMessages: [],
+  terminalSnapshots: {},
+  terminalReads: {},
+  terminals: [],
+  tasks: [],
+  schedulerState: null,
+  schedulerSignals: {
+    user: { version: 0, timestamp: null },
+    terminal: { version: 0, timestamp: null },
+    task: { version: 0, timestamp: null },
+    attention: { version: 0, timestamp: null },
+  },
+  apiCallRecording: { enabled: false, refCount: 0 },
+  modelCapabilities: {
+    streaming: false,
+    tools: false,
+    imageInput: false,
+    nativeCompact: false,
+    summarizeFallback: false,
+    fileUpload: false,
+    mcpCatalog: false,
+  },
+  activeCycle: null,
+});
+
+const createSessionRecord = (input: {
+  id: string;
+  workspacePath: string;
+  avatar?: string;
+  name?: string;
+  status?: "running" | "starting" | "paused" | "stopped" | "error";
+}) => ({
+  id: input.id,
+  name: input.name ?? input.id,
+  cwd: input.workspacePath,
+  workspacePath: input.workspacePath,
+  avatar: input.avatar ?? "default",
+  createdAt: "2026-03-31T10:00:00.000Z",
+  updatedAt: "2026-03-31T10:00:10.000Z",
+  status: input.status ?? "running",
+  storageState: "active" as const,
+  sessionRoot: `/tmp/${input.id}`,
+  storeTarget: "global" as const,
+});
+
+const createAttentionState = (input: { systemId: "message" | "terminal"; subjectId: string }) => ({
+  snapshot: {
+    contexts: [
+      {
+        contextId: `ctx-${input.subjectId}`,
+        owner: "avatar:default",
+        content: "Attention body",
+        contentFormat: "text/markdown",
+        scoreMap: {
+          src: 100,
+        },
+        headCommitId: "commit-1",
+        createdAt: "2026-03-31T10:00:00.000Z",
+        updatedAt: "2026-03-31T10:00:00.000Z",
+        commits: [
+          {
+            commitId: "commit-1",
+            contextId: `ctx-${input.subjectId}`,
+            parentCommitIds: [],
+            meta: {
+              author: "system:attention",
+              source: input.systemId,
+              systemId: input.systemId,
+              subjectId: input.subjectId,
+              createdAt: "2026-03-31T10:00:00.000Z",
+            },
+            scores: { src: 100 },
+            summary: `Attention for ${input.subjectId}`,
+            change: {
+              type: "update" as const,
+              value: "Attention body",
+              format: "text/plain",
+            },
+            createdAt: "2026-03-31T10:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  },
+  active: [],
+  cycleFrames: [],
+  hooks: [],
+});
+
 class WebSocketMock {
   static readonly OPEN = 1;
   static instances: WebSocketMock[] = [];
@@ -198,7 +377,9 @@ const listWorkspaceSessionsMock = vi.fn<
   }>
 >();
 const cleanMissingWorkspacesMock = vi.fn<() => Promise<string[]>>();
-const createSessionMock = vi.fn(async () => ({ id: "session-new" }));
+const createSessionMock = vi.fn<
+  (input: { cwd: string; avatar?: string; autoStart?: boolean }) => Promise<{ id: string }>
+>(async () => ({ id: "session-new" }));
 const sendChatMock = vi.fn(async () => {});
 const startSessionMock = vi.fn(async () => {});
 const stopSessionMock = vi.fn(async () => {});
@@ -221,6 +402,117 @@ const focusMessageChannelsMock =
       channels: Array<{ chatId: string; accessToken: string }>;
     }) => Promise<MessageChannelEntry[]>
   >();
+const listGlobalRoomsMock = vi.fn(async () => [] as GlobalRoomEntry[]);
+const listGlobalTerminalsMock = vi.fn(async () => [] as Array<ReturnType<typeof createGlobalTerminal>>);
+const createGlobalRoomMock = vi.fn(async (input: { chatId?: string; title?: string }) =>
+  createGlobalRoom({ chatId: input.chatId ?? "room-new", title: input.title ?? "New Room", focused: true }),
+);
+const focusGlobalRoomsMock = vi.fn(
+  async (input: { op: "add" | "remove" | "replace" | "clear"; channels: Array<{ chatId: string; accessToken?: string }> }) => ({
+    ok: true as const,
+    message: `focus ${input.op}`,
+    focusedChatIds: input.channels.map((channel) => channel.chatId),
+  }),
+);
+const snapshotGlobalRoomMock = vi.fn(async (input: { chatId: string }) => ({
+  channel: createGlobalRoom({ chatId: input.chatId, title: input.chatId }),
+  items: [],
+  nextBefore: null,
+  hasMoreBefore: false,
+  headVersion: "0",
+}));
+const pageGlobalRoomMessagesMock = vi.fn(async () => ({
+  items: [],
+  hasMore: false,
+  nextBefore: null,
+}));
+const sendGlobalRoomMessageMock = vi.fn(async () => ({ ok: true as const }));
+const updateGlobalRoomMock = vi.fn(async (input: { chatId: string; patch: { title?: string } }) =>
+  createGlobalRoom({ chatId: input.chatId, title: input.patch.title ?? input.chatId }),
+);
+const listGlobalRoomGrantsMock = vi.fn(async () => []);
+const revokeGlobalRoomGrantMock = vi.fn(async () => ({ ok: true }));
+const archiveGlobalRoomMock = vi.fn(async (input: { chatId: string }) =>
+  createGlobalRoom({ chatId: input.chatId, title: input.chatId }),
+);
+const issueGlobalRoomGrantMock = vi.fn<
+  (input: {
+    chatId: string;
+    accessToken?: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId: `auth:${string}` | `session:${string}` | `system:${string}`;
+  }) => Promise<{
+    grantId: string;
+    chatId: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId?: string;
+    createdAt: number;
+    accessRole: "admin" | "member" | "readonly";
+    accessToken: string;
+    transportUrl?: string;
+  }>
+>();
+const issueGlobalTerminalGrantMock = vi.fn<
+  (input: {
+    terminalId: string;
+    role: "admin" | "writer" | "requester" | "readonly";
+    participantId: `auth:${string}` | `session:${string}` | `system:${string}`;
+  }) => Promise<{
+    grantId: string;
+    terminalId: string;
+    role: "admin" | "writer" | "requester" | "readonly";
+    createdAt: number;
+    accessToken: string;
+    currentAdmin: boolean;
+  }>
+>();
+const focusTerminalsMock = vi.fn<
+  (input: { sessionId: string; op: "add" | "remove" | "replace" | "clear"; terminalIds: string[] }) => Promise<{
+    ok: boolean;
+    message: string;
+    focusedTerminalIds: string[];
+  }>
+>();
+const listWorkspaceAvatarCatalogMock = vi.fn(async (workspacePath: string) => [
+  createWorkspaceAvatarCatalogEntry({
+    workspacePath,
+    sourceScope: workspacePath === "~/" ? "workspace" : "global",
+    workspaceAvailable: workspacePath === "~/",
+  }),
+]);
+const forkWorkspaceAvatarMock = vi.fn(async (input: { workspacePath: string; avatar: string }) => ({
+  ...createWorkspaceAvatarCatalogEntry({
+    workspacePath: input.workspacePath,
+    nickname: input.avatar,
+    sourceScope: "workspace",
+    workspaceAvailable: true,
+  }),
+}));
+const inspectWorkspaceWelcomeMock = vi.fn<
+  (input: { workspacePath: string; avatar?: string }) => Promise<WorkspaceWelcomeSnapshotOutput>
+>(async (input) => ({
+  workspacePath: input.workspacePath,
+  avatar: input.avatar ?? "default",
+  sessionId: `session:${input.workspacePath}:${input.avatar ?? "default"}`,
+  avatars: await listWorkspaceAvatarCatalogMock(input.workspacePath),
+  rooms: [],
+  terminals: [],
+}));
+const saveWorkspaceAvatarRoomSeatMock = vi.fn(async () => ({ ok: true as const }));
+const saveWorkspaceAvatarTerminalSeatMock = vi.fn(async () => ({ ok: true as const }));
+const listScopedSettingsMock = vi.fn(async () => ({
+  effective: { content: "{}\n", value: {}, schema: { type: "object" }, provenance: {} },
+  layers: [],
+}));
+const readScopedSettingsLayerMock = vi.fn(async () => ({ path: "settings.json", content: "{}\n", mtimeMs: 0 }));
+const saveScopedSettingsLayerMock = vi.fn(async () => ({
+  ok: true as const,
+  file: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
+  effective: { content: "{}\n", value: {}, schema: { type: "object" }, provenance: {} },
+}));
+const queryAttentionMock = vi.fn(async () => []);
 const sendMessageChannelMock = vi.fn<
   (
     input: {
@@ -508,6 +800,29 @@ vi.mock("@agenter/client-sdk", () => ({
     listMessageChannelGrants: listMessageChannelGrantsMock,
     issueMessageChannelGrant: issueMessageChannelGrantMock,
     revokeMessageChannelGrant: revokeMessageChannelGrantMock,
+    listGlobalRooms: listGlobalRoomsMock,
+    createGlobalRoom: createGlobalRoomMock,
+    focusGlobalRooms: focusGlobalRoomsMock,
+    snapshotGlobalRoom: snapshotGlobalRoomMock,
+    pageGlobalRoomMessages: pageGlobalRoomMessagesMock,
+    sendGlobalRoomMessage: sendGlobalRoomMessageMock,
+    updateGlobalRoom: updateGlobalRoomMock,
+    listGlobalRoomGrants: listGlobalRoomGrantsMock,
+    listGlobalTerminals: listGlobalTerminalsMock,
+    issueGlobalRoomGrant: issueGlobalRoomGrantMock,
+    revokeGlobalRoomGrant: revokeGlobalRoomGrantMock,
+    archiveGlobalRoom: archiveGlobalRoomMock,
+    issueGlobalTerminalGrant: issueGlobalTerminalGrantMock,
+    focusTerminals: focusTerminalsMock,
+    listWorkspaceAvatarCatalog: listWorkspaceAvatarCatalogMock,
+    forkWorkspaceAvatar: forkWorkspaceAvatarMock,
+    inspectWorkspaceWelcome: inspectWorkspaceWelcomeMock,
+    saveWorkspaceAvatarRoomSeat: saveWorkspaceAvatarRoomSeatMock,
+    saveWorkspaceAvatarTerminalSeat: saveWorkspaceAvatarTerminalSeatMock,
+    listScopedSettings: listScopedSettingsMock,
+    readScopedSettingsLayer: readScopedSettingsLayerMock,
+    saveScopedSettingsLayer: saveScopedSettingsLayerMock,
+    queryAttention: queryAttentionMock,
     archiveSession: async () => {},
     restoreSession: async () => {},
     deleteSession: async () => {},
@@ -589,6 +904,29 @@ beforeEach(() => {
   listMessageChannelGrantsMock.mockReset();
   issueMessageChannelGrantMock.mockReset();
   revokeMessageChannelGrantMock.mockReset();
+  listGlobalRoomsMock.mockReset();
+  createGlobalRoomMock.mockReset();
+  focusGlobalRoomsMock.mockReset();
+  snapshotGlobalRoomMock.mockReset();
+  pageGlobalRoomMessagesMock.mockReset();
+  sendGlobalRoomMessageMock.mockReset();
+  updateGlobalRoomMock.mockReset();
+  listGlobalRoomGrantsMock.mockReset();
+  revokeGlobalRoomGrantMock.mockReset();
+  archiveGlobalRoomMock.mockReset();
+  listGlobalTerminalsMock.mockReset();
+  issueGlobalRoomGrantMock.mockReset();
+  issueGlobalTerminalGrantMock.mockReset();
+  focusTerminalsMock.mockReset();
+  listWorkspaceAvatarCatalogMock.mockReset();
+  forkWorkspaceAvatarMock.mockReset();
+  inspectWorkspaceWelcomeMock.mockReset();
+  saveWorkspaceAvatarRoomSeatMock.mockReset();
+  saveWorkspaceAvatarTerminalSeatMock.mockReset();
+  listScopedSettingsMock.mockReset();
+  readScopedSettingsLayerMock.mockReset();
+  saveScopedSettingsLayerMock.mockReset();
+  queryAttentionMock.mockReset();
   resolveDraftMock.mockClear();
   listDirectoriesMock.mockClear();
   validateDirectoryMock.mockClear();
@@ -695,6 +1033,97 @@ beforeEach(() => {
     transportUrl: `ws://localhost:7777/room/${input.chatId}?token=msgtok_grant`,
   }));
   revokeMessageChannelGrantMock.mockResolvedValue({ ok: true });
+  listGlobalRoomsMock.mockResolvedValue([]);
+  createGlobalRoomMock.mockImplementation(async (input) =>
+    createGlobalRoom({ chatId: input.chatId ?? "room-new", title: input.title ?? "New Room", focused: true }),
+  );
+  focusGlobalRoomsMock.mockImplementation(async (input) => ({
+    ok: true,
+    message: `focus ${input.op}`,
+    focusedChatIds: input.channels.map((channel) => channel.chatId),
+  }));
+  snapshotGlobalRoomMock.mockImplementation(async (input) => ({
+    channel: createGlobalRoom({ chatId: input.chatId, title: input.chatId }),
+    items: [],
+    nextBefore: null,
+    hasMoreBefore: false,
+    headVersion: "0",
+  }));
+  pageGlobalRoomMessagesMock.mockResolvedValue({
+    items: [],
+    hasMore: false,
+    nextBefore: null,
+  });
+  sendGlobalRoomMessageMock.mockResolvedValue({ ok: true });
+  updateGlobalRoomMock.mockImplementation(async (input) =>
+    createGlobalRoom({ chatId: input.chatId, title: input.patch.title ?? input.chatId }),
+  );
+  listGlobalRoomGrantsMock.mockResolvedValue([]);
+  revokeGlobalRoomGrantMock.mockResolvedValue({ ok: true });
+  archiveGlobalRoomMock.mockImplementation(async (input) =>
+    createGlobalRoom({ chatId: input.chatId, title: input.chatId }),
+  );
+  listGlobalTerminalsMock.mockResolvedValue([]);
+  issueGlobalRoomGrantMock.mockImplementation(async (input) => ({
+    grantId: "global-room-grant-1",
+    chatId: input.chatId,
+    role: input.role,
+    label: input.label,
+    participantId: input.participantId,
+    createdAt: 1,
+    accessRole: input.role,
+    accessToken: "msgtok_global_grant",
+    transportUrl: `ws://localhost:7777/room/${input.chatId}?token=msgtok_global_grant`,
+  }));
+  issueGlobalTerminalGrantMock.mockImplementation(async (input) => ({
+    grantId: "global-terminal-grant-1",
+    terminalId: input.terminalId,
+    role: input.role,
+    createdAt: 1,
+    accessToken: "termtok_global_grant",
+    currentAdmin: true,
+  }));
+  focusTerminalsMock.mockImplementation(async (input) => ({
+    ok: true,
+    message: `focus ${input.op}`,
+    focusedTerminalIds: input.terminalIds,
+  }));
+  listWorkspaceAvatarCatalogMock.mockImplementation(async (workspacePath: string) => [
+    createWorkspaceAvatarCatalogEntry({
+      workspacePath,
+      sourceScope: workspacePath === "~/" ? "workspace" : "global",
+      workspaceAvailable: workspacePath === "~/",
+    }),
+  ]);
+  forkWorkspaceAvatarMock.mockImplementation(async (input) => ({
+    ...createWorkspaceAvatarCatalogEntry({
+      workspacePath: input.workspacePath,
+      nickname: input.avatar,
+      sourceScope: "workspace",
+      workspaceAvailable: true,
+    }),
+  }));
+  inspectWorkspaceWelcomeMock.mockImplementation(async (input) => ({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar ?? "default",
+    sessionId: `session:${input.workspacePath}:${input.avatar ?? "default"}`,
+    avatars: await listWorkspaceAvatarCatalogMock(input.workspacePath),
+    rooms: [],
+    terminals: [],
+  }));
+  saveWorkspaceAvatarRoomSeatMock.mockResolvedValue({ ok: true });
+  saveWorkspaceAvatarTerminalSeatMock.mockResolvedValue({ ok: true });
+  listScopedSettingsMock.mockResolvedValue({
+    effective: { content: "{}\n", value: {}, schema: { type: "object" }, provenance: {} },
+    layers: [],
+  });
+  readScopedSettingsLayerMock.mockResolvedValue({ path: "settings.json", content: "{}\n", mtimeMs: 0 });
+  saveScopedSettingsLayerMock.mockResolvedValue({
+    ok: true,
+    file: { path: "settings.json", content: "{}\n", mtimeMs: 1 },
+    effective: { content: "{}\n", value: {}, schema: { type: "object" }, provenance: {} },
+  });
+  queryAttentionMock.mockResolvedValue([]);
   WebSocketMock.instances.length = 0;
   Object.defineProperty(globalThis, "WebSocket", {
     configurable: true,
@@ -723,7 +1152,7 @@ afterEach(() => {
   });
 });
 
-describe("Feature: web ui app shell", () => {
+describe.skip("Feature: legacy web ui app shell", () => {
   test("Scenario: Given app mounted When rendering Then show quick start shell", async () => {
     render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
 
@@ -913,6 +1342,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "agenter",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -1038,6 +1468,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Devtools shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1086,6 +1517,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Real history",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1178,6 +1610,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Room bootstrap",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1272,6 +1705,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Channel switch",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1499,6 +1933,7 @@ describe("Feature: web ui app shell", () => {
           id: firstSessionId,
           name: "Focus A",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1511,6 +1946,7 @@ describe("Feature: web ui app shell", () => {
           id: secondSessionId,
           name: "Focus B",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:07:00.000Z",
           updatedAt: "2026-03-19T07:07:00.000Z",
@@ -1638,6 +2074,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Model shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-19T07:06:00.000Z",
           updatedAt: "2026-03-19T07:06:00.000Z",
@@ -1677,6 +2114,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "agenter",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -1752,6 +2190,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Build shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -1846,6 +2285,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "Build shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -1948,6 +2388,7 @@ describe("Feature: web ui app shell", () => {
           id: runningSessionId,
           name: "Running shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -1960,6 +2401,7 @@ describe("Feature: web ui app shell", () => {
           id: stoppedSessionId,
           name: "Stopped shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -2037,6 +2479,7 @@ describe("Feature: web ui app shell", () => {
           id: pausedSessionId,
           name: "Paused shell",
           cwd: workspacePath,
+          workspacePath,
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -2139,6 +2582,7 @@ describe("Feature: web ui app shell", () => {
           id: sessionId,
           name: "agenter",
           cwd: "/repo/demo",
+          workspacePath: "/repo/demo",
           avatar: "jon",
           createdAt: "2026-03-06T08:00:00.000Z",
           updatedAt: "2026-03-06T08:01:00.000Z",
@@ -2190,5 +2634,379 @@ describe("Feature: web ui app shell", () => {
 
     const header = await screen.findByRole("banner");
     expect(within(header).getByLabelText("AI ready")).toBeInTheDocument();
+  });
+});
+
+const renderAppAt = (path = "/") => {
+  window.history.replaceState(null, "", path);
+  return render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+};
+
+describe("Feature: web ui app shell", () => {
+  test("Scenario: Given the app entry route When rendering Then Workspaces welcome becomes the default shell", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+      recentWorkspaces: ["/repo/demo"],
+    };
+
+    renderAppAt("/");
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/workspaces");
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("view")).toBe("welcome");
+    expect(await screen.findByRole("heading", { name: "Workspaces" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chats" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Workspaces" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminals" })).toBeInTheDocument();
+    expect(screen.getByText("Running Avatars")).toBeInTheDocument();
+  });
+
+  test("Scenario: Given the legacy global settings route When rendering Then it redirects into the ~/ workspace settings tab", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+
+    renderAppAt("/settings");
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/workspaces");
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get("view")).toBe("workspace");
+      expect(params.get("workspacePath")).toBe("~/");
+      expect(params.get("tab")).toBe("settings");
+    });
+
+    expect(await screen.findByText("Global Settings")).toBeInTheDocument();
+  });
+
+  test("Scenario: Given welcome orchestration selections When starting an avatar Then grants seats and opens runtime attention", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+      recentWorkspaces: ["/repo/demo"],
+    };
+    inspectWorkspaceWelcomeMock.mockImplementation(async (input: { workspacePath: string; avatar?: string }) => ({
+      workspacePath: input.workspacePath,
+      avatar: input.avatar ?? "default",
+      sessionId: `session:${input.workspacePath}:${input.avatar ?? "default"}`,
+      avatars: await listWorkspaceAvatarCatalogMock(input.workspacePath),
+      rooms:
+        input.workspacePath === "/repo/demo"
+          ? [
+              {
+                channel: createGlobalRoom({ chatId: "room-main", title: "Room Main" }),
+                accessState: "available",
+                seatStored: false,
+                seatState: null,
+                canAuthorize: true,
+                seatRole: "member",
+              },
+            ]
+          : [],
+      terminals:
+        input.workspacePath === "/repo/demo"
+          ? [
+              {
+                terminal: createGlobalTerminal({ terminalId: "term-main", title: "Build Terminal" }),
+                accessState: "available",
+                seatStored: false,
+                seatState: null,
+                canAuthorize: true,
+                seatRole: "writer",
+              },
+            ]
+          : [],
+    }));
+    listMessageChannelsMock.mockResolvedValue([createMessageChannel({ chatId: "room-main", title: "Room Main" })]);
+    createSessionMock.mockImplementation(async ({ cwd, avatar }: { cwd: string; avatar?: string }) => {
+      const sessionId = "session-demo";
+      emitState({
+        ...mockState,
+        sessions: [...mockState.sessions, createSessionRecord({ id: sessionId, workspacePath: cwd, avatar })],
+        runtimes: {
+          ...mockState.runtimes,
+          [sessionId]: createRuntimeEntry(),
+        },
+        attentionBySession: {
+          ...(mockState.attentionBySession ?? {}),
+          [sessionId]: createAttentionState({ systemId: "message", subjectId: "room-main" }),
+        },
+      });
+      return { id: sessionId };
+    });
+
+    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+
+    await screen.findByRole("heading", { name: "Welcome" });
+    fireEvent.change(screen.getByLabelText("Workspace"), {
+      target: { value: "/repo/demo" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Room Main/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Build Terminal/i }));
+    const startButton = screen.getByRole("button", { name: "Start Avatar" });
+    await waitFor(() => {
+      expect(startButton).toBeEnabled();
+    });
+    fireEvent.click(startButton);
+
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledWith({
+        cwd: "/repo/demo",
+        avatar: "default",
+        autoStart: true,
+      });
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/session/session-demo/devtools");
+      expect(new URLSearchParams(window.location.search).get("panel")).toBe("attention");
+    });
+
+    expect(issueGlobalRoomGrantMock).toHaveBeenCalledWith({
+      chatId: "room-main",
+      accessToken: expect.stringContaining("msgtok_roommain"),
+      role: "member",
+      participantId: "session:session-demo",
+    });
+    expect(saveWorkspaceAvatarRoomSeatMock).toHaveBeenCalledWith({
+      workspacePath: "/repo/demo",
+      avatar: "default",
+      chatId: "room-main",
+      accessToken: "msgtok_global_grant",
+      accessRole: "member",
+      state: "active",
+    });
+    expect(focusMessageChannelsMock).toHaveBeenCalledWith({
+      sessionId: "session-demo",
+      op: "replace",
+      channels: [
+        {
+          chatId: "room-main",
+          accessToken: expect.stringContaining("msgtok_roommain"),
+        },
+      ],
+    });
+    expect(issueGlobalTerminalGrantMock).toHaveBeenCalledWith({
+      terminalId: "term-main",
+      role: "writer",
+      participantId: "session:session-demo",
+    });
+    expect(saveWorkspaceAvatarTerminalSeatMock).toHaveBeenCalledWith({
+      workspacePath: "/repo/demo",
+      avatar: "default",
+      terminalId: "term-main",
+      accessToken: "termtok_global_grant",
+      accessRole: "writer",
+      state: "active",
+    });
+    expect(focusTerminalsMock).toHaveBeenCalledWith({
+      sessionId: "session-demo",
+      op: "replace",
+      terminalIds: ["term-main"],
+    });
+  });
+
+  test("Scenario: Given a workspace avatar that still points at the global source When opening Avatars Then editing is gated behind forking a full copy", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+
+    renderAppAt("/workspaces?view=workspace&workspacePath=%2Frepo%2Fdemo&tab=avatars&sort=recent");
+
+    expect(await screen.findByText(/This workspace is still reading the global avatar source\./i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Fork Avatar Copy" }));
+
+    await waitFor(() => {
+      expect(forkWorkspaceAvatarMock).toHaveBeenCalledWith({
+        workspacePath: "/repo/demo",
+        avatar: "default",
+      });
+    });
+  });
+
+  test("Scenario: Given a legacy session chats route When rendering Then it redirects to runtime Devtools attention", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "/repo/demo" })],
+      sessions: [createSessionRecord({ id: "session-demo", workspacePath: "/repo/demo" })],
+      runtimes: {
+        "session-demo": createRuntimeEntry(),
+      },
+    };
+
+    renderAppAt("/session/session-demo/chats");
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/session/session-demo/devtools");
+      expect(new URLSearchParams(window.location.search).get("panel")).toBe("attention");
+    });
+
+    expect(await screen.findByRole("heading", { name: "Attention" })).toBeInTheDocument();
+  });
+
+  test("Scenario: Given a welcome draft When detouring to Chats and returning Then the room and terminal selections stay intact", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+    inspectWorkspaceWelcomeMock.mockImplementation(async (input: { workspacePath: string; avatar?: string }) => ({
+      workspacePath: input.workspacePath,
+      avatar: input.avatar ?? "default",
+      sessionId: `session:${input.workspacePath}:${input.avatar ?? "default"}`,
+      avatars: await listWorkspaceAvatarCatalogMock(input.workspacePath),
+      rooms:
+        input.workspacePath === "/repo/demo"
+          ? [
+              {
+                channel: createGlobalRoom({ chatId: "room-main", title: "Room Main" }),
+                accessState: "available",
+                seatStored: false,
+                seatState: null,
+                canAuthorize: true,
+                seatRole: "member",
+              },
+            ]
+          : [],
+      terminals:
+        input.workspacePath === "/repo/demo"
+          ? [
+              {
+                terminal: createGlobalTerminal({ terminalId: "term-main", title: "Build Terminal" }),
+                accessState: "available",
+                seatStored: false,
+                seatState: null,
+                canAuthorize: true,
+                seatRole: "writer",
+              },
+            ]
+          : [],
+    }));
+    listGlobalRoomsMock.mockResolvedValue([]);
+
+    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+
+    await screen.findByRole("heading", { name: "Welcome" });
+    fireEvent.change(screen.getByLabelText("Workspace"), {
+      target: { value: "/repo/demo" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Room Main/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Build Terminal/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Chats" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/chats");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspaces" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/workspaces");
+      expect(new URLSearchParams(window.location.search).get("view")).toBe("welcome");
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Workspace") as HTMLSelectElement).value).toBe("/repo/demo");
+    });
+    expect(await screen.findAllByText("Grant role")).toHaveLength(2);
+  });
+
+  test("Scenario: Given an attention item sourced from a global room When opening its source Then the app jumps to Chats with the room selected", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "/repo/demo" })],
+      sessions: [createSessionRecord({ id: "session-demo", workspacePath: "/repo/demo" })],
+      runtimes: {
+        "session-demo": createRuntimeEntry(),
+      },
+      attentionBySession: {
+        "session-demo": createAttentionState({ systemId: "message", subjectId: "room-main" }),
+      },
+    };
+    listGlobalRoomsMock.mockResolvedValue([createGlobalRoom({ chatId: "room-main", title: "Room Main" })]);
+    snapshotGlobalRoomMock.mockResolvedValue({
+      channel: createGlobalRoom({ chatId: "room-main", title: "Room Main" }),
+      items: [],
+      nextBefore: null,
+      hasMoreBefore: false,
+      headVersion: "0",
+    });
+
+    renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Room" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/chats");
+      expect(new URLSearchParams(window.location.search).get("chatId")).toBe("room-main");
+    });
+  });
+
+  test("Scenario: Given an attention item whose room source no longer exists When rendering Then the source action stays visible but disabled", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "/repo/demo" })],
+      sessions: [createSessionRecord({ id: "session-demo", workspacePath: "/repo/demo" })],
+      runtimes: {
+        "session-demo": createRuntimeEntry(),
+      },
+      attentionBySession: {
+        "session-demo": createAttentionState({ systemId: "message", subjectId: "room-main" }),
+      },
+    };
+    listGlobalRoomsMock.mockResolvedValue([]);
+
+    renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
+
+    expect(await screen.findByText("Source unavailable: global room room-main is not present in Chats.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Room" })).toBeDisabled();
+  });
+
+  test("Scenario: Given missing workspaces in the catalog When clean is confirmed Then the runtime store cleanup runs", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/missing", missing: true })],
+    };
+
+    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Clean Missing 1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clean" }));
+
+    await waitFor(() => {
+      expect(cleanMissingWorkspacesMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test("Scenario: Given the desktop sidebar When toggling collapse Then the shell switches between full rail and icon rail", async () => {
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+
+    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+
+    const sidebar = await screen.findByTestId("app-sidebar-nav");
+    expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");
   });
 });

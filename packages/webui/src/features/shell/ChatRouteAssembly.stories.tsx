@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 
+import type { TabItem } from "../../components/ui/tabs";
 import { ChatPanel } from "../chat/ChatPanel";
 import { createRealSessionHistoryFixture } from "../chat/real-session-history-fixture";
 import { SessionStatusPillMenu } from "./SessionStatusPillMenu";
@@ -8,6 +9,12 @@ import { ShellLayoutProvider } from "./shell-layout-context";
 import { WorkspaceShellFrame } from "./WorkspaceShellFrame";
 
 const fixture = createRealSessionHistoryFixture({ turns: 10, unreadCount: 2 });
+const CHAT_ROUTE_TABS: TabItem[] = [
+  { id: "chat", label: "Chats" },
+  { id: "terminals", label: "Terminals" },
+  { id: "devtools", label: "Devtools" },
+  { id: "settings", label: "Settings" },
+];
 
 type ChatRouteAssemblyStoryArgs = {
   workspacePath: string;
@@ -30,8 +37,10 @@ const buildRouteStory =
         data-testid="chat-route-assembly-root"
       >
         <WorkspaceShellFrame
+          locationLabel="Chats"
           workspacePath={args.workspacePath}
           activeTab={args.activeTab}
+          tabs={CHAT_ROUTE_TABS}
           onNavigate={() => undefined}
           headerStatusSlot={
             <SessionStatusPillMenu

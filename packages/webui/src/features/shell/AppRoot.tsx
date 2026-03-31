@@ -48,21 +48,6 @@ const isSessionDevtoolsPath = (pathname: string): boolean => {
   return match?.[2] === "devtools";
 };
 
-const resolveSessionTabPath = (pathname: string): "/chats" | "/terminals" | "/devtools" | "/settings" => {
-  const match = SESSION_ROUTE_PATH_RE.exec(pathname);
-  const tab = match?.[2];
-  if (tab === "terminals") {
-    return "/terminals";
-  }
-  if (tab === "devtools") {
-    return "/devtools";
-  }
-  if (tab === "settings") {
-    return "/settings";
-  }
-  return "/chats";
-};
-
 const routeLabelFromPath = (pathname: string): string => {
   const sessionMatch = SESSION_ROUTE_PATH_RE.exec(pathname);
   if (sessionMatch) {
@@ -78,6 +63,9 @@ const routeLabelFromPath = (pathname: string): string => {
     }
     return "Chats";
   }
+  if (pathname === "/chats") {
+    return "Chats";
+  }
   if (pathname.startsWith("/workspace/")) {
     return "Workspace";
   }
@@ -87,10 +75,7 @@ const routeLabelFromPath = (pathname: string): string => {
   if (pathname === "/terminals") {
     return "Terminals";
   }
-  if (pathname === "/settings") {
-    return "Settings";
-  }
-  return "Quick Start";
+  return "Chats";
 };
 
 const resolveHeaderAiStatus = (
@@ -140,23 +125,36 @@ export const AppRoot = () => {
     setMobileSidebarOpen(true);
   }, []);
 
-  const handleSelectQuickStart = useCallback(() => {
-    void navigate({ to: "/" });
+  const handleSelectChats = useCallback(() => {
+    void navigate({
+      to: "/chats",
+      search: {
+        chatId: undefined,
+      },
+    });
     setMobileSidebarOpen(false);
   }, [navigate]);
 
   const handleSelectWorkspaces = useCallback(() => {
-    void navigate({ to: "/workspaces" });
-    setMobileSidebarOpen(false);
-  }, [navigate]);
-
-  const handleSelectSettings = useCallback(() => {
-    void navigate({ to: "/settings" });
+    void navigate({
+      to: "/workspaces",
+      search: {
+        view: "welcome",
+        workspacePath: undefined,
+        tab: "settings",
+        sort: "recent",
+      },
+    });
     setMobileSidebarOpen(false);
   }, [navigate]);
 
   const handleSelectTerminals = useCallback(() => {
-    void navigate({ to: "/terminals" });
+    void navigate({
+      to: "/terminals",
+      search: {
+        terminalId: undefined,
+      },
+    });
     setMobileSidebarOpen(false);
   }, [navigate]);
 
@@ -181,60 +179,32 @@ export const AppRoot = () => {
   const primaryItems = useMemo(
     () =>
       defaultPrimaryNavItems({
-        quickStartActive: location.pathname === "/",
-        workspacesActive: location.pathname === "/workspaces",
+        chatsActive: location.pathname === "/chats",
+        workspacesActive: location.pathname.startsWith("/workspaces"),
         terminalsActive: location.pathname === "/terminals",
-        settingsActive: location.pathname === "/settings",
         unreadWorkspaces: unreadTotal,
-        onSelectQuickStart: handleSelectQuickStart,
+        onSelectChats: handleSelectChats,
         onSelectWorkspaces: handleSelectWorkspaces,
         onSelectTerminals: handleSelectTerminals,
-        onSelectSettings: handleSelectSettings,
       }),
-    [handleSelectQuickStart, handleSelectSettings, handleSelectTerminals, handleSelectWorkspaces, location.pathname, unreadTotal],
+    [handleSelectChats, handleSelectTerminals, handleSelectWorkspaces, location.pathname, unreadTotal],
   );
 
   const runningSessions = useMemo<RunningSessionNavItem[]>(() => {
     return runningSessionStates
       .map((session) => ({
         sessionId: session.sessionId,
-        name: session.name,
+        name: session.avatar || session.name,
         workspacePath: session.workspacePath,
         iconUrl: iconUrls.session(session.sessionId) ?? undefined,
         active: session.sessionId === routeSessionId,
         unreadCount: session.unreadCount,
         status: session.status,
         onSelect: () => {
-          const targetTabPath = resolveSessionTabPath(location.pathname);
-          if (targetTabPath === "/devtools") {
-            void navigate({
-              to: "/session/$sessionId/devtools",
-              params: { sessionId: session.sessionId },
-              search: buildSessionDevtoolsSearch({ panel: "attention" }),
-            });
-            setMobileSidebarOpen(false);
-            return;
-          }
-          if (targetTabPath === "/terminals") {
-            void navigate({
-              to: "/session/$sessionId/terminals",
-              params: { sessionId: session.sessionId },
-            });
-            setMobileSidebarOpen(false);
-            return;
-          }
-          if (targetTabPath === "/settings") {
-            void navigate({
-              to: "/session/$sessionId/settings",
-              params: { sessionId: session.sessionId },
-            });
-            setMobileSidebarOpen(false);
-            return;
-          }
           void navigate({
-            to: "/session/$sessionId/chats",
+            to: "/session/$sessionId/devtools",
             params: { sessionId: session.sessionId },
-            search: { chatId: undefined },
+            search: buildSessionDevtoolsSearch({ panel: "attention" }),
           });
           setMobileSidebarOpen(false);
         },
@@ -248,10 +218,9 @@ export const AppRoot = () => {
         }
         return left.name.localeCompare(right.name);
       });
-  }, [iconUrls, location.pathname, navigate, routeSessionId, runningSessionStates]);
+  }, [iconUrls, navigate, routeSessionId, runningSessionStates]);
 
-  const showGlobalNotice =
-    controller.notice.length > 0 && (location.pathname === "/" || location.pathname === "/workspaces");
+  const showGlobalNotice = controller.notice.length > 0 && location.pathname.startsWith("/workspaces");
   const isWorkspaceRoute = isSessionRoutePath(location.pathname);
   const showSidebarRail = adaptiveViewport.globalNavMode === "rail";
   const showDrawerTrigger = adaptiveViewport.globalNavMode === "drawer";

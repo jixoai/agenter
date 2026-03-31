@@ -1,6 +1,11 @@
 import type {
   AttentionQueryItem,
   DraftResolutionOutput,
+  GlobalRoomActorId,
+  GlobalRoomEntry,
+  GlobalRoomGrantEntry,
+  GlobalRoomGrantIssueOutput,
+  GlobalRoomMessage,
   GlobalTerminalApprovalRequest,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
@@ -11,6 +16,8 @@ import type {
   RuntimeClientState,
   RuntimeStore,
   TerminalActivityItem,
+  WorkspaceAvatarCatalogEntry,
+  WorkspaceWelcomeSnapshotOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
@@ -34,6 +41,8 @@ export interface AppController {
   quickstartBootstrapLoading: boolean;
   quickstartRecentSessions: WorkspaceSessionEntry[];
   quickstartBusy: boolean;
+  workspaceWelcomeSelection: WorkspaceWelcomeSelection | null;
+  setWorkspaceWelcomeSelection: (selection: WorkspaceWelcomeSelection | null) => void;
   selectedWorkspacePath: string | null;
   setSelectedWorkspacePath: (path: string | null) => void;
   selectedWorkspaceSessionId: string | null;
@@ -55,7 +64,11 @@ export interface AppController {
   settingsStatus: string;
   getLongListPagingState: (input: LongListPagingInput) => LongListPagingState;
   searchWorkspacePaths: (input: { cwd: string; query: string; limit?: number }) => Promise<AIInputSuggestion[]>;
-  createWorkspaceSession: (workspacePath: string) => Promise<string | null>;
+  workspaceWelcomeDrafts: Record<string, WorkspaceWelcomeDraft>;
+  getWorkspaceWelcomeDraft: (workspacePath: string, avatar: string) => WorkspaceWelcomeDraft | null;
+  saveWorkspaceWelcomeDraft: (draft: WorkspaceWelcomeDraft) => void;
+  clearWorkspaceWelcomeDraft: (workspacePath: string, avatar: string) => void;
+  createWorkspaceSession: (workspacePath: string, avatar?: string) => Promise<string | null>;
   quickstartSubmit: (payload: { text: string; assets: File[] }) => Promise<string | null>;
   enterWorkspace: () => Promise<string | null>;
   saveQuickstartBootstrapConfig: (config: QuickstartBootstrapConfig) => Promise<void>;
@@ -126,6 +139,77 @@ export interface AppController {
     accessToken: string;
     archivedBy?: string;
   }) => Promise<MessageChannelEntry>;
+  listGlobalRooms: (input?: { includeArchived?: boolean }) => Promise<GlobalRoomEntry[]>;
+  createGlobalRoom: (input: {
+    chatId?: string;
+    title?: string;
+    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
+    focus?: boolean;
+  }) => Promise<GlobalRoomEntry>;
+  focusGlobalRooms: (input: {
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken?: string }>;
+  }) => Promise<{ ok: boolean; message: string; focusedChatIds: string[] }>;
+  snapshotGlobalRoom: (input: {
+    chatId: string;
+    accessToken?: string;
+    limit?: number;
+  }) => Promise<{
+    channel: GlobalRoomEntry;
+    items: GlobalRoomMessage[];
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+    hasMoreBefore: boolean;
+    headVersion: string;
+  }>;
+  pageGlobalRoomMessages: (input: {
+    chatId: string;
+    accessToken?: string;
+    before?: { beforeTimeMs: number; beforeId: number } | null;
+    limit?: number;
+  }) => Promise<{
+    items: GlobalRoomMessage[];
+    hasMore: boolean;
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+  }>;
+  sendGlobalRoomMessage: (input: {
+    chatId: string;
+    accessToken?: string;
+    payload: { text: string; assets: File[] };
+  }) => Promise<{ ok: boolean; reason?: string }>;
+  updateGlobalRoom: (input: {
+    chatId: string;
+    accessToken?: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+      adminGroupCandidateIds?: GlobalRoomActorId[];
+    };
+  }) => Promise<GlobalRoomEntry>;
+  listGlobalRoomGrants: (input: {
+    chatId: string;
+    accessToken?: string;
+  }) => Promise<GlobalRoomGrantEntry[]>;
+  issueGlobalRoomGrant: (input: {
+    chatId: string;
+    accessToken?: string;
+    role: "admin" | "member" | "readonly";
+    label?: string;
+    participantId: GlobalRoomActorId;
+    accessTokenHint?: string;
+  }) => Promise<GlobalRoomGrantIssueOutput["grant"]>;
+  revokeGlobalRoomGrant: (input: {
+    chatId: string;
+    accessToken?: string;
+    grantId: string;
+  }) => Promise<{ ok: boolean }>;
+  archiveGlobalRoom: (input: {
+    chatId: string;
+    accessToken?: string;
+    archivedBy?: string;
+  }) => Promise<GlobalRoomEntry>;
   listTerminals: (sessionId: string) => Promise<
     Array<{
       terminalId: string;
@@ -249,10 +333,29 @@ export interface AppController {
   restoreWorkspaceSession: (sessionId: string) => Promise<void>;
   deleteWorkspaceSession: (sessionId: string) => Promise<void>;
   loadMoreWorkspaceSessions: () => Promise<void>;
-  ensureSettingsLayers: (workspacePath: string) => Promise<void>;
-  refreshSettingsLayers: (workspacePath: string) => Promise<void>;
-  loadSelectedLayer: (workspacePath: string, layerId: string) => Promise<void>;
-  saveSelectedLayer: (workspacePath: string, layerId: string) => Promise<void>;
+  listWorkspaceAvatarCatalog: (workspacePath: string) => Promise<WorkspaceAvatarCatalogEntry[]>;
+  forkWorkspaceAvatar: (input: { workspacePath: string; avatar: string }) => Promise<WorkspaceAvatarCatalogEntry>;
+  inspectWorkspaceWelcome: (input: { workspacePath: string; avatar?: string }) => Promise<WorkspaceWelcomeSnapshotOutput>;
+  saveWorkspaceAvatarRoomSeat: (input: {
+    workspacePath: string;
+    avatar: string;
+    chatId: string;
+    accessToken: string;
+    accessRole: "admin" | "member" | "readonly";
+    state?: "active" | "credential-invalid";
+  }) => Promise<{ ok: true }>;
+  saveWorkspaceAvatarTerminalSeat: (input: {
+    workspacePath: string;
+    avatar: string;
+    terminalId: string;
+    accessToken: string;
+    accessRole: "admin" | "writer" | "requester" | "readonly";
+    state?: "active" | "credential-invalid";
+  }) => Promise<{ ok: true }>;
+  ensureSettingsLayers: (workspacePath: string, avatar?: string) => Promise<void>;
+  refreshSettingsLayers: (workspacePath: string, avatar?: string) => Promise<void>;
+  loadSelectedLayer: (workspacePath: string, layerId: string, avatar?: string) => Promise<void>;
+  saveSelectedLayer: (workspacePath: string, layerId: string, avatar?: string) => Promise<void>;
   setChatVisibility: (input: {
     sessionId: string;
     chatId?: string;
@@ -283,6 +386,20 @@ export interface AppController {
     includeHidden?: boolean;
   }) => Promise<Array<{ name: string; path: string }>>;
   validateDirectory: (path: string) => Promise<{ ok: boolean; path: string }>;
+}
+
+export interface WorkspaceWelcomeDraft {
+  workspacePath: string;
+  avatar: string;
+  selectedRoomIds: string[];
+  selectedTerminalIds: string[];
+  roomRoles: Record<string, "admin" | "member" | "readonly">;
+  terminalRoles: Record<string, "admin" | "writer" | "requester" | "readonly">;
+}
+
+export interface WorkspaceWelcomeSelection {
+  workspacePath: string;
+  avatar: string;
 }
 
 export const AppControllerContext = createContext<AppController | null>(null);

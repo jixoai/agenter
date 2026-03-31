@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { loadSettings, type SettingsProvenanceEntry, type SettingsSourceInput } from "@agenter/settings";
 
+import { GLOBAL_WORKSPACE_PATH, isGlobalWorkspacePath, toWorkspaceCwd } from "./workspace-target";
+
 export type SettingsScope = "workspace" | "global";
 
 export interface ScopedSettingsLayerSnapshot {
@@ -152,23 +154,25 @@ const attachJumpTargets = (
 const resolveScopeLoadContext = (input: { scope: SettingsScope; workspacePath?: string; homeDir: string }): {
   projectRoot: string;
   cwd: string;
-  sources?: Array<"user">;
+  sources?: SettingsSourceInput[];
 } => {
-  if (input.scope === "workspace") {
-    if (!input.workspacePath) {
+  const workspacePath = input.workspacePath?.trim();
+  const isGlobalWorkspace = workspacePath ? isGlobalWorkspacePath(workspacePath, input.homeDir) : input.scope === "global";
+  if (!isGlobalWorkspace && input.scope === "workspace") {
+    if (!workspacePath) {
       throw new Error("workspacePath is required for workspace settings scope");
     }
-    const workspacePath = resolve(input.workspacePath);
+    const resolvedWorkspace = resolve(workspacePath);
     return {
-      projectRoot: workspacePath,
-      cwd: workspacePath,
+      projectRoot: resolvedWorkspace,
+      cwd: resolvedWorkspace,
     };
   }
-  const home = input.homeDir;
+  const home = resolve(input.homeDir);
   return {
     projectRoot: home,
     cwd: home,
-    sources: ["user"],
+    sources: ["user", join(home, ".agenter", "settings.local.json")],
   };
 };
 
@@ -244,7 +248,10 @@ export const readScopedSettingsLayer = async (input: {
     throw new Error(`settings layer not found: ${input.layerId}`);
   }
   const home = input.homeDir ?? homedir();
-  const workspacePath = input.scope === "workspace" ? resolve(input.workspacePath ?? ".") : home;
+  const workspacePath =
+    input.scope === "workspace" && input.workspacePath && !isGlobalWorkspacePath(input.workspacePath, home)
+      ? resolve(input.workspacePath)
+      : toWorkspaceCwd(GLOBAL_WORKSPACE_PATH, home);
   return await readLayerFile(workspacePath, layer, home);
 };
 
@@ -284,7 +291,10 @@ export const saveScopedSettingsLayer = async (input: {
   }
 
   const home = input.homeDir ?? homedir();
-  const workspacePath = input.scope === "workspace" ? resolve(input.workspacePath ?? ".") : home;
+  const workspacePath =
+    input.scope === "workspace" && input.workspacePath && !isGlobalWorkspacePath(input.workspacePath, home)
+      ? resolve(input.workspacePath)
+      : toWorkspaceCwd(GLOBAL_WORKSPACE_PATH, home);
   const current = await readLayerFile(workspacePath, layer, home);
   if (Math.abs(current.mtimeMs - input.baseMtimeMs) > 0.5) {
     return {

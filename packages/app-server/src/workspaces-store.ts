@@ -2,6 +2,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unl
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
+import { GLOBAL_WORKSPACE_PATH, toWorkspacePath } from "./workspace-target";
+
 const nowIso = (): string => new Date().toISOString();
 const defaultPath = (): string => resolve(homedir(), ".agenter", "workspaces.yaml");
 
@@ -50,7 +52,7 @@ const parseYamlScalar = (value: string): string => {
 const emptyDocument = (): WorkspacesDocument => ({
   version: CURRENT_VERSION,
   updatedAt: nowIso(),
-  workspaces: [],
+  workspaces: [GLOBAL_WORKSPACE_PATH],
   favoriteWorkspaces: [],
   favoriteSessions: [],
 });
@@ -63,7 +65,7 @@ const repairWorkspacePath = (value: string): string => {
   return match?.[1] ?? trimmed;
 };
 
-const normalizeWorkspacePath = (value: string): string => resolve(repairWorkspacePath(value));
+const normalizeWorkspacePath = (value: string): string => toWorkspacePath(repairWorkspacePath(value));
 
 const dedupe = (items: string[]): string[] => {
   const seen = new Set<string>();
@@ -79,7 +81,7 @@ const dedupe = (items: string[]): string[] => {
 };
 
 const normalizeDocument = (input: Partial<WorkspacesDocument>): WorkspacesDocument => {
-  const workspaces = dedupe((input.workspaces ?? []).map((item) => normalizeWorkspacePath(item)));
+  const workspaces = dedupe([GLOBAL_WORKSPACE_PATH, ...(input.workspaces ?? []).map((item) => normalizeWorkspacePath(item))]);
   const favoriteWorkspaces = dedupe(
     (input.favoriteWorkspaces ?? [])
       .map((item) => normalizeWorkspacePath(item))
@@ -288,6 +290,9 @@ export class WorkspacesStore {
 
   remove(workspacePath: string): boolean {
     const normalized = normalizeWorkspacePath(workspacePath);
+    if (normalized === GLOBAL_WORKSPACE_PATH) {
+      return false;
+    }
     return this.withFileLock(() => {
       const doc = this.readFromDisk();
       if (!doc.workspaces.includes(normalized)) {

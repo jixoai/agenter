@@ -2,18 +2,28 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ReactNode } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 
+import type { TabItem } from "../../components/ui/tabs";
 import { ShellLayoutProvider } from "./shell-layout-context";
 import { WorkspaceShellFrame } from "./WorkspaceShellFrame";
 
+const WORKSPACE_TABS: TabItem[] = [
+  { id: "chat", label: "Chats" },
+  { id: "terminals", label: "Terminals" },
+  { id: "devtools", label: "Devtools" },
+  { id: "settings", label: "Settings" },
+];
+
 const renderFrame = (narrow = false) => {
   return (args: {
+    locationLabel: string;
     workspacePath: string;
     workspaceMissing?: boolean;
-    activeTab: "chat" | "terminals" | "devtools" | "settings";
-    onNavigate: (tab: "chat" | "terminals" | "devtools" | "settings") => void;
+    activeTab: string;
+    tabs: TabItem[];
+    onNavigate: (tab: string) => void;
     children: ReactNode;
   }) => {
-    const [activeTab, setActiveTab] = useState<"chat" | "terminals" | "devtools" | "settings">(args.activeTab);
+    const [activeTab, setActiveTab] = useState(args.activeTab);
 
     return (
       <ShellLayoutProvider
@@ -46,8 +56,10 @@ const meta = {
   title: "Features/Shell/WorkspaceShellFrame",
   component: WorkspaceShellFrame,
   args: {
+    locationLabel: "Chats",
     workspacePath: "/repo/demo/project-alpha",
     activeTab: "chat",
+    tabs: WORKSPACE_TABS,
     onNavigate: fn(),
     children: (
       <section className="flex h-full items-center justify-center rounded-2xl bg-white p-4 shadow-sm">

@@ -34,7 +34,7 @@ const readViewportMode = (): ViewportMode => {
 
 const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
 
-export const GlobalTerminalsRoute = () => {
+export const GlobalTerminalsRoute = ({ preferredTerminalId }: { preferredTerminalId?: string | null }) => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
   const sessions = useRuntimeSelector((state) => state.sessions);
@@ -58,7 +58,7 @@ export const GlobalTerminalsRoute = () => {
     return sessions.map((session) => ({
       actorId: `session:${session.id}` as GlobalTerminalActorId,
       label: session.name,
-      subtitle: session.cwd,
+      subtitle: session.workspacePath,
     }));
   }, [sessions]);
 
@@ -184,6 +184,13 @@ export const GlobalTerminalsRoute = () => {
     }
     void loadActivity(selectedTerminal.terminalId, null);
   }, [loadActivity, selectedTerminal?.terminalId]);
+
+  useEffect(() => {
+    if (!preferredTerminalId || !terminals.some((terminal) => terminal.terminalId === preferredTerminalId)) {
+      return;
+    }
+    setSelectedTerminalId(preferredTerminalId);
+  }, [preferredTerminalId, terminals]);
 
   const handleSelectTerminal = useCallback(
     (terminalId: string) => {

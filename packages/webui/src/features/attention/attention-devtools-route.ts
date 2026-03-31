@@ -1,4 +1,4 @@
-export type DevtoolsPanelId = "attention" | "cycles" | "systems" | "observability";
+export type DevtoolsPanelId = "attention" | "cycles" | "systems" | "observability" | "settings";
 export type AttentionDetailView = "context" | "items" | "search";
 
 export interface SessionDevtoolsSearch {
@@ -30,7 +30,7 @@ const readPositiveInt = (value: unknown): number | undefined => {
 };
 
 const normalizePanel = (value: unknown, cycleId?: number): DevtoolsPanelId => {
-  if (value === "cycles" || value === "systems" || value === "observability" || value === "attention") {
+  if (value === "cycles" || value === "systems" || value === "observability" || value === "attention" || value === "settings") {
     return value;
   }
   return cycleId ? "cycles" : "attention";

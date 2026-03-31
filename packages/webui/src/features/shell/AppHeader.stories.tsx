@@ -64,6 +64,11 @@ export const WorkspaceHeaderKeepsTabsAndBasenameOnly: Story = {
     workspace: {
       workspacePath: "/repo/demo/project-alpha",
       activeTab: "chat",
+      tabs: [
+        { id: "chat", label: "Chats" },
+        { id: "terminals", label: "Terminals" },
+        { id: "devtools", label: "Devtools" },
+      ],
       onNavigate: fn(),
     },
   },

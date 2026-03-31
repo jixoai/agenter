@@ -7,6 +7,11 @@ import type {
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
+  GlobalRoomActorId,
+  GlobalRoomEntry,
+  GlobalRoomGrantEntry,
+  GlobalRoomGrantIssueOutput,
+  GlobalRoomMessage,
   GlobalTerminalApprovalRequest,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
@@ -1267,6 +1272,42 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.listSessions.query(input);
   }
 
+  async listWorkspaceAvatarCatalog(workspacePath: string) {
+    const output = await this.client.trpc.workspace.avatarCatalog.query({ workspacePath });
+    return output.items;
+  }
+
+  async forkWorkspaceAvatar(input: { workspacePath: string; avatar: string }) {
+    const output = await this.client.trpc.workspace.forkAvatar.mutate(input);
+    return output.avatar;
+  }
+
+  async inspectWorkspaceWelcome(input: { workspacePath: string; avatar?: string }) {
+    return await this.client.trpc.workspace.welcomeSnapshot.query(input);
+  }
+
+  async saveWorkspaceAvatarRoomSeat(input: {
+    workspacePath: string;
+    avatar: string;
+    chatId: string;
+    accessToken: string;
+    accessRole: "admin" | "member" | "readonly";
+    state?: "active" | "credential-invalid";
+  }) {
+    return await this.client.trpc.workspace.saveAvatarRoomSeat.mutate(input);
+  }
+
+  async saveWorkspaceAvatarTerminalSeat(input: {
+    workspacePath: string;
+    avatar: string;
+    terminalId: string;
+    accessToken: string;
+    accessRole: "admin" | "writer" | "requester" | "readonly";
+    state?: "active" | "credential-invalid";
+  }) {
+    return await this.client.trpc.workspace.saveAvatarTerminalSeat.mutate(input);
+  }
+
   async inspectAttentionState(sessionId: string): Promise<RuntimeAttentionState> {
     return await this.client.trpc.runtime.attentionState.query({ sessionId });
   }
@@ -1608,6 +1649,131 @@ export class RuntimeStore {
     return await this.client.trpc.message.revokeChannelGrant.mutate(input);
   }
 
+  async listGlobalRooms(input: { includeArchived?: boolean } = {}): Promise<GlobalRoomEntry[]> {
+    const output = await this.client.trpc.message.globalList.query(input);
+    return output.items;
+  }
+
+  async createGlobalRoom(input: {
+    chatId?: string;
+    title?: string;
+    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    metadata?: Record<string, unknown>;
+    adminToken?: string;
+    focus?: boolean;
+  }): Promise<GlobalRoomEntry> {
+    const output = await this.client.trpc.message.globalCreate.mutate({
+      kind: "room",
+      ...input,
+    });
+    return output.channel;
+  }
+
+  async focusGlobalRooms(input: {
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken?: string }>;
+  }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }> {
+    return await this.client.trpc.message.globalFocus.mutate(input);
+  }
+
+  async snapshotGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
+    limit?: number;
+  }): Promise<{
+    channel: GlobalRoomEntry;
+    items: GlobalRoomMessage[];
+    nextBefore: HistoryPageCursor | null;
+    hasMoreBefore: boolean;
+    headVersion: string;
+  }> {
+    return await this.client.trpc.message.globalSnapshot.query(input);
+  }
+
+  async pageGlobalRoomMessages(input: {
+    chatId: string;
+    accessToken?: string;
+    before?: HistoryPageCursor | null;
+    limit?: number;
+  }): Promise<{
+    items: GlobalRoomMessage[];
+    hasMore: boolean;
+    nextBefore: HistoryPageCursor | null;
+  }> {
+    const output = await this.client.trpc.message.globalPage.query({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      before: input.before ?? undefined,
+      limit: input.limit,
+    });
+    return {
+      items: output.items,
+      hasMore: output.hasMoreBefore,
+      nextBefore: output.nextBefore,
+    };
+  }
+
+  async sendGlobalRoomMessage(input: {
+    chatId: string;
+    accessToken?: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    return await this.client.trpc.message.globalSend.mutate(input);
+  }
+
+  async updateGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
+    patch: {
+      title?: string;
+      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      metadata?: Record<string, unknown>;
+      adminGroupCandidateIds?: GlobalRoomActorId[];
+    };
+  }): Promise<GlobalRoomEntry> {
+    const output = await this.client.trpc.message.globalUpdate.mutate(input);
+    return output.channel;
+  }
+
+  async archiveGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
+    archivedBy?: string;
+  }): Promise<GlobalRoomEntry> {
+    const output = await this.client.trpc.message.globalDelete.mutate(input);
+    return output.channel;
+  }
+
+  async listGlobalRoomGrants(input: {
+    chatId: string;
+    accessToken?: string;
+  }): Promise<GlobalRoomGrantEntry[]> {
+    const output = await this.client.trpc.message.globalListGrants.query(input);
+    return output.items;
+  }
+
+  async issueGlobalRoomGrant(input: {
+    chatId: string;
+    accessToken?: string;
+    role: "admin" | "member" | "readonly";
+    participantId: GlobalRoomActorId;
+    label?: string;
+    accessTokenHint?: string;
+  }): Promise<GlobalRoomGrantIssueOutput["grant"]> {
+    const output = await this.client.trpc.message.globalIssueGrant.mutate(input);
+    return output.grant;
+  }
+
+  async revokeGlobalRoomGrant(input: {
+    chatId: string;
+    accessToken?: string;
+    grantId: string;
+  }): Promise<{ ok: boolean }> {
+    return await this.client.trpc.message.globalRevokeGrant.mutate(input);
+  }
+
   async listTerminals(sessionId: string): Promise<
     Array<{
       terminalId: string;
@@ -1794,7 +1960,7 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.list.query({ workspacePath });
   }
 
-  async listScopedSettings(input: { scope: "workspace" | "global"; workspacePath?: string }) {
+  async listScopedSettings(input: { scope: "workspace" | "global"; workspacePath?: string; avatar?: string }) {
     return await this.client.trpc.settings.scope.list.query(input);
   }
 
@@ -1850,7 +2016,12 @@ export class RuntimeStore {
     return await this.client.trpc.settings.layers.read.query({ workspacePath, layerId });
   }
 
-  async readScopedSettingsLayer(input: { scope: "workspace" | "global"; workspacePath?: string; layerId: string }) {
+  async readScopedSettingsLayer(input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    layerId: string;
+    avatar?: string;
+  }) {
     return await this.client.trpc.settings.scope.read.query(input);
   }
 
@@ -1864,6 +2035,7 @@ export class RuntimeStore {
     layerId: string;
     content: string;
     baseMtimeMs: number;
+    avatar?: string;
   }) {
     return await this.client.trpc.settings.scope.save.mutate(input);
   }

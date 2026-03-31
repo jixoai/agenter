@@ -76,10 +76,13 @@ describe("Feature: app kernel event replay", () => {
 
     const session = await kernel.createSession({ cwd: workspace, name: "global-workspace", autoStart: false });
     expect(session.storeTarget).toBe("global");
+    expect(session.workspacePath).toBe(resolve(workspace));
 
     const workspaces = kernel.listAllWorkspaces();
-    expect(workspaces[0]?.path).toBe(resolve(workspace));
-    expect(workspaces[0]?.counts).toEqual({ all: 1, running: 0, stopped: 1, archive: 0 });
+    expect(workspaces[0]?.path).toBe("~/");
+    expect(workspaces[0]?.counts).toEqual({ all: 0, running: 0, stopped: 0, archive: 0 });
+    expect(workspaces[1]?.path).toBe(resolve(workspace));
+    expect(workspaces[1]?.counts).toEqual({ all: 1, running: 0, stopped: 1, archive: 0 });
 
     const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
     expect(page.counts).toEqual({ all: 1, running: 0, stopped: 1, archive: 0 });
@@ -399,7 +402,7 @@ describe("Feature: app kernel event replay", () => {
     expect(readFileSync(workspacesPath, "utf8")).not.toContain(JSON.stringify(resolve(missingWorkspace)));
   });
 
-  test("Scenario: Given workspace session When creating and archiving Then paths use UTC buckets and archive tab can see it", async () => {
+  test("Scenario: Given workspace session When creating and archiving Then active paths stay global and archive tab can see it", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");
@@ -423,9 +426,8 @@ describe("Feature: app kernel event replay", () => {
       String(created.getUTCMonth() + 1).padStart(2, "0"),
       String(created.getUTCDate()).padStart(2, "0"),
     ];
-    expect(session.sessionRoot).toBe(
-      join(workspace, ".agenter", "avatar", session.avatar, "sessions", ...bucket, session.id),
-    );
+    expect(session.sessionRoot).toBe(join(root, "sessions", ...bucket, session.id));
+    expect(session.workspacePath).toBe(resolve(workspace));
 
     const archived = await kernel.archiveSession(session.id);
     const archivedDate = new Date(archived.archivedAt!);
@@ -442,9 +444,27 @@ describe("Feature: app kernel event replay", () => {
 
     const restored = await kernel.restoreSession(session.id);
     expect(restored.storageState).toBe("active");
-    expect(restored.sessionRoot).toBe(
-      join(workspace, ".agenter", "avatar", session.avatar, "sessions", ...bucket, session.id),
-    );
+    expect(restored.sessionRoot).toBe(join(root, "sessions", ...bucket, session.id));
+  });
+
+  test("Scenario: Given the same workspace and avatar pair When launching twice Then the kernel reuses one stable session identity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-session-reuse-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const first = await kernel.createSession({ cwd: workspace, avatar: "default", autoStart: false });
+    const second = await kernel.createSession({ cwd: workspace, avatar: "default", autoStart: false });
+
+    expect(second.id).toBe(first.id);
+    expect(kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 }).items).toHaveLength(1);
   });
 
   test("Scenario: Given terminal preset command is missing When auto-starting session Then kernel still accepts chat input", async () => {
@@ -855,6 +875,83 @@ describe("Feature: app kernel event replay", () => {
     } finally {
       globalPlane.close();
     }
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given global room authority When kernel lists sends grants and archives Then room truth stays outside session ownership", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = kernel.createGlobalRoom({
+      chatId: "room-ops",
+      title: "Ops room",
+      focus: true,
+    });
+    expect(room.chatId).toBe("room-ops");
+    expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId && item.focused)).toBeTrue();
+
+    const sent = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      text: "global hello",
+    });
+    expect(sent.ok).toBeTrue();
+
+    const snapshot = kernel.snapshotGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    expect(snapshot.items.some((item) => item.content === "global hello")).toBeTrue();
+
+    const page = kernel.pageGlobalRoomMessages({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    expect(page.items.some((item) => item.content === "global hello")).toBeTrue();
+
+    const updated = kernel.updateGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      patch: {
+        title: "Ops renamed",
+        metadata: { topic: "ops" },
+      },
+    });
+    expect(updated.title).toBe("Ops renamed");
+
+    const issued = kernel.issueGlobalRoomGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "session:avatar-pair",
+      label: "Pair operator",
+    });
+    expect(issued.accessToken).toStartWith("msgtok_");
+    expect(kernel.listGlobalRoomGrants({ chatId: room.chatId, accessToken: room.accessToken })).toHaveLength(1);
+
+    const revoked = kernel.revokeGlobalRoomGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      grantId: issued.grantId,
+    });
+    expect(revoked.ok).toBeTrue();
+
+    const archived = kernel.archiveGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      archivedBy: "ops-admin",
+    });
+    expect(archived.archivedBy).toBe("ops-admin");
+    expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId)).toBeFalse();
 
     await kernel.stop();
   });

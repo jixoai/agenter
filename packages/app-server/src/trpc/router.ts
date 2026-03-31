@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
+import type { MessageActorId } from "@agenter/message-system";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
@@ -22,7 +23,14 @@ const channelAccessInput = z.object({
   accessToken: z.string().min(1),
 });
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
+const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const TERMINAL_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const messageActorIdSchema = z.custom<MessageActorId>(
+  (value) => typeof value === "string" && MESSAGE_ACTOR_ID_PATTERN.test(value),
+  {
+    message: "message actor id must start with auth:, session:, or system:",
+  },
+);
 const terminalActorIdSchema = z.custom<TerminalActorId>(
   (value) => typeof value === "string" && TERMINAL_ACTOR_ID_PATTERN.test(value),
   {
@@ -110,6 +118,16 @@ const resolveTerminalCallerScope = (
     return {};
   }
   const actorId = `auth:${auth.claims.authId}` as TerminalActorId;
+  return auth.claims.superadmin ? { superadminActorId: actorId } : { actorId };
+};
+
+const resolveMessageCallerScope = (
+  auth: { claims: { authId: string; superadmin: boolean } } | null | undefined,
+): { actorId?: MessageActorId; superadminActorId?: MessageActorId } => {
+  if (!auth?.claims.authId) {
+    return {};
+  }
+  const actorId = `auth:${auth.claims.authId}` as MessageActorId;
   return auth.claims.superadmin ? { superadminActorId: actorId } : { actorId };
 };
 
@@ -422,6 +440,207 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.revokeMessageChannelGrant(input)),
+    globalList: t.procedure
+      .input(
+        z.object({
+          includeArchived: z.boolean().optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listGlobalRooms({
+          includeArchived: input.includeArchived,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalCreate: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().trim().min(1).optional(),
+          kind: z.literal("room").default("room"),
+          title: z.string().trim().min(1).optional(),
+          participants: z
+            .array(
+              z.object({
+                id: z.string().trim().min(1),
+                label: z.string().trim().min(1).optional(),
+                role: z.enum(["avatar", "user", "system"]).optional(),
+              }),
+            )
+            .optional(),
+          metadata: z.record(z.string(), z.unknown()).optional(),
+          adminToken: z
+            .string()
+            .trim()
+            .regex(ACCESS_TOKEN_PATTERN, "adminToken must be 16-128 chars [A-Za-z0-9._-]")
+            .optional(),
+          focus: z.boolean().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.createGlobalRoom({
+          chatId: input.chatId,
+          title: input.title,
+          participants: input.participants,
+          metadata: input.metadata,
+          adminToken: input.adminToken,
+          focus: input.focus,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalFocus: t.procedure
+      .input(
+        z.object({
+          op: z.enum(["add", "remove", "replace", "clear"]),
+          channels: z
+            .array(
+              z.object({
+                chatId: z.string().min(1),
+                accessToken: z.string().min(1).optional(),
+              }),
+            )
+            .default([]),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.focusGlobalRooms({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalSnapshot: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          limit: z.number().int().positive().max(500).optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        ctx.kernel.snapshotGlobalRoom({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalPage: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          before: reverseTimeCursorSchema.optional(),
+          limit: z.number().int().positive().max(500).optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageGlobalRoomMessages({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalSend: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          text: z.string().min(1),
+          assetIds: z.array(z.string().min(1)).optional(),
+          clientMessageId: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.sendGlobalRoomMessage({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalUpdate: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          patch: z.object({
+            title: z.string().trim().min(1).optional(),
+            participants: z
+              .array(
+                z.object({
+                  id: z.string().min(1),
+                  label: z.string().trim().min(1).optional(),
+                  role: z.enum(["avatar", "user", "system"]).optional(),
+                }),
+              )
+              .optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
+            adminGroupCandidateIds: z.array(messageActorIdSchema).optional(),
+          }),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.updateGlobalRoom({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalDelete: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          archivedBy: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.archiveGlobalRoom({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalListGrants: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listGlobalRoomGrants({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalIssueGrant: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          role: z.enum(["admin", "member", "readonly"]),
+          label: z.string().trim().min(1).optional(),
+          participantId: messageActorIdSchema,
+          accessTokenHint: z
+            .string()
+            .trim()
+            .regex(ACCESS_TOKEN_PATTERN, "accessTokenHint must be 16-128 chars [A-Za-z0-9._-]")
+            .optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        grant: ctx.kernel.issueGlobalRoomGrant({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalRevokeGrant: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          grantId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.revokeGlobalRoomGrant({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
   }),
   terminal: t.router({
     list: t.procedure
@@ -637,6 +856,7 @@ export const appRouter = t.router({
           z.object({
             scope: z.enum(["workspace", "global"]),
             workspacePath: z.string().min(1).optional(),
+            avatar: z.string().min(1).optional(),
           }),
         )
         .query(async ({ ctx, input }) => await ctx.kernel.listSettingsScope(input)),
@@ -646,6 +866,7 @@ export const appRouter = t.router({
             scope: z.enum(["workspace", "global"]),
             workspacePath: z.string().min(1).optional(),
             layerId: z.string().min(1),
+            avatar: z.string().min(1).optional(),
           }),
         )
         .query(async ({ ctx, input }) => await ctx.kernel.readSettingsScopeLayer(input)),
@@ -657,6 +878,7 @@ export const appRouter = t.router({
             layerId: z.string().min(1),
             content: z.string(),
             baseMtimeMs: z.number().nonnegative(),
+            avatar: z.string().min(1).optional(),
           }),
         )
         .mutation(async ({ ctx, input }) => await ctx.kernel.saveSettingsScopeLayer(input)),
@@ -1009,6 +1231,66 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.listWorkspaceSessions(input)),
+    avatarCatalog: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listWorkspaceAvatarCatalog(input.workspacePath),
+      })),
+    forkAvatar: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        avatar: ctx.kernel.forkWorkspaceAvatar(input),
+      })),
+    welcomeSnapshot: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => {
+        const terminalScope = resolveTerminalCallerScope(ctx.auth);
+        return ctx.kernel.inspectWorkspaceWelcome({
+          workspacePath: input.workspacePath,
+          avatar: input.avatar,
+          ...resolveMessageCallerScope(ctx.auth),
+          terminalActorId: terminalScope.actorId,
+          superadminTerminalActorId: terminalScope.superadminActorId,
+        });
+      }),
+    saveAvatarRoomSeat: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          accessRole: z.enum(["admin", "member", "readonly"]),
+          state: z.enum(["active", "credential-invalid"]).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.saveWorkspaceAvatarRoomSeat(input)),
+    saveAvatarTerminalSeat: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          terminalId: z.string().min(1),
+          accessToken: z.string().min(1),
+          accessRole: z.enum(["admin", "writer", "requester", "readonly"]),
+          state: z.enum(["active", "credential-invalid"]).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.saveWorkspaceAvatarTerminalSeat(input)),
     searchPaths: t.procedure
       .input(
         z.object({

@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, type Dirent, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { toWorkspaceCwd } from "./workspace-target";
+
 export interface WorkspacePathSearchItem {
   label: string;
   path: string;
@@ -345,7 +347,7 @@ export class WorkspacePathSearchIndex {
   private readonly cache = new Map<string, WorkspacePathCacheEntry>();
 
   search(input: { cwd: string; query?: string; limit?: number }): WorkspacePathSearchItem[] {
-    const workspacePath = resolve(input.cwd);
+    const workspacePath = toWorkspaceCwd(input.cwd);
     const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
     const normalizedQuery = (input.query ?? "").trim().replace(/^@/, "").replace(/\\/g, "/").toLowerCase();
     const entries = this.getEntries(workspacePath);

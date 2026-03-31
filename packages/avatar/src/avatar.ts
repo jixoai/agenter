@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import type { AgenterAvatarInit, AvatarPromptPaths, AvatarSource, ResolveAvatarInput, ResolvedAvatar } from "./types";
@@ -9,15 +9,13 @@ const sanitizeNickname = (value: string): string => {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-");
-  return normalized.length > 0 ? normalized : "agenter-bot";
+  return normalized.length > 0 ? normalized : "default";
 };
 
 export const normalizeAvatarNickname = (value: string): string => sanitizeNickname(value);
 
 export const defaultAvatarNickname = (): string => {
-  const envUser = process.env.USER ?? process.env.LOGNAME ?? process.env.USERNAME;
-  const systemUser = envUser && envUser.trim().length > 0 ? envUser : userInfo().username;
-  return `${sanitizeNickname(systemUser)}-bot`;
+  return "default";
 };
 
 const dedupeSources = (sources: AvatarSource[]): AvatarSource[] => {

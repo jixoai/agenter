@@ -3,12 +3,13 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { readSessionDocument, writeSessionDocument, type PersistedSessionStorageState } from "./session-doc";
+import { resolveWorkspaceAvatarSessionId } from "./session-identity";
+import { GLOBAL_WORKSPACE_PATH, toWorkspacePath, workspaceDisplayName } from "./workspace-target";
 
 export type SessionStatus = "stopped" | "paused" | "starting" | "running" | "error";
 export type SessionStorageState = PersistedSessionStorageState;
 
 const isoNow = (): string => new Date().toISOString();
-const createId = (): string => crypto.randomUUID();
 
 const toUtcBucket = (isoLike: string): [string, string, string] => {
   const value = new Date(isoLike);
@@ -55,6 +56,7 @@ export interface SessionMeta {
   id: string;
   name: string;
   cwd: string;
+  workspacePath: string;
   avatar: string;
   createdAt: string;
   updatedAt: string;
@@ -105,14 +107,30 @@ export class SessionCatalog {
     return this.byId.get(sessionId);
   }
 
-  create(input: { name?: string; cwd: string; avatar: string; storeTarget: "global" | "workspace" }): SessionMeta {
-    const id = createId();
+  findByWorkspaceAvatar(workspacePath: string, avatar: string): SessionMeta | undefined {
+    return this.byId.get(resolveWorkspaceAvatarSessionId(toWorkspacePath(workspacePath), avatar));
+  }
+
+  create(input: {
+    name?: string;
+    cwd: string;
+    workspacePath?: string;
+    avatar: string;
+    storeTarget: "global" | "workspace";
+  }): SessionMeta {
+    const workspacePath = toWorkspacePath(input.workspacePath ?? input.cwd);
+    const id = resolveWorkspaceAvatarSessionId(workspacePath, input.avatar);
+    const existing = this.byId.get(id);
+    if (existing) {
+      return existing.storageState === "archived" ? this.restore(existing.id) : existing;
+    }
     const createdAt = isoNow();
     const cwd = resolve(input.cwd);
     const session: SessionMeta = {
       id,
-      name: input.name?.trim().length ? input.name.trim() : this.deriveName(cwd),
+      name: input.name?.trim().length ? input.name.trim() : this.deriveName(workspacePath, input.avatar),
       cwd,
+      workspacePath,
       avatar: input.avatar,
       createdAt,
       updatedAt: createdAt,
@@ -121,6 +139,7 @@ export class SessionCatalog {
       sessionRoot: this.resolveActiveSessionRoot({
         id,
         cwd,
+        workspacePath,
         avatar: input.avatar,
         createdAt,
         storeTarget: input.storeTarget,
@@ -220,7 +239,7 @@ export class SessionCatalog {
   }
 
   refresh(workspaces: string[]): void {
-    const workspaceSet = new Set(workspaces.map((item) => resolve(item)));
+    const workspaceSet = new Set(workspaces.map((item) => toWorkspacePath(item)));
     const discovered = new Map<string, SessionMeta>();
 
     for (const sessionRoot of this.scanGlobalSessionRoots()) {
@@ -235,13 +254,16 @@ export class SessionCatalog {
       if (!parsed) {
         continue;
       }
-      if (parsed.storeTarget === "workspace" && !workspaceSet.has(parsed.cwd)) {
+      if (parsed.storeTarget === "workspace" && !workspaceSet.has(parsed.workspacePath)) {
         continue;
       }
       discovered.set(parsed.id, parsed);
     }
 
     for (const workspace of workspaceSet) {
+      if (workspace === GLOBAL_WORKSPACE_PATH) {
+        continue;
+      }
       for (const sessionRoot of this.scanWorkspaceSessionRoots(workspace)) {
         const parsed = this.readSessionMeta(sessionRoot, "workspace");
         if (parsed) {
@@ -309,14 +331,16 @@ export class SessionCatalog {
     }
 
     const cwd = session.cwd ? resolve(session.cwd) : ".";
+    const workspacePath = toWorkspacePath(session.workspacePath ?? cwd);
     const createdAt = session.createdAt ?? isoNow();
     const storageState = session.storageState ?? (target === "archive" ? "archived" : "active");
 
     return {
       id: session.id,
-      name: session.name ?? this.deriveName(cwd),
+      name: session.name ?? this.deriveName(workspacePath, session.avatar ?? "default"),
       cwd,
-      avatar: session.avatar ?? "agenter-bot",
+      workspacePath,
+      avatar: session.avatar ?? "default",
       createdAt,
       updatedAt: session.updatedAt ?? createdAt,
       status: normalizePersistedStatus(session.status as SessionStatus | undefined),
@@ -338,6 +362,7 @@ export class SessionCatalog {
         id: meta.id,
         name: meta.name,
         cwd: meta.cwd,
+        workspacePath: meta.workspacePath,
         avatar: meta.avatar,
         storeTarget: meta.storeTarget,
         status: meta.status,
@@ -352,7 +377,9 @@ export class SessionCatalog {
     });
   }
 
-  private resolveActiveSessionRoot(input: Pick<SessionMeta, "id" | "cwd" | "avatar" | "createdAt" | "storeTarget">): string {
+  private resolveActiveSessionRoot(
+    input: Pick<SessionMeta, "id" | "cwd" | "workspacePath" | "avatar" | "createdAt" | "storeTarget">,
+  ): string {
     const [year, month, day] = toUtcBucket(input.createdAt);
     if (input.storeTarget === "workspace") {
       return join(input.cwd, ".agenter", "avatar", input.avatar, "sessions", year, month, day, input.id);
@@ -365,11 +392,11 @@ export class SessionCatalog {
     return join(this.archiveRoot, year, month, day, sessionId);
   }
 
-  private deriveName(cwd: string): string {
-    const part = resolve(cwd)
-      .split("/")
-      .filter((token) => token.length > 0)
-      .at(-1);
-    return part ?? "workspace";
+  private deriveName(workspacePath: string, avatar: string): string {
+    const normalizedAvatar = avatar.trim();
+    if (normalizedAvatar.length > 0) {
+      return normalizedAvatar;
+    }
+    return workspaceDisplayName(workspacePath);
   }
 }

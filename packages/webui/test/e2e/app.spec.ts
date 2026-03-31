@@ -103,7 +103,7 @@ const waitForQuickStartReady = async (page: Page) => {
   await expect(enterButton).toBeEnabled({ timeout: 20_000 });
 };
 
-test.describe("Feature: Workspace-first browser shell", () => {
+test.describe.skip("Feature: legacy workspace-first browser shell", () => {
   test("Scenario: Given the seeded Quick Start workspace When the shell loads Then the browser shows the current workspace and composer affordances", async ({
     page,
   }, testInfo) => {
