@@ -6,8 +6,11 @@ import { MarkdownDocument } from "../../components/markdown/MarkdownDocument";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
+import { Input } from "../../components/ui/input";
 import { JSONViewer } from "../../components/ui/json-viewer";
+import { Label } from "../../components/ui/label";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { Separator } from "../../components/ui/separator";
 import { Tabs } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import {
@@ -108,6 +111,18 @@ const readChangePreviewText = (commit: AttentionCommitView): string => {
   return JSON.stringify(commit.change.value);
 };
 
+const listCardButtonClassName = (selected: boolean, tone: "dark" | "sky" = "dark"): string =>
+  cn(
+    "h-auto w-full items-start justify-start whitespace-normal rounded-xl px-2.5 py-2 text-left shadow-none",
+    tone === "sky"
+      ? selected
+        ? "border-sky-300 bg-sky-50 text-sky-950 hover:bg-sky-50"
+        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+      : selected
+        ? "border-slate-900 bg-slate-950 text-white hover:bg-slate-950"
+        : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
+  );
+
 const renderScoreButtons = (input: {
   scores: Record<string, number>;
   emptyLabel: string;
@@ -121,22 +136,24 @@ const renderScoreButtons = (input: {
   return (
     <div className="flex flex-wrap gap-1.5">
       {summary.entries.map((entry) => (
-        <button
+        <Button
           key={entry.key}
           type="button"
+          size="sm"
+          variant="outline"
           onClick={() => input.onSelectHash(entry.key)}
           className={cn(
-            badgeClassName,
-            "cursor-pointer transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800",
+            "rounded-full px-2 py-1 text-[11px] shadow-none transition-colors",
             entry.resolved
               ? "border-slate-200 bg-slate-100 text-slate-500"
               : "border-emerald-200 bg-emerald-50 text-emerald-700",
+            "hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800",
           )}
           title={`score:${entry.key}`}
         >
           <span className="font-medium">{entry.key}</span>
           <span>{entry.score}</span>
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -326,7 +343,7 @@ export const AttentionInspectorPanel = ({
     : selectedContext;
   const detailCommit = isSearchTab ? selectedQueryEntry?.commit : selectedCommit;
   const detailCommitSourceLink = useMemo(
-    () => (detailCommit ? resolveSourceLink?.(detailCommit) ?? null : null),
+    () => (detailCommit ? (resolveSourceLink?.(detailCommit) ?? null) : null),
     [detailCommit, resolveSourceLink],
   );
   const selectedCommitScoreSummary = useMemo(
@@ -431,7 +448,8 @@ export const AttentionInspectorPanel = ({
         <p className="text-xs text-slate-500">{source.description}</p>
         {!source.available ? (
           <p className="text-xs text-amber-700">
-            Source unavailable. Keep the attention item for history, then archive it when the source is no longer useful.
+            Source unavailable. Keep the attention item for history, then archive it when the source is no longer
+            useful.
           </p>
         ) : null}
       </section>
@@ -439,7 +457,9 @@ export const AttentionInspectorPanel = ({
   };
 
   return (
-    <section className={cn("grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-xl bg-white p-3 shadow-xs", className)}>
+    <section
+      className={cn("grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3 rounded-xl bg-white p-3 shadow-xs", className)}
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -482,7 +502,9 @@ export const AttentionInspectorPanel = ({
             <Tabs
               items={detailTabs}
               value={activeTab}
-              onValueChange={(value) => setActiveTab(value === "items" ? "items" : value === "search" ? "search" : "context")}
+              onValueChange={(value) =>
+                setActiveTab(value === "items" ? "items" : value === "search" ? "search" : "context")
+              }
               ariaLabel="Attention detail tabs"
               trailing={tabsTrailing}
             />
@@ -491,30 +513,33 @@ export const AttentionInspectorPanel = ({
           {isSearchTab ? (
             <div className="grid h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3 xl:grid-cols-[20rem_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
               <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 xl:hidden">
-                <label
+                <Label
                   className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"
                   htmlFor="attention-query-input-mobile"
                 >
                   <Search className="h-3.5 w-3.5" />
                   Search attention
-                </label>
-                <input
+                </Label>
+                <Input
                   id="attention-query-input-mobile"
                   value={queryText}
                   onChange={(event) => setQueryText(event.target.value)}
                   placeholder="context:ctx-chat-kzf score:abc123 deep:2"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
+                  className="border-slate-200 bg-white px-2.5"
                 />
+                <Separator className="mt-2" />
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
                   <span>{searchStatusLabel}</span>
                   {hasQuery ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
+                      variant="ghost"
                       onClick={() => setQueryText("")}
-                      className="font-medium text-sky-700 hover:text-sky-800"
+                      className="h-auto px-2 py-1 text-[11px] font-medium text-sky-700 hover:text-sky-800"
                     >
                       Clear query
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 {queryError ? <p className="mt-2 text-[11px] text-rose-600">{queryError}</p> : null}
@@ -522,30 +547,33 @@ export const AttentionInspectorPanel = ({
 
               <section className="grid h-full grid-rows-[minmax(0,1fr)] gap-3 xl:grid-rows-[auto_minmax(0,1fr)]">
                 <section className="hidden rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 xl:block">
-                  <label
+                  <Label
                     className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"
                     htmlFor="attention-query-input-desktop"
                   >
                     <Search className="h-3.5 w-3.5" />
                     Search attention
-                  </label>
-                  <input
+                  </Label>
+                  <Input
                     id="attention-query-input-desktop"
                     value={queryText}
                     onChange={(event) => setQueryText(event.target.value)}
                     placeholder="context:ctx-chat-kzf score:abc123 deep:2"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
+                    className="border-slate-200 bg-white px-2.5"
                   />
+                  <Separator className="mt-2" />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
                     <span>{searchStatusLabel}</span>
                     {hasQuery ? (
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
+                        variant="ghost"
                         onClick={() => setQueryText("")}
-                        className="font-medium text-sky-700 hover:text-sky-800"
+                        className="h-auto px-2 py-1 text-[11px] font-medium text-sky-700 hover:text-sky-800"
                       >
                         Clear query
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                   {queryError ? <p className="mt-2 text-[11px] text-rose-600">{queryError}</p> : null}
@@ -568,26 +596,23 @@ export const AttentionInspectorPanel = ({
                           contexts.find((context) => context.contextId === entry.contextId)?.scoreMap ?? {},
                         ).some((score) => score > 0);
                         const isSelected =
-                          entry.contextId === detailContext?.contextId && entry.commit.commitId === detailCommit?.commitId;
+                          entry.contextId === detailContext?.contextId &&
+                          entry.commit.commitId === detailCommit?.commitId;
                         const scoreSummary = buildAttentionScoreSummary(entry.commit.scores);
                         return (
-                          <button
+                          <Button
                             key={`${entry.contextId}:${entry.commit.commitId}`}
                             type="button"
+                            variant="outline"
                             onClick={() => {
                               applySelection({
                                 contextId: entry.contextId,
                                 itemId: entry.commit.commitId,
                               });
                             }}
-                            className={cn(
-                              "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-                              isSelected
-                                ? "border-slate-900 bg-slate-950 text-white"
-                                : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
-                            )}
+                            className={listCardButtonClassName(isSelected)}
                           >
-                            <div className="flex items-start justify-between gap-2">
+                            <div className="flex w-full items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium">{entry.commit.summary}</div>
                                 <div className="mt-1 text-[11px] opacity-80">
@@ -596,11 +621,13 @@ export const AttentionInspectorPanel = ({
                               </div>
                               <span className="text-[11px] opacity-70">{contextActive ? "active" : "resolved"}</span>
                             </div>
-                            <div className="mt-1 text-[11px] opacity-80">{scoreSummary?.text ?? "No score summary"}</div>
+                            <div className="mt-1 text-[11px] opacity-80">
+                              {scoreSummary?.text ?? "No score summary"}
+                            </div>
                             <div className="mt-1 line-clamp-2 text-[11px] opacity-70">
                               {readChangePreviewText(entry.commit)}
                             </div>
-                          </button>
+                          </Button>
                         );
                       })}
                     </div>
@@ -678,7 +705,9 @@ export const AttentionInspectorPanel = ({
 
                         <section className={cn(surfaceClassName, "space-y-3 p-3")}>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Metadata</h4>
+                            <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                              Metadata
+                            </h4>
                             <HelpHint
                               helpId="attention-panel:metadata"
                               textContext="Metadata explains who emitted the commit and where the mutation belongs."
@@ -707,18 +736,19 @@ export const AttentionInspectorPanel = ({
                           {relatedItems.length > 0 ? (
                             <div className="space-y-1.5">
                               {relatedItems.map((entry) => (
-                                <button
+                                <Button
                                   key={`${entry.contextId}:${entry.commit.commitId}:${entry.reason}`}
                                   type="button"
+                                  variant="outline"
                                   onClick={() => {
                                     applySelection({
                                       contextId: entry.contextId,
                                       itemId: entry.commit.commitId,
                                     });
                                   }}
-                                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left hover:border-slate-300 hover:bg-white"
+                                  className="h-auto w-full items-start justify-start rounded-xl border-slate-200 bg-slate-50 px-2.5 py-2 text-left whitespace-normal shadow-none hover:border-slate-300 hover:bg-white"
                                 >
-                                  <div className="min-w-0">
+                                  <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm font-medium text-slate-900">
                                       {entry.commit.summary}
                                     </div>
@@ -728,11 +758,13 @@ export const AttentionInspectorPanel = ({
                                     <Link2 className="h-3.5 w-3.5" />
                                     {entry.reason}
                                   </span>
-                                </button>
+                                </Button>
                               ))}
                             </div>
                           ) : (
-                            <p className="text-sm text-slate-500">No related commits are linked to this selection yet.</p>
+                            <p className="text-sm text-slate-500">
+                              No related commits are linked to this selection yet.
+                            </p>
                           )}
                         </section>
                       </div>
@@ -758,52 +790,48 @@ export const AttentionInspectorPanel = ({
                   : "grid-rows-[minmax(6rem,0.5fr)_minmax(0,1.5fr)]",
               )}
             >
-            <ScrollViewport
-              className="h-full rounded-xl border border-slate-200 bg-slate-50/70 p-2"
-              data-testid="attention-context-scroll-viewport"
-            >
-              <div className="space-y-1.5">
-                {contexts.map((context) => {
-                  const isSelected = context.contextId === selectedContext?.contextId;
-                  const snapshot = buildAttentionContextSnapshot(attention, context.contextId);
-                  const activeCount = snapshot?.activeCount ?? 0;
-                  return (
-                    <button
-                      key={context.contextId}
-                      type="button"
-                      onClick={() => {
-                        applySelection({
-                          contextId: context.contextId,
-                          itemId: selectDefaultItemId(context, attention),
-                        });
-                        setActiveTab("context");
-                      }}
-                      className={cn(
-                        "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-                        isSelected
-                          ? "border-sky-300 bg-sky-50 text-sky-950"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{context.contextId}</span>
-                        <span className="text-[11px] text-slate-500">{activeCount}</span>
-                      </div>
-                      <div className="mt-1 text-[11px] text-slate-500">owner: {context.owner}</div>
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        {snapshot?.scoreSummary?.text ?? "No active scores"}
-                      </div>
-                      <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
-                        {snapshot?.headCommit?.summary ??
-                          `${snapshot?.commitCount ?? context.commitCount ?? context.commits.length} commits`}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </ScrollViewport>
+              <ScrollViewport
+                className="h-full rounded-xl border border-slate-200 bg-slate-50/70 p-2"
+                data-testid="attention-context-scroll-viewport"
+              >
+                <div className="space-y-1.5">
+                  {contexts.map((context) => {
+                    const isSelected = context.contextId === selectedContext?.contextId;
+                    const snapshot = buildAttentionContextSnapshot(attention, context.contextId);
+                    const activeCount = snapshot?.activeCount ?? 0;
+                    return (
+                      <Button
+                        key={context.contextId}
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          applySelection({
+                            contextId: context.contextId,
+                            itemId: selectDefaultItemId(context, attention),
+                          });
+                          setActiveTab("context");
+                        }}
+                        className={listCardButtonClassName(isSelected, "sky")}
+                      >
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">{context.contextId}</span>
+                          <span className="text-[11px] text-slate-500">{activeCount}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">owner: {context.owner}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          {snapshot?.scoreSummary?.text ?? "No active scores"}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                          {snapshot?.headCommit?.summary ??
+                            `${snapshot?.commitCount ?? context.commitCount ?? context.commits.length} commits`}
+                        </div>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </ScrollViewport>
 
-            {activeTab === "context" ? (
+              {activeTab === "context" ? (
                 <ScrollViewport
                   className="h-full rounded-xl border border-slate-200 bg-white p-3"
                   data-testid="attention-context-detail-scroll-viewport"
@@ -945,23 +973,19 @@ export const AttentionInspectorPanel = ({
                           entry.commit.commitId === selectedCommit?.commitId;
                         const scoreSummary = buildAttentionScoreSummary(entry.commit.scores);
                         return (
-                          <button
+                          <Button
                             key={`${entry.contextId}:${entry.commit.commitId}`}
                             type="button"
+                            variant="outline"
                             onClick={() => {
                               applySelection({
                                 contextId: entry.contextId,
                                 itemId: entry.commit.commitId,
                               });
                             }}
-                            className={cn(
-                              "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-                              isSelected
-                                ? "border-slate-900 bg-slate-950 text-white"
-                                : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
-                            )}
+                            className={listCardButtonClassName(isSelected)}
                           >
-                            <div className="flex items-start justify-between gap-2">
+                            <div className="flex w-full items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium">{entry.commit.summary}</div>
                                 <div className="mt-1 text-[11px] opacity-80">
@@ -976,7 +1000,7 @@ export const AttentionInspectorPanel = ({
                             <div className="mt-1 line-clamp-2 text-[11px] opacity-70">
                               {readChangePreviewText(entry.commit)}
                             </div>
-                          </button>
+                          </Button>
                         );
                       })}
                       {defaultContextItems.length === 0 ? (
@@ -1092,18 +1116,19 @@ export const AttentionInspectorPanel = ({
                               {relatedItems.length > 0 ? (
                                 <div className="space-y-1.5">
                                   {relatedItems.map((entry) => (
-                                    <button
+                                    <Button
                                       key={`${entry.contextId}:${entry.commit.commitId}:${entry.reason}`}
                                       type="button"
+                                      variant="outline"
                                       onClick={() => {
                                         applySelection({
                                           contextId: entry.contextId,
                                           itemId: entry.commit.commitId,
                                         });
                                       }}
-                                      className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left hover:border-slate-300 hover:bg-white"
+                                      className="h-auto w-full items-start justify-start rounded-xl border-slate-200 bg-slate-50 px-2.5 py-2 text-left whitespace-normal shadow-none hover:border-slate-300 hover:bg-white"
                                     >
-                                      <div className="min-w-0">
+                                      <div className="min-w-0 flex-1">
                                         <div className="truncate text-sm font-medium text-slate-900">
                                           {entry.commit.summary}
                                         </div>
@@ -1113,7 +1138,7 @@ export const AttentionInspectorPanel = ({
                                         <Link2 className="h-3.5 w-3.5" />
                                         {entry.reason}
                                       </span>
-                                    </button>
+                                    </Button>
                                   ))}
                                 </div>
                               ) : (
@@ -1133,7 +1158,7 @@ export const AttentionInspectorPanel = ({
                   </ScrollViewport>
                 </div>
               )}
-          </div>
+            </div>
           )}
         </div>
       </AsyncSurface>

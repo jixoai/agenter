@@ -99,7 +99,10 @@ export const SettingsPanel = ({
   const effectiveSchema = effective?.schema ?? {};
   const effectiveProvenance = effective?.provenance ?? {};
   const layerDraftJson = useMemo(() => tryParseJson(layerContent), [layerContent]);
-  const effectiveValue = useMemo(() => effective?.value ?? tryParseJson(effectiveContent) ?? {}, [effective?.value, effectiveContent]);
+  const effectiveValue = useMemo(
+    () => effective?.value ?? tryParseJson(effectiveContent) ?? {},
+    [effective?.value, effectiveContent],
+  );
   const hasData = activeTab === "effective" ? effectiveContent.trim().length > 0 : layers.length > 0;
   const splitDetail = detailMode === "split";
 
@@ -158,7 +161,11 @@ export const SettingsPanel = ({
         </div>
       </header>
 
-      <Tabs items={VIEW_TABS} value={layerViewMode} onValueChange={(value) => setLayerViewMode(value as "source" | "view")} />
+      <Tabs
+        items={VIEW_TABS}
+        value={layerViewMode}
+        onValueChange={(value) => setLayerViewMode(value as "source" | "view")}
+      />
 
       {layerViewMode === "source" ? (
         <SettingsSourceEditor
@@ -206,7 +213,11 @@ export const SettingsPanel = ({
         </Badge>
       </div>
 
-      <Tabs items={MAIN_TABS} value={activeTab} onValueChange={(value) => setActiveTab(value as "effective" | "layers")} />
+      <Tabs
+        items={MAIN_TABS}
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "effective" | "layers")}
+      />
 
       <AsyncSurface
         state={resolveAsyncSurfaceState({ loading, hasData })}
@@ -241,7 +252,12 @@ export const SettingsPanel = ({
             )}
           </section>
         ) : (
-          <div className={cn("grid h-full grid-cols-1 gap-3", splitDetail ? "grid-rows-[minmax(180px,40%)_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]")}>
+          <div
+            className={cn(
+              "grid h-full grid-cols-1 gap-3",
+              splitDetail ? "grid-rows-[minmax(180px,40%)_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+            )}
+          >
             <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-xl border border-slate-200 bg-slate-50 p-2">
               <header className="mb-2 flex items-center justify-between gap-2">
                 <p className="typo-emphasis text-xs text-slate-700">Layer Files</p>
@@ -251,20 +267,21 @@ export const SettingsPanel = ({
               </header>
               <ScrollViewport data-testid="settings-sources-scroll-viewport" className="h-full space-y-1 pr-1">
                 {layers.map((layer) => (
-                  <button
+                  <Button
                     key={layer.layerId}
                     type="button"
+                    variant="outline"
                     onClick={() => {
                       setFocusedLayerPointer(null);
                       openLayer(layer.layerId);
                     }}
                     className={
                       layer.layerId === selectedLayerId
-                        ? "w-full rounded-md border border-teal-300 bg-teal-50 px-2 py-2 text-left"
-                        : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-100"
+                        ? "h-auto w-full items-start justify-start rounded-md border-teal-300 bg-teal-50 px-2 py-2 text-left whitespace-normal shadow-none hover:bg-teal-50"
+                        : "h-auto w-full items-start justify-start rounded-md border-slate-200 bg-white px-2 py-2 text-left whitespace-normal shadow-none hover:bg-slate-100"
                     }
                   >
-                    <div className="mb-1 flex flex-wrap items-center gap-1">
+                    <div className="mb-1 flex w-full flex-wrap items-center gap-1">
                       <Badge variant="secondary">{layerBadgeLabel(layer)}</Badge>
                       <Badge variant={layerTone(layer)}>{layer.editable ? "editable" : "readonly"}</Badge>
                     </div>
@@ -272,7 +289,7 @@ export const SettingsPanel = ({
                     {!layer.editable && layer.readonlyReason ? (
                       <p className="mt-1 text-[11px] text-amber-700">{layer.readonlyReason}</p>
                     ) : null}
-                  </button>
+                  </Button>
                 ))}
               </ScrollViewport>
             </section>
@@ -282,7 +299,12 @@ export const SettingsPanel = ({
       </AsyncSurface>
 
       {detailMode === "sheet" && activeTab === "layers" ? (
-        <Sheet open={detailOpen} onOpenChange={setDetailOpen} side="right" title={selectedLayer ? "Layer Detail" : "Layer Sources"}>
+        <Sheet
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          side="right"
+          title={selectedLayer ? "Layer Detail" : "Layer Sources"}
+        >
           <div className="h-full min-h-[45dvh]">{layerDetail}</div>
         </Sheet>
       ) : null}

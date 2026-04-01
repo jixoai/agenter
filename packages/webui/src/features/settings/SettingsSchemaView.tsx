@@ -3,10 +3,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
 import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
-import { getValueAtPointer, patchValueAtPointer } from "./settings-json-pointer";
 import type { SettingsPointerJumpTarget, SettingsProvenanceEntry } from "./settings-graph-types";
+import { getValueAtPointer, patchValueAtPointer } from "./settings-json-pointer";
 
 interface SettingsSchemaViewProps {
   schema: Record<string, unknown> | null;
@@ -29,7 +30,9 @@ const isPrimitive = (value: unknown): value is string | number | boolean | null 
 const asSchemaRecord = (value: unknown): Record<string, unknown> | null => (isRecord(value) ? value : null);
 
 const asSchemaList = (value: unknown): Record<string, unknown>[] =>
-  Array.isArray(value) ? value.map((item) => asSchemaRecord(item)).filter((item): item is Record<string, unknown> => item !== null) : [];
+  Array.isArray(value)
+    ? value.map((item) => asSchemaRecord(item)).filter((item): item is Record<string, unknown> => item !== null)
+    : [];
 
 const toSchemaKind = (schema: Record<string, unknown> | null, value: unknown): SchemaKind => {
   const rawType = schema?.type;
@@ -94,7 +97,11 @@ const readDescription = (schema: Record<string, unknown> | null): string | null 
   return normalized.length > 0 ? normalized : null;
 };
 
-const getChildSchema = (schema: Record<string, unknown> | null, token: string, value: unknown): Record<string, unknown> | null => {
+const getChildSchema = (
+  schema: Record<string, unknown> | null,
+  token: string,
+  value: unknown,
+): Record<string, unknown> | null => {
   const normalized = pickUnionSchema(schema, value);
   if (!normalized) {
     return null;
@@ -271,8 +278,11 @@ const FieldNode = ({
   const description = readDescription(normalizedSchema);
   const focused = focusPointer === pointer;
   const scalarEditable =
-    mode === "editable" && onPatch && (kind === "string" || kind === "number" || kind === "integer" || kind === "boolean");
-  const placeholder = scalarEditable && (kind === "string" || kind === "number" || kind === "integer") ? description : null;
+    mode === "editable" &&
+    onPatch &&
+    (kind === "string" || kind === "number" || kind === "integer" || kind === "boolean");
+  const placeholder =
+    scalarEditable && (kind === "string" || kind === "number" || kind === "integer") ? description : null;
   const showHelpIcon = placeholder === null;
   const [expanded, setExpanded] = useState(() => isRoot || focused || !isEmptyValue(value));
 
@@ -340,9 +350,11 @@ const FieldNode = ({
     );
   } else if (enumValues.length > 0 && scalarEditable) {
     body = (
-      <select
-        className="h-8 rounded border border-slate-300 bg-white px-2 text-xs text-slate-700"
-        value={typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : ""}
+      <Select
+        className="h-8 text-xs"
+        value={
+          typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : ""
+        }
         onChange={(event) => {
           const selected = enumValues.find((item) => String(item) === event.target.value);
           if (selected !== undefined) {
@@ -355,18 +367,18 @@ const FieldNode = ({
             {String(item)}
           </option>
         ))}
-      </select>
+      </Select>
     );
   } else if (scalarEditable && kind === "boolean") {
     body = (
-      <select
-        className="h-8 rounded border border-slate-300 bg-white px-2 text-xs text-slate-700"
+      <Select
+        className="h-8 text-xs"
         value={value === true ? "true" : "false"}
         onChange={(event) => onPatch(pointer, event.target.value === "true")}
       >
         <option value="true">true</option>
         <option value="false">false</option>
-      </select>
+      </Select>
     );
   } else if (scalarEditable && (kind === "number" || kind === "integer")) {
     body = (
@@ -393,7 +405,7 @@ const FieldNode = ({
     );
   } else if (isPrimitive(value)) {
     body = (
-      <p className="whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+      <p className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs break-words whitespace-pre-wrap text-slate-700">
         {renderPrimitive(value)}
       </p>
     );
@@ -423,7 +435,10 @@ const FieldNode = ({
       <article
         ref={(node) => registerPointer(pointer, node)}
         data-settings-pointer={pointer}
-        className={cn("space-y-2 rounded-lg border border-slate-200 bg-white px-2 py-2", focused ? "ring-2 ring-teal-300" : "")}
+        className={cn(
+          "space-y-2 rounded-lg border border-slate-200 bg-white px-2 py-2",
+          focused ? "ring-2 ring-teal-300" : "",
+        )}
       >
         <header className="flex flex-wrap items-center justify-between gap-2">{header}</header>
         {body}

@@ -69,14 +69,17 @@ const AttentionRefCard = ({
   }
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={() => onOpenAttentionRef?.({ contextId, itemId })}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-300"
+      className="h-auto w-full items-start justify-start rounded-xl border-slate-200 bg-slate-50 px-3 py-2 text-left whitespace-normal shadow-none transition hover:border-slate-300 hover:bg-white"
     >
-      <p className="text-sm font-medium text-slate-900">{label}</p>
-      <p className="text-xs text-slate-500">{subtitle}</p>
-    </button>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-slate-900">{label}</p>
+        <p className="text-xs text-slate-500">{subtitle}</p>
+      </div>
+    </Button>
   );
 };
 

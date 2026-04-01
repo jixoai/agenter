@@ -47,12 +47,7 @@ export const SessionsPanel = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="typo-title-3 text-slate-900">Work Sessions</h2>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={onToggleShowAll}
-          >
+          <Button type="button" size="sm" variant="ghost" onClick={onToggleShowAll}>
             <ButtonLeadingVisual>
               <Clock3 className="h-3.5 w-3.5" />
             </ButtonLeadingVisual>
@@ -90,23 +85,24 @@ export const SessionsPanel = ({
       <ScrollViewport className="h-full space-y-2">
         {sessions.length === 0 ? <p className="typo-caption text-slate-500">No entries yet.</p> : null}
         {sessions.map((session) => (
-          <button
+          <Button
             key={session.id}
             type="button"
+            variant="ghost"
             onClick={() => onSelect(session.id)}
             className={cn(
-              "w-full rounded-lg px-3 py-2 text-left transition-colors",
+              "h-auto w-full items-start justify-start rounded-lg px-3 py-2 text-left whitespace-normal shadow-none transition-colors",
               session.id === activeSessionId
-                ? "bg-teal-50 text-teal-950"
+                ? "bg-teal-50 text-teal-950 hover:bg-teal-50"
                 : "bg-white text-slate-800 hover:bg-slate-100",
             )}
           >
-            <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="mb-1 flex w-full items-center justify-between gap-2">
               <span className="truncate text-sm font-medium">{session.name}</span>
               <Badge variant={statusVariant(session.status)}>{session.status}</Badge>
             </div>
             <p className="truncate text-[11px] text-slate-600">{session.cwd}</p>
-          </button>
+          </Button>
         ))}
       </ScrollViewport>
     </section>

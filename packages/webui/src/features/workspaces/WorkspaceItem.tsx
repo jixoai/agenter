@@ -39,12 +39,17 @@ export const WorkspaceItem = ({
       )}
     >
       <div className="flex items-start gap-2">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => onSelect(selected ? null : workspace.path)}
           className={cn(
-            "flex min-w-0 flex-1 flex-col items-start rounded-lg px-2 py-2 text-left",
-            selected ? "bg-transparent" : workspace.missing ? "hover:bg-rose-100/60" : "hover:bg-slate-100",
+            "h-auto min-w-0 flex-1 items-start justify-start rounded-lg px-2 py-2 text-left whitespace-normal shadow-none",
+            selected
+              ? "bg-transparent hover:bg-transparent"
+              : workspace.missing
+                ? "hover:bg-rose-100/60"
+                : "hover:bg-slate-100",
           )}
           title={workspace.path}
         >
@@ -58,7 +63,7 @@ export const WorkspaceItem = ({
               <Badge variant="secondary">archive {workspace.counts.archive}</Badge>
             ) : null}
           </span>
-        </button>
+        </Button>
 
         <div className="flex items-center gap-1 self-start">
           <Button

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppController, useRuntimeSelector } from "../../app-context";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
 import { JSONViewer } from "../../components/ui/json-viewer";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
@@ -41,17 +42,18 @@ const ChannelRow = ({
 }) => {
   const Icon = channel.kind === "room" ? Users : MessageCircleMore;
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={() => onSelect(channel.chatId)}
       className={cn(
-        "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+        "h-auto w-full items-start justify-start rounded-xl px-3 py-2.5 text-left whitespace-normal shadow-none transition-colors",
         selected
-          ? "border-slate-900 bg-slate-900 text-white"
+          ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
           : "border-slate-200 bg-white text-slate-800 hover:border-slate-300",
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex w-full items-start gap-3">
         <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", selected ? "text-white" : "text-slate-500")} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -68,7 +70,7 @@ const ChannelRow = ({
           </p>
         </div>
       </div>
-    </button>
+    </Button>
   );
 };
 
@@ -210,7 +212,7 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
             {selectedChannel ? (
               <div className="space-y-4">
                 <section className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Transport</h4>
+                  <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Transport</h4>
                   <JSONViewer
                     value={{
                       transportUrl: selectedChannel.transportUrl ?? null,
@@ -221,7 +223,7 @@ export const SystemsPanel = ({ sessionId, loading }: SystemsPanelProps) => {
                   />
                 </section>
                 <section className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Participants</h4>
+                  <h4 className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">Participants</h4>
                   <JSONViewer value={selectedChannel.participants} />
                 </section>
               </div>

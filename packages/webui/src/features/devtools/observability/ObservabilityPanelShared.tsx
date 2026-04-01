@@ -1,5 +1,7 @@
 import { CheckCircle2, Cpu, LoaderCircle, TriangleAlert } from "lucide-react";
 
+import { Button, ButtonLabel, ButtonLeadingVisual } from "../../../components/ui/button";
+
 export const StatusIcon = ({ status }: { status: "ok" | "error" | "running" | "done" | "cancelled" }) => {
   if (status === "done") {
     return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
@@ -29,13 +31,15 @@ export const PanelHeader = ({ label, count, hasMore, loading, onLoadMore }: Pane
     <span className="text-[11px] font-medium text-slate-700">
       {label} ({count})
     </span>
-    <button
+    <Button
       type="button"
+      size="sm"
+      variant="outline"
       disabled={!hasMore || loading || !onLoadMore}
       onClick={() => {
         void onLoadMore?.();
       }}
-      className="rounded-md bg-white px-2 py-1 text-[11px] text-slate-600 shadow-xs ring-1 ring-slate-200 transition hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+      className="text-[11px] text-slate-600 shadow-xs"
     >
       {loading ? (
         <span className="inline-flex items-center gap-1">
@@ -43,11 +47,13 @@ export const PanelHeader = ({ label, count, hasMore, loading, onLoadMore }: Pane
           Loading...
         </span>
       ) : (
-        <span className="inline-flex items-center gap-1">
-          <Cpu className="h-3 w-3" />
-          Load older
-        </span>
+        <>
+          <ButtonLeadingVisual>
+            <Cpu className="h-3 w-3" />
+          </ButtonLeadingVisual>
+          <ButtonLabel>Load older</ButtonLabel>
+        </>
       )}
-    </button>
+    </Button>
   </div>
 );

@@ -90,9 +90,7 @@ const LoadingShell = () => (
   </div>
 );
 
-const getFocusedTerminal = (
-  runtime: NonNullable<TerminalPanelProps["runtime"]>,
-): RuntimeTerminal | undefined => {
+const getFocusedTerminal = (runtime: NonNullable<TerminalPanelProps["runtime"]>): RuntimeTerminal | undefined => {
   const focusedTerminalId = runtime.focusedTerminalIds[0] ?? runtime.terminals[0]?.terminalId;
   return runtime.terminals.find((item) => item.terminalId === focusedTerminalId) ?? runtime.terminals[0];
 };
@@ -163,7 +161,9 @@ export const TerminalPanel = ({
   const pageFocusedRef = useRef(true);
   const focused = useMemo(() => (runtime ? getFocusedTerminal(runtime) : undefined), [runtime]);
   const selectedTerminal = useMemo(
-    () => (terminals.find((terminal) => terminal.terminalId === selectedTerminalId) ?? focused ?? terminals[0]) || undefined,
+    () =>
+      (terminals.find((terminal) => terminal.terminalId === selectedTerminalId) ?? focused ?? terminals[0]) ||
+      undefined,
     [focused, selectedTerminalId, terminals],
   );
 
@@ -456,12 +456,14 @@ export const TerminalPanel = ({
               <Trash2 className="h-3.5 w-3.5" />
               Delete
             </Button>
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs",
+                "rounded-full text-xs shadow-none",
                 viewportMode === "fit"
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
                   : "border-slate-200 bg-white text-slate-700",
               )}
               aria-pressed={viewportMode === "fit"}
@@ -469,13 +471,15 @@ export const TerminalPanel = ({
             >
               <ScanLine className="h-3.5 w-3.5" />
               <span>Fit</span>
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs",
+                "rounded-full text-xs shadow-none",
                 viewportMode === "cover"
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
                   : "border-slate-200 bg-white text-slate-700",
               )}
               aria-pressed={viewportMode === "cover"}
@@ -483,22 +487,24 @@ export const TerminalPanel = ({
             >
               <MonitorCog className="h-3.5 w-3.5" />
               <span>Cover</span>
-            </button>
+            </Button>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-1.5">
           {terminals.map((terminal) => (
-            <button
+            <Button
               type="button"
               key={terminal.terminalId}
+              size="sm"
+              variant="outline"
               onClick={() => {
                 handleSelectTerminal(terminal.terminalId);
               }}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]",
+                "rounded-md px-2 py-1 text-[11px] shadow-none",
                 terminal.terminalId === selectedTerminal.terminalId
-                  ? "border-teal-300 bg-teal-100 text-teal-900"
+                  ? "border-teal-300 bg-teal-100 text-teal-900 hover:bg-teal-100"
                   : "border-slate-200 bg-slate-50 text-slate-700",
               )}
             >
@@ -508,7 +514,7 @@ export const TerminalPanel = ({
                   {unreadByTerminal[terminal.terminalId]}
                 </span>
               ) : null}
-            </button>
+            </Button>
           ))}
         </div>
         {actionError ? <p className="text-xs text-rose-700">{actionError}</p> : null}

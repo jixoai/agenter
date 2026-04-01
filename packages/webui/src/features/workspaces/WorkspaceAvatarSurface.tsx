@@ -3,7 +3,7 @@ import { CopyPlus, Play, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { surfaceToneClassName } from "../../components/ui/surface";
 import { cn } from "../../lib/utils";
@@ -31,7 +31,12 @@ export const WorkspaceAvatarSurface = ({
 }: WorkspaceAvatarSurfaceProps) => {
   return (
     <div className="grid h-full gap-3 xl:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]">
-      <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm")}>
+      <section
+        className={cn(
+          surfaceToneClassName("panel"),
+          "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm",
+        )}
+      >
         <div className="space-y-2 border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-teal-700" />
@@ -57,8 +62,13 @@ export const WorkspaceAvatarSurface = ({
                     selected ? "border-teal-300 bg-teal-50/70" : "border-slate-200 bg-white hover:border-slate-300",
                   )}
                 >
-                  <button type="button" onClick={() => onSelectAvatar(avatar.nickname)} className="w-full text-left">
-                    <div className="flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onSelectAvatar(avatar.nickname)}
+                    className="h-auto w-full items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
+                  >
+                    <div className="flex w-full items-center justify-between gap-2">
                       <div className="text-sm font-medium text-slate-900">{avatar.nickname}</div>
                       {avatar.defaultAvatar ? <Badge variant="secondary">default</Badge> : null}
                     </div>
@@ -67,16 +77,20 @@ export const WorkspaceAvatarSurface = ({
                       {avatar.workspaceAvailable ? <Badge variant="secondary">workspace copy</Badge> : null}
                       {avatar.globalAvailable ? <Badge variant="secondary">global source</Badge> : null}
                     </div>
-                  </button>
+                  </Button>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => onStartAvatar(avatar.nickname)}>
-                      <Play className="h-3.5 w-3.5" />
-                      Start
+                      <ButtonLeadingVisual>
+                        <Play className="h-3.5 w-3.5" />
+                      </ButtonLeadingVisual>
+                      <ButtonLabel>Start</ButtonLabel>
                     </Button>
                     {canFork ? (
                       <Button size="sm" variant="secondary" onClick={() => onForkAvatar(avatar.nickname)}>
-                        <CopyPlus className="h-3.5 w-3.5" />
-                        Fork
+                        <ButtonLeadingVisual>
+                          <CopyPlus className="h-3.5 w-3.5" />
+                        </ButtonLeadingVisual>
+                        <ButtonLabel>Fork</ButtonLabel>
                       </Button>
                     ) : null}
                   </div>

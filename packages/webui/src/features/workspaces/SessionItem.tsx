@@ -49,19 +49,22 @@ export const SessionItem = ({
     <article
       className={cn(
         "rounded-xl border px-3 py-3 text-left transition-colors",
-        selected ? "border-teal-300 bg-teal-50/60" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100",
+        selected
+          ? "border-teal-300 bg-teal-50/60"
+          : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100",
       )}
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => onSelect(selected ? null : session.sessionId)}
             onDoubleClick={() => onActivate(session.sessionId)}
-            className="flex min-w-0 flex-1 flex-col items-start gap-2 text-left"
+            className="h-auto min-w-0 flex-1 items-start justify-start rounded-lg px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
             title={session.sessionId}
           >
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-slate-900">{session.name}</span>
               <Badge variant={status.variant}>{status.label}</Badge>
               {unreadCount > 0 ? <Badge variant="warning">{`${unreadCount} unread`}</Badge> : null}
@@ -70,7 +73,7 @@ export const SessionItem = ({
             </div>
             <p className="text-[11px] break-all text-slate-500">{session.sessionId}</p>
             <p className="text-[11px] text-slate-500">Created {formatSessionCreatedAt(session.createdAt)}</p>
-          </button>
+          </Button>
 
           <div className="flex w-full flex-wrap items-center justify-start gap-1 sm:w-auto sm:justify-end">
             {!isArchived ? (
@@ -103,7 +106,9 @@ export const SessionItem = ({
                 title="Toggle favorite"
                 onClick={() => onToggleFavorite(session.sessionId)}
               >
-                <Star className={cn("h-4 w-4", session.favorite ? "fill-amber-400 text-amber-500" : "text-slate-500")} />
+                <Star
+                  className={cn("h-4 w-4", session.favorite ? "fill-amber-400 text-amber-500" : "text-slate-500")}
+                />
               </Button>
             ) : null}
             {!compact && (isArchived ? onRestore : onArchive) ? (
@@ -144,14 +149,17 @@ export const SessionItem = ({
           </div>
         </div>
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => onSelect(selected ? null : session.sessionId)}
           onDoubleClick={() => onActivate(session.sessionId)}
-          className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-left hover:border-slate-300"
+          className="h-auto w-full items-start justify-start rounded-lg border-slate-200 bg-white/80 px-3 py-2 text-left whitespace-normal shadow-none hover:border-slate-300"
         >
-          <p className={cn("text-xs leading-5 text-slate-700", compact ? "line-clamp-2" : "line-clamp-3")}>{previewText}</p>
-        </button>
+          <p className={cn("text-xs leading-5 text-slate-700", compact ? "line-clamp-2" : "line-clamp-3")}>
+            {previewText}
+          </p>
+        </Button>
       </div>
     </article>
   );

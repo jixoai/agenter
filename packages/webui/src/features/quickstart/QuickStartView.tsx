@@ -8,15 +8,15 @@ import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/bu
 import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Skeleton } from "../../components/ui/skeleton";
-import { AIInput, type AIInputSuggestion, type AIInputSubmitPayload } from "../chat/AIInput";
+import { AIInput, type AIInputSubmitPayload, type AIInputSuggestion } from "../chat/AIInput";
 import { SessionItem } from "../workspaces/SessionItem";
-import { QuickstartRoomConfigDialog } from "./quickstart-room-config-dialog";
-import { QuickstartTerminalConfigDialog } from "./quickstart-terminal-config-dialog";
 import {
   DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
   type QuickstartBootstrapConfig,
   type QuickstartTerminalConfig,
 } from "./quickstart-bootstrap-types";
+import { QuickstartRoomConfigDialog } from "./quickstart-room-config-dialog";
+import { QuickstartTerminalConfigDialog } from "./quickstart-terminal-config-dialog";
 
 interface QuickStartViewProps {
   workspacePath: string;
@@ -203,16 +203,20 @@ export const QuickStartView = ({
 
               {activeTerminals.length > 0 ? (
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Boot terminals</div>
+                  <div className="text-[11px] font-medium tracking-[0.14em] text-slate-500 uppercase">
+                    Boot terminals
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {activeTerminals.map((terminal) => (
                       <div
                         key={terminal.terminalId}
                         className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2 py-1"
                       >
-                        <button
+                        <Button
                           type="button"
-                          className="inline-flex items-center gap-1 text-xs text-slate-800"
+                          size="sm"
+                          variant="ghost"
+                          className="h-auto px-1 py-0 text-xs text-slate-800 shadow-none hover:bg-transparent"
                           disabled={!canEditBootstrap || configSaving}
                           onClick={() => {
                             setEditingTerminalId(terminal.terminalId);
@@ -221,10 +225,12 @@ export const QuickStartView = ({
                         >
                           <span className="font-medium">{terminal.terminalId}</span>
                           <span className="text-slate-500">{terminal.focus ? "focus" : "idle"}</span>
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                          size="icon"
+                          variant="ghost"
+                          className="h-5 w-5 text-slate-500 shadow-none hover:bg-slate-100"
                           aria-label={`Edit terminal ${terminal.terminalId}`}
                           disabled={!canEditBootstrap || configSaving}
                           onClick={() => {
@@ -233,10 +239,12 @@ export const QuickStartView = ({
                           }}
                         >
                           <Pencil className="h-3 w-3" />
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                          size="icon"
+                          variant="ghost"
+                          className="h-5 w-5 text-slate-500 shadow-none hover:bg-slate-100"
                           aria-label={`Delete terminal ${terminal.terminalId}`}
                           disabled={!canEditBootstrap || configSaving}
                           onClick={() => {
@@ -244,7 +252,7 @@ export const QuickStartView = ({
                           }}
                         >
                           <Trash2 className="h-3 w-3" />
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -252,7 +260,9 @@ export const QuickStartView = ({
               ) : null}
 
               {bootstrapLoading || configSaving ? (
-                <p className="text-xs text-slate-500">{bootstrapLoading ? "Loading quick start config..." : "Saving config..."}</p>
+                <p className="text-xs text-slate-500">
+                  {bootstrapLoading ? "Loading quick start config..." : "Saving config..."}
+                </p>
               ) : null}
               {configError ? <p className="text-xs text-rose-700">{configError}</p> : null}
             </div>
@@ -273,11 +283,14 @@ export const QuickStartView = ({
 
             <div className="mt-3 space-y-2 rounded-2xl bg-slate-50/85 px-3 py-3 ring-1 ring-slate-200/70">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Workspace</p>
+                <p className="text-[11px] tracking-[0.18em] text-slate-500 uppercase">Workspace</p>
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {workspacePath.split(/[\\/]+/).filter(Boolean).at(-1) ?? workspacePath}
+                  {workspacePath
+                    .split(/[\\/]+/)
+                    .filter(Boolean)
+                    .at(-1) ?? workspacePath}
                 </p>
-                <p className="mt-1 hidden break-all text-xs text-slate-500 sm:block">{workspacePath}</p>
+                <p className="mt-1 hidden text-xs break-all text-slate-500 sm:block">{workspacePath}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <Badge variant="secondary">{providerLabel}</Badge>

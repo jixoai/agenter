@@ -1,15 +1,9 @@
 import { ChevronRight, Folder, FolderOpen, RotateCcw, StepBack } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { Button, ButtonLabel, ButtonLeadingVisual, ButtonTrailingVisual } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
-import {
-  InlineAffordanceLabel,
-  InlineAffordanceLeadingVisual,
-  InlineAffordanceTrailingVisual,
-  inlineAffordanceClassName,
-} from "../../components/ui/inline-affordance";
 
 interface DirectoryEntry {
   name: string;
@@ -165,18 +159,20 @@ export const WorkspacePickerDialog = ({
             <p className="text-xs font-medium text-slate-700">Recent</p>
             <div className="flex flex-wrap gap-2">
               {recentWorkspaces.map((workspace) => (
-                <button
+                <Button
                   key={workspace}
                   type="button"
+                  size="sm"
+                  variant="outline"
                   onClick={() => {
                     setSelectedPath(workspace);
                     setPathInput(workspace);
                     setCurrentPath(workspace);
                   }}
-                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                  className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-700 shadow-none hover:bg-slate-100"
                 >
                   {workspace}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -191,31 +187,29 @@ export const WorkspacePickerDialog = ({
                 const active = selectedPath === entry.path;
                 return (
                   <li key={entry.path}>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => setSelectedPath(entry.path)}
                       onDoubleClick={() => {
                         setCurrentPath(entry.path);
                         setPathInput(entry.path);
                         setSelectedPath(entry.path);
                       }}
-                      className={inlineAffordanceClassName({
-                        size: "control",
-                        layout: "both",
-                        fill: true,
-                        className: active
-                          ? "text-left text-teal-900 bg-teal-50"
-                          : "text-left hover:bg-slate-50",
-                      })}
+                      className={
+                        active
+                          ? "w-full justify-start bg-teal-50 text-left text-teal-900 shadow-none hover:bg-teal-50"
+                          : "w-full justify-start text-left shadow-none hover:bg-slate-50"
+                      }
                     >
-                      <InlineAffordanceLeadingVisual>
+                      <ButtonLeadingVisual>
                         {active ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4 text-slate-500" />}
-                      </InlineAffordanceLeadingVisual>
-                      <InlineAffordanceLabel className="truncate">{entry.name}</InlineAffordanceLabel>
-                      <InlineAffordanceTrailingVisual className="ml-auto">
+                      </ButtonLeadingVisual>
+                      <ButtonLabel className="truncate">{entry.name}</ButtonLabel>
+                      <ButtonTrailingVisual className="ml-auto">
                         <ChevronRight className="h-4 w-4 text-slate-400" />
-                      </InlineAffordanceTrailingVisual>
-                    </button>
+                      </ButtonTrailingVisual>
+                    </Button>
                   </li>
                 );
               })}

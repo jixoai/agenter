@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { Sheet } from "../../components/ui/sheet";
@@ -74,18 +75,19 @@ const TimelineItemButton = ({
   const status = getCycleStatusMeta(item.cycle);
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={() => onSelect(item.id)}
       className={cn(
-        "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+        "h-auto w-full items-start justify-start rounded-xl px-3 py-2.5 text-left whitespace-normal shadow-sm",
         selected
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+          ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
           : "border-slate-200 bg-white hover:border-slate-300",
       )}
       aria-label={`${formatCycleTitle(item.cycle, index + 1)} · ${status.label}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex w-full items-start gap-3">
         <div className="pt-0.5">{statusIcon(item.cycle)}</div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -106,13 +108,13 @@ const TimelineItemButton = ({
               </Badge>
             ) : null}
           </div>
-          <p className={cn("text-xs font-medium leading-5", selected ? "text-white/88" : "text-slate-700")}>
+          <p className={cn("text-xs leading-5 font-medium", selected ? "text-white/88" : "text-slate-700")}>
             {item.headline}
           </p>
           <p className={cn("text-[11px] leading-5", selected ? "text-white/72" : "text-slate-500")}>{item.detail}</p>
         </div>
       </div>
-    </button>
+    </Button>
   );
 };
 
@@ -211,11 +213,13 @@ export const CycleInspectorPanel = ({
             content="Cycles are attention reduction passes: why the loop woke, which contexts moved, and what debt remained."
           />
           {pagingState || onLoadMore ? (
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               disabled={!pagingState?.hasMore || pagingState.loadingOlder || !onLoadMore}
               onClick={onLoadMore}
-              className="rounded-md bg-white px-2 py-1 text-[11px] text-slate-600 shadow-xs ring-1 ring-slate-200 transition hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              className="text-[11px] text-slate-600 shadow-xs"
             >
               {pagingState?.loadingOlder ? (
                 <span className="inline-flex items-center gap-1">
@@ -225,7 +229,7 @@ export const CycleInspectorPanel = ({
               ) : (
                 "Load older"
               )}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -301,7 +305,8 @@ export const CycleInspectorPanel = ({
             <ViewportMask className="h-full">
               <section className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
                 <p className="text-sm text-slate-500">
-                  Select a cycle to inspect attention motion, item mutations, delivered side effects, and runtime evidence.
+                  Select a cycle to inspect attention motion, item mutations, delivered side effects, and runtime
+                  evidence.
                 </p>
               </section>
             </ViewportMask>

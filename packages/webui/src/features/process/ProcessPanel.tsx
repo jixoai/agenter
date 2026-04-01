@@ -2,8 +2,7 @@ import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
-import { ScrollViewport } from "../../components/ui/overflow-surface";
-import { ToolInvocationCard } from "../../components/ui/tool-invocation-card";
+import { Button } from "../../components/ui/button";
 import {
   InlineAffordance,
   InlineAffordanceLabel,
@@ -11,6 +10,8 @@ import {
   InlineAffordanceMeta,
   InlineAffordanceTrailingVisual,
 } from "../../components/ui/inline-affordance";
+import { ScrollViewport } from "../../components/ui/overflow-surface";
+import { ToolInvocationCard } from "../../components/ui/tool-invocation-card";
 
 interface ChatMessage {
   id: string;
@@ -45,10 +46,7 @@ export const ProcessPanel = ({ messages, loading = false }: ProcessPanelProps) =
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const traces = useMemo(
-    () =>
-      messages.filter(
-        (message) => message.channel === "self_talk" || message.channel === "tool",
-      ),
+    () => messages.filter((message) => message.channel === "self_talk" || message.channel === "tool"),
     [messages],
   );
   const state = resolveAsyncSurfaceState({ loading, hasData: traces.length > 0 });
@@ -66,32 +64,30 @@ export const ProcessPanel = ({ messages, loading = false }: ProcessPanelProps) =
         <ScrollViewport className="flex-1 space-y-2">
           {traces.map((trace) => {
             const isOpen = expanded[trace.id] ?? false;
-            const title =
-              trace.channel === "self_talk"
-                ? "Self-talk"
-                : `Tool · ${trace.tool?.name ?? "tool"}`;
+            const title = trace.channel === "self_talk" ? "Self-talk" : `Tool · ${trace.tool?.name ?? "tool"}`;
             const icon = <Sparkles className="h-3.5 w-3.5 text-teal-700" />;
             const compact = stripInternalHtml(trace.content);
             return (
               <article key={trace.id} className="rounded-lg bg-slate-100 px-2 py-1.5 text-xs text-slate-700">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={() => setExpanded((prev) => ({ ...prev, [trace.id]: !isOpen }))}
-                  className="w-full text-left"
+                  className="h-auto w-full justify-start px-0 py-0 text-left shadow-none hover:bg-transparent"
                 >
-                    <InlineAffordance className="flex w-full" fill>
-                      <InlineAffordanceLeadingVisual>{icon}</InlineAffordanceLeadingVisual>
-                      <InlineAffordanceLabel className="font-medium text-slate-900">{title}</InlineAffordanceLabel>
-                      {trace.channel === "tool" && trace.tool ? (
-                        <InlineAffordanceMeta className="text-[11px] tracking-wide text-slate-500 uppercase">
-                          {trace.tool.status}
-                        </InlineAffordanceMeta>
-                      ) : null}
-                      <InlineAffordanceTrailingVisual>
+                  <InlineAffordance className="flex w-full" fill>
+                    <InlineAffordanceLeadingVisual>{icon}</InlineAffordanceLeadingVisual>
+                    <InlineAffordanceLabel className="font-medium text-slate-900">{title}</InlineAffordanceLabel>
+                    {trace.channel === "tool" && trace.tool ? (
+                      <InlineAffordanceMeta className="text-[11px] tracking-wide text-slate-500 uppercase">
+                        {trace.tool.status}
+                      </InlineAffordanceMeta>
+                    ) : null}
+                    <InlineAffordanceTrailingVisual>
                       {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     </InlineAffordanceTrailingVisual>
                   </InlineAffordance>
-                </button>
+                </Button>
                 {isOpen ? (
                   trace.channel === "tool" && trace.tool ? (
                     <div className="mt-1">

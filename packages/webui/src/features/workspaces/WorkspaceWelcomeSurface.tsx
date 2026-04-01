@@ -2,8 +2,9 @@ import type { WorkspaceEntry, WorkspaceWelcomeSnapshotOutput } from "@agenter/cl
 import { Bot, MessagesSquare, Play, RefreshCcw, TerminalSquare } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { Select } from "../../components/ui/select";
 import { surfaceToneClassName } from "../../components/ui/surface";
@@ -72,21 +73,30 @@ export const WorkspaceWelcomeSurface = ({
   onStart,
 }: WorkspaceWelcomeSurfaceProps) => {
   return (
-    <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm")}>
+    <section
+      className={cn(
+        surfaceToneClassName("panel"),
+        "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm",
+      )}
+    >
       <div className="space-y-3 border-b border-slate-200 pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="typo-title-3 text-slate-900">Welcome</h2>
-            <p className="mt-1 text-xs text-slate-500">Compose one avatar, then attach the rooms and terminals it should enter.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Compose one avatar, then attach the rooms and terminals it should enter.
+            </p>
           </div>
           <Button size="sm" variant="outline" onClick={onRefresh} disabled={loading || busy}>
-            <RefreshCcw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            Refresh
+            <ButtonLeadingVisual>
+              <RefreshCcw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            </ButtonLeadingVisual>
+            <ButtonLabel>Refresh</ButtonLabel>
           </Button>
         </div>
 
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.7fr)]">
-          <label className="grid gap-1 text-xs text-slate-600">
+          <Label className="grid gap-1 text-xs text-slate-600">
             <span>Workspace</span>
             <Select value={workspacePath} onChange={(event) => onWorkspacePathChange(event.currentTarget.value)}>
               {workspaces.map((workspace) => (
@@ -95,12 +105,12 @@ export const WorkspaceWelcomeSurface = ({
                 </option>
               ))}
             </Select>
-          </label>
+          </Label>
 
-          <label className="grid gap-1 text-xs text-slate-600">
+          <Label className="grid gap-1 text-xs text-slate-600">
             <span>Avatar</span>
             <Input value={avatar} onChange={(event) => onAvatarChange(event.target.value)} placeholder="default" />
-          </label>
+          </Label>
         </div>
 
         {snapshot ? (
@@ -138,14 +148,17 @@ export const WorkspaceWelcomeSurface = ({
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
                           onClick={() => onToggleRoom(room.channel.chatId)}
-                          className="min-w-0 flex-1 text-left"
+                          className="h-auto min-w-0 flex-1 items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
                         >
-                          <div className="text-sm font-medium text-slate-900">{room.channel.title || room.channel.chatId}</div>
-                          <div className="mt-1 break-all text-[11px] text-slate-500">{room.channel.chatId}</div>
-                        </button>
+                          <div className="text-sm font-medium text-slate-900">
+                            {room.channel.title || room.channel.chatId}
+                          </div>
+                          <div className="mt-1 text-[11px] break-all text-slate-500">{room.channel.chatId}</div>
+                        </Button>
                         <Badge variant={accessTone(room.accessState)}>{room.accessState}</Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -154,19 +167,22 @@ export const WorkspaceWelcomeSurface = ({
                       </div>
                       {selected ? (
                         <div className="mt-3 grid gap-2">
-                          <label className="grid gap-1 text-xs text-slate-600">
+                          <Label className="grid gap-1 text-xs text-slate-600">
                             <span>Grant role</span>
                             <Select
                               value={roomRoles[room.channel.chatId] ?? "member"}
                               onChange={(event) =>
-                                onRoomRoleChange(room.channel.chatId, event.currentTarget.value as "admin" | "member" | "readonly")
+                                onRoomRoleChange(
+                                  room.channel.chatId,
+                                  event.currentTarget.value as "admin" | "member" | "readonly",
+                                )
                               }
                             >
                               <option value="member">member</option>
                               <option value="readonly">readonly</option>
                               <option value="admin">admin</option>
                             </Select>
-                          </label>
+                          </Label>
                         </div>
                       ) : null}
                     </article>
@@ -203,16 +219,17 @@ export const WorkspaceWelcomeSurface = ({
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
                           onClick={() => onToggleTerminal(terminal.terminal.terminalId)}
-                          className="min-w-0 flex-1 text-left"
+                          className="h-auto min-w-0 flex-1 items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
                         >
                           <div className="text-sm font-medium text-slate-900">
                             {terminal.terminal.title || terminal.terminal.terminalId}
                           </div>
-                          <div className="mt-1 break-all text-[11px] text-slate-500">{terminal.terminal.cwd}</div>
-                        </button>
+                          <div className="mt-1 text-[11px] break-all text-slate-500">{terminal.terminal.cwd}</div>
+                        </Button>
                         <Badge variant={accessTone(terminal.accessState)}>{terminal.accessState}</Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -221,7 +238,7 @@ export const WorkspaceWelcomeSurface = ({
                       </div>
                       {selected ? (
                         <div className="mt-3 grid gap-2">
-                          <label className="grid gap-1 text-xs text-slate-600">
+                          <Label className="grid gap-1 text-xs text-slate-600">
                             <span>Grant role</span>
                             <Select
                               value={terminalRoles[terminal.terminal.terminalId] ?? "writer"}
@@ -237,7 +254,7 @@ export const WorkspaceWelcomeSurface = ({
                               <option value="readonly">readonly</option>
                               <option value="admin">admin</option>
                             </Select>
-                          </label>
+                          </Label>
                         </div>
                       ) : null}
                     </article>
@@ -264,8 +281,10 @@ export const WorkspaceWelcomeSurface = ({
               </p>
             </div>
             <Button onClick={onStart} disabled={loading || busy || !workspacePath || avatar.trim().length === 0}>
-              <Play className="h-4 w-4" />
-              {busy ? "Starting..." : "Start Avatar"}
+              <ButtonLeadingVisual>
+                <Play className="h-4 w-4" />
+              </ButtonLeadingVisual>
+              <ButtonLabel>{busy ? "Starting..." : "Start Avatar"}</ButtonLabel>
             </Button>
           </div>
         </section>

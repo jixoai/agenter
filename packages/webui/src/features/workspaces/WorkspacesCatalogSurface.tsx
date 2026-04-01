@@ -1,5 +1,5 @@
 import type { WorkspaceEntry } from "@agenter/client-sdk";
-import { AlertTriangle, FolderCog, History, Sparkles } from "lucide-react";
+import { FolderCog, History, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
@@ -27,7 +27,9 @@ interface WorkspacesCatalogSurfaceProps {
 const isWorkspaceSelected = (selection: WorkspaceMasterSelection, workspacePath: string): boolean =>
   selection.kind === "workspace" && selection.workspacePath === workspacePath;
 
-const selectionCopy = (selection: WorkspaceMasterSelection): { title: string; description: string; icon: typeof Sparkles } => {
+const selectionCopy = (
+  selection: WorkspaceMasterSelection,
+): { title: string; description: string; icon: typeof Sparkles } => {
   if (selection.kind === "history") {
     return {
       title: "History",
@@ -98,7 +100,12 @@ export const WorkspacesCatalogSurface = ({
 
   return (
     <>
-      <section className={cn(surfaceToneClassName("panel"), "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm")}>
+      <section
+        className={cn(
+          surfaceToneClassName("panel"),
+          "grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-2xl p-4 shadow-sm",
+        )}
+      >
         <div className="space-y-3 border-b border-slate-200 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
@@ -116,43 +123,47 @@ export const WorkspacesCatalogSurface = ({
           </div>
 
           <div className="grid gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => onSelectSelection({ kind: "welcome" })}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left transition-colors",
+                "h-auto w-full items-start justify-start rounded-xl px-3 py-3 text-left whitespace-normal shadow-none transition-colors",
                 selection.kind === "welcome"
-                  ? "border-teal-300 bg-teal-50/70"
+                  ? "border-teal-300 bg-teal-50/70 hover:bg-teal-50/70"
                   : "border-slate-200 bg-white hover:border-slate-300",
               )}
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex w-full items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-slate-900">Welcome</div>
-                  <div className="mt-1 text-xs text-slate-500">Start or reattach avatars with global rooms and terminals.</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Start or reattach avatars with global rooms and terminals.
+                  </div>
                 </div>
                 <Badge variant="secondary">Start</Badge>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => onSelectSelection({ kind: "history" })}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left transition-colors",
+                "h-auto w-full items-start justify-start rounded-xl px-3 py-3 text-left whitespace-normal shadow-none transition-colors",
                 selection.kind === "history"
-                  ? "border-teal-300 bg-teal-50/70"
+                  ? "border-teal-300 bg-teal-50/70 hover:bg-teal-50/70"
                   : "border-slate-200 bg-white hover:border-slate-300",
               )}
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex w-full items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-slate-900">History</div>
                   <div className="mt-1 text-xs text-slate-500">List workspaces by last use, path, or name.</div>
                 </div>
                 <Badge variant="secondary">List</Badge>
               </div>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -174,7 +185,9 @@ export const WorkspacesCatalogSurface = ({
                   workspace={workspace}
                   unreadCount={unreadByWorkspace[workspace.path] ?? 0}
                   selected={isWorkspaceSelected(selection, workspace.path)}
-                  onSelect={(path) => onSelectSelection(path ? { kind: "workspace", workspacePath: path } : { kind: "welcome" })}
+                  onSelect={(path) =>
+                    onSelectSelection(path ? { kind: "workspace", workspacePath: path } : { kind: "welcome" })
+                  }
                   onCreateSession={() => onSelectSelection({ kind: "welcome" })}
                   onToggleFavorite={onToggleFavorite}
                   onDelete={(path) => setPendingDeletePath(path)}
@@ -212,11 +225,7 @@ export const WorkspacesCatalogSurface = ({
         </div>
       </Dialog>
 
-      <Dialog
-        open={pendingCleanMissing}
-        onClose={() => setPendingCleanMissing(false)}
-        title="Clean missing workspaces"
-      >
+      <Dialog open={pendingCleanMissing} onClose={() => setPendingCleanMissing(false)} title="Clean missing workspaces">
         <div className="space-y-3 text-sm text-slate-600">
           <p>Remove catalog entries whose directories are no longer present on disk.</p>
           <div className="flex justify-end gap-2">

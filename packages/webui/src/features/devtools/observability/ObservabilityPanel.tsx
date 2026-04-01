@@ -2,9 +2,14 @@ import { Activity, CircleDashed } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge, BadgeLabel, BadgeLeadingVisual } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
 import { HelpHint } from "../../../components/ui/help-hint";
+import { Input } from "../../../components/ui/input";
 import { JSONViewer } from "../../../components/ui/json-viewer";
+import { Label } from "../../../components/ui/label";
 import { ScrollViewport } from "../../../components/ui/overflow-surface";
+import { Select } from "../../../components/ui/select";
+import { Separator } from "../../../components/ui/separator";
 import { Tabs } from "../../../components/ui/tabs";
 import { cn } from "../../../lib/utils";
 import {
@@ -98,6 +103,14 @@ export const ObservabilityPanel = ({
     void onLoadMoreModel?.();
   }, [onLoadMoreModel, onLoadMoreTrace]);
 
+  const selectionButtonClassName = (selected: boolean): string =>
+    cn(
+      "h-auto w-full items-start justify-start whitespace-normal rounded-xl px-2.5 py-2 text-left shadow-none",
+      selected
+        ? "border-slate-900 bg-slate-950 text-white hover:bg-slate-950"
+        : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
+    );
+
   return (
     <section className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] rounded-xl bg-white p-3 shadow-xs">
       <header className="mb-2 flex items-center justify-between gap-2">
@@ -136,28 +149,41 @@ export const ObservabilityPanel = ({
           <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
             <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
               <div className="mb-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_11rem]">
-                <input
-                  value={searchText}
-                  onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="Search contexts, cycles, transport"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none placeholder:text-slate-400 focus:border-sky-300"
-                />
-                <select
-                  value={kindFilter}
-                  onChange={(event) => setKindFilter(event.target.value as ObservabilityEventItem["kind"] | "all")}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 transition-colors outline-none focus:border-sky-300"
-                >
-                  <option value="all">All events</option>
-                  <option value="attention.context">Attention contexts</option>
-                  <option value="attention.commit">Attention commits</option>
-                  <option value="attention.hook">Attention hooks</option>
-                  <option value="cycle.frame">Cycle frames</option>
-                  <option value="scheduler.state">Scheduler state</option>
-                  <option value="scheduler.trace">Scheduler trace</option>
-                  <option value="model.call">Model calls</option>
-                  <option value="api.call">API calls</option>
-                </select>
+                <div className="space-y-1.5">
+                  <Label htmlFor="observability-search-input" className="text-[11px] font-medium text-slate-600">
+                    Search trace feed
+                  </Label>
+                  <Input
+                    id="observability-search-input"
+                    value={searchText}
+                    onChange={(event) => setSearchText(event.target.value)}
+                    placeholder="Search contexts, cycles, transport"
+                    className="border-slate-200 bg-white px-2.5"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="observability-kind-filter" className="text-[11px] font-medium text-slate-600">
+                    Event kind
+                  </Label>
+                  <Select
+                    id="observability-kind-filter"
+                    value={kindFilter}
+                    onChange={(event) => setKindFilter(event.target.value as ObservabilityEventItem["kind"] | "all")}
+                    className="border-slate-200 bg-white"
+                  >
+                    <option value="all">All events</option>
+                    <option value="attention.context">Attention contexts</option>
+                    <option value="attention.commit">Attention commits</option>
+                    <option value="attention.hook">Attention hooks</option>
+                    <option value="cycle.frame">Cycle frames</option>
+                    <option value="scheduler.state">Scheduler state</option>
+                    <option value="scheduler.trace">Scheduler trace</option>
+                    <option value="model.call">Model calls</option>
+                    <option value="api.call">API calls</option>
+                  </Select>
+                </div>
               </div>
+              <Separator className="mb-2" />
               <p className="text-[11px] text-slate-500">
                 {filteredEvents.length} visible events · contexts, cycles, scheduler, and transport in one feed
               </p>
@@ -171,18 +197,14 @@ export const ObservabilityPanel = ({
                 {filteredEvents.map((event) => {
                   const isSelected = event.key === selectedEvent?.key;
                   return (
-                    <button
+                    <Button
                       key={event.key}
                       type="button"
+                      variant="outline"
                       onClick={() => setSelectedEventKey(event.key)}
-                      className={cn(
-                        "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-                        isSelected
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-white",
-                      )}
+                      className={selectionButtonClassName(isSelected)}
                     >
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex w-full items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">{event.title}</div>
                           <div className="mt-1 text-[11px] opacity-80">{event.kind}</div>
@@ -199,7 +221,7 @@ export const ObservabilityPanel = ({
                         </span>
                       </div>
                       <div className="mt-1 text-[11px] opacity-80">{event.summary}</div>
-                    </button>
+                    </Button>
                   );
                 })}
                 {filteredEvents.length === 0 ? (
@@ -283,14 +305,16 @@ export const ObservabilityPanel = ({
           <span className="text-[11px] text-slate-500">
             Older trace pages currently extend scheduler traces and transport records.
           </span>
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="outline"
             onClick={handleLoadOlderEvents}
             disabled={loadingTrace || loadingModel}
-            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+            className="text-xs"
           >
             {loadingTrace || loadingModel ? "Loading..." : "Load older"}
-          </button>
+          </Button>
         </div>
       ) : null}
 
