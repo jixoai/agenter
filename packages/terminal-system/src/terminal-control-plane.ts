@@ -476,6 +476,21 @@ export class TerminalControlPlane {
     return [...current];
   }
 
+  focusAuthorized(op: TerminalFocusOp, access: Array<{ terminalId: string; accessToken: string }>): string[] {
+    const grants = access.map(({ terminalId, accessToken }) => this.requireAccess(terminalId, accessToken, "readonly"));
+    const actorId = grants[0]?.participantId;
+    if (!actorId || !ACTOR_ID_PATTERN.test(actorId)) {
+      return this.focus(
+        op,
+        grants.map((grant) => grant.terminalId),
+      );
+    }
+    const allowedTerminalIds = grants
+      .map((grant) => grant.terminalId)
+      .filter((terminalId, index, items) => items.indexOf(terminalId) === index);
+    return this.focusForActor(actorId as TerminalActorId, op, allowedTerminalIds);
+  }
+
   getFocusedTerminalIds(actorId: TerminalActorId = TRUSTED_BOOTSTRAP_PARTICIPANT_ID): string[] {
     let focused = this.focusedTerminalIdsByActor.get(actorId);
     if (!focused) {
@@ -661,6 +676,7 @@ export class TerminalControlPlane {
     superadminActorId?: TerminalActorId;
   }): Promise<TerminalReadResult> {
     this.authorizeRead(input);
+    const actorId = this.resolveEventActorId(input);
     const entry = this.ensureManagedEntry(input.terminalId);
     if (!entry.terminal.isRunning()) {
       entry.terminal.start();
@@ -684,11 +700,11 @@ export class TerminalControlPlane {
         );
         const shouldUseDiff = mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
         if (shouldUseDiff) {
-          return this.attachReadEvent(diffPayload);
+          return this.attachReadEvent(diffPayload, actorId);
         }
       }
     }
-    return this.attachReadEvent(snapshotPayload);
+    return this.attachReadEvent(snapshotPayload, actorId);
   }
 
   async snapshot(terminalId: string, options: { remark?: boolean } = {}): Promise<TerminalReadResult> {
@@ -730,6 +746,7 @@ export class TerminalControlPlane {
       payload: {
         title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
         content: input.text,
+        actorId: this.resolveEventActorId(input),
         detail: {
           submit: input.submit,
           submitKey: input.submitKey ?? null,
@@ -1412,6 +1429,24 @@ export class TerminalControlPlane {
     );
   }
 
+  private resolveEventActorId(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    accessToken?: string;
+    superadminActorId?: TerminalActorId;
+  }): TerminalActorId | undefined {
+    if (input.superadminActorId) {
+      return input.superadminActorId;
+    }
+    if (input.actorId) {
+      return input.actorId;
+    }
+    return this.resolveGrant({
+      terminalId: input.terminalId,
+      accessToken: input.accessToken,
+    }).participantId;
+  }
+
   private authorizeRead(input: {
     terminalId: string;
     actorId?: TerminalActorId;
@@ -1514,13 +1549,14 @@ export class TerminalControlPlane {
     return record;
   }
 
-  private attachReadEvent(payload: TerminalReadResult): TerminalReadResult {
+  private attachReadEvent(payload: TerminalReadResult, actorId?: TerminalActorId): TerminalReadResult {
     const event = this.db.appendEvent({
       terminalId: payload.terminalId,
       kind: "terminal_read",
       payload: {
         title: "Terminal read",
         content: JSON.stringify(payload),
+        actorId,
         detail: payload,
       },
     });

@@ -1,22 +1,25 @@
 import type { MessageChannelEntry, MessageChannelGrantEntry, MessageChannelGrantIssueOutput } from "@agenter/client-sdk";
-import { CircleDot, Copy, Info, Plus, Signal, Trash2, Users } from "lucide-react";
+import { CircleDot, Copy, Info, Signal, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { SurfaceSignalDisclosure } from "../../components/ui/surface-signal-disclosure";
 import { Textarea } from "../../components/ui/textarea";
+import { RoomParticipantEditor } from "./RoomParticipantEditor";
+import {
+  normalizeRoomParticipants,
+  resolveRoomParticipantRole,
+  toRoomParticipantDrafts,
+  type RoomActorOption,
+  type RoomParticipantDraft,
+  type RoomParticipantInput,
+} from "./room-participants";
 
-type ParticipantRole = "avatar" | "user" | "system";
 type GrantRole = "admin" | "member" | "readonly";
-
-interface ParticipantDraft {
-  key: string;
-  id: string;
-  label: string;
-  role: ParticipantRole;
-}
+const TRUSTED_BOOTSTRAP_ACTOR_ID = "system:trusted-bootstrap";
 
 interface MessageChannelMetadataDisclosureProps {
   channel: MessageChannelEntry;
@@ -26,7 +29,7 @@ interface MessageChannelMetadataDisclosureProps {
     channel: MessageChannelEntry;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: ParticipantRole }>;
+      participants?: RoomParticipantInput[];
       metadata?: Record<string, unknown>;
     };
   }) => Promise<MessageChannelEntry>;
@@ -37,6 +40,7 @@ interface MessageChannelMetadataDisclosureProps {
     label?: string;
     participantId?: string;
   }) => Promise<MessageChannelGrantIssueOutput["grant"]>;
+  actorOptions?: RoomActorOption[];
   onRevokeChannelGrant?: (input: { channel: MessageChannelEntry; grantId: string }) => Promise<{ ok: boolean }>;
 }
 
@@ -49,14 +53,6 @@ const rowTone = (channel: MessageChannelEntry): "neutral" | "active" | "warning"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-const toParticipantDrafts = (channel: MessageChannelEntry): ParticipantDraft[] =>
-  channel.participants.map((participant, index) => ({
-    key: `${participant.id || "participant"}-${index}-${channel.updatedAt}`,
-    id: participant.id,
-    label: participant.label ?? "",
-    role: participant.role ?? "user",
-  }));
 
 const toMetadataDraft = (metadata: MessageChannelEntry["metadata"]): string => JSON.stringify(metadata ?? {}, null, 2);
 
@@ -71,9 +67,6 @@ const parseMetadataDraft = (value: string): Record<string, unknown> => {
   }
   return parsed;
 };
-
-const toParticipantRole = (value: string): ParticipantRole =>
-  value === "avatar" || value === "system" ? value : "user";
 
 const toGrantRole = (value: string): GrantRole =>
   value === "admin" || value === "member" ? value : "readonly";
@@ -110,11 +103,14 @@ export const MessageChannelMetadataDisclosure = ({
   onUpdateChannel,
   onListChannelGrants,
   onIssueChannelGrant,
+  actorOptions = [],
   onRevokeChannelGrant,
 }: MessageChannelMetadataDisclosureProps) => {
   const [open, setOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(channel.title);
-  const [participantDrafts, setParticipantDrafts] = useState<ParticipantDraft[]>(() => toParticipantDrafts(channel));
+  const [participantDrafts, setParticipantDrafts] = useState<RoomParticipantDraft[]>(() =>
+    toRoomParticipantDrafts(channel.participants, actorOptions, channel.updatedAt),
+  );
   const [metadataDraft, setMetadataDraft] = useState(() => toMetadataDraft(channel.metadata));
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -130,11 +126,11 @@ export const MessageChannelMetadataDisclosure = ({
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [focusing, setFocusing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const actorMeta = useMemo(() => new Map(actorOptions.map((option) => [option.actorId, option])), [actorOptions]);
 
   const isAdmin = channel.accessRole === "admin";
   const isBuiltIn =
-    channel.chatId === "chat-main" ||
-    (isRecord(channel.metadata) && typeof channel.metadata.builtIn === "boolean" && channel.metadata.builtIn === true);
+    isRecord(channel.metadata) && typeof channel.metadata.builtIn === "boolean" && channel.metadata.builtIn === true;
   const ChannelIcon = Users;
   const transportState = channel.transportUrl ? (channel.focused ? "connected and focused" : "connected") : "offline";
 
@@ -157,14 +153,14 @@ export const MessageChannelMetadataDisclosure = ({
 
   useEffect(() => {
     setDraftTitle(channel.title);
-    setParticipantDrafts(toParticipantDrafts(channel));
+    setParticipantDrafts(toRoomParticipantDrafts(channel.participants, actorOptions, channel.updatedAt));
     setMetadataDraft(toMetadataDraft(channel.metadata));
     setFormError(null);
     setFocusing(false);
     setArchiving(false);
     setIssuedGrant(null);
     setCopyFeedback(null);
-  }, [channel]);
+  }, [actorOptions, channel]);
 
   useEffect(() => {
     if (!open) {
@@ -175,24 +171,16 @@ export const MessageChannelMetadataDisclosure = ({
 
   const canEditChannel = isAdmin && Boolean(onUpdateChannel);
   const canManageGrants = isAdmin && Boolean(onIssueChannelGrant) && Boolean(onRevokeChannelGrant);
-  const canFocusChannel = isAdmin && Boolean(onFocusChannel);
+  const canFocusChannel =
+    channel.accessRole !== "readonly" &&
+    Boolean(channel.participantId) &&
+    channel.participantId !== TRUSTED_BOOTSTRAP_ACTOR_ID &&
+    Boolean(onFocusChannel);
   const canArchiveChannel = isAdmin && Boolean(onArchiveChannel) && !isBuiltIn;
 
   const normalizedParticipants = useMemo(
-    () =>
-      participantDrafts
-        .map((participant) => ({
-          id: participant.id.trim(),
-          label: participant.label.trim(),
-          role: participant.role,
-        }))
-        .filter((participant) => participant.id.length > 0)
-        .map((participant) => ({
-          id: participant.id,
-          label: participant.label.length > 0 ? participant.label : undefined,
-          role: participant.role,
-        })),
-    [participantDrafts],
+    () => normalizeRoomParticipants(participantDrafts, actorOptions),
+    [actorOptions, participantDrafts],
   );
 
   const handleSave = useCallback(async () => {
@@ -218,14 +206,14 @@ export const MessageChannelMetadataDisclosure = ({
         },
       });
       setDraftTitle(updated.title);
-      setParticipantDrafts(toParticipantDrafts(updated));
+      setParticipantDrafts(toRoomParticipantDrafts(updated.participants, actorOptions, updated.updatedAt));
       setMetadataDraft(toMetadataDraft(updated.metadata));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
-  }, [canEditChannel, channel, draftTitle, metadataDraft, normalizedParticipants, onUpdateChannel]);
+  }, [actorOptions, canEditChannel, channel, draftTitle, metadataDraft, normalizedParticipants, onUpdateChannel]);
 
   const handleIssueGrant = useCallback(async () => {
     if (!canManageGrants || !onIssueChannelGrant) {
@@ -363,7 +351,7 @@ export const MessageChannelMetadataDisclosure = ({
                 </div>
                 {!canArchiveChannel ? (
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {isBuiltIn ? "Built-in chat-main channel cannot be archived." : "Archive requires admin access."}
+                    {isBuiltIn ? "Built-in room channel cannot be archived." : "Archive requires admin access."}
                   </p>
                 ) : null}
               </div>
@@ -374,99 +362,38 @@ export const MessageChannelMetadataDisclosure = ({
 
       <Section title="Participants" icon={CircleDot}>
         <div className="space-y-2">
-          {participantDrafts.map((participant, index) => (
-            <div
-              key={participant.key}
-              className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7rem_auto]"
-            >
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-label-${participant.key}`}>
-                  Label
-                </label>
-                <Input
-                  id={`participant-label-${participant.key}`}
-                  aria-label={`Participant label ${index + 1}`}
-                  value={participant.label}
-                  readOnly={!canEditChannel}
-                  onChange={(event) => {
-                    const nextValue = event.currentTarget.value;
-                    setParticipantDrafts((current) =>
-                      current.map((entry) => (entry.key === participant.key ? { ...entry, label: nextValue } : entry)),
-                    );
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-id-${participant.key}`}>
-                  Participant ID
-                </label>
-                <Input
-                  id={`participant-id-${participant.key}`}
-                  aria-label={`Participant id ${index + 1}`}
-                  value={participant.id}
-                  readOnly={!canEditChannel}
-                  onChange={(event) => {
-                    const nextValue = event.currentTarget.value;
-                    setParticipantDrafts((current) =>
-                      current.map((entry) => (entry.key === participant.key ? { ...entry, id: nextValue } : entry)),
-                    );
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600" htmlFor={`participant-role-${participant.key}`}>
-                  Role
-                </label>
-                <Select
-                  id={`participant-role-${participant.key}`}
-                  aria-label={`Participant role ${index + 1}`}
-                  disabled={!canEditChannel}
-                  value={participant.role}
-                  onChange={(event) => {
-                    const nextRole = toParticipantRole(event.currentTarget.value);
-                    setParticipantDrafts((current) =>
-                      current.map((entry) => (entry.key === participant.key ? { ...entry, role: nextRole } : entry)),
-                    );
-                  }}
-                >
-                  <option value="avatar">avatar</option>
-                  <option value="user">user</option>
-                  <option value="system">system</option>
-                </Select>
-              </div>
-              {canEditChannel ? (
-                <div className="flex items-end justify-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Remove participant ${index + 1}`}
-                    onClick={() => {
-                      setParticipantDrafts((current) => current.filter((entry) => entry.key !== participant.key));
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          ))}
-          {canEditChannel ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setParticipantDrafts((current) => [
-                  ...current,
-                  { key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id: "", label: "", role: "user" },
-                ]);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Add participant
-            </Button>
-          ) : null}
+          <p className="text-[11px] text-slate-500">Room seats reference auth or session actors. Labels and avatars stay upstream in auth-system.</p>
+          <RoomParticipantEditor
+            participants={participantDrafts}
+            actorOptions={actorOptions}
+            canEdit={canEditChannel}
+            fieldIdPrefix="message-channel-participant"
+            onActorChange={(key, actorId) => {
+              setParticipantDrafts((current) =>
+                current.map((entry) =>
+                  entry.key === key
+                    ? { ...entry, id: actorId, role: resolveRoomParticipantRole(actorOptions, actorId, entry.role) }
+                    : entry,
+                ),
+              );
+            }}
+            onRoleChange={(key, role) => {
+              setParticipantDrafts((current) => current.map((entry) => (entry.key === key ? { ...entry, role } : entry)));
+            }}
+            onRemove={(key) => {
+              setParticipantDrafts((current) => current.filter((entry) => entry.key !== key));
+            }}
+            onAdd={
+              canEditChannel
+                ? () => {
+                    setParticipantDrafts((current) => [
+                      ...current,
+                      { key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id: "", role: "user" },
+                    ]);
+                  }
+                : undefined
+            }
+          />
         </div>
       </Section>
 
@@ -514,17 +441,19 @@ export const MessageChannelMetadataDisclosure = ({
                 <option value="member">member</option>
                 <option value="admin">admin</option>
               </Select>
+              <Select aria-label="Grant participant" value={grantParticipantId} onChange={(event) => setGrantParticipantId(event.currentTarget.value)}>
+                <option value="">Select actor</option>
+                {actorOptions.map((option) => (
+                  <option key={option.actorId} value={option.actorId}>
+                    {[option.label, option.actorKind, option.subtitle].filter(Boolean).join(" · ")}
+                  </option>
+                ))}
+              </Select>
               <Input
                 aria-label="Grant label"
                 value={grantLabel}
                 onChange={(event) => setGrantLabel(event.currentTarget.value)}
                 placeholder="Viewer label"
-              />
-              <Input
-                aria-label="Grant participant"
-                value={grantParticipantId}
-                onChange={(event) => setGrantParticipantId(event.currentTarget.value)}
-                placeholder="user:gaubee"
               />
               <Button type="button" size="sm" onClick={() => void handleIssueGrant()} disabled={!canManageGrants || issuing}>
                 Issue token
@@ -555,12 +484,18 @@ export const MessageChannelMetadataDisclosure = ({
                 {grants.map((grant) => (
                   <li key={grant.grantId} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                     <div className="min-w-0">
-                      <div className="font-medium text-slate-900">
-                        {grant.label ?? grant.participantId ?? grant.grantId}
+                      <div className="flex flex-wrap items-center gap-2 font-medium text-slate-900">
+                        <span>{grant.label ?? grant.participantId ?? grant.grantId}</span>
+                        {grant.participantId ? (
+                          <Badge variant="secondary">{actorMeta.get(grant.participantId)?.actorKind ?? "grant"}</Badge>
+                        ) : null}
                       </div>
                       <div className="truncate text-slate-500">
                         {grant.role} · {grant.participantId ?? "no participant"} · {new Date(grant.createdAt).toLocaleString()}
                       </div>
+                      {grant.participantId && actorMeta.get(grant.participantId)?.subtitle ? (
+                        <div className="truncate text-slate-500">{actorMeta.get(grant.participantId)?.subtitle}</div>
+                      ) : null}
                     </div>
                     <Button
                       type="button"

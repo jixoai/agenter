@@ -1,5 +1,5 @@
 import { Terminal } from "@xterm/xterm";
-import "@xterm/xterm/css/xterm.css";
+import xtermStyles from "@xterm/xterm/css/xterm.css?inline";
 import { LitElement, html } from "lit";
 import { property, query } from "lit/decorators.js";
 
@@ -282,6 +282,8 @@ const templateStyles = `
   }
 `;
 
+const combinedStyles = `${xtermStyles}\n${templateStyles}`;
+
 const ANSI_RESET = "\u001b[0m";
 const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROGRAMMING_LIGATURE_REGEX = new RegExp(
@@ -418,10 +420,6 @@ export class TerminalViewElement extends LitElement {
     setTimeout(run, 0);
   }
 
-  createRenderRoot(): this {
-    return this;
-  }
-
   connectedCallback(): void {
     super.connectedCallback();
     this.syncSocket();
@@ -499,7 +497,7 @@ export class TerminalViewElement extends LitElement {
 
     return html`
       <style>
-        ${templateStyles}
+        ${combinedStyles}
       </style>
       <div
         class="terminal-stage"

@@ -134,9 +134,11 @@ const resolveMessageCallerScope = (
 export const appRouter = t.router({
   auth: t.router({
     service: t.procedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
+    actors: t.procedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listAuthActors() })),
     challengeStart: t.procedure
       .input(authChallengeStartInput)
       .mutation(async ({ ctx, input }) => await ctx.kernel.startAuthChallenge(input.authId)),
+    bootstrapManagedKey: t.procedure.mutation(async ({ ctx }) => await ctx.kernel.revealManagedRootAuthPrivateKey()),
     challengeVerify: t.procedure
       .input(authChallengeVerifyInput)
       .mutation(async ({ ctx, input }) => await ctx.kernel.verifyAuthChallenge({ ...input, token: ctx.auth?.token ?? undefined })),
@@ -521,6 +523,21 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
+    globalMarkRead: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          messageId: z.string().min(1).optional(),
+          readAt: z.number().int().positive().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.markGlobalRoomRead({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
     globalPage: t.procedure
       .input(
         z.object({
@@ -703,6 +720,7 @@ export const appRouter = t.router({
         z.object({
           op: z.enum(["add", "remove", "replace", "clear"]),
           terminalIds: z.array(z.string().min(1)).default([]),
+          accessToken: z.string().min(1).optional(),
         }),
       )
       .mutation(({ ctx, input }) =>
@@ -736,6 +754,49 @@ export const appRouter = t.router({
           terminalId: input.terminalId,
           before: input.before,
           limit: input.limit ?? 120,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    read: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          remark: z.boolean().optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        ctx.kernel.readGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    write: t.procedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          text: z.string(),
+          submit: z.boolean().optional(),
+          submitKey: z.enum(["enter", "linefeed"]).optional(),
+          submitGapMs: z.number().int().nonnegative().optional(),
+          createApprovalRequest: z.boolean().optional(),
+          readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          returnRead: z
+            .union([
+              z.boolean(),
+              z.object({
+                throttleMs: z.number().int().nonnegative().optional(),
+                debounceMs: z.number().int().nonnegative().optional(),
+              }),
+            ])
+            .optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) =>
+        await ctx.kernel.writeGlobalTerminal({
+          ...input,
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),

@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { DEFAULT_MESSAGE_CHAT_ID } from "./session-chat-projection";
 
 const toMessageSeq = (messageId: string): number => {
   const value = Number(messageId);
@@ -131,7 +132,7 @@ export class SessionNotificationRegistry {
     if (input.message.role !== "assistant" || input.message.channel !== "to_user") {
       return null;
     }
-    const chatId = input.message.chatId ?? "chat-main";
+    const chatId = input.message.chatId ?? DEFAULT_MESSAGE_CHAT_ID;
     const key = notificationKey(input.sessionId, "chat", chatId);
     const visibility = this.getVisibility(input.sessionId, "chat", chatId);
     if (visibility?.visible && visibility.focused) {

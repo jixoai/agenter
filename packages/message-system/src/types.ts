@@ -14,6 +14,11 @@ export interface MessageControlPlaneConfigPatch {
   transport?: Partial<MessageTransportConfig>;
 }
 
+/**
+ * message-system keeps "channel" as the generic product surface.
+ * Today the only concrete channel kind is "room", which is the shared space
+ * that carries user-facing conversation.
+ */
 export type MessageChannelKind = "room";
 export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
@@ -36,6 +41,10 @@ export interface MessageAdminWorkItem {
 }
 
 export type MessageKind = "text" | "error" | "interactive";
+/**
+ * `queued` means the message still owes AI-side attention or automation work.
+ * It does not mean the room transcript should hide the message from humans.
+ */
 export type MessageAttentionState = "queued" | "loaded";
 
 export type MessageAttachmentKind = "image" | "video" | "file";
@@ -79,6 +88,11 @@ export interface MessagePayload {
 }
 
 export interface MessageChannelRecord {
+  /**
+   * Stable channel id inside message-system. For room channels we currently use
+   * room-flavored ids such as `room-*`, but the generic field stays `chatId`
+   * because it addresses the channel layer, not the room subtype label.
+   */
   chatId: string;
   kind: MessageChannelKind;
   title: string;
@@ -96,7 +110,33 @@ export interface MessageChannelRecord {
 export interface MessageChannelAccessProjection {
   accessRole: MessageChannelAccessRole;
   accessToken: string;
+  participantId?: MessageActorId;
+  currentAdmin?: boolean;
   transportUrl?: string;
+}
+
+export interface MessageReadStateProjection {
+  actorId: MessageActorId;
+  role: MessageChannelAccessRole;
+  label?: string;
+  currentAdmin: boolean;
+  online: boolean;
+  focused: boolean;
+  invalidCredential: boolean;
+  readMessageId?: string;
+  readMessageRowId?: number;
+  readAt?: number;
+  hasReadLatestVisible: boolean;
+}
+
+export interface MessageReadProgressProjection {
+  latestVisibleMessageId?: string;
+  latestVisibleMessageRowId?: number;
+  latestVisibleAt?: number;
+  totalSeatCount: number;
+  readSeatCount: number;
+  unreadSeatCount: number;
+  invalidCredentialSeatCount: number;
 }
 
 export interface MessageChannelGrantRecord {
@@ -104,7 +144,7 @@ export interface MessageChannelGrantRecord {
   chatId: string;
   role: MessageChannelAccessRole;
   label?: string;
-  participantId?: string;
+  participantId?: MessageActorId;
   accessToken?: string;
   createdAt: number;
   revokedAt?: number;
@@ -141,7 +181,10 @@ export interface ReversePage<T> {
   hasMoreBefore: boolean;
 }
 
-export interface MessageControlPlaneEntry extends MessageChannelRecord, MessageChannelAccessProjection {}
+export interface MessageControlPlaneEntry extends MessageChannelRecord, MessageChannelAccessProjection {
+  readProgress?: MessageReadProgressProjection;
+  readStates?: MessageReadStateProjection[];
+}
 
 export interface MessageIssuedGrant extends Omit<MessageChannelGrantRecord, "accessToken">, MessageChannelAccessProjection {}
 
@@ -215,6 +258,11 @@ export interface MessageAuthorizedEditInput extends MessageEditInput {
 export interface MessageAuthorizedPageInput extends MessageAuthorizedReadInput {
   before?: ReverseTimeCursor | null;
   limit?: number;
+}
+
+export interface MessageAuthorizedMarkReadInput extends MessageAuthorizedReadInput {
+  messageId?: string;
+  readAt?: number;
 }
 
 export interface MessageChannelPatchInput {

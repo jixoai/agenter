@@ -1,4 +1,5 @@
 import type {
+  AuthSessionOutput,
   AttentionQueryItem,
   DraftResolutionOutput,
   GlobalRoomActorId,
@@ -11,8 +12,10 @@ import type {
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
+  ProfileServiceInfoOutput,
   MessageChannelEntry,
   MessageChannelGrantEntry,
+  MessageChannelGrantIssueOutput,
   RuntimeClientState,
   RuntimeStore,
   TerminalActivityItem,
@@ -33,6 +36,14 @@ export interface AppController {
   runtimeStore: RuntimeStore;
   notice: string;
   setNotice: (value: string) => void;
+  authService: ProfileServiceInfoOutput | null;
+  authSession: AuthSessionOutput | null;
+  authStatus: string;
+  authReady: boolean;
+  privateKeyDraft: string;
+  setPrivateKeyDraft: (value: string) => void;
+  authenticateWithPrivateKey: () => Promise<AuthSessionOutput | null>;
+  clearAuthSession: () => Promise<void>;
   quickstartWorkspacePath: string;
   setQuickstartWorkspacePath: (path: string) => void;
   quickstartDraft: DraftResolutionOutput | null;
@@ -122,17 +133,7 @@ export interface AppController {
     label?: string;
     participantId?: string;
     accessTokenHint?: string;
-  }) => Promise<{
-    grantId: string;
-    chatId: string;
-    role: "admin" | "member" | "readonly";
-    label?: string;
-    participantId?: string;
-    createdAt: number;
-    accessRole: "admin" | "member" | "readonly";
-    accessToken: string;
-    transportUrl?: string;
-  }>;
+  }) => Promise<MessageChannelGrantIssueOutput["grant"]>;
   archiveMessageChannel: (input: {
     sessionId: string;
     chatId: string;
@@ -163,6 +164,12 @@ export interface AppController {
     hasMoreBefore: boolean;
     headVersion: string;
   }>;
+  markGlobalRoomRead: (input: {
+    chatId: string;
+    accessToken?: string;
+    messageId?: string;
+    readAt?: number;
+  }) => Promise<GlobalRoomEntry>;
   pageGlobalRoomMessages: (input: {
     chatId: string;
     accessToken?: string;
@@ -274,8 +281,66 @@ export interface AppController {
   focusGlobalTerminals: (input: {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
+    accessToken?: string;
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   deleteGlobalTerminal: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  readGlobalTerminal: (input: {
+    terminalId: string;
+    accessToken?: string;
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+  }) => Promise<{
+    kind: "terminal-diff" | "terminal-snapshot";
+    representation: "diff" | "snapshot";
+    terminalId: string;
+    eventId?: number;
+    fromHash?: string | null;
+    toHash?: string | null;
+    seq?: number;
+    cols?: number;
+    rows?: number;
+    cursor?: { x: number; y: number };
+    tail?: string;
+    diff?: string;
+    bytes?: number;
+    status: "IDLE" | "BUSY";
+    title?: string;
+    running?: boolean;
+  }>;
+  writeGlobalTerminal: (input: {
+    terminalId: string;
+    accessToken?: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+    submitGapMs?: number;
+    createApprovalRequest?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  }) => Promise<{
+    ok: boolean;
+    message: string;
+    eventId?: number;
+    read?: {
+      kind: "terminal-diff" | "terminal-snapshot";
+      representation: "diff" | "snapshot";
+      terminalId: string;
+      eventId?: number;
+      fromHash?: string | null;
+      toHash?: string | null;
+      seq?: number;
+      cols?: number;
+      rows?: number;
+      cursor?: { x: number; y: number };
+      tail?: string;
+      diff?: string;
+      bytes?: number;
+      status: "IDLE" | "BUSY";
+      title?: string;
+      running?: boolean;
+    };
+    approvalRequest?: GlobalTerminalApprovalRequest;
+  }>;
   listGlobalTerminalGrants: (terminalId: string) => Promise<GlobalTerminalGrantEntry[]>;
   issueGlobalTerminalGrant: (input: {
     terminalId: string;

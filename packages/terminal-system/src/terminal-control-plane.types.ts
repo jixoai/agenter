@@ -206,6 +206,7 @@ export interface TerminalWriteLeaseRecord {
 export interface TerminalEventPayload {
   title: string;
   content: string;
+  actorId?: TerminalActorId;
   detail?: unknown;
 }
 

@@ -58,14 +58,82 @@ describe("Feature: profile-service control plane", () => {
     });
     const response = await fetch(`http://${handle.host}:${handle.port}/auth/descriptor`);
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const descriptor = (await response.json()) as {
+      authMode: string;
+      rootAuthId: string;
+      rootIdentifier: {
+        kind: string;
+        value: string;
+      };
+      rootAuthKeyPath: string;
+      rootAuthBootstrapMode: string;
+      canRevealRootAuthPrivateKey: boolean;
+      hasManagedRootAuthPrivateKey: boolean;
+    };
+    expect(descriptor).toMatchObject({
       authMode: "wallet_challenge_jwt",
       rootAuthId: `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`,
       rootIdentifier: {
         kind: "wallet_evm",
         value: privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase(),
       },
+      rootAuthBootstrapMode: "managed_local",
+      canRevealRootAuthPrivateKey: true,
+      hasManagedRootAuthPrivateKey: true,
     });
+    expect(descriptor.rootAuthKeyPath.endsWith("/root-auth.key")).toBeTrue();
+  });
+
+  test("Scenario: Given a managed local root auth key When the reveal endpoint is requested Then the exact private key and auth identity are returned", async () => {
+    const { handle } = await startServer(4606, new Map(), {
+      rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+    });
+    const response = await fetch(`http://${handle.host}:${handle.port}/auth/root-key/reveal`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(200);
+    const revealed = (await response.json()) as {
+      privateKey: string;
+      authId: string;
+      rootAuthKeyPath: string;
+    };
+    expect(revealed).toMatchObject({
+      privateKey: ROOT_AUTH_PRIVATE_KEY,
+      authId: `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`,
+    });
+    expect(revealed.rootAuthKeyPath.endsWith("/root-auth.key")).toBeTrue();
+  });
+
+  test("Scenario: Given profile-service fresh start When the reveal endpoint is requested Then the generated managed key matches the published auth descriptor", async () => {
+    const { handle } = await startServer(4607);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const descriptorResponse = await fetch(`${baseUrl}/auth/descriptor`);
+    expect(descriptorResponse.status).toBe(200);
+    const descriptor = (await descriptorResponse.json()) as {
+      rootAuthId: string;
+      rootAuthKeyPath: string;
+      rootAuthBootstrapMode: string;
+      canRevealRootAuthPrivateKey: boolean;
+      hasManagedRootAuthPrivateKey: boolean;
+    };
+
+    const revealResponse = await fetch(`${baseUrl}/auth/root-key/reveal`, {
+      method: "POST",
+    });
+    expect(revealResponse.status).toBe(200);
+    const revealed = (await revealResponse.json()) as {
+      privateKey: string;
+      authId: string;
+      rootAuthKeyPath: string;
+    };
+
+    expect(descriptor.rootAuthBootstrapMode).toBe("managed_local");
+    expect(descriptor.canRevealRootAuthPrivateKey).toBeTrue();
+    expect(descriptor.hasManagedRootAuthPrivateKey).toBeTrue();
+    expect(revealed.privateKey).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(revealed.authId).toBe(descriptor.rootAuthId);
+    expect(revealed.rootAuthKeyPath).toBe(descriptor.rootAuthKeyPath);
   });
 
   test("Scenario: Given wallet auth challenge When the signature is valid Then the auth service returns a JWT session and replays it from /auth/session", async () => {

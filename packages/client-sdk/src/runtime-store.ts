@@ -80,7 +80,7 @@ const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
 
 const LOOPBUS_LRU_LIMIT = 100;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
-const DEFAULT_MESSAGE_CHAT_ID = "chat-main";
+const DEFAULT_MESSAGE_CHAT_ID = "room-main";
 const DEFAULT_MODEL_CAPABILITIES = {
   streaming: false,
   tools: false,
@@ -373,8 +373,17 @@ export class RuntimeStore {
     return await this.ensureProfileServiceInfo();
   }
 
+  async listAuthActors() {
+    const output = await this.client.trpc.auth.actors.query();
+    return output.items;
+  }
+
   async startAuthChallenge(authId: string) {
     return await this.client.trpc.auth.challengeStart.mutate({ authId });
+  }
+
+  async revealManagedRootAuthPrivateKey() {
+    return await this.client.trpc.auth.bootstrapManagedKey.mutate();
   }
 
   async verifyAuthChallenge(input: { challengeId: string; signature: string }) {
@@ -1685,9 +1694,19 @@ export class RuntimeStore {
     items: GlobalRoomMessage[];
     nextBefore: HistoryPageCursor | null;
     hasMoreBefore: boolean;
-    headVersion: string;
+      headVersion: string;
   }> {
     return await this.client.trpc.message.globalSnapshot.query(input);
+  }
+
+  async markGlobalRoomRead(input: {
+    chatId: string;
+    accessToken?: string;
+    messageId?: string;
+    readAt?: number;
+  }): Promise<GlobalRoomEntry> {
+    const output = await this.client.trpc.message.globalMarkRead.mutate(input);
+    return output.channel;
   }
 
   async pageGlobalRoomMessages(input: {
@@ -1868,12 +1887,36 @@ export class RuntimeStore {
   async focusGlobalTerminals(input: {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
+    accessToken?: string;
   }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
     return await this.client.trpc.terminal.globalFocus.mutate(input);
   }
 
   async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
     return await this.client.trpc.terminal.globalDelete.mutate(input);
+  }
+
+  async readGlobalTerminal(input: {
+    terminalId: string;
+    accessToken?: string;
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+  }) {
+    return await this.client.trpc.terminal.read.query(input);
+  }
+
+  async writeGlobalTerminal(input: {
+    terminalId: string;
+    accessToken?: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+    submitGapMs?: number;
+    createApprovalRequest?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  }) {
+    return await this.client.trpc.terminal.write.mutate(input);
   }
 
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {

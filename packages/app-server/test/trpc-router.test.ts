@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
+import type { MessageControlPlane } from "@agenter/message-system";
 import type { TerminalControlPlane } from "@agenter/terminal-system";
 import { AppKernel, appRouter, createTrpcContext } from "../src";
 
@@ -56,6 +57,78 @@ describe("Feature: app-server trpc procedures", () => {
 
     const afterDelete = await caller.session.list();
     expect(afterDelete.sessions).toHaveLength(0);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given app-server owns a managed local profile-service child When auth bootstrap is requested Then descriptor flags and reveal payload stay aligned", async () => {
+    const root = makeTempDir();
+    const expectedAuthId = `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`;
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const descriptor = await caller.auth.service();
+    expect(descriptor).toMatchObject({
+      rootAuthId: expectedAuthId,
+      rootAuthBootstrapMode: "managed_local",
+      canRevealRootAuthPrivateKey: true,
+      hasManagedRootAuthPrivateKey: true,
+    });
+
+    const revealed = await caller.auth.bootstrapManagedKey();
+    expect(revealed).toEqual({
+      privateKey: ROOT_AUTH_PRIVATE_KEY,
+      authId: expectedAuthId,
+      rootAuthKeyPath: descriptor.rootAuthKeyPath,
+    });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a durable auth identity When auth actors are listed Then the collaboration catalog exposes auth-backed label icon and actor id", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const account = privateKeyToAccount(generatePrivateKey());
+    const authId = `wallet_evm:${account.address.toLowerCase()}`;
+    const challenge = await caller.auth.challengeStart({ authId });
+    const signature = await account.signMessage({ message: challenge.challengeText });
+    await caller.auth.challengeVerify({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+
+    const actors = await caller.auth.actors();
+    expect(actors.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorId: `auth:${authId}`,
+          actorKind: "auth",
+          authId,
+          label: account.address.toLowerCase(),
+          subtitle: authId,
+          iconUrl: expect.stringContaining("/media/profiles/"),
+          identifier: {
+            kind: "wallet_evm",
+            value: account.address.toLowerCase(),
+          },
+        }),
+      ]),
+    );
 
     await kernel.stop();
   });
@@ -236,7 +309,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     const listed = await caller.message.globalList({ includeArchived: false });
     expect(listed.items.some((item) => item.chatId === room.chatId)).toBeTrue();
-    expect(listed.items.find((item) => item.chatId === room.chatId)?.focused).toBeTrue();
+    expect(listed.items.find((item) => item.chatId === room.chatId)?.focused).toBeFalse();
 
     const sent = await caller.message.globalSend({
       chatId: room.chatId,
@@ -252,6 +325,29 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(snapshot.channel.chatId).toBe(room.chatId);
     expect(snapshot.items.some((item) => item.content === "hello ops")).toBeTrue();
+    const sentMessage = snapshot.items.find((item) => item.content === "hello ops");
+    expect(sentMessage?.attentionState).toBe("queued");
+    expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
+    const relay = await caller.message.globalIssueGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "session:ops-relay",
+      label: "Ops relay",
+    });
+
+    const relayRead = await caller.message.globalMarkRead({
+      chatId: room.chatId,
+      accessToken: relay.grant.accessToken,
+      messageId: sentMessage?.messageId,
+      readAt: 2_000,
+    });
+    expect(relayRead.channel.readProgress).toMatchObject({
+      latestVisibleMessageId: sentMessage?.messageId,
+      totalSeatCount: 1,
+      readSeatCount: 1,
+      unreadSeatCount: 0,
+    });
 
     const page = await caller.message.globalPage({
       chatId: room.chatId,
@@ -262,7 +358,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     const focused = await caller.message.globalFocus({
       op: "replace",
-      channels: [{ chatId: room.chatId }],
+      channels: [{ chatId: room.chatId, accessToken: room.accessToken }],
     });
     expect(focused.focusedChatIds).toEqual([room.chatId]);
 
@@ -311,6 +407,126 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given seat-backed room reads When seat token and superadmin both mark the same room Then durable read progress only advances for real room seats", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const descriptor = await caller.auth.service();
+    const challenge = await caller.auth.challengeStart({
+      authId: descriptor.rootAuthId,
+    });
+    const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
+      message: challenge.challengeText,
+    });
+    const session = await caller.auth.challengeVerify({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+    const superadminCaller = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${session.token}`,
+      }),
+    );
+
+    const created = await caller.message.globalCreate({
+      chatId: "room-read-state",
+      kind: "room",
+      title: "Read state room",
+      focus: false,
+    });
+    const room = created.channel;
+    const relay = await caller.message.globalIssueGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "session:relay",
+      label: "Relay",
+    });
+    const viewer = await caller.message.globalIssueGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "readonly",
+      participantId: "auth:viewer",
+      label: "Viewer",
+    });
+
+    const messageControlPlane = Reflect.get(kernel, "messageControlPlane") as MessageControlPlane;
+    messageControlPlane.send({
+      chatId: room.chatId,
+      from: "system",
+      content: "hello read-state",
+      createdAt: 1_000,
+      updatedAt: 1_000,
+      visibleAt: 1_000,
+    });
+
+    const snapshot = await caller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    const latestMessageId = snapshot.items[0]?.messageId;
+    if (!latestMessageId) {
+      throw new Error("expected latest visible room message");
+    }
+
+    const relayRead = await caller.message.globalMarkRead({
+      chatId: room.chatId,
+      accessToken: relay.grant.accessToken,
+      messageId: latestMessageId,
+      readAt: 2_000,
+    });
+    expect(relayRead.channel.readProgress).toMatchObject({
+      latestVisibleMessageId: latestMessageId,
+      totalSeatCount: 2,
+      readSeatCount: 1,
+      unreadSeatCount: 1,
+    });
+    expect(relayRead.channel.readStates.find((state) => state.actorId === "session:relay")).toMatchObject({
+      actorId: "session:relay",
+      hasReadLatestVisible: true,
+      readAt: 2_000,
+    });
+
+    const superadminRead = await superadminCaller.message.globalMarkRead({
+      chatId: room.chatId,
+      messageId: latestMessageId,
+      readAt: 3_000,
+    });
+    expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
+    expect(superadminRead.channel.readStates.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`)).toBeFalse();
+
+    const viewerRead = await caller.message.globalMarkRead({
+      chatId: room.chatId,
+      accessToken: viewer.grant.accessToken,
+      messageId: latestMessageId,
+      readAt: 4_000,
+    });
+    expect(viewerRead.channel.readProgress).toMatchObject({
+      latestVisibleMessageId: latestMessageId,
+      totalSeatCount: 2,
+      readSeatCount: 2,
+      unreadSeatCount: 0,
+    });
+    expect(viewerRead.channel.readStates.find((state) => state.actorId === "auth:viewer")).toMatchObject({
+      actorId: "auth:viewer",
+      hasReadLatestVisible: true,
+      readAt: 4_000,
+    });
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given global terminal routes When creating granting approving and deleting Then the terminal stays independent from session startup order", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
@@ -325,7 +541,7 @@ describe("Feature: app-server trpc procedures", () => {
       terminalId: "global-ops",
       processKind: "shell",
       cwd: root,
-      focus: true,
+      focus: false,
     });
     const terminalId = created.result.terminal?.terminalId;
     if (!terminalId) {
@@ -334,7 +550,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     const listed = await caller.terminal.globalList();
     expect(listed.items.some((item) => item.terminalId === terminalId)).toBeTrue();
-    expect(listed.items.find((item) => item.terminalId === terminalId)?.focused).toBeTrue();
+    expect(listed.items.find((item) => item.terminalId === terminalId)?.focused).toBeFalse();
 
     const issued = await caller.terminal.issueGrant({
       terminalId,
@@ -368,12 +584,22 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(lease.participantId).toBe("session:avatar-pair");
 
-    const allowed = await terminalSystem.write({
+    const focusedBySeat = await caller.terminal.globalFocus({
+      op: "add",
+      terminalIds: [terminalId],
+      accessToken: issued.grant.accessToken,
+    });
+    expect(focusedBySeat.focusedTerminalIds).toEqual([terminalId]);
+
+    const afterSeatFocus = terminalSystem.list().find((item) => item.terminalId === terminalId);
+    expect(afterSeatFocus?.focused).toBeFalse();
+    expect(afterSeatFocus?.actors?.find((actor) => actor.actorId === "session:avatar-pair")?.focused).toBeTrue();
+
+    const allowed = await caller.terminal.write({
       terminalId,
+      accessToken: issued.grant.accessToken,
       text: "approved write",
       submit: false,
-      actorId: "session:avatar-pair",
-      accessToken: issued.grant.accessToken,
       returnRead: false,
     });
     expect(allowed.ok).toBeTrue();
@@ -383,6 +609,7 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
     expect(activity.items.some((item) => item.kind === "terminal_write")).toBeTrue();
+    expect(activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair")).toBeTrue();
 
     const focused = await caller.terminal.globalFocus({
       op: "clear",

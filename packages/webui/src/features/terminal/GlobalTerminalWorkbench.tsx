@@ -5,7 +5,7 @@ import type {
   GlobalTerminalGrantIssueOutput,
   TerminalActivityItem,
 } from "@agenter/client-sdk";
-import { Crosshair, ListRestart, Maximize2, Minimize2, Plus, Shield, TerminalSquare, Trash2 } from "lucide-react";
+import { ListRestart, Maximize2, Minimize2, Plus, Shield, TerminalSquare, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
@@ -17,11 +17,13 @@ import { ClipSurface, ViewportMask } from "../../components/ui/overflow-surface"
 import { Skeleton } from "../../components/ui/skeleton";
 import { surfaceToneClassName } from "../../components/ui/surface";
 import { Tabs, type TabItem } from "../../components/ui/tabs";
+import type { ActorTokenOption } from "../collaboration/ActorTokenSelect";
 import { cn } from "../../lib/utils";
-import { TerminalActivityPanel } from "./TerminalActivityPanel";
+import { TerminalActionsUsersPanel } from "./TerminalActionsUsersPanel";
 import { TerminalActorGroup, type TerminalActorMeta } from "./TerminalActorGroup";
 import { TerminalApprovalRequestsDialog } from "./TerminalApprovalRequestsDialog";
 import { TerminalGrantManagerDialog, type TerminalActorOption } from "./TerminalGrantManagerDialog";
+import type { TerminalUserEntry } from "./TerminalUsersPanel";
 import { TerminalViewHost } from "./TerminalViewHost";
 import { TerminalCreateDialog } from "./terminal-create-dialog";
 
@@ -35,6 +37,8 @@ interface GlobalTerminalWorkbenchProps {
   error: string | null;
   viewportMode: ViewportMode;
   actorOptions: TerminalActorOption[];
+  callerOptions: ActorTokenOption[];
+  selectedCallerToken: string | null;
   resolveActorMeta: (actorId: string) => TerminalActorMeta | null;
   activity: {
     terminalId: string | null;
@@ -43,7 +47,15 @@ interface GlobalTerminalWorkbenchProps {
     loading: boolean;
     loadingMore: boolean;
   };
+  grants: {
+    terminalId: string | null;
+    items: GlobalTerminalGrantEntry[];
+    loading: boolean;
+    error: string | null;
+  };
+  users: TerminalUserEntry[];
   onRefresh: () => Promise<void> | void;
+  onSelectCallerToken: (accessToken: string) => void;
   onSelectTerminal: (terminalId: string) => void;
   onSetViewportMode: (mode: ViewportMode) => void;
   onCreateTerminal: (input: {
@@ -65,7 +77,6 @@ interface GlobalTerminalWorkbenchProps {
     focus?: boolean;
   }) => Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
   onDeleteTerminal: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
-  onFocusTerminal: (terminal: GlobalTerminalEntry) => Promise<void> | void;
   onListGrants: (terminalId: string) => Promise<GlobalTerminalGrantEntry[]>;
   onIssueGrant: (input: {
     terminalId: string;
@@ -83,6 +94,18 @@ interface GlobalTerminalWorkbenchProps {
   onApproveRequest: (input: { terminalId: string; requestId: string; durationMs: number }) => Promise<unknown>;
   onDenyRequest: (input: { terminalId: string; requestId: string }) => Promise<unknown>;
   onLoadMoreActivity: () => Promise<void> | void;
+  onSetUserFocus: (input: { actorId: string; accessToken: string; focused: boolean }) => Promise<void> | void;
+  onReadTerminal: (input: {
+    accessToken?: string;
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+  }) => Promise<void> | void;
+  onWriteTerminal: (input: {
+    accessToken?: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+  }) => Promise<void> | void;
 }
 
 const LoadingShell = () => (
@@ -111,14 +134,18 @@ export const GlobalTerminalWorkbench = ({
   error,
   viewportMode,
   actorOptions,
+  callerOptions,
+  selectedCallerToken,
   resolveActorMeta,
   activity,
+  grants,
+  users,
   onRefresh,
+  onSelectCallerToken,
   onSelectTerminal,
   onSetViewportMode,
   onCreateTerminal,
   onDeleteTerminal,
-  onFocusTerminal,
   onListGrants,
   onIssueGrant,
   onRevokeGrant,
@@ -126,6 +153,9 @@ export const GlobalTerminalWorkbench = ({
   onApproveRequest,
   onDenyRequest,
   onLoadMoreActivity,
+  onSetUserFocus,
+  onReadTerminal,
+  onWriteTerminal,
 }: GlobalTerminalWorkbenchProps) => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -184,12 +214,6 @@ export const GlobalTerminalWorkbench = ({
           {selectedTerminal ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => void onFocusTerminal(selectedTerminal)} disabled={actionBusy}>
-                  <ButtonLeadingVisual>
-                    <Crosshair className="h-3.5 w-3.5" />
-                  </ButtonLeadingVisual>
-                  <ButtonLabel>{selectedTerminal.focused ? "Clear focus" : "Focus terminal"}</ButtonLabel>
-                </Button>
                 <Button
                   type="button"
                   size="sm"
@@ -308,14 +332,23 @@ export const GlobalTerminalWorkbench = ({
                 </ViewportMask>
               </section>
 
-              <TerminalActivityPanel
+              <TerminalActionsUsersPanel
                 terminalId={selectedTerminal.terminalId}
-                terminalRead={undefined}
                 items={activity.terminalId === selectedTerminal.terminalId ? activity.items : []}
-                hasMore={activity.terminalId === selectedTerminal.terminalId ? activity.hasMore : false}
-                loading={activity.terminalId === selectedTerminal.terminalId ? activity.loading : false}
-                loadingOlder={activity.terminalId === selectedTerminal.terminalId ? activity.loadingMore : false}
+                users={users}
+                callerOptions={callerOptions}
+                selectedCallerToken={selectedCallerToken}
+                activityHasMore={activity.terminalId === selectedTerminal.terminalId ? activity.hasMore : false}
+                activityLoading={activity.terminalId === selectedTerminal.terminalId ? activity.loading : false}
+                activityLoadingOlder={activity.terminalId === selectedTerminal.terminalId ? activity.loadingMore : false}
+                usersLoading={grants.loading}
+                error={grants.error}
+                onSelectCallerToken={onSelectCallerToken}
                 onLoadMore={() => void onLoadMoreActivity()}
+                onSetUserFocus={onSetUserFocus}
+                onRead={(input) => onReadTerminal(input)}
+                onWrite={(input) => onWriteTerminal(input)}
+                resolveActorMeta={(actorId) => (actorId ? resolveActorMeta(actorId) : null)}
               />
             </div>
           ) : null}

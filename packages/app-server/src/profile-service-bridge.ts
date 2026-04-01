@@ -4,6 +4,7 @@ import {
   type AuthSessionProjection,
   buildProfileIconUrl,
   buildSessionIconUrl,
+  type RootAuthPrivateKeyReveal,
   startProfileServiceServer,
   type ProfileMetadata,
   type ProfileProjection,
@@ -46,6 +47,7 @@ export interface AuthServiceDescriptor extends AuthDescriptor {
 }
 
 export type ProfileServiceDescriptor = AuthServiceDescriptor;
+export type RootAuthPrivateKeyRevealResult = RootAuthPrivateKeyReveal;
 
 const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 const jsonHeaders = { "content-type": "application/json" };
@@ -127,10 +129,32 @@ export class ProfileServiceBridge {
       throw new Error(`profile-service auth descriptor failed (${response.status})`);
     }
     const descriptor = (await response.json()) as AuthDescriptor;
+    const bootstrapDescriptor = this.options.endpoint
+      ? {
+          ...descriptor,
+          rootAuthBootstrapMode: "external" as const,
+          canRevealRootAuthPrivateKey: false,
+          hasManagedRootAuthPrivateKey: false,
+        }
+      : descriptor;
     return {
       endpoint: baseUrl,
-      ...descriptor,
+      ...bootstrapDescriptor,
     };
+  }
+
+  async revealRootAuthPrivateKey(): Promise<RootAuthPrivateKeyRevealResult> {
+    if (this.options.endpoint) {
+      throw new Error("managed root auth key reveal is unavailable for external auth service");
+    }
+    const response = await this.request("/auth/root-key/reveal", {
+      method: "POST",
+      headers: jsonHeaders,
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service root auth key reveal failed (${response.status})`);
+    }
+    return (await response.json()) as RootAuthPrivateKeyRevealResult;
   }
 
   private async buildAbsoluteUrl(pathname: string): Promise<string> {

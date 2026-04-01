@@ -477,6 +477,70 @@ describe("Feature: web-chat-view package", () => {
     expect(screen.queryByText("Loading channel history...")).toBeNull();
   });
 
+  test("Scenario: Given queued room messages without visibleAt When the transcript renders Then they stay visible in createdAt order without a pending strip", async () => {
+    render(
+      <div style={{ height: 520 }}>
+        <WebChatView
+          channel={{
+            chatId: "chat-main",
+            kind: "room",
+            title: "Room",
+            owner: "jane",
+            participants: [
+              { id: "avatar:jane", label: "jane", role: "avatar" },
+              { id: "user", label: "User", role: "user" },
+            ],
+            createdAt: 1,
+            updatedAt: 1,
+            focused: true,
+            accessRole: "admin",
+            accessToken: "msgtok_admin",
+          }}
+          initialMessages={[
+            {
+              rowId: 1,
+              messageId: "queued-1",
+              chatId: "chat-main",
+              from: "User",
+              to: "jane",
+              kind: "text",
+              content: "queued visible draft",
+              createdAt: 100,
+              updatedAt: 100,
+              attentionState: "queued",
+              editable: true,
+              metadata: {},
+              attachments: [],
+            },
+            {
+              rowId: 2,
+              messageId: "reply-1",
+              chatId: "chat-main",
+              from: "jane",
+              kind: "text",
+              content: "assistant reply",
+              createdAt: 200,
+              updatedAt: 200,
+              visibleAt: 200,
+              attentionState: "loaded",
+              editable: false,
+              metadata: {},
+              attachments: [],
+            },
+          ]}
+          renderComposer={() => <button type="button">Host composer</button>}
+        />
+      </div>,
+    );
+
+    await expect(screen.findByText("queued visible draft")).resolves.toBeTruthy();
+    expect(screen.queryByText("Pending for attention")).toBeNull();
+    expect(screen.queryByText("Queued messages will move into the transcript after attention reads them.")).toBeNull();
+
+    const transcriptText = screen.getByTestId("web-chat-scroll-viewport").textContent ?? "";
+    expect(transcriptText.indexOf("queued visible draft")).toBeLessThan(transcriptText.indexOf("assistant reply"));
+  });
+
   test("Scenario: Given bootstrap transcript rows mirror the transport snapshot with legacy ids When the websocket snapshot arrives Then the view collapses the semantic duplicates into a single visible transcript", async () => {
     render(
       <div style={{ height: 520 }}>

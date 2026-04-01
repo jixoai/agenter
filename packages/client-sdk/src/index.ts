@@ -2,6 +2,8 @@ export { RuntimeStore, createRuntimeStore } from "./runtime-store";
 export { createAgenterClient, type AgenterClient, type AgenterClientOptions } from "./trpc-client";
 export type {
   AuthChallengeStartOutput,
+  AuthActorCatalogEntry,
+  AuthActorCatalogOutput,
   AuthChallengeVerifyOutput,
   AuthServiceInfoOutput,
   AuthSessionOutput,

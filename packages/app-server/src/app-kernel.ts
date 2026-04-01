@@ -33,6 +33,9 @@ import {
   type TerminalGrantRole,
   type TerminalIssueGrantInput,
   type TerminalProcessProfile,
+  type TerminalReadMode,
+  type TerminalReadResult,
+  type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import {
   SessionDb,
@@ -62,6 +65,7 @@ import {
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
+import { projectAuthActors } from "./auth-actor-catalog";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -156,6 +160,7 @@ const projectTerminalEventToActivityRecord = (event: {
   payload: {
     title: string;
     content: string;
+    actorId?: string;
     detail?: unknown;
   };
 }): TerminalActivityRecord => ({
@@ -164,6 +169,7 @@ const projectTerminalEventToActivityRecord = (event: {
   createdAt: event.createdAt,
   kind: event.kind,
   cycleId: null,
+  actorId: event.payload.actorId,
   title: event.payload.title,
   content: event.payload.content,
   detail: event.payload.detail,
@@ -619,6 +625,40 @@ export class AppKernel {
     return {
       room,
       accessToken: input.accessToken ?? room.accessToken,
+    };
+  }
+
+  private resolveGlobalTerminalProjection(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalControlPlaneEntry {
+    if (input.actorId && !input.superadminActorId) {
+      const terminal = this.terminalControlPlane
+        .listForActor(input.actorId, { touchPresence: false })
+        .find((entry) => entry.terminalId === input.terminalId);
+      if (!terminal) {
+        throw new Error("terminal credential-invalid");
+      }
+      return terminal;
+    }
+    const terminal = this.terminalControlPlane.list().find((entry) => entry.terminalId === input.terminalId);
+    if (!terminal) {
+      throw new Error(`unknown terminal: ${input.terminalId}`);
+    }
+    return terminal;
+  }
+
+  private resolveGlobalTerminalAccess(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): { terminal: TerminalControlPlaneEntry; accessToken: string | undefined } {
+    const terminal = this.resolveGlobalTerminalProjection(input);
+    return {
+      terminal,
+      accessToken: input.accessToken ?? terminal.access?.accessToken,
     };
   }
 
@@ -1398,11 +1438,6 @@ export class AppKernel {
         includeArchived: true,
       });
     }
-    if (shouldFocus) {
-      this.messageControlPlane.focus("replace", [room.chatId]);
-    } else {
-      this.messageControlPlane.focus("remove", [room.chatId]);
-    }
     return this.resolveGlobalRoomProjection({
       chatId: room.chatId,
       superadminActorId: input.superadminActorId,
@@ -1417,19 +1452,20 @@ export class AppKernel {
     superadminActorId?: MessageActorId;
   }): { ok: boolean; message: string; focusedChatIds: string[] } {
     const focusedChatIds =
-      input.actorId && !input.superadminActorId
+      input.channels.length > 0 && input.channels.every((channel) => typeof channel.accessToken === "string" && channel.accessToken.length > 0)
         ? this.messageControlPlane.focusAuthorized(
             input.op,
             input.channels.map((channel) => ({
               chatId: channel.chatId,
-              accessToken:
-                channel.accessToken ??
-                this.resolveGlobalRoomAccess({
-                  chatId: channel.chatId,
-                  actorId: input.actorId,
-                }).accessToken,
+              accessToken: channel.accessToken!,
             })),
           )
+        : input.actorId && !input.superadminActorId
+          ? this.messageControlPlane.focusForActor(
+              input.actorId,
+              input.op,
+              input.channels.map((channel) => channel.chatId),
+            )
         : this.messageControlPlane.focus(
             input.op,
             input.channels.map((channel) => channel.chatId),
@@ -1439,6 +1475,23 @@ export class AppKernel {
       message: `focus ${input.op}`,
       focusedChatIds,
     };
+  }
+
+  markGlobalRoomRead(input: {
+    chatId: string;
+    messageId?: string;
+    readAt?: number;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): MessageControlPlaneEntry {
+    const access = this.resolveGlobalRoomAccess(input);
+    return this.messageControlPlane.markChannelReadAuthorized({
+      chatId: input.chatId,
+      accessToken: access.accessToken,
+      messageId: input.messageId,
+      readAt: input.readAt,
+    });
   }
 
   pageGlobalRoomMessages(input: {
@@ -1636,9 +1689,6 @@ export class AppKernel {
         terminal,
       };
     }
-    if (input.focus ?? true) {
-      this.terminalControlPlane.focus("replace", [created.terminalId]);
-    }
     const terminal = this.terminalControlPlane.list().find((entry) => entry.terminalId === created.terminalId);
     return {
       ok: true,
@@ -1650,11 +1700,20 @@ export class AppKernel {
   focusGlobalTerminals(input: {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
+    accessToken?: string;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }): { ok: boolean; message: string; focusedTerminalIds: string[] } {
-    const focusedTerminalIds =
-      input.actorId && !input.superadminActorId
+    const seatAccessToken = input.accessToken;
+    const focusedTerminalIds = seatAccessToken
+      ? this.terminalControlPlane.focusAuthorized(
+          input.op,
+          input.terminalIds.map((terminalId) => ({
+            terminalId,
+            accessToken: seatAccessToken,
+          })),
+        )
+      : input.actorId && !input.superadminActorId
         ? this.terminalControlPlane.focusForActor(input.actorId, input.op, input.terminalIds)
         : this.terminalControlPlane.focus(input.op, input.terminalIds);
     return {
@@ -1744,6 +1803,62 @@ export class AppKernel {
       nextBefore: page.nextBefore,
       hasMoreBefore: page.hasMoreBefore,
     };
+  }
+
+  async readGlobalTerminal(input: {
+    terminalId: string;
+    mode?: TerminalReadMode;
+    remark?: boolean;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<TerminalReadResult> {
+    const access = this.resolveGlobalTerminalAccess(input);
+    return await this.terminalControlPlane.readAuthorized({
+      terminalId: input.terminalId,
+      mode: input.mode,
+      remark: input.remark,
+      accessToken: access.accessToken,
+      ...(access.accessToken
+        ? {}
+        : {
+            actorId: input.actorId,
+            superadminActorId: input.superadminActorId,
+          }),
+    });
+  }
+
+  async writeGlobalTerminal(input: {
+    terminalId: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+    submitGapMs?: number;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readMode?: TerminalReadMode;
+    createApprovalRequest?: boolean;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<TerminalWriteResult> {
+    const access = this.resolveGlobalTerminalAccess(input);
+    return await this.terminalControlPlane.write({
+      terminalId: input.terminalId,
+      text: input.text,
+      submit: input.submit,
+      submitKey: input.submitKey,
+      submitGapMs: input.submitGapMs,
+      returnRead: input.returnRead,
+      readMode: input.readMode,
+      createApprovalRequest: input.createApprovalRequest,
+      accessToken: access.accessToken,
+      ...(access.accessToken
+        ? {}
+        : {
+            actorId: input.actorId,
+            superadminActorId: input.superadminActorId,
+          }),
+    });
   }
 
   listTerminals(sessionId: string): TerminalControlPlaneEntry[] {
@@ -1994,6 +2109,10 @@ export class AppKernel {
     return await this.authService.getProfile(reference);
   }
 
+  async listAuthActors() {
+    return projectAuthActors(await this.authService.listProfiles());
+  }
+
   async updateProfile(input: { reference: string; token: string; patch: ProfileMetadata }): Promise<ProfileProjection> {
     return await this.authService.updateProfile(input.reference, input.patch, input.token);
   }
@@ -2021,6 +2140,10 @@ export class AppKernel {
 
   async getAuthServiceDescriptor() {
     return await this.authService.describe();
+  }
+
+  async revealManagedRootAuthPrivateKey() {
+    return await this.authService.revealRootAuthPrivateKey();
   }
 
   async startAuthChallenge(authId: string) {

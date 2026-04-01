@@ -1,4 +1,5 @@
 import {
+  type AuthSessionOutput,
   createAgenterClient,
   createRuntimeStore,
   type DraftResolutionOutput,
@@ -28,6 +29,9 @@ import {
   DEFAULT_QUICKSTART_BOOTSTRAP_CONFIG,
   type QuickstartBootstrapConfig,
 } from "./features/quickstart/quickstart-bootstrap-types";
+import { readStoredAuthToken, writeStoredAuthToken } from "./features/settings/auth-session-storage";
+import { resolveWalletAuthIdentity, signWalletAuthChallenge } from "./features/settings/private-key-auth";
+import { SuperadminOnboardingDialog } from "./features/settings/SuperadminOnboardingDialog";
 import { type SettingsEffectiveGraph, type SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { deriveWorkspaceSessionPreview, workspaceSessionPreviewEquals } from "./features/workspaces/session-preview";
 import { createAppRouter } from "./router";
@@ -156,6 +160,12 @@ const workspaceWelcomeSelectionEquals = (
 export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const [router] = useState(() => createAppRouter());
   const [notice, setNotice] = useState("");
+  const [authSession, setAuthSession] = useState<AuthSessionOutput | null>(null);
+  const [authStatus, setAuthStatus] = useState("No stored auth session token.");
+  const [authReady, setAuthReady] = useState(false);
+  const [privateKeyDraft, setPrivateKeyDraft] = useState("");
+  const [managedRootKeyBusy, setManagedRootKeyBusy] = useState(false);
+  const [superadminOnboardingDismissed, setSuperadminOnboardingDismissed] = useState(false);
   const [quickstartWorkspacePath, setQuickstartWorkspacePath] = useState(".");
   const [quickstartDraft, setQuickstartDraft] = useState<DraftResolutionOutput | null>(null);
   const [quickstartDraftLoading, setQuickstartDraftLoading] = useState(false);
@@ -195,6 +205,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const client = useMemo(() => createAgenterClient({ wsUrl }), [wsUrl]);
   const store = useMemo(() => createRuntimeStore(client), [client]);
   const storeLifecycleRef = useRef<{ store: typeof store; mounts: number } | null>(null);
+  const profileService = useRuntimeStoreSelector(store, (state) => state.profileService);
+  const connected = useRuntimeStoreSelector(store, (state) => state.connected);
   const runtimeSessions = useRuntimeStoreSelector(store, (state) => state.sessions);
   const runtimeRecentWorkspaces = useRuntimeStoreSelector(store, (state) => state.recentWorkspaces);
   const runtimeWorkspaces = useRuntimeStoreSelector(store, (state) => state.workspaces);
@@ -202,6 +214,70 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
   const setError = useCallback((error: unknown) => {
     setNotice(displayNoticeFromError(error, "Something failed while loading the application."));
   }, []);
+
+  const applyAuthToken = useCallback(
+    async (token: string | null | undefined, input?: { status?: string; clearPrivateKeyDraft?: boolean }) => {
+      const normalized = token?.trim() ?? "";
+      store.setAuthToken(normalized || null);
+      writeStoredAuthToken(normalized || null);
+      if (normalized.length === 0) {
+        setAuthSession(null);
+        setAuthStatus(input?.status ?? "Cleared stored auth session token.");
+        return null;
+      }
+      const session = await store.getAuthSession();
+      if (!session) {
+        store.clearAuthToken();
+        writeStoredAuthToken(null);
+        setAuthSession(null);
+        setAuthStatus("Stored auth session is invalid or expired.");
+        return null;
+      }
+      if (input?.clearPrivateKeyDraft) {
+        setPrivateKeyDraft("");
+      }
+      setAuthSession(session);
+      setAuthStatus(
+        input?.status ??
+          (session.claims.superadmin
+            ? `Authenticated ${session.claims.authId} as superadmin.`
+            : `Authenticated ${session.claims.authId}.`),
+      );
+      return session;
+    },
+    [store],
+  );
+
+  const authenticateWithPrivateKey = useCallback(async (): Promise<AuthSessionOutput | null> => {
+    const identity = resolveWalletAuthIdentity(privateKeyDraft);
+    setAuthStatus(`Requesting challenge for ${identity.authId}...`);
+    const challenge = await store.startAuthChallenge(identity.authId);
+    setAuthStatus(`Signing challenge for ${identity.authId}...`);
+    const signed = await signWalletAuthChallenge(privateKeyDraft, challenge.challengeText);
+    const verified = await store.verifyAuthChallenge({
+      challengeId: challenge.challengeId,
+      signature: signed.signature,
+    });
+    return await applyAuthToken(verified.token, {
+      clearPrivateKeyDraft: true,
+    });
+  }, [applyAuthToken, privateKeyDraft, store]);
+
+  const clearAuthSession = useCallback(async (): Promise<void> => {
+    await applyAuthToken(null);
+  }, [applyAuthToken]);
+
+  const revealManagedRootAuthPrivateKey = useCallback(async (): Promise<void> => {
+    setManagedRootKeyBusy(true);
+    setAuthStatus("Requesting backend-managed root private key...");
+    try {
+      const revealed = await store.revealManagedRootAuthPrivateKey();
+      setPrivateKeyDraft(revealed.privateKey);
+      setAuthStatus(`Loaded backend-managed root key for ${revealed.authId}. Sign challenge to finish binding.`);
+    } finally {
+      setManagedRootKeyBusy(false);
+    }
+  }, [store]);
 
   useEffect(() => {
     longListPagingByKeyRef.current = longListPagingByKey;
@@ -470,6 +546,46 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       });
     };
   }, [setError, store]);
+
+  useEffect(() => {
+    if (!connected) {
+      setAuthReady(false);
+      return;
+    }
+    let cancelled = false;
+    setAuthReady(false);
+    const storedToken = readStoredAuthToken();
+    const hydrate = async () => {
+      try {
+        if (storedToken) {
+          await applyAuthToken(storedToken, { status: "Restored stored auth session." });
+        } else {
+          store.clearAuthToken();
+          setAuthSession(null);
+          setAuthStatus("No stored auth session token.");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setError(error);
+          setAuthStatus("auth restore failed");
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthReady(true);
+        }
+      }
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyAuthToken, connected, setError, store]);
+
+  useEffect(() => {
+    if (authSession) {
+      setSuperadminOnboardingDismissed(false);
+    }
+  }, [authSession]);
 
   useEffect(() => {
     const fallbackWorkspace =
@@ -1165,6 +1281,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [setError, store],
   );
 
+  const markGlobalRoomRead = useCallback(
+    async (input: { chatId: string; accessToken?: string; messageId?: string; readAt?: number }) => {
+      try {
+        return await store.markGlobalRoomRead(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
   const pageGlobalRoomMessages = useCallback(
     async (input: {
       chatId: string;
@@ -1386,6 +1514,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: {
       op: "add" | "remove" | "replace" | "clear";
       terminalIds: string[];
+      accessToken?: string;
     }) => {
       try {
         return await store.focusGlobalTerminals(input);
@@ -1401,6 +1530,45 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: { terminalId: string }) => {
       try {
         return await store.deleteGlobalTerminal(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const readGlobalTerminal = useCallback(
+    async (input: {
+      terminalId: string;
+      accessToken?: string;
+      mode?: "auto" | "diff" | "snapshot";
+      remark?: boolean;
+    }) => {
+      try {
+        return await store.readGlobalTerminal(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const writeGlobalTerminal = useCallback(
+    async (input: {
+      terminalId: string;
+      accessToken?: string;
+      text: string;
+      submit?: boolean;
+      submitKey?: "enter" | "linefeed";
+      submitGapMs?: number;
+      createApprovalRequest?: boolean;
+      readMode?: "auto" | "diff" | "snapshot";
+      returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    }) => {
+      try {
+        return await store.writeGlobalTerminal(input);
       } catch (error) {
         setError(error);
         throw error;
@@ -1918,11 +2086,21 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
 
   const validateDirectory = useCallback(async (path: string) => await store.validateDirectory(path), [store]);
 
+  const showSuperadminOnboarding = connected && authReady && !authSession && !superadminOnboardingDismissed;
+
   const controller = useMemo<AppController>(
     () => ({
       runtimeStore: store,
       notice,
       setNotice,
+      authService: profileService,
+      authSession,
+      authStatus,
+      authReady,
+      privateKeyDraft,
+      setPrivateKeyDraft,
+      authenticateWithPrivateKey,
+      clearAuthSession,
       quickstartWorkspacePath,
       setQuickstartWorkspacePath,
       quickstartDraft,
@@ -1982,6 +2160,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       createGlobalRoom,
       focusGlobalRooms,
       snapshotGlobalRoom,
+      markGlobalRoomRead,
       pageGlobalRoomMessages,
       sendGlobalRoomMessage,
       updateGlobalRoom,
@@ -1997,6 +2176,8 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       createGlobalTerminal,
       focusGlobalTerminals,
       deleteGlobalTerminal,
+      readGlobalTerminal,
+      writeGlobalTerminal,
       listGlobalTerminalGrants,
       issueGlobalTerminalGrant,
       revokeGlobalTerminalGrant,
@@ -2038,8 +2219,14 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     }),
     [
       archiveWorkspaceSession,
+      authenticateWithPrivateKey,
       archiveMessageChannel,
+      authReady,
+      profileService,
+      authSession,
+      authStatus,
       cleanMissingWorkspaces,
+      clearAuthSession,
       clearWorkspaceWelcomeDraft,
       consumeNotifications,
       createWorkspaceSession,
@@ -2077,6 +2264,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       listWorkspaceAvatarCatalog,
       listDirectories,
       notice,
+      privateKeyDraft,
       quickstartBusy,
       quickstartBootstrapConfig,
       quickstartBootstrapLoading,
@@ -2097,6 +2285,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       archiveGlobalRoom,
       focusTerminals,
       focusGlobalTerminals,
+      markGlobalRoomRead,
       pageGlobalRoomMessages,
       snapshotGlobalRoom,
       updateMessageChannel,
@@ -2113,6 +2302,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       selectedLayerId,
       selectedWorkspacePath,
       selectedWorkspaceSessionId,
+      setPrivateKeyDraft,
       setWorkspaceWelcomeSelection,
       abortSession,
       sendChat,
@@ -2134,9 +2324,11 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       listGlobalTerminalApprovalRequests,
       listGlobalTerminalGrants,
       listGlobalTerminals,
+      readGlobalTerminal,
       loadGlobalTerminalActivity,
       denyGlobalTerminalRequest,
       validateDirectory,
+      writeGlobalTerminal,
       workspaceSessionCounts,
       workspaceSessionCursor,
       workspaceSessions,
@@ -2152,6 +2344,30 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     <TooltipProvider>
       <AppControllerContext.Provider value={controller}>
         <RouterProvider router={router} />
+        <SuperadminOnboardingDialog
+          open={showSuperadminOnboarding}
+          authService={profileService}
+          authStatus={authStatus}
+          privateKeyDraft={privateKeyDraft}
+          canRevealManagedKey={profileService?.canRevealRootAuthPrivateKey === true}
+          managedKeyBusy={managedRootKeyBusy}
+          onPrivateKeyDraftChange={setPrivateKeyDraft}
+          onRevealManagedKey={async () => {
+            try {
+              await revealManagedRootAuthPrivateKey();
+            } catch (error) {
+              setError(error);
+            }
+          }}
+          onAuthenticate={async () => {
+            try {
+              await authenticateWithPrivateKey();
+            } catch (error) {
+              setError(error);
+            }
+          }}
+          onDismiss={() => setSuperadminOnboardingDismissed(true)}
+        />
       </AppControllerContext.Provider>
     </TooltipProvider>
   );

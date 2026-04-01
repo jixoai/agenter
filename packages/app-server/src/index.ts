@@ -44,6 +44,10 @@ export {
   type AgentToolProviderContext,
 } from "./agenter-ai";
 export {
+  projectAuthActors,
+  type AuthActorProjection,
+} from "./auth-actor-catalog";
+export {
   AppKernel,
   type AppKernelOptions,
   type WorkspaceListItem,

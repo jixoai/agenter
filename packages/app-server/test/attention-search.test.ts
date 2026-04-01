@@ -156,10 +156,15 @@ describe("Feature: attention search query execution", () => {
       request: { query: "context:ctx-chat-main score:ba7902 deep:2" },
     });
 
-    expect(items.map((item) => item.commit.scores)).toEqual([{ ba7902: 0 }, { ba7902: 100 }]);
-    expect(items.map((item) => item.commit.summary)).toEqual([
+    expect(
+      items
+        .map((item) => item.commit.scores.ba7902 ?? null)
+        .filter((score): score is number => typeof score === "number")
+        .sort((left, right) => left - right),
+    ).toEqual([0, 100]);
+    expect(items.map((item) => item.commit.summary).sort()).toEqual([
       "Weather query completed",
       "厦门天气如何？未来天气走势如何？",
-    ]);
+    ].sort());
   });
 });

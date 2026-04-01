@@ -34,7 +34,17 @@ export interface AuthDescriptor {
   authMode: "wallet_challenge_jwt";
   rootAuthId: string;
   rootIdentifier: ProfileIdentifier;
+  rootAuthKeyPath: string;
   jwtTtlSeconds: number;
+  rootAuthBootstrapMode: "managed_local" | "external";
+  canRevealRootAuthPrivateKey: boolean;
+  hasManagedRootAuthPrivateKey: boolean;
+}
+
+export interface RootAuthPrivateKeyReveal {
+  privateKey: string;
+  authId: string;
+  rootAuthKeyPath: string;
 }
 
 export interface AuthChallengeDescriptor {

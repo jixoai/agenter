@@ -76,6 +76,92 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given multiple actor seats When they focus the same terminal independently Then each seat keeps its own focus truth", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "shared",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+    const reviewer = plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      participantId: "session:reviewer",
+      role: "writer",
+    });
+
+    expect(plane.focusForActor("session:owner", "add", [created.terminalId])).toEqual(["shared"]);
+    expect(
+      plane.focusAuthorized("add", [
+        {
+          terminalId: created.terminalId,
+          accessToken: reviewer.accessToken,
+        },
+      ]),
+    ).toEqual(["shared"]);
+    expect(plane.listForActor("session:owner", { touchPresence: false })[0]?.focused).toBe(true);
+    expect(plane.listForActor("session:reviewer", { touchPresence: false })[0]?.focused).toBe(true);
+
+    expect(
+      plane.focusAuthorized("remove", [
+        {
+          terminalId: created.terminalId,
+          accessToken: reviewer.accessToken,
+        },
+      ]),
+    ).toEqual([]);
+    expect(plane.listForActor("session:owner", { touchPresence: false })[0]?.focused).toBe(true);
+    expect(plane.listForActor("session:reviewer", { touchPresence: false })[0]?.focused).toBe(false);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given one actor seat with two terminal grants When focus is added and removed by access token Then multi-terminal focus stays actor-scoped", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const left = await plane.create({
+      terminalId: "left-seat",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+    const right = await plane.create({
+      terminalId: "right-seat",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+    const reviewerLeft = plane.issueGrantAuthorized({
+      terminalId: left.terminalId,
+      actorId: "session:owner",
+      participantId: "session:reviewer",
+      role: "readonly",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: right.terminalId,
+      actorId: "session:owner",
+      participantId: "session:reviewer",
+      role: "readonly",
+      accessTokenHint: reviewerLeft.accessToken,
+    });
+
+    expect(
+      plane.focusAuthorized("add", [
+        { terminalId: left.terminalId, accessToken: reviewerLeft.accessToken },
+        { terminalId: right.terminalId, accessToken: reviewerLeft.accessToken },
+      ]),
+    ).toEqual(["left-seat", "right-seat"]);
+    expect(plane.getFocusedTerminalIds("session:reviewer")).toEqual(["left-seat", "right-seat"]);
+
+    expect(
+      plane.focusAuthorized("remove", [
+        { terminalId: left.terminalId, accessToken: reviewerLeft.accessToken },
+      ]),
+    ).toEqual(["right-seat"]);
+    expect(plane.getFocusedTerminalIds("session:reviewer")).toEqual(["right-seat"]);
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given a write with returnRead When the terminal echoes input Then the control plane returns an explicit inspection payload", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "echo" });

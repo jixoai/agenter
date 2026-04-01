@@ -6,6 +6,7 @@ import type { ProfileServiceOptions } from "./types";
 export interface ResolvedProfileServiceConfig {
   dataDir: string;
   dbPath: string;
+  rootAuthKeyPath: string;
   host: string;
   port: number;
   publicBaseUrl: string;
@@ -31,6 +32,7 @@ export const resolveProfileServiceConfig = (options: ProfileServiceOptions = {})
   return {
     dataDir,
     dbPath: join(dataDir, "profile-service.duckdb"),
+    rootAuthKeyPath: join(dataDir, "root-auth.key"),
     host,
     port,
     publicBaseUrl,

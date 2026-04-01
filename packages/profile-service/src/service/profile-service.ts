@@ -20,6 +20,7 @@ import type {
   ProfileIdentifier,
   ProfileMetadata,
   ProfileProjection,
+  RootAuthPrivateKeyReveal,
   SessionIconSeed,
 } from "../types";
 import type { ProfileStore } from "../store/profile-store";
@@ -34,7 +35,11 @@ export interface ProfileServiceAuthOptions {
   authJwtSecret: string;
   authJwtTtlMs: number;
   rootAuthId: string;
+  rootAuthPrivateKey: string;
   rootIdentifier: ProfileIdentifier;
+  rootAuthKeyPath: string;
+  rootAuthBootstrapMode: "managed_local" | "external";
+  canRevealRootAuthPrivateKey: boolean;
   webauthnOrigin: string;
   webauthnRpId: string;
   webauthnRpName: string;
@@ -91,7 +96,22 @@ export class ProfileService {
       authMode: "wallet_challenge_jwt",
       rootAuthId: this.authOptions.rootAuthId,
       rootIdentifier: normalizeIdentifier(this.authOptions.rootIdentifier),
+      rootAuthKeyPath: this.authOptions.rootAuthKeyPath,
       jwtTtlSeconds: Math.max(1, Math.floor(this.authOptions.authJwtTtlMs / 1000)),
+      rootAuthBootstrapMode: this.authOptions.rootAuthBootstrapMode,
+      canRevealRootAuthPrivateKey: this.authOptions.canRevealRootAuthPrivateKey,
+      hasManagedRootAuthPrivateKey: this.authOptions.rootAuthBootstrapMode === "managed_local",
+    };
+  }
+
+  revealRootAuthPrivateKey(): RootAuthPrivateKeyReveal {
+    if (!this.authOptions.canRevealRootAuthPrivateKey) {
+      throw new Error("managed root auth key reveal is unavailable");
+    }
+    return {
+      privateKey: this.authOptions.rootAuthPrivateKey,
+      authId: this.authOptions.rootAuthId,
+      rootAuthKeyPath: this.authOptions.rootAuthKeyPath,
     };
   }
 

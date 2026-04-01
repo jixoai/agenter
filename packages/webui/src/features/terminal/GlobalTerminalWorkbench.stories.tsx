@@ -81,16 +81,19 @@ if (typeof customElements !== "undefined" && !customElements.get(TERMINAL_VIEW_T
 const actorOptions: TerminalActorOption[] = [
   {
     actorId: "session:owner",
+    actorKind: "session",
     label: "Owner avatar",
     subtitle: "/repo/demo",
   },
   {
     actorId: "session:reviewer",
+    actorKind: "session",
     label: "Reviewer avatar",
     subtitle: "/repo/review",
   },
   {
     actorId: "session:viewer",
+    actorKind: "session",
     label: "Viewer avatar",
     subtitle: "/repo/watch",
   },
@@ -231,6 +234,7 @@ const activity: TerminalActivityItem[] = [
     id: 1,
     terminalId: "iflow",
     createdAt: 1,
+    actorId: "session:owner",
     kind: "terminal_write",
     cycleId: null,
     title: "Terminal write",
@@ -240,6 +244,7 @@ const activity: TerminalActivityItem[] = [
     id: 2,
     terminalId: "iflow",
     createdAt: 2,
+    actorId: "session:owner",
     kind: "terminal_read",
     cycleId: null,
     title: "terminal_read",
@@ -258,6 +263,11 @@ const meta = {
     error: null,
     viewportMode: "fit" as const,
     actorOptions,
+    callerOptions: [
+      { accessToken: "termtok_owner", label: "Owner avatar", subtitle: "/repo/demo", roleLabel: "admin" },
+      { accessToken: "termtok_reviewer", label: "Reviewer avatar", subtitle: "/repo/review", roleLabel: "requester" },
+    ],
+    selectedCallerToken: "termtok_owner",
     resolveActorMeta: (actorId: string) => actorMeta.get(actorId) ?? null,
     activity: {
       terminalId: "iflow",
@@ -266,12 +276,46 @@ const meta = {
       loading: false,
       loadingMore: false,
     },
+    grants: {
+      terminalId: "iflow",
+      items: grants,
+      loading: false,
+      error: null,
+    },
+    users: [
+      {
+        actorId: "session:owner",
+        actorKind: "session",
+        label: "Owner avatar",
+        subtitle: "/repo/demo",
+        role: "admin",
+        currentAdmin: true,
+        online: true,
+        focused: true,
+        invalidCredential: false,
+        accessToken: "termtok_owner",
+        currentCaller: true,
+      },
+      {
+        actorId: "session:reviewer",
+        actorKind: "session",
+        label: "Reviewer avatar",
+        subtitle: "/repo/review",
+        role: "requester",
+        currentAdmin: false,
+        online: true,
+        focused: false,
+        invalidCredential: false,
+        accessToken: "termtok_reviewer",
+        currentCaller: false,
+      },
+    ],
     onRefresh: fn(async () => {}),
+    onSelectCallerToken: fn((accessToken: string) => accessToken),
     onSelectTerminal: fn((terminalId: string) => terminalId),
     onSetViewportMode: fn((mode: "fit" | "cover") => mode),
     onCreateTerminal: fn(async () => ({ ok: true, message: "created", terminal: terminals[0] })),
     onDeleteTerminal: fn(async () => ({ ok: true, message: "deleted" })),
-    onFocusTerminal: fn(async () => {}),
     onListGrants: fn(async () => grants),
     onIssueGrant: fn(async (): Promise<GlobalTerminalGrantIssueOutput["grant"]> => ({
       grantId: "grant-new",
@@ -288,6 +332,9 @@ const meta = {
     onApproveRequest: fn(async () => ({})),
     onDenyRequest: fn(async () => ({})),
     onLoadMoreActivity: fn(async () => {}),
+    onSetUserFocus: fn(async () => {}),
+    onReadTerminal: fn(async () => {}),
+    onWriteTerminal: fn(async () => {}),
   },
   render: (args) => {
     const [selectedTerminalId, setSelectedTerminalId] = useState(args.selectedTerminalId);
@@ -325,6 +372,8 @@ export const WorkbenchLifecycle: Story = {
     await expect(canvas.getByRole("button", { name: "Access" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Approvals 1" })).toBeInTheDocument();
     await expect(canvas.getByRole("heading", { name: "Flow shell" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Focus terminal" })).toBeNull();
+    await expect(canvas.queryByRole("button", { name: "Clear focus" })).toBeNull();
 
     await waitFor(() => {
       expect(canvasElement.querySelector("terminal-view")).not.toBeNull();
@@ -345,6 +394,15 @@ export const WorkbenchLifecycle: Story = {
     });
 
     await userEvent.click(canvas.getByRole("tab", { name: /Flow shell/i }));
+    await userEvent.click(canvas.getByRole("tab", { name: "Users" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Unfocus Owner avatar" }));
+    await expect(args.onSetUserFocus).toHaveBeenCalledWith({
+      actorId: "session:owner",
+      accessToken: "termtok_owner",
+      focused: true,
+    });
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Actions" }));
     await userEvent.click(canvas.getByRole("button", { name: "Access" }));
     await expect(await body.findByText("Current grants")).toBeInTheDocument();
     await expect(args.onListGrants).toHaveBeenCalled();

@@ -241,6 +241,7 @@ export interface WebChatViewProps {
   renderMessage?: (input: WebChatMessageRenderInput) => ReactNode;
   onSendMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
   onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
+  onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
   socketFactory?: WebChatSocketFactory;
 }
 
@@ -258,24 +259,23 @@ export const WebChatView = ({
   renderMessage,
   onSendMessage,
   onLatestVisibleAssistantMessageIdChange,
+  onLatestVisibleMessageIdChange,
   socketFactory,
 }: WebChatViewProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const rowNodesRef = useRef(new Map<string, HTMLElement>());
+  const visibleMessageIdsRef = useRef(new Map<string, boolean>());
   const visibleAssistantIdsRef = useRef(new Map<string, boolean>());
+  const latestVisibleAssistantMessageIdRef = useRef<string | null>(null);
   const latestVisibleMessageIdRef = useRef<string | null>(null);
   const prependAnchorRef = useRef<{ count: number; scrollHeight: number; scrollTop: number } | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
   const [sending, setSending] = useState(false);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState("");
-  const [editing, setEditing] = useState(false);
 
   const {
     connectionState,
     messages,
-    pendingMessages,
     transcriptMessages,
     focused,
     hasMoreBefore,
@@ -284,7 +284,6 @@ export const WebChatView = ({
     errorMessage,
     loadOlder,
     sendText,
-    editMessage,
   } = useWebChatChannel({ channel, initialMessages, socketFactory });
 
   const rowVirtualizer = useVirtualizer({
@@ -336,25 +335,6 @@ export const WebChatView = ({
       : <DefaultWebChatComposer {...composerProps} />
     : null;
 
-  const handleStartEdit = useCallback((message: WebChatMessage) => {
-    setEditingMessageId(message.messageId);
-    setEditingText(message.content);
-  }, []);
-
-  const handleSaveEdit = useCallback(async () => {
-    if (!editingMessageId) {
-      return;
-    }
-    setEditing(true);
-    try {
-      await editMessage(editingMessageId, editingText);
-      setEditingMessageId(null);
-      setEditingText("");
-    } finally {
-      setEditing(false);
-    }
-  }, [editMessage, editingMessageId, editingText]);
-
   const syncLatestVisibleAssistantMessageId = useCallback(() => {
     if (!onLatestVisibleAssistantMessageIdChange || !channel) {
       return;
@@ -370,25 +350,47 @@ export const WebChatView = ({
         break;
       }
     }
+    if (latestVisibleAssistantMessageIdRef.current === next) {
+      return;
+    }
+    latestVisibleAssistantMessageIdRef.current = next;
+    onLatestVisibleAssistantMessageIdChange(next);
+  }, [channel, onLatestVisibleAssistantMessageIdChange, transcriptMessages]);
+
+  const syncLatestVisibleMessageId = useCallback(() => {
+    if (!onLatestVisibleMessageIdChange || !channel) {
+      return;
+    }
+    let next: string | null = null;
+    for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
+      const message = transcriptMessages[index];
+      if (!message) {
+        continue;
+      }
+      if (visibleMessageIdsRef.current.get(message.messageId) === true) {
+        next = message.messageId;
+        break;
+      }
+    }
     if (latestVisibleMessageIdRef.current === next) {
       return;
     }
     latestVisibleMessageIdRef.current = next;
-    onLatestVisibleAssistantMessageIdChange(next);
-  }, [channel, onLatestVisibleAssistantMessageIdChange, transcriptMessages]);
+    onLatestVisibleMessageIdChange(next);
+  }, [channel, onLatestVisibleMessageIdChange, transcriptMessages]);
 
   useEffect(() => {
-    if (!onLatestVisibleAssistantMessageIdChange) {
-      return;
-    }
     visibleAssistantIdsRef.current.clear();
+    visibleMessageIdsRef.current.clear();
+    latestVisibleAssistantMessageIdRef.current = null;
     latestVisibleMessageIdRef.current = null;
-    onLatestVisibleAssistantMessageIdChange(null);
-  }, [channel?.chatId, onLatestVisibleAssistantMessageIdChange]);
+    onLatestVisibleAssistantMessageIdChange?.(null);
+    onLatestVisibleMessageIdChange?.(null);
+  }, [channel?.chatId, onLatestVisibleAssistantMessageIdChange, onLatestVisibleMessageIdChange]);
 
   useEffect(() => {
     const root = viewportRef.current;
-    if (!root || !channel || !onLatestVisibleAssistantMessageIdChange) {
+    if (!root || !channel || (!onLatestVisibleAssistantMessageIdChange && !onLatestVisibleMessageIdChange)) {
       return;
     }
     const observer = new IntersectionObserver(
@@ -396,18 +398,30 @@ export const WebChatView = ({
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
           const messageId = target.dataset.messageId;
-          if (!messageId || target.dataset.assistantMessage !== "true") {
+          if (!messageId) {
             continue;
           }
-          visibleAssistantIdsRef.current.set(messageId, entry.isIntersecting && entry.intersectionRatio >= 0.2);
+          const visible = entry.isIntersecting && entry.intersectionRatio >= 0.2;
+          visibleMessageIdsRef.current.set(messageId, visible);
+          if (target.dataset.assistantMessage === "true") {
+            visibleAssistantIdsRef.current.set(messageId, visible);
+          }
         }
         syncLatestVisibleAssistantMessageId();
+        syncLatestVisibleMessageId();
       },
       { root, threshold: [0.2, 0.5, 0.8] },
     );
     rowNodesRef.current.forEach((node) => observer.observe(node));
     return () => observer.disconnect();
-  }, [channel, onLatestVisibleAssistantMessageIdChange, syncLatestVisibleAssistantMessageId, transcriptMessages]);
+  }, [
+    channel,
+    onLatestVisibleAssistantMessageIdChange,
+    onLatestVisibleMessageIdChange,
+    syncLatestVisibleAssistantMessageId,
+    syncLatestVisibleMessageId,
+    transcriptMessages,
+  ]);
 
   useEffect(() => {
     if (!stickToBottom) {
@@ -566,10 +580,6 @@ export const WebChatView = ({
               </div>
             ) : messages.length === 0 ? (
               <EmptyState title={emptyTitle} message={emptyMessage} />
-            ) : transcriptMessages.length === 0 ? (
-              <div className="flex h-full min-h-[12rem] items-center justify-center px-6 py-10 text-center text-sm text-slate-500">
-                Queued messages will move into the transcript after attention reads them.
-              </div>
             ) : rowVirtualizer.getVirtualItems().length > 0 ? (
               <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
                 {rowVirtualizer.getVirtualItems().map((item) =>
@@ -586,73 +596,6 @@ export const WebChatView = ({
           </div>
         </div>
       </div>
-
-      {pendingMessages.length > 0 ? (
-        <div className="border-t border-slate-200/80 bg-slate-50/90 px-3 py-2 md:px-4">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-slate-700">Pending for attention</p>
-            <p className="text-[11px] text-slate-500">{pendingMessages.length} queued</p>
-          </div>
-          <div className="space-y-2">
-            {pendingMessages.map((message) => {
-              const isEditing = editingMessageId === message.messageId;
-              return (
-                <div
-                  key={`pending:${message.messageId}`}
-                  className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-slate-800"
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                    <span className="font-medium">{message.from}</span>
-                    <span>{formatTimestamp(message.createdAt)}</span>
-                  </div>
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={editingText}
-                        onChange={(event) => setEditingText(event.currentTarget.value)}
-                        className="min-h-20 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-50"
-                          onClick={() => void handleSaveEdit()}
-                          disabled={editing}
-                        >
-                          {editing ? "Saving..." : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700"
-                          onClick={() => {
-                            setEditingMessageId(null);
-                            setEditingText("");
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                  )}
-                  {!isEditing && message.editable ? (
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-medium text-slate-700"
-                        onClick={() => handleStartEdit(message)}
-                      >
-                        Edit before read
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
 
       {renderedComposer}
     </section>

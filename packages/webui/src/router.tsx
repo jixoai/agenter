@@ -1,5 +1,4 @@
 import type {
-  AuthSessionOutput,
   CachedResourceState,
   GlobalRoomActorId,
   GlobalTerminalActorId,
@@ -43,8 +42,6 @@ import { ObservabilityPanel } from "./features/devtools/observability/Observabil
 import { useIconServiceUrls } from "./features/profile/icon-service";
 import { CycleInspectorPanel } from "./features/process/CycleInspectorPanel";
 import { GlobalSettingsPanel } from "./features/settings/GlobalSettingsPanel";
-import { readStoredAuthToken, writeStoredAuthToken } from "./features/settings/auth-session-storage";
-import { resolveWalletAuthIdentity, signWalletAuthChallenge } from "./features/settings/private-key-auth";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import type { SettingsEffectiveGraph, SettingsLayerItem } from "./features/settings/settings-graph-types";
 import { AppRoot } from "./features/shell/AppRoot";
@@ -1659,12 +1656,10 @@ const LegacyGlobalSettingsRouteView = () => {
 const GlobalSettingsRouteView = () => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
-  const authService = useRuntimeSelector((state) => state.profileService);
   const adaptiveViewport = useAdaptiveViewport();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("idle");
-  const [authStatus, setAuthStatus] = useState("No stored auth session token.");
   const [effective, setEffective] = useState<SettingsEffectiveGraph>(EMPTY_SETTINGS_EFFECTIVE);
   const [layers, setLayers] = useState<SettingsLayerItem[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -1674,8 +1669,6 @@ const GlobalSettingsRouteView = () => {
   const [activeProfileReference, setActiveProfileReference] = useState("");
   const [selectedProfileReference, setSelectedProfileReference] = useState<string | null>(null);
   const [profileDraft, setProfileDraft] = useState<ProfileEditorDraft>(createEmptyProfileDraft());
-  const [privateKeyDraft, setPrivateKeyDraft] = useState("");
-  const [authSession, setAuthSession] = useState<AuthSessionOutput | null>(null);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.profileId === selectedProfileReference) ?? null,
@@ -1711,39 +1704,6 @@ const GlobalSettingsRouteView = () => {
     return items.find((layer) => layer.editable)?.layerId ?? items[0]?.layerId ?? null;
   };
 
-  const applyAuthToken = useCallback(
-    async (token: string | null | undefined, input?: { status?: string; clearPrivateKeyDraft?: boolean }) => {
-      const normalized = token?.trim() ?? "";
-      controller.runtimeStore.setAuthToken(normalized || null);
-      writeStoredAuthToken(normalized || null);
-      if (normalized.length === 0) {
-        setAuthSession(null);
-        setAuthStatus(input?.status ?? "Cleared stored auth session token.");
-        return null;
-      }
-      const session = await controller.runtimeStore.getAuthSession();
-      if (!session) {
-        controller.runtimeStore.clearAuthToken();
-        writeStoredAuthToken(null);
-        setAuthSession(null);
-        setAuthStatus("Stored auth session is invalid or expired.");
-        return null;
-      }
-      if (input?.clearPrivateKeyDraft) {
-        setPrivateKeyDraft("");
-      }
-      setAuthSession(session);
-      setAuthStatus(
-        input?.status ??
-          (session.claims.superadmin
-            ? `Authenticated ${session.claims.authId} as superadmin.`
-            : `Authenticated ${session.claims.authId}.`),
-      );
-      return session;
-    },
-    [controller],
-  );
-
   const refresh = useCallback(
     async (preferredProfileReference?: string | null) => {
       setLoading(true);
@@ -1771,60 +1731,34 @@ const GlobalSettingsRouteView = () => {
           });
           setLayerDraft(file.content);
           setLayerMtimeMs(file.mtimeMs);
-        } else {
-          setLayerDraft("{}\n");
-          setLayerMtimeMs(0);
-        }
-
-        const nextSelectedProfileReference = selectPreferredProfileReference(durableProfiles, {
-          preferred: preferredProfileReference ?? selectedProfileReference,
-          active: effectiveProfileReference,
-          authenticated: authSession?.profile.profileId ?? null,
-        });
-        setSelectedProfileReference(nextSelectedProfileReference);
-        setStatus(`Loaded ${durableProfiles.length} durable profiles`);
-      } catch (error) {
-        controller.setNotice(String(error instanceof Error ? error.message : error));
-        setStatus("load failed");
-      } finally {
-        setLoading(false);
+      } else {
+        setLayerDraft("{}\n");
+        setLayerMtimeMs(0);
       }
-    },
-    [authSession?.profile.profileId, controller, selectedLayerId, selectedProfileReference],
+
+      const nextSelectedProfileReference = selectPreferredProfileReference(durableProfiles, {
+        preferred: preferredProfileReference ?? selectedProfileReference,
+        active: effectiveProfileReference,
+        authenticated: controller.authSession?.profile.profileId ?? null,
+      });
+      setSelectedProfileReference(nextSelectedProfileReference);
+      setStatus(`Loaded ${durableProfiles.length} durable profiles`);
+    } catch (error) {
+      controller.setNotice(String(error instanceof Error ? error.message : error));
+      setStatus("load failed");
+    } finally {
+      setLoading(false);
+    }
+  },
+    [controller, selectedLayerId, selectedProfileReference],
   );
 
   useEffect(() => {
-    if (!connected) {
+    if (!connected || !controller.authReady) {
       return;
     }
-    let cancelled = false;
-    const storedToken = readStoredAuthToken();
-    const hydrate = async () => {
-      try {
-        if (storedToken) {
-          const session = await applyAuthToken(storedToken, { status: "Restored stored auth session." });
-          if (!cancelled) {
-            await refresh(session?.profile.profileId ?? null);
-          }
-          return;
-        }
-        controller.runtimeStore.clearAuthToken();
-        setAuthSession(null);
-        setAuthStatus("No stored auth session token.");
-        await refresh();
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        controller.setNotice(String(error instanceof Error ? error.message : error));
-        setAuthStatus("auth restore failed");
-      }
-    };
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [applyAuthToken, connected, controller, refresh]);
+    void refresh();
+  }, [connected, controller.authReady, controller.authSession?.profile.profileId, refresh]);
 
   return (
     <section className={cn(surfaceToneClassName("panel"), "flex h-full flex-col")}>
@@ -1832,10 +1766,10 @@ const GlobalSettingsRouteView = () => {
         loading={loading}
         saving={saving}
         status={status}
-        authStatus={authStatus}
-        authService={authService}
-        authSession={authSession}
-        privateKeyDraft={privateKeyDraft}
+        authStatus={controller.authStatus}
+        authService={controller.authService}
+        authSession={controller.authSession}
+        privateKeyDraft={controller.privateKeyDraft}
         detailMode={adaptiveViewport.compact ? "sheet" : "split"}
         effective={effective}
         layers={layers}
@@ -1900,22 +1834,13 @@ const GlobalSettingsRouteView = () => {
           setLayerDraft((current) => patchActiveProfileReference(current, reference));
         }}
         onProfileDraftChange={setProfileDraft}
-        onPrivateKeyDraftChange={setPrivateKeyDraft}
+        onPrivateKeyDraftChange={controller.setPrivateKeyDraft}
         onAuthenticate={async () => {
           try {
-            const identity = resolveWalletAuthIdentity(privateKeyDraft);
-            setAuthStatus(`Requesting challenge for ${identity.authId}...`);
-            const challenge = await controller.runtimeStore.startAuthChallenge(identity.authId);
-            setAuthStatus(`Signing challenge for ${identity.authId}...`);
-            const signed = await signWalletAuthChallenge(privateKeyDraft, challenge.challengeText);
-            const verified = await controller.runtimeStore.verifyAuthChallenge({
-              challengeId: challenge.challengeId,
-              signature: signed.signature,
-            });
-            const session =
-              (await applyAuthToken(verified.token, {
-                clearPrivateKeyDraft: true,
-              })) ?? verified;
+            const session = await controller.authenticateWithPrivateKey();
+            if (!session) {
+              return;
+            }
             const profileId = typeof session.profile.profileId === "string" ? session.profile.profileId : null;
             if (profileId) {
               setSelectedProfileReference(profileId);
@@ -1925,21 +1850,25 @@ const GlobalSettingsRouteView = () => {
             await refresh(profileId);
           } catch (error) {
             controller.setNotice(String(error instanceof Error ? error.message : error));
-            setAuthStatus(error instanceof Error ? error.message : String(error));
+            setStatus("auth failed");
           }
         }}
         onUploadProfileIcon={async (reference, file) => {
-          if (!authSession?.token || authSession.profile.profileId !== reference) {
-            setAuthStatus("Authenticate the selected profile before uploading its icon.");
+          if (!controller.authSession?.token || controller.authSession.profile.profileId !== reference) {
+            setStatus("auth required");
             return;
           }
           await controller.runtimeStore.uploadProfileIcon(reference, file);
-          setAuthStatus(`Uploaded icon for ${reference}.`);
+          setStatus(`Uploaded icon for ${reference}.`);
           await refresh(reference);
         }}
         onSaveProfile={async () => {
-          if (!selectedProfile || !authSession?.token || authSession.profile.profileId !== selectedProfile.profileId) {
-            setAuthStatus("Authenticate the selected profile before saving metadata.");
+          if (
+            !selectedProfile ||
+            !controller.authSession?.token ||
+            controller.authSession.profile.profileId !== selectedProfile.profileId
+          ) {
+            setStatus("auth required");
             return;
           }
           await controller.runtimeStore.updateProfile({
@@ -1951,11 +1880,11 @@ const GlobalSettingsRouteView = () => {
               ...(profileDraft.address.trim() ? { address: profileDraft.address.trim() } : {}),
             },
           });
-          setAuthStatus(`Saved metadata for ${selectedProfile.profileId}.`);
+          setStatus(`Saved metadata for ${selectedProfile.profileId}.`);
           await refresh(selectedProfile.profileId);
         }}
         onClearAuthSession={() => {
-          void applyAuthToken(null);
+          void controller.clearAuthSession();
         }}
       />
     </section>

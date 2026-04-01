@@ -16,7 +16,7 @@ describe("Feature: workspaces store", () => {
     first.add("/repo/b");
 
     const second = new WorkspacesStore({ filePath });
-    expect(second.list()).toEqual(["/repo/b", "/repo/a"]);
+    expect(second.list()).toEqual(["~/", "/repo/b", "/repo/a"]);
   });
 
   test("Scenario: Given two store instances When both write Then workspace and session favorites stay durable", async () => {
@@ -32,7 +32,7 @@ describe("Feature: workspaces store", () => {
     second.toggleSessionFavorite("session-1");
 
     const latest = new WorkspacesStore({ filePath });
-    expect(latest.list()).toEqual(["/repo/b", "/repo/a"]);
+    expect(latest.list()).toEqual(["~/", "/repo/b", "/repo/a"]);
     expect(latest.listEntries().find((item) => item.path === "/repo/a")?.favorite).toBeTrue();
     expect(latest.favoriteSessionIds()).toEqual(["session-1"]);
   });
@@ -72,7 +72,10 @@ describe("Feature: workspaces store", () => {
     );
 
     const reloaded = new WorkspacesStore({ filePath });
-    expect(reloaded.list()).toEqual([workspace]);
-    expect(reloaded.listEntries()).toEqual([{ path: workspace, favorite: true }]);
+    expect(reloaded.list()).toEqual(["~/", workspace]);
+    expect(reloaded.listEntries()).toEqual([
+      { path: "~/", favorite: false },
+      { path: workspace, favorite: true },
+    ]);
   });
 });

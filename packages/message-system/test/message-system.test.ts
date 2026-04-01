@@ -170,7 +170,7 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(sent.content).toBe("member message");
     expect(sent.attentionState).toBe("queued");
-    expect(sent.visibleAt).toBeUndefined();
+    expect(sent.visibleAt).toBe(sent.createdAt);
     expect(sent.editable).toBe(true);
 
     const interactive = plane.sendAuthorized({
@@ -260,7 +260,7 @@ describe("Feature: message-chat-control-plane", () => {
     expect(grants.map((grant) => grant.participantId).sort()).toEqual(["auth:owner", "auth:viewer", "session:relay"]);
   });
 
-  test("Scenario: Given a queued room message When it is edited before attention reads it Then the same messageId stays pending until it is marked loaded", () => {
+  test("Scenario: Given a queued room message When it is edited before attention reads it Then the same messageId stays visible in transcript order until it is marked loaded", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: "room-pending" });
     const member = plane.issueChannelGrantAuthorized({
@@ -278,7 +278,7 @@ describe("Feature: message-chat-control-plane", () => {
       content: "first draft",
     });
     expect(queued.attentionState).toBe("queued");
-    expect(queued.visibleAt).toBeUndefined();
+    expect(queued.visibleAt).toBe(queued.createdAt);
     expect(queued.editable).toBe(true);
 
     const edited = plane.editAuthorized({
@@ -290,7 +290,7 @@ describe("Feature: message-chat-control-plane", () => {
     expect(edited.messageId).toBe(queued.messageId);
     expect(edited.content).toBe("edited draft");
     expect(edited.attentionState).toBe("queued");
-    expect(edited.visibleAt).toBeUndefined();
+    expect(edited.visibleAt).toBe(queued.createdAt);
 
     const loaded = plane.markMessageAttentionLoaded({
       chatId: room.chatId,
@@ -299,7 +299,7 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(loaded.messageId).toBe(queued.messageId);
     expect(loaded.attentionState).toBe("loaded");
-    expect(loaded.visibleAt).toBe(1234);
+    expect(loaded.visibleAt).toBe(queued.createdAt);
     expect(loaded.attentionLoadedAt).toBe(1234);
     expect(loaded.editable).toBe(false);
 
@@ -375,6 +375,153 @@ describe("Feature: message-chat-control-plane", () => {
     plane.setActorPresence("auth:alice", true);
     expect(plane.getChannelForActor(room.chatId, "auth:alice")?.metadata?.currentRoomAdminId).toBe("auth:alice");
     expect(plane.listPendingAdminWork(room.chatId)[0]?.assignedAdminId).toBe("auth:alice");
+  });
+
+  test("Scenario: Given multiple room seats When different actors mark the latest visible message Then aggregate read progress and per-seat timestamps stay actor-scoped", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: "room-read-progress" });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "readonly",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const relay = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Relay",
+      participantId: "session:relay",
+    });
+    const visible = plane.send({
+      chatId: room.chatId,
+      from: "system",
+      content: "visible room update",
+      createdAt: 1_000,
+      updatedAt: 1_000,
+      visibleAt: 1_000,
+    });
+
+    plane.setActorPresence("auth:owner", true);
+    plane.setActorPresence("auth:viewer", true);
+    plane.setActorPresence("session:relay", true);
+    plane.focusForActor("session:relay", "replace", [room.chatId]);
+
+    const initial = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(initial.channel.readProgress).toMatchObject({
+      latestVisibleMessageId: visible.messageId,
+      totalSeatCount: 3,
+      readSeatCount: 0,
+      unreadSeatCount: 3,
+    });
+
+    const relayRead = plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: relay.accessToken,
+      messageId: visible.messageId,
+      readAt: 2_000,
+    });
+    expect(relayRead.readProgress).toMatchObject({
+      latestVisibleMessageId: visible.messageId,
+      totalSeatCount: 3,
+      readSeatCount: 1,
+      unreadSeatCount: 2,
+    });
+    const relayState = relayRead.readStates?.find((state) => state.actorId === "session:relay");
+    expect(relayState).toMatchObject({
+      actorId: "session:relay",
+      hasReadLatestVisible: true,
+      readAt: 2_000,
+      focused: true,
+      online: true,
+    });
+
+    const ownerRead = plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      readAt: 3_000,
+    });
+    expect(ownerRead.readProgress).toMatchObject({
+      latestVisibleMessageId: visible.messageId,
+      totalSeatCount: 3,
+      readSeatCount: 2,
+      unreadSeatCount: 1,
+    });
+    const ownerState = ownerRead.readStates?.find((state) => state.actorId === "auth:owner");
+    const viewerState = ownerRead.readStates?.find((state) => state.actorId === "auth:viewer");
+    expect(ownerState).toMatchObject({
+      actorId: "auth:owner",
+      hasReadLatestVisible: true,
+      readAt: 3_000,
+      online: true,
+    });
+    expect(viewerState).toMatchObject({
+      actorId: "auth:viewer",
+      hasReadLatestVisible: false,
+      readAt: undefined,
+      online: true,
+    });
+    expect(plane.snapshotAuthorized({ chatId: room.chatId, accessToken: viewer.accessToken }).channel.readProgress).toMatchObject({
+      latestVisibleMessageId: visible.messageId,
+      readSeatCount: 2,
+      unreadSeatCount: 1,
+    });
+  });
+
+  test("Scenario: Given an unread seat with invalid credentials When room collaboration state is projected Then that seat stays visible and flagged instead of disappearing", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: "room-read-invalid" });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "readonly",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const relay = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Relay",
+      participantId: "session:relay",
+    });
+    const visible = plane.send({
+      chatId: room.chatId,
+      from: "system",
+      content: "durable visibility",
+      createdAt: 4_000,
+      updatedAt: 4_000,
+      visibleAt: 4_000,
+    });
+
+    plane.setCredentialState("auth:viewer", { invalidCredential: true });
+    plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: relay.accessToken,
+      messageId: visible.messageId,
+      readAt: 5_000,
+    });
+
+    const projected = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+    }).channel;
+    expect(projected.readProgress).toMatchObject({
+      latestVisibleMessageId: visible.messageId,
+      totalSeatCount: 3,
+      readSeatCount: 1,
+      unreadSeatCount: 2,
+      invalidCredentialSeatCount: 1,
+    });
+    expect(projected.readStates?.find((state) => state.actorId === "auth:viewer")).toMatchObject({
+      actorId: "auth:viewer",
+      hasReadLatestVisible: false,
+      invalidCredential: true,
+    });
   });
 
   test("Scenario: Given revoked or malformed room credentials When room APIs or transport validate them Then callers receive explicit credential-invalid and superadmin can still recover the room", async () => {

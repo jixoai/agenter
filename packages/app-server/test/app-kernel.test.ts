@@ -895,7 +895,7 @@ describe("Feature: app kernel event replay", () => {
       focus: true,
     });
     expect(room.chatId).toBe("room-ops");
-    expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId && item.focused)).toBeTrue();
+    expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId && item.focused)).toBeFalse();
 
     const sent = kernel.sendGlobalRoomMessage({
       chatId: room.chatId,
@@ -910,6 +910,30 @@ describe("Feature: app kernel event replay", () => {
       limit: 20,
     });
     expect(snapshot.items.some((item) => item.content === "global hello")).toBeTrue();
+    const sentMessage = snapshot.items.find((item) => item.content === "global hello");
+    expect(sentMessage?.attentionState).toBe("queued");
+    expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
+    const issued = kernel.issueGlobalRoomGrant({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "session:avatar-pair",
+      label: "Pair operator",
+    });
+    expect(issued.accessToken).toStartWith("msgtok_");
+
+    const readProjection = kernel.markGlobalRoomRead({
+      chatId: room.chatId,
+      accessToken: issued.accessToken,
+      messageId: sentMessage?.messageId,
+      readAt: 2_000,
+    });
+    expect(readProjection.readProgress).toMatchObject({
+      latestVisibleMessageId: sentMessage?.messageId,
+      totalSeatCount: 1,
+      readSeatCount: 1,
+      unreadSeatCount: 0,
+    });
 
     const page = kernel.pageGlobalRoomMessages({
       chatId: room.chatId,
@@ -928,14 +952,6 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(updated.title).toBe("Ops renamed");
 
-    const issued = kernel.issueGlobalRoomGrant({
-      chatId: room.chatId,
-      accessToken: room.accessToken,
-      role: "member",
-      participantId: "session:avatar-pair",
-      label: "Pair operator",
-    });
-    expect(issued.accessToken).toStartWith("msgtok_");
     expect(kernel.listGlobalRoomGrants({ chatId: room.chatId, accessToken: room.accessToken })).toHaveLength(1);
 
     const revoked = kernel.revokeGlobalRoomGrant({

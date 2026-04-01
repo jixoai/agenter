@@ -21,7 +21,11 @@ const authService = {
     kind: "wallet_evm" as const,
     value: "0x0000000000000000000000000000000000000001",
   },
+  rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
   jwtTtlSeconds: 3600,
+  rootAuthBootstrapMode: "managed_local" as const,
+  canRevealRootAuthPrivateKey: true,
+  hasManagedRootAuthPrivateKey: true,
 };
 
 const authSession: AuthSessionOutput = {

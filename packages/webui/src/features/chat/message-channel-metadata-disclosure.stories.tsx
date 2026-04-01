@@ -11,8 +11,12 @@ const createChannel = (input: { accessRole: "admin" | "member" | "readonly"; tit
   title: input.title ?? "Lunch relay",
   owner: "jane",
   participants: [
-    { id: "avatar:jane", label: "jane", role: "avatar" },
-    { id: "user:kzf", label: "kzf", role: "user" },
+    {
+      id: "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
+      label: "Nova Ops",
+      role: "user",
+    },
+    { id: "session:observer", label: "Observer avatar", role: "avatar" },
   ],
   metadata: { builtIn: false, topic: "lunch" },
   createdAt: 1,
@@ -29,8 +33,29 @@ const grantsFixture: MessageChannelGrantEntry[] = [
     chatId: "room-lunch",
     role: "readonly",
     label: "Viewer",
-    participantId: "user:gaubee",
+    participantId: "session:observer",
     createdAt: 2,
+  },
+];
+
+const isGrantParticipantId = (
+  value: string | undefined,
+): value is NonNullable<MessageChannelGrantEntry["participantId"]> =>
+  typeof value === "string" &&
+  (value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:"));
+
+const actorOptions = [
+  {
+    actorId: "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
+    actorKind: "auth" as const,
+    label: "Nova Ops",
+    subtitle: "wallet_evm:0x00000000000000000000000000000000000000aa",
+  },
+  {
+    actorId: "session:observer",
+    actorKind: "session" as const,
+    label: "Observer avatar",
+    subtitle: "/repo/demo",
   },
 ];
 
@@ -95,7 +120,7 @@ const DisclosureStory = ({
                   chatId: channel.chatId,
                   role: input.role,
                   label: input.label,
-                  participantId: input.participantId,
+                  participantId: isGrantParticipantId(input.participantId) ? input.participantId : undefined,
                   createdAt: 3,
                 };
                 replaceGrants([nextGrant, ...grantsRef.current]);
@@ -108,6 +133,7 @@ const DisclosureStory = ({
               }
             : undefined
         }
+        actorOptions={actorOptions}
         onRevokeChannelGrant={
           accessRole === "admin"
             ? async ({ grantId }) => {
@@ -160,11 +186,16 @@ export const AdminMetadataManagement: Story = {
     const titleInput = await portal.findByDisplayValue("Lunch relay");
     await userEvent.clear(titleInput);
     await userEvent.type(titleInput, "Lunch handoff");
+    await userEvent.selectOptions(portal.getByLabelText("Participant actor 2"), "auth:wallet_evm:0x00000000000000000000000000000000000000aa");
     await userEvent.click(portal.getByRole("button", { name: "Save channel" }));
     await expect(dialog).toHaveTextContent("Lunch handoff");
+    await expect(dialog).toHaveTextContent("Nova Ops");
 
     await userEvent.type(portal.getByLabelText("Grant label"), "Relay member");
-    await userEvent.type(portal.getByLabelText("Grant participant"), "user:gaubee");
+    await userEvent.selectOptions(
+      portal.getByLabelText("Grant participant"),
+      "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
+    );
     await userEvent.click(portal.getByRole("button", { name: "Issue token" }));
     await expect(dialog).toHaveTextContent("Issued readonly token");
     await expect(dialog).toHaveTextContent("msgtok_member");

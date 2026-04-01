@@ -26,6 +26,7 @@ packages/i18n-zh-Hans/prompts.json
 CHAT.md
 easy-spec/
 .agenter
+.chat/
 
 # generated webui bundle from cli package
 packages/cli/assets/webui/

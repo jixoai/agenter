@@ -279,6 +279,8 @@ export const createProfileServiceApp = ({
 
   app.get("/auth/descriptor", (context) => context.json(service.describeAuth()));
 
+  app.post("/auth/root-key/reveal", (context) => context.json(service.revealRootAuthPrivateKey()));
+
   app.get("/auth/session", async (context) => {
     const token = readBearerToken(context.req.header("authorization"));
     const session = await service.authenticateAuthToken(token);

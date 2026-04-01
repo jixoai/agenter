@@ -74,7 +74,12 @@ export const settingsSchema = z.object({
         .object({
           chatMainDefaults: z
             .object({
-              title: z.string().trim().min(1).describe("Default title for chat-main channel.").optional(),
+              title: z
+                .string()
+                .trim()
+                .min(1)
+                .describe("Default title for the primary room inside the chat channel.")
+                .optional(),
               participants: z
                 .array(
                   z.object({
@@ -83,20 +88,20 @@ export const settingsSchema = z.object({
                     role: z.enum(["avatar", "user", "system"]).describe("Participant role.").optional(),
                   }),
                 )
-                .describe("Default participants for chat-main channel.")
+                .describe("Default participants for the primary room inside the chat channel.")
                 .optional(),
               metadata: z
                 .record(z.string(), z.unknown())
-                .describe("Additional metadata merged into chat-main channel.")
+                .describe("Additional metadata merged into the primary room inside the chat channel.")
                 .optional(),
               adminToken: z
                 .string()
                 .trim()
                 .regex(ACCESS_TOKEN_PATTERN, "adminToken must be 16-128 chars [A-Za-z0-9._-]")
-                .describe("Optional explicit admin token for chat-main bootstrap.")
+                .describe("Optional explicit admin token for the primary room bootstrap.")
                 .optional(),
             })
-            .describe("Default chat-main bootstrap config.")
+            .describe("Bootstrap config for the primary room inside the chat channel.")
             .optional(),
         })
         .describe("Message feature switches.")

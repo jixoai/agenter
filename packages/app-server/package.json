@@ -38,7 +38,8 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "viem": "^2.47.6"
+    "viem": "^2.47.6",
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "@agenter/i18n-en": "workspace:*",

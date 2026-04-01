@@ -11,6 +11,7 @@ export interface TerminalActorMeta {
   label: string;
   iconUrl?: string;
   subtitle?: string;
+  actorKind?: "auth" | "session";
 }
 
 interface TerminalActorGroupProps {

@@ -172,6 +172,9 @@ export const GlobalSettingsPanel = ({
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
               <span className="rounded border border-slate-200 bg-white px-2 py-1">Mode: {authService?.authMode ?? "unavailable"}</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-1">Root auth: {authService?.rootAuthId ?? "unavailable"}</span>
+              <span className="rounded border border-slate-200 bg-white px-2 py-1">
+                Root key: {authService?.rootAuthKeyPath ?? "~/.agenter/profile-service/root-auth.key"}
+              </span>
               <span className="rounded border border-slate-200 bg-white px-2 py-1">JWT TTL: {authService ? `${authService.jwtTtlSeconds}s` : "unknown"}</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-1">Auth identity: {authSession?.claims.authId ?? "none"}</span>
               <span className="rounded border border-slate-200 bg-white px-2 py-1">Auth profile: {authenticatedProfileId ?? "none"}</span>

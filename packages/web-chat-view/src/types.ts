@@ -49,7 +49,6 @@ export type WebChatSocketFactory = (url: string) => WebChatSocketLike;
 export interface WebChatChannelState {
   connectionState: WebChatConnectionState;
   messages: WebChatMessage[];
-  pendingMessages: WebChatMessage[];
   transcriptMessages: WebChatMessage[];
   focused: boolean;
   hasMoreBefore: boolean;

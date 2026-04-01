@@ -8,6 +8,7 @@ import type {
   MessageActorId,
   MessageAdminWorkItem,
   MessageAppendInput,
+  MessageAuthorizedMarkReadInput,
   MessageAuthorizedEditInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
@@ -23,6 +24,8 @@ import type {
   MessageFocusOp,
   MessageIssueGrantInput,
   MessageIssuedGrant,
+  MessageReadProgressProjection,
+  MessageReadStateProjection,
   MessageRecord,
   MessageSnapshot,
   MessageTransportClientMessage,
@@ -51,6 +54,7 @@ interface MessageSocketData {
 interface ActorPresence {
   online: boolean;
   expiresAt: number | null;
+  invalidCredential: boolean;
 }
 
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted bootstrap";
@@ -151,11 +155,23 @@ export class MessageControlPlane {
       return;
     }
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
+    const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
       expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : null,
+      invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
+  }
+
+  setCredentialState(actorId: MessageActorId, input: { invalidCredential: boolean }): void {
+    this.assertActorId(actorId);
+    const current = this.actorPresence.get(actorId);
+    this.actorPresence.set(actorId, {
+      online: current?.online ?? false,
+      expiresAt: current?.expiresAt ?? null,
+      invalidCredential: input.invalidCredential,
+    });
   }
 
   listChannelsForActor(
@@ -174,7 +190,12 @@ export class MessageControlPlane {
           focused: focusedIds.has(channel.chatId),
           metadata: this.withAdminState(channel.chatId, channel.metadata),
         },
-        this.createProjection(channel.chatId, grant.role, grant.accessToken ?? this.issueActorAccessToken(channel.chatId, actorId, grant.role)),
+        this.createProjection({
+          chatId: channel.chatId,
+          accessRole: grant.role,
+          accessToken: grant.accessToken ?? this.issueActorAccessToken(channel.chatId, actorId, grant.role),
+          participantId: grant.participantId as MessageActorId,
+        }),
       ),
     );
   }
@@ -190,7 +211,15 @@ export class MessageControlPlane {
   listChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     return this.db
       .listChannels(this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID), input.includeArchived ?? false)
-      .map((channel) => this.withProjection(channel, this.issueTrustedBootstrapAccess(channel.chatId)));
+      .map((channel) =>
+        this.withProjection(
+          {
+            ...channel,
+            metadata: this.withAdminState(channel.chatId, channel.metadata),
+          },
+          this.issueTrustedBootstrapAccess(channel.chatId),
+        ),
+      );
   }
 
   getChannel(chatId: string, input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry | undefined {
@@ -201,7 +230,15 @@ export class MessageControlPlane {
     if (channel.archivedAt && !input.includeArchived) {
       return undefined;
     }
-    return channel ? this.withProjection(channel, this.issueTrustedBootstrapAccess(chatId)) : undefined;
+    return channel
+      ? this.withProjection(
+          {
+            ...channel,
+            metadata: this.withAdminState(channel.chatId, channel.metadata),
+          },
+          this.issueTrustedBootstrapAccess(chatId),
+        )
+      : undefined;
   }
 
   getMessage(chatId: string, messageId: string): MessageRecord | undefined {
@@ -232,7 +269,13 @@ export class MessageControlPlane {
         projection,
       );
     }
-    return this.withProjection(channel, this.issueTrustedBootstrapAccess(input.chatId, input.adminToken));
+    return this.withProjection(
+      {
+        ...channel,
+        metadata: this.withAdminState(channel.chatId, channel.metadata),
+      },
+      this.issueTrustedBootstrapAccess(input.chatId, input.adminToken),
+    );
   }
 
   focus(op: MessageFocusOp = "replace", chatIds: string[] = []): string[] {
@@ -291,13 +334,14 @@ export class MessageControlPlane {
 
   send(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
+    const attentionState = input.attentionState ?? "loaded";
+    const visibleAt = input.visibleAt ?? createdAt;
     const message = this.db.appendMessage({
       ...input,
       createdAt,
-      attentionState: input.attentionState ?? "loaded",
-      visibleAt: input.visibleAt ?? (input.attentionState === "queued" ? undefined : createdAt),
-      attentionLoadedAt:
-        input.attentionLoadedAt ?? (input.attentionState === "queued" ? undefined : createdAt),
+      attentionState,
+      visibleAt,
+      attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
     });
     this.bumpVersion();
     for (const listener of this.messageListeners) {
@@ -326,6 +370,9 @@ export class MessageControlPlane {
       });
     }
     this.requireAccess(input.chatId, input.accessToken, "member");
+    const createdAt = input.createdAt ?? Date.now();
+    const attentionState = input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued");
+    const visibleAt = input.visibleAt ?? createdAt;
     return this.send({
       chatId: input.chatId,
       messageId: input.messageId,
@@ -334,12 +381,11 @@ export class MessageControlPlane {
       to: input.to,
       kind: input.kind,
       content: input.content,
-      createdAt: input.createdAt,
-      updatedAt: input.updatedAt,
-      attentionState: input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued"),
-      visibleAt: input.visibleAt ?? (input.kind && input.kind !== "text" ? input.createdAt ?? Date.now() : undefined),
-      attentionLoadedAt:
-        input.attentionLoadedAt ?? (input.kind && input.kind !== "text" ? input.createdAt ?? Date.now() : undefined),
+      createdAt,
+      updatedAt: input.updatedAt ?? createdAt,
+      attentionState,
+      visibleAt,
+      attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
       metadata: input.metadata,
       attachments: input.attachments,
       payload: input.payload,
@@ -440,10 +486,84 @@ export class MessageControlPlane {
     return this.queryMessages({ chatId: input.chatId, before: input.before, limit: input.limit });
   }
 
+  markChannelReadAuthorized(input: MessageAuthorizedMarkReadInput): MessageControlPlaneEntry {
+    const grant = this.requireAccess(input.chatId, input.accessToken, "readonly");
+    const channel = this.db.getChannel(
+      input.chatId,
+      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+    );
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+
+    if (!grant.participantId || !ACTOR_ID_PATTERN.test(grant.participantId) || this.isTrustedBootstrapGrant(grant)) {
+      return this.withProjection(
+        {
+          ...channel,
+          metadata: this.withAdminState(channel.chatId, channel.metadata),
+        },
+        this.createProjection({
+          chatId: input.chatId,
+          accessRole: grant.role,
+          accessToken: input.accessToken,
+          participantId: grant.participantId as MessageActorId | undefined,
+        }),
+      );
+    }
+
+    const target = input.messageId ? this.db.getMessage(input.chatId, input.messageId) : this.db.resolveLatestVisibleMessage(input.chatId);
+    if (input.messageId && !target) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    if (!target) {
+      return this.withProjection(
+        {
+          ...channel,
+          metadata: this.withAdminState(channel.chatId, channel.metadata),
+        },
+        this.createProjection({
+          chatId: input.chatId,
+          accessRole: grant.role,
+          accessToken: input.accessToken,
+          participantId: grant.participantId as MessageActorId,
+        }),
+      );
+    }
+    const result = this.db.markReadState({
+      chatId: input.chatId,
+      actorId: grant.participantId as MessageActorId,
+      readMessageId: target.messageId,
+      readMessageRowId: target.rowId,
+      readAt: input.readAt ?? Date.now(),
+    });
+    if (result.changed) {
+      this.bumpVersion();
+    }
+
+    return this.withProjection(
+      {
+        ...channel,
+        metadata: this.withAdminState(channel.chatId, channel.metadata),
+      },
+      this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken: input.accessToken,
+        participantId: grant.participantId as MessageActorId,
+      }),
+    );
+  }
+
   snapshot(chatId: string, limit = 50): MessageSnapshot {
     const snapshot = this.db.snapshot(chatId, this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId), limit);
     return {
-      channel: this.withProjection(snapshot.channel, this.issueTrustedBootstrapAccess(chatId)),
+      channel: this.withProjection(
+        {
+          ...snapshot.channel,
+          metadata: this.withAdminState(snapshot.channel.chatId, snapshot.channel.metadata),
+        },
+        this.issueTrustedBootstrapAccess(chatId),
+      ),
       items: snapshot.items,
       nextBefore: this.db.pageMessages(chatId, { limit }).nextBefore,
       hasMoreBefore: this.db.pageMessages(chatId, { limit }).hasMoreBefore,
@@ -465,7 +585,12 @@ export class MessageControlPlane {
           ...snapshot.channel,
           metadata: this.withAdminState(snapshot.channel.chatId, snapshot.channel.metadata),
         },
-        this.createProjection(input.chatId, grant.role, input.accessToken),
+        this.createProjection({
+          chatId: input.chatId,
+          accessRole: grant.role,
+          accessToken: input.accessToken,
+          participantId: grant.participantId as MessageActorId | undefined,
+        }),
       ),
       items: page.items,
       nextBefore: page.nextBefore,
@@ -493,7 +618,12 @@ export class MessageControlPlane {
         ...channel,
         metadata: this.withAdminState(channel.chatId, channel.metadata),
       },
-      this.createProjection(input.chatId, grant.role, grant.accessToken ?? input.accessToken ?? ""),
+      this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken: grant.accessToken ?? input.accessToken ?? "",
+        participantId: grant.participantId as MessageActorId | undefined,
+      }),
     );
   }
 
@@ -518,7 +648,12 @@ export class MessageControlPlane {
         ...channel,
         metadata: this.withAdminState(channel.chatId, channel.metadata),
       },
-      this.createProjection(input.chatId, grant.role, grant.accessToken ?? input.accessToken ?? ""),
+      this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken: grant.accessToken ?? input.accessToken ?? "",
+        participantId: grant.participantId as MessageActorId | undefined,
+      }),
     );
   }
 
@@ -545,7 +680,12 @@ export class MessageControlPlane {
     this.bumpVersion();
     return {
       ...grant,
-      ...this.createProjection(input.chatId, grant.role, accessToken),
+      ...this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken,
+        participantId: grant.participantId as MessageActorId | undefined,
+      }),
     };
   }
 
@@ -802,7 +942,12 @@ export class MessageControlPlane {
       const grant = this.db.findActiveGrantByToken(chatId, cachedAccessToken, hashToken(cachedAccessToken));
       if (grant && this.isTrustedBootstrapGrant(grant)) {
         if (!preferred || preferred === cachedAccessToken) {
-          return this.createProjection(chatId, grant.role, cachedAccessToken);
+          return this.createProjection({
+            chatId,
+            accessRole: grant.role,
+            accessToken: cachedAccessToken,
+            participantId: grant.participantId as MessageActorId | undefined,
+          });
         }
       }
       this.trustedBootstrapTokens.delete(chatId);
@@ -815,7 +960,12 @@ export class MessageControlPlane {
       tokenHash: hashToken(accessToken),
     });
     this.trustedBootstrapTokens.set(chatId, accessToken);
-    return this.createProjection(chatId, grant.role, accessToken);
+    return this.createProjection({
+      chatId,
+      accessRole: grant.role,
+      accessToken,
+      participantId: grant.participantId as MessageActorId | undefined,
+    });
   }
 
   private createTrustedBootstrapDescriptor(chatId: string): {
@@ -840,25 +990,102 @@ export class MessageControlPlane {
     );
   }
 
-  private createProjection(
-    chatId: string,
-    accessRole: MessageChannelAccessRole,
-    accessToken: string,
-  ): MessageChannelAccessProjection {
+  private createProjection(input: {
+    chatId: string;
+    accessRole: MessageChannelAccessRole;
+    accessToken: string;
+    participantId?: MessageActorId;
+  }): MessageChannelAccessProjection {
     return {
-      accessRole,
-      accessToken,
-      transportUrl: this.getTransportEndpoint(chatId, accessToken)?.url,
+      accessRole: input.accessRole,
+      accessToken: input.accessToken,
+      participantId: input.participantId,
+      currentAdmin: input.participantId ? this.resolveCurrentAdminActorId(input.chatId) === input.participantId : false,
+      transportUrl: this.getTransportEndpoint(input.chatId, input.accessToken)?.url,
     };
   }
 
   private withProjection(
-    channel: Omit<MessageControlPlaneEntry, keyof MessageChannelAccessProjection>,
+    channel: Omit<MessageControlPlaneEntry, keyof MessageChannelAccessProjection | "readProgress" | "readStates">,
     projection: MessageChannelAccessProjection,
   ): MessageControlPlaneEntry {
+    const latestVisibleMessage = this.db.resolveLatestVisibleMessage(channel.chatId);
+    const readStates = this.listReadStateProjections(channel.chatId, latestVisibleMessage);
     return {
       ...channel,
       ...projection,
+      readProgress: this.createReadProgress(channel.chatId, latestVisibleMessage, readStates),
+      readStates,
+    };
+  }
+
+  private listReadStateProjections(chatId: string, latestVisibleMessage?: MessageRecord): MessageReadStateProjection[] {
+    const readStateByActorId = new Map(this.db.listReadStates(chatId).map((state) => [state.actorId, state]));
+    const currentAdminId = this.resolveCurrentAdminActorId(chatId);
+    const focusedByActor = new Map<string, boolean>();
+    for (const [actorId, focusedIds] of this.focusedChatIdsByActor.entries()) {
+      if (focusedIds.has(chatId)) {
+        focusedByActor.set(actorId, true);
+      }
+    }
+    const latestVisibleRowId = latestVisibleMessage?.rowId ?? null;
+    const entries = this.db
+      .listActiveGrants(chatId)
+      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageActorId } => {
+        return Boolean(grant.participantId) && !this.isTrustedBootstrapGrant(grant);
+      })
+      .map((grant) => {
+        const presence = this.actorPresence.get(grant.participantId);
+        const readState = readStateByActorId.get(grant.participantId);
+        return {
+          actorId: grant.participantId,
+          role: grant.role,
+          label: grant.label,
+          currentAdmin: currentAdminId === grant.participantId,
+          online: presence?.online ?? false,
+          focused: focusedByActor.get(grant.participantId) ?? false,
+          invalidCredential: presence?.invalidCredential ?? false,
+          readMessageId: readState?.readMessageId,
+          readMessageRowId: readState?.readMessageRowId,
+          readAt: readState?.readAt,
+          hasReadLatestVisible: latestVisibleRowId !== null && (readState?.readMessageRowId ?? -1) >= latestVisibleRowId,
+        } satisfies MessageReadStateProjection;
+      });
+    return entries.sort((left, right) => {
+      if (left.currentAdmin !== right.currentAdmin) {
+        return left.currentAdmin ? -1 : 1;
+      }
+      const roleDiff = roleRank(right.role) - roleRank(left.role);
+      if (roleDiff !== 0) {
+        return roleDiff;
+      }
+      return left.actorId.localeCompare(right.actorId);
+    });
+  }
+
+  private createReadProgress(
+    chatId: string,
+    latestVisibleMessage: MessageRecord | undefined,
+    readStates: MessageReadStateProjection[],
+  ): MessageReadProgressProjection {
+    void chatId;
+    if (!latestVisibleMessage) {
+      return {
+        totalSeatCount: readStates.length,
+        readSeatCount: 0,
+        unreadSeatCount: 0,
+        invalidCredentialSeatCount: readStates.filter((state) => state.invalidCredential).length,
+      };
+    }
+    const readSeatCount = readStates.filter((state) => state.hasReadLatestVisible).length;
+    return {
+      latestVisibleMessageId: latestVisibleMessage.messageId,
+      latestVisibleMessageRowId: latestVisibleMessage.rowId,
+      latestVisibleAt: latestVisibleMessage.visibleAt ?? latestVisibleMessage.createdAt,
+      totalSeatCount: readStates.length,
+      readSeatCount,
+      unreadSeatCount: Math.max(0, readStates.length - readSeatCount),
+      invalidCredentialSeatCount: readStates.filter((state) => state.invalidCredential).length,
     };
   }
 
@@ -963,6 +1190,7 @@ export class MessageControlPlane {
     this.actorPresence.set(actorId, {
       online: true,
       expiresAt: actorId.startsWith("auth:") ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
+      invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
   }
@@ -976,7 +1204,12 @@ export class MessageControlPlane {
     this.assertActorId(actorId);
     const existing = this.db.findReusableGrant({ chatId, role, participantId: actorId });
     if (existing?.accessToken) {
-      return this.createProjection(chatId, existing.role, existing.accessToken);
+      return this.createProjection({
+        chatId,
+        accessRole: existing.role,
+        accessToken: existing.accessToken,
+        participantId: actorId,
+      });
     }
     const accessToken = this.resolveGrantAccessToken(preferredToken);
     this.db.revokeActiveGrantsByParticipant(chatId, actorId);
@@ -987,7 +1220,12 @@ export class MessageControlPlane {
       accessToken,
       tokenHash: hashToken(accessToken),
     });
-    return this.createProjection(chatId, grant.role, accessToken);
+    return this.createProjection({
+      chatId,
+      accessRole: grant.role,
+      accessToken,
+      participantId: actorId,
+    });
   }
 
   private issueActorAccessToken(chatId: string, actorId: MessageActorId, role: MessageChannelAccessRole): string {

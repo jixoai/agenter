@@ -152,6 +152,21 @@ const createMockClient = (input: {
     }>;
   }>;
   workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
+  authActorsQuery?: () => Promise<{
+    items: Array<{
+      actorId: string;
+      actorKind: "auth";
+      authId: string;
+      profileId: string;
+      label: string;
+      subtitle: string;
+      iconUrl: string;
+      identifier: {
+        kind: string;
+        value: string;
+      };
+    }>;
+  }>;
   notificationSnapshotQuery?: () => Promise<{
     items: Array<{
       id: string;
@@ -170,6 +185,49 @@ const createMockClient = (input: {
     unreadBySession: Record<string, number>;
     unreadByChat: Record<string, Record<string, number>>;
     unreadByTerminal: Record<string, Record<string, number>>;
+  }>;
+  messageGlobalMarkReadMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    messageId?: string;
+    readAt?: number;
+  }) => Promise<{
+    channel: {
+      chatId: string;
+      kind: "room";
+      title: string;
+      owner: string;
+      participants: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      createdAt: number;
+      updatedAt: number;
+      focused: boolean;
+      accessRole: "admin" | "member" | "readonly";
+      accessToken: string;
+      participantId?: string;
+      transportUrl?: string;
+      readProgress?: {
+        latestVisibleMessageId?: string;
+        latestVisibleMessageRowId?: number;
+        latestVisibleAt?: number;
+        totalSeatCount: number;
+        readSeatCount: number;
+        unreadSeatCount: number;
+        invalidCredentialSeatCount: number;
+      };
+      readStates?: Array<{
+        actorId: string;
+        role: "admin" | "member" | "readonly";
+        label?: string;
+        currentAdmin: boolean;
+        online: boolean;
+        focused: boolean;
+        invalidCredential: boolean;
+        readMessageId?: string;
+        readMessageRowId?: number;
+        readAt?: number;
+        hasReadLatestVisible: boolean;
+      }>;
+    };
   }>;
   setChatVisibilityMutate?: (input: {
     sessionId: string;
@@ -473,8 +531,15 @@ const createMockClient = (input: {
                     kind: "wallet_evm",
                     value: "0x0000000000000000000000000000000000000001",
                   },
+                  rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
                   jwtTtlSeconds: 3600,
+                  rootAuthBootstrapMode: "managed_local",
+                  canRevealRootAuthPrivateKey: true,
+                  hasManagedRootAuthPrivateKey: true,
                 },
+        },
+        actors: {
+          query: async () => (input.authActorsQuery ? await input.authActorsQuery() : { items: [] }),
         },
         challengeStart: {
           mutate: async (payload: { authId: string }) => ({
@@ -482,6 +547,13 @@ const createMockClient = (input: {
             challengeText: `challenge:${payload.authId}`,
             authId: payload.authId,
             expiresAt: new Date().toISOString(),
+          }),
+        },
+        bootstrapManagedKey: {
+          mutate: async () => ({
+            privateKey: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+            authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+            rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
           }),
         },
         challengeVerify: {
@@ -746,6 +818,12 @@ const createMockClient = (input: {
                   headVersion: "0",
                 },
         },
+        globalMarkRead: {
+          mutate: async (payload: { chatId: string; accessToken?: string; messageId?: string; readAt?: number }) =>
+            input.messageGlobalMarkReadMutate
+              ? await input.messageGlobalMarkReadMutate(payload)
+              : { channel: null },
+        },
         globalPage: {
           query: async (payload: {
             chatId: string;
@@ -933,7 +1011,11 @@ const createMockClient = (input: {
                     kind: "wallet_evm",
                     value: "0x0000000000000000000000000000000000000001",
                   },
+                  rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
                   jwtTtlSeconds: 3600,
+                  rootAuthBootstrapMode: "managed_local",
+                  canRevealRootAuthPrivateKey: true,
+                  hasManagedRootAuthPrivateKey: true,
                 },
         },
         list: {
@@ -2609,7 +2691,20 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given profile-service endpoint discovery When building icon and WebAuthn URLs Then runtime store targets the independent service", async () => {
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(701),
-      profileServiceQuery: async () => ({ endpoint: "http://127.0.0.1:4591" }),
+      profileServiceQuery: async () => ({
+        endpoint: "http://127.0.0.1:4591",
+        authMode: "wallet_challenge_jwt",
+        rootAuthId: "wallet_evm:0x0000000000000000000000000000000000000001",
+        rootIdentifier: {
+          kind: "wallet_evm",
+          value: "0x0000000000000000000000000000000000000001",
+        },
+        rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
+        jwtTtlSeconds: 3600,
+        rootAuthBootstrapMode: "managed_local",
+        canRevealRootAuthPrivateKey: true,
+        hasManagedRootAuthPrivateKey: true,
+      }),
     });
     const store = new RuntimeStore(client);
 
@@ -2621,6 +2716,49 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.webauthnAuthenticationUrl("profile-1")).toBe(
       "http://127.0.0.1:4591/auth/webauthn/authenticate?reference=profile-1",
     );
+
+    store.disconnect();
+  });
+
+  test("Scenario: Given auth actor projections are available When the runtime store lists auth actors Then the catalog is returned without conflating session actors", async () => {
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(702),
+      authActorsQuery: async () => ({
+        items: [
+          {
+            actorId: "auth:wallet_evm:0xowner",
+            actorKind: "auth",
+            authId: "wallet_evm:0xowner",
+            profileId: "profile-owner",
+            label: "Owner",
+            subtitle: "wallet_evm:0xowner",
+            iconUrl: "http://127.0.0.1:4591/media/profiles/profile-owner/icon",
+            identifier: {
+              kind: "wallet_evm",
+              value: "0xowner",
+            },
+          },
+        ],
+      }),
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await expect(store.listAuthActors()).resolves.toEqual([
+      {
+        actorId: "auth:wallet_evm:0xowner",
+        actorKind: "auth",
+        authId: "wallet_evm:0xowner",
+        profileId: "profile-owner",
+        label: "Owner",
+        subtitle: "wallet_evm:0xowner",
+        iconUrl: "http://127.0.0.1:4591/media/profiles/profile-owner/icon",
+        identifier: {
+          kind: "wallet_evm",
+          value: "0xowner",
+        },
+      },
+    ]);
 
     store.disconnect();
   });
@@ -3553,5 +3691,121 @@ describe("Feature: runtime store synchronization", () => {
     expect(issued.accessToken).toBe("msgtok_member");
     expect(revoked).toEqual({ ok: true });
     expect(archived.archivedBy).toBe("ops-bot");
+  });
+
+  test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
+    const requests: {
+      markRead?: { chatId: string; accessToken?: string; messageId?: string; readAt?: number };
+    } = {};
+    const room = {
+      chatId: "room-ops",
+      kind: "room" as const,
+      title: "Ops room",
+      owner: "ops-bot",
+      participants: [
+        { id: "avatar:ops-bot", label: "ops-bot", role: "avatar" as const },
+        { id: "user:kzf", label: "kzf", role: "user" as const },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: false,
+      accessRole: "member" as const,
+      accessToken: "msgtok_member",
+      participantId: "session:relay",
+      transportUrl: "ws://127.0.0.1:7777/room/room-ops?token=msgtok_member",
+      readProgress: {
+        latestVisibleMessageId: "12",
+        latestVisibleMessageRowId: 12,
+        latestVisibleAt: 12,
+        totalSeatCount: 2,
+        readSeatCount: 1,
+        unreadSeatCount: 1,
+        invalidCredentialSeatCount: 0,
+      },
+      readStates: [
+        {
+          actorId: "session:relay",
+          role: "member" as const,
+          label: "Relay",
+          currentAdmin: false,
+          online: true,
+          focused: true,
+          invalidCredential: false,
+          readMessageId: "12",
+          readMessageRowId: 12,
+          readAt: 5_000,
+          hasReadLatestVisible: true,
+        },
+        {
+          actorId: "auth:viewer",
+          role: "readonly" as const,
+          label: "Viewer",
+          currentAdmin: false,
+          online: true,
+          focused: false,
+          invalidCredential: false,
+          hasReadLatestVisible: false,
+        },
+      ],
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        notificationSnapshotQuery: async () => ({
+          items: [
+            {
+              id: "i-1:9",
+              sessionId: "i-1",
+              sourceType: "chat",
+              sourceId: "chat-main",
+              chatId: "chat-main",
+              workspacePath: "/repo/demo",
+              sessionName: "workspace",
+              messageId: "9",
+              messageSeq: 9,
+              content: "assistant unread",
+              timestamp: Date.now(),
+            },
+          ],
+          unreadBySession: { "i-1": 1 },
+          unreadByChat: { "i-1": { "chat-main": 1 } },
+          unreadByTerminal: {},
+        }),
+        messageGlobalMarkReadMutate: async (input) => {
+          requests.markRead = input;
+          return { channel: room };
+        },
+      }),
+    );
+
+    await store.connect();
+    await waitFor(() => store.getState().unreadBySession["i-1"] === 1);
+
+    const readChannel = await store.markGlobalRoomRead({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: "12",
+      readAt: 5_000,
+    });
+
+    expect(requests.markRead).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: "12",
+      readAt: 5_000,
+    });
+    expect(readChannel.readProgress).toMatchObject({
+      latestVisibleMessageId: "12",
+      readSeatCount: 1,
+      unreadSeatCount: 1,
+    });
+    expect(readChannel.readStates?.find((state) => state.actorId === "session:relay")).toMatchObject({
+      actorId: "session:relay",
+      hasReadLatestVisible: true,
+      readAt: 5_000,
+    });
+    expect(store.getState().unreadBySession["i-1"]).toBe(1);
+    expect(store.getState().notifications[0]?.messageId).toBe("9");
+    store.disconnect();
   });
 });

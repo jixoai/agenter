@@ -8,15 +8,20 @@ import {
   type WebChatSocketFactory,
 } from "@agenter/web-chat-view";
 import { Crosshair, Plus } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Tabs } from "../../components/ui/tabs";
+import { cn } from "../../lib/utils";
 import { MessageChannelBubble } from "./message-channel-bubble";
 import { MessageChannelCreateDialog, type MessageChannelCreateInput } from "./message-channel-create-dialog";
 import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-disclosure";
+import { RoomReadProgressDisclosure } from "./RoomReadProgressDisclosure";
+import type { RoomActorOption } from "./room-participants";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
+
+const TRUSTED_BOOTSTRAP_ACTOR_ID = "system:trusted-bootstrap";
 
 interface MessageChannelSurfaceProps {
   sessionId: string;
@@ -53,12 +58,18 @@ interface MessageChannelSurfaceProps {
     label?: string;
     participantId?: string;
   }) => Promise<MessageChannelGrantIssueOutput["grant"]>;
+  actorOptions?: RoomActorOption[];
   onRevokeChannelGrant?: (input: { channel: MessageChannelEntry; grantId: string }) => Promise<{ ok: boolean }>;
   onCommand?: (command: AIInputCommand) => Promise<void> | void;
   onSearchPaths?: (input: { cwd: string; query: string; limit?: number }) => Promise<AIInputSuggestion[]>;
   onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
+  onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
+  readProgress?: MessageChannelEntry["readProgress"];
+  readStates?: MessageChannelEntry["readStates"];
   socketFactory?: WebChatSocketFactory;
   onOpenDevtools?: (cycleId: number) => void;
+  renderComposerAccessory?: (props: WebChatComposerRenderProps) => ReactNode;
+  sidePanel?: ReactNode;
 }
 
 export const MessageChannelSurface = ({
@@ -83,12 +94,18 @@ export const MessageChannelSurface = ({
   onUpdateChannel,
   onListChannelGrants,
   onIssueChannelGrant,
+  actorOptions = [],
   onRevokeChannelGrant,
   onCommand,
   onSearchPaths,
   onLatestVisibleAssistantMessageIdChange,
+  onLatestVisibleMessageIdChange,
+  readProgress,
+  readStates,
   socketFactory,
   onOpenDevtools,
+  renderComposerAccessory,
+  sidePanel,
 }: MessageChannelSurfaceProps) => {
   const actionGroupRef = useRef<HTMLDivElement | null>(null);
   const selectedChannel = useMemo(
@@ -129,6 +146,7 @@ export const MessageChannelSurface = ({
 
   const renderComposer = (props: WebChatComposerRenderProps) => (
     <div className="border-t border-slate-200 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
+      {renderComposerAccessory ? <div className="mb-2">{renderComposerAccessory(props)}</div> : null}
       <AIInput
         workspacePath={workspacePath}
         placeholder={selectedChannel ? "Message Agenter and use @ to reference files..." : "Create a room to start messaging."}
@@ -159,11 +177,15 @@ export const MessageChannelSurface = ({
     hasData: Boolean(selectedChannel),
   });
   const canToggleSelectedChannelFocus = Boolean(
-    selectedChannel && onFocusChannel && selectedChannel.accessRole === "admin",
+    selectedChannel &&
+      onFocusChannel &&
+      selectedChannel.accessRole !== "readonly" &&
+      selectedChannel.participantId &&
+      selectedChannel.participantId !== TRUSTED_BOOTSTRAP_ACTOR_ID,
   );
 
   return (
-    <div className="grid h-full min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-3">
+    <div className="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
       <div className="min-w-0">
         <Tabs
           items={channels.map((channel) => ({
@@ -184,9 +206,11 @@ export const MessageChannelSurface = ({
                   onUpdateChannel={onUpdateChannel}
                   onListChannelGrants={onListChannelGrants}
                   onIssueChannelGrant={onIssueChannelGrant}
+                  actorOptions={actorOptions}
                   onRevokeChannelGrant={onRevokeChannelGrant}
                 />
               ) : null}
+              {selectedChannel ? <RoomReadProgressDisclosure readProgress={readProgress} readStates={readStates} /> : null}
               <div ref={actionGroupRef} className="flex min-w-0 items-center gap-1.5">
                 {selectedChannel && onFocusChannel ? (
                   <AdaptiveIconButton
@@ -212,7 +236,7 @@ export const MessageChannelSurface = ({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={disabled}
+                  disabled={channelsLoading}
                   icon={Plus}
                   label="New room"
                   tooltip="Create a room"
@@ -226,48 +250,57 @@ export const MessageChannelSurface = ({
         />
       </div>
 
-      <AsyncSurface
-        state={asyncState}
-        className="min-h-0"
-        viewportClassName="h-full min-h-0"
-        emptyLoadingLabel="Loading rooms..."
-        loadingOverlayLabel="Refreshing rooms..."
-        empty={
-          <div className="flex h-full min-h-[20rem] items-center justify-center px-6 py-8 text-center">
-            <div className="space-y-2">
-              <h2 className="text-base font-semibold text-slate-900">{emptyTitle}</h2>
-              <p className="max-w-md text-sm text-slate-500">{emptyMessage}</p>
-            </div>
-          </div>
-        }
+      <div
+        className={cn(
+          "grid min-h-0 gap-3",
+          sidePanel ? "xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.7fr)]" : "grid-cols-[minmax(0,1fr)]",
+        )}
       >
-        <WebChatView
-          key={selectedChannel?.chatId ?? "empty"}
-          channel={selectedChannel}
-          initialMessages={initialMessages}
-          disabled={disabled || !selectedChannel}
-          showHeader={false}
-          routeNotice={
-            selectedChannel && channelsError
-              ? {
-                  tone: "destructive",
-                  message: channelsError,
-                }
-              : routeNotice
+        <AsyncSurface
+          state={asyncState}
+          className="min-h-0"
+          viewportClassName="h-full min-h-0"
+          emptyLoadingLabel="Loading rooms..."
+          loadingOverlayLabel="Refreshing rooms..."
+          empty={
+            <div className="flex h-full min-h-[20rem] items-center justify-center px-6 py-8 text-center">
+              <div className="space-y-2">
+                <h2 className="text-base font-semibold text-slate-900">{emptyTitle}</h2>
+                <p className="max-w-md text-sm text-slate-500">{emptyMessage}</p>
+              </div>
+            </div>
           }
-          emptyTitle={emptyTitle}
-          emptyMessage={emptyMessage}
-          renderComposer={renderComposer}
-          renderMessage={renderMessage}
-          onSendMessage={(payload) => (selectedChannel ? onSendMessage({ channel: selectedChannel, payload }) : Promise.resolve())}
-          onLatestVisibleAssistantMessageIdChange={onLatestVisibleAssistantMessageIdChange}
-          socketFactory={socketFactory}
-        />
-      </AsyncSurface>
+        >
+          <WebChatView
+            key={selectedChannel?.chatId ?? "empty"}
+            channel={selectedChannel}
+            initialMessages={initialMessages}
+            disabled={disabled || !selectedChannel}
+            showHeader={false}
+            routeNotice={
+              selectedChannel && channelsError
+                ? {
+                    tone: "destructive",
+                    message: channelsError,
+                  }
+                : routeNotice
+            }
+            emptyTitle={emptyTitle}
+            emptyMessage={emptyMessage}
+            renderComposer={renderComposer}
+            renderMessage={renderMessage}
+            onSendMessage={(payload) => (selectedChannel ? onSendMessage({ channel: selectedChannel, payload }) : Promise.resolve())}
+            onLatestVisibleAssistantMessageIdChange={onLatestVisibleAssistantMessageIdChange}
+            onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
+            socketFactory={socketFactory}
+          />
+        </AsyncSurface>
+        {sidePanel ? <div className="min-h-0">{sidePanel}</div> : null}
+      </div>
       <MessageChannelCreateDialog
         open={createDialogOpen}
-        ownerHint={selectedChannel?.owner ?? assistantAvatarLabel ?? "agenter"}
         existingCount={channels.length}
+        actorOptions={actorOptions}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={async (input) => {
           await onCreateChannel(input);

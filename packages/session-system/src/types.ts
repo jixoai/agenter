@@ -308,6 +308,7 @@ export interface TerminalActivityRecord {
   createdAt: number;
   kind: TerminalActivityKind;
   cycleId: number | null;
+  actorId?: string;
   role?: SessionBlockRole;
   channel?: SessionBlockChannel;
   title: string;

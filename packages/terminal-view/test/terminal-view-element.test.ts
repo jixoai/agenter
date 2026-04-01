@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
 
 type ResizeEntry = Pick<ResizeObserverEntry, "target" | "contentRect">;
 
@@ -188,6 +188,14 @@ const waitForLifecycleFrame = async (): Promise<void> => {
   });
 };
 
+const requireShadowRoot = (element: HTMLElement): ShadowRoot => {
+  const shadowRoot = element.shadowRoot;
+  if (!shadowRoot) {
+    throw new Error("terminal-view shadow root not found");
+  }
+  return shadowRoot;
+};
+
 describe("Feature: terminal-view WebComponent", () => {
   beforeEach(() => {
     mockTerminals.length = 0;
@@ -234,6 +242,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await waitForLifecycleFrame();
     await element.updateComplete;
 
+    const shadowRoot = requireShadowRoot(element);
     const terminal = mockTerminals.at(-1);
     expect(terminal).toBeDefined();
     expect(terminal?.resetCount).toBe(1);
@@ -249,17 +258,18 @@ describe("Feature: terminal-view WebComponent", () => {
       [7, 9],
       [10, 12],
     ]);
-    expect(element.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:1220px");
-    expect(element.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1188px");
-    expect(element.querySelector("style")?.textContent).toContain('font-feature-settings: "liga" 1, "calt" 1;');
+    expect(element.querySelector("style")).toBeNull();
+    expect(shadowRoot.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:1220px");
+    expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1188px");
+    expect(shadowRoot.querySelector("style")?.textContent).toContain('font-feature-settings: "liga" 1, "calt" 1;');
     expect(terminal?.writes.at(-1)).toContain("npm ERR!");
     expect(terminal?.writes.at(-1)).toContain("38;2;241;76;76");
     expect(terminal?.writes.at(-1)).toContain("line 64");
-    expect(element.querySelector('[data-terminal-scroll-contract="terminal-stage"]')).not.toBeNull();
-    expect(element.querySelector('[data-terminal-scroll-owner="terminal-stage"]')).not.toBeNull();
-    expect(element.querySelector('[data-viewport-mode="cover"]')).not.toBeNull();
-    expect(element.textContent).toContain("Flow shell");
-    expect(element.textContent).toContain("/repo/demo");
+    expect(shadowRoot.querySelector('[data-terminal-scroll-contract="terminal-stage"]')).not.toBeNull();
+    expect(shadowRoot.querySelector('[data-terminal-scroll-owner="terminal-stage"]')).not.toBeNull();
+    expect(shadowRoot.querySelector('[data-viewport-mode="cover"]')).not.toBeNull();
+    expect(shadowRoot.textContent).toContain("Flow shell");
+    expect(shadowRoot.textContent).toContain("/repo/demo");
   });
 
   test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component keeps fixed geometry and reflects connection lifecycle without auto-resizing the PTY", async () => {
@@ -277,6 +287,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await waitForLifecycleFrame();
     await element.updateComplete;
 
+    const shadowRoot = requireShadowRoot(element);
     const socket = WebSocketMock.instances.at(-1);
     expect(socket?.url).toBe("ws://127.0.0.1:4900/pty/iflow");
     expect(element.connectionState).toBe("connecting");
@@ -312,7 +323,7 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.rows).toBe(40);
     expect(terminal?.writes).toContain("initial state");
     expect(terminal?.options.scrollback).toBe(10_000);
-    expect(element.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1260px");
+    expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1260px");
 
     element.snapshot = {
       seq: 3,
@@ -346,7 +357,7 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.writes).toContain("bun test\r\n");
     expect(element.status).toBe("IDLE");
     expect(element.connectionState).toBe("closed");
-    expect(element.querySelector(".terminal-connection-badge")?.textContent).toContain("disconnected");
+    expect(shadowRoot.querySelector(".terminal-connection-badge")?.textContent).toContain("disconnected");
 
     element.remove();
     expect(terminal?.deregisteredJoinerIds).toContain(0);

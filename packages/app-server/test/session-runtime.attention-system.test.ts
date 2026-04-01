@@ -11,7 +11,7 @@ import {
   type AttentionCommitChange,
 } from "@agenter/attention-system";
 import { SessionDb } from "@agenter/session-system";
-import { TerminalControlPlane } from "@agenter/terminal-system";
+import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import { SessionRuntime } from "../src/session-runtime";
@@ -466,6 +466,48 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(activeTerminalItems.some((item) => item.title === "Unfocused terminal iflow-1")).toBeFalse();
       expect(activeTerminalItems.some((item) => item.title === "Created terminal iflow-1")).toBeTrue();
       expect(activeTerminalItems.some((item) => item.title === "Created terminal iflow-2")).toBeTrue();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given another actor focuses a shared terminal When this runtime did not focus it Then the runtime keeps its own focused set unchanged", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    try {
+      const created = await runtime.createRuntimeTerminal({
+        terminalId: "shared-focus",
+        processKind: "shell",
+        focus: false,
+      });
+      expect(created.ok).toBeTrue();
+      const focusedBefore = [...runtime.snapshot().focusedTerminalIds];
+      expect(focusedBefore.includes("shared-focus")).toBeFalse();
+
+      const terminalControlPlane = Reflect.get(runtime, "terminalControlPlane") as TerminalControlPlane;
+      const terminalActorId = Reflect.get(runtime, "terminalActorId") as TerminalActorId;
+      const observer = terminalControlPlane.issueGrantAuthorized({
+        terminalId: "shared-focus",
+        actorId: terminalActorId,
+        participantId: "session:observer",
+        role: "readonly",
+      });
+
+      terminalControlPlane.focusAuthorized("add", [
+        {
+          terminalId: "shared-focus",
+          accessToken: observer.accessToken,
+        },
+      ]);
+
+      expect(runtime.snapshot().focusedTerminalIds).toEqual(focusedBefore);
+      expect(internal.focusedTerminalIds).toEqual(focusedBefore);
+      expect(
+        terminalControlPlane.listForActor("session:observer", { touchPresence: false }).find((item) => item.terminalId === "shared-focus")
+          ?.focused,
+      ).toBeTrue();
     } finally {
       await runtime.stop();
     }

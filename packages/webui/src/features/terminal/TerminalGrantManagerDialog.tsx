@@ -16,6 +16,7 @@ import { cn } from "../../lib/utils";
 
 export interface TerminalActorOption {
   actorId: GlobalTerminalActorId;
+  actorKind: "auth" | "session";
   label: string;
   subtitle?: string;
 }
@@ -262,22 +263,20 @@ export const TerminalGrantManagerDialog = ({
           <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_12rem]">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700" htmlFor="terminal-grant-participant">
-                Participant actor id
+                Participant actor
               </label>
-              <Input
+              <Select
                 id="terminal-grant-participant"
-                list="terminal-grant-participants"
                 value={participantId}
                 onChange={(event) => setParticipantId(event.currentTarget.value)}
-                placeholder="session:avatar-main"
-              />
-              <datalist id="terminal-grant-participants">
+              >
+                <option value="">Select actor</option>
                 {actorOptions.map((option) => (
                   <option key={option.actorId} value={option.actorId}>
-                    {option.label}
+                    {[option.label, option.actorKind, option.subtitle].filter(Boolean).join(" · ")}
                   </option>
                 ))}
-              </datalist>
+              </Select>
             </div>
 
             <div className="space-y-1">
@@ -353,6 +352,7 @@ export const TerminalGrantManagerDialog = ({
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium text-slate-900">{displayLabel}</span>
+                            {meta ? <Badge variant="secondary">{meta.actorKind}</Badge> : null}
                             <Badge variant="secondary">{grant.role}</Badge>
                             {actor?.currentAdmin ? <Badge variant="warning">current admin</Badge> : null}
                             {typeof actor?.adminCandidateRank === "number" ? (

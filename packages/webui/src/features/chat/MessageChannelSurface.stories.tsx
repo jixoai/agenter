@@ -12,6 +12,21 @@ const noopCreateChannel = async (_input: MessageChannelCreateInput): Promise<voi
 const explicitFocusToggleSpy = fn(noopFocusChannel);
 const createChannelViaMetadataDialogSpy = fn(noopCreateChannel);
 
+const actorOptions = [
+  {
+    actorId: "auth:owner",
+    actorKind: "auth" as const,
+    label: "Owner",
+    subtitle: "wallet_evm:0xowner",
+  },
+  {
+    actorId: "session:reviewer",
+    actorKind: "session" as const,
+    label: "Reviewer avatar",
+    subtitle: "/repo/demo",
+  },
+];
+
 const createChannel = (input: {
   chatId: string;
   title: string;
@@ -24,14 +39,15 @@ const createChannel = (input: {
   title: input.title,
   owner: "jane",
   participants: [
-    { id: "avatar:jane", label: "jane", role: "avatar" },
-    { id: "user:kzf", label: "kzf", role: "user" },
+    { id: "auth:owner", label: "Owner", role: "user" },
+    { id: "session:reviewer", label: "Reviewer avatar", role: "avatar" },
   ],
   createdAt: 1,
   updatedAt: 1,
   focused: input.focused ?? false,
   accessRole: "admin",
   accessToken: `msgtok_${input.chatId.replace(/[^a-z0-9]/gi, "")}`,
+  participantId: "auth:owner",
   transportUrl:
     input.transportUrl === null
       ? undefined
@@ -243,6 +259,7 @@ const SurfaceStory = ({
             current.map((entry) => (entry.chatId === channel.chatId ? { ...entry, focused: !entry.focused } : entry)),
           );
         }}
+        actorOptions={actorOptions}
         onSendMessage={onSendMessage}
         onSearchPaths={async () => []}
         socketFactory={socketFactory}

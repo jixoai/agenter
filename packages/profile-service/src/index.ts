@@ -20,6 +20,7 @@ export type {
   ProfileIdentifierKind,
   ProfileMetadata,
   ProfileProjection,
+  RootAuthPrivateKeyReveal,
   ProfileServiceHandle,
   ProfileServiceOptions,
   SessionIconSeed,

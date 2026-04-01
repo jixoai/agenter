@@ -1,4 +1,5 @@
 import type {
+  AuthActorCatalogEntry,
   GlobalRoomEntry,
   MessageChannelEntry,
   RuntimeClientState,
@@ -30,7 +31,11 @@ const createState = (): RuntimeClientState => ({
       kind: "wallet_evm",
       value: "0x0000000000000000000000000000000000000001",
     },
+    rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
     jwtTtlSeconds: 3600,
+    rootAuthBootstrapMode: "managed_local",
+    canRevealRootAuthPrivateKey: true,
+    hasManagedRootAuthPrivateKey: true,
   },
   lastEventId: 0,
   sessions: [],
@@ -665,6 +670,28 @@ const startAuthChallengeMock = vi.fn(async (authId: string) => ({
 }));
 const verifyAuthChallengeMock = vi.fn(async () => createAuthSessionMock());
 const getAuthSessionMock = vi.fn(async () => (mockAuthToken ? createAuthSessionMock() : null));
+const listAuthActorsMock = vi.fn(
+  async (): Promise<AuthActorCatalogEntry[]> => [
+    {
+      actorId: "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
+      actorKind: "auth",
+      authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
+      profileId: "profile-1",
+      label: "Nova Ops",
+      subtitle: "wallet_evm:0x00000000000000000000000000000000000000aa",
+      iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+      identifier: {
+        kind: "wallet_evm",
+        value: "0x00000000000000000000000000000000000000aa",
+      },
+    },
+  ],
+);
+const revealManagedRootAuthPrivateKeyMock = vi.fn(async () => ({
+  privateKey: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+  authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+  rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
+}));
 const setAuthTokenMock = vi.fn((token: string | null | undefined) => {
   mockAuthToken = token?.trim() ?? "";
 });
@@ -834,6 +861,7 @@ vi.mock("@agenter/client-sdk", () => ({
     uploadSessionAssets: async () => [],
     sessionIconUrl: sessionIconUrlMock,
     profileIconUrl: profileIconUrlMock,
+    listAuthActors: listAuthActorsMock,
     uploadSessionIcon: uploadSessionIconMock,
     listProfiles: listProfilesMock,
     getProfile: getProfileMock,
@@ -842,6 +870,7 @@ vi.mock("@agenter/client-sdk", () => ({
     clearAuthToken: () => setAuthTokenMock(null),
     getAuthToken: () => mockAuthToken || null,
     startAuthChallenge: startAuthChallengeMock,
+    revealManagedRootAuthPrivateKey: revealManagedRootAuthPrivateKeyMock,
     verifyAuthChallenge: verifyAuthChallengeMock,
     getAuthSession: getAuthSessionMock,
     getAuthServiceDescriptor: async () => mockState.profileService,
@@ -947,6 +976,7 @@ beforeEach(() => {
   getProfileMock.mockClear();
   updateProfileMock.mockClear();
   startAuthChallengeMock.mockReset();
+  revealManagedRootAuthPrivateKeyMock.mockReset();
   verifyAuthChallengeMock.mockReset();
   getAuthSessionMock.mockReset();
   setAuthTokenMock.mockClear();
@@ -958,11 +988,32 @@ beforeEach(() => {
   readGlobalSettingsMock.mockClear();
   saveGlobalSettingsMock.mockClear();
   listProfilesMock.mockResolvedValue({ items: [] });
+  listAuthActorsMock.mockReset();
+  listAuthActorsMock.mockResolvedValue([
+    {
+      actorId: "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
+      actorKind: "auth",
+      authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
+      profileId: "profile-1",
+      label: "Nova Ops",
+      subtitle: "wallet_evm:0x00000000000000000000000000000000000000aa",
+      iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+      identifier: {
+        kind: "wallet_evm",
+        value: "0x00000000000000000000000000000000000000aa",
+      },
+    },
+  ]);
   startAuthChallengeMock.mockResolvedValue({
     challengeId: "challenge-auth-1",
     challengeText: "challenge:wallet_evm:0x00000000000000000000000000000000000000aa",
     authId: "wallet_evm:0x00000000000000000000000000000000000000aa",
     expiresAt: new Date(0).toISOString(),
+  });
+  revealManagedRootAuthPrivateKeyMock.mockResolvedValue({
+    privateKey: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+    authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+    rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
   });
   verifyAuthChallengeMock.mockResolvedValue(createAuthSessionMock());
   getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? createAuthSessionMock() : null));
@@ -2637,9 +2688,21 @@ describe.skip("Feature: legacy web ui app shell", () => {
   });
 });
 
-const renderAppAt = (path = "/") => {
+const dismissSuperadminOnboarding = async () => {
+  const dialog = await screen.findByRole("dialog", { name: "Bind superadmin key" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Later" }));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Bind superadmin key" })).not.toBeInTheDocument();
+  });
+};
+
+const renderAppAt = async (path = "/", options?: { dismissSuperadminOnboarding?: boolean }) => {
   window.history.replaceState(null, "", path);
-  return render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+  const view = render(<App wsUrl="ws://127.0.0.1:9999/trpc" />);
+  if (options?.dismissSuperadminOnboarding ?? true) {
+    await dismissSuperadminOnboarding();
+  }
+  return view;
 };
 
 describe("Feature: web ui app shell", () => {
@@ -2651,7 +2714,7 @@ describe("Feature: web ui app shell", () => {
       recentWorkspaces: ["/repo/demo"],
     };
 
-    renderAppAt("/");
+    await renderAppAt("/");
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/workspaces");
@@ -2667,6 +2730,86 @@ describe("Feature: web ui app shell", () => {
     expect(screen.getByText("Running Avatars")).toBeInTheDocument();
   });
 
+  test("Scenario: Given no stored auth token on first start When the app boots Then the superadmin onboarding is visible and can authenticate", async () => {
+    const authSession = {
+      ...createAuthSessionMock(),
+      claims: {
+        ...createAuthSessionMock().claims,
+        superadmin: true,
+      },
+    };
+    verifyAuthChallengeMock.mockResolvedValue(authSession);
+    getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? authSession : null));
+
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+
+    await renderAppAt("/", { dismissSuperadminOnboarding: false });
+
+    const dialog = await screen.findByRole("dialog", { name: "Bind superadmin key" });
+    expect(within(dialog).getByText(/root key:/i)).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByPlaceholderText("0x-prefixed private key"), {
+      target: {
+        value: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+      },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign challenge" }));
+
+    await waitFor(() => {
+      expect(startAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(verifyAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(mockAuthToken).toBe(authSession.token);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Bind superadmin key" })).not.toBeInTheDocument();
+    });
+  });
+
+  test("Scenario: Given a backend-managed root key When onboarding requests it Then the dialog prefills the key before signing the challenge", async () => {
+    const authSession = {
+      ...createAuthSessionMock(),
+      claims: {
+        ...createAuthSessionMock().claims,
+        superadmin: true,
+      },
+    };
+    verifyAuthChallengeMock.mockResolvedValue(authSession);
+    getAuthSessionMock.mockImplementation(async () => (mockAuthToken ? authSession : null));
+
+    mockState = {
+      ...createState(),
+      connected: true,
+      workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
+    };
+
+    await renderAppAt("/", { dismissSuperadminOnboarding: false });
+
+    const dialog = await screen.findByRole("dialog", { name: "Bind superadmin key" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use backend-managed key" }));
+
+    await waitFor(() => {
+      expect(revealManagedRootAuthPrivateKeyMock).toHaveBeenCalledTimes(1);
+      expect(within(dialog).getByPlaceholderText("0x-prefixed private key")).toHaveValue(
+        "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
+      );
+    });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign challenge" }));
+
+    await waitFor(() => {
+      expect(startAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(verifyAuthChallengeMock).toHaveBeenCalledTimes(1);
+      expect(mockAuthToken).toBe(authSession.token);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Bind superadmin key" })).not.toBeInTheDocument();
+    });
+  });
+
   test("Scenario: Given the legacy global settings route When rendering Then it redirects into the ~/ workspace settings tab", async () => {
     mockState = {
       ...createState(),
@@ -2674,7 +2817,7 @@ describe("Feature: web ui app shell", () => {
       workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
     };
 
-    renderAppAt("/settings");
+    await renderAppAt("/settings");
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/workspaces");
@@ -2744,7 +2887,7 @@ describe("Feature: web ui app shell", () => {
       return { id: sessionId };
     });
 
-    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+    await renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
 
     await screen.findByRole("heading", { name: "Welcome" });
     fireEvent.change(screen.getByLabelText("Workspace"), {
@@ -2822,7 +2965,7 @@ describe("Feature: web ui app shell", () => {
       workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
     };
 
-    renderAppAt("/workspaces?view=workspace&workspacePath=%2Frepo%2Fdemo&tab=avatars&sort=recent");
+    await renderAppAt("/workspaces?view=workspace&workspacePath=%2Frepo%2Fdemo&tab=avatars&sort=recent");
 
     expect(await screen.findByText(/This workspace is still reading the global avatar source\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Fork Avatar Copy" }));
@@ -2846,7 +2989,7 @@ describe("Feature: web ui app shell", () => {
       },
     };
 
-    renderAppAt("/session/session-demo/chats");
+    await renderAppAt("/session/session-demo/chats");
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/session/session-demo/devtools");
@@ -2896,7 +3039,7 @@ describe("Feature: web ui app shell", () => {
     }));
     listGlobalRoomsMock.mockResolvedValue([]);
 
-    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+    await renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
 
     await screen.findByRole("heading", { name: "Welcome" });
     fireEvent.change(screen.getByLabelText("Workspace"), {
@@ -2945,7 +3088,7 @@ describe("Feature: web ui app shell", () => {
       headVersion: "0",
     });
 
-    renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
+    await renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
 
     fireEvent.click(await screen.findByRole("button", { name: "Open Room" }));
 
@@ -2970,7 +3113,7 @@ describe("Feature: web ui app shell", () => {
     };
     listGlobalRoomsMock.mockResolvedValue([]);
 
-    renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
+    await renderAppAt("/session/session-demo/devtools?panel=attention&attentionView=items");
 
     expect(await screen.findByText("Source unavailable: global room room-main is not present in Chats.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Room" })).toBeDisabled();
@@ -2983,7 +3126,7 @@ describe("Feature: web ui app shell", () => {
       workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/missing", missing: true })],
     };
 
-    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+    await renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
 
     fireEvent.click(await screen.findByRole("button", { name: "Clean Missing 1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Clean" }));
@@ -3000,7 +3143,7 @@ describe("Feature: web ui app shell", () => {
       workspaces: [createWorkspace({ path: "~/" }), createWorkspace({ path: "/repo/demo" })],
     };
 
-    renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
+    await renderAppAt("/workspaces?view=welcome&tab=settings&sort=recent");
 
     const sidebar = await screen.findByTestId("app-sidebar-nav");
     expect(sidebar).toHaveAttribute("data-sidebar-collapsed", "false");

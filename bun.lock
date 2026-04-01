@@ -63,6 +63,7 @@
       },
       "devDependencies": {
         "viem": "^2.47.6",
+        "yaml": "^2.8.2",
       },
       "peerDependencies": {
         "@agenter/i18n-en": "workspace:*",

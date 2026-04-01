@@ -20,15 +20,6 @@ const compareMessages = (left: WebChatMessage, right: WebChatMessage): number =>
   return left.messageId.localeCompare(right.messageId);
 };
 
-const compareVisibleMessages = (left: WebChatMessage, right: WebChatMessage): number => {
-  const leftVisibleAt = left.visibleAt ?? left.createdAt;
-  const rightVisibleAt = right.visibleAt ?? right.createdAt;
-  if (leftVisibleAt !== rightVisibleAt) {
-    return leftVisibleAt - rightVisibleAt;
-  }
-  return compareMessages(left, right);
-};
-
 const isBootstrapMessageId = (messageId: string): boolean => /^\d+$/.test(messageId);
 
 const sameAttachmentSet = (left: WebChatMessage["attachments"], right: WebChatMessage["attachments"]): boolean => {
@@ -109,7 +100,7 @@ const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
 
 const normalizeMessageRecord = (message: WebChatMessage): WebChatMessage => {
   const attentionState = message.attentionState ?? "loaded";
-  const visibleAt = message.visibleAt ?? (attentionState === "loaded" ? message.createdAt : undefined);
+  const visibleAt = message.visibleAt ?? message.createdAt;
   return {
     ...message,
     attentionState,
@@ -354,20 +345,12 @@ export const useWebChatChannel = (input: {
     socket.send(JSON.stringify(payload));
   }, []);
 
-  const pendingMessages = useMemo(
-    () => messages.filter((message) => message.visibleAt === undefined).sort(compareMessages),
-    [messages],
-  );
-  const transcriptMessages = useMemo(
-    () => messages.filter((message) => message.visibleAt !== undefined).sort(compareVisibleMessages),
-    [messages],
-  );
+  const transcriptMessages = useMemo(() => [...messages].sort(compareMessages), [messages]);
 
   return useMemo(
     () => ({
       connectionState,
       messages,
-      pendingMessages,
       transcriptMessages,
       focused,
       hasMoreBefore,
@@ -388,7 +371,6 @@ export const useWebChatChannel = (input: {
       loadingInitial,
       loadingMore,
       messages,
-      pendingMessages,
       sendText,
       transcriptMessages,
     ],
