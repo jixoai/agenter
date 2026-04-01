@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Button } from "../../components/ui/button";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -235,18 +237,17 @@ export const TerminalCreateDialog = ({ open, defaultCwd, onClose, onCreate }: Te
         </div>
 
         <label className="flex items-center gap-2 text-xs text-slate-700">
-          <input
-            type="checkbox"
-            checked={focus}
-            onChange={(event) => setFocus(event.currentTarget.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
+          <Checkbox checked={focus} onChange={(event) => setFocus(event.currentTarget.checked)} />
           Focus terminal after create
         </label>
 
-        <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <summary className="cursor-pointer text-sm font-medium text-slate-800">Advanced profile overrides</summary>
-          <div className="mt-3 space-y-3">
+        <Accordion type="single" collapsible className="rounded-xl border border-slate-200 bg-slate-50 px-3">
+          <AccordionItem value="advanced" className="border-b-0">
+            <AccordionTrigger className="py-3 text-sm font-medium text-slate-800 hover:no-underline">
+              Advanced profile overrides
+            </AccordionTrigger>
+            <AccordionContent className="pb-3">
+              <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700" htmlFor="terminal-create-profile-command">
                 Profile command JSON array
@@ -355,8 +356,10 @@ export const TerminalCreateDialog = ({ open, defaultCwd, onClose, onCreate }: Te
                 placeholder='{"submit":"enter","newline":"shift+enter"}'
               />
             </div>
-          </div>
-        </details>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
 
         {error ? <p className="text-xs text-rose-700">{error}</p> : null}
       </div>

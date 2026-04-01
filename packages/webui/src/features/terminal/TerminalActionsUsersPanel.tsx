@@ -3,6 +3,7 @@ import { LoaderCircle, TerminalSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/button";
+import { Checkbox } from "../../components/ui/checkbox";
 import { NoticeBanner } from "../../components/ui/notice-banner";
 import { ScrollViewport, ViewportMask } from "../../components/ui/overflow-surface";
 import { ProfileImage } from "../../components/ui/profile-image";
@@ -175,7 +176,7 @@ export const TerminalActionsUsersPanel = ({
                       </Select>
                     </label>
                     <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                      <input type="checkbox" checked={writeSubmit} onChange={(event) => setWriteSubmit(event.currentTarget.checked)} />
+                      <Checkbox checked={writeSubmit} onChange={(event) => setWriteSubmit(event.currentTarget.checked)} />
                       <span>Submit after write</span>
                     </label>
                     <Button
@@ -219,7 +220,7 @@ export const TerminalActionsUsersPanel = ({
                       </Select>
                     </label>
                     <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                      <input type="checkbox" checked={readRemark} onChange={(event) => setReadRemark(event.currentTarget.checked)} />
+                      <Checkbox checked={readRemark} onChange={(event) => setReadRemark(event.currentTarget.checked)} />
                       <span>Mark diff baseline</span>
                     </label>
                   </div>

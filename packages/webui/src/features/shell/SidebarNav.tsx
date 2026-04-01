@@ -3,9 +3,19 @@ import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual, ButtonTrailingVisual } from "../../components/ui/button";
-import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { ProfileImage } from "../../components/ui/profile-image";
-import { surfaceToneClassName } from "../../components/ui/surface";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarScrollArea,
+} from "../../components/ui/sidebar";
 import { Tooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { sessionStatusMeta } from "../../shared/status-meta";
@@ -78,15 +88,6 @@ const createWorkspaceAvatar = (workspacePath: string): NavAvatar => ({
   hue: hashPath(workspacePath),
 });
 
-const SidebarSection = ({ label, collapsed }: { label: string; collapsed: boolean }) =>
-  collapsed ? (
-    <p className="sr-only">{label}</p>
-  ) : (
-    <div className="px-1">
-      <p className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{label}</p>
-    </div>
-  );
-
 const SidebarWorkspaceGlyph = ({ avatar }: { avatar: NavAvatar }) => (
   <span
     className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold"
@@ -112,15 +113,11 @@ const PrimaryButton = ({
   if (collapsed) {
     return (
       <Tooltip content={<span>{item.label}</span>}>
-        <Button
+        <SidebarMenuButton
           type="button"
-          size="icon"
-          variant={item.active ? "secondary" : "ghost"}
+          collapsed
+          isActive={item.active}
           onClick={item.onSelect}
-          className={cn(
-            "relative h-11 w-11 rounded-xl",
-            item.active ? "bg-teal-50 text-teal-900 ring-1 ring-teal-200" : "text-slate-700",
-          )}
           aria-label={item.label}
           title={item.label}
           aria-current={item.active ? "page" : undefined}
@@ -131,21 +128,17 @@ const PrimaryButton = ({
               {item.badgeCount}
             </span>
           ) : null}
-        </Button>
+        </SidebarMenuButton>
       </Tooltip>
     );
   }
 
   return (
-    <Button
+    <SidebarMenuButton
       type="button"
-      variant={item.active ? "secondary" : "ghost"}
+      isActive={item.active}
       onClick={item.onSelect}
-      className={cn(
-        "w-full justify-start rounded-xl",
-        item.active ? "bg-teal-50 text-teal-900 ring-1 ring-teal-200" : "text-slate-700",
-        compact ? "min-h-10" : "min-h-11",
-      )}
+      className={cn(compact ? "min-h-10" : "min-h-11")}
       aria-current={item.active ? "page" : undefined}
     >
       <ButtonLeadingVisual>
@@ -159,7 +152,7 @@ const PrimaryButton = ({
           </span>
         </ButtonTrailingVisual>
       ) : null}
-    </Button>
+    </SidebarMenuButton>
   );
 };
 
@@ -178,8 +171,10 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
           </div>
         }
       >
-        <button
+        <Button
           type="button"
+          size="icon"
+          variant={item.active ? "secondary" : "ghost"}
           onClick={item.onSelect}
           aria-label={summary}
           title={summary}
@@ -213,9 +208,9 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
                   : status.variant === "destructive"
                     ? "bg-rose-500"
                     : "bg-slate-400",
-            )}
-          />
-        </button>
+                )}
+              />
+        </Button>
       </Tooltip>
     );
   }
@@ -230,8 +225,9 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
         </div>
       }
     >
-      <button
+      <Button
         type="button"
+        variant={item.active ? "secondary" : "ghost"}
         onClick={item.onSelect}
         aria-label={summary}
         title={summary}
@@ -277,9 +273,9 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
                 {basenamePath(item.workspacePath)} · {status.label}
               </span>
             </div>
+            </div>
           </div>
-        </div>
-      </button>
+      </Button>
     </Tooltip>
   );
 };
@@ -369,8 +365,10 @@ const OperatorProfileButton = ({
           </div>
         }
       >
-        <button
+        <Button
           type="button"
+          size="icon"
+          variant={item.active ? "secondary" : "ghost"}
           onClick={item.onSelect}
           aria-label={summary}
           title={summary}
@@ -380,14 +378,15 @@ const OperatorProfileButton = ({
           )}
         >
           <ProfileImage src={item.iconUrl} label={item.label} alt={item.label} className="h-8 w-8 rounded-xl" />
-        </button>
+        </Button>
       </Tooltip>
     );
   }
 
   return (
-    <button
+    <Button
       type="button"
+      variant={item.active ? "secondary" : "outline"}
       onClick={item.onSelect}
       aria-label={summary}
       title={summary}
@@ -411,7 +410,7 @@ const OperatorProfileButton = ({
           </div>
         </div>
       </div>
-    </button>
+    </Button>
   );
 };
 
@@ -429,70 +428,71 @@ export const SidebarNavContent = ({
     <div
       className={cn(
         "grid h-full gap-4",
-        compact
-          ? "grid-rows-[auto_minmax(0,1fr)_auto]"
-          : iconRail
-            ? "grid-rows-[auto_auto_minmax(0,1fr)_auto] justify-items-center px-2 py-3"
-            : "grid-rows-[auto_auto_minmax(0,1fr)_auto] px-3 py-3",
+        compact ? "grid-rows-[minmax(0,1fr)_auto] px-3 py-3" : iconRail ? "justify-items-center px-2 py-3" : "px-3 py-3",
       )}
       data-sidebar-collapsed={iconRail ? "true" : "false"}
     >
-      {!compact ? <SidebarNavBrand collapsed={iconRail} onToggleCollapsed={onToggleCollapsed} /> : null}
+      {!compact ? (
+        <SidebarHeader className={cn(iconRail && "w-full")}>
+          <SidebarNavBrand collapsed={iconRail} onToggleCollapsed={onToggleCollapsed} />
+        </SidebarHeader>
+      ) : null}
 
-      <section className={cn("space-y-2", iconRail && "w-full")}>
-        <SidebarSection label="Navigate" collapsed={iconRail} />
-        <div className={cn("space-y-1", iconRail && "flex flex-col items-center")}>
-          {primaryItems.map((item) => (
-            <PrimaryButton key={item.key} item={item} compact={compact} collapsed={iconRail} />
-          ))}
-        </div>
-      </section>
-
-      <section className={cn("grid grid-rows-[auto_minmax(0,1fr)] gap-2", iconRail && "w-full")}>
-        <SidebarSection label="Running Avatars" collapsed={iconRail} />
-        <ScrollViewport
-          data-testid="sidebar-running-avatars-viewport"
-          className={cn("h-full pr-1", iconRail ? "" : "space-y-1")}
-        >
-          {runningSessions.length === 0 ? (
-            <div className={cn(iconRail && "flex justify-center")}>
-              <SidebarNavEmpty compact={compact} collapsed={iconRail} />
-            </div>
-          ) : (
-            <div className={cn(iconRail ? "flex flex-col items-center gap-2" : "space-y-1")}>
-              {runningSessions.map((item) => (
-                <SessionButton key={item.sessionId} item={item} collapsed={iconRail} />
+      <SidebarContent className={cn(iconRail && "w-full")}>
+        <div className="grid h-full min-h-0 gap-4">
+          <SidebarGroup className={cn(iconRail && "w-full")}>
+            <SidebarGroupLabel collapsed={iconRail}>Navigate</SidebarGroupLabel>
+            <SidebarMenu className={cn(iconRail && "flex flex-col items-center")}>
+              {primaryItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <PrimaryButton item={item} compact={compact} collapsed={iconRail} />
+                </SidebarMenuItem>
               ))}
-            </div>
-          )}
-        </ScrollViewport>
-      </section>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup className={cn("grid min-h-0 grid-rows-[auto_minmax(0,1fr)]", iconRail && "w-full")}>
+            <SidebarGroupLabel collapsed={iconRail}>Running Avatars</SidebarGroupLabel>
+            <SidebarScrollArea
+              data-testid="sidebar-running-avatars-viewport"
+              className={cn("pr-1", iconRail ? "" : "space-y-1")}
+            >
+              {runningSessions.length === 0 ? (
+                <div className={cn(iconRail && "flex justify-center")}>
+                  <SidebarNavEmpty compact={compact} collapsed={iconRail} />
+                </div>
+              ) : (
+                <SidebarMenu className={cn(iconRail ? "flex flex-col items-center gap-2 space-y-0" : "space-y-1")}>
+                  {runningSessions.map((item) => (
+                    <SidebarMenuItem key={item.sessionId}>
+                      <SessionButton item={item} collapsed={iconRail} />
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              )}
+            </SidebarScrollArea>
+          </SidebarGroup>
+        </div>
+      </SidebarContent>
 
       {operatorProfile ? (
-        <section className={cn("space-y-2", iconRail && "w-full")}>
-          <SidebarSection label="Operator" collapsed={iconRail} />
-          <div className={cn(iconRail && "flex justify-center")}>
-            <OperatorProfileButton item={operatorProfile} collapsed={iconRail} />
-          </div>
-        </section>
+        <SidebarFooter className={cn(iconRail && "w-full")}>
+          <SidebarGroup className={cn(iconRail && "w-full")}>
+            <SidebarGroupLabel collapsed={iconRail}>Operator</SidebarGroupLabel>
+            <div className={cn(iconRail && "flex justify-center")}>
+              <OperatorProfileButton item={operatorProfile} collapsed={iconRail} />
+            </div>
+          </SidebarGroup>
+        </SidebarFooter>
       ) : null}
     </div>
   );
 };
 
 export const SidebarNav = ({ className, compact = false, collapsed = false, ...props }: SidebarNavProps) => (
-  <aside
-    data-testid="app-sidebar-nav"
-    data-sidebar-collapsed={collapsed && !compact ? "true" : "false"}
-    className={cn(
-      surfaceToneClassName("chrome"),
-      "hidden h-full shrink-0 border-r border-slate-200 transition-[width] duration-200 ease-out xl:flex xl:flex-col",
-      collapsed && !compact ? "w-[4.75rem]" : "w-[18.5rem]",
-      className,
-    )}
-  >
+  <Sidebar data-testid="app-sidebar-nav" collapsed={collapsed && !compact} className={className}>
     <SidebarNavContent {...props} compact={compact} collapsed={collapsed} />
-  </aside>
+  </Sidebar>
 );
 
 export const defaultPrimaryNavItems = (input: {

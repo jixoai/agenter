@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/button";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -140,21 +141,11 @@ export const QuickstartTerminalConfigDialog = ({
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="flex items-center gap-2 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={focus}
-              onChange={(event) => setFocus(event.currentTarget.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
+            <Checkbox checked={focus} onChange={(event) => setFocus(event.currentTarget.checked)} />
             Focus after boot
           </label>
           <label className="flex items-center gap-2 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={autoRun}
-              onChange={(event) => setAutoRun(event.currentTarget.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
+            <Checkbox checked={autoRun} onChange={(event) => setAutoRun(event.currentTarget.checked)} />
             Auto run on startup
           </label>
         </div>
