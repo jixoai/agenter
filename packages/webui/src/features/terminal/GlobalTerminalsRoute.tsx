@@ -214,6 +214,15 @@ export const GlobalTerminalsRoute = ({ preferredTerminalId }: { preferredTermina
     [controller],
   );
 
+  const applyGrantState = useCallback((input: { terminalId: string; items: GlobalTerminalGrantEntry[] }) => {
+    setGrants({
+      terminalId: input.terminalId,
+      items: input.items,
+      loading: false,
+      error: null,
+    });
+  }, []);
+
   useEffect(() => {
     if (!connected) {
       return;
@@ -419,6 +428,13 @@ export const GlobalTerminalsRoute = ({ preferredTerminalId }: { preferredTermina
       onListGrants={controller.listGlobalTerminalGrants}
       onIssueGrant={controller.issueGlobalTerminalGrant}
       onRevokeGrant={controller.revokeGlobalTerminalGrant}
+      onTerminalGrantChanged={async (input) => {
+        applyGrantState({
+          terminalId: input.terminalId,
+          items: input.grants,
+        });
+        await refresh({ silent: true });
+      }}
       onListApprovalRequests={controller.listGlobalTerminalApprovalRequests}
       onApproveRequest={controller.approveGlobalTerminalRequest}
       onDenyRequest={controller.denyGlobalTerminalRequest}

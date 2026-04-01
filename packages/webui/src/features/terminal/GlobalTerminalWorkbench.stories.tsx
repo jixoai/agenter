@@ -328,6 +328,7 @@ const meta = {
       currentAdmin: false,
     })),
     onRevokeGrant: fn(async () => ({ ok: true })),
+    onTerminalGrantChanged: fn(async () => {}),
     onListApprovalRequests: fn(async () => approvalRequests),
     onApproveRequest: fn(async () => ({})),
     onDenyRequest: fn(async () => ({})),
@@ -365,11 +366,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const WorkbenchLifecycle: Story = {
+  args: {},
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const body = within(document.body);
     await expect(canvas.getByRole("button", { name: "Create terminal" })).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Access" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Users & access" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Approvals 1" })).toBeInTheDocument();
     await expect(canvas.getByRole("heading", { name: "Flow shell" })).toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Focus terminal" })).toBeNull();
@@ -403,8 +405,8 @@ export const WorkbenchLifecycle: Story = {
     });
 
     await userEvent.click(canvas.getByRole("tab", { name: "Actions" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Access" }));
-    await expect(await body.findByText("Current grants")).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Users & access" }));
+    await expect(await body.findByText("Granted seats")).toBeInTheDocument();
     await expect(args.onListGrants).toHaveBeenCalled();
 
     await userEvent.click(body.getByRole("button", { name: "Close dialog" }));

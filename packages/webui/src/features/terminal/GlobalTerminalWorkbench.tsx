@@ -87,6 +87,7 @@ interface GlobalTerminalWorkbenchProps {
     adminCandidateRank?: number | null;
   }) => Promise<GlobalTerminalGrantIssueOutput["grant"]>;
   onRevokeGrant: (input: { terminalId: string; grantId: string }) => Promise<{ ok: boolean }>;
+  onTerminalGrantChanged: (input: { terminalId: string; grants: GlobalTerminalGrantEntry[] }) => Promise<void> | void;
   onListApprovalRequests: (input: {
     terminalId: string;
     statuses?: GlobalTerminalApprovalRequest["status"][];
@@ -149,6 +150,7 @@ export const GlobalTerminalWorkbench = ({
   onListGrants,
   onIssueGrant,
   onRevokeGrant,
+  onTerminalGrantChanged,
   onListApprovalRequests,
   onApproveRequest,
   onDenyRequest,
@@ -246,7 +248,7 @@ export const GlobalTerminalWorkbench = ({
                   <ButtonLeadingVisual>
                     <Shield className="h-3.5 w-3.5" />
                   </ButtonLeadingVisual>
-                  <ButtonLabel>Access</ButtonLabel>
+                  <ButtonLabel>Users & access</ButtonLabel>
                 </Button>
                 <Button
                   type="button"
@@ -325,6 +327,7 @@ export const GlobalTerminalWorkbench = ({
                       status={selectedTerminal.status}
                       viewportMode={viewportMode}
                       transportUrl={selectedTerminal.transportUrl}
+                      snapshot={selectedTerminal.snapshot ?? null}
                       className="h-full"
                       testId="global-terminal-view"
                     />
@@ -336,6 +339,7 @@ export const GlobalTerminalWorkbench = ({
                 terminalId={selectedTerminal.terminalId}
                 items={activity.terminalId === selectedTerminal.terminalId ? activity.items : []}
                 users={users}
+                canManageAccess={canAdminister}
                 callerOptions={callerOptions}
                 selectedCallerToken={selectedCallerToken}
                 activityHasMore={activity.terminalId === selectedTerminal.terminalId ? activity.hasMore : false}
@@ -344,6 +348,7 @@ export const GlobalTerminalWorkbench = ({
                 usersLoading={grants.loading}
                 error={grants.error}
                 onSelectCallerToken={onSelectCallerToken}
+                onManageAccess={() => setGrantDialogOpen(true)}
                 onLoadMore={() => void onLoadMoreActivity()}
                 onSetUserFocus={onSetUserFocus}
                 onRead={(input) => onReadTerminal(input)}
@@ -357,7 +362,7 @@ export const GlobalTerminalWorkbench = ({
 
       <TerminalCreateDialog
         open={createDialogOpen}
-        defaultCwd={selectedTerminal?.cwd ?? "."}
+        defaultCwd={selectedTerminal?.cwd ?? ""}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={async (input) => {
           await onCreateTerminal(input);
@@ -418,7 +423,12 @@ export const GlobalTerminalWorkbench = ({
         onListGrants={onListGrants}
         onIssueGrant={onIssueGrant}
         onRevokeGrant={onRevokeGrant}
-        onChanged={onRefresh}
+        onChanged={async (input) => {
+          await onTerminalGrantChanged({
+            terminalId: input.terminalId,
+            grants: input.grants,
+          });
+        }}
       />
 
       <TerminalApprovalRequestsDialog

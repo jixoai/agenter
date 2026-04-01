@@ -23,6 +23,7 @@ interface TerminalActionsUsersPanelProps {
   terminalId: string;
   items: TerminalActivityItem[];
   users: TerminalUserEntry[];
+  canManageAccess?: boolean;
   callerOptions: ActorTokenOption[];
   selectedCallerToken: string | null;
   activityHasMore: boolean;
@@ -31,6 +32,7 @@ interface TerminalActionsUsersPanelProps {
   usersLoading: boolean;
   error: string | null;
   onSelectCallerToken: (accessToken: string) => void;
+  onManageAccess?: () => void;
   onLoadMore: () => Promise<void> | void;
   onSetUserFocus: (input: { actorId: string; accessToken: string; focused: boolean }) => Promise<void> | void;
   onRead: (input: {
@@ -61,6 +63,7 @@ export const TerminalActionsUsersPanel = ({
   terminalId,
   items,
   users,
+  canManageAccess = false,
   callerOptions,
   selectedCallerToken,
   activityHasMore,
@@ -69,6 +72,7 @@ export const TerminalActionsUsersPanel = ({
   usersLoading,
   error,
   onSelectCallerToken,
+  onManageAccess,
   onLoadMore,
   onSetUserFocus,
   onRead,
@@ -95,7 +99,14 @@ export const TerminalActionsUsersPanel = ({
 
       {activeTab === "users" ? (
         <div className="min-h-0">
-          <TerminalUsersPanel terminalId={terminalId} loading={usersLoading} users={users} onSetUserFocus={onSetUserFocus} />
+          <TerminalUsersPanel
+            terminalId={terminalId}
+            loading={usersLoading}
+            users={users}
+            canManageAccess={canManageAccess}
+            onManageAccess={onManageAccess}
+            onSetUserFocus={onSetUserFocus}
+          />
         </div>
       ) : (
         <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, userEvent, within } from "storybook/test";
 
-import { SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem } from "./SidebarNav";
+import { SidebarNavContent, defaultPrimaryNavItems, type RunningSessionNavItem, type SidebarOperatorProfileItem } from "./SidebarNav";
 
 const sessionIconSvgUrl = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="18" fill="#155e75"/></svg>',
@@ -30,6 +30,15 @@ const baseSessions: RunningSessionNavItem[] = [
   },
 ];
 
+const operatorProfile: SidebarOperatorProfileItem = {
+  label: "Nova Ops",
+  subtitle: "wallet_evm:0x00000000000000000000000000000000000000aa",
+  iconUrl: sessionIconSvgUrl,
+  roleLabel: "superadmin",
+  active: false,
+  onSelect: () => {},
+};
+
 const longRunningSessions: RunningSessionNavItem[] = Array.from({ length: 24 }, (_, index) => ({
   sessionId: `session-running-${index + 1}`,
   name: `Running task ${index + 1}`,
@@ -55,6 +64,7 @@ const meta = {
       onSelectTerminals: () => {},
     }),
     runningSessions: baseSessions,
+    operatorProfile,
   },
   render: () => {
     const [activePrimary, setActivePrimary] = useState<"chats" | "workspaces" | "terminals">("chats");
@@ -78,6 +88,7 @@ const meta = {
             active: item.sessionId === activeSessionId,
             onSelect: () => setActiveSessionId(item.sessionId),
           }))}
+          operatorProfile={operatorProfile}
         />
       </div>
     );
@@ -99,6 +110,8 @@ export const SidebarShowsPrimaryAndRunningSessions: Story = {
     await expect(canvas.getByRole("button", { name: /^Workspaces\b/i })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: /^Terminals$/ })).toBeInTheDocument();
     await expect(canvas.getByText("Running Avatars")).toBeInTheDocument();
+    await expect(canvas.getByText("Operator")).toBeInTheDocument();
+    await expect(canvas.getByText("Nova Ops")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-1")).toBeInTheDocument();
     await expect(canvas.getByText("session-running-2")).toBeInTheDocument();
     await expect(canvas.getByRole("img", { name: "Fix layout drift" })).toBeInTheDocument();
@@ -136,6 +149,7 @@ export const SidebarLongRunningSessionListKeepsViewport: Story = {
             active: item.sessionId === activeSessionId,
             onSelect: () => setActiveSessionId(item.sessionId),
           }))}
+          operatorProfile={operatorProfile}
         />
       </div>
     );
@@ -175,6 +189,7 @@ export const DesktopRailCanCollapseToIconWidth: Story = {
             active: item.sessionId === activeSessionId,
             onSelect: () => setActiveSessionId(item.sessionId),
           }))}
+          operatorProfile={operatorProfile}
         />
       </div>
     );

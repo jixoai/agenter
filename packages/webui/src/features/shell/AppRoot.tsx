@@ -158,6 +158,13 @@ export const AppRoot = () => {
     setMobileSidebarOpen(false);
   }, [navigate]);
 
+  const handleSelectOperatorProfile = useCallback(() => {
+    void navigate({
+      to: "/settings",
+    });
+    setMobileSidebarOpen(false);
+  }, [navigate]);
+
   useEffect(() => {
     if (!connected || !routeSessionId) {
       return;
@@ -189,6 +196,35 @@ export const AppRoot = () => {
       }),
     [handleSelectChats, handleSelectTerminals, handleSelectWorkspaces, location.pathname, unreadTotal],
   );
+
+  const locationSearch = (location as { search?: Record<string, unknown> }).search;
+  const operatorProfile = useMemo(() => {
+    const authenticatedProfile = controller.authSession?.profile;
+    const profileId = authenticatedProfile?.profileId ?? null;
+    const displayName =
+      authenticatedProfile?.metadata.displayName?.trim() ||
+      authenticatedProfile?.metadata.nickname?.trim() ||
+      controller.authService?.rootAuthId ||
+      "Superadmin";
+    const roleLabel = controller.authSession?.claims.superadmin
+      ? "superadmin"
+      : controller.authSession?.claims.admin
+        ? "admin"
+        : "identity";
+    const subtitle = controller.authSession?.claims.authId ?? controller.authService?.rootAuthId ?? "Open global profile";
+    return {
+      label: displayName,
+      subtitle,
+      iconUrl: authenticatedProfile?.iconUrl ?? iconUrls.profile(profileId),
+      roleLabel,
+      active:
+        location.pathname === "/settings" ||
+        (location.pathname === "/workspaces" &&
+          locationSearch?.workspacePath === "~/" &&
+          locationSearch?.tab === "settings"),
+      onSelect: handleSelectOperatorProfile,
+    };
+  }, [controller.authService, controller.authSession, handleSelectOperatorProfile, iconUrls, location.pathname, locationSearch?.tab, locationSearch?.workspacePath]);
 
   const runningSessions = useMemo<RunningSessionNavItem[]>(() => {
     return runningSessionStates
@@ -234,6 +270,7 @@ export const AppRoot = () => {
             <SidebarNav
               primaryItems={primaryItems}
               runningSessions={runningSessions}
+              operatorProfile={operatorProfile}
               collapsed={desktopSidebarCollapsed}
               onToggleCollapsed={() => setDesktopSidebarCollapsed((current) => !current)}
             />
@@ -288,7 +325,7 @@ export const AppRoot = () => {
         </div>
 
         <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen} side="left" title="Navigation">
-          <SidebarNavContent primaryItems={primaryItems} runningSessions={runningSessions} compact />
+          <SidebarNavContent primaryItems={primaryItems} runningSessions={runningSessions} operatorProfile={operatorProfile} compact />
         </Sheet>
       </ViewportMask>
     </main>

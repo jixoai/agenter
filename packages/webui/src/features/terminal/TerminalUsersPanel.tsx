@@ -25,6 +25,8 @@ interface TerminalUsersPanelProps {
   terminalId: string;
   loading: boolean;
   users: TerminalUserEntry[];
+  canManageAccess?: boolean;
+  onManageAccess?: () => void;
   onSetUserFocus?: (input: { actorId: string; accessToken: string; focused: boolean }) => Promise<void> | void;
 }
 
@@ -38,24 +40,45 @@ const onlineLabel = (user: Pick<TerminalUserEntry, "online" | "focused">): strin
   return user.focused ? "online + focused" : "online";
 };
 
-export const TerminalUsersPanel = ({ terminalId, loading, users, onSetUserFocus }: TerminalUsersPanelProps) => {
+export const TerminalUsersPanel = ({
+  terminalId,
+  loading,
+  users,
+  canManageAccess = false,
+  onManageAccess,
+  onSetUserFocus,
+}: TerminalUsersPanelProps) => {
   const [busyActorId, setBusyActorId] = useState<string | null>(null);
 
   return (
     <ViewportMask className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Users className="h-4 w-4 text-slate-500" />
-          <h3 className="typo-title-3 text-slate-900">Users</h3>
-          <Badge variant="secondary">{terminalId}</Badge>
-          <Badge variant="secondary">{loading ? "Loading..." : `${users.length} seats`}</Badge>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Users className="h-4 w-4 text-slate-500" />
+            <h3 className="typo-title-3 text-slate-900">Users</h3>
+            <Badge variant="secondary">{terminalId}</Badge>
+            <Badge variant="secondary">{loading ? "Loading..." : `${users.length} seats`}</Badge>
+          </div>
+          {canManageAccess && onManageAccess ? (
+            <Button type="button" size="sm" variant="outline" onClick={onManageAccess}>
+              <Shield className="h-3.5 w-3.5" />
+              Manage access
+            </Button>
+          ) : null}
         </div>
       </div>
 
       <ScrollViewport className="h-full px-3 py-3">
         {users.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-            No terminal seats are visible for this terminal yet.
+          <div className="space-y-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+            <p>No terminal seats are visible for this terminal yet.</p>
+            {canManageAccess && onManageAccess ? (
+              <Button type="button" size="sm" variant="outline" onClick={onManageAccess}>
+                <Shield className="h-3.5 w-3.5" />
+                Add first user
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-3">

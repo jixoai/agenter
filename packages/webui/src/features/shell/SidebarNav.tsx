@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, MessagesSquare, TerminalSquare } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, MessagesSquare, ShieldCheck, TerminalSquare } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
@@ -37,9 +37,19 @@ export interface RunningSessionNavItem {
   onSelect: () => void;
 }
 
+export interface SidebarOperatorProfileItem {
+  label: string;
+  subtitle: string;
+  iconUrl?: string | null;
+  roleLabel: string;
+  active: boolean;
+  onSelect: () => void;
+}
+
 interface SidebarNavProps {
   primaryItems: PrimaryNavItem[];
   runningSessions: RunningSessionNavItem[];
+  operatorProfile?: SidebarOperatorProfileItem | null;
   compact?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
@@ -340,9 +350,75 @@ const SidebarNavBrand = ({ collapsed, onToggleCollapsed }: { collapsed: boolean;
   );
 };
 
+const OperatorProfileButton = ({
+  item,
+  collapsed,
+}: {
+  item: SidebarOperatorProfileItem;
+  collapsed: boolean;
+}) => {
+  const summary = [item.label, item.roleLabel, item.subtitle].filter(Boolean).join(" · ");
+  if (collapsed) {
+    return (
+      <Tooltip
+        content={
+          <div className="max-w-[22rem] space-y-1">
+            <p className="font-medium text-slate-900">{item.label}</p>
+            <p className="text-slate-600">{item.roleLabel}</p>
+            <p className="break-all text-slate-600">{item.subtitle}</p>
+          </div>
+        }
+      >
+        <button
+          type="button"
+          onClick={item.onSelect}
+          aria-label={summary}
+          title={summary}
+          className={cn(
+            "flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
+            item.active ? "bg-teal-50 text-slate-900 ring-1 ring-teal-200" : "text-slate-700 hover:bg-slate-100",
+          )}
+        >
+          <ProfileImage src={item.iconUrl} label={item.label} alt={item.label} className="h-8 w-8 rounded-xl" />
+        </button>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={item.onSelect}
+      aria-label={summary}
+      title={summary}
+      className={cn(
+        "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
+        item.active
+          ? "border-teal-200 bg-teal-50 text-slate-900"
+          : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100",
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <ProfileImage src={item.iconUrl} label={item.label} alt={item.label} className="h-9 w-9 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium text-slate-900">{item.label}</span>
+            <Badge variant="secondary">{item.roleLabel}</Badge>
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <ShieldCheck className="h-3 w-3" />
+            <span className="truncate">{item.subtitle}</span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+};
+
 export const SidebarNavContent = ({
   primaryItems,
   runningSessions,
+  operatorProfile,
   compact = false,
   collapsed = false,
   onToggleCollapsed,
@@ -354,10 +430,10 @@ export const SidebarNavContent = ({
       className={cn(
         "grid h-full gap-4",
         compact
-          ? "grid-rows-[auto_minmax(0,1fr)]"
+          ? "grid-rows-[auto_minmax(0,1fr)_auto]"
           : iconRail
-            ? "grid-rows-[auto_auto_minmax(0,1fr)] justify-items-center px-2 py-3"
-            : "grid-rows-[auto_auto_minmax(0,1fr)] px-3 py-3",
+            ? "grid-rows-[auto_auto_minmax(0,1fr)_auto] justify-items-center px-2 py-3"
+            : "grid-rows-[auto_auto_minmax(0,1fr)_auto] px-3 py-3",
       )}
       data-sidebar-collapsed={iconRail ? "true" : "false"}
     >
@@ -391,6 +467,15 @@ export const SidebarNavContent = ({
           )}
         </ScrollViewport>
       </section>
+
+      {operatorProfile ? (
+        <section className={cn("space-y-2", iconRail && "w-full")}>
+          <SidebarSection label="Operator" collapsed={iconRail} />
+          <div className={cn(iconRail && "flex justify-center")}>
+            <OperatorProfileButton item={operatorProfile} collapsed={iconRail} />
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 };

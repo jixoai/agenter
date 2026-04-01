@@ -36,7 +36,11 @@ interface TerminalGrantManagerDialogProps {
     adminCandidateRank?: number | null;
   }) => Promise<GlobalTerminalGrantIssueOutput["grant"]>;
   onRevokeGrant: (input: { terminalId: string; grantId: string }) => Promise<{ ok: boolean }>;
-  onChanged: () => Promise<void> | void;
+  onChanged: (input: {
+    terminalId: string;
+    grants: GlobalTerminalGrantEntry[];
+    issuedGrant?: GlobalTerminalGrantIssueOutput["grant"] | null;
+  }) => Promise<void> | void;
 }
 
 type GrantRole = "admin" | "writer" | "requester" | "readonly";
@@ -88,16 +92,15 @@ export const TerminalGrantManagerDialog = ({
     return new Map(actorOptions.map((option) => [option.actorId, option]));
   }, [actorOptions]);
 
-  const load = async () => {
+  const load = async (): Promise<GlobalTerminalGrantEntry[]> => {
     if (!terminal) {
-      return;
+      return [];
     }
     setLoading(true);
     setError(null);
     try {
       const next = await onListGrants(terminal.terminalId);
-      setGrants(
-        [...next].sort((left, right) => {
+      const sorted = [...next].sort((left, right) => {
           const leftRank =
             terminal.actors?.find((actor) => actor.actorId === left.participantId)?.adminCandidateRank ?? Number.MAX_SAFE_INTEGER;
           const rightRank =
@@ -110,10 +113,12 @@ export const TerminalGrantManagerDialog = ({
             return roleDiff;
           }
           return (left.participantId ?? left.grantId).localeCompare(right.participantId ?? right.grantId);
-        }),
-      );
+        });
+      setGrants(sorted);
+      return sorted;
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
+      return [];
     } finally {
       setLoading(false);
     }
@@ -185,8 +190,12 @@ export const TerminalGrantManagerDialog = ({
         adminCandidateRank: role === "admin" ? parseCandidateRank(adminCandidateRank) : undefined,
       });
       setIssuedGrant(created);
-      await load();
-      await onChanged();
+      const nextGrants = await load();
+      await onChanged({
+        terminalId: terminal.terminalId,
+        grants: nextGrants,
+        issuedGrant: created,
+      });
       setParticipantId("");
       setLabel("");
       setAccessTokenHint("");
@@ -211,8 +220,8 @@ export const TerminalGrantManagerDialog = ({
     <>
       <Dialog
         open={open}
-        title={terminal ? `Access for ${terminal.title ?? terminal.terminalId}` : "Manage access"}
-        description="Grant terminal seats to auth or session actors. Admin candidates are ordered by rank, where 0 is the highest priority."
+        title={terminal ? `Users & access for ${terminal.title ?? terminal.terminalId}` : "Manage access"}
+        description="Grant terminal seats to auth users or AvatarSession seats. Admin candidates are ordered by rank, where 0 is the highest priority."
         onClose={() => {
           if (saving) {
             return;
@@ -263,7 +272,7 @@ export const TerminalGrantManagerDialog = ({
           <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_12rem]">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700" htmlFor="terminal-grant-participant">
-                Participant actor
+                Actor
               </label>
               <Select
                 id="terminal-grant-participant"
@@ -281,7 +290,7 @@ export const TerminalGrantManagerDialog = ({
 
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700" htmlFor="terminal-grant-role">
-                Role
+                Access
               </label>
               <Select id="terminal-grant-role" value={role} onChange={(event) => setRole(event.currentTarget.value as GrantRole)}>
                 <option value="readonly">readonly</option>
@@ -333,13 +342,13 @@ export const TerminalGrantManagerDialog = ({
 
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium text-slate-900">Current grants</h3>
+              <h3 className="text-sm font-medium text-slate-900">Granted seats</h3>
               {loading ? <span className="text-xs text-slate-500">Loading…</span> : null}
             </div>
             <div className="space-y-2">
               {grants.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                  No explicit grants yet.
+                  No explicit seats yet. Issue the first grant above, then the actor will appear in Users and Call as immediately.
                 </div>
               ) : (
                 grants.map((grant) => {
@@ -375,8 +384,12 @@ export const TerminalGrantManagerDialog = ({
                             setError(null);
                             void onRevokeGrant({ terminalId: terminal.terminalId, grantId: grant.grantId })
                               .then(async () => {
-                                await load();
-                                await onChanged();
+                                const nextGrants = await load();
+                                await onChanged({
+                                  terminalId: terminal.terminalId,
+                                  grants: nextGrants,
+                                  issuedGrant: null,
+                                });
                               })
                               .catch((revokeError) => {
                                 setError(revokeError instanceof Error ? revokeError.message : String(revokeError));

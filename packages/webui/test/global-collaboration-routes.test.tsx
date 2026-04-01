@@ -98,6 +98,10 @@ vi.mock("../src/features/terminal/GlobalTerminalWorkbench", () => ({
     onSelectTerminal: (terminalId: string) => void;
     selectedCallerToken: string | null;
     onSelectCallerToken: (accessToken: string) => void;
+    onTerminalGrantChanged?: (input: {
+      terminalId: string;
+      grants: GlobalTerminalGrantEntry[];
+    }) => Promise<void> | void;
     onSetUserFocus: (input: { actorId: string; accessToken: string; focused: boolean }) => Promise<void> | void;
     onReadTerminal: (input: {
       accessToken?: string;
@@ -118,6 +122,27 @@ vi.mock("../src/features/terminal/GlobalTerminalWorkbench", () => ({
       </button>
       <button type="button" onClick={() => props.onSelectCallerToken("termtok_writer")}>
         Select alternate terminal caller
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void props.onTerminalGrantChanged?.({
+            terminalId: "term-main",
+            grants: [
+              {
+                grantId: "grant-writer",
+                terminalId: "term-main",
+                role: "writer",
+                label: "Observer",
+                participantId: "session:observer",
+                accessToken: "termtok_writer",
+                createdAt: 2,
+              },
+            ],
+          })
+        }
+      >
+        Inject terminal grant refresh
       </button>
       <button
         type="button"
@@ -477,6 +502,51 @@ describe("Feature: global collaboration routes", () => {
         submitKey: "enter",
         returnRead: true,
       });
+    });
+  });
+
+  test("Scenario: Given a terminal grant is issued locally When the route receives the changed grant set Then Call as updates without a full page refresh", async () => {
+    const listGlobalTerminals = vi.fn(async () => [createGlobalTerminal()]);
+
+    routeTestState.controller = {
+      runtimeStore: {
+        listAuthActors: async () => createAuthActors(),
+        profileIconUrl: (reference: string) => `http://127.0.0.1:4591/media/profiles/${reference}/icon`,
+        sessionIconUrl: (sessionId: string) => `http://127.0.0.1:4591/media/sessions/${sessionId}/icon`,
+      },
+      authSession: null,
+      listGlobalTerminals,
+      focusGlobalTerminals: vi.fn(async () => ({ ok: true as const, message: "focused", focusedTerminalIds: ["term-main"] })),
+      loadGlobalTerminalActivity: vi.fn(async () => ({
+        items: [],
+        hasMore: false,
+        nextBefore: null,
+      })),
+      listGlobalTerminalGrants: vi.fn(async () => []),
+      createGlobalTerminal: vi.fn(async () => ({ ok: true as const, message: "created", terminal: createGlobalTerminal() })),
+      deleteGlobalTerminal: vi.fn(async () => ({ ok: true as const, message: "deleted" })),
+      issueGlobalTerminalGrant: vi.fn(),
+      revokeGlobalTerminalGrant: vi.fn(),
+      listGlobalTerminalApprovalRequests: vi.fn(async () => []),
+      approveGlobalTerminalRequest: vi.fn(async () => ({ ok: true as const })),
+      denyGlobalTerminalRequest: vi.fn(async () => ({ ok: true as const })),
+      readGlobalTerminal: vi.fn(async () => ({ ok: true as const })),
+      writeGlobalTerminal: vi.fn(async () => ({ ok: true as const })),
+    };
+
+    render(<GlobalTerminalsRoute />);
+
+    await screen.findByTestId("terminal-caller-token");
+    expect(screen.getByTestId("terminal-caller-token")).toHaveTextContent("termtok_owner");
+
+    fireEvent.click(screen.getByRole("button", { name: "Select alternate terminal caller" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-caller-token")).toHaveTextContent("termtok_owner");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Inject terminal grant refresh" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-caller-token")).toHaveTextContent("termtok_writer");
     });
   });
 
