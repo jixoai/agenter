@@ -232,14 +232,14 @@ describe("Feature: app-server trpc procedures", () => {
       patch: {
         title: "Lunch relay",
         participants: [
-          { id: `avatar:${channel.owner}`, label: channel.owner, role: "avatar" },
-          { id: "user:kzf", label: "kzf", role: "user" },
-          { id: "user:gaubee", label: "gaubee", role: "user" },
+          { id: `session:${channel.owner}`, label: channel.owner },
+          { id: "auth:kzf", label: "kzf" },
+          { id: "auth:gaubee", label: "gaubee" },
         ],
       },
     });
     expect(updated.channel.title).toBe("Lunch relay");
-    expect(updated.channel.participants.map((participant) => participant.id)).toContain("user:gaubee");
+    expect(updated.channel.participants.map((participant) => participant.id)).toContain("auth:gaubee");
 
     const issued = await caller.message.issueChannelGrant({
       sessionId,
@@ -396,13 +396,23 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(revoked.ok).toBeTrue();
 
-    const archived = await caller.message.globalDelete({
+    const archived = await caller.message.globalArchive({
       chatId: room.chatId,
       accessToken: room.accessToken,
       archivedBy: "ops-admin",
     });
     expect(archived.channel.archivedBy).toBe("ops-admin");
     expect((await caller.message.globalList({ includeArchived: false })).items.some((item) => item.chatId === room.chatId)).toBeFalse();
+
+    const disposable = await caller.message.globalCreate({
+      title: "Disposable room",
+    });
+    const deleted = await caller.message.globalDelete({
+      chatId: disposable.channel.chatId,
+      accessToken: disposable.channel.accessToken,
+    });
+    expect(deleted.channel.chatId).toBe(disposable.channel.chatId);
+    expect((await caller.message.globalList({ includeArchived: true })).items.some((item) => item.chatId === disposable.channel.chatId)).toBeFalse();
 
     await kernel.stop();
   });

@@ -208,8 +208,8 @@ const createGlobalRoom = (): GlobalRoomEntry => ({
   title: "Room Main",
   owner: "Owner",
   participants: [
-    { id: "auth:owner", label: "Owner", role: "user" },
-    { id: "session:observer", label: "Observer", role: "avatar" },
+    { id: "auth:owner", label: "Owner" },
+    { id: "session:observer", label: "Observer" },
   ],
   createdAt: 1,
   updatedAt: 1,

@@ -112,10 +112,18 @@ const normalizeMessageRecord = (message: WebChatMessage): WebChatMessage => {
 
 const normalizeMessageRecords = (messages: WebChatMessage[]): WebChatMessage[] => messages.map(normalizeMessageRecord);
 
+const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
+
 const resolveUserSender = (channel: WebChatChannel): { from: string; to?: string } => {
-  const userParticipant = channel.participants.find((participant) => participant.role === "user");
+  const currentParticipant = channel.participantId
+    ? channel.participants.find((participant) => participant.id === channel.participantId)
+    : undefined;
+  const fallbackParticipant =
+    currentParticipant ??
+    channel.participants.find((participant) => (participant.label ?? fallbackActorLabel(participant.id)) !== channel.owner) ??
+    channel.participants[0];
   return {
-    from: userParticipant?.label ?? userParticipant?.id ?? "User",
+    from: fallbackParticipant?.label ?? (fallbackParticipant ? fallbackActorLabel(fallbackParticipant.id) : "User"),
     to: channel.owner,
   };
 };

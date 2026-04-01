@@ -151,8 +151,8 @@ export const createGaubeeRoom = (harness: MockKernelHarness): MessageControlPlan
     kind: "room",
     title: "gaubee",
     participants: [
-      { id: "avatar:relay-bot", label: "relay-bot", role: "avatar" },
-      { id: "user:gaubee", label: "gaubee", role: "user" },
+      { id: "session:relay-bot", label: "relay-bot" },
+      { id: "auth:gaubee", label: "gaubee" },
     ],
     focus: false,
   });

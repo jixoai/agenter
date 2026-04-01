@@ -1090,7 +1090,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: {
       sessionId: string;
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
       adminToken?: string;
       focus?: boolean;
@@ -1148,7 +1148,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       accessToken: string;
       patch: {
         title?: string;
-        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        participants?: Array<{ id: string; label?: string }>;
         metadata?: Record<string, unknown>;
       };
     }) => {
@@ -1223,6 +1223,22 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     [setError, store],
   );
 
+  const deleteMessageChannel = useCallback(
+    async (input: {
+      sessionId: string;
+      chatId: string;
+      accessToken: string;
+    }) => {
+      try {
+        return await store.deleteMessageChannel(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
   const listGlobalRooms = useCallback(
     async (input: { includeArchived?: boolean } = {}) => {
       try {
@@ -1239,7 +1255,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: {
       chatId?: string;
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
       adminToken?: string;
       focus?: boolean;
@@ -1332,7 +1348,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       accessToken?: string;
       patch: {
         title?: string;
-        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        participants?: Array<{ id: string; label?: string }>;
         metadata?: Record<string, unknown>;
         adminGroupCandidateIds?: GlobalRoomActorId[];
       };
@@ -1394,6 +1410,18 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
     async (input: { chatId: string; accessToken?: string; archivedBy?: string }) => {
       try {
         return await store.archiveGlobalRoom(input);
+      } catch (error) {
+        setError(error);
+        throw error;
+      }
+    },
+    [setError, store],
+  );
+
+  const deleteGlobalRoom = useCallback(
+    async (input: { chatId: string; accessToken?: string }) => {
+      try {
+        return await store.deleteGlobalRoom(input);
       } catch (error) {
         setError(error);
         throw error;
@@ -2156,6 +2184,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       issueMessageChannelGrant,
       revokeMessageChannelGrant,
       archiveMessageChannel,
+      deleteMessageChannel,
       listGlobalRooms,
       createGlobalRoom,
       focusGlobalRooms,
@@ -2168,6 +2197,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       issueGlobalRoomGrant,
       revokeGlobalRoomGrant,
       archiveGlobalRoom,
+      deleteGlobalRoom,
       listTerminals,
       createTerminal,
       focusTerminals,
@@ -2235,6 +2265,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       deleteSession,
       deleteWorkspace,
       deleteWorkspaceSession,
+      deleteMessageChannel,
       enterWorkspace,
       ensureMessageChannels,
       ensureSettingsLayers,
@@ -2283,6 +2314,7 @@ export const App = ({ wsUrl = defaultWsUrl() }: AppProps) => {
       deleteTerminal,
       deleteGlobalTerminal,
       archiveGlobalRoom,
+      deleteGlobalRoom,
       focusTerminals,
       focusGlobalTerminals,
       markGlobalRoomRead,

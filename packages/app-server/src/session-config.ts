@@ -66,7 +66,6 @@ export interface ResolvedSessionConfig {
       participants?: Array<{
         id: string;
         label?: string;
-        role?: "avatar" | "user" | "system";
       }>;
       metadata?: Record<string, unknown>;
       adminToken?: string;
@@ -276,7 +275,6 @@ export const resolveSessionConfig = async (
             participants: settings.features.message.chatMainDefaults.participants?.map((participant) => ({
               id: participant.id,
               label: participant.label,
-              role: participant.role,
             })),
             metadata: settings.features.message.chatMainDefaults.metadata,
             adminToken: settings.features.message.chatMainDefaults.adminToken,

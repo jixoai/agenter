@@ -1474,7 +1474,7 @@ export class RuntimeStore {
     sessionId: string;
     kind: "room";
     title?: string;
-    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    participants?: Array<{ id: string; label?: string }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -1589,7 +1589,7 @@ export class RuntimeStore {
     accessToken: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
     };
   }): Promise<MessageChannelEntry> {
@@ -1635,6 +1635,25 @@ export class RuntimeStore {
     accessToken: string;
     archivedBy?: string;
   }): Promise<MessageChannelEntry> {
+    const output = await this.client.trpc.message.archiveChannel.mutate(input);
+    this.setMessageChannelsState(input.sessionId, (resource) => ({
+      ...resource,
+      data: resource.data.filter((item) => item.chatId !== output.channel.chatId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    return output.channel;
+  }
+
+  async deleteMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }): Promise<MessageChannelEntry> {
     const output = await this.client.trpc.message.deleteChannel.mutate(input);
     this.setMessageChannelsState(input.sessionId, (resource) => ({
       ...resource,
@@ -1666,7 +1685,7 @@ export class RuntimeStore {
   async createGlobalRoom(input: {
     chatId?: string;
     title?: string;
-    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    participants?: Array<{ id: string; label?: string }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -1747,7 +1766,7 @@ export class RuntimeStore {
     accessToken?: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
       adminGroupCandidateIds?: GlobalRoomActorId[];
     };
@@ -1760,6 +1779,14 @@ export class RuntimeStore {
     chatId: string;
     accessToken?: string;
     archivedBy?: string;
+  }): Promise<GlobalRoomEntry> {
+    const output = await this.client.trpc.message.globalArchive.mutate(input);
+    return output.channel;
+  }
+
+  async deleteGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalDelete.mutate(input);
     return output.channel;

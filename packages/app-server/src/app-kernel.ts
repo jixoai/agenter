@@ -691,10 +691,7 @@ export class AppKernel {
       title: DEFAULT_MESSAGE_CHAT_TITLE,
       owner: session.avatar,
       contextId: `ctx-${roomId}`,
-      participants: [
-        { id: `avatar:${session.avatar}`, label: session.avatar, role: "avatar" },
-        { id: "user", label: "User", role: "user" },
-      ],
+      participants: [],
       metadata: {
         builtIn: true,
         primaryRoom: true,
@@ -1287,7 +1284,6 @@ export class AppKernel {
     participants?: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
@@ -1345,6 +1341,17 @@ export class AppKernel {
       chatId: input.chatId,
       accessToken: input.accessToken,
       archivedBy: input.archivedBy,
+    });
+  }
+
+  deleteMessageChannel(input: { sessionId: string; chatId: string; accessToken: string }): MessageControlPlaneEntry {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      throw new Error("session runtime is not active");
+    }
+    return runtime.deleteMessageChannel({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
     });
   }
 
@@ -1410,7 +1417,6 @@ export class AppKernel {
     participants?: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
@@ -1584,6 +1590,20 @@ export class AppKernel {
       accessToken: access.accessToken,
       superadminActorId: input.superadminActorId,
       archivedBy: input.archivedBy ?? access.room.owner,
+    });
+  }
+
+  deleteGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): MessageControlPlaneEntry {
+    const access = this.resolveGlobalRoomAccess(input);
+    return this.messageControlPlane.deleteChannelAuthorized({
+      chatId: input.chatId,
+      accessToken: access.accessToken,
+      superadminActorId: input.superadminActorId,
     });
   }
 

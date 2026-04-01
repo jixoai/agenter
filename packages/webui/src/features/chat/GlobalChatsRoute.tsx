@@ -534,6 +534,13 @@ export const GlobalChatsRoute = ({ preferredRoomId }: { preferredRoomId?: string
         });
         await refreshRooms();
       }}
+      onDeleteChannel={async (channel) => {
+        await controller.deleteGlobalRoom({
+          chatId: channel.chatId,
+          accessToken: resolveSelectedRoomAdminToken(channel.accessToken),
+        });
+        await refreshRooms();
+      }}
       onSendMessage={({ channel, payload }) =>
         controller
           .sendGlobalRoomMessage({

@@ -26,9 +26,13 @@ export type MessageActorId = `auth:${string}` | `session:${string}` | `system:${
 export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
 
 export interface MessageParticipant {
+  /**
+   * Room participants only describe seat membership.
+   * Identity provenance stays in the actor id itself (`auth:` / `session:` / `system:`),
+   * while room permission stays in grants/admin state.
+   */
   id: string;
   label?: string;
-  role?: "avatar" | "user" | "system";
 }
 
 export interface MessageAdminWorkItem {

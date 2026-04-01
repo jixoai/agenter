@@ -76,8 +76,8 @@ export const createMockKernelHarness = async (
         chatMainDefaults: {
           title: "kzf",
           participants: [
-            { id: "avatar:relay-bot", label: "relay-bot", role: "avatar" },
-            { id: "user:kzf", label: "kzf", role: "user" },
+            { id: "session:relay-bot", label: "relay-bot" },
+            { id: "auth:kzf", label: "kzf" },
           ],
         },
       },

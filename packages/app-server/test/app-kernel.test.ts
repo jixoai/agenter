@@ -969,6 +969,16 @@ describe("Feature: app kernel event replay", () => {
     expect(archived.archivedBy).toBe("ops-admin");
     expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId)).toBeFalse();
 
+    const disposable = kernel.createGlobalRoom({
+      title: "Disposable room",
+    });
+    const deleted = kernel.deleteGlobalRoom({
+      chatId: disposable.chatId,
+      accessToken: disposable.accessToken,
+    });
+    expect(deleted.chatId).toBe(disposable.chatId);
+    expect(kernel.listGlobalRooms({ includeArchived: true }).some((item) => item.chatId === disposable.chatId)).toBeFalse();
+
     await kernel.stop();
   });
 

@@ -41,11 +41,9 @@ const normalizeParticipant = (value: unknown): QuickstartRoomParticipant | null 
   if (!id) {
     return null;
   }
-  const role = readString(record.role);
   return {
     id,
     label: readString(record.label),
-    role: role === "avatar" || role === "system" ? role : role === "user" ? "user" : undefined,
   };
 };
 
@@ -59,13 +57,11 @@ const sanitizeRoomConfig = (room: QuickstartRoomConfig): QuickstartRoomConfig =>
       .map((participant) => ({
         id: participant.id.trim(),
         label: participant.label?.trim(),
-        role: participant.role,
       }))
       .filter((participant) => participant.id.length > 0)
       .map((participant) => ({
         id: participant.id,
         label: participant.label && participant.label.length > 0 ? participant.label : undefined,
-        role: participant.role,
       })),
     metadata: readRecord(room.metadata) ? cloneRecord(room.metadata) : {},
     adminToken: room.adminToken.trim(),
@@ -234,7 +230,6 @@ export const applyQuickstartBootstrapConfigToSettings = (
     roomPayload.participants = room.participants.map((participant) => ({
       id: participant.id,
       label: participant.label,
-      role: participant.role,
     }));
   }
   if (Object.keys(room.metadata).length > 0) {

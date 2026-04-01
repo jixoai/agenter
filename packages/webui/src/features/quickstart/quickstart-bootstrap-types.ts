@@ -1,9 +1,6 @@
-export type QuickstartParticipantRole = "avatar" | "user" | "system";
-
 export interface QuickstartRoomParticipant {
   id: string;
   label?: string;
-  role?: QuickstartParticipantRole;
 }
 
 export interface QuickstartRoomConfig {

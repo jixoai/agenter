@@ -4,17 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
 import type { QuickstartRoomConfig } from "./quickstart-bootstrap-types";
-
-type ParticipantRole = "avatar" | "user" | "system";
 
 interface ParticipantDraft {
   key: string;
   id: string;
   label: string;
-  role: ParticipantRole;
 }
 
 interface QuickstartRoomConfigDialogProps {
@@ -55,37 +51,15 @@ const createToken = (): string => {
   return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("");
 };
 
-const toRole = (value: string): ParticipantRole => {
-  if (value === "avatar" || value === "system") {
-    return value;
-  }
-  return "user";
-};
-
-const buildParticipantDrafts = (value: QuickstartRoomConfig, ownerHint: string): ParticipantDraft[] => {
+const buildParticipantDrafts = (value: QuickstartRoomConfig, _ownerHint: string): ParticipantDraft[] => {
   if (value.participants.length > 0) {
     return value.participants.map((participant, index) => ({
       key: `${participant.id}-${index}`,
       id: participant.id,
       label: participant.label ?? "",
-      role: participant.role ?? "user",
     }));
   }
-  const owner = ownerHint.trim() || "agenter";
-  return [
-    {
-      key: `owner-${owner}`,
-      id: `avatar:${owner}`,
-      label: owner,
-      role: "avatar",
-    },
-    {
-      key: "user-default",
-      id: "user",
-      label: "User",
-      role: "user",
-    },
-  ];
+  return [];
 };
 
 export const QuickstartRoomConfigDialog = ({
@@ -120,13 +94,11 @@ export const QuickstartRoomConfigDialog = ({
         .map((participant) => ({
           id: participant.id.trim(),
           label: participant.label.trim(),
-          role: participant.role,
         }))
         .filter((participant) => participant.id.length > 0)
         .map((participant) => ({
           id: participant.id,
           label: participant.label.length > 0 ? participant.label : undefined,
-          role: participant.role,
         })),
     [participants],
   );
@@ -135,10 +107,6 @@ export const QuickstartRoomConfigDialog = ({
     const normalizedTitle = title.trim();
     if (normalizedTitle.length === 0) {
       setError("Title is required.");
-      return;
-    }
-    if (normalizedParticipants.length === 0) {
-      setError("At least one participant is required.");
       return;
     }
     const normalizedAdminToken = adminToken.trim();
@@ -228,7 +196,6 @@ export const QuickstartRoomConfigDialog = ({
                     key: `new-${idRef.current}`,
                     id: "",
                     label: "",
-                    role: "user",
                   },
                 ]);
               }}
@@ -241,7 +208,7 @@ export const QuickstartRoomConfigDialog = ({
             {participants.map((participant, index) => (
               <div
                 key={participant.key}
-                className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem_auto]"
+                className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
               >
                 <div className="space-y-1">
                   <label className="text-[11px] font-medium text-slate-600" htmlFor={`quickstart-room-label-${participant.key}`}>
@@ -272,25 +239,6 @@ export const QuickstartRoomConfigDialog = ({
                       );
                     }}
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600" htmlFor={`quickstart-room-role-${participant.key}`}>
-                    Role
-                  </label>
-                  <Select
-                    id={`quickstart-room-role-${participant.key}`}
-                    value={participant.role}
-                    onChange={(event) => {
-                      const nextRole = toRole(event.currentTarget.value);
-                      setParticipants((current) =>
-                        current.map((entry) => (entry.key === participant.key ? { ...entry, role: nextRole } : entry)),
-                      );
-                    }}
-                  >
-                    <option value="avatar">avatar</option>
-                    <option value="user">user</option>
-                    <option value="system">system</option>
-                  </Select>
                 </div>
                 <div className="flex items-end justify-end">
                   <Button

@@ -14,9 +14,8 @@ const createChannel = (input: { accessRole: "admin" | "member" | "readonly"; tit
     {
       id: "auth:wallet_evm:0x00000000000000000000000000000000000000aa",
       label: "Nova Ops",
-      role: "user",
     },
-    { id: "session:observer", label: "Observer avatar", role: "avatar" },
+    { id: "session:observer", label: "Observer avatar" },
   ],
   metadata: { builtIn: false, topic: "lunch" },
   createdAt: 1,
@@ -63,10 +62,12 @@ const DisclosureStory = ({
   accessRole,
   onFocusChannel,
   onArchiveChannel,
+  onDeleteChannel,
 }: {
   accessRole: "admin" | "member" | "readonly";
   onFocusChannel?: () => Promise<void> | void;
   onArchiveChannel?: () => Promise<void> | void;
+  onDeleteChannel?: () => Promise<void> | void;
 }) => {
   const [channel, setChannel] = useState(() => createChannel({ accessRole }));
   const [, setGrantVersion] = useState(0);
@@ -93,6 +94,13 @@ const DisclosureStory = ({
           accessRole === "admin" && onArchiveChannel
             ? async () => {
                 await onArchiveChannel();
+              }
+            : undefined
+        }
+        onDeleteChannel={
+          accessRole === "admin" && onDeleteChannel
+            ? async () => {
+                await onDeleteChannel();
               }
             : undefined
         }
@@ -186,6 +194,7 @@ export const AdminMetadataManagement: Story = {
     const titleInput = await portal.findByDisplayValue("Lunch relay");
     await userEvent.clear(titleInput);
     await userEvent.type(titleInput, "Lunch handoff");
+    await expect(portal.queryByLabelText(/Participant role/i)).toBeNull();
     await userEvent.selectOptions(portal.getByLabelText("Participant actor 2"), "auth:wallet_evm:0x00000000000000000000000000000000000000aa");
     await userEvent.click(portal.getByRole("button", { name: "Save channel" }));
     await expect(dialog).toHaveTextContent("Lunch handoff");
@@ -207,6 +216,7 @@ export const AdminMetadataManagement: Story = {
 
 const adminLifecycleFocusSpy = fn(async () => undefined);
 const adminLifecycleArchiveSpy = fn(async () => undefined);
+const adminLifecycleDeleteSpy = fn(async () => undefined);
 
 export const AdminLifecycleActions: Story = {
   render: () => (
@@ -214,6 +224,7 @@ export const AdminLifecycleActions: Story = {
       accessRole="admin"
       onFocusChannel={adminLifecycleFocusSpy}
       onArchiveChannel={adminLifecycleArchiveSpy}
+      onDeleteChannel={adminLifecycleDeleteSpy}
     />
   ),
   play: async ({ canvasElement }) => {
@@ -221,15 +232,18 @@ export const AdminLifecycleActions: Story = {
     const portal = within(document.body);
     adminLifecycleFocusSpy.mockClear();
     adminLifecycleArchiveSpy.mockClear();
+    adminLifecycleDeleteSpy.mockClear();
     await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
     await portal.findByRole("dialog");
 
     await userEvent.click(portal.getByRole("button", { name: /focus channel/i }));
     await userEvent.click(portal.getByRole("button", { name: "Archive channel" }));
+    await userEvent.click(portal.getByRole("button", { name: "Dissolve room" }));
 
     await waitFor(() => {
       expect(adminLifecycleFocusSpy).toHaveBeenCalledTimes(1);
       expect(adminLifecycleArchiveSpy).toHaveBeenCalledTimes(1);
+      expect(adminLifecycleDeleteSpy).toHaveBeenCalledTimes(1);
     });
   },
 };

@@ -4,7 +4,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ProfileImage } from "../../components/ui/profile-image";
 import { Select } from "../../components/ui/select";
-import type { RoomActorOption, RoomParticipantDraft, RoomParticipantRole } from "./room-participants";
+import type { RoomActorOption, RoomParticipantDraft } from "./room-participants";
 
 interface RoomParticipantEditorProps {
   participants: RoomParticipantDraft[];
@@ -12,7 +12,6 @@ interface RoomParticipantEditorProps {
   canEdit: boolean;
   fieldIdPrefix: string;
   onActorChange: (key: string, actorId: string) => void;
-  onRoleChange: (key: string, role: RoomParticipantRole) => void;
   onRemove: (key: string) => void;
   onAdd?: () => void;
 }
@@ -23,7 +22,6 @@ export const RoomParticipantEditor = ({
   canEdit,
   fieldIdPrefix,
   onActorChange,
-  onRoleChange,
   onRemove,
   onAdd,
 }: RoomParticipantEditorProps) => {
@@ -44,7 +42,7 @@ export const RoomParticipantEditor = ({
         return (
           <div
             key={participant.key}
-            className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_7rem_auto]"
+            className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_auto]"
           >
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-slate-600" htmlFor={`${fieldIdPrefix}-actor-${participant.key}`}>
@@ -88,25 +86,8 @@ export const RoomParticipantEditor = ({
                   <p className="break-all text-slate-500">{participant.id}</p>
                 </div>
               ) : (
-                <p className="text-xs text-slate-500">Select an auth actor or a session actor.</p>
+                <p className="text-xs text-slate-500">Select the actor seat that should belong to this room.</p>
               )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-600" htmlFor={`${fieldIdPrefix}-role-${participant.key}`}>
-                Role
-              </label>
-              <Select
-                id={`${fieldIdPrefix}-role-${participant.key}`}
-                aria-label={`Participant role ${index + 1}`}
-                disabled={!canEdit}
-                value={participant.role}
-                onChange={(event) => onRoleChange(participant.key, event.currentTarget.value as RoomParticipantRole)}
-              >
-                <option value="avatar">avatar</option>
-                <option value="user">user</option>
-                <option value="system">system</option>
-              </Select>
             </div>
 
             {canEdit ? (

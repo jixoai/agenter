@@ -657,6 +657,34 @@ export class MessageControlPlane {
     );
   }
 
+  deleteChannelAuthorized(input: {
+    chatId: string;
+    accessToken?: string;
+    superadminActorId?: MessageActorId;
+  }): MessageControlPlaneEntry {
+    const grant = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const channel = this.db.deleteChannel(
+      input.chatId,
+      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+    );
+    for (const focused of this.focusedChatIdsByActor.values()) {
+      focused.delete(input.chatId);
+    }
+    this.bumpVersion();
+    return this.withProjection(
+      {
+        ...channel,
+        metadata: this.withAdminState(channel.chatId, channel.metadata),
+      },
+      this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken: grant.accessToken ?? input.accessToken ?? "",
+        participantId: grant.participantId as MessageActorId | undefined,
+      }),
+    );
+  }
+
   listChannelGrantsAuthorized(input: MessageAuthorizedReadInput & { superadminActorId?: MessageActorId }): MessageChannelGrantRecord[] {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
     return this.db.listActiveGrants(input.chatId).filter((grant) => !this.isTrustedBootstrapGrant(grant));

@@ -31,6 +31,32 @@ const fractionFromSeed = (seed: number, offset: number): number => {
 
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
+const normalizeHue = (value: number): number => ((value % 360) + 360) % 360;
+
+const channelToHex = (value: number): string => Math.round(Math.max(0, Math.min(255, value))).toString(16).padStart(2, "0");
+
+const hslToHex = (hue: number, saturation: number, lightness: number): string => {
+  const h = normalizeHue(hue) / 60;
+  const s = Math.max(0, Math.min(100, saturation)) / 100;
+  const l = Math.max(0, Math.min(100, lightness)) / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const x = chroma * (1 - Math.abs((h % 2) - 1));
+  const [r1, g1, b1] =
+    h < 1
+      ? [chroma, x, 0]
+      : h < 2
+        ? [x, chroma, 0]
+        : h < 3
+          ? [0, chroma, x]
+          : h < 4
+            ? [0, x, chroma]
+            : h < 5
+              ? [x, 0, chroma]
+              : [chroma, 0, x];
+  const match = l - chroma / 2;
+  return `#${channelToHex((r1 + match) * 255)}${channelToHex((g1 + match) * 255)}${channelToHex((b1 + match) * 255)}`;
+};
+
 const labelFromValue = (value: string, fallback: string): string => {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : fallback;
@@ -38,12 +64,14 @@ const labelFromValue = (value: string, fallback: string): string => {
 
 const buildRadialStops = (seed: number, accentHue: number) => {
   const glowHue = (accentHue + 30 + Math.round(fractionFromSeed(seed, 4) * 80)) % 360;
-  const lightness = 0.78 + fractionFromSeed(seed, 5) * 0.12;
-  const chroma = 0.1 + fractionFromSeed(seed, 6) * 0.08;
+  const accentLightness = 76 + fractionFromSeed(seed, 5) * 10;
+  const accentSaturation = 60 + fractionFromSeed(seed, 6) * 18;
+  const depthLightness = 34 + fractionFromSeed(seed, 7) * 14;
+  const depthSaturation = 40 + fractionFromSeed(seed, 8) * 16;
   return {
-    accent: `oklch(${lightness.toFixed(3)} ${chroma.toFixed(3)} ${accentHue})`,
-    glow: `oklch(${(lightness - 0.08).toFixed(3)} ${(chroma + 0.02).toFixed(3)} ${glowHue})`,
-    depth: `oklch(${(0.34 + fractionFromSeed(seed, 7) * 0.14).toFixed(3)} ${(0.08 + fractionFromSeed(seed, 8) * 0.06).toFixed(3)} ${accentHue})`,
+    accent: hslToHex(accentHue, accentSaturation, accentLightness),
+    glow: hslToHex(glowHue, accentSaturation + 10, Math.max(54, accentLightness - 10)),
+    depth: hslToHex(accentHue, depthSaturation, depthLightness),
   };
 };
 

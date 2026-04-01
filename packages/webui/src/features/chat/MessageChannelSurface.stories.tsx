@@ -39,8 +39,8 @@ const createChannel = (input: {
   title: input.title,
   owner: "jane",
   participants: [
-    { id: "auth:owner", label: "Owner", role: "user" },
-    { id: "session:reviewer", label: "Reviewer avatar", role: "avatar" },
+    { id: "auth:owner", label: "Owner" },
+    { id: "session:reviewer", label: "Reviewer avatar" },
   ],
   createdAt: 1,
   updatedAt: 1,

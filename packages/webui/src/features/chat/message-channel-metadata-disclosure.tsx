@@ -11,7 +11,6 @@ import { Textarea } from "../../components/ui/textarea";
 import { RoomParticipantEditor } from "./RoomParticipantEditor";
 import {
   normalizeRoomParticipants,
-  resolveRoomParticipantRole,
   toRoomParticipantDrafts,
   type RoomActorOption,
   type RoomParticipantDraft,
@@ -25,6 +24,7 @@ interface MessageChannelMetadataDisclosureProps {
   channel: MessageChannelEntry;
   onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
+  onDeleteChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onUpdateChannel?: (input: {
     channel: MessageChannelEntry;
     patch: {
@@ -100,6 +100,7 @@ export const MessageChannelMetadataDisclosure = ({
   channel,
   onFocusChannel,
   onArchiveChannel,
+  onDeleteChannel,
   onUpdateChannel,
   onListChannelGrants,
   onIssueChannelGrant,
@@ -109,7 +110,7 @@ export const MessageChannelMetadataDisclosure = ({
   const [open, setOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(channel.title);
   const [participantDrafts, setParticipantDrafts] = useState<RoomParticipantDraft[]>(() =>
-    toRoomParticipantDrafts(channel.participants, actorOptions, channel.updatedAt),
+    toRoomParticipantDrafts(channel.participants, channel.updatedAt),
   );
   const [metadataDraft, setMetadataDraft] = useState(() => toMetadataDraft(channel.metadata));
   const [formError, setFormError] = useState<string | null>(null);
@@ -126,6 +127,7 @@ export const MessageChannelMetadataDisclosure = ({
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [focusing, setFocusing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const actorMeta = useMemo(() => new Map(actorOptions.map((option) => [option.actorId, option])), [actorOptions]);
 
   const isAdmin = channel.accessRole === "admin";
@@ -153,14 +155,15 @@ export const MessageChannelMetadataDisclosure = ({
 
   useEffect(() => {
     setDraftTitle(channel.title);
-    setParticipantDrafts(toRoomParticipantDrafts(channel.participants, actorOptions, channel.updatedAt));
+    setParticipantDrafts(toRoomParticipantDrafts(channel.participants, channel.updatedAt));
     setMetadataDraft(toMetadataDraft(channel.metadata));
     setFormError(null);
     setFocusing(false);
     setArchiving(false);
+    setDeleting(false);
     setIssuedGrant(null);
     setCopyFeedback(null);
-  }, [actorOptions, channel]);
+  }, [channel]);
 
   useEffect(() => {
     if (!open) {
@@ -177,6 +180,7 @@ export const MessageChannelMetadataDisclosure = ({
     channel.participantId !== TRUSTED_BOOTSTRAP_ACTOR_ID &&
     Boolean(onFocusChannel);
   const canArchiveChannel = isAdmin && Boolean(onArchiveChannel) && !isBuiltIn;
+  const canDeleteChannel = isAdmin && Boolean(onDeleteChannel) && !isBuiltIn;
 
   const normalizedParticipants = useMemo(
     () => normalizeRoomParticipants(participantDrafts, actorOptions),
@@ -206,14 +210,14 @@ export const MessageChannelMetadataDisclosure = ({
         },
       });
       setDraftTitle(updated.title);
-      setParticipantDrafts(toRoomParticipantDrafts(updated.participants, actorOptions, updated.updatedAt));
+      setParticipantDrafts(toRoomParticipantDrafts(updated.participants, updated.updatedAt));
       setMetadataDraft(toMetadataDraft(updated.metadata));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
-  }, [actorOptions, canEditChannel, channel, draftTitle, metadataDraft, normalizedParticipants, onUpdateChannel]);
+  }, [canEditChannel, channel, draftTitle, metadataDraft, normalizedParticipants, onUpdateChannel]);
 
   const handleIssueGrant = useCallback(async () => {
     if (!canManageGrants || !onIssueChannelGrant) {
@@ -297,6 +301,22 @@ export const MessageChannelMetadataDisclosure = ({
     }
   }, [canArchiveChannel, channel, onArchiveChannel]);
 
+  const handleDeleteChannel = useCallback(async () => {
+    if (!canDeleteChannel || !onDeleteChannel) {
+      return;
+    }
+    setDeleting(true);
+    setFormError(null);
+    try {
+      await onDeleteChannel(channel);
+      setOpen(false);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDeleting(false);
+    }
+  }, [canDeleteChannel, channel, onDeleteChannel]);
+
   return (
     <SurfaceSignalDisclosure
       icon={Info}
@@ -348,12 +368,25 @@ export const MessageChannelMetadataDisclosure = ({
                   >
                     Archive channel
                   </Button>
+                  {onDeleteChannel ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={!canDeleteChannel || deleting}
+                      onClick={() => void handleDeleteChannel()}
+                    >
+                      Dissolve room
+                    </Button>
+                  ) : null}
                 </div>
-                {!canArchiveChannel ? (
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {isBuiltIn ? "Built-in room channel cannot be archived." : "Archive requires admin access."}
-                  </p>
-                ) : null}
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {isBuiltIn
+                    ? "Built-in room channel cannot be archived or dissolved."
+                    : onDeleteChannel && canDeleteChannel
+                      ? "Dissolve removes the room record, grants, read state, and transcript."
+                      : "Archive requires admin access."}
+                </p>
               </div>
             ) : null}
           </div>
@@ -369,16 +402,7 @@ export const MessageChannelMetadataDisclosure = ({
             canEdit={canEditChannel}
             fieldIdPrefix="message-channel-participant"
             onActorChange={(key, actorId) => {
-              setParticipantDrafts((current) =>
-                current.map((entry) =>
-                  entry.key === key
-                    ? { ...entry, id: actorId, role: resolveRoomParticipantRole(actorOptions, actorId, entry.role) }
-                    : entry,
-                ),
-              );
-            }}
-            onRoleChange={(key, role) => {
-              setParticipantDrafts((current) => current.map((entry) => (entry.key === key ? { ...entry, role } : entry)));
+              setParticipantDrafts((current) => current.map((entry) => (entry.key === key ? { ...entry, id: actorId } : entry)));
             }}
             onRemove={(key) => {
               setParticipantDrafts((current) => current.filter((entry) => entry.key !== key));
@@ -388,7 +412,7 @@ export const MessageChannelMetadataDisclosure = ({
                 ? () => {
                     setParticipantDrafts((current) => [
                       ...current,
-                      { key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id: "", role: "user" },
+                      { key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id: "" },
                     ]);
                   }
                 : undefined

@@ -12,10 +12,10 @@ interface TestHandle {
 const handles: TestHandle[] = [];
 
 const EXPECTED_PROFILE_FALLBACK_SVG =
-  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><defs><radialGradient id="bg" cx="27%" cy="46%" r="76%"><stop offset="0%" stop-color="oklch(0.824 0.107 70)" /><stop offset="100%" stop-color="oklch(0.476 0.123 70)" /></radialGradient><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="86" /><feComponentTransfer><feFuncA type="table" tableValues="0 0.12" /></feComponentTransfer></filter></defs><rect width="96" height="96" rx="48" fill="url(#bg)" /><circle cx="48" cy="34" r="17" fill="white" fill-opacity="0.18" /><path d="M20 76c2-14 13-24 28-24s26 10 28 24" stroke="white" stroke-opacity="0.24" stroke-width="10" stroke-linecap="round" /><rect width="96" height="96" rx="48" filter="url(#grain)" opacity="0.28" /><text x="48" y="50" text-anchor="middle" dominant-baseline="middle" font-family="ui-sans-serif, 'IBM Plex Sans', sans-serif" font-size="34" font-weight="700" fill="white">D</text></svg>`;
+  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><defs><radialGradient id="bg" cx="27%" cy="46%" r="76%"><stop offset="0%" stop-color="#e0ebab" /><stop offset="100%" stop-color="#a3b83b" /></radialGradient><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="86" /><feComponentTransfer><feFuncA type="table" tableValues="0 0.12" /></feComponentTransfer></filter></defs><rect width="96" height="96" rx="48" fill="url(#bg)" /><circle cx="48" cy="34" r="17" fill="white" fill-opacity="0.18" /><path d="M20 76c2-14 13-24 28-24s26 10 28 24" stroke="white" stroke-opacity="0.24" stroke-width="10" stroke-linecap="round" /><rect width="96" height="96" rx="48" filter="url(#grain)" opacity="0.28" /><text x="48" y="50" text-anchor="middle" dominant-baseline="middle" font-family="ui-sans-serif, 'IBM Plex Sans', sans-serif" font-size="34" font-weight="700" fill="white">D</text></svg>`;
 
 const EXPECTED_SESSION_FALLBACK_SVG =
-  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><defs><radialGradient id="bg" cx="39%" cy="58%" r="58%"><stop offset="0%" stop-color="oklch(0.871 0.141 110)" /><stop offset="48%" stop-color="oklch(0.791 0.161 187)" /><stop offset="100%" stop-color="oklch(0.352 0.115 110)" /></radialGradient><radialGradient id="fg" cx="50%" cy="42%" r="58%"><stop offset="0%" stop-color="oklch(0.891 0.172 117)" stop-opacity="0.98" /><stop offset="100%" stop-color="oklch(0.358 0.100 117)" stop-opacity="0.9" /></radialGradient><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" seed="938" /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="table" tableValues="0 0.18" /></feComponentTransfer></filter></defs><rect width="96" height="96" rx="26" fill="url(#bg)" /><circle cx="79%" cy="32%" r="19" fill="oklch(0.811 0.192 188)" fill-opacity="0.42" /><rect x="0" y="0" width="96" height="96" rx="26" filter="url(#noise)" opacity="0.34" /><path d="M18 70c0-12 10-22 22-22h16c12 0 22 10 22 22v8H18z" fill="url(#fg)" fill-opacity="0.88" /><circle cx="48" cy="35" r="18" fill="url(#fg)" /><text x="48" y="55" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="42" font-weight="700" fill="white">42</text></svg>`;
+  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><defs><radialGradient id="bg" cx="39%" cy="58%" r="58%"><stop offset="0%" stop-color="#c2f2b8" /><stop offset="48%" stop-color="#86e5f1" /><stop offset="100%" stop-color="#3c862d" /></radialGradient><radialGradient id="fg" cx="50%" cy="42%" r="58%"><stop offset="0%" stop-color="#c0f6bd" stop-opacity="0.98" /><stop offset="100%" stop-color="#368532" stop-opacity="0.9" /></radialGradient><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" seed="938" /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="table" tableValues="0 0.18" /></feComponentTransfer></filter></defs><rect width="96" height="96" rx="26" fill="url(#bg)" /><circle cx="79%" cy="32%" r="19" fill="#89e8f6" fill-opacity="0.42" /><rect x="0" y="0" width="96" height="96" rx="26" filter="url(#noise)" opacity="0.34" /><path d="M18 70c0-12 10-22 22-22h16c12 0 22 10 22 22v8H18z" fill="url(#fg)" fill-opacity="0.88" /><circle cx="48" cy="35" r="18" fill="url(#fg)" /><text x="48" y="55" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="42" font-weight="700" fill="white">42</text></svg>`;
 
 const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
 
@@ -253,6 +253,7 @@ describe("Feature: profile-service control plane", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/svg+xml");
     const svg = await response.text();
+    expect(svg.includes("oklch(")).toBeFalse();
     expect(svg).toBe(EXPECTED_PROFILE_FALLBACK_SVG);
   });
 
@@ -495,6 +496,7 @@ describe("Feature: profile-service control plane", () => {
     expect(iconResponse.status).toBe(200);
     expect(iconResponse.headers.get("content-type")).toBe("image/svg+xml");
     const svg = await iconResponse.text();
+    expect(svg.includes("oklch(")).toBeFalse();
     expect(svg).toBe(EXPECTED_SESSION_FALLBACK_SVG);
   });
 });

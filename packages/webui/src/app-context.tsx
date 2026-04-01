@@ -94,7 +94,7 @@ export interface AppController {
   createMessageChannel: (input: {
     sessionId: string;
     title?: string;
-    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    participants?: Array<{ id: string; label?: string }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -116,7 +116,7 @@ export interface AppController {
     accessToken: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
     };
   }) => Promise<MessageChannelEntry>;
@@ -140,11 +140,16 @@ export interface AppController {
     accessToken: string;
     archivedBy?: string;
   }) => Promise<MessageChannelEntry>;
+  deleteMessageChannel: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }) => Promise<MessageChannelEntry>;
   listGlobalRooms: (input?: { includeArchived?: boolean }) => Promise<GlobalRoomEntry[]>;
   createGlobalRoom: (input: {
     chatId?: string;
     title?: string;
-    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    participants?: Array<{ id: string; label?: string }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -190,7 +195,7 @@ export interface AppController {
     accessToken?: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
       adminGroupCandidateIds?: GlobalRoomActorId[];
     };
@@ -216,6 +221,10 @@ export interface AppController {
     chatId: string;
     accessToken?: string;
     archivedBy?: string;
+  }) => Promise<GlobalRoomEntry>;
+  deleteGlobalRoom: (input: {
+    chatId: string;
+    accessToken?: string;
   }) => Promise<GlobalRoomEntry>;
   listTerminals: (sessionId: string) => Promise<
     Array<{

@@ -390,7 +390,6 @@ const createMessageToolProvider = (messageGateway?: MessageGatewayLike): AgentTo
           z.object({
             id: z.string(),
             label: z.string().optional(),
-            role: z.enum(["avatar", "user", "system"]).optional(),
           }),
         ),
         metadata: z.record(z.string(), z.unknown()).optional(),
@@ -588,8 +587,8 @@ const createMessageGateway = () => {
       owner: "agenter",
       contextId: "ctx-chat-main",
       participants: [
-        { id: "avatar:agenter", label: "agenter", role: "avatar" as const },
-        { id: "user", label: "User", role: "user" as const },
+        { id: "session:agenter", label: "agenter" },
+        { id: "auth:user", label: "User" },
       ],
       metadata: {
         builtIn: true,
@@ -603,8 +602,8 @@ const createMessageGateway = () => {
       owner: "agenter",
       contextId: "ctx-room-qa",
       participants: [
-        { id: "avatar:agenter", label: "agenter", role: "avatar" as const },
-        { id: "user:kzf", label: "kzf", role: "user" as const },
+        { id: "session:agenter", label: "agenter" },
+        { id: "auth:kzf", label: "kzf" },
       ],
       metadata: {
         topic: "dogfood",

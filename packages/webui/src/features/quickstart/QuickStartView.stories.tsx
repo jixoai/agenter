@@ -63,8 +63,8 @@ const bootstrapConfig: QuickstartBootstrapConfig = {
   room: {
     title: "Main room",
     participants: [
-      { id: "avatar:jane", label: "jane", role: "avatar" },
-      { id: "user:kzf", label: "kzf", role: "user" },
+      { id: "session:jane", label: "jane" },
+      { id: "auth:kzf", label: "kzf" },
     ],
     metadata: {
       builtIn: true,

@@ -197,7 +197,7 @@ const createMockClient = (input: {
       kind: "room";
       title: string;
       owner: string;
-      participants: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants: Array<{ id: string; label?: string }>;
       createdAt: number;
       updatedAt: number;
       focused: boolean;
@@ -385,7 +385,7 @@ const createMockClient = (input: {
     accessToken: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
     };
   }) => Promise<{ channel: unknown }>;
@@ -408,18 +408,23 @@ const createMockClient = (input: {
     accessToken: string;
     grantId: string;
   }) => Promise<{ ok: boolean }>;
-  messageDeleteChannelMutate?: (input: {
+  messageArchiveChannelMutate?: (input: {
     sessionId: string;
     chatId: string;
     accessToken: string;
     archivedBy?: string;
+  }) => Promise<{ channel: unknown }>;
+  messageDeleteChannelMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
   }) => Promise<{ channel: unknown }>;
   messageGlobalListQuery?: (input: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
   messageGlobalCreateMutate?: (input: {
     chatId?: string;
     kind: "room";
     title?: string;
-    participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+    participants?: Array<{ id: string; label?: string }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -457,7 +462,7 @@ const createMockClient = (input: {
     accessToken?: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
       adminGroupCandidateIds?: string[];
     };
@@ -479,10 +484,14 @@ const createMockClient = (input: {
     accessToken?: string;
     grantId: string;
   }) => Promise<{ ok: boolean }>;
-  messageGlobalDeleteMutate?: (input: {
+  messageGlobalArchiveMutate?: (input: {
     chatId: string;
     accessToken?: string;
     archivedBy?: string;
+  }) => Promise<{ channel: unknown }>;
+  messageGlobalDeleteMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
   }) => Promise<{ channel: unknown }>;
   terminalListQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
   terminalCreateMutate?: (input: {
@@ -751,7 +760,7 @@ const createMockClient = (input: {
             accessToken: string;
             patch: {
               title?: string;
-              participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+              participants?: Array<{ id: string; label?: string }>;
               metadata?: Record<string, unknown>;
             };
           }) =>
@@ -778,8 +787,12 @@ const createMockClient = (input: {
           mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; grantId: string }) =>
             input.messageRevokeChannelGrantMutate ? await input.messageRevokeChannelGrantMutate(payload) : { ok: true },
         },
-        deleteChannel: {
+        archiveChannel: {
           mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; archivedBy?: string }) =>
+            input.messageArchiveChannelMutate ? await input.messageArchiveChannelMutate(payload) : { channel: null },
+        },
+        deleteChannel: {
+          mutate: async (payload: { sessionId: string; chatId: string; accessToken: string }) =>
             input.messageDeleteChannelMutate ? await input.messageDeleteChannelMutate(payload) : { channel: null },
         },
         globalList: {
@@ -791,7 +804,7 @@ const createMockClient = (input: {
             chatId?: string;
             kind: "room";
             title?: string;
-            participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+            participants?: Array<{ id: string; label?: string }>;
             metadata?: Record<string, unknown>;
             adminToken?: string;
             focus?: boolean;
@@ -850,7 +863,7 @@ const createMockClient = (input: {
             accessToken?: string;
             patch: {
               title?: string;
-              participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+              participants?: Array<{ id: string; label?: string }>;
               metadata?: Record<string, unknown>;
               adminGroupCandidateIds?: string[];
             };
@@ -877,8 +890,12 @@ const createMockClient = (input: {
           mutate: async (payload: { chatId: string; accessToken?: string; grantId: string }) =>
             input.messageGlobalRevokeGrantMutate ? await input.messageGlobalRevokeGrantMutate(payload) : { ok: true },
         },
-        globalDelete: {
+        globalArchive: {
           mutate: async (payload: { chatId: string; accessToken?: string; archivedBy?: string }) =>
+            input.messageGlobalArchiveMutate ? await input.messageGlobalArchiveMutate(payload) : { channel: null },
+        },
+        globalDelete: {
+          mutate: async (payload: { chatId: string; accessToken?: string }) =>
             input.messageGlobalDeleteMutate ? await input.messageGlobalDeleteMutate(payload) : { channel: null },
         },
       },
@@ -1613,8 +1630,8 @@ describe("Feature: runtime store synchronization", () => {
               title: "Main room",
               owner: "tester-bot",
               participants: [
-                { id: "avatar:tester-bot", label: "tester-bot", role: "avatar" },
-                { id: "user", label: "User", role: "user" },
+                { id: "session:tester-bot", label: "tester-bot" },
+                { id: "auth:user", label: "User" },
               ],
               createdAt: 1,
               updatedAt: 2,
@@ -3183,8 +3200,8 @@ describe("Feature: runtime store synchronization", () => {
       title: "Main room",
       owner: "jane",
       participants: [
-        { id: "avatar:jane", label: "jane", role: "avatar" as const },
-        { id: "user:kzf", label: "kzf", role: "user" as const },
+        { id: "session:jane", label: "jane" },
+        { id: "auth:kzf", label: "kzf" },
       ],
       createdAt: 1,
       updatedAt: 1,
@@ -3237,7 +3254,7 @@ describe("Feature: runtime store synchronization", () => {
         accessToken: string;
         patch: {
           title?: string;
-          participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+          participants?: Array<{ id: string; label?: string }>;
         };
       };
       listGrants?: { sessionId: string; chatId: string; accessToken: string };
@@ -3257,8 +3274,8 @@ describe("Feature: runtime store synchronization", () => {
       title: "Main room",
       owner: "jane",
       participants: [
-        { id: "avatar:jane", label: "jane", role: "avatar" as const },
-        { id: "user:kzf", label: "kzf", role: "user" as const },
+        { id: "session:jane", label: "jane" },
+        { id: "auth:kzf", label: "kzf" },
       ],
       createdAt: 1,
       updatedAt: 1,
@@ -3394,7 +3411,7 @@ describe("Feature: runtime store synchronization", () => {
         chatId?: string;
         kind: "room";
         title?: string;
-        participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+        participants?: Array<{ id: string; label?: string }>;
         metadata?: Record<string, unknown>;
         adminToken?: string;
         focus?: boolean;
@@ -3419,7 +3436,7 @@ describe("Feature: runtime store synchronization", () => {
         accessToken?: string;
         patch: {
           title?: string;
-          participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+          participants?: Array<{ id: string; label?: string }>;
           metadata?: Record<string, unknown>;
           adminGroupCandidateIds?: string[];
         };
@@ -3435,6 +3452,7 @@ describe("Feature: runtime store synchronization", () => {
       };
       revoke?: { chatId: string; accessToken?: string; grantId: string };
       archive?: { chatId: string; accessToken?: string; archivedBy?: string };
+      delete?: { chatId: string; accessToken?: string };
     } = {};
     const room = {
       chatId: "room-ops",
@@ -3442,8 +3460,8 @@ describe("Feature: runtime store synchronization", () => {
       title: "Ops room",
       owner: "ops-bot",
       participants: [
-        { id: "avatar:ops-bot", label: "ops-bot", role: "avatar" as const },
-        { id: "user:kzf", label: "kzf", role: "user" as const },
+        { id: "session:ops-bot", label: "ops-bot" },
+        { id: "auth:kzf", label: "kzf" },
       ],
       createdAt: 1,
       updatedAt: 1,
@@ -3559,9 +3577,13 @@ describe("Feature: runtime store synchronization", () => {
           requests.revoke = input;
           return { ok: true };
         },
-        messageGlobalDeleteMutate: async (input) => {
+        messageGlobalArchiveMutate: async (input) => {
           requests.archive = input;
           return { channel: { ...room, archivedAt: 9, archivedBy: input.archivedBy ?? "ops-bot" } };
+        },
+        messageGlobalDeleteMutate: async (input) => {
+          requests.delete = input;
+          return { channel: room };
         },
       }),
     );
@@ -3657,6 +3679,10 @@ describe("Feature: runtime store synchronization", () => {
       accessToken: room.accessToken,
       archivedBy: "ops-bot",
     });
+    const deleted = await store.deleteGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
 
     expect(requests.list).toEqual({});
     expect(requests.create?.title).toBe("Ops room");
@@ -3686,11 +3712,16 @@ describe("Feature: runtime store synchronization", () => {
       accessToken: room.accessToken,
       archivedBy: "ops-bot",
     });
+    expect(requests.delete).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
     expect(updated.title).toBe("Ops renamed");
     expect(grants[0]?.participantId).toBe("auth:observer");
     expect(issued.accessToken).toBe("msgtok_member");
     expect(revoked).toEqual({ ok: true });
     expect(archived.archivedBy).toBe("ops-bot");
+    expect(deleted.chatId).toBe(room.chatId);
   });
 
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
@@ -3703,8 +3734,8 @@ describe("Feature: runtime store synchronization", () => {
       title: "Ops room",
       owner: "ops-bot",
       participants: [
-        { id: "avatar:ops-bot", label: "ops-bot", role: "avatar" as const },
-        { id: "user:kzf", label: "kzf", role: "user" as const },
+        { id: "session:ops-bot", label: "ops-bot" },
+        { id: "auth:kzf", label: "kzf" },
       ],
       createdAt: 1,
       updatedAt: 1,

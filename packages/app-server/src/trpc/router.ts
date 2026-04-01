@@ -264,7 +264,6 @@ export const appRouter = t.router({
               z.object({
                 id: z.string().trim().min(1),
                 label: z.string().trim().min(1).optional(),
-                role: z.enum(["avatar", "user", "system"]).optional(),
               }),
             )
             .optional(),
@@ -379,7 +378,6 @@ export const appRouter = t.router({
                 z.object({
                   id: z.string().min(1),
                   label: z.string().trim().min(1).optional(),
-                  role: z.enum(["avatar", "user", "system"]).optional(),
                 }),
               )
               .optional(),
@@ -390,7 +388,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.updateMessageChannel(input),
       })),
-    deleteChannel: t.procedure
+    archiveChannel: t.procedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -401,6 +399,17 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.archiveMessageChannel(input),
+      })),
+    deleteChannel: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.deleteMessageChannel(input),
       })),
     listChannelGrants: t.procedure
       .input(
@@ -462,13 +471,12 @@ export const appRouter = t.router({
           title: z.string().trim().min(1).optional(),
           participants: z
             .array(
-              z.object({
-                id: z.string().trim().min(1),
-                label: z.string().trim().min(1).optional(),
-                role: z.enum(["avatar", "user", "system"]).optional(),
-              }),
-            )
-            .optional(),
+                z.object({
+                  id: z.string().trim().min(1),
+                  label: z.string().trim().min(1).optional(),
+                }),
+              )
+              .optional(),
           metadata: z.record(z.string(), z.unknown()).optional(),
           adminToken: z
             .string()
@@ -581,7 +589,6 @@ export const appRouter = t.router({
                 z.object({
                   id: z.string().min(1),
                   label: z.string().trim().min(1).optional(),
-                  role: z.enum(["avatar", "user", "system"]).optional(),
                 }),
               )
               .optional(),
@@ -596,7 +603,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalDelete: t.procedure
+    globalArchive: t.procedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -606,6 +613,19 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.archiveGlobalRoom({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
+    globalDelete: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        channel: ctx.kernel.deleteGlobalRoom({
           ...input,
           ...resolveMessageCallerScope(ctx.auth),
         }),

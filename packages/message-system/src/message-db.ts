@@ -198,6 +198,7 @@ export class MessageDb {
     const fullPath = resolve(filePath);
     mkdirSync(dirname(fullPath), { recursive: true });
     this.db = new Database(fullPath, { create: true, strict: true });
+    this.db.exec(`pragma foreign_keys = on;`);
     this.migrate();
   }
 
@@ -288,6 +289,15 @@ export class MessageDb {
       )
       .run(now, archivedBy, now, chatId);
     return this.getChannel(chatId, focused)!;
+  }
+
+  deleteChannel(chatId: string, focused = false): MessageChannelRecord {
+    const current = this.getChannel(chatId, focused);
+    if (!current) {
+      throw new Error(`unknown chat channel: ${chatId}`);
+    }
+    this.db.query(`delete from chat_channel where chat_id = ?`).run(chatId);
+    return current;
   }
 
   issueGrant(input: MessageIssueGrantInput & { chatId: string; accessToken: string; tokenHash: string }): MessageChannelGrantRecord {

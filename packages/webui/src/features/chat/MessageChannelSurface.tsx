@@ -42,12 +42,13 @@ interface MessageChannelSurfaceProps {
   onCreateChannel: (input: MessageChannelCreateInput) => Promise<void> | void;
   onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
+  onDeleteChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onSendMessage: (input: { channel: MessageChannelEntry; payload: AIInputSubmitPayload }) => Promise<void>;
   onUpdateChannel?: (input: {
     channel: MessageChannelEntry;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
     };
   }) => Promise<MessageChannelEntry>;
@@ -90,6 +91,7 @@ export const MessageChannelSurface = ({
   onCreateChannel,
   onFocusChannel,
   onArchiveChannel,
+  onDeleteChannel,
   onSendMessage,
   onUpdateChannel,
   onListChannelGrants,
@@ -203,6 +205,7 @@ export const MessageChannelSurface = ({
                   channel={selectedChannel}
                   onFocusChannel={onFocusChannel}
                   onArchiveChannel={onArchiveChannel}
+                  onDeleteChannel={onDeleteChannel}
                   onUpdateChannel={onUpdateChannel}
                   onListChannelGrants={onListChannelGrants}
                   onIssueChannelGrant={onIssueChannelGrant}

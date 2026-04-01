@@ -9,7 +9,6 @@ import { RoomParticipantEditor } from "./RoomParticipantEditor";
 import {
   buildDefaultRoomParticipantDrafts,
   normalizeRoomParticipants,
-  resolveRoomParticipantRole,
   type RoomActorOption,
   type RoomParticipantDraft,
   type RoomParticipantInput,
@@ -73,7 +72,7 @@ export const MessageChannelCreateDialog = ({
   onCreate,
 }: MessageChannelCreateDialogProps) => {
   const [title, setTitle] = useState(() => defaultTitle(existingCount));
-  const [participants, setParticipants] = useState<RoomParticipantDraft[]>(() => buildDefaultRoomParticipantDrafts(actorOptions));
+  const [participants, setParticipants] = useState<RoomParticipantDraft[]>(() => buildDefaultRoomParticipantDrafts());
   const [metadataDraft, setMetadataDraft] = useState("{}\n");
   const [adminToken, setAdminToken] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -85,11 +84,11 @@ export const MessageChannelCreateDialog = ({
       return;
     }
     setTitle(defaultTitle(existingCount));
-    setParticipants(buildDefaultRoomParticipantDrafts(actorOptions));
+    setParticipants(buildDefaultRoomParticipantDrafts());
     setMetadataDraft("{}\n");
     setAdminToken("");
     setError(null);
-  }, [actorOptions, existingCount, open]);
+  }, [existingCount, open]);
 
   const normalizedParticipants = useMemo(() => normalizeRoomParticipants(participants, actorOptions), [actorOptions, participants]);
 
@@ -97,10 +96,6 @@ export const MessageChannelCreateDialog = ({
     const nextTitle = title.trim();
     if (nextTitle.length === 0) {
       setError("Title is required.");
-      return;
-    }
-    if (normalizedParticipants.length === 0) {
-      setError("Select at least one auth or session actor.");
       return;
     }
 
@@ -189,16 +184,7 @@ export const MessageChannelCreateDialog = ({
             canEdit
             fieldIdPrefix="channel-create-participant"
             onActorChange={(key, actorId) => {
-              setParticipants((current) =>
-                current.map((entry) =>
-                  entry.key === key
-                    ? { ...entry, id: actorId, role: resolveRoomParticipantRole(actorOptions, actorId, entry.role) }
-                    : entry,
-                ),
-              );
-            }}
-            onRoleChange={(key, role) => {
-              setParticipants((current) => current.map((entry) => (entry.key === key ? { ...entry, role } : entry)));
+              setParticipants((current) => current.map((entry) => (entry.key === key ? { ...entry, id: actorId } : entry)));
             }}
             onRemove={(key) => {
               setParticipants((current) => current.filter((entry) => entry.key !== key));
@@ -210,7 +196,6 @@ export const MessageChannelCreateDialog = ({
                 {
                   key: `new-${idRef.current}`,
                   id: "",
-                  role: "user",
                 },
               ]);
             }}

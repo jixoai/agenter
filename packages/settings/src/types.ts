@@ -105,7 +105,6 @@ export interface TerminalFeatureSettings {
 export interface MessageChannelParticipantSettings {
   id: string;
   label?: string;
-  role?: "avatar" | "user" | "system";
 }
 
 export interface MessageChatMainDefaultsSettings {

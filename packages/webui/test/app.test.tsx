@@ -127,8 +127,8 @@ const createMessageChannel = (input: {
   title: input.title ?? "Room",
   owner: input.owner ?? "jon",
   participants: [
-    { id: "avatar:jon", label: "jon", role: "avatar" },
-    { id: "user:test", label: "User", role: "user" },
+    { id: "session:jon", label: "jon" },
+    { id: "auth:test", label: "User" },
   ],
   createdAt: 1,
   updatedAt: 1,
@@ -544,7 +544,7 @@ const updateMessageChannelMock = vi.fn<
     accessToken: string;
     patch: {
       title?: string;
-      participants?: Array<{ id: string; label?: string; role?: "avatar" | "user" | "system" }>;
+      participants?: Array<{ id: string; label?: string }>;
       metadata?: Record<string, unknown>;
     };
   }) => Promise<MessageChannelEntry>

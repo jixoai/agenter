@@ -38,8 +38,8 @@ const createChannel = (input: {
   title: input.title,
   owner: "jon",
   participants: [
-    { id: "auth:wallet_evm:0xowner", label: "Owner", role: "user" },
-    { id: "session:reviewer", label: "Reviewer avatar", role: "avatar" },
+    { id: "auth:wallet_evm:0xowner", label: "Owner" },
+    { id: "session:reviewer", label: "Reviewer avatar" },
   ],
   createdAt: 1,
   updatedAt: 1,
@@ -135,15 +135,15 @@ describe("Feature: message-channel room tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "New room" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Create room" });
+    expect(within(dialog).getByText("No actors are selected for this room yet.")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Participant role/i)).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "Create room" }));
 
     expect(onCreateChannel).toHaveBeenCalledTimes(1);
     expect(onCreateChannel).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Room 1",
-        participants: [
-          { id: "session:reviewer", label: "Reviewer avatar", role: "avatar" },
-        ],
+        participants: [],
         metadata: {},
       }),
     );

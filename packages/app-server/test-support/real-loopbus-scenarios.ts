@@ -261,8 +261,8 @@ export const runRealLunchRelayScenario = async (
     kind: "room",
     title: "gaubee",
     participants: [
-      { id: `avatar:${harness.session.avatar}`, label: harness.session.avatar, role: "avatar" },
-      { id: "user:gaubee", label: "gaubee", role: "user" },
+      { id: `session:${harness.session.avatar}`, label: harness.session.avatar },
+      { id: "auth:gaubee", label: "gaubee" },
     ],
     focus: false,
   });
@@ -628,8 +628,8 @@ export const runRealJudgeRelayScenario = async (
     kind: "room",
     title: "kzf",
     participants: [
-      { id: `avatar:${harness.session.avatar}`, label: harness.session.avatar, role: "avatar" },
-      { id: "user:kzf", label: "kzf", role: "user" },
+      { id: `session:${harness.session.avatar}`, label: harness.session.avatar },
+      { id: "auth:kzf", label: "kzf" },
     ],
     focus: false,
   });

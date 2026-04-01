@@ -21,7 +21,7 @@ const createRoom = (
     chatId: input.chatId ?? "room-kzf",
     kind: "room",
     owner: "jane",
-    participants: [{ id: "avatar:jane" }, { id: "user:kzf" }],
+    participants: [{ id: "session:jane" }, { id: "auth:kzf" }],
     bootstrapActorId: input.bootstrapActorId ?? "auth:owner",
   });
 
@@ -239,9 +239,9 @@ describe("Feature: message-chat-control-plane", () => {
       patch: {
         title: "Lunch relay",
         participants: [
-          { id: "avatar:jane", label: "jane", role: "avatar" },
-          { id: "user:kzf", label: "kzf", role: "user" },
-          { id: "session:relay", label: "Relay member", role: "avatar" },
+          { id: "session:jane", label: "jane" },
+          { id: "auth:kzf", label: "kzf" },
+          { id: "session:relay", label: "Relay member" },
         ],
         metadata: { topic: "lunch" },
       },
@@ -258,6 +258,47 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: room.accessToken,
     });
     expect(grants.map((grant) => grant.participantId).sort()).toEqual(["auth:owner", "auth:viewer", "session:relay"]);
+  });
+
+  test("Scenario: Given a room with grants transcript and read state When it is dissolved Then the room and its dependent facts disappear together", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: "room-dissolve" });
+    const relay = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Relay member",
+      participantId: "session:relay",
+    });
+
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: relay.accessToken,
+      from: "session:relay",
+      content: "ready",
+    });
+    plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: relay.accessToken,
+    });
+    plane.focusForActor("session:relay", "add", [room.chatId]);
+
+    const deleted = plane.deleteChannelAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+
+    expect(deleted.chatId).toBe(room.chatId);
+    expect(plane.getChannel(room.chatId, { includeArchived: true })).toBeUndefined();
+    expect(plane.getChannelForActor(room.chatId, "session:relay", { includeArchived: true })).toBeUndefined();
+    expect(plane.listChannels({ includeArchived: true }).some((entry) => entry.chatId === room.chatId)).toBeFalse();
+    expect(plane.listChannelsForActor("session:relay", { includeArchived: true }).some((entry) => entry.chatId === room.chatId)).toBeFalse();
+    expect(() =>
+      plane.snapshotAuthorized({
+        chatId: room.chatId,
+        accessToken: relay.accessToken,
+      }),
+    ).toThrow("message channel access denied");
   });
 
   test("Scenario: Given a queued room message When it is edited before attention reads it Then the same messageId stays visible in transcript order until it is marked loaded", () => {

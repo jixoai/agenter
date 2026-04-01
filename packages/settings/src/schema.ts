@@ -85,7 +85,6 @@ export const settingsSchema = z.object({
                   z.object({
                     id: z.string().trim().min(1).describe("Participant id."),
                     label: z.string().trim().min(1).describe("Participant label.").optional(),
-                    role: z.enum(["avatar", "user", "system"]).describe("Participant role.").optional(),
                   }),
                 )
                 .describe("Default participants for the primary room inside the chat channel.")

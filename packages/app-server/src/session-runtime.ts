@@ -1280,13 +1280,7 @@ export class SessionRuntime {
       title: defaults?.title ?? "Room",
       owner: avatar,
       contextId: context.contextId,
-      participants:
-        defaults?.participants && defaults.participants.length > 0
-          ? defaults.participants
-          : [
-              { id: `avatar:${avatar}`, label: avatar, role: "avatar" },
-              { id: "user", label: "User", role: "user" },
-            ],
+      participants: defaults?.participants ?? [],
       metadata: {
         builtIn: true,
         primaryRoom: true,
@@ -1322,7 +1316,6 @@ export class SessionRuntime {
       participants: channel.participants.map((participant) => ({
         id: participant.id,
         label: participant.label,
-        role: participant.role,
       })),
       metadata:
         channel.metadata && typeof channel.metadata === "object"
@@ -1343,7 +1336,6 @@ export class SessionRuntime {
     participants: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     focused: boolean;
@@ -1359,7 +1351,6 @@ export class SessionRuntime {
       participants: channel.participants.map((participant) => ({
         id: participant.id,
         label: participant.label,
-        role: participant.role,
       })),
       metadata:
         channel.metadata && typeof channel.metadata === "object"
@@ -1380,7 +1371,6 @@ export class SessionRuntime {
     participants: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     focused: boolean;
@@ -1401,7 +1391,6 @@ export class SessionRuntime {
     participants: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     focused: boolean;
@@ -1523,7 +1512,6 @@ export class SessionRuntime {
     participants?: Array<{
       id: string;
       label?: string;
-      role?: "avatar" | "user" | "system";
     }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
@@ -1538,13 +1526,7 @@ export class SessionRuntime {
       title: input.title ?? "Room",
       owner: avatar,
       contextId: context.contextId,
-      participants:
-        input.participants && input.participants.length > 0
-          ? input.participants
-          : [
-              { id: `avatar:${avatar}`, label: avatar, role: "avatar" },
-              { id: "user", label: "User", role: "user" },
-            ],
+      participants: input.participants ?? [],
       metadata: input.metadata ?? { builtIn: false },
       adminToken: input.adminToken,
       bootstrapActorId: this.messageActorId,
@@ -1674,6 +1656,33 @@ export class SessionRuntime {
       },
     });
     return archived;
+  }
+
+  deleteMessageChannel(input: { chatId: string; accessToken: string }): MessageControlPlaneEntry {
+    const channel =
+      this.getActorRoom(input.chatId, { includeArchived: true }) ?? this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    const builtIn = Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
+    if (channel.chatId === this.getDefaultChatId() || builtIn) {
+      throw new Error("built-in room is protected and cannot be deleted");
+    }
+    const deleted = this.messageSystem.deleteChannelAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+    });
+    this.enqueueLifecycleAttentionCommit({
+      systemId: "message",
+      subjectId: deleted.chatId,
+      contextId: deleted.contextId ?? this.getDefaultAttentionContextId(deleted.chatId),
+      event: "channel_delete",
+      summary: `Deleted chat channel ${deleted.chatId}`,
+      payload: {
+        channel: this.projectMessageChannelForAttention(deleted),
+      },
+    });
+    return deleted;
   }
 
   listMessageChannelGrants(input: { chatId: string; accessToken: string }): MessageChannelGrantRecord[] {
@@ -2393,7 +2402,6 @@ export class SessionRuntime {
             z.object({
               id: z.string(),
               label: z.string().optional(),
-              role: z.enum(["avatar", "user", "system"]).optional(),
             }),
           ),
           metadata: z.record(z.string(), z.unknown()).optional(),

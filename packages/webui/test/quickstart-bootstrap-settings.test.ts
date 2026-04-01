@@ -13,7 +13,7 @@ describe("Feature: quickstart bootstrap config persistence", () => {
         message: {
           chatMainDefaults: {
             title: "Main room",
-            participants: [{ id: "avatar:jane", label: "jane", role: "avatar" }],
+            participants: [{ id: "avatar:jane", label: "jane" }],
             metadata: { builtIn: true },
             adminToken: "AdminToken_123456",
           },
@@ -51,7 +51,7 @@ describe("Feature: quickstart bootstrap config persistence", () => {
     const nextConfig = normalizeQuickstartBootstrapConfig({
       room: {
         title: "Chat bootstrap",
-        participants: [{ id: "avatar:jane", role: "avatar" }],
+        participants: [{ id: "avatar:jane" }],
         metadata: { scope: "quickstart" },
         adminToken: "",
       },
