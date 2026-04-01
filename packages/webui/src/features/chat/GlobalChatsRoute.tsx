@@ -500,6 +500,16 @@ export const GlobalChatsRoute = ({ preferredRoomId }: { preferredRoomId?: string
           roomId={selectedRoom?.chatId ?? null}
           loading={grants.loading}
           users={roomUsers}
+          onSetUserFocus={async (input) => {
+            if (!selectedRoom) {
+              return;
+            }
+            await controller.focusGlobalRooms({
+              op: input.focused ? "remove" : "add",
+              channels: [{ chatId: selectedRoom.chatId, accessToken: input.accessToken }],
+            });
+            await refreshRooms({ silent: true });
+          }}
         />
       }
       onSelectChannel={(chatId) => {
@@ -515,17 +525,6 @@ export const GlobalChatsRoute = ({ preferredRoomId }: { preferredRoomId?: string
         });
         await refreshRooms();
         setSelectedRoomId(created.chatId);
-      }}
-      onFocusChannel={async (channel) => {
-        const accessToken = resolveSelectedRoomAccessToken(channel.accessToken);
-        if (!accessToken) {
-          return;
-        }
-        await controller.focusGlobalRooms({
-          op: channel.focused ? "remove" : "add",
-          channels: [{ chatId: channel.chatId, accessToken }],
-        });
-        await refreshRooms({ silent: true });
       }}
       onArchiveChannel={async (channel) => {
         await controller.archiveGlobalRoom({

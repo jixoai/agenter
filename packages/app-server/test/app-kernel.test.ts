@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { AppKernel, SessionDb } from "../src";
+import { MessageDb } from "../../message-system/src/message-db";
 
 const tempDirs: string[] = [];
 
@@ -978,6 +979,53 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(deleted.chatId).toBe(disposable.chatId);
     expect(kernel.listGlobalRooms({ includeArchived: true }).some((item) => item.chatId === disposable.chatId)).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a legacy primary room participant list When the kernel reattaches to that room Then the stored room truth is repaired", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "repair-room", autoStart: false });
+    const room = kernel.listMessageChannels(session.id)[0];
+    if (!room) {
+      throw new Error("expected primary room");
+    }
+
+    const db = new MessageDb(join(root, ".message", "message.db"));
+    try {
+      db.updateChannel(room.chatId, {
+        participants: [
+          { id: "avatar:default", label: "Default avatar" },
+          { id: "session:observer", label: " Observer " },
+          { id: "user", label: "Legacy user" },
+        ],
+      });
+      expect(db.getChannel(room.chatId)?.participants.map((participant) => participant.id)).toEqual([
+        "avatar:default",
+        "session:observer",
+        "user",
+      ]);
+    } finally {
+      db.close();
+    }
+
+    const repaired = kernel.listMessageChannels(session.id).find((channel) => channel.chatId === room.chatId);
+    expect(repaired?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
+
+    const repairedDb = new MessageDb(join(root, ".message", "message.db"));
+    try {
+      expect(repairedDb.getChannel(room.chatId)?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
+    } finally {
+      repairedDb.close();
+    }
 
     await kernel.stop();
   });

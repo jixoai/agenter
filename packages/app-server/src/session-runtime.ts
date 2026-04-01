@@ -108,6 +108,7 @@ import {
   type LoopSourceRef,
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
+import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
@@ -1254,14 +1255,16 @@ export class SessionRuntime {
     const context = this.ensureAttentionContextForChannel(chatId);
     const existing = this.getActorRoom(chatId);
     if (existing) {
+      const repaired = repairRoomParticipantsIfNeeded(this.messageSystem, existing);
       this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
-      return existing;
+      return repaired;
     }
     const sharedRoom = this.messageSystem.getChannel(chatId);
     if (sharedRoom) {
+      const repairedSharedRoom = repairRoomParticipantsIfNeeded(this.messageSystem, sharedRoom);
       this.messageSystem.issueChannelGrantAuthorized({
         chatId,
-        accessToken: sharedRoom.accessToken,
+        accessToken: repairedSharedRoom.accessToken,
         role: "admin",
         label: this.getAvatarName(),
         participantId: this.messageActorId,
@@ -1269,7 +1272,7 @@ export class SessionRuntime {
       this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
       const granted = this.getActorRoom(chatId);
       if (granted) {
-        return granted;
+        return repairRoomParticipantsIfNeeded(this.messageSystem, granted);
       }
     }
     const avatar = this.getAvatarName();

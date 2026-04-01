@@ -18,11 +18,9 @@ import {
 } from "./room-participants";
 
 type GrantRole = "admin" | "member" | "readonly";
-const TRUSTED_BOOTSTRAP_ACTOR_ID = "system:trusted-bootstrap";
 
 interface MessageChannelMetadataDisclosureProps {
   channel: MessageChannelEntry;
-  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onDeleteChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onUpdateChannel?: (input: {
@@ -98,7 +96,6 @@ const Section = ({
 
 export const MessageChannelMetadataDisclosure = ({
   channel,
-  onFocusChannel,
   onArchiveChannel,
   onDeleteChannel,
   onUpdateChannel,
@@ -125,14 +122,11 @@ export const MessageChannelMetadataDisclosure = ({
   const [issuedGrant, setIssuedGrant] = useState<MessageChannelGrantIssueOutput["grant"] | null>(null);
   const [revokingGrantId, setRevokingGrantId] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const [focusing, setFocusing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const actorMeta = useMemo(() => new Map(actorOptions.map((option) => [option.actorId, option])), [actorOptions]);
 
   const isAdmin = channel.accessRole === "admin";
-  const isBuiltIn =
-    isRecord(channel.metadata) && typeof channel.metadata.builtIn === "boolean" && channel.metadata.builtIn === true;
   const ChannelIcon = Users;
   const transportState = channel.transportUrl ? (channel.focused ? "connected and focused" : "connected") : "offline";
 
@@ -158,12 +152,11 @@ export const MessageChannelMetadataDisclosure = ({
     setParticipantDrafts(toRoomParticipantDrafts(channel.participants, channel.updatedAt));
     setMetadataDraft(toMetadataDraft(channel.metadata));
     setFormError(null);
-    setFocusing(false);
     setArchiving(false);
     setDeleting(false);
     setIssuedGrant(null);
     setCopyFeedback(null);
-  }, [channel]);
+  }, [channel.accessRole, channel.chatId, channel.participantId, channel.updatedAt]);
 
   useEffect(() => {
     if (!open) {
@@ -174,13 +167,8 @@ export const MessageChannelMetadataDisclosure = ({
 
   const canEditChannel = isAdmin && Boolean(onUpdateChannel);
   const canManageGrants = isAdmin && Boolean(onIssueChannelGrant) && Boolean(onRevokeChannelGrant);
-  const canFocusChannel =
-    channel.accessRole !== "readonly" &&
-    Boolean(channel.participantId) &&
-    channel.participantId !== TRUSTED_BOOTSTRAP_ACTOR_ID &&
-    Boolean(onFocusChannel);
-  const canArchiveChannel = isAdmin && Boolean(onArchiveChannel) && !isBuiltIn;
-  const canDeleteChannel = isAdmin && Boolean(onDeleteChannel) && !isBuiltIn;
+  const canArchiveChannel = isAdmin && Boolean(onArchiveChannel);
+  const canDeleteChannel = isAdmin && Boolean(onDeleteChannel);
 
   const normalizedParticipants = useMemo(
     () => normalizeRoomParticipants(participantDrafts, actorOptions),
@@ -270,21 +258,6 @@ export const MessageChannelMetadataDisclosure = ({
     setCopyFeedback("Token copied.");
   }, [issuedGrant?.accessToken]);
 
-  const handleFocusChannel = useCallback(async () => {
-    if (!canFocusChannel || !onFocusChannel) {
-      return;
-    }
-    setFocusing(true);
-    setFormError(null);
-    try {
-      await onFocusChannel(channel);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setFocusing(false);
-    }
-  }, [canFocusChannel, channel, onFocusChannel]);
-
   const handleArchiveChannel = useCallback(async () => {
     if (!canArchiveChannel || !onArchiveChannel) {
       return;
@@ -345,20 +318,11 @@ export const MessageChannelMetadataDisclosure = ({
         <Section title="Runtime" icon={Signal}>
           <div className="space-y-2.5">
             <FieldRow label="Transport" value={channel.transportUrl ?? "Not available"} />
-            <FieldRow label="Focused" value={channel.focused ? "Yes" : "No"} />
+            <FieldRow label="Seat focus" value={channel.focused ? "Focused" : "Not focused"} />
             <FieldRow label="Context" value={channel.contextId ?? "Not bound"} />
             {isAdmin ? (
               <div className="pt-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canFocusChannel || focusing}
-                    onClick={() => void handleFocusChannel()}
-                  >
-                    {channel.focused ? "Unfocus channel" : "Focus channel"}
-                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -381,11 +345,9 @@ export const MessageChannelMetadataDisclosure = ({
                   ) : null}
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  {isBuiltIn
-                    ? "Built-in room channel cannot be archived or dissolved."
-                    : onDeleteChannel && canDeleteChannel
-                      ? "Dissolve removes the room record, grants, read state, and transcript."
-                      : "Archive requires admin access."}
+                  {onDeleteChannel && canDeleteChannel
+                    ? "Dissolve removes the room record, grants, read state, and transcript."
+                    : "Archive requires admin access."}
                 </p>
               </div>
             ) : null}

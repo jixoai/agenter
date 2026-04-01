@@ -7,9 +7,7 @@ import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { MessageChannelSurface } from "./MessageChannelSurface";
 import type { MessageChannelCreateInput } from "./message-channel-create-dialog";
 
-const noopFocusChannel = async (_channel: MessageChannelEntry): Promise<void> => undefined;
 const noopCreateChannel = async (_input: MessageChannelCreateInput): Promise<void> => undefined;
-const explicitFocusToggleSpy = fn(noopFocusChannel);
 const createChannelViaMetadataDialogSpy = fn(noopCreateChannel);
 
 const actorOptions = [
@@ -215,7 +213,6 @@ const SurfaceStory = ({
   socketMode = "snapshot",
   onSendMessage = fn(async () => undefined),
   onCreateChannel = fn(async (_input: MessageChannelCreateInput) => undefined),
-  onFocusChannel = fn(async (_channel: MessageChannelEntry) => undefined),
   onOpenDevtools = fn(),
 }: {
   compact: boolean;
@@ -225,7 +222,6 @@ const SurfaceStory = ({
   socketMode?: SocketMode;
   onSendMessage?: (input: { channel: MessageChannelEntry; payload: { text: string; assets: File[] } }) => Promise<void>;
   onCreateChannel?: (input: MessageChannelCreateInput) => Promise<void>;
-  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void>;
   onOpenDevtools?: (cycleId: number) => void;
 }) => {
   const [channelsState, setChannelsState] = useState(items);
@@ -253,12 +249,6 @@ const SurfaceStory = ({
         imageCompatible={false}
         onSelectChannel={setSelectedChatId}
         onCreateChannel={onCreateChannel}
-        onFocusChannel={async (channel) => {
-          await onFocusChannel(channel);
-          setChannelsState((current) =>
-            current.map((entry) => (entry.chatId === channel.chatId ? { ...entry, focused: !entry.focused } : entry)),
-          );
-        }}
         actorOptions={actorOptions}
         onSendMessage={onSendMessage}
         onSearchPaths={async () => []}
@@ -287,7 +277,6 @@ const meta = {
     userAvatarLabel: "You",
     onSelectChannel: () => undefined,
     onCreateChannel: () => undefined,
-    onFocusChannel: () => undefined,
     onSendMessage: async () => undefined,
     onCommand: async () => undefined,
     onSearchPaths: async () => [],
@@ -331,30 +320,12 @@ export const CompactMultiChannelSurface: Story = {
 
     await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: /focus/i })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("tab", { name: /Team room/i }));
 
     await expect(await canvas.findByText(transcriptByChatId["room-team"])).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: /focus/i })).toBeVisible();
-  },
-};
-
-export const ExplicitFocusToggleSurface: Story = {
-  render: () => <SurfaceStory compact={false} onFocusChannel={explicitFocusToggleSpy} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-
-    explicitFocusToggleSpy.mockClear();
-    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("button", { name: /focus/i }));
-
-    await waitFor(() => {
-      expect(explicitFocusToggleSpy).toHaveBeenCalledWith(expect.objectContaining({ chatId: "room-jane" }));
-    });
-    await expect(canvas.getByRole("button", { name: "Unfocus" })).toBeInTheDocument();
   },
 };
 

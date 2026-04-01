@@ -60,12 +60,10 @@ const actorOptions = [
 
 const DisclosureStory = ({
   accessRole,
-  onFocusChannel,
   onArchiveChannel,
   onDeleteChannel,
 }: {
   accessRole: "admin" | "member" | "readonly";
-  onFocusChannel?: () => Promise<void> | void;
   onArchiveChannel?: () => Promise<void> | void;
   onDeleteChannel?: () => Promise<void> | void;
 }) => {
@@ -82,14 +80,6 @@ const DisclosureStory = ({
     <div className="flex min-h-[28rem] items-start justify-center bg-slate-100 p-6">
       <MessageChannelMetadataDisclosure
         channel={channel}
-        onFocusChannel={
-          accessRole === "admin" && onFocusChannel
-            ? async () => {
-                await onFocusChannel();
-                setChannel((current) => ({ ...current, focused: true }));
-              }
-            : undefined
-        }
         onArchiveChannel={
           accessRole === "admin" && onArchiveChannel
             ? async () => {
@@ -214,7 +204,6 @@ export const AdminMetadataManagement: Story = {
   },
 };
 
-const adminLifecycleFocusSpy = fn(async () => undefined);
 const adminLifecycleArchiveSpy = fn(async () => undefined);
 const adminLifecycleDeleteSpy = fn(async () => undefined);
 
@@ -222,7 +211,6 @@ export const AdminLifecycleActions: Story = {
   render: () => (
     <DisclosureStory
       accessRole="admin"
-      onFocusChannel={adminLifecycleFocusSpy}
       onArchiveChannel={adminLifecycleArchiveSpy}
       onDeleteChannel={adminLifecycleDeleteSpy}
     />
@@ -230,18 +218,17 @@ export const AdminLifecycleActions: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const portal = within(document.body);
-    adminLifecycleFocusSpy.mockClear();
     adminLifecycleArchiveSpy.mockClear();
     adminLifecycleDeleteSpy.mockClear();
     await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
     await portal.findByRole("dialog");
 
-    await userEvent.click(portal.getByRole("button", { name: /focus channel/i }));
-    await userEvent.click(portal.getByRole("button", { name: "Archive channel" }));
     await userEvent.click(portal.getByRole("button", { name: "Dissolve room" }));
+    await userEvent.click(canvas.getByTestId("message-channel-metadata-trigger"));
+    await portal.findByRole("dialog");
+    await userEvent.click(portal.getByRole("button", { name: "Archive channel" }));
 
     await waitFor(() => {
-      expect(adminLifecycleFocusSpy).toHaveBeenCalledTimes(1);
       expect(adminLifecycleArchiveSpy).toHaveBeenCalledTimes(1);
       expect(adminLifecycleDeleteSpy).toHaveBeenCalledTimes(1);
     });

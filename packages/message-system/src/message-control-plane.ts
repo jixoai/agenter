@@ -21,6 +21,7 @@ import type {
   MessageControlPlaneConfigPatch,
   MessageControlPlaneEntry,
   MessageCreateInput,
+  MessageParticipant,
   MessageFocusOp,
   MessageIssueGrantInput,
   MessageIssuedGrant,
@@ -94,6 +95,28 @@ const hashToken = (token: string): string => createHash("sha256").update(token).
 const createOpaqueToken = (): string => `msgtok_${randomUUID().replace(/-/g, "")}`;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+
+const isCanonicalActorId = (value: string): value is MessageActorId =>
+  ACTOR_ID_PATTERN.test(value) &&
+  (value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:"));
+
+const normalizeChannelParticipants = (participants?: MessageParticipant[]): MessageParticipant[] | undefined => {
+  if (!participants) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: MessageParticipant[] = [];
+  for (const participant of participants) {
+    const id = participant.id.trim();
+    if (!isCanonicalActorId(id) || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    const label = participant.label?.trim();
+    normalized.push(label ? { id, label } : { id });
+  }
+  return normalized;
+};
 
 const roleRank = (role: MessageChannelAccessRole): number => {
   if (role === "admin") {
@@ -249,11 +272,13 @@ export class MessageControlPlane {
     if (!input.chatId.startsWith("room-")) {
       throw new Error(`invalid room id prefix: ${input.chatId}`);
     }
+    const participants = normalizeChannelParticipants(input.participants);
     const channel = this.db.createChannel(
       {
         ...input,
         kind: "room",
         owner: input.owner ?? this.config.defaultOwner,
+        participants,
       },
       this.getFocusedChatIdsForActor(input.bootstrapActorId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId),
     );
@@ -1271,7 +1296,7 @@ export class MessageControlPlane {
     const synced = this.withAdminState(chatId, nextMetadata);
     return {
       title: patch.title,
-      participants: patch.participants,
+      participants: normalizeChannelParticipants(patch.participants),
       metadata: synced,
     };
   }

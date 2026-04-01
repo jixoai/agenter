@@ -92,6 +92,37 @@ describe("Feature: message-chat-control-plane", () => {
     plane.stopTransport();
   });
 
+  test("Scenario: Given legacy participant ids When a room is created or updated Then only canonical actor-backed seats remain in durable truth", () => {
+    const plane = createPlane();
+    const created = plane.createChannel({
+      chatId: "room-legacy-participants",
+      kind: "room",
+      owner: "jane",
+      participants: [
+        { id: " avatar:default ", label: "Default avatar" },
+        { id: " session:relay ", label: " Relay " },
+        { id: "user", label: "User" },
+      ],
+      bootstrapActorId: "auth:owner",
+    });
+
+    expect(created.participants).toEqual([{ id: "session:relay", label: "Relay" }]);
+
+    const updated = plane.updateChannelAuthorized({
+      chatId: created.chatId,
+      accessToken: created.accessToken,
+      patch: {
+        participants: [
+          { id: "auth:owner", label: " Owner " },
+          { id: "user", label: "Legacy user" },
+          { id: "auth:owner", label: "Owner duplicate" },
+        ],
+      },
+    });
+
+    expect(updated.participants).toEqual([{ id: "auth:owner", label: "Owner" }]);
+  });
+
   test("Scenario: Given long room history When reverse paging runs Then the oldest cursor advances correctly", () => {
     const plane = createPlane();
     createRoom(plane, { chatId: "room-history" });

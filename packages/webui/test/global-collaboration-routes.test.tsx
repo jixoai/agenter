@@ -8,7 +8,7 @@ import type {
   TerminalActivityItem,
 } from "@agenter/client-sdk";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { isValidElement, type ReactElement } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const { routeTestState } = vi.hoisted(() => ({
@@ -47,7 +47,8 @@ vi.mock("../src/features/chat/MessageChannelSurface", () => ({
     channels: GlobalRoomEntry[];
     selectedChatId: string | null;
     disabled: boolean;
-    renderComposerAccessory?: (props: unknown) => React.ReactNode;
+    sidePanel?: ReactNode;
+    renderComposerAccessory?: (props: unknown) => ReactNode;
     onSendMessage: (input: { channel: GlobalRoomEntry; payload: { text: string; assets: File[] } }) => Promise<void> | void;
   }) => {
     const selectedChannel = props.channels.find((channel) => channel.chatId === props.selectedChatId) ?? props.channels[0] ?? null;
@@ -86,6 +87,7 @@ vi.mock("../src/features/chat/MessageChannelSurface", () => ({
         >
           Send test global room message
         </button>
+        {props.sidePanel}
       </div>
     );
   },
@@ -367,6 +369,50 @@ describe("Feature: global collaboration routes", () => {
         chatId: "room-main",
         accessToken: "msgtok_member",
         payload: { text: "hello from room", assets: [] },
+      });
+    });
+  });
+
+  test("Scenario: Given room users with their own room tokens When a seat focus button is pressed Then the route uses that seat token instead of a room-global toggle", async () => {
+    const listGlobalRooms = vi.fn(async () => [createGlobalRoom()]);
+    const snapshotGlobalRoom = vi.fn(async () => ({
+      channel: createGlobalRoom(),
+      items: [],
+      nextBefore: null,
+      hasMoreBefore: false,
+      headVersion: "1",
+    }));
+    const listGlobalRoomGrants = vi.fn(async () => [createGlobalRoomGrant()]);
+    const focusGlobalRooms = vi.fn(async () => ({ ok: true as const, message: "focused", focusedChatIds: ["room-main"] }));
+
+    routeTestState.controller = {
+      runtimeStore: {
+        listAuthActors: async () => createAuthActors(),
+        profileIconUrl: (reference: string) => `http://127.0.0.1:4591/media/profiles/${reference}/icon`,
+        sessionIconUrl: (sessionId: string) => `http://127.0.0.1:4591/media/sessions/${sessionId}/icon`,
+      },
+      authSession: null,
+      listGlobalRooms,
+      snapshotGlobalRoom,
+      listGlobalRoomGrants,
+      sendGlobalRoomMessage: vi.fn(async () => ({ ok: true as const })),
+      createGlobalRoom: vi.fn(),
+      focusGlobalRooms,
+      archiveGlobalRoom: vi.fn(),
+      deleteGlobalRoom: vi.fn(),
+      updateGlobalRoom: vi.fn(),
+      issueGlobalRoomGrant: vi.fn(),
+      revokeGlobalRoomGrant: vi.fn(),
+    };
+
+    render(<GlobalChatsRoute />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Focus Observer" }));
+
+    await waitFor(() => {
+      expect(focusGlobalRooms).toHaveBeenCalledWith({
+        op: "add",
+        channels: [{ chatId: "room-main", accessToken: "msgtok_member" }],
       });
     });
   });

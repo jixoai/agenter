@@ -7,8 +7,8 @@ import {
   type WebChatNotice,
   type WebChatSocketFactory,
 } from "@agenter/web-chat-view";
-import { Crosshair, Plus } from "lucide-react";
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
@@ -20,8 +20,6 @@ import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-dis
 import { RoomReadProgressDisclosure } from "./RoomReadProgressDisclosure";
 import type { RoomActorOption } from "./room-participants";
 import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
-
-const TRUSTED_BOOTSTRAP_ACTOR_ID = "system:trusted-bootstrap";
 
 interface MessageChannelSurfaceProps {
   sessionId: string;
@@ -40,7 +38,6 @@ interface MessageChannelSurfaceProps {
   userAvatarLabel?: string;
   onSelectChannel: (chatId: string) => void;
   onCreateChannel: (input: MessageChannelCreateInput) => Promise<void> | void;
-  onFocusChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onArchiveChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onDeleteChannel?: (channel: MessageChannelEntry) => Promise<void> | void;
   onSendMessage: (input: { channel: MessageChannelEntry; payload: AIInputSubmitPayload }) => Promise<void>;
@@ -89,7 +86,6 @@ export const MessageChannelSurface = ({
   userAvatarLabel,
   onSelectChannel,
   onCreateChannel,
-  onFocusChannel,
   onArchiveChannel,
   onDeleteChannel,
   onSendMessage,
@@ -109,12 +105,10 @@ export const MessageChannelSurface = ({
   renderComposerAccessory,
   sidePanel,
 }: MessageChannelSurfaceProps) => {
-  const actionGroupRef = useRef<HTMLDivElement | null>(null);
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.chatId === selectedChatId) ?? channels[0] ?? null,
     [channels, selectedChatId],
   );
-  const [collapseActionLabels, setCollapseActionLabels] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const showEmptyChannelState = !channelsLoading && !channelsError && channels.length === 0;
   const emptyTitle = channelsError
@@ -127,24 +121,6 @@ export const MessageChannelSurface = ({
     : showEmptyChannelState
       ? "Create a room to start the conversation."
       : "Send a message to start this room.";
-
-  useLayoutEffect(() => {
-    const container = actionGroupRef.current;
-    if (!container || typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const update = () => {
-      setCollapseActionLabels(container.clientWidth < 268);
-    };
-
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(container);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
 
   const renderComposer = (props: WebChatComposerRenderProps) => (
     <div className="border-t border-slate-200 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
@@ -178,13 +154,6 @@ export const MessageChannelSurface = ({
     loading: channelsLoading,
     hasData: Boolean(selectedChannel),
   });
-  const canToggleSelectedChannelFocus = Boolean(
-    selectedChannel &&
-      onFocusChannel &&
-      selectedChannel.accessRole !== "readonly" &&
-      selectedChannel.participantId &&
-      selectedChannel.participantId !== TRUSTED_BOOTSTRAP_ACTOR_ID,
-  );
 
   return (
     <div className="grid h-full min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
@@ -203,7 +172,6 @@ export const MessageChannelSurface = ({
               {selectedChannel ? (
                 <MessageChannelMetadataDisclosure
                   channel={selectedChannel}
-                  onFocusChannel={onFocusChannel}
                   onArchiveChannel={onArchiveChannel}
                   onDeleteChannel={onDeleteChannel}
                   onUpdateChannel={onUpdateChannel}
@@ -214,27 +182,7 @@ export const MessageChannelSurface = ({
                 />
               ) : null}
               {selectedChannel ? <RoomReadProgressDisclosure readProgress={readProgress} readStates={readStates} /> : null}
-              <div ref={actionGroupRef} className="flex min-w-0 items-center gap-1.5">
-                {selectedChannel && onFocusChannel ? (
-                  <AdaptiveIconButton
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canToggleSelectedChannelFocus || disabled}
-                    icon={Crosshair}
-                    label={selectedChannel.focused ? "Unfocus" : "Focus"}
-                    tooltip={
-                      selectedChannel.focused
-                        ? "Remove this chat channel from semantic focus"
-                        : "Add this chat channel to semantic focus"
-                    }
-                    labelPriority={collapseActionLabels ? "icon-only" : "always"}
-                    onClick={() => {
-                      void onFocusChannel(selectedChannel);
-                    }}
-                    containerClassName="min-w-0"
-                  />
-                ) : null}
+              <div className="flex min-w-0 items-center gap-1.5">
                 <AdaptiveIconButton
                   type="button"
                   size="sm"
@@ -243,7 +191,7 @@ export const MessageChannelSurface = ({
                   icon={Plus}
                   label="New room"
                   tooltip="Create a room"
-                  labelPriority={collapseActionLabels ? "icon-only" : "always"}
+                  labelPriority="always"
                   onClick={() => setCreateDialogOpen(true)}
                   containerClassName="min-w-0"
                 />

@@ -9,7 +9,6 @@ const {
   CreateChannelViaMetadataDialog,
   DeliveredMessageLinksToDevtools,
   EmptyChannelCollection,
-  ExplicitFocusToggleSurface,
   LoadingChannelCollection,
   RefreshingChannelCollection,
   TransportErrorSurface,
@@ -20,7 +19,6 @@ describe("Feature: Storybook DOM contract for message channel surface", () => {
   test("Scenario: Given desktop and compact multi-channel chat surfaces When the user switches channels Then each viewport keeps the selected transcript stable", async () => {
     await DesktopMultiChannelSurface.run();
     await CompactMultiChannelSurface.run();
-    await ExplicitFocusToggleSurface.run();
     await DeliveredMessageLinksToDevtools.run();
     await CreateChannelViaMetadataDialog.run();
   });

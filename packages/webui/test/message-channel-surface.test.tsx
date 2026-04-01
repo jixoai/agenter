@@ -84,12 +84,11 @@ describe("Feature: message-channel room tabs", () => {
     expect(within(roomTab).getByText("1")).toBeInTheDocument();
   });
 
-  test("Scenario: Given a selected room channel When rendering Then the room exposes an explicit focus toggle beside create actions", () => {
+  test("Scenario: Given a selected room channel When rendering Then the tab row stays focused on metadata and create actions only", () => {
     const channels = [
       createChannel({ chatId: "room-main", title: "Main room", focused: false }),
       createChannel({ chatId: "room-ops", title: "Ops room", focused: false }),
     ];
-    const onFocusChannel = vi.fn(async () => undefined);
 
     render(
       <MessageChannelSurface
@@ -102,16 +101,15 @@ describe("Feature: message-channel room tabs", () => {
         onSelectChannel={() => {}}
         onCreateChannel={async () => {}}
         actorOptions={actorOptions}
-        onFocusChannel={onFocusChannel}
         onSendMessage={async () => {}}
         onSearchPaths={async () => []}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /focus/i }));
-
-    expect(onFocusChannel).toHaveBeenCalledTimes(1);
-    expect(onFocusChannel).toHaveBeenCalledWith(expect.objectContaining({ chatId: "room-ops" }));
+    expect(screen.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New room" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^focus$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^unfocus$/i })).toBeNull();
   });
 
   test("Scenario: Given no existing rooms When creating a room Then the empty state still exposes the create dialog and submits defaults", async () => {

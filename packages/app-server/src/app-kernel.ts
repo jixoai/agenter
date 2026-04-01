@@ -64,6 +64,7 @@ import {
 } from "./avatar-seat-store";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
+import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import { projectAuthActors } from "./auth-actor-catalog";
 import {
@@ -669,20 +670,21 @@ export class AppKernel {
     const roomId = resolvePrimaryRoomId(session.id);
     const existing = this.messageControlPlane.getChannelForActor(roomId, actorId, { touchPresence: false });
     if (existing) {
-      return existing;
+      return repairRoomParticipantsIfNeeded(this.messageControlPlane, existing);
     }
     const bootstrap = this.messageControlPlane.getChannel(roomId, { includeArchived: true });
     if (bootstrap) {
+      const repairedBootstrap = repairRoomParticipantsIfNeeded(this.messageControlPlane, bootstrap);
       this.messageControlPlane.issueChannelGrantAuthorized({
         chatId: roomId,
-        accessToken: bootstrap.accessToken,
+        accessToken: repairedBootstrap.accessToken,
         role: "admin",
         label: session.avatar,
         participantId: actorId,
       });
       return (
         this.messageControlPlane.getChannelForActor(roomId, actorId, { includeArchived: true, touchPresence: false }) ??
-        bootstrap
+        repairedBootstrap
       );
     }
     return this.messageControlPlane.createChannel({
