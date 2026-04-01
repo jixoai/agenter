@@ -33,6 +33,14 @@ Human-facing room and terminal admin flows SHALL select durable people from the 
 - **THEN** the terminal grant flow selects that participant from the auth actor catalog
 - **THEN** the terminal keeps its grant and token local while reusing the auth actor id as identity
 
+### Requirement: Collaboration pickers SHALL project valid actors without stale session floods
+Actor pickers SHALL project durable auth actors and valid session seats, but they SHALL avoid flooding the operator with archived or stale session residue.
+
+#### Scenario: Archived session residue does not dominate room picker defaults
+- **WHEN** the room create dialog opens
+- **THEN** stale or archived session entries are not auto-expanded into participant rows
+- **AND** the picker remains focused on intentional seat selection
+
 ### Requirement: Actor catalog SHALL provide icon projections suitable for collaboration surfaces
 
 The actor catalog SHALL expose icon URLs or equivalent public media descriptors that collaboration surfaces can render directly.

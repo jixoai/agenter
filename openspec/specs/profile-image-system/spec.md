@@ -21,6 +21,14 @@ The system SHALL expose stable media endpoints for session icons and profile/ava
 - **THEN** the backend returns deterministic fallback artwork derived from the resolved profile identity seed
 - **THEN** repeated requests for the same identity return visually stable fallback output
 
+### Requirement: Deterministic fallback icons SHALL render correctly through the default raster path
+Profile and session fallback icons SHALL remain visibly colored and readable when served through the default raster media path.
+
+#### Scenario: Default fallback avatar is not blacked out
+- **WHEN** the client requests a default profile or session icon without forcing SVG
+- **THEN** the returned raster image contains usable colored fallback artwork
+- **AND** the caller does not need a special query parameter to avoid a black avatar
+
 ### Requirement: The system SHALL allow uploaded icons for sessions and avatars
 The system SHALL accept uploaded icon files for sessions and profiles/avatars, persist them as profile-service-owned image assets, and serve those uploaded assets from the same semantic icon endpoints. Backend rasterization and derived variants SHALL be produced server-side rather than requiring browser-side fallback uploads.
 
