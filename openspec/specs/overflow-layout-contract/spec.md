@@ -23,7 +23,7 @@ The WebUI SHALL distinguish layout containment, scrolling, visual clipping, sema
 - **THEN** unrelated layout ancestors do not add compensating background color
 
 ### Requirement: WebUI panels SHALL expose one primary scroll viewport
-Each major WebUI application surface SHALL provide exactly one deliberate primary scroll container for its main content region, while headers, tabs, fixed controls, and semantic chrome remain outside that viewport. When raw clipping is removed from layout wrappers, the replacement layout MUST explicitly restore required `overflow-auto` behavior on the real scroll owner.
+Each major WebUI application surface SHALL provide exactly one deliberate primary scroll container for its main content region, while headers, tabs, fixed controls, and semantic chrome remain outside that viewport. When raw clipping is removed from layout wrappers, the replacement layout MUST explicitly restore scrolling through the shared `ScrollView` primitive on the real scroll owner.
 
 #### Scenario: Panel with long content remains operable
 - **WHEN** a panel contains content taller than the available viewport
@@ -37,7 +37,7 @@ Each major WebUI application surface SHALL provide exactly one deliberate primar
 
 #### Scenario: Removing clipping restores explicit scrolling
 - **WHEN** a layout wrapper stops using raw clipping in order to follow the overflow contract
-- **THEN** the surface reassigns scrolling to an explicit `overflow-auto` viewport where needed
+- **THEN** the surface reassigns scrolling to an explicit `ScrollView` where needed
 - **THEN** long Chat, Devtools, Cycles, and Settings content remains scrollable on desktop and compact viewports
 
 ### Requirement: Raw overflow-hidden usage SHALL be statically enforceable

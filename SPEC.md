@@ -27,6 +27,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并按 actor seat 维护，而不是退化成 session unread badge。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
+- WebUI 的用户可见滚动所有权必须统一委托给共享 `ScrollView` 原语；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
@@ -52,10 +53,14 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 ## 5. 产品表面长期法则
 
-- 一级导航固定为 `Chats`、`Terminals`、`Workspaces`；`Quick Start` 与 standalone `GlobalSettings` 不再是 durable primary routes。
-- `Workspaces` 是统一的 global/workspace shell：固定包含 `Welcome` 与 `History`，并承载 workspace-scoped `Settings` / `Avatars` 等 detail tabs。
-- `~/` 是 special global workspace。用户级 settings、auth-adjacent controls 与 canonical avatar catalog 通过它暴露，而不是通过独立 global-settings 页面暴露。
-- `Welcome` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar、global room ref、global terminal ref 与 grant intent，并在用户 detour 到 `Chats` / `Terminals` 后继续保留当前草稿。
+- 一级导航固定为 `Workspaces`、`History`、`Messages`、`Terminals`、`Settings`。
+- `Workspaces` 是统一的 global/workspace shell；`Quick Start` 是该路由中的启动编排区，不再是独立主路由。
+- `History` 是全局 workspace 历史索引页，只列出已有启动记录的 workspace，并支持按最近使用、路径、名字排序。
+- `Messages` 是 `message-system` 的全局 surface；其中 `room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
+- `Terminals` 是 `terminal-system` 的全局 surface；右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。
+- `Settings` 同时承担超级管理员入口、root key 绑定、profile 编辑和全局身份管理；壳层 footer 中的 profile 入口只是一条通往这里的导航。
+- `~/` 是 special global workspace。canonical avatar catalog 与用户级默认配置通过它暴露，但 room / terminal 自身不从属于 workspace。
+- `Quick Start` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar 与未来可扩展的全局系统引用，并在用户 detour 到 `Messages` / `Terminals` 后继续保留当前草稿。
 - `Running Avatars` 是 secondary runtime rail。进入单个 avatar 后，默认页固定为 `Attention`，runtime tabs 在同一层打平，`Chats` / `Terminals` 只作为 link-out 的全局资源页存在。
 - `workspace + avatar` 是 durable active-session identity；再次启动同一 pair 时必须复用同一个稳定 session id，而不是创建重复 session。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。

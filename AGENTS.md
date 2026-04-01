@@ -231,10 +231,11 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 - **禁止使用 `min-h-0`**：在本项目 WebUI 中不再使用该 class 处理滚动/压缩。
 - **`overflow-hidden` 不是默认布局工具**：禁止把 raw `overflow-hidden` 当作修复 flex/scroll 的通用手段；先修正布局层级与滚动所有权。
-- **移除 hidden 必须补 scroll owner**：一旦去掉祖先 `overflow-hidden`，必须同步为真正的内容区补上显式滚动拥有者；对 surface 级内容优先使用 `ScrollViewport`，不能只“去掉裁剪”却不恢复滚动。
+- **移除 hidden 必须补 scroll owner**：一旦去掉祖先 `overflow-hidden`，必须同步为真正的内容区补上显式滚动拥有者；对 surface 级内容统一使用 `ScrollView`，不能只“去掉裁剪”却不恢复滚动。
 - **布局壳层禁止 raw clipping**：shell、route wrapper、panel wrapper 这类 layout surface 不允许直接写 raw `overflow-hidden`；应用级视口裁剪必须走 `ViewportMask`。
-- **主滚动区显式化**：每个 major panel 只允许一个主滚动区，并且必须通过 `ScrollViewport` 表达，而不是在祖先和子孙同时混用 `overflow-auto/hidden`。
-- **Flex/Grid 不会自动变成滚动层**：当内容区位于 `flex-1`、`grid` 的 `minmax(0,1fr)` 行列中时，仍然必须显式声明 `overflow-auto` 或 `ScrollViewport`；“高度对了”不等于“能够滚动”。
+- **主滚动区显式化**：每个 major panel 只允许一个主滚动区，并且必须通过 `ScrollView` 表达，而不是在祖先和子孙同时混用 raw `overflow-*`。
+- **滚动法则升级为原语**：任何用户可见滚动区域都必须通过 `ScrollView` 获得滚动能力；`ScrollView` 同时承担普通滚动与虚拟滚动，feature code 不得再手写 `overflow-auto/scroll` 作为滚动 owner。
+- **Flex/Grid 不会自动变成滚动层**：当内容区位于 `flex-1`、`grid` 的 `minmax(0,1fr)` 行列中时，仍然必须显式声明 `ScrollView` 作为滚动 owner；“高度对了”不等于“能够滚动”。
 - **视觉裁剪单独建模**：圆角媒体、终端窗口、Markdown/code surface 这类明确的视觉裁剪，统一使用 `ClipSurface`；不要把视觉裁剪和布局约束混在一个容器里。
 - **动画裁剪例外最小化**：只有像 `Accordion` 这种 animation primitive 允许保留 raw `overflow-hidden` 作为过渡 mask；新增例外必须先抽象成 primitive，再更新 allowlist。
 - **滚动容器单点定义**：每个面板只保留一个主滚动区，避免多层嵌套滚动导致内容挤压与重叠。
