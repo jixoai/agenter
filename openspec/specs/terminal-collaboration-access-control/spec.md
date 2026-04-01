@@ -5,7 +5,7 @@ Define actor-scoped grants, admin-group failover, approval routing, and write le
 
 ## Requirements
 ### Requirement: Terminal resources SHALL enforce actor-scoped grants
-The terminal collaboration control plane SHALL enforce grants bound to auth actors or session actors with roles `admin`, `writer`, `requester`, and `readonly`. A valid global superadmin claim MAY administer any terminal regardless of local grants.
+The terminal collaboration control plane SHALL enforce grants bound to auth actors or session actors with roles `admin`, `writer`, `requester`, and `readonly`. Focus state SHALL also remain actor-scoped and SHALL be mutated only through that actor's terminal authority or a valid superadmin recovery path. A valid global superadmin claim MAY administer any terminal regardless of local grants.
 
 #### Scenario: Readonly actor can observe but not write
 - **WHEN** an auth actor or session actor holds a `readonly` grant for a terminal
@@ -16,6 +16,21 @@ The terminal collaboration control plane SHALL enforce grants bound to auth acto
 - **WHEN** a valid global superadmin claim is presented for a terminal whose local admin grants are missing or misconfigured
 - **THEN** the control plane allows that caller to inspect and repair terminal grants
 - **THEN** terminal recovery does not require an existing terminal-local admin grant
+
+#### Scenario: Focus mutation uses actor-scoped authority
+- **WHEN** an actor focuses or unfocuses a terminal
+- **THEN** the control plane validates that mutation against that actor's grant or superadmin recovery authority
+- **THEN** the resulting focus state is stored only for that actor seat
+
+#### Scenario: One actor cannot clear another actor's focus without admin authority
+- **WHEN** a non-admin actor attempts to clear another actor seat's focus state
+- **THEN** the control plane rejects that mutation
+- **THEN** the other actor's focus truth remains unchanged
+
+#### Scenario: Selected seat token survives superadmin operator context
+- **WHEN** a superadmin operator uses a seat token to focus, read, or write a terminal on behalf of that seat
+- **THEN** terminal-system validates the action against that seat token
+- **THEN** the recorded actor and focus truth belong to the selected seat instead of the superadmin operator
 
 ### Requirement: Terminal administration SHALL elect one current admin from an ordered admin group
 Each terminal SHALL expose one current local admin at a time, while an ordered admin-group candidate list MAY be configured behind it. When the current admin goes offline, the next eligible candidate in order SHALL be promoted, and any still-pending approval work SHALL be reassigned to the newly promoted admin. If a higher-priority eligible candidate later comes online, it SHALL immediately preempt and become the current admin.

@@ -5,12 +5,17 @@ Define how app-server runtime publications expose attached global terminal state
 
 ## Requirements
 ### Requirement: Runtime publications SHALL prefer focused terminal sets
-Runtime snapshots and realtime terminal events SHALL publish the focused set of globally attached terminals for a session, with any single-focus field treated only as a derived compatibility projection.
+Runtime snapshots and realtime terminal events SHALL publish the focused set of globally attached terminals for the current session actor, with any single-focus field treated only as a derived compatibility projection.
 
 #### Scenario: Snapshot exposes multiple focused attached terminals
 - **WHEN** a session is attached to more than one focused global terminal
 - **THEN** the runtime snapshot returns every focused terminal id in `focusedTerminalIds`
 - **THEN** clients do not need to reconstruct the set from a single-focus field
+
+#### Scenario: Snapshot exposes session actor focus instead of a shared global flag
+- **WHEN** the current session actor focuses terminals through terminal-system
+- **THEN** the runtime snapshot returns those focused terminal ids in `focusedTerminalIds`
+- **THEN** the client does not treat another actor's focus set as if it belonged to this session
 
 #### Scenario: Compatibility field remains derived
 - **WHEN** a compatibility field such as `focusedTerminalId` is still present

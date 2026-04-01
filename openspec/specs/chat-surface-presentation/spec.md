@@ -3,7 +3,7 @@
 Define the conversation-first presentation contract for the workspace Chat route.
 ## Requirements
 ### Requirement: Workspace Chat SHALL present a conversation-first session stage
-The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, and the shared AI input composer over cycle or kernel inspection details.
+The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, the shared AI input composer, and message-system-native collaboration state over cycle or kernel inspection details.
 
 #### Scenario: Active session opens on a conversation-focused surface
 - **WHEN** the user opens a workspace Chat route with an active session
@@ -19,6 +19,11 @@ The WebUI SHALL render the workspace Chat route as a conversation-first stage th
 - **WHEN** adjacent chat messages are separated by a meaningful time gap or a date boundary
 - **THEN** the Chat route inserts a centered time or date divider into the transcript
 - **THEN** the divider stays visually secondary to the message bubbles
+
+#### Scenario: Group chat shows read progress instead of pending strip
+- **WHEN** the user is viewing a shared room conversation
+- **THEN** the primary room status affordance summarizes who has read the conversation or latest message
+- **THEN** the UI does not treat "pending for attention" as the main collaboration summary for that room
 
 ### Requirement: Workspace Chat SHALL expose one primary session action and one actionable status summary
 The WebUI SHALL expose exactly one primary session action inside the Chat route, and it SHALL summarize route-relevant runtime state into one actionable notice or passive status instead of stacking multiple competing technical statuses. The primary session action SHALL be rendered through one compact route-local session status pill menu rather than through header-level action chrome.
@@ -84,4 +89,3 @@ The Chat route SHALL virtualize transcript rows regardless of history size thres
 - **WHEN** the session contains a very large transcript
 - **THEN** Chat renders the conversation through a virtualized list instead of mounting every row
 - **THEN** loading an older page keeps the visible anchor stable
-

@@ -5,7 +5,7 @@ Define how WebUI renders the global terminal workbench and terminal-facing surfa
 
 ## Requirements
 ### Requirement: WebUI terminal and devtools surfaces SHALL consume the runtime terminal contract directly
-WebUI terminal-facing surfaces SHALL render from global terminal ids, focused terminal sets, title/status metadata, and explicit terminal representation metadata instead of relying on legacy session-private terminal assumptions.
+WebUI terminal-facing surfaces SHALL render from global terminal ids, actor-scoped focused terminal sets, title/status metadata, and explicit terminal representation metadata instead of relying on legacy session-private or terminal-global focus assumptions.
 
 #### Scenario: Terminals page renders from global terminal ids
 - **WHEN** the user opens the top-level `Terminals` page
@@ -30,6 +30,11 @@ The top-level `Terminals` page SHALL expose the running global terminal catalog 
 - **THEN** the terminal-local toolbar exposes controls such as theme or shortcut affordances on the leading side
 - **THEN** those controls remain local to the terminal surface instead of leaking into unrelated shell chrome
 
+#### Scenario: Terminal toolbar does not own collaboration focus
+- **WHEN** the user is viewing the top-level `Terminals` page
+- **THEN** the toolbar keeps terminal-local presentation controls only
+- **THEN** actor focus or unfocus actions live in the terminal Users panel instead of a global toolbar button
+
 ### Requirement: Terminals page SHALL visualize actor state through AvatarGroup semantics
 The `Terminals` page SHALL render attached actors through an AvatarGroup that encodes online/focus state with badge colors and permission state with border colors.
 
@@ -42,6 +47,11 @@ The `Terminals` page SHALL render attached actors through an AvatarGroup that en
 - **WHEN** the page renders attached actors for a terminal
 - **THEN** border colors distinguish `readonly`, `requester`, `writer`, and `admin`
 - **THEN** the user can identify write authority without opening a secondary inspector first
+
+#### Scenario: Users panel shows per-seat focus state
+- **WHEN** the terminal page renders attached actors for a terminal
+- **THEN** each actor row can display whether that seat currently focuses the terminal
+- **THEN** explicit focus or unfocus actions act on that seat rather than on one shared terminal flag
 
 ### Requirement: Terminals page SHALL warn before allowing multiple writers
 When a terminal configuration action would leave more than one actor with `writer` authority, the UI SHALL present a downgrade prompt before applying the change.

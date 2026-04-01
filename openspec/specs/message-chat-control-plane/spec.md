@@ -4,7 +4,7 @@
 Define the global room-first message control plane, its transport contract, and the model-facing semantics for collaboration across auth actors and session actors.
 ## Requirements
 ### Requirement: Message-system SHALL manage multiple chat channels
-The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, and room durability SHALL NOT depend on any single session remaining alive.
+The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, and room-local read-state SHALL remain durable per actor seat.
 
 #### Scenario: One room is shared by human and session actors
 - **WHEN** an auth actor and one or more session actors are granted access to the same room
@@ -21,15 +21,20 @@ The message control plane SHALL manage multiple global room resources independen
 - **THEN** the room definition, grants, history, and assets remain available in the global message store
 - **THEN** a later auth actor or session actor can reattach to that same room
 
-#### Scenario: Queued user input stays pending until attention reads it
+#### Scenario: Queued user input stays visible while awaiting attention
 - **WHEN** a member sends a text message through an authorized chat transport
 - **THEN** the message is persisted in a queued attention state
-- **AND** it remains editable and out of the main transcript until attention loads it
+- **AND** it remains visible in the room transcript in send order while still being editable until attention loads it
 
 #### Scenario: Assistant-visible output is immediately visible
 - **WHEN** the runtime or assistant writes a visible reply or structured error through the control plane
 - **THEN** the message is persisted as already loaded and visible
-- **AND** it does not enter the queued pending strip
+- **AND** it does not enter any queued-only room presentation mode
+
+#### Scenario: Room read-state survives session stop
+- **WHEN** a room has actor-scoped read-state and one contributing session later stops
+- **THEN** the room history and room read-state remain available in the global message store
+- **THEN** a later actor reattaching to that room can still observe the current read progression
 
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
 A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.

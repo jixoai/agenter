@@ -23,7 +23,10 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
+- Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
+- Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并按 actor seat 维护，而不是退化成 session unread badge。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
+- Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。

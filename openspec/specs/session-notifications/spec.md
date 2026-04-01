@@ -3,7 +3,7 @@
 Define the unread session notification projection and its WebUI entry points.
 ## Requirements
 ### Requirement: Session notifications SHALL project unread assistant replies
-The app-server SHALL maintain an ephemeral unread-notification projection for assistant replies that are intended for the user and arrive while that session's Chat view is not visibly consumed.
+The app-server SHALL maintain an ephemeral unread-notification projection for assistant replies that are intended for the user and arrive while that session's Chat view is not visibly consumed. This projection SHALL remain distinct from durable room-local read-state.
 
 #### Scenario: Hidden chat reply creates unread notification
 - **WHEN** a running session emits an assistant message with `channel = to_user` while its Chat view is not visible and focused
@@ -29,6 +29,11 @@ The app-server SHALL clear unread notifications for a session when the client re
 - **WHEN** the message-first Chat viewport reports the last visible assistant `to_user` message id for a session
 - **THEN** the notification projection consumes unread entries only up to that message
 - **THEN** later unread assistant replies remain pending until they become visible
+
+#### Scenario: Session unread badge and room read-state coexist
+- **WHEN** a room already exposes durable per-seat read-state and a hidden assistant reply also creates a session unread notification
+- **THEN** the running-session unread badge is still derived from the ephemeral notification projection
+- **THEN** the room-local read-state remains sourced from message-system instead of being overwritten by the session unread badge
 
 ### Requirement: Session notifications SHALL be ephemeral runtime state
 The system SHALL treat session notifications as application runtime state instead of durable session history.
@@ -60,4 +65,3 @@ Unread projection behavior SHALL remain correct when the client hydrates a persi
 - **WHEN** the user resumes a running session and the Chat viewport renders unread assistant replies into view
 - **THEN** the notification projection consumes only the replies up to that visible boundary
 - **THEN** the running-session unread badge reflects the remaining unread replies, if any
-

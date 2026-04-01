@@ -15,6 +15,11 @@ Message-system, terminal-system, and future systems SHALL integrate with the att
 - **THEN** the terminal source plugin invalidates that terminal source reference
 - **THEN** the runtime reads that source into attention drafts bound to the terminal context instead of synthesizing a generic text fact
 
+#### Scenario: Terminal focused by another actor does not become this runtime's attention input
+- **WHEN** a terminal produces a semantic change but only some other actor seat focuses it
+- **THEN** terminal-system still records that focus truth
+- **THEN** this session runtime does not ingest that terminal attention solely from the other actor's focus
+
 #### Scenario: Future systems reuse the same invalidation protocol
 - **WHEN** a future system such as browser-system or os-system participates in runtime orchestration
 - **THEN** it invalidates a source reference through the shared adapter contract
@@ -32,4 +37,3 @@ The runtime SHALL decide whether to schedule model work only after attention dra
 - **WHEN** attention drafts are committed but a cycle policy hook defers the next model pass
 - **THEN** the runtime records the pending attention state and item references
 - **THEN** the model call is delayed until the policy allows it
-
