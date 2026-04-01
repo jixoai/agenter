@@ -3,7 +3,6 @@
 @import "@fontsource/jetbrains-mono/700.css";
 @import "tailwindcss";
 @import "tw-animate-css";
-@plugin "@toolwind/corner-shape";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -136,7 +135,7 @@
     height: 100%;
   }
   * {
-    @apply border-border outline-ring/50 corner-bevel;
+    @apply border-border outline-ring/50;
     box-sizing: border-box;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, currentColor, transparent 80%) transparent;

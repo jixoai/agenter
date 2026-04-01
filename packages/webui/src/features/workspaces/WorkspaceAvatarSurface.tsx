@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { surfaceToneClassName } from "../../components/ui/surface";
 import { cn } from "../../lib/utils";
@@ -62,11 +63,9 @@ export const WorkspaceAvatarSurface = ({
                     selected ? "border-teal-300 bg-teal-50/70" : "border-slate-200 bg-white hover:border-slate-300",
                   )}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
+                  <CardButton
                     onClick={() => onSelectAvatar(avatar.nickname)}
-                    className="h-auto w-full items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
+                    className="border-transparent bg-transparent px-0 py-0 shadow-none hover:border-transparent hover:bg-transparent"
                   >
                     <div className="flex w-full items-center justify-between gap-2">
                       <div className="text-sm font-medium text-slate-900">{avatar.nickname}</div>
@@ -77,7 +76,7 @@ export const WorkspaceAvatarSurface = ({
                       {avatar.workspaceAvailable ? <Badge variant="secondary">workspace copy</Badge> : null}
                       {avatar.globalAvailable ? <Badge variant="secondary">global source</Badge> : null}
                     </div>
-                  </Button>
+                  </CardButton>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => onStartAvatar(avatar.nickname)}>
                       <ButtonLeadingVisual>

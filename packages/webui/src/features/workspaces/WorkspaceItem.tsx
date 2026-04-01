@@ -3,6 +3,7 @@ import { MessageSquarePlus, Star, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { cn } from "../../lib/utils";
 import { runningCountMeta } from "../../shared/status-meta";
 
@@ -39,16 +40,14 @@ export const WorkspaceItem = ({
       )}
     >
       <div className="flex items-start gap-2">
-        <Button
-          type="button"
-          variant="ghost"
+        <CardButton
           onClick={() => onSelect(selected ? null : workspace.path)}
           className={cn(
-            "h-auto min-w-0 flex-1 items-start justify-start rounded-lg px-2 py-2 text-left whitespace-normal shadow-none",
+            "min-w-0 flex-1 rounded-lg px-2 py-2 shadow-none",
             selected
-              ? "bg-transparent hover:bg-transparent"
+              ? "border-transparent bg-transparent hover:border-transparent hover:bg-transparent"
               : workspace.missing
-                ? "hover:bg-rose-100/60"
+                ? "border-transparent bg-transparent hover:border-transparent hover:bg-rose-100/60"
                 : "hover:bg-slate-100",
           )}
           title={workspace.path}
@@ -63,7 +62,7 @@ export const WorkspaceItem = ({
               <Badge variant="secondary">archive {workspace.counts.archive}</Badge>
             ) : null}
           </span>
-        </Button>
+        </CardButton>
 
         <div className="flex items-center gap-1 self-start">
           <Button

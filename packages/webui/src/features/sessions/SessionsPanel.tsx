@@ -3,6 +3,7 @@ import { Clock3, Play, Plus, Square, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { cn } from "../../lib/utils";
 
@@ -85,15 +86,13 @@ export const SessionsPanel = ({
       <ScrollViewport className="h-full space-y-2">
         {sessions.length === 0 ? <p className="typo-caption text-slate-500">No entries yet.</p> : null}
         {sessions.map((session) => (
-          <Button
+          <CardButton
             key={session.id}
-            type="button"
-            variant="ghost"
             onClick={() => onSelect(session.id)}
             className={cn(
-              "h-auto w-full items-start justify-start rounded-lg px-3 py-2 text-left whitespace-normal shadow-none transition-colors",
+              "rounded-lg px-3 py-2 transition-colors",
               session.id === activeSessionId
-                ? "bg-teal-50 text-teal-950 hover:bg-teal-50"
+                ? "border-teal-300 bg-teal-50 text-teal-950 hover:bg-teal-50"
                 : "bg-white text-slate-800 hover:bg-slate-100",
             )}
           >
@@ -102,7 +101,7 @@ export const SessionsPanel = ({
               <Badge variant={statusVariant(session.status)}>{session.status}</Badge>
             </div>
             <p className="truncate text-[11px] text-slate-600">{session.cwd}</p>
-          </Button>
+          </CardButton>
         ))}
       </ScrollViewport>
     </section>

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { Dialog } from "../../components/ui/dialog";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
 import { surfaceToneClassName } from "../../components/ui/surface";
@@ -123,15 +124,13 @@ export const WorkspacesCatalogSurface = ({
           </div>
 
           <div className="grid gap-2">
-            <Button
-              type="button"
-              variant="outline"
+            <CardButton
               onClick={() => onSelectSelection({ kind: "welcome" })}
               className={cn(
-                "h-auto w-full items-start justify-start rounded-xl px-3 py-3 text-left whitespace-normal shadow-none transition-colors",
+                "px-3 py-3",
                 selection.kind === "welcome"
                   ? "border-teal-300 bg-teal-50/70 hover:bg-teal-50/70"
-                  : "border-slate-200 bg-white hover:border-slate-300",
+                  : "bg-white hover:border-slate-300",
               )}
             >
               <div className="flex w-full items-center justify-between gap-3">
@@ -143,17 +142,15 @@ export const WorkspacesCatalogSurface = ({
                 </div>
                 <Badge variant="secondary">Start</Badge>
               </div>
-            </Button>
+            </CardButton>
 
-            <Button
-              type="button"
-              variant="outline"
+            <CardButton
               onClick={() => onSelectSelection({ kind: "history" })}
               className={cn(
-                "h-auto w-full items-start justify-start rounded-xl px-3 py-3 text-left whitespace-normal shadow-none transition-colors",
+                "px-3 py-3",
                 selection.kind === "history"
                   ? "border-teal-300 bg-teal-50/70 hover:bg-teal-50/70"
-                  : "border-slate-200 bg-white hover:border-slate-300",
+                  : "bg-white hover:border-slate-300",
               )}
             >
               <div className="flex w-full items-center justify-between gap-3">
@@ -163,7 +160,7 @@ export const WorkspacesCatalogSurface = ({
                 </div>
                 <Badge variant="secondary">List</Badge>
               </div>
-            </Button>
+            </CardButton>
           </div>
         </div>
 

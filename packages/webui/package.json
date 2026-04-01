@@ -58,7 +58,6 @@
     "@tailwindcss/vite": "^4.1.12",
     "@testing-library/jest-dom": "^6.7.0",
     "@testing-library/react": "^16.3.0",
-    "@toolwind/corner-shape": "^0.0.8-3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.7.0",

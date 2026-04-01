@@ -19,8 +19,8 @@ export const Dialog = ({ open, title, description, descriptionHelpId, onClose, c
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-slate-900/45 data-[closed]:invisible data-[closed]:pointer-events-none data-[ending-style]:animate-out data-[starting-style]:animate-in" />
-        <DialogPrimitive.Popup className="fixed inset-x-3 bottom-3 z-50 max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none data-[closed]:invisible data-[closed]:pointer-events-none data-[ending-style]:animate-out data-[starting-style]:animate-in md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
+        <DialogPrimitive.Backdrop className="data-[ending-style]:animate-out data-[starting-style]:animate-in fixed inset-0 z-[60] bg-slate-900/45 data-[closed]:pointer-events-none data-[closed]:invisible" />
+        <DialogPrimitive.Popup className="data-[ending-style]:animate-out data-[starting-style]:animate-in fixed inset-x-3 bottom-3 z-[61] max-h-[90dvh] rounded-xl border border-slate-200 bg-white shadow-2xl outline-none data-[closed]:pointer-events-none data-[closed]:invisible md:inset-auto md:top-1/2 md:left-1/2 md:w-[min(92vw,48rem)] md:-translate-x-1/2 md:-translate-y-1/2">
           <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -34,7 +34,9 @@ export const Dialog = ({ open, title, description, descriptionHelpId, onClose, c
                   />
                 ) : null}
               </div>
-              {description ? <DialogPrimitive.Description className="sr-only">{description}</DialogPrimitive.Description> : null}
+              {description ? (
+                <DialogPrimitive.Description className="sr-only">{description}</DialogPrimitive.Description>
+              ) : null}
             </div>
             <DialogPrimitive.Close
               className={cn(

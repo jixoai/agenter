@@ -3,6 +3,7 @@ import { Archive, MessageSquare, RotateCcw, Square, Star, Trash2 } from "lucide-
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { cn } from "../../lib/utils";
 import { sessionStatusMeta } from "../../shared/status-meta";
 import { workspaceSessionPreviewText } from "./session-preview";
@@ -56,12 +57,10 @@ export const SessionItem = ({
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <Button
-            type="button"
-            variant="ghost"
+          <CardButton
             onClick={() => onSelect(selected ? null : session.sessionId)}
             onDoubleClick={() => onActivate(session.sessionId)}
-            className="h-auto min-w-0 flex-1 items-start justify-start rounded-lg px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
+            className="min-w-0 flex-1 border-transparent bg-transparent px-0 py-0 shadow-none hover:border-transparent hover:bg-transparent"
             title={session.sessionId}
           >
             <div className="flex w-full flex-wrap items-center gap-2">
@@ -73,7 +72,7 @@ export const SessionItem = ({
             </div>
             <p className="text-[11px] break-all text-slate-500">{session.sessionId}</p>
             <p className="text-[11px] text-slate-500">Created {formatSessionCreatedAt(session.createdAt)}</p>
-          </Button>
+          </CardButton>
 
           <div className="flex w-full flex-wrap items-center justify-start gap-1 sm:w-auto sm:justify-end">
             {!isArchived ? (
@@ -149,17 +148,15 @@ export const SessionItem = ({
           </div>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
+        <CardButton
           onClick={() => onSelect(selected ? null : session.sessionId)}
           onDoubleClick={() => onActivate(session.sessionId)}
-          className="h-auto w-full items-start justify-start rounded-lg border-slate-200 bg-white/80 px-3 py-2 text-left whitespace-normal shadow-none hover:border-slate-300"
+          className="rounded-lg border-slate-200 bg-white/80 px-3 py-2 shadow-none hover:border-slate-300"
         >
           <p className={cn("text-xs leading-5 text-slate-700", compact ? "line-clamp-2" : "line-clamp-3")}>
             {previewText}
           </p>
-        </Button>
+        </CardButton>
       </div>
     </article>
   );

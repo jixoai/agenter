@@ -37,3 +37,23 @@ export const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes
   ({ className, ...props }, ref) => <div ref={ref} className={cn("p-4 pt-0", className)} {...props} />,
 );
 CardContent.displayName = "CardContent";
+
+export interface CardButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+
+export const CardButton = React.forwardRef<HTMLButtonElement, CardButtonProps>(
+  ({ className, type = "button", ...props }, ref) => (
+    <button
+      ref={ref}
+      type={type}
+      className={cn(
+        "w-full rounded-xl border border-slate-200 bg-white/90 text-left shadow-sm transition-colors",
+        "hover:border-slate-300 hover:bg-slate-50/90",
+        "focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white focus-visible:outline-none",
+        "disabled:pointer-events-none disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    />
+  ),
+);
+CardButton.displayName = "CardButton";

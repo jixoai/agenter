@@ -3,6 +3,7 @@ import { Bot, MessagesSquare, Play, RefreshCcw, TerminalSquare } from "lucide-re
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { ScrollViewport } from "../../components/ui/overflow-surface";
@@ -148,17 +149,15 @@ export const WorkspaceWelcomeSurface = ({
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
+                        <CardButton
                           onClick={() => onToggleRoom(room.channel.chatId)}
-                          className="h-auto min-w-0 flex-1 items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
+                          className="min-w-0 flex-1 border-transparent bg-transparent px-0 py-0 shadow-none hover:border-transparent hover:bg-transparent"
                         >
                           <div className="text-sm font-medium text-slate-900">
                             {room.channel.title || room.channel.chatId}
                           </div>
                           <div className="mt-1 text-[11px] break-all text-slate-500">{room.channel.chatId}</div>
-                        </Button>
+                        </CardButton>
                         <Badge variant={accessTone(room.accessState)}>{room.accessState}</Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -219,17 +218,15 @@ export const WorkspaceWelcomeSurface = ({
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
+                        <CardButton
                           onClick={() => onToggleTerminal(terminal.terminal.terminalId)}
-                          className="h-auto min-w-0 flex-1 items-start justify-start px-0 py-0 text-left whitespace-normal shadow-none hover:bg-transparent"
+                          className="min-w-0 flex-1 border-transparent bg-transparent px-0 py-0 shadow-none hover:border-transparent hover:bg-transparent"
                         >
                           <div className="text-sm font-medium text-slate-900">
                             {terminal.terminal.title || terminal.terminal.terminalId}
                           </div>
                           <div className="mt-1 text-[11px] break-all text-slate-500">{terminal.terminal.cwd}</div>
-                        </Button>
+                        </CardButton>
                         <Badge variant={accessTone(terminal.accessState)}>{terminal.accessState}</Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">

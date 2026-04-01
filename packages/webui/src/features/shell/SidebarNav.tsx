@@ -1,8 +1,17 @@
-import { ChevronLeft, ChevronRight, FolderTree, MessageSquare, MessagesSquare, ShieldCheck, TerminalSquare } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderTree,
+  MessageSquare,
+  MessagesSquare,
+  ShieldCheck,
+  TerminalSquare,
+} from "lucide-react";
 import type { ComponentType } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button, ButtonLabel, ButtonLeadingVisual, ButtonTrailingVisual } from "../../components/ui/button";
+import { CardButton } from "../../components/ui/card";
 import { ProfileImage } from "../../components/ui/profile-image";
 import {
   Sidebar,
@@ -208,8 +217,8 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
                   : status.variant === "destructive"
                     ? "bg-rose-500"
                     : "bg-slate-400",
-                )}
-              />
+            )}
+          />
         </Button>
       </Tooltip>
     );
@@ -225,15 +234,16 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
         </div>
       }
     >
-      <Button
+      <CardButton
         type="button"
-        variant={item.active ? "secondary" : "ghost"}
         onClick={item.onSelect}
         aria-label={summary}
         title={summary}
         className={cn(
-          "w-full rounded-xl px-2 py-2 text-left transition-colors",
-          item.active ? "bg-teal-50 text-slate-900 ring-1 ring-teal-200" : "text-slate-700 hover:bg-slate-100",
+          "w-full px-2 py-2",
+          item.active
+            ? "border-teal-200 bg-teal-50 text-slate-900 ring-1 ring-teal-200"
+            : "text-slate-700 hover:bg-slate-100",
         )}
       >
         <div className="flex items-start gap-2.5">
@@ -273,9 +283,9 @@ const SessionButton = ({ item, collapsed }: { item: RunningSessionNavItem; colla
                 {basenamePath(item.workspacePath)} · {status.label}
               </span>
             </div>
-            </div>
           </div>
-      </Button>
+        </div>
+      </CardButton>
     </Tooltip>
   );
 };
@@ -346,13 +356,7 @@ const SidebarNavBrand = ({ collapsed, onToggleCollapsed }: { collapsed: boolean;
   );
 };
 
-const OperatorProfileButton = ({
-  item,
-  collapsed,
-}: {
-  item: SidebarOperatorProfileItem;
-  collapsed: boolean;
-}) => {
+const OperatorProfileButton = ({ item, collapsed }: { item: SidebarOperatorProfileItem; collapsed: boolean }) => {
   const summary = [item.label, item.roleLabel, item.subtitle].filter(Boolean).join(" · ");
   if (collapsed) {
     return (
@@ -384,17 +388,14 @@ const OperatorProfileButton = ({
   }
 
   return (
-    <Button
+    <CardButton
       type="button"
-      variant={item.active ? "secondary" : "outline"}
       onClick={item.onSelect}
       aria-label={summary}
       title={summary}
       className={cn(
-        "w-full rounded-xl border px-2.5 py-2 text-left transition-colors",
-        item.active
-          ? "border-teal-200 bg-teal-50 text-slate-900"
-          : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100",
+        "w-full px-2.5 py-2",
+        item.active ? "border-teal-200 bg-teal-50 text-slate-900" : "bg-white/80 text-slate-700 hover:bg-slate-100",
       )}
     >
       <div className="flex items-start gap-2.5">
@@ -410,7 +411,7 @@ const OperatorProfileButton = ({
           </div>
         </div>
       </div>
-    </Button>
+    </CardButton>
   );
 };
 
@@ -428,7 +429,11 @@ export const SidebarNavContent = ({
     <div
       className={cn(
         "grid h-full gap-4",
-        compact ? "grid-rows-[minmax(0,1fr)_auto] px-3 py-3" : iconRail ? "justify-items-center px-2 py-3" : "px-3 py-3",
+        compact
+          ? "grid-rows-[minmax(0,1fr)_auto] px-3 py-3"
+          : iconRail
+            ? "justify-items-center px-2 py-3"
+            : "px-3 py-3",
       )}
       data-sidebar-collapsed={iconRail ? "true" : "false"}
     >
