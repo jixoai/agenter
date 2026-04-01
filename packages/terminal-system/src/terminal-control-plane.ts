@@ -1081,10 +1081,11 @@ export class TerminalControlPlane {
       return existing;
     }
     const record = this.requireRecord(terminalId);
+    const normalizedCwd = resolve(record.cwd);
     const managedConfig: ManagedTerminalConfig = {
       terminalId: record.terminalId,
       command: [...record.command],
-      cwd: record.cwd,
+      cwd: normalizedCwd,
       cols: record.profile.cols ?? 120,
       rows: record.profile.rows ?? 30,
       gitLog: toManagedGitLogMode(record.profile.gitLog),
@@ -1114,11 +1115,12 @@ export class TerminalControlPlane {
     const entry = this.entries.get(record.terminalId);
     const snapshot = entry?.terminal.getSnapshot();
     const access = input.access ?? undefined;
+    const normalizedCwd = resolve(record.cwd);
     return {
       terminalId: record.terminalId,
       processKind: record.processKind,
       command: [...record.command],
-      cwd: record.cwd,
+      cwd: normalizedCwd,
       workspace: entry?.terminal.getWorkspace() ?? null,
       running: entry?.terminal.isRunning() ?? false,
       status: entry?.terminal.getStatus() ?? "IDLE",

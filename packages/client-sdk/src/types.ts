@@ -16,6 +16,7 @@ export type WorkspaceSessionCursor = WorkspaceSessionListOutput["nextCursor"];
 export type WorkspaceAvatarCatalogOutput = RouterOutputs["workspace"]["avatarCatalog"];
 export type WorkspaceAvatarCatalogEntry = WorkspaceAvatarCatalogOutput["items"][number];
 export type WorkspaceAvatarForkOutput = RouterOutputs["workspace"]["forkAvatar"];
+export type WorkspaceAvatarCopyOutput = RouterOutputs["workspace"]["copyAvatar"];
 export type WorkspaceWelcomeSnapshotOutput = RouterOutputs["workspace"]["welcomeSnapshot"];
 export type WorkspaceWelcomeRoomItem = WorkspaceWelcomeSnapshotOutput["rooms"][number];
 export type WorkspaceWelcomeTerminalItem = WorkspaceWelcomeSnapshotOutput["terminals"][number];

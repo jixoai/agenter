@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-const sourceDir = join(import.meta.dir, "../../webui/dist");
+const sourceDir = join(import.meta.dir, "../../webui/build");
 const targetDir = join(import.meta.dir, "../assets/webui");
 
 if (!existsSync(sourceDir)) {

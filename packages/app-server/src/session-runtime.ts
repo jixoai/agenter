@@ -137,6 +137,10 @@ import {
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
 
+const toToolRecord = (value: object): Record<string, unknown> => {
+  return Object.fromEntries(Object.entries(value));
+};
+
 const slugifyMessageChannelTitle = (value: string, fallback: string): string => {
   const normalized = value
     .trim()
@@ -2766,10 +2770,12 @@ export class SessionRuntime {
             "terminal_read",
             input,
             async () =>
-              await this.readTerminalRepresentation(input.terminalId, {
-                mode: input.mode ?? "auto",
-                remark: false,
-              }),
+              toToolRecord(
+                await this.readTerminalRepresentation(input.terminalId, {
+                  mode: input.mode ?? "auto",
+                  remark: false,
+                }),
+              ),
           );
         });
 
@@ -2784,10 +2790,12 @@ export class SessionRuntime {
             "terminal_snapshot",
             input,
             async () =>
-              await this.readTerminalRepresentation(input.terminalId, {
-                mode: "snapshot",
-                remark: false,
-              }),
+              toToolRecord(
+                await this.readTerminalRepresentation(input.terminalId, {
+                  mode: "snapshot",
+                  remark: false,
+                }),
+              ),
           );
         });
 
@@ -2796,7 +2804,9 @@ export class SessionRuntime {
           description: runtimeText.t("tool.terminal_get_config.description"),
           outputSchema: z.record(z.string(), z.unknown()),
         }).server(async () =>
-          traceTool("terminal_get_config", {}, async () => await this.requireTerminalControlPlane().getConfig()),
+          traceTool("terminal_get_config", {}, async () =>
+            toToolRecord(await this.requireTerminalControlPlane().getConfig()),
+          ),
         );
 
         const setConfigTool = toolDefinition({
@@ -2815,7 +2825,8 @@ export class SessionRuntime {
           return traceTool(
             "terminal_set_config",
             input,
-            async () => await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch),
+            async () =>
+              toToolRecord(await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch)),
           );
         });
 
@@ -2982,7 +2993,7 @@ export class SessionRuntime {
             if (result.items.length > 0) {
               this.notifyInput("task");
             }
-            return result;
+            return toToolRecord(result);
           });
         });
 
@@ -3000,7 +3011,7 @@ export class SessionRuntime {
             });
             this.emit("taskUpdated", { task });
             this.notifyInput("task");
-            return task;
+            return toToolRecord(task);
           });
         });
 
@@ -3018,7 +3029,7 @@ export class SessionRuntime {
             });
             this.emit("taskUpdated", { task });
             this.notifyInput("task");
-            return task;
+            return toToolRecord(task);
           });
         });
 
@@ -3044,7 +3055,7 @@ export class SessionRuntime {
               this.emit("taskUpdated", { task });
             }
             this.notifyInput("task");
-            return result;
+            return toToolRecord(result);
           });
         });
 
@@ -3068,7 +3079,7 @@ export class SessionRuntime {
             });
             this.emit("taskUpdated", { task });
             this.notifyInput("task");
-            return task;
+            return toToolRecord(task);
           });
         });
 
@@ -3092,7 +3103,7 @@ export class SessionRuntime {
             });
             this.emit("taskUpdated", { task });
             this.notifyInput("task");
-            return task;
+            return toToolRecord(task);
           });
         });
 
@@ -3139,7 +3150,7 @@ export class SessionRuntime {
               }
               this.notifyInput("task");
             }
-            return result;
+            return toToolRecord(result);
           });
         });
 

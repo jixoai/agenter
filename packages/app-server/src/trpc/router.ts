@@ -1331,6 +1331,17 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         avatar: ctx.kernel.forkWorkspaceAvatar(input),
       })),
+    copyAvatar: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          sourceAvatar: z.string().min(1),
+          targetAvatar: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        avatar: ctx.kernel.copyWorkspaceAvatar(input),
+      })),
     welcomeSnapshot: t.procedure
       .input(
         z.object({

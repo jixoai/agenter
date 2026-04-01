@@ -83,7 +83,7 @@ const startWebDevServer = async (input: {
     stderr: "inherit",
     env: {
       ...process.env,
-      VITE_AGENTER_WS_URL: `ws://${input.trpcHost}:${input.trpcPort}/trpc`,
+      PUBLIC_AGENTER_WS_URL: `ws://${input.trpcHost}:${input.trpcPort}/trpc`,
     },
   });
   await waitForHttpServer(webUrl({ host: input.host, port: input.webPort }));

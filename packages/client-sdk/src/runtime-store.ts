@@ -1291,6 +1291,15 @@ export class RuntimeStore {
     return output.avatar;
   }
 
+  async copyWorkspaceAvatar(input: {
+    workspacePath: string;
+    sourceAvatar: string;
+    targetAvatar: string;
+  }) {
+    const output = await this.client.trpc.workspace.copyAvatar.mutate(input);
+    return output.avatar;
+  }
+
   async inspectWorkspaceWelcome(input: { workspacePath: string; avatar?: string }) {
     return await this.client.trpc.workspace.welcomeSnapshot.query(input);
   }

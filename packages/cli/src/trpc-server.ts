@@ -101,7 +101,9 @@ const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: strin
 
   let targetPath = resolvedPath;
   if (!existsSync(targetPath)) {
-    targetPath = join(staticDir, "index.html");
+    const fallback200 = join(staticDir, "200.html");
+    const fallbackIndex = join(staticDir, "index.html");
+    targetPath = existsSync(fallback200) ? fallback200 : fallbackIndex;
   }
 
   if (!existsSync(targetPath)) {

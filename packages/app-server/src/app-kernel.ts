@@ -52,6 +52,7 @@ import {
 import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleCompactTrigger } from "./chat-cycles";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import {
+  copyAvatarIntoWorkspace,
   listWorkspaceAvatarCatalog,
   forkAvatarIntoWorkspace,
   type WorkspaceAvatarCatalogEntry,
@@ -779,6 +780,20 @@ export class AppKernel {
     return forkAvatarIntoWorkspace({
       workspacePath,
       nickname: input.avatar,
+    });
+  }
+
+  copyWorkspaceAvatar(input: {
+    workspacePath: string;
+    sourceAvatar: string;
+    targetAvatar: string;
+  }): WorkspaceAvatarCatalogEntry {
+    const workspacePath = toWorkspacePath(input.workspacePath);
+    this.workspaces.add(workspacePath);
+    return copyAvatarIntoWorkspace({
+      workspacePath,
+      sourceNickname: input.sourceAvatar,
+      targetNickname: input.targetAvatar,
     });
   }
 

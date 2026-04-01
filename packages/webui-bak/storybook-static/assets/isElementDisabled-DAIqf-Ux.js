@@ -1,0 +1,1 @@
+import{r as e}from"./iframe-BA9U4A2Q.js";function f({controlled:t,default:s,name:i,state:c="value"}){const{current:a}=e.useRef(t!==void 0),[u,r]=e.useState(s),l=a?t:u,n=e.useCallback(o=>{a||r(o)},[]);return[l,n]}function b(t){return t==null||t.hasAttribute("disabled")||t.getAttribute("aria-disabled")==="true"}export{b as i,f as u};
