@@ -1,6 +1,6 @@
 import type { MessageChannelEntry, MessageChannelGrantEntry, MessageChannelGrantIssueOutput } from "@agenter/client-sdk";
 import { CircleDot, Copy, Info, Signal, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -125,10 +125,15 @@ export const MessageChannelMetadataDisclosure = ({
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const actorMeta = useMemo(() => new Map(actorOptions.map((option) => [option.actorId, option])), [actorOptions]);
+  const channelRef = useRef(channel);
 
   const isAdmin = channel.accessRole === "admin";
   const ChannelIcon = Users;
   const transportState = channel.transportUrl ? (channel.focused ? "connected and focused" : "connected") : "offline";
+
+  useEffect(() => {
+    channelRef.current = channel;
+  }, [channel]);
 
   const loadGrants = useCallback(async () => {
     if (!isAdmin || !onListChannelGrants) {
@@ -139,13 +144,13 @@ export const MessageChannelMetadataDisclosure = ({
     setGrantsLoading(true);
     setGrantsError(null);
     try {
-      setGrants(await onListChannelGrants(channel));
+      setGrants(await onListChannelGrants(channelRef.current));
     } catch (error) {
       setGrantsError(error instanceof Error ? error.message : String(error));
     } finally {
       setGrantsLoading(false);
     }
-  }, [channel, isAdmin, onListChannelGrants]);
+  }, [channel.accessRole, channel.accessToken, channel.chatId, isAdmin, onListChannelGrants]);
 
   useEffect(() => {
     setDraftTitle(channel.title);
@@ -156,7 +161,7 @@ export const MessageChannelMetadataDisclosure = ({
     setDeleting(false);
     setIssuedGrant(null);
     setCopyFeedback(null);
-  }, [channel.accessRole, channel.chatId, channel.participantId, channel.updatedAt]);
+  }, [channel.chatId, channel.updatedAt]);
 
   useEffect(() => {
     if (!open) {

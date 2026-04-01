@@ -38,7 +38,7 @@ describe("Feature: collaboration actor directory", () => {
     ]);
   });
 
-  test("Scenario: Given active and archived sessions When the directory is built Then only active session seats stay in the picker", () => {
+  test("Scenario: Given running, stopped, and archived sessions When the directory is built Then only running session seats stay in the picker", () => {
     const items = buildActorDirectory({
       sessions: [
         {
@@ -48,6 +48,19 @@ describe("Feature: collaboration actor directory", () => {
           cwd: "/repo/demo",
           workspacePath: "/repo/demo",
           sessionRoot: "/tmp/session-active",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          status: "running",
+          storageState: "active",
+          storeTarget: "global",
+        },
+        {
+          id: "session-stopped",
+          name: "Stopped reviewer",
+          avatar: "reviewer",
+          cwd: "/repo/demo",
+          workspacePath: "/repo/demo",
+          sessionRoot: "/tmp/session-stopped",
           createdAt: "2026-04-01T00:00:00.000Z",
           updatedAt: "2026-04-01T00:00:00.000Z",
           status: "stopped",

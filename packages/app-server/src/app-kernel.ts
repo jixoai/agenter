@@ -539,7 +539,11 @@ export class AppKernel {
       this.workspaces.add(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
-    await Promise.all(this.sessions.list().map((session) => this.syncSessionIconSeed(session)));
+    await Promise.all([
+      this.messageControlPlane.startTransport({ port: 0 }),
+      this.terminalControlPlane.startTransport({ port: 0 }),
+      ...this.sessions.list().map((session) => this.syncSessionIconSeed(session)),
+    ]);
   }
 
   async stop(): Promise<void> {

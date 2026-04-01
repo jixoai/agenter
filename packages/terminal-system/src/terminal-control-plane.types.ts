@@ -241,6 +241,7 @@ export interface TerminalControlPlaneEntry {
   running: boolean;
   status: "IDLE" | "BUSY";
   seq: number;
+  snapshot?: ManagedTerminalSnapshot;
   focused: boolean;
   icon?: string;
   title?: string;

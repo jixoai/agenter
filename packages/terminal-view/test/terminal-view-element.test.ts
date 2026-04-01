@@ -362,4 +362,45 @@ describe("Feature: terminal-view WebComponent", () => {
     element.remove();
     expect(terminal?.deregisteredJoinerIds).toContain(0);
   });
+
+  test("Scenario: Given the live snapshot arrives before xterm boot finishes When the component mounts Then the first transport snapshot is still rendered", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "iflow";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/iflow";
+
+    document.body.append(element);
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    socket?.message(
+      JSON.stringify({
+        type: "snapshot",
+        terminalId: "iflow",
+        status: "BUSY",
+        snapshot: {
+          seq: 1,
+          cols: 120,
+          rows: 30,
+          lines: ["boot output"],
+          cursor: { x: 0, y: 0 },
+        },
+      }),
+    );
+
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const terminal = mockTerminals.at(-1);
+    expect(element.connectionState).toBe("connected");
+    expect(terminal?.resetCount).toBe(1);
+    expect(terminal?.writes).toContain("boot output");
+    expect(terminal?.cols).toBe(120);
+    expect(terminal?.rows).toBe(30);
+  });
 });

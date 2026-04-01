@@ -574,7 +574,11 @@ export class TerminalViewElement extends LitElement {
     this.observeTerminalScreen();
     this.syncMeasuredScreen();
     if (this.snapshot) {
-      this.hydrateSnapshot(this.snapshot, "prop");
+      const source = this.connectionState === "connected" && !this.liveSnapshotHydrated ? "transport" : "prop";
+      const applied = this.hydrateSnapshot(this.snapshot, source);
+      if (source === "transport" && applied) {
+        this.liveSnapshotHydrated = true;
+      }
     }
   }
 
@@ -636,16 +640,16 @@ export class TerminalViewElement extends LitElement {
     this.requestUpdate();
   }
 
-  private hydrateSnapshot(snapshot: TerminalViewSnapshot | null, source: "prop" | "transport"): void {
+  private hydrateSnapshot(snapshot: TerminalViewSnapshot | null, source: "prop" | "transport"): boolean {
     if (!snapshot || !this.terminal) {
-      return;
+      return false;
     }
     const geometryChanged = this.terminal.cols !== snapshot.cols || this.terminal.rows !== snapshot.rows;
-    if (source === "prop" && this.connectionState === "connected") {
-      return;
+    if (source === "prop" && this.connectionState === "connected" && this.liveSnapshotHydrated) {
+      return false;
     }
     if (snapshot.seq <= this.hydratedSnapshotSeq && !geometryChanged) {
-      return;
+      return false;
     }
     this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, snapshot.seq);
     this.terminal.options.scrollback = Math.max(DEFAULT_SCROLLBACK, snapshot.lines.length - snapshot.rows + 256);
@@ -656,6 +660,7 @@ export class TerminalViewElement extends LitElement {
       this.terminal.write(rendered);
     }
     this.syncMeasuredScreen();
+    return true;
   }
 
   private syncSocket(): void {
@@ -715,8 +720,7 @@ export class TerminalViewElement extends LitElement {
           this.terminal.cols !== message.snapshot.cols ||
           this.terminal.rows !== message.snapshot.rows;
         if (!this.liveSnapshotHydrated || geometryChanged) {
-          this.hydrateSnapshot(message.snapshot, "transport");
-          this.liveSnapshotHydrated = true;
+          this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
         }
         return;
       }

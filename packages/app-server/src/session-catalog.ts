@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { readSessionDocument, writeSessionDocument, type PersistedSessionStorageState } from "./session-doc";
 import { resolveWorkspaceAvatarSessionId } from "./session-identity";
@@ -52,6 +52,17 @@ const scanBucketedSessionRoots = (baseDir: string): string[] => {
   return roots;
 };
 
+const scanDirectSessionRoots = (baseDir: string): string[] => {
+  try {
+    return readdirSync(baseDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(baseDir, entry.name))
+      .filter((entry) => existsSync(join(entry, "session.json")));
+  } catch {
+    return [];
+  }
+};
+
 export interface SessionMeta {
   id: string;
   name: string;
@@ -85,10 +96,12 @@ export class SessionCatalog {
   private readonly byId = new Map<string, SessionMeta>();
   private readonly globalRoot: string;
   private readonly archiveRoot: string;
+  private readonly legacyRoot: string;
 
   constructor(options: SessionCatalogOptions = {}) {
     this.globalRoot = options.globalRoot ?? join(homedir(), ".agenter", "sessions");
     this.archiveRoot = options.archiveRoot ?? join(homedir(), ".agenter", "archive", "sessions");
+    this.legacyRoot = join(dirname(this.archiveRoot), "sessions-legacy");
   }
 
   getGlobalRoot(): string {
@@ -242,9 +255,17 @@ export class SessionCatalog {
     const workspaceSet = new Set(workspaces.map((item) => toWorkspacePath(item)));
     const discovered = new Map<string, SessionMeta>();
 
+    for (const sessionRoot of this.scanLegacyFlatGlobalSessionRoots()) {
+      this.quarantineSessionRoot(sessionRoot);
+    }
+
     for (const sessionRoot of this.scanGlobalSessionRoots()) {
       const parsed = this.readSessionMeta(sessionRoot, "global");
       if (parsed) {
+        if (!this.shouldKeepDiscoveredMeta(parsed)) {
+          this.quarantineSessionRoot(sessionRoot);
+          continue;
+        }
         discovered.set(parsed.id, parsed);
       }
     }
@@ -265,10 +286,7 @@ export class SessionCatalog {
         continue;
       }
       for (const sessionRoot of this.scanWorkspaceSessionRoots(workspace)) {
-        const parsed = this.readSessionMeta(sessionRoot, "workspace");
-        if (parsed) {
-          discovered.set(parsed.id, parsed);
-        }
+        this.quarantineSessionRoot(sessionRoot);
       }
     }
 
@@ -300,6 +318,10 @@ export class SessionCatalog {
 
   private scanGlobalSessionRoots(): string[] {
     return scanBucketedSessionRoots(this.globalRoot);
+  }
+
+  private scanLegacyFlatGlobalSessionRoots(): string[] {
+    return scanDirectSessionRoots(this.globalRoot);
   }
 
   private scanArchiveSessionRoots(): string[] {
@@ -351,6 +373,31 @@ export class SessionCatalog {
       sessionRoot,
       storeTarget: (session.storeTarget as "global" | "workspace" | undefined) ?? (target === "global" ? "global" : "workspace"),
     };
+  }
+
+  private shouldKeepDiscoveredMeta(meta: SessionMeta): boolean {
+    if (meta.storageState === "archived") {
+      return true;
+    }
+    if (meta.storeTarget !== "global") {
+      return false;
+    }
+    return meta.id === resolveWorkspaceAvatarSessionId(meta.workspacePath, meta.avatar);
+  }
+
+  private quarantineSessionRoot(sessionRoot: string): void {
+    if (!existsSync(sessionRoot)) {
+      return;
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const baseName = basename(sessionRoot) || "session";
+    const targetRoot = join(this.legacyRoot, timestamp, baseName);
+    try {
+      mkdirSync(dirname(targetRoot), { recursive: true });
+      renameSync(sessionRoot, targetRoot);
+    } catch {
+      rmSync(sessionRoot, { recursive: true, force: true });
+    }
   }
 
   private persistMeta(meta: SessionMeta): void {

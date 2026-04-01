@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
@@ -201,6 +201,29 @@ describe("Feature: terminal control plane", () => {
     expect(snapshot.lines.length).toBeGreaterThan(snapshot.rows);
     expect(rendered).toContain("line 1");
     expect(rendered).toContain("line 48");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a relative cwd and live output When listing terminals Then the control plane exposes an absolute cwd and inline snapshot for global restore", async () => {
+    const plane = createPlane();
+    const created = await plane.create({
+      terminalId: "relative-cwd",
+      cwd: ".",
+    });
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "pwd\n",
+      submit: false,
+    });
+    await Bun.sleep(120);
+
+    const listed = plane.list().find((entry) => entry.terminalId === created.terminalId);
+
+    expect(listed?.cwd).toBe(resolve("."));
+    expect(listed?.snapshot?.seq).toBeGreaterThan(0);
+    expect(listed?.snapshot?.lines.join("\n")).toContain("pwd");
 
     await plane.dispose();
   });

@@ -58,6 +58,89 @@ const resolveRoomActorKind = (actorId: string | undefined): RoomUserEntry["actor
   return "system";
 };
 
+const roomParticipantsEqual = (left: GlobalRoomEntry["participants"], right: GlobalRoomEntry["participants"]): boolean =>
+  left.length === right.length &&
+  left.every((participant, index) => {
+    const candidate = right[index];
+    return candidate?.id === participant.id && candidate?.label === participant.label;
+  });
+
+const roomReadProgressEqual = (
+  left: GlobalRoomEntry["readProgress"],
+  right: GlobalRoomEntry["readProgress"],
+): boolean => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    left.latestVisibleMessageId === right.latestVisibleMessageId &&
+    left.latestVisibleMessageRowId === right.latestVisibleMessageRowId &&
+    left.latestVisibleAt === right.latestVisibleAt &&
+    left.totalSeatCount === right.totalSeatCount &&
+    left.readSeatCount === right.readSeatCount &&
+    left.unreadSeatCount === right.unreadSeatCount &&
+    left.invalidCredentialSeatCount === right.invalidCredentialSeatCount
+  );
+};
+
+const roomReadStatesEqual = (left: GlobalRoomEntry["readStates"], right: GlobalRoomEntry["readStates"]): boolean => {
+  const leftStates = left ?? [];
+  const rightStates = right ?? [];
+  return (
+    leftStates.length === rightStates.length &&
+    leftStates.every((state, index) => {
+      const candidate = rightStates[index];
+      return (
+        candidate?.actorId === state.actorId &&
+        candidate?.role === state.role &&
+        candidate?.label === state.label &&
+        candidate?.currentAdmin === state.currentAdmin &&
+        candidate?.online === state.online &&
+        candidate?.focused === state.focused &&
+        candidate?.invalidCredential === state.invalidCredential &&
+        candidate?.readMessageId === state.readMessageId &&
+        candidate?.readMessageRowId === state.readMessageRowId &&
+        candidate?.readAt === state.readAt &&
+        candidate?.hasReadLatestVisible === state.hasReadLatestVisible
+      );
+    })
+  );
+};
+
+const globalRoomEquals = (left: GlobalRoomEntry, right: GlobalRoomEntry): boolean =>
+  left.chatId === right.chatId &&
+  left.kind === right.kind &&
+  left.title === right.title &&
+  left.owner === right.owner &&
+  left.createdAt === right.createdAt &&
+  left.updatedAt === right.updatedAt &&
+  left.focused === right.focused &&
+  left.accessRole === right.accessRole &&
+  left.accessToken === right.accessToken &&
+  left.participantId === right.participantId &&
+  left.transportUrl === right.transportUrl &&
+  JSON.stringify(left.metadata ?? {}) === JSON.stringify(right.metadata ?? {}) &&
+  roomParticipantsEqual(left.participants, right.participants) &&
+  roomReadProgressEqual(left.readProgress, right.readProgress) &&
+  roomReadStatesEqual(left.readStates ?? [], right.readStates ?? []);
+
+const mergeGlobalRooms = (current: GlobalRoomEntry[], next: GlobalRoomEntry[]): GlobalRoomEntry[] => {
+  if (current.length === 0) {
+    return next;
+  }
+  const currentById = new Map(current.map((room) => [room.chatId, room]));
+  const merged = next.map((room) => {
+    const existing = currentById.get(room.chatId);
+    return existing && globalRoomEquals(existing, room) ? existing : room;
+  });
+  const unchanged =
+    merged.length === current.length && merged.every((room, index) => room === current[index]);
+  return unchanged ? current : merged;
+};
+
 export const GlobalChatsRoute = ({ preferredRoomId }: { preferredRoomId?: string | null }) => {
   const controller = useAppController();
   const connected = useRuntimeSelector((state) => state.connected);
@@ -312,7 +395,7 @@ export const GlobalChatsRoute = ({ preferredRoomId }: { preferredRoomId?: string
       }
       try {
         const items = await controller.listGlobalRooms();
-        setRooms(items);
+        setRooms((current) => mergeGlobalRooms(current, items));
         setSelectedRoomId((current) => {
           if (current && items.some((item) => item.chatId === current)) {
             return current;

@@ -35,7 +35,7 @@ export const buildActorDirectory = (input: {
   }
 
   for (const session of input.sessions) {
-    if (session.storageState !== "active") {
+    if (session.storageState !== "active" || session.status !== "running") {
       continue;
     }
     const actorId = `session:${session.id}`;

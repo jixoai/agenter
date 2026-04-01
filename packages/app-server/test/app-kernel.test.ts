@@ -90,6 +90,28 @@ describe("Feature: app kernel event replay", () => {
     expect(page.items[0]?.sessionId).toBe(session.id);
   });
 
+  test("Scenario: Given kernel startup When creating global room and terminal surfaces Then live transport URLs initial snapshots and absolute cwd are available immediately", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const room = kernel.createGlobalRoom({
+      title: "Ops room",
+      focus: false,
+    });
+    const terminalResult = await kernel.createGlobalTerminal({
+      cwd: ".",
+      focus: false,
+    });
+
+    expect(room.transportUrl).toContain("ws://127.0.0.1:");
+    expect(room.transportUrl).toContain("/room/");
+    expect(terminalResult.terminal?.transportUrl).toContain("ws://127.0.0.1:");
+    expect(terminalResult.terminal?.transportUrl).toContain("/pty/");
+    expect(terminalResult.terminal?.cwd).toBe(resolve("."));
+    expect(terminalResult.terminal?.snapshot?.rows).toBeGreaterThan(0);
+    expect(terminalResult.terminal?.snapshot?.cols).toBeGreaterThan(0);
+  });
+
   test("Scenario: Given session runtime When inspecting model debug Then resolved provider config and empty history are returned", async () => {
     const kernel = createKernel();
     await kernel.start();

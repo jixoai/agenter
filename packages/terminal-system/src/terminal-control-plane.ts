@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { TerminalStatus } from "./types";
 import { ManagedTerminal, type ManagedTerminalConfig, type ManagedTerminalSnapshot } from "./managed-terminal";
@@ -1064,7 +1064,7 @@ export class TerminalControlPlane {
       { command: input.command, cwd: input.cwd },
     );
     const command = profile.command ? [...profile.command] : [...(this.options.defaultShellCommand ?? defaultShellCommand())];
-    const cwd = profile.cwd ?? homedir();
+    const cwd = resolve(profile.cwd ?? homedir());
     return this.db.createTerminal({
       terminalId,
       processKind,
@@ -1123,6 +1123,7 @@ export class TerminalControlPlane {
       running: entry?.terminal.isRunning() ?? false,
       status: entry?.terminal.getStatus() ?? "IDLE",
       seq: snapshot?.seq ?? 0,
+      snapshot,
       focused: input.focused,
       icon: record.profile.icon,
       title: record.profile.title,

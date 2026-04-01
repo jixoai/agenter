@@ -75,6 +75,63 @@ describe("Feature: message channel metadata disclosure", () => {
     expect(within(dialog).getByLabelText("Participant actor 1")).toHaveValue("auth:owner");
   });
 
+  test("Scenario: Given an admin drafting an extra room seat When polling rerenders the same room revision Then the unsaved participant row remains visible", async () => {
+    const channel = createChannel();
+    const onUpdateChannel = vi.fn(async ({ channel: current, patch }: { channel: MessageChannelEntry; patch: Record<string, unknown> }) => ({
+      ...current,
+      ...patch,
+    }));
+    const { rerender } = render(
+      <MessageChannelMetadataDisclosure channel={channel} onUpdateChannel={onUpdateChannel} actorOptions={actorOptions} />,
+    );
+
+    fireEvent.click(screen.getByTestId("message-channel-metadata-trigger"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add participant" }));
+
+    const participantSelects = within(dialog).getAllByLabelText(/Participant actor/i);
+    fireEvent.change(participantSelects[1]!, { target: { value: "session:observer" } });
+
+    rerender(
+      <MessageChannelMetadataDisclosure
+        channel={{
+          ...channel,
+          transportUrl: "ws://localhost/room-main?poll=2",
+        }}
+        onUpdateChannel={onUpdateChannel}
+        actorOptions={actorOptions}
+      />,
+    );
+
+    const rerenderedSelects = within(dialog).getAllByLabelText(/Participant actor/i);
+    expect(rerenderedSelects).toHaveLength(2);
+    expect(rerenderedSelects[1]).toHaveValue("session:observer");
+  });
+
+  test("Scenario: Given the token grants section is open When the parent rerenders an equivalent room projection Then grants are not reloaded again", async () => {
+    const onListChannelGrants = vi.fn(async () => []);
+    const { rerender } = render(
+      <MessageChannelMetadataDisclosure channel={createChannel()} actorOptions={actorOptions} onListChannelGrants={onListChannelGrants} />,
+    );
+
+    fireEvent.click(screen.getByTestId("message-channel-metadata-trigger"));
+    await screen.findByRole("dialog");
+    expect(onListChannelGrants).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MessageChannelMetadataDisclosure
+        channel={{
+          ...createChannel(),
+          transportUrl: "ws://localhost/room-main?refreshed=1",
+        }}
+        actorOptions={actorOptions}
+        onListChannelGrants={onListChannelGrants}
+      />,
+    );
+
+    expect(onListChannelGrants).toHaveBeenCalledTimes(1);
+  });
+
   test("Scenario: Given a built-in legacy room When the admin opens metadata Then cleanup actions remain available", async () => {
     render(
       <MessageChannelMetadataDisclosure
