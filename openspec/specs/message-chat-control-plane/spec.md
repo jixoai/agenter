@@ -37,25 +37,27 @@ The message control plane SHALL manage multiple global room resources independen
 - **THEN** a later actor reattaching to that room can still observe the current read progression
 
 ### Requirement: Room lifecycle SHALL distinguish archive from dissolve
-Room lifecycle APIs SHALL expose archive as a reversible visibility action and dissolve/delete as a destructive removal action.
 
-#### Scenario: Admin archives a room
-- **WHEN** an admin archives a room
-- **THEN** the room disappears from default active room lists
-- **AND** its durable messages, grants, and read-state remain available to archived queries
+Room lifecycle APIs SHALL expose archive as a reversible visibility action and dissolve/delete as a destructive removal action, and room provenance metadata such as `builtIn` SHALL NOT by itself suppress global cleanup affordances.
 
-#### Scenario: Admin dissolves a room
-- **WHEN** an admin deletes a room
-- **THEN** the room channel record is removed from message-system storage
-- **AND** grants, messages, and read-state owned by that room are removed with it
+#### Scenario: Admin dissolves a legacy bootstrap room
+- **WHEN** an admin deletes a room that still carries legacy bootstrap provenance metadata
+- **THEN** the room can still be dissolved through the normal room lifecycle API
+- **AND** the room's provenance metadata does not by itself block destructive cleanup
 
 ### Requirement: Room participant membership SHALL not encode actor-kind identity roles
-Room participant lists SHALL model room seat membership only, not `avatar|user|system` identity-role labels.
 
-#### Scenario: New room write omits legacy identity role field
-- **WHEN** the client creates or updates a room participant list
-- **THEN** the write persists participant ids and optional labels
-- **AND** it does not need to emit legacy actor-kind role markers
+Room participant lists SHALL model room seat membership only, not `avatar|user|system` identity-role labels, and message-system SHALL persist only canonical actor-backed participant ids.
+
+#### Scenario: New room write strips legacy participant ids
+- **WHEN** the client creates or updates a room participant list containing legacy ids such as `avatar:*` or bare `user`
+- **THEN** the write persists only canonical `auth:` / `session:` / `system:` participant ids
+- **AND** invalid legacy ids are removed instead of being preserved in durable room truth
+
+#### Scenario: Bootstrap repair rewrites an old room with canonical participants
+- **WHEN** app-server reattaches to an existing room whose stored participant list still contains invalid legacy ids
+- **THEN** the room is rewritten with the normalized canonical participant list
+- **AND** subsequent room reads stop surfacing those invalid legacy participants
 
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
 A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.
@@ -87,3 +89,4 @@ The message control plane SHALL contribute provider-owned system guidance that d
 - **WHEN** the assistant is asked to mediate or judge between channels
 - **THEN** the system prompt reminds it not to speak as another participant
 - **AND** lack of a user reply in one channel does not block unrelated work elsewhere in the runtime
+
