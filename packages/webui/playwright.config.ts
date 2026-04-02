@@ -1,10 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const E2E_DAEMON_PORT = 19190;
+const E2E_WEB_PORT = 44173;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.e2e.ts",
+  fullyParallel: false,
+  workers: 1,
   use: {
-    baseURL: "http://localhost:4173",
+    baseURL: `http://127.0.0.1:${E2E_WEB_PORT}`,
   },
   projects: [
     {
@@ -24,17 +29,17 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "rm -rf .playwright/agenter-home && mkdir -p .playwright/agenter-home && HOME=$PWD/.playwright/agenter-home bun run ../cli/src/bin/agenter.ts daemon --host 127.0.0.1 --port 19090",
-      port: 19090,
-      reuseExistingServer: !process.env.CI,
+        `if lsof -ti tcp:${E2E_DAEMON_PORT} >/dev/null; then lsof -ti tcp:${E2E_DAEMON_PORT} | xargs kill; sleep 1; fi && rm -rf .playwright/agenter-home && mkdir -p .playwright/agenter-home && HOME=$PWD/.playwright/agenter-home bun run ../cli/src/bin/agenter.ts daemon --host 127.0.0.1 --port ${E2E_DAEMON_PORT}`,
+      port: E2E_DAEMON_PORT,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {
       command:
-        "PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:19090/trpc pnpm run build && PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:19090/trpc pnpm run preview -- --host 127.0.0.1 --port 4173",
-      port: 4173,
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+        `PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:${E2E_DAEMON_PORT}/trpc pnpm run build && PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:${E2E_DAEMON_PORT}/trpc pnpm exec vite preview --host 127.0.0.1 --port ${E2E_WEB_PORT}`,
+      port: E2E_WEB_PORT,
+      reuseExistingServer: false,
+      timeout: 300_000,
     },
   ],
 });

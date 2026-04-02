@@ -1,30 +1,15 @@
 <script lang="ts">
-	import FileClockIcon from '@lucide/svelte/icons/file-clock';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
-	import ShieldUserIcon from '@lucide/svelte/icons/shield-user';
-	import TerminalSquareIcon from '@lucide/svelte/icons/terminal-square';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import { onMount } from 'svelte';
-
 	import type {
+		CachedResourceState,
 		GlobalTerminalApprovalRequest,
 		GlobalTerminalEntry,
 		GlobalTerminalGrantEntry,
 		TerminalActivityItem,
 	} from '@agenter/client-sdk';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
-	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import ScrollView from '$lib/components/scroll-view.svelte';
-	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
-	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import {
 		buildActorDirectory,
 		buildActorDirectoryMap,
@@ -32,28 +17,65 @@
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 
+	import TerminalSystemSurface from './terminal-system-surface.svelte';
+	import type {
+		TerminalSystemCallAsOption,
+		TerminalSystemNotice,
+		TerminalSystemSeatState,
+	} from './terminal-system-surface.types';
+
 	const controller = getAppControllerContext();
 
-	let terminals = $state<GlobalTerminalEntry[]>([]);
-	let selectedTerminalId = $state('');
-	let selectedTerminal = $state<GlobalTerminalEntry | null>(null);
-	let grants = $state<GlobalTerminalGrantEntry[]>([]);
-	let approvals = $state<GlobalTerminalApprovalRequest[]>([]);
-	let activity = $state<TerminalActivityItem[]>([]);
-	let terminalsLoading = $state(false);
-	let terminalDetailLoading = $state(false);
-	let grantParticipantId = $state('');
-	let grantRole = $state<'admin' | 'writer' | 'requester' | 'readonly'>('writer');
-	let callAsToken = $state('');
-	let readMode = $state<'auto' | 'diff' | 'snapshot'>('auto');
-	let writeText = $state('');
-	let createDialogOpen = $state(false);
-	let createTerminalId = $state('');
-	let createProcessKind = $state('shell');
-	let createCwd = $state('');
-	let actionToolTab = $state<'write' | 'read'>('write');
-	let sidePanelTab = $state<'actions' | 'users'>('actions');
-	const globalTerminalRefreshMs = 2500;
+	const emptyTerminalCatalogState: CachedResourceState<GlobalTerminalEntry[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
+	const emptyTerminalGrantState: CachedResourceState<GlobalTerminalGrantEntry[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
+	const emptyTerminalApprovalState: CachedResourceState<GlobalTerminalApprovalRequest[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
+	const emptyTerminalActivityState: CachedResourceState<TerminalActivityItem[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
+
+	type TerminalSeatState = {
+		actorId: string;
+		role: 'admin' | 'writer' | 'requester' | 'readonly';
+		label?: string;
+		currentAdmin: boolean;
+		online: boolean;
+		focused: boolean;
+		invalidCredential: boolean;
+		accessToken?: string;
+		grantId?: string;
+		adminCandidateRank?: number;
+		leaseExpiresAt?: number;
+	};
+
+	let selectedTerminalId = $state(page.url.searchParams.get('terminalId') ?? '');
+	let selectedCallerTokenByTerminalId = $state<Record<string, string>>({});
+	let routeNotice = $state<TerminalSystemNotice | null>(null);
 
 	const actorDirectory = $derived(
 		buildActorDirectory({
@@ -64,88 +86,30 @@
 		}),
 	);
 	const actorDirectoryMap = $derived(buildActorDirectoryMap(actorDirectory));
+	const selectableActors = $derived(actorDirectory.filter((actor) => actor.actorKind !== 'system'));
+	const terminalsState = $derived(controller.runtimeState.globalTerminals ?? emptyTerminalCatalogState);
+	const terminals = $derived(terminalsState.data);
+	const selectedTerminal = $derived(terminals.find((terminal) => terminal.terminalId === selectedTerminalId) ?? null);
+	const selectedTerminalGrantsState = $derived(
+		selectedTerminalId
+			? (controller.runtimeState.globalTerminalGrantsById[selectedTerminalId] ?? emptyTerminalGrantState)
+			: emptyTerminalGrantState,
+	);
+	const selectedTerminalApprovalsState = $derived(
+		selectedTerminalId
+			? (controller.runtimeState.globalTerminalApprovalsById[selectedTerminalId] ?? emptyTerminalApprovalState)
+			: emptyTerminalApprovalState,
+	);
+	const selectedTerminalActivityState = $derived(
+		selectedTerminalId
+			? (controller.runtimeState.globalTerminalActivityById[selectedTerminalId] ?? emptyTerminalActivityState)
+			: emptyTerminalActivityState,
+	);
 
 	const asTerminalActorId = (value: string): `auth:${string}` | `session:${string}` | `system:${string}` | null => {
 		return /^((auth|session|system):.+)$/u.test(value)
 			? (value as `auth:${string}` | `session:${string}` | `system:${string}`)
 			: null;
-	};
-
-	const callAsOptions = $derived.by(() => {
-		if (!selectedTerminal) {
-			return [];
-		}
-		const items = [];
-		if (selectedTerminal.access?.accessToken) {
-			items.push({
-				accessToken: selectedTerminal.access.accessToken,
-				participantId: selectedTerminal.access.participantId,
-				role: selectedTerminal.access.role,
-				label:
-					(selectedTerminal.access.participantId
-						? actorDirectoryMap.get(selectedTerminal.access.participantId)?.label ??
-							fallbackActorLabel(selectedTerminal.access.participantId)
-						: undefined) ?? 'Admin seat',
-			});
-		}
-		for (const grant of grants) {
-			if (!grant.accessToken) {
-				continue;
-			}
-			items.push({
-				accessToken: grant.accessToken,
-				participantId: grant.participantId,
-				role: grant.role,
-				label:
-					(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
-					grant.label ??
-					fallbackActorLabel(grant.participantId ?? grant.grantId),
-			});
-		}
-		return items;
-	});
-
-	const loadTerminals = async (options?: { background?: boolean }): Promise<void> => {
-		terminalsLoading = !options?.background;
-		try {
-			terminals = await controller.runtimeStore.listGlobalTerminals();
-			if (!selectedTerminalId && terminals[0]) {
-				selectedTerminalId = terminals[0].terminalId;
-			}
-		} finally {
-			terminalsLoading = false;
-		}
-	};
-
-	const loadTerminalDetail = async (terminalId: string, options?: { background?: boolean }): Promise<void> => {
-		terminalDetailLoading = !options?.background;
-		try {
-			selectedTerminal = (await controller.runtimeStore.listGlobalTerminals()).find((entry) => entry.terminalId === terminalId) ?? null;
-			if (!selectedTerminal) {
-				return;
-			}
-			grants = await controller.runtimeStore.listGlobalTerminalGrants(selectedTerminal.terminalId);
-			approvals = await controller.runtimeStore.listGlobalTerminalApprovalRequests({
-				terminalId: selectedTerminal.terminalId,
-				statuses: ['pending'],
-			});
-			activity = (await controller.runtimeStore.loadGlobalTerminalActivity(selectedTerminal.terminalId)).items.sort(
-				(left, right) => left.createdAt - right.createdAt,
-			);
-			if (!callAsOptions.some((option) => option.accessToken === callAsToken)) {
-				callAsToken = selectedTerminal.access?.accessToken ?? grants[0]?.accessToken ?? '';
-			}
-		} finally {
-			terminalDetailLoading = false;
-		}
-	};
-
-	const refreshSelectedTerminal = async (): Promise<void> => {
-		if (!selectedTerminalId) {
-			return;
-		}
-		await loadTerminals();
-		await loadTerminalDetail(selectedTerminalId);
 	};
 
 	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
@@ -165,412 +129,488 @@
 		};
 	};
 
-	onMount(() => {
-		const refreshTimer = window.setInterval(() => {
-			if (document.visibilityState === 'hidden') {
-				return;
+	const describeTerminalError = (error: unknown, fallback: string): TerminalSystemNotice => ({
+		tone: 'destructive',
+		message: error instanceof Error ? error.message : fallback,
+	});
+
+	const callAsOptions = $derived.by(() => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return [] as TerminalSystemCallAsOption[];
+		}
+		const options: TerminalSystemCallAsOption[] = [];
+		if (terminal.access?.accessToken) {
+			options.push({
+				accessToken: terminal.access.accessToken,
+				participantId: terminal.access.participantId,
+				role: terminal.access.role,
+				label:
+					(terminal.access.participantId
+						? actorDirectoryMap.get(terminal.access.participantId)?.label ??
+							fallbackActorLabel(terminal.access.participantId)
+						: undefined) ?? 'Bootstrap admin',
+			});
+		}
+		for (const grant of selectedTerminalGrantsState.data) {
+			if (!grant.accessToken) {
+				continue;
 			}
-			void loadTerminals({ background: true });
-			if (selectedTerminalId) {
-				void loadTerminalDetail(selectedTerminalId, { background: true });
+			options.push({
+				accessToken: grant.accessToken,
+				participantId: grant.participantId,
+				role: grant.role,
+				label:
+					(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
+					grant.label ??
+					fallbackActorLabel(grant.participantId ?? grant.grantId),
+			});
+		}
+		return options;
+	});
+
+	const selectedCallerToken = $derived.by(() => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return null;
+		}
+		const selected = selectedCallerTokenByTerminalId[terminal.terminalId];
+		if (selected && callAsOptions.some((option) => option.accessToken === selected)) {
+			return selected;
+		}
+		return callAsOptions[0]?.accessToken ?? terminal.access?.accessToken ?? null;
+	});
+
+	const terminalSeatStates = $derived.by(() => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return [] as TerminalSeatState[];
+		}
+
+		const seats = new Map<string, TerminalSeatState>();
+		const mergeSeat = (seat: TerminalSeatState): void => {
+			const current = seats.get(seat.actorId);
+			seats.set(seat.actorId, {
+				...current,
+				...seat,
+				accessToken: seat.accessToken ?? current?.accessToken,
+				grantId: seat.grantId ?? current?.grantId,
+				adminCandidateRank: seat.adminCandidateRank ?? current?.adminCandidateRank,
+				leaseExpiresAt: seat.leaseExpiresAt ?? current?.leaseExpiresAt,
+			});
+		};
+
+		if (terminal.access?.participantId) {
+			mergeSeat({
+				actorId: terminal.access.participantId,
+				role: terminal.access.role,
+				label: actorDirectoryMap.get(terminal.access.participantId)?.label ?? fallbackActorLabel(terminal.access.participantId),
+				currentAdmin: terminal.access.currentAdmin,
+				online: false,
+				focused: false,
+				invalidCredential: false,
+				accessToken: terminal.access.accessToken,
+				adminCandidateRank: terminal.access.adminCandidateRank,
+				leaseExpiresAt: terminal.access.leaseExpiresAt,
+			});
+		}
+
+		for (const grant of selectedTerminalGrantsState.data) {
+			if (!grant.participantId) {
+				continue;
 			}
-		}, globalTerminalRefreshMs);
+			mergeSeat({
+				actorId: grant.participantId,
+				role: grant.role,
+				label: grant.label,
+				currentAdmin: false,
+				online: false,
+				focused: false,
+				invalidCredential: !grant.accessToken,
+				accessToken: grant.accessToken,
+				grantId: grant.grantId,
+			});
+		}
+
+		for (const state of terminal.actors ?? []) {
+			mergeSeat({
+				actorId: state.actorId,
+				role: state.role,
+				label: state.label,
+				currentAdmin: state.currentAdmin,
+				online: state.online,
+				focused: state.focused,
+				invalidCredential: state.invalidCredential ?? false,
+				adminCandidateRank: state.adminCandidateRank,
+				leaseExpiresAt: state.leaseExpiresAt,
+			});
+		}
+
+		const roleRank = {
+			admin: 0,
+			writer: 1,
+			requester: 2,
+			readonly: 3,
+		} as const;
+		return [...seats.values()].sort((left, right) => {
+			if (left.currentAdmin !== right.currentAdmin) {
+				return left.currentAdmin ? -1 : 1;
+			}
+			const leftCandidateRank = left.adminCandidateRank ?? Number.MAX_SAFE_INTEGER;
+			const rightCandidateRank = right.adminCandidateRank ?? Number.MAX_SAFE_INTEGER;
+			if (leftCandidateRank !== rightCandidateRank) {
+				return leftCandidateRank - rightCandidateRank;
+			}
+			if (roleRank[left.role] !== roleRank[right.role]) {
+				return roleRank[left.role] - roleRank[right.role];
+			}
+			return (left.label ?? left.actorId).localeCompare(right.label ?? right.actorId);
+		});
+	});
+
+	const resolvedTerminalSeatStates = $derived.by(() => {
+		return terminalSeatStates.map((state) => {
+			const actor = describeActor(state.actorId, state.label ?? state.actorId);
+			return {
+				...state,
+				actorKind: actor.actorKind,
+				label: actor.label,
+				subtitle: actor.subtitle,
+				iconUrl: actor.iconUrl,
+			} satisfies TerminalSystemSeatState;
+		});
+	});
+
+	const terminalNotice = $derived.by(() => {
+		if (routeNotice) {
+			return routeNotice;
+		}
+		const error =
+			selectedTerminalActivityState.error ??
+			selectedTerminalApprovalsState.error ??
+			selectedTerminalGrantsState.error ??
+			terminalsState.error;
+		if (!error) {
+			return null;
+		}
+		return {
+			tone: 'destructive',
+			message: error,
+		} satisfies TerminalSystemNotice;
+	});
+
+	const syncTerminalQuery = async (terminalId: string): Promise<void> => {
+		const queryTerminalId = page.url.searchParams.get('terminalId') ?? '';
+		if (queryTerminalId === terminalId) {
+			return;
+		}
+		const url = new URL(page.url);
+		if (terminalId) {
+			url.searchParams.set('terminalId', terminalId);
+		} else {
+			url.searchParams.delete('terminalId');
+		}
+		await goto(`${url.pathname}${url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : ''}`, {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
+	};
+
+	const selectTerminal = (terminalId: string): void => {
+		selectedTerminalId = terminalId;
+		routeNotice = null;
+		void syncTerminalQuery(terminalId);
+	};
+
+	const handleCreateTerminal = async (input: {
+		terminalId?: string;
+		processKind?: string;
+		cwd?: string;
+	}): Promise<void> => {
+		try {
+			const created = await controller.runtimeStore.createGlobalTerminal({
+				terminalId: input.terminalId,
+				processKind: input.processKind,
+				cwd: input.cwd,
+			});
+			routeNotice = null;
+			selectTerminal(created.terminal?.terminalId ?? '');
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal create failed');
+			throw error;
+		}
+	};
+
+	const handleDeleteTerminal = async (): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.deleteGlobalTerminal({
+				terminalId: terminal.terminalId,
+			});
+			routeNotice = null;
+			selectedTerminalId = '';
+			await syncTerminalQuery('');
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal delete failed');
+		}
+	};
+
+	const handleChangeCallerToken = (accessToken: string): void => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		selectedCallerTokenByTerminalId = {
+			...selectedCallerTokenByTerminalId,
+			[terminal.terminalId]: accessToken,
+		};
+	};
+
+	const handleGrantSeat = async (input: { participantId: string; role: 'admin' | 'writer' | 'requester' | 'readonly' }): Promise<void> => {
+		const terminal = selectedTerminal;
+		const participantId = asTerminalActorId(input.participantId);
+		if (!terminal || !participantId) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.issueGlobalTerminalGrant({
+				terminalId: terminal.terminalId,
+				role: input.role,
+				participantId,
+				label: actorDirectoryMap.get(input.participantId)?.label,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'grant seat failed');
+			throw error;
+		}
+	};
+
+	const handleToggleSeatFocus = async (input: {
+		accessToken: string;
+		focused: boolean;
+	}): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.focusGlobalTerminals({
+				op: input.focused ? 'remove' : 'add',
+				terminalIds: [terminal.terminalId],
+				accessToken: input.accessToken,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'seat focus update failed');
+		}
+	};
+
+	const handleRevokeSeat = async (input: { grantId: string }): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.revokeGlobalTerminalGrant({
+				terminalId: terminal.terminalId,
+				grantId: input.grantId,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'seat revoke failed');
+		}
+	};
+
+	const handleApproveRequest = async (input: { requestId: string; durationMs?: number }): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.approveGlobalTerminalRequest({
+				terminalId: terminal.terminalId,
+				requestId: input.requestId,
+				durationMs: input.durationMs ?? 30 * 60 * 1000,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'approval decision failed');
+		}
+	};
+
+	const handleDenyRequest = async (input: { requestId: string }): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			await controller.runtimeStore.denyGlobalTerminalRequest({
+				terminalId: terminal.terminalId,
+				requestId: input.requestId,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'approval denial failed');
+		}
+	};
+
+	const isTerminalWriteResult = (
+		value: unknown,
+	): value is { ok?: boolean; message?: string; approvalRequest?: { requestId: string } } => {
+		return Boolean(value && typeof value === 'object');
+	};
+
+	const handleWriteToolCall = async (input: { text: string }): Promise<{ approvalRequested?: boolean; message?: string } | void> => {
+		const terminal = selectedTerminal;
+		const accessToken = selectedCallerToken;
+		const selectedSeat = callAsOptions.find((option) => option.accessToken === accessToken);
+		if (!terminal || !accessToken) {
+			throw new Error('terminal-system seat token is unavailable');
+		}
+		try {
+			const result = await controller.runtimeStore.writeGlobalTerminal({
+				terminalId: terminal.terminalId,
+				accessToken,
+				text: input.text,
+				createApprovalRequest: selectedSeat?.role === 'requester',
+				returnRead: false,
+			});
+			if (isTerminalWriteResult(result) && result.approvalRequest) {
+				routeNotice = {
+					tone: 'warning',
+					message: `Write approval requested: ${result.approvalRequest.requestId}`,
+				};
+				return {
+					approvalRequested: true,
+					message: result.message,
+				};
+			}
+			if (isTerminalWriteResult(result) && result.ok === false) {
+				throw new Error(result.message ?? 'terminal write failed');
+			}
+			routeNotice = null;
+			return {
+				approvalRequested: false,
+				message: isTerminalWriteResult(result) ? result.message : undefined,
+			};
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal write failed');
+			return {
+				approvalRequested: false,
+				message: error instanceof Error ? error.message : 'terminal write failed',
+			};
+		}
+	};
+
+	const handleReadToolCall = async (input: { mode: 'auto' | 'diff' | 'snapshot' }): Promise<void> => {
+		const terminal = selectedTerminal;
+		const accessToken = selectedCallerToken;
+		if (!terminal || !accessToken) {
+			throw new Error('terminal-system seat token is unavailable');
+		}
+		try {
+			await controller.runtimeStore.readGlobalTerminal({
+				terminalId: terminal.terminalId,
+				accessToken,
+				mode: input.mode,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal read failed');
+		}
+	};
+
+	$effect(() => {
+		const release = controller.runtimeStore.retainGlobalTerminals();
+		void controller.runtimeStore.hydrateGlobalTerminals();
 		return () => {
-			window.clearInterval(refreshTimer);
+			release();
 		};
 	});
 
 	$effect(() => {
-		void loadTerminals();
+		const requestedTerminalId = page.url.searchParams.get('terminalId') ?? '';
+		if (requestedTerminalId && requestedTerminalId !== selectedTerminalId) {
+			selectedTerminalId = requestedTerminalId;
+		}
 	});
 
 	$effect(() => {
-		if (selectedTerminalId) {
-			void loadTerminalDetail(selectedTerminalId);
+		const requestedTerminalId = page.url.searchParams.get('terminalId') ?? '';
+		if (selectedTerminalId && terminals.some((terminal) => terminal.terminalId === selectedTerminalId)) {
+			return;
 		}
+		if (requestedTerminalId) {
+			return;
+		}
+		const nextTerminalId = terminals[0]?.terminalId ?? '';
+		if (!nextTerminalId || nextTerminalId === selectedTerminalId) {
+			return;
+		}
+		selectedTerminalId = nextTerminalId;
+		void syncTerminalQuery(nextTerminalId);
+	});
+
+	$effect(() => {
+		const terminalId = selectedTerminal?.terminalId;
+		if (!terminalId) {
+			return;
+		}
+		const releaseGrants = controller.runtimeStore.retainGlobalTerminalGrants(terminalId);
+		const releaseApprovals = controller.runtimeStore.retainGlobalTerminalApprovals(terminalId);
+		const releaseActivity = controller.runtimeStore.retainGlobalTerminalActivity(terminalId);
+		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId });
+		void controller.runtimeStore.hydrateGlobalTerminalApprovals({ terminalId });
+		void controller.runtimeStore.hydrateGlobalTerminalActivity({ terminalId, limit: 120 });
+		return () => {
+			releaseActivity();
+			releaseApprovals();
+			releaseGrants();
+		};
+	});
+
+	$effect(() => {
+		const terminal = selectedTerminal;
+		const accessToken = selectedCallerToken;
+		if (!terminal || !accessToken) {
+			return;
+		}
+		if (selectedCallerTokenByTerminalId[terminal.terminalId] === accessToken) {
+			return;
+		}
+		selectedCallerTokenByTerminalId = {
+			...selectedCallerTokenByTerminalId,
+			[terminal.terminalId]: accessToken,
+		};
 	});
 </script>
 
-<div class="grid h-full min-h-0 gap-4 p-4 md:grid-cols-[18rem_minmax(0,1fr)_24rem] md:p-6">
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<div class="flex items-center justify-between gap-3">
-				<div class="min-w-0">
-					<CardTitle>Terminals</CardTitle>
-					<CardDescription>terminal-system is global and orthogonal. Focus belongs to a seat, not the terminal object.</CardDescription>
-				</div>
-				<Button
-					size="icon-sm"
-					variant="outline"
-					class="shrink-0"
-					onclick={() => (createDialogOpen = true)}
-					aria-label="Create terminal"
-				>
-					<PlusIcon class="size-4" />
-				</Button>
-			</div>
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<ScrollView class="h-full" contentClass="divide-y">
-				{#if terminalsLoading && terminals.length === 0}
-					<div class="p-4 text-sm text-muted-foreground">Loading terminals…</div>
-				{:else}
-					{#each terminals as terminal (terminal.terminalId)}
-						<button
-							class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
-								selectedTerminalId === terminal.terminalId ? 'bg-primary/5' : ''
-							}`}
-							onclick={() => {
-								selectedTerminalId = terminal.terminalId;
-							}}
-						>
-							<div class="flex items-center justify-between gap-3">
-								<div class="min-w-0">
-									<div class="truncate text-sm font-semibold">{terminal.title || terminal.terminalId}</div>
-									<div class="truncate text-[11px] text-muted-foreground">{terminal.cwd}</div>
-								</div>
-								<div class="rounded-full border px-2 py-1 text-[11px]">{terminal.status}</div>
-							</div>
-						</button>
-					{/each}
-				{/if}
-			</ScrollView>
-		</CardContent>
-	</Card>
-
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<div class="flex items-center justify-between gap-3">
-				<div class="min-w-0">
-					<CardTitle>{selectedTerminal?.title ?? 'Terminal view'}</CardTitle>
-					<CardDescription>{selectedTerminal?.cwd ?? 'Select one terminal to inspect its shared runtime.'}</CardDescription>
-				</div>
-				{#if selectedTerminal}
-					<Button
-						variant="outline"
-						size="icon-sm"
-						class="shrink-0"
-						onclick={async () => {
-							const terminal = selectedTerminal;
-							if (!terminal) return;
-							await controller.runtimeStore.deleteGlobalTerminal({ terminalId: terminal.terminalId });
-							selectedTerminalId = '';
-							selectedTerminal = null;
-							await loadTerminals();
-						}}
-						aria-label="Delete terminal"
-					>
-						<Trash2Icon class="size-4" />
-					</Button>
-				{/if}
-			</div>
-		</CardHeader>
-		<CardContent class="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] p-0">
-			<div class="min-h-0 p-4">
-				{#if selectedTerminal}
-					<div class="grid h-full min-h-0 gap-3">
-						<div class="rounded-2xl border bg-black p-2 text-white">
-							<TerminalViewHost
-								class="block h-[28rem] w-full"
-								terminalId={selectedTerminal.terminalId}
-								terminalTitle={selectedTerminal.title}
-								cwd={selectedTerminal.cwd}
-								status={selectedTerminal.status}
-								transportUrl={selectedTerminal.transportUrl}
-								snapshot={selectedTerminal.snapshot ?? null}
-							/>
-						</div>
-						<div class="grid gap-2 text-xs text-muted-foreground">
-							<div>Absolute cwd: {selectedTerminal.cwd}</div>
-							<div>Process kind: {selectedTerminal.processKind}</div>
-							<div>Renderer: {selectedTerminal.rendererEngine ?? 'xterm'}</div>
-						</div>
-					</div>
-				{:else}
-					<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Select a terminal from the left rail.</div>
-				{/if}
-			</div>
-
-			<div class="border-t p-4">
-				<Tabs bind:value={actionToolTab}>
-					<TabsList class="grid w-full grid-cols-2">
-						<TabsTrigger value="write">Write</TabsTrigger>
-						<TabsTrigger value="read">Read</TabsTrigger>
-					</TabsList>
-
-					<TabsContent value="write" class="mt-3 grid gap-3">
-						<div class="grid items-start gap-3 md:grid-cols-[14rem_minmax(0,1fr)_auto]">
-							<NativeSelect.Root bind:value={callAsToken}>
-								{#each callAsOptions as option (option.accessToken)}
-									<option value={option.accessToken}>{option.label} · {option.role}</option>
-								{/each}
-							</NativeSelect.Root>
-							<Textarea bind:value={writeText} class="min-h-24" placeholder="Type terminal input…" />
-							<Button
-								class="shrink-0 self-start"
-								onclick={async () => {
-									if (!selectedTerminal || !callAsToken || !writeText.trim()) return;
-									await controller.runtimeStore.writeGlobalTerminal({
-										terminalId: selectedTerminal.terminalId,
-										accessToken: callAsToken,
-										text: writeText,
-										returnRead: false,
-									});
-									writeText = '';
-									await refreshSelectedTerminal();
-								}}
-							>
-								<SendHorizontalIcon class="size-4" />
-								Call tool
-							</Button>
-						</div>
-					</TabsContent>
-
-					<TabsContent value="read" class="mt-3 grid gap-3">
-						<div class="grid items-start gap-3 md:grid-cols-[14rem_12rem_auto]">
-							<NativeSelect.Root bind:value={callAsToken}>
-								{#each callAsOptions as option (option.accessToken)}
-									<option value={option.accessToken}>{option.label} · {option.role}</option>
-								{/each}
-							</NativeSelect.Root>
-							<NativeSelect.Root bind:value={readMode}>
-								<option value="auto">auto</option>
-								<option value="diff">diff</option>
-								<option value="snapshot">snapshot</option>
-							</NativeSelect.Root>
-							<Button
-								class="shrink-0 self-start"
-								onclick={async () => {
-									if (!selectedTerminal || !callAsToken) return;
-									await controller.runtimeStore.readGlobalTerminal({
-										terminalId: selectedTerminal.terminalId,
-										accessToken: callAsToken,
-										mode: readMode,
-									});
-									await refreshSelectedTerminal();
-								}}
-							>
-								<FileClockIcon class="size-4" />
-								Call read
-							</Button>
-						</div>
-					</TabsContent>
-				</Tabs>
-			</div>
-		</CardContent>
-	</Card>
-
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<CardTitle>Actions + Users</CardTitle>
-			<CardDescription>Actions are tool-call facts. Users are seats, grants, approvals, and seat focus.</CardDescription>
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<Tabs bind:value={sidePanelTab} class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-				<TabsList class="mx-4 mt-4 grid grid-cols-2">
-					<TabsTrigger value="actions">Actions</TabsTrigger>
-					<TabsTrigger value="users">Users</TabsTrigger>
-				</TabsList>
-
-				<TabsContent value="actions" class="min-h-0">
-					<ScrollView class="h-full" contentClass="grid gap-3 p-4">
-						{#if activity.length}
-							{#each activity as event (event.id)}
-								{@const actor = describeActor(event.actorId, event.actorId ?? event.terminalId)}
-								<div class="rounded-2xl border p-3">
-									<div class="flex items-center gap-3">
-										<ProfileAvatar label={actor.label} src={actor.iconUrl} class="size-8" />
-										<div class="min-w-0">
-											<div class="truncate text-sm font-semibold">{actor.label}</div>
-											<div class="truncate text-xs text-muted-foreground">
-												{event.kind} · {new Date(event.createdAt).toLocaleString()}
-											</div>
-										</div>
-									</div>
-									<div class="mt-3 rounded-xl bg-muted/40 px-3 py-2 text-sm">{event.title}</div>
-									<div class="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{event.content}</div>
-								</div>
-							{/each}
-						{:else if terminalDetailLoading}
-							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Loading terminal activity…</div>
-						{:else}
-							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">No terminal actions yet.</div>
-						{/if}
-					</ScrollView>
-				</TabsContent>
-
-				<TabsContent value="users" class="min-h-0">
-					<div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-						<div class="grid gap-2">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
-							<NativeSelect.Root bind:value={grantParticipantId}>
-								<option value="">Select actor</option>
-								{#each actorDirectory as actor (actor.actorId)}
-									<option value={actor.actorId}>{actor.label} · {actor.subtitle ?? actor.actorId}</option>
-								{/each}
-							</NativeSelect.Root>
-							<NativeSelect.Root bind:value={grantRole}>
-								<option value="writer">writer</option>
-								<option value="requester">requester</option>
-								<option value="readonly">readonly</option>
-								<option value="admin">admin</option>
-							</NativeSelect.Root>
-							<Button onclick={async () => {
-								const terminal = selectedTerminal;
-								const participantId = asTerminalActorId(grantParticipantId);
-								if (!terminal || !participantId) return;
-								await controller.runtimeStore.issueGlobalTerminalGrant({
-									terminalId: terminal.terminalId,
-									role: grantRole,
-									participantId,
-									label: actorDirectoryMap.get(grantParticipantId)?.label,
-								});
-								grantParticipantId = '';
-								await refreshSelectedTerminal();
-							}} disabled={!selectedTerminal || !grantParticipantId}>
-								<ShieldUserIcon class="size-4" />
-								Grant seat
-							</Button>
-						</div>
-
-						<ScrollView class="h-full" contentClass="grid gap-3">
-							{#each selectedTerminal?.actors ?? [] as actorSeat (actorSeat.actorId)}
-								{@const actor = describeActor(actorSeat.actorId, actorSeat.label ?? actorSeat.actorId)}
-								{@const grant = grants.find((item) => item.participantId === actorSeat.actorId)}
-								<div class="rounded-2xl border p-3">
-									<div class="flex items-center justify-between gap-3">
-										<div class="flex min-w-0 items-center gap-3">
-											<ProfileAvatar label={actor.label} src={actor.iconUrl} class="size-9" />
-											<div class="min-w-0">
-												<div class="truncate text-sm font-semibold">{actor.label}</div>
-												<div class="truncate text-xs text-muted-foreground">{actorSeat.actorId}</div>
-											</div>
-										</div>
-										<div class="rounded-full border px-2 py-1 text-[11px]">{actorSeat.role}</div>
-									</div>
-									<div class="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-										<div>{actorSeat.focused ? 'Focused' : 'Unfocused'}</div>
-										{#if actorSeat.currentAdmin}
-											<div>Current admin</div>
-										{/if}
-										{#if actorSeat.invalidCredential}
-											<div>Credential invalid</div>
-										{/if}
-									</div>
-									<div class="mt-3 flex flex-wrap gap-2">
-										{#if grant?.accessToken}
-											<Button
-												size="sm"
-												variant="outline"
-												onclick={async () => {
-													await controller.runtimeStore.focusGlobalTerminals({
-														op: actorSeat.focused ? 'remove' : 'add',
-														terminalIds: [selectedTerminal!.terminalId],
-														accessToken: grant.accessToken,
-													});
-													await refreshSelectedTerminal();
-												}}
-											>
-												{actorSeat.focused ? 'Unfocus seat' : 'Focus seat'}
-											</Button>
-											<Button
-												size="sm"
-												variant="outline"
-												onclick={async () => {
-													await controller.runtimeStore.revokeGlobalTerminalGrant({
-														terminalId: selectedTerminal!.terminalId,
-														grantId: grant.grantId,
-													});
-													await refreshSelectedTerminal();
-												}}
-											>
-												Revoke
-											</Button>
-										{/if}
-									</div>
-								</div>
-							{/each}
-
-							{#if approvals.length}
-								<div class="grid gap-2 rounded-2xl border border-amber-300 bg-amber-50/60 p-3">
-									<div class="text-sm font-semibold">Pending approvals</div>
-									{#each approvals as approval (approval.requestId)}
-										<div class="rounded-xl border border-amber-200 bg-white/70 p-3">
-											<div class="text-sm">{approval.participantId}</div>
-											<div class="mt-1 text-xs text-muted-foreground">{approval.requestedInput?.text ?? 'write request'}</div>
-											<div class="mt-3 flex gap-2">
-												<Button size="sm" onclick={async () => {
-													if (!selectedTerminal) return;
-													await controller.runtimeStore.approveGlobalTerminalRequest({
-														terminalId: selectedTerminal.terminalId,
-														requestId: approval.requestId,
-														durationMs: 30 * 60 * 1000,
-													});
-													await refreshSelectedTerminal();
-												}}>
-													Approve 30m
-												</Button>
-												<Button size="sm" variant="outline" onclick={async () => {
-													if (!selectedTerminal) return;
-													await controller.runtimeStore.denyGlobalTerminalRequest({
-														terminalId: selectedTerminal.terminalId,
-														requestId: approval.requestId,
-													});
-													await refreshSelectedTerminal();
-												}}>
-													Deny
-												</Button>
-											</div>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</ScrollView>
-					</div>
-				</TabsContent>
-			</Tabs>
-		</CardContent>
-	</Card>
-</div>
-
-<Dialog.Root bind:open={createDialogOpen}>
-	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Create terminal</Dialog.Title>
-			<Dialog.Description>Create a global terminal. Its cwd is absolute because terminal-system is no longer workspace-owned.</Dialog.Description>
-		</Dialog.Header>
-		<div class="grid gap-3">
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Terminal id</span>
-				<Input bind:value={createTerminalId} placeholder="global-ops" />
-			</label>
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Process kind</span>
-				<Input bind:value={createProcessKind} placeholder="shell" />
-			</label>
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Absolute cwd</span>
-				<Input bind:value={createCwd} placeholder="/Users/kzf/Dev/GitHub/jixoai-labs/agenter" />
-			</label>
-		</div>
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (createDialogOpen = false)}>Cancel</Button>
-			<Button onclick={async () => {
-				const created = await controller.runtimeStore.createGlobalTerminal({
-					terminalId: createTerminalId.trim() || undefined,
-					processKind: createProcessKind.trim() || undefined,
-					cwd: createCwd.trim() || undefined,
-				});
-				createDialogOpen = false;
-				createTerminalId = '';
-				createProcessKind = 'shell';
-				createCwd = '';
-				await loadTerminals();
-				selectedTerminalId = created.terminal?.terminalId ?? '';
-			}}>
-				<TerminalSquareIcon class="size-4" />
-				Create terminal
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<TerminalSystemSurface
+	{terminalsState}
+	{selectedTerminalId}
+	{selectedTerminal}
+	terminalGrantsState={selectedTerminalGrantsState}
+	terminalApprovalsState={selectedTerminalApprovalsState}
+	terminalActivityState={selectedTerminalActivityState}
+	routeNotice={terminalNotice}
+	{selectableActors}
+	{callAsOptions}
+	{selectedCallerToken}
+	seatStates={resolvedTerminalSeatStates}
+	onSelectTerminal={selectTerminal}
+	onChangeCallerToken={handleChangeCallerToken}
+	onCreateTerminal={handleCreateTerminal}
+	onDeleteTerminal={handleDeleteTerminal}
+	onGrantSeat={handleGrantSeat}
+	onToggleSeatFocus={handleToggleSeatFocus}
+	onRevokeSeat={handleRevokeSeat}
+	onApproveRequest={handleApproveRequest}
+	onDenyRequest={handleDenyRequest}
+	onWriteToolCall={handleWriteToolCall}
+	onReadToolCall={handleReadToolCall}
+/>

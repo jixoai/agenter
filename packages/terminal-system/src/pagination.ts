@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { PageMeta, RenderResult } from "./types";
 
@@ -203,6 +203,7 @@ const writeArchiveFile = (
   lines: string[],
   splitMeta?: SplitMeta,
 ): void => {
+  mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, buildArchiveContent(meta, source, lines, splitMeta), "utf8");
 };
 
@@ -213,6 +214,7 @@ const writeLatestFile = (
   lines: string[],
   eventTag?: string | null,
 ): void => {
+  mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, buildLatestContent(meta, source, lines, eventTag), "utf8");
 };
 

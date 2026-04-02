@@ -5,7 +5,37 @@ import { readStoredAuthToken, writeStoredAuthToken } from './auth-session-storag
 import { resolveAgenterWsUrl } from './ws-url';
 import type { AppController } from './types';
 
-const runtimeClone = (store: RuntimeStore) => store.getState();
+const runtimeClone = (store: RuntimeStore) => {
+	const state = store.getState();
+	return {
+		...state,
+		runtimes: { ...state.runtimes },
+		activityBySession: { ...state.activityBySession },
+		terminalSnapshotsBySession: { ...state.terminalSnapshotsBySession },
+		terminalReadsBySession: { ...state.terminalReadsBySession },
+		chatsBySession: { ...state.chatsBySession },
+		messageChannelsBySession: { ...state.messageChannelsBySession },
+		chatCyclesBySession: { ...state.chatCyclesBySession },
+		attentionBySession: { ...state.attentionBySession },
+		tasksBySession: { ...state.tasksBySession },
+		workspaceAvatarCatalogByPath: { ...state.workspaceAvatarCatalogByPath },
+		globalRoomSnapshotsById: { ...state.globalRoomSnapshotsById },
+		globalRoomGrantsById: { ...state.globalRoomGrantsById },
+		globalTerminalGrantsById: { ...state.globalTerminalGrantsById },
+		globalTerminalApprovalsById: { ...state.globalTerminalApprovalsById },
+		globalTerminalActivityById: { ...state.globalTerminalActivityById },
+		schedulerLogsBySession: { ...state.schedulerLogsBySession },
+		observabilityTracesBySession: { ...state.observabilityTracesBySession },
+		apiCallsBySession: { ...state.apiCallsBySession },
+		modelCallsBySession: { ...state.modelCallsBySession },
+		modelCallDeltasBySession: state.modelCallDeltasBySession ? { ...state.modelCallDeltasBySession } : undefined,
+		terminalActivityBySession: { ...state.terminalActivityBySession },
+		apiCallRecordingBySession: { ...state.apiCallRecordingBySession },
+		unreadBySession: { ...state.unreadBySession },
+		unreadByChat: { ...state.unreadByChat },
+		unreadByTerminal: { ...state.unreadByTerminal },
+	};
+};
 const toProfileReference = (profile: {
 	profileId: string | null;
 	identifiers: Array<{ kind: string; value: string }>;
@@ -34,27 +64,36 @@ export const createAppController = (): AppController => {
 		initialAuthToken: readStoredAuthToken(),
 	});
 	const runtimeStore = createRuntimeStore(client);
-
-	let runtimeState = $state(runtimeClone(runtimeStore));
-	let authService = $state<Awaited<ReturnType<RuntimeStore['getAuthServiceDescriptor']>> | null>(null);
-	let authSession = $state<Awaited<ReturnType<RuntimeStore['getAuthSession']>> | null>(null);
-	let authActors = $state<Awaited<ReturnType<RuntimeStore['listAuthActors']>>>([]);
-	let profiles = $state<AppController['profiles']>([]);
-	let initializing = $state(true);
-	let refreshing = $state(false);
-	let authBusy = $state(false);
-	let statusText = $state('Connecting to agenter runtime…');
 	let started = false;
 	let unsubscribeRuntime: (() => void) | null = null;
 
+	const controller = $state<AppController>({
+		runtimeStore,
+		runtimeState: runtimeClone(runtimeStore),
+		authService: null,
+		authSession: null,
+		authActors: [],
+		profiles: [],
+		initializing: true,
+		refreshing: false,
+		authBusy: false,
+		statusText: 'Connecting to agenter runtime…',
+		start: async () => {},
+		stop: () => {},
+		refreshBootstrap: async () => {},
+		authenticateWithPrivateKey: async () => {},
+		revealManagedRootKey: async () => '',
+		signOut: async () => {},
+	});
+
 	const syncRuntimeState = (): void => {
-		runtimeState = runtimeClone(runtimeStore);
+		controller.runtimeState = runtimeClone(runtimeStore);
 	};
 
 	const refreshAuthState = async (): Promise<void> => {
-		authService = await runtimeStore.getAuthServiceDescriptor();
+		controller.authService = await runtimeStore.getAuthServiceDescriptor();
 		const session = await runtimeStore.getAuthSession();
-		authSession = session;
+		controller.authSession = session;
 		if (!session) {
 			runtimeStore.clearAuthToken();
 			writeStoredAuthToken(null);
@@ -62,21 +101,21 @@ export const createAppController = (): AppController => {
 	};
 
 	const refreshBootstrap = async (): Promise<void> => {
-		refreshing = true;
-		statusText = 'Refreshing runtime, auth, profiles, and workspace catalog…';
+		controller.refreshing = true;
+		controller.statusText = 'Refreshing runtime, auth, profiles, and workspace catalog…';
 		try {
 			await refreshAuthState();
-			authActors = await runtimeStore.listAuthActors();
-			profiles = (await runtimeStore.listProfiles()).items.map(toProfileReference);
+			controller.authActors = await runtimeStore.listAuthActors();
+			controller.profiles = (await runtimeStore.listProfiles()).items.map(toProfileReference);
 			await runtimeStore.listAllWorkspaces();
 			await runtimeStore.listRecentWorkspaces(32);
 			syncRuntimeState();
-			statusText = authSession
-				? `Connected as ${authSession.profile.metadata.displayName ?? authSession.profile.metadata.nickname ?? authSession.claims.authId}`
+			controller.statusText = controller.authSession
+				? `Connected as ${controller.authSession.profile.metadata.displayName ?? controller.authSession.profile.metadata.nickname ?? controller.authSession.claims.authId}`
 				: 'Connected. Superadmin key is not bound in this browser yet.';
 		} finally {
-			refreshing = false;
-			initializing = false;
+			controller.refreshing = false;
+			controller.initializing = false;
 		}
 	};
 
@@ -101,10 +140,10 @@ export const createAppController = (): AppController => {
 	};
 
 	const authenticateWithPrivateKey = async (privateKey: string): Promise<void> => {
-		authBusy = true;
-		statusText = 'Signing wallet challenge…';
+		controller.authBusy = true;
+		controller.statusText = 'Signing wallet challenge…';
 		try {
-			authService = await runtimeStore.getAuthServiceDescriptor();
+			controller.authService = await runtimeStore.getAuthServiceDescriptor();
 			const identity = resolveWalletAuthIdentity(privateKey);
 			const descriptor = await runtimeStore.startAuthChallenge(identity.authId);
 			const signedChallenge = await signWalletAuthChallenge(privateKey, descriptor.challengeText);
@@ -116,19 +155,19 @@ export const createAppController = (): AppController => {
 			writeStoredAuthToken(verified.token);
 			await refreshBootstrap();
 		} finally {
-			authBusy = false;
+			controller.authBusy = false;
 		}
 	};
 
 	const revealManagedRootKey = async (): Promise<string> => {
-		authBusy = true;
-		statusText = 'Requesting backend-managed root private key…';
+		controller.authBusy = true;
+		controller.statusText = 'Requesting backend-managed root private key…';
 		try {
 			const revealed = await runtimeStore.revealManagedRootAuthPrivateKey();
-			statusText = `Loaded backend-managed root key for ${revealed.authId}`;
+			controller.statusText = `Loaded backend-managed root key for ${revealed.authId}`;
 			return revealed.privateKey;
 		} finally {
-			authBusy = false;
+			controller.authBusy = false;
 		}
 	};
 
@@ -138,69 +177,12 @@ export const createAppController = (): AppController => {
 		await refreshBootstrap();
 	};
 
-	return {
-		get runtimeStore() {
-			return runtimeStore;
-		},
-		get runtimeState() {
-			return runtimeState;
-		},
-		set runtimeState(value) {
-			runtimeState = value;
-		},
-		get authService() {
-			return authService;
-		},
-		set authService(value) {
-			authService = value;
-		},
-		get authSession() {
-			return authSession;
-		},
-		set authSession(value) {
-			authSession = value;
-		},
-		get authActors() {
-			return authActors;
-		},
-		set authActors(value) {
-			authActors = value;
-		},
-		get profiles() {
-			return profiles;
-		},
-		set profiles(value) {
-			profiles = value;
-		},
-		get initializing() {
-			return initializing;
-		},
-		set initializing(value) {
-			initializing = value;
-		},
-		get refreshing() {
-			return refreshing;
-		},
-		set refreshing(value) {
-			refreshing = value;
-		},
-		get authBusy() {
-			return authBusy;
-		},
-		set authBusy(value) {
-			authBusy = value;
-		},
-		get statusText() {
-			return statusText;
-		},
-		set statusText(value) {
-			statusText = value;
-		},
-		start,
-		stop,
-		refreshBootstrap,
-		authenticateWithPrivateKey,
-		revealManagedRootKey,
-		signOut,
-	};
+	controller.start = start;
+	controller.stop = stop;
+	controller.refreshBootstrap = refreshBootstrap;
+	controller.authenticateWithPrivateKey = authenticateWithPrivateKey;
+	controller.revealManagedRootKey = revealManagedRootKey;
+	controller.signOut = signOut;
+
+	return controller;
 };

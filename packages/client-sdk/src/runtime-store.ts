@@ -12,6 +12,7 @@ import type {
   GlobalRoomGrantEntry,
   GlobalRoomGrantIssueOutput,
   GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
   GlobalTerminalApprovalRequest,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
@@ -33,6 +34,7 @@ import type {
   SessionEntry,
   UploadedSessionAsset,
   WorkspacePathSearchOutput,
+  WorkspaceAvatarCatalogEntry,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
@@ -55,6 +57,28 @@ const createInitialState = (): RuntimeClientState => ({
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],
+  workspaceAvatarCatalogByPath: {},
+  globalRooms: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
+  globalRoomSnapshotsById: {},
+  globalRoomGrantsById: {},
+  globalTerminals: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
+  globalTerminalGrantsById: {},
+  globalTerminalApprovalsById: {},
+  globalTerminalActivityById: {},
   schedulerLogsBySession: {},
   observabilityTracesBySession: {},
   apiCallsBySession: {},
@@ -73,6 +97,14 @@ type SubscriptionHandle = { unsubscribe: () => void };
 type ApiCallStreamHandle = { count: number; sub: SubscriptionHandle | null; cursor: number };
 type HistoryCursorValue = HistoryPageCursor | null;
 type SessionResourceHandle = { sessionId: string };
+type GlobalRoomSnapshotRefreshTask = {
+  promise: Promise<GlobalRoomSnapshotOutput | null>;
+  query: { accessToken?: string; limit?: number };
+};
+type GlobalTerminalActivityRefreshTask = {
+  promise: Promise<TerminalActivityItem[]>;
+  limit: number;
+};
 
 const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
   return [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -156,6 +188,32 @@ const createHydratedCachedResourceState = <T>(data: T): CachedResourceState<T> =
   refreshedAt: Date.now(),
 });
 
+const compareWorkspaceAvatarCatalogEntry = (
+  left: WorkspaceAvatarCatalogEntry,
+  right: WorkspaceAvatarCatalogEntry,
+): number => {
+  if (left.defaultAvatar !== right.defaultAvatar) {
+    return left.defaultAvatar ? -1 : 1;
+  }
+  return left.nickname.localeCompare(right.nickname);
+};
+
+const sortWorkspaceAvatarCatalog = (items: WorkspaceAvatarCatalogEntry[]): WorkspaceAvatarCatalogEntry[] => {
+  return [...items].sort(compareWorkspaceAvatarCatalogEntry);
+};
+
+const compareGlobalRoomEntry = (left: GlobalRoomEntry, right: GlobalRoomEntry): number => {
+  if (left.updatedAt !== right.updatedAt) {
+    return right.updatedAt - left.updatedAt;
+  }
+  if (left.createdAt !== right.createdAt) {
+    return right.createdAt - left.createdAt;
+  }
+  return left.chatId.localeCompare(right.chatId);
+};
+
+const sortGlobalRooms = (items: GlobalRoomEntry[]): GlobalRoomEntry[] => [...items].sort(compareGlobalRoomEntry);
+
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
 
 const isTrpcErrorCode = (error: unknown, code: string): boolean =>
@@ -174,6 +232,27 @@ const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage)
     return left.timestamp - right.timestamp;
   }
   return left.id.localeCompare(right.id);
+};
+
+const mergeTerminalActivityItems = (
+  current: TerminalActivityItem[],
+  incoming: TerminalActivityItem[],
+  limit: number,
+): TerminalActivityItem[] => {
+  const entries = new Map<number, TerminalActivityItem>();
+  for (const item of current) {
+    entries.set(item.id, item);
+  }
+  for (const item of incoming) {
+    entries.set(item.id, item);
+  }
+  const merged = [...entries.values()].sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      return left.createdAt - right.createdAt;
+    }
+    return left.id - right.id;
+  });
+  return merged.length > limit ? merged.slice(-limit) : merged;
 };
 
 const sameChatAttachmentSet = (
@@ -301,6 +380,24 @@ export class RuntimeStore {
   private shouldReconnect = false;
   private readonly sessionResourceHandles = new Map<string, SessionResourceHandle>();
   private readonly messageChannelRefreshTasks = new WeakMap<SessionResourceHandle, Promise<MessageChannelEntry[]>>();
+  private readonly workspaceAvatarCatalogRefreshTasks = new Map<string, Promise<WorkspaceAvatarCatalogEntry[]>>();
+  private readonly workspaceAvatarCatalogWatchCountByPath = new Map<string, number>();
+  private globalRoomsRefreshTask: Promise<GlobalRoomEntry[]> | null = null;
+  private globalRoomsWatchCount = 0;
+  private readonly globalRoomSnapshotRefreshTasks = new Map<string, GlobalRoomSnapshotRefreshTask>();
+  private readonly globalRoomSnapshotWatchCountById = new Map<string, number>();
+  private readonly globalRoomSnapshotQueryById = new Map<string, { accessToken?: string; limit?: number }>();
+  private readonly globalRoomGrantRefreshTasks = new Map<string, Promise<GlobalRoomGrantEntry[]>>();
+  private readonly globalRoomGrantWatchCountById = new Map<string, number>();
+  private readonly globalRoomGrantQueryById = new Map<string, { accessToken?: string }>();
+  private globalTerminalsRefreshTask: Promise<GlobalTerminalEntry[]> | null = null;
+  private globalTerminalsWatchCount = 0;
+  private readonly globalTerminalGrantRefreshTasks = new Map<string, Promise<GlobalTerminalGrantEntry[]>>();
+  private readonly globalTerminalGrantWatchCountById = new Map<string, number>();
+  private readonly globalTerminalApprovalRefreshTasks = new Map<string, Promise<GlobalTerminalApprovalRequest[]>>();
+  private readonly globalTerminalApprovalWatchCountById = new Map<string, number>();
+  private readonly globalTerminalActivityRefreshTasks = new Map<string, GlobalTerminalActivityRefreshTask>();
+  private readonly globalTerminalActivityWatchCountById = new Map<string, number>();
   private readonly apiCallStreams = new Map<string, ApiCallStreamHandle>();
   private readonly schedulerLogsAccessBySession = new Map<string, Map<number, number>>();
   private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
@@ -577,6 +674,873 @@ export class RuntimeStore {
     const next = updater(this.ensureMessageChannelsState(sessionId));
     this.state.messageChannelsBySession[sessionId] = next;
     return next;
+  }
+
+  private ensureWorkspaceAvatarCatalogState(workspacePath: string): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
+    return this.state.workspaceAvatarCatalogByPath[workspacePath] ?? createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
+  }
+
+  private setWorkspaceAvatarCatalogState(
+    workspacePath: string,
+    updater: (
+      current: CachedResourceState<WorkspaceAvatarCatalogEntry[]>,
+    ) => CachedResourceState<WorkspaceAvatarCatalogEntry[]>,
+  ): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
+    const next = updater(this.ensureWorkspaceAvatarCatalogState(workspacePath));
+    this.state.workspaceAvatarCatalogByPath[workspacePath] = next;
+    return next;
+  }
+
+  private reconcileWorkspaceAvatarCatalogEntry(
+    workspacePath: string,
+    entry: WorkspaceAvatarCatalogEntry,
+    optimisticNickname?: string,
+  ): void {
+    this.setWorkspaceAvatarCatalogState(workspacePath, (resource) => {
+      const nextData = resource.data.filter(
+        (candidate) => candidate.nickname !== entry.nickname && candidate.nickname !== optimisticNickname,
+      );
+      nextData.push(entry);
+      return {
+        ...resource,
+        data: sortWorkspaceAvatarCatalog(nextData),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private insertOptimisticWorkspaceAvatarCopy(input: {
+    workspacePath: string;
+    sourceAvatar: string;
+    targetAvatar: string;
+  }): { applied: boolean; optimisticNickname: string } {
+    const optimisticNickname = input.targetAvatar.trim();
+    if (optimisticNickname.length === 0) {
+      return { applied: false, optimisticNickname };
+    }
+
+    const resource = this.ensureWorkspaceAvatarCatalogState(input.workspacePath);
+    if (!resource.loaded || resource.data.some((entry) => entry.nickname === optimisticNickname)) {
+      return { applied: false, optimisticNickname };
+    }
+
+    const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
+    const optimisticEntry: WorkspaceAvatarCatalogEntry = {
+      nickname: optimisticNickname,
+      defaultAvatar: optimisticNickname === "default",
+      sourceScope: "workspace",
+      globalAvailable: false,
+      workspaceAvailable: true,
+      globalPath: sourceEntry?.globalPath ?? "",
+      workspacePath: sourceEntry?.workspacePath ?? "",
+      effectivePath: sourceEntry?.workspacePath ?? "",
+    };
+    this.setWorkspaceAvatarCatalogState(input.workspacePath, (current) => ({
+      ...current,
+      data: sortWorkspaceAvatarCatalog([...current.data, optimisticEntry]),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: current.refreshedAt,
+    }));
+    this.emit();
+    return { applied: true, optimisticNickname };
+  }
+
+  private rollbackOptimisticWorkspaceAvatarCopy(workspacePath: string, optimisticNickname: string): void {
+    if (optimisticNickname.length === 0) {
+      return;
+    }
+    this.setWorkspaceAvatarCatalogState(workspacePath, (resource) => ({
+      ...resource,
+      data: resource.data.filter((entry) => entry.nickname !== optimisticNickname),
+      loading: false,
+      refreshing: false,
+      error: null,
+    }));
+  }
+
+  private async refreshWorkspaceAvatarCatalogInternal(
+    workspacePath: string,
+    input: { force?: boolean } = {},
+  ): Promise<WorkspaceAvatarCatalogEntry[]> {
+    const current = this.ensureWorkspaceAvatarCatalogState(workspacePath);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.workspaceAvatarCatalogRefreshTasks.get(workspacePath);
+    if (inflight) {
+      return await inflight;
+    }
+
+    this.setWorkspaceAvatarCatalogState(workspacePath, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.workspace.avatarCatalog
+      .query({ workspacePath })
+      .then((output) => {
+        const data = sortWorkspaceAvatarCatalog(output.items);
+        this.setWorkspaceAvatarCatalogState(workspacePath, (resource) => ({
+          ...resource,
+          data,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return data;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setWorkspaceAvatarCatalogState(workspacePath, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        this.workspaceAvatarCatalogRefreshTasks.delete(workspacePath);
+      });
+
+    this.workspaceAvatarCatalogRefreshTasks.set(workspacePath, task);
+    return await task;
+  }
+
+  private ensureGlobalRoomsState(): CachedResourceState<GlobalRoomEntry[]> {
+    return this.state.globalRooms;
+  }
+
+  private setGlobalRoomsState(
+    updater: (current: CachedResourceState<GlobalRoomEntry[]>) => CachedResourceState<GlobalRoomEntry[]>,
+  ): CachedResourceState<GlobalRoomEntry[]> {
+    const next = updater(this.ensureGlobalRoomsState());
+    this.state.globalRooms = next;
+    return next;
+  }
+
+  private ensureGlobalRoomSnapshotState(chatId: string): CachedResourceState<GlobalRoomSnapshotOutput | null> {
+    return this.state.globalRoomSnapshotsById[chatId] ?? createCachedResourceState<GlobalRoomSnapshotOutput | null>(null);
+  }
+
+  private setGlobalRoomSnapshotState(
+    chatId: string,
+    updater: (
+      current: CachedResourceState<GlobalRoomSnapshotOutput | null>,
+    ) => CachedResourceState<GlobalRoomSnapshotOutput | null>,
+  ): CachedResourceState<GlobalRoomSnapshotOutput | null> {
+    const next = updater(this.ensureGlobalRoomSnapshotState(chatId));
+    this.state.globalRoomSnapshotsById[chatId] = next;
+    return next;
+  }
+
+  private ensureGlobalRoomGrantsState(chatId: string): CachedResourceState<GlobalRoomGrantEntry[]> {
+    return this.state.globalRoomGrantsById[chatId] ?? createCachedResourceState<GlobalRoomGrantEntry[]>([]);
+  }
+
+  private setGlobalRoomGrantsState(
+    chatId: string,
+    updater: (current: CachedResourceState<GlobalRoomGrantEntry[]>) => CachedResourceState<GlobalRoomGrantEntry[]>,
+  ): CachedResourceState<GlobalRoomGrantEntry[]> {
+    const next = updater(this.ensureGlobalRoomGrantsState(chatId));
+    this.state.globalRoomGrantsById[chatId] = next;
+    return next;
+  }
+
+  private resolveGlobalRoomEntry(chatId: string): GlobalRoomEntry | null {
+    return this.state.globalRooms.data.find((room) => room.chatId === chatId) ?? null;
+  }
+
+  private reconcileGlobalRoomEntry(entry: GlobalRoomEntry): void {
+    this.setGlobalRoomsState((resource) => {
+      const nextData = resource.data.filter((candidate) => candidate.chatId !== entry.chatId);
+      nextData.push(entry);
+      return {
+        ...resource,
+        data: sortGlobalRooms(nextData),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+    this.setGlobalRoomSnapshotState(entry.chatId, (resource) => {
+      if (!resource.loaded || !resource.data) {
+        return resource;
+      }
+      return {
+        ...resource,
+        data: {
+          ...resource.data,
+          channel: entry,
+        },
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private removeGlobalRoomEntry(chatId: string): void {
+    this.setGlobalRoomsState((resource) => ({
+      ...resource,
+      data: resource.data.filter((candidate) => candidate.chatId !== chatId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+  }
+
+  private resolveGlobalRoomSnapshotQuery(
+    chatId: string,
+    input: { accessToken?: string; limit?: number } = {},
+  ): { accessToken?: string; limit?: number } {
+    const previous = this.globalRoomSnapshotQueryById.get(chatId) ?? {};
+    const fromCatalog = this.resolveGlobalRoomEntry(chatId);
+    const next = {
+      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+      limit: input.limit ?? previous.limit ?? 120,
+    };
+    this.globalRoomSnapshotQueryById.set(chatId, next);
+    return next;
+  }
+
+  private shouldRefreshGlobalRoomSnapshot(chatId: string): boolean {
+    const resource = this.state.globalRoomSnapshotsById[chatId];
+    return Boolean(resource?.loaded || this.globalRoomSnapshotWatchCountById.has(chatId));
+  }
+
+  private shouldRefreshGlobalRoomGrants(chatId: string): boolean {
+    const resource = this.state.globalRoomGrantsById[chatId];
+    return Boolean(resource?.loaded || this.globalRoomGrantWatchCountById.has(chatId));
+  }
+
+  private sameGlobalRoomSnapshotQuery(
+    left: { accessToken?: string; limit?: number },
+    right: { accessToken?: string; limit?: number },
+  ): boolean {
+    return left.accessToken === right.accessToken && left.limit === right.limit;
+  }
+
+  private resolveGlobalRoomGrantQuery(
+    chatId: string,
+    input: { accessToken?: string } = {},
+  ): { accessToken?: string } {
+    const previous = this.globalRoomGrantQueryById.get(chatId) ?? {};
+    const fromCatalog = this.resolveGlobalRoomEntry(chatId);
+    const next = {
+      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+    };
+    this.globalRoomGrantQueryById.set(chatId, next);
+    return next;
+  }
+
+  private async refreshGlobalRoomsInternal(input: { force?: boolean } = {}): Promise<GlobalRoomEntry[]> {
+    const current = this.ensureGlobalRoomsState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    if (this.globalRoomsRefreshTask) {
+      return await this.globalRoomsRefreshTask;
+    }
+
+    this.setGlobalRoomsState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.message.globalList
+      .query({})
+      .then((output) => {
+        const data = sortGlobalRooms(output.items);
+        this.setGlobalRoomsState((resource) => ({
+          ...resource,
+          data,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return data;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalRoomsState((resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        this.globalRoomsRefreshTask = null;
+      });
+
+    this.globalRoomsRefreshTask = task;
+    return await task;
+  }
+
+  private async refreshGlobalRoomSnapshotInternal(
+    chatId: string,
+    input: { accessToken?: string; limit?: number; force?: boolean } = {},
+  ): Promise<GlobalRoomSnapshotOutput | null> {
+    const current = this.ensureGlobalRoomSnapshotState(chatId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const query = this.resolveGlobalRoomSnapshotQuery(chatId, input);
+    const inflight = this.globalRoomSnapshotRefreshTasks.get(chatId);
+    if (inflight && this.sameGlobalRoomSnapshotQuery(inflight.query, query)) {
+      return await inflight.promise;
+    }
+    this.setGlobalRoomSnapshotState(chatId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.message.globalSnapshot
+      .query({
+        chatId,
+        accessToken: query.accessToken,
+        limit: query.limit,
+      })
+      .then((snapshot) => {
+        this.reconcileGlobalRoomEntry(snapshot.channel);
+        this.setGlobalRoomSnapshotState(chatId, (resource) => ({
+          ...resource,
+          data: snapshot,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return snapshot;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalRoomSnapshotState(chatId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        const latest = this.globalRoomSnapshotRefreshTasks.get(chatId);
+        if (latest?.promise === task) {
+          this.globalRoomSnapshotRefreshTasks.delete(chatId);
+        }
+      });
+
+    this.globalRoomSnapshotRefreshTasks.set(chatId, { promise: task, query });
+    return await task;
+  }
+
+  private async refreshGlobalRoomGrantsInternal(
+    chatId: string,
+    input: { accessToken?: string; force?: boolean } = {},
+  ): Promise<GlobalRoomGrantEntry[]> {
+    const current = this.ensureGlobalRoomGrantsState(chatId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.globalRoomGrantRefreshTasks.get(chatId);
+    if (inflight) {
+      return await inflight;
+    }
+
+    const query = this.resolveGlobalRoomGrantQuery(chatId, input);
+    this.setGlobalRoomGrantsState(chatId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.message.globalListGrants
+      .query({
+        chatId,
+        accessToken: query.accessToken,
+      })
+      .then((output) => {
+        this.setGlobalRoomGrantsState(chatId, (resource) => ({
+          ...resource,
+          data: output.items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return output.items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalRoomGrantsState(chatId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        this.globalRoomGrantRefreshTasks.delete(chatId);
+      });
+
+    this.globalRoomGrantRefreshTasks.set(chatId, task);
+    return await task;
+  }
+
+  private ensureGlobalTerminalsState(): CachedResourceState<GlobalTerminalEntry[]> {
+    return this.state.globalTerminals;
+  }
+
+  private setGlobalTerminalsState(
+    updater: (current: CachedResourceState<GlobalTerminalEntry[]>) => CachedResourceState<GlobalTerminalEntry[]>,
+  ): CachedResourceState<GlobalTerminalEntry[]> {
+    const next = updater(this.ensureGlobalTerminalsState());
+    this.state.globalTerminals = next;
+    return next;
+  }
+
+  private ensureGlobalTerminalGrantsState(terminalId: string): CachedResourceState<GlobalTerminalGrantEntry[]> {
+    return this.state.globalTerminalGrantsById[terminalId] ?? createCachedResourceState<GlobalTerminalGrantEntry[]>([]);
+  }
+
+  private setGlobalTerminalGrantsState(
+    terminalId: string,
+    updater: (
+      current: CachedResourceState<GlobalTerminalGrantEntry[]>,
+    ) => CachedResourceState<GlobalTerminalGrantEntry[]>,
+  ): CachedResourceState<GlobalTerminalGrantEntry[]> {
+    const next = updater(this.ensureGlobalTerminalGrantsState(terminalId));
+    this.state.globalTerminalGrantsById[terminalId] = next;
+    return next;
+  }
+
+  private ensureGlobalTerminalApprovalsState(
+    terminalId: string,
+  ): CachedResourceState<GlobalTerminalApprovalRequest[]> {
+    return (
+      this.state.globalTerminalApprovalsById[terminalId] ??
+      createCachedResourceState<GlobalTerminalApprovalRequest[]>([])
+    );
+  }
+
+  private setGlobalTerminalApprovalsState(
+    terminalId: string,
+    updater: (
+      current: CachedResourceState<GlobalTerminalApprovalRequest[]>,
+    ) => CachedResourceState<GlobalTerminalApprovalRequest[]>,
+  ): CachedResourceState<GlobalTerminalApprovalRequest[]> {
+    const next = updater(this.ensureGlobalTerminalApprovalsState(terminalId));
+    this.state.globalTerminalApprovalsById[terminalId] = next;
+    return next;
+  }
+
+  private ensureGlobalTerminalActivityState(terminalId: string): CachedResourceState<TerminalActivityItem[]> {
+    return this.state.globalTerminalActivityById[terminalId] ?? createCachedResourceState<TerminalActivityItem[]>([]);
+  }
+
+  private setGlobalTerminalActivityState(
+    terminalId: string,
+    updater: (
+      current: CachedResourceState<TerminalActivityItem[]>,
+    ) => CachedResourceState<TerminalActivityItem[]>,
+  ): CachedResourceState<TerminalActivityItem[]> {
+    const next = updater(this.ensureGlobalTerminalActivityState(terminalId));
+    this.state.globalTerminalActivityById[terminalId] = next;
+    return next;
+  }
+
+  private projectTerminalActivityFact(item: TerminalActivityItem): void {
+    this.setGlobalTerminalActivityState(item.terminalId, (resource) => {
+      if (resource.data.some((candidate) => candidate.id === item.id)) {
+        return resource;
+      }
+      const data = [...resource.data, item].sort((left, right) => {
+        if (left.createdAt !== right.createdAt) {
+          return left.createdAt - right.createdAt;
+        }
+        return left.id - right.id;
+      });
+      return {
+        ...resource,
+        data,
+        loaded: true,
+        loading: false,
+        refreshing: resource.loading || resource.refreshing,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+    this.emit();
+  }
+
+  private projectGlobalTerminalLeaseFact(input: {
+    terminalId: string;
+    requestId: string;
+    lease: {
+      leaseId: string;
+      participantId: string;
+      expiresAt: number;
+    };
+  }): void {
+    this.setGlobalTerminalApprovalsState(input.terminalId, (resource) => ({
+      ...resource,
+      data: resource.data.filter((request) => request.requestId !== input.requestId),
+      loaded: true,
+      loading: false,
+      refreshing: resource.loading || resource.refreshing,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.setGlobalTerminalsState((resource) => ({
+      ...resource,
+      data: resource.data.map((terminal) => {
+        if (terminal.terminalId !== input.terminalId) {
+          return terminal;
+        }
+        return {
+          ...terminal,
+          pendingRequestCount: Math.max(0, (terminal.pendingRequestCount ?? 0) - 1),
+          actors: (terminal.actors ?? []).map((actor) =>
+            actor.actorId === input.lease.participantId
+              ? {
+                  ...actor,
+                  leaseId: input.lease.leaseId,
+                  leaseExpiresAt: input.lease.expiresAt,
+                }
+              : actor,
+          ),
+        };
+      }),
+      loaded: resource.loaded || resource.data.length > 0,
+      loading: false,
+      refreshing: resource.loading || resource.refreshing,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+  }
+
+  private resolveGlobalTerminalEntry(terminalId: string): GlobalTerminalEntry | null {
+    return this.state.globalTerminals.data.find((terminal) => terminal.terminalId === terminalId) ?? null;
+  }
+
+  private reconcileGlobalTerminalEntry(entry: GlobalTerminalEntry): void {
+    this.setGlobalTerminalsState((resource) => {
+      const nextData = [...resource.data];
+      const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
+      if (index >= 0) {
+        nextData[index] = entry;
+      } else {
+        nextData.unshift(entry);
+      }
+      return {
+        ...resource,
+        data: nextData,
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private removeGlobalTerminalEntry(terminalId: string): void {
+    this.setGlobalTerminalsState((resource) => ({
+      ...resource,
+      data: resource.data.filter((candidate) => candidate.terminalId !== terminalId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+  }
+
+  private shouldRefreshGlobalTerminalGrants(terminalId: string): boolean {
+    const resource = this.state.globalTerminalGrantsById[terminalId];
+    return Boolean(resource?.loaded || this.globalTerminalGrantWatchCountById.has(terminalId));
+  }
+
+  private shouldRefreshGlobalTerminalApprovals(terminalId: string): boolean {
+    const resource = this.state.globalTerminalApprovalsById[terminalId];
+    return Boolean(resource?.loaded || this.globalTerminalApprovalWatchCountById.has(terminalId));
+  }
+
+  private shouldRefreshGlobalTerminalActivity(terminalId: string): boolean {
+    const resource = this.state.globalTerminalActivityById[terminalId];
+    return Boolean(resource?.loaded || this.globalTerminalActivityWatchCountById.has(terminalId));
+  }
+
+  private async refreshGlobalTerminalsInternal(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
+    const current = this.ensureGlobalTerminalsState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    if (!input.force && this.globalTerminalsRefreshTask) {
+      return await this.globalTerminalsRefreshTask;
+    }
+
+    this.setGlobalTerminalsState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.terminal.globalList
+      .query()
+      .then((output) => {
+        this.setGlobalTerminalsState((resource) => ({
+          ...resource,
+          data: output.items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return output.items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalTerminalsState((resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        if (this.globalTerminalsRefreshTask === task) {
+          this.globalTerminalsRefreshTask = null;
+        }
+      });
+
+    this.globalTerminalsRefreshTask = task;
+    return await task;
+  }
+
+  private async refreshGlobalTerminalGrantsInternal(
+    terminalId: string,
+    input: { force?: boolean } = {},
+  ): Promise<GlobalTerminalGrantEntry[]> {
+    const current = this.ensureGlobalTerminalGrantsState(terminalId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.globalTerminalGrantRefreshTasks.get(terminalId);
+    if (!input.force && inflight) {
+      return await inflight;
+    }
+
+    this.setGlobalTerminalGrantsState(terminalId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.terminal.listGrants
+      .query({ terminalId })
+      .then((output) => {
+        this.setGlobalTerminalGrantsState(terminalId, (resource) => ({
+          ...resource,
+          data: output.items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return output.items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalTerminalGrantsState(terminalId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        if (this.globalTerminalGrantRefreshTasks.get(terminalId) === task) {
+          this.globalTerminalGrantRefreshTasks.delete(terminalId);
+        }
+      });
+
+    this.globalTerminalGrantRefreshTasks.set(terminalId, task);
+    return await task;
+  }
+
+  private async refreshGlobalTerminalApprovalsInternal(
+    terminalId: string,
+    input: { force?: boolean } = {},
+  ): Promise<GlobalTerminalApprovalRequest[]> {
+    const current = this.ensureGlobalTerminalApprovalsState(terminalId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.globalTerminalApprovalRefreshTasks.get(terminalId);
+    if (!input.force && inflight) {
+      return await inflight;
+    }
+
+    this.setGlobalTerminalApprovalsState(terminalId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.terminal.listApprovalRequests
+      .query({
+        terminalId,
+        statuses: ["pending"],
+      })
+      .then((output) => {
+        this.setGlobalTerminalApprovalsState(terminalId, (resource) => ({
+          ...resource,
+          data: output.items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return output.items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalTerminalApprovalsState(terminalId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        if (this.globalTerminalApprovalRefreshTasks.get(terminalId) === task) {
+          this.globalTerminalApprovalRefreshTasks.delete(terminalId);
+        }
+      });
+
+    this.globalTerminalApprovalRefreshTasks.set(terminalId, task);
+    return await task;
+  }
+
+  private async refreshGlobalTerminalActivityInternal(
+    terminalId: string,
+    input: { limit?: number; force?: boolean } = {},
+  ): Promise<TerminalActivityItem[]> {
+    const current = this.ensureGlobalTerminalActivityState(terminalId);
+    const limit = input.limit ?? 120;
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const inflight = this.globalTerminalActivityRefreshTasks.get(terminalId);
+    if (!input.force && inflight && inflight.limit === limit) {
+      return await inflight.promise;
+    }
+
+    this.setGlobalTerminalActivityState(terminalId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.terminal.activityPage
+      .query({
+        terminalId,
+        limit,
+      })
+      .then((output) => {
+        const items = mergeTerminalActivityItems(current.data, output.items, limit);
+        this.setGlobalTerminalActivityState(terminalId, (resource) => ({
+          ...resource,
+          data: items,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return items;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalTerminalActivityState(terminalId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        const latest = this.globalTerminalActivityRefreshTasks.get(terminalId);
+        if (latest?.promise === task) {
+          this.globalTerminalActivityRefreshTasks.delete(terminalId);
+        }
+      });
+
+    this.globalTerminalActivityRefreshTasks.set(terminalId, { promise: task, limit });
+    return await task;
   }
 
   private async refreshMessageChannelsInternal(
@@ -956,6 +1920,24 @@ export class RuntimeStore {
     this.chatCyclesBeforeCursorBySession.clear();
     this.terminalActivityBeforeCursorByKey.clear();
     this.sessionResourceHandles.clear();
+    this.workspaceAvatarCatalogRefreshTasks.clear();
+    this.workspaceAvatarCatalogWatchCountByPath.clear();
+    this.globalRoomsRefreshTask = null;
+    this.globalRoomsWatchCount = 0;
+    this.globalRoomSnapshotRefreshTasks.clear();
+    this.globalRoomSnapshotWatchCountById.clear();
+    this.globalRoomSnapshotQueryById.clear();
+    this.globalRoomGrantRefreshTasks.clear();
+    this.globalRoomGrantWatchCountById.clear();
+    this.globalRoomGrantQueryById.clear();
+    this.globalTerminalsRefreshTask = null;
+    this.globalTerminalsWatchCount = 0;
+    this.globalTerminalGrantRefreshTasks.clear();
+    this.globalTerminalGrantWatchCountById.clear();
+    this.globalTerminalApprovalRefreshTasks.clear();
+    this.globalTerminalApprovalWatchCountById.clear();
+    this.globalTerminalActivityRefreshTasks.clear();
+    this.globalTerminalActivityWatchCountById.clear();
     this.setConnectionStatus("offline");
     this.emit();
     this.client.close();
@@ -1066,6 +2048,14 @@ export class RuntimeStore {
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.apiCallRecording]),
         ),
         workspaces: previousState.workspaces,
+        workspaceAvatarCatalogByPath: previousState.workspaceAvatarCatalogByPath,
+        globalRooms: previousState.globalRooms,
+        globalRoomSnapshotsById: previousState.globalRoomSnapshotsById,
+        globalRoomGrantsById: previousState.globalRoomGrantsById,
+        globalTerminals: previousState.globalTerminals,
+        globalTerminalGrantsById: previousState.globalTerminalGrantsById,
+        globalTerminalApprovalsById: previousState.globalTerminalApprovalsById,
+        globalTerminalActivityById: previousState.globalTerminalActivityById,
         notifications: previousState.notifications,
         unreadBySession: previousState.unreadBySession,
         unreadByChat: previousState.unreadByChat,
@@ -1083,6 +2073,48 @@ export class RuntimeStore {
       this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
       this.restoreRetainedApiCallStreams();
       this.emit();
+      for (const [workspacePath, resource] of Object.entries(previousState.workspaceAvatarCatalogByPath)) {
+        if (!resource.loaded && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
+          continue;
+        }
+        void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
+      }
+      if (previousState.globalRooms.loaded || this.globalRoomsWatchCount > 0) {
+        void this.hydrateGlobalRooms({ force: true });
+      }
+      for (const [chatId, resource] of Object.entries(previousState.globalRoomSnapshotsById)) {
+        if (!resource.loaded && !this.globalRoomSnapshotWatchCountById.has(chatId)) {
+          continue;
+        }
+        void this.hydrateGlobalRoomSnapshot({ chatId, force: true });
+      }
+      for (const [chatId, resource] of Object.entries(previousState.globalRoomGrantsById)) {
+        if (!resource.loaded && !this.globalRoomGrantWatchCountById.has(chatId)) {
+          continue;
+        }
+        void this.hydrateGlobalRoomGrants({ chatId, force: true });
+      }
+      if (previousState.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+        void this.hydrateGlobalTerminals({ force: true });
+      }
+      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalGrantsById)) {
+        if (!resource.loaded && !this.globalTerminalGrantWatchCountById.has(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalGrants({ terminalId, force: true });
+      }
+      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalApprovalsById)) {
+        if (!resource.loaded && !this.globalTerminalApprovalWatchCountById.has(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalApprovals({ terminalId, force: true });
+      }
+      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalActivityById)) {
+        if (!resource.loaded && !this.globalTerminalActivityWatchCountById.has(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalActivity({ terminalId, force: true });
+      }
 
       const scheduleSecondaryChrome = (run: () => void) => {
         setTimeout(() => {
@@ -1281,13 +2313,43 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.listSessions.query(input);
   }
 
-  async listWorkspaceAvatarCatalog(workspacePath: string) {
-    const output = await this.client.trpc.workspace.avatarCatalog.query({ workspacePath });
-    return output.items;
+  getWorkspaceAvatarCatalogState(workspacePath: string): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
+    return this.ensureWorkspaceAvatarCatalogState(workspacePath);
+  }
+
+  retainWorkspaceAvatarCatalog(workspacePath: string): () => void {
+    this.workspaceAvatarCatalogWatchCountByPath.set(
+      workspacePath,
+      (this.workspaceAvatarCatalogWatchCountByPath.get(workspacePath) ?? 0) + 1,
+    );
+    this.state.workspaceAvatarCatalogByPath[workspacePath] =
+      this.state.workspaceAvatarCatalogByPath[workspacePath] ?? createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
+    return () => {
+      const current = this.workspaceAvatarCatalogWatchCountByPath.get(workspacePath) ?? 0;
+      if (current <= 1) {
+        this.workspaceAvatarCatalogWatchCountByPath.delete(workspacePath);
+        return;
+      }
+      this.workspaceAvatarCatalogWatchCountByPath.set(workspacePath, current - 1);
+    };
+  }
+
+  async hydrateWorkspaceAvatarCatalog(
+    workspacePath: string,
+    input: { force?: boolean } = {},
+  ): Promise<WorkspaceAvatarCatalogEntry[]> {
+    return await this.refreshWorkspaceAvatarCatalogInternal(workspacePath, input);
+  }
+
+  async listWorkspaceAvatarCatalog(workspacePath: string): Promise<WorkspaceAvatarCatalogEntry[]> {
+    return await this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
   }
 
   async forkWorkspaceAvatar(input: { workspacePath: string; avatar: string }) {
     const output = await this.client.trpc.workspace.forkAvatar.mutate(input);
+    this.reconcileWorkspaceAvatarCatalogEntry(input.workspacePath, output.avatar);
+    this.emit();
+    void this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true });
     return output.avatar;
   }
 
@@ -1296,8 +2358,20 @@ export class RuntimeStore {
     sourceAvatar: string;
     targetAvatar: string;
   }) {
-    const output = await this.client.trpc.workspace.copyAvatar.mutate(input);
-    return output.avatar;
+    const optimistic = this.insertOptimisticWorkspaceAvatarCopy(input);
+    try {
+      const output = await this.client.trpc.workspace.copyAvatar.mutate(input);
+      this.reconcileWorkspaceAvatarCatalogEntry(input.workspacePath, output.avatar, optimistic.optimisticNickname);
+      this.emit();
+      void this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true });
+      return output.avatar;
+    } catch (error) {
+      if (optimistic.applied) {
+        this.rollbackOptimisticWorkspaceAvatarCopy(input.workspacePath, optimistic.optimisticNickname);
+        this.emit();
+      }
+      throw error;
+    }
   }
 
   async inspectWorkspaceWelcome(input: { workspacePath: string; avatar?: string }) {
@@ -1686,9 +2760,54 @@ export class RuntimeStore {
     return await this.client.trpc.message.revokeChannelGrant.mutate(input);
   }
 
+  getGlobalRoomsState(): CachedResourceState<GlobalRoomEntry[]> {
+    return this.ensureGlobalRoomsState();
+  }
+
+  retainGlobalRooms(): () => void {
+    this.globalRoomsWatchCount += 1;
+    return () => {
+      this.globalRoomsWatchCount = Math.max(0, this.globalRoomsWatchCount - 1);
+    };
+  }
+
+  async hydrateGlobalRooms(input: { force?: boolean } = {}): Promise<GlobalRoomEntry[]> {
+    return await this.refreshGlobalRoomsInternal(input);
+  }
+
   async listGlobalRooms(input: { includeArchived?: boolean } = {}): Promise<GlobalRoomEntry[]> {
-    const output = await this.client.trpc.message.globalList.query(input);
-    return output.items;
+    if (input.includeArchived) {
+      const output = await this.client.trpc.message.globalList.query(input);
+      return sortGlobalRooms(output.items);
+    }
+    return await this.hydrateGlobalRooms({ force: true });
+  }
+
+  getGlobalRoomSnapshotState(chatId: string): CachedResourceState<GlobalRoomSnapshotOutput | null> {
+    return this.ensureGlobalRoomSnapshotState(chatId);
+  }
+
+  retainGlobalRoomSnapshot(chatId: string): () => void {
+    this.globalRoomSnapshotWatchCountById.set(chatId, (this.globalRoomSnapshotWatchCountById.get(chatId) ?? 0) + 1);
+    this.state.globalRoomSnapshotsById[chatId] =
+      this.state.globalRoomSnapshotsById[chatId] ?? createCachedResourceState<GlobalRoomSnapshotOutput | null>(null);
+    return () => {
+      const current = this.globalRoomSnapshotWatchCountById.get(chatId) ?? 0;
+      if (current <= 1) {
+        this.globalRoomSnapshotWatchCountById.delete(chatId);
+        return;
+      }
+      this.globalRoomSnapshotWatchCountById.set(chatId, current - 1);
+    };
+  }
+
+  async hydrateGlobalRoomSnapshot(input: {
+    chatId: string;
+    accessToken?: string;
+    limit?: number;
+    force?: boolean;
+  }): Promise<GlobalRoomSnapshotOutput | null> {
+    return await this.refreshGlobalRoomSnapshotInternal(input.chatId, input);
   }
 
   async createGlobalRoom(input: {
@@ -1703,6 +2822,8 @@ export class RuntimeStore {
       kind: "room",
       ...input,
     });
+    this.reconcileGlobalRoomEntry(output.channel);
+    this.emit();
     return output.channel;
   }
 
@@ -1710,21 +2831,33 @@ export class RuntimeStore {
     op: "add" | "remove" | "replace" | "clear";
     channels: Array<{ chatId: string; accessToken?: string }>;
   }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }> {
-    return await this.client.trpc.message.globalFocus.mutate(input);
+    const output = await this.client.trpc.message.globalFocus.mutate(input);
+    for (const channel of input.channels) {
+      if (!this.shouldRefreshGlobalRoomSnapshot(channel.chatId)) {
+        continue;
+      }
+      void this.hydrateGlobalRoomSnapshot({
+        chatId: channel.chatId,
+        accessToken: channel.accessToken,
+        force: true,
+      });
+    }
+    return output;
   }
 
   async snapshotGlobalRoom(input: {
     chatId: string;
     accessToken?: string;
     limit?: number;
-  }): Promise<{
-    channel: GlobalRoomEntry;
-    items: GlobalRoomMessage[];
-    nextBefore: HistoryPageCursor | null;
-    hasMoreBefore: boolean;
-      headVersion: string;
-  }> {
-    return await this.client.trpc.message.globalSnapshot.query(input);
+  }): Promise<GlobalRoomSnapshotOutput> {
+    const snapshot = await this.refreshGlobalRoomSnapshotInternal(input.chatId, {
+      ...input,
+      force: true,
+    });
+    if (!snapshot) {
+      throw new Error(`global room snapshot missing: ${input.chatId}`);
+    }
+    return snapshot;
   }
 
   async markGlobalRoomRead(input: {
@@ -1734,6 +2867,22 @@ export class RuntimeStore {
     readAt?: number;
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalMarkRead.mutate(input);
+    this.reconcileGlobalRoomEntry(output.channel);
+    this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
+      if (!resource.loaded || !resource.data) {
+        return resource;
+      }
+      return {
+        ...resource,
+        data: {
+          ...resource.data,
+          channel: output.channel,
+        },
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+    this.emit();
     return output.channel;
   }
 
@@ -1781,6 +2930,8 @@ export class RuntimeStore {
     };
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalUpdate.mutate(input);
+    this.reconcileGlobalRoomEntry(output.channel);
+    this.emit();
     return output.channel;
   }
 
@@ -1790,6 +2941,22 @@ export class RuntimeStore {
     archivedBy?: string;
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalArchive.mutate(input);
+    this.removeGlobalRoomEntry(output.channel.chatId);
+    this.setGlobalRoomSnapshotState(output.channel.chatId, (resource) => ({
+      ...resource,
+      data: resource.data
+        ? {
+            ...resource.data,
+            channel: output.channel,
+          }
+        : resource.data,
+      loaded: resource.loaded,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
     return output.channel;
   }
 
@@ -1798,15 +2965,63 @@ export class RuntimeStore {
     accessToken?: string;
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalDelete.mutate(input);
+    this.removeGlobalRoomEntry(output.channel.chatId);
+    this.setGlobalRoomSnapshotState(output.channel.chatId, (resource) => ({
+      ...resource,
+      data: null,
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.setGlobalRoomGrantsState(output.channel.chatId, (resource) => ({
+      ...resource,
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
     return output.channel;
+  }
+
+  getGlobalRoomGrantsState(chatId: string): CachedResourceState<GlobalRoomGrantEntry[]> {
+    return this.ensureGlobalRoomGrantsState(chatId);
+  }
+
+  retainGlobalRoomGrants(chatId: string): () => void {
+    this.globalRoomGrantWatchCountById.set(chatId, (this.globalRoomGrantWatchCountById.get(chatId) ?? 0) + 1);
+    this.state.globalRoomGrantsById[chatId] =
+      this.state.globalRoomGrantsById[chatId] ?? createCachedResourceState<GlobalRoomGrantEntry[]>([]);
+    return () => {
+      const current = this.globalRoomGrantWatchCountById.get(chatId) ?? 0;
+      if (current <= 1) {
+        this.globalRoomGrantWatchCountById.delete(chatId);
+        return;
+      }
+      this.globalRoomGrantWatchCountById.set(chatId, current - 1);
+    };
+  }
+
+  async hydrateGlobalRoomGrants(input: {
+    chatId: string;
+    accessToken?: string;
+    force?: boolean;
+  }): Promise<GlobalRoomGrantEntry[]> {
+    return await this.refreshGlobalRoomGrantsInternal(input.chatId, input);
   }
 
   async listGlobalRoomGrants(input: {
     chatId: string;
     accessToken?: string;
   }): Promise<GlobalRoomGrantEntry[]> {
-    const output = await this.client.trpc.message.globalListGrants.query(input);
-    return output.items;
+    return await this.refreshGlobalRoomGrantsInternal(input.chatId, {
+      accessToken: input.accessToken,
+      force: true,
+    });
   }
 
   async issueGlobalRoomGrant(input: {
@@ -1818,6 +3033,23 @@ export class RuntimeStore {
     accessTokenHint?: string;
   }): Promise<GlobalRoomGrantIssueOutput["grant"]> {
     const output = await this.client.trpc.message.globalIssueGrant.mutate(input);
+    this.setGlobalRoomGrantsState(input.chatId, (resource) => ({
+      ...resource,
+      data: resource.data
+        .filter((grant) => grant.grantId !== output.grant.grantId)
+        .concat(output.grant),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    void this.hydrateGlobalRoomSnapshot({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      force: true,
+    }).catch(() => undefined);
     return output.grant;
   }
 
@@ -1826,7 +3058,23 @@ export class RuntimeStore {
     accessToken?: string;
     grantId: string;
   }): Promise<{ ok: boolean }> {
-    return await this.client.trpc.message.globalRevokeGrant.mutate(input);
+    const output = await this.client.trpc.message.globalRevokeGrant.mutate(input);
+    this.setGlobalRoomGrantsState(input.chatId, (resource) => ({
+      ...resource,
+      data: resource.data.filter((grant) => grant.grantId !== input.grantId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    void this.hydrateGlobalRoomSnapshot({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      force: true,
+    }).catch(() => undefined);
+    return output;
   }
 
   async listTerminals(sessionId: string): Promise<
@@ -1893,9 +3141,23 @@ export class RuntimeStore {
     return output;
   }
 
+  getGlobalTerminalsState(): CachedResourceState<GlobalTerminalEntry[]> {
+    return this.ensureGlobalTerminalsState();
+  }
+
+  retainGlobalTerminals(): () => void {
+    this.globalTerminalsWatchCount += 1;
+    return () => {
+      this.globalTerminalsWatchCount = Math.max(0, this.globalTerminalsWatchCount - 1);
+    };
+  }
+
+  async hydrateGlobalTerminals(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
+    return await this.refreshGlobalTerminalsInternal(input);
+  }
+
   async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
-    const output = await this.client.trpc.terminal.globalList.query();
-    return output.items;
+    return await this.hydrateGlobalTerminals({ force: true });
   }
 
   async createGlobalTerminal(input: {
@@ -1917,6 +3179,10 @@ export class RuntimeStore {
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const output = await this.client.trpc.terminal.globalCreate.mutate(input);
+    if (output.result.terminal) {
+      this.reconcileGlobalTerminalEntry(output.result.terminal);
+      this.emit();
+    }
     return output.result;
   }
 
@@ -1925,11 +3191,47 @@ export class RuntimeStore {
     terminalIds: string[];
     accessToken?: string;
   }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
-    return await this.client.trpc.terminal.globalFocus.mutate(input);
+    const output = await this.client.trpc.terminal.globalFocus.mutate(input);
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
+    }
+    return output;
   }
 
   async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
-    return await this.client.trpc.terminal.globalDelete.mutate(input);
+    const output = await this.client.trpc.terminal.globalDelete.mutate(input);
+    if (output.ok) {
+      this.removeGlobalTerminalEntry(input.terminalId);
+      this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
+        ...resource,
+        data: [],
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.setGlobalTerminalApprovalsState(input.terminalId, (resource) => ({
+        ...resource,
+        data: [],
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.setGlobalTerminalActivityState(input.terminalId, (resource) => ({
+        ...resource,
+        data: [],
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+    }
+    return output;
   }
 
   async readGlobalTerminal(input: {
@@ -1938,7 +3240,40 @@ export class RuntimeStore {
     mode?: "auto" | "diff" | "snapshot";
     remark?: boolean;
   }) {
-    return await this.client.trpc.terminal.read.query(input);
+    const output = await this.client.trpc.terminal.read.query(input);
+    const readFact =
+      this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
+        ? ({
+        id: output.eventId,
+        terminalId: output.terminalId,
+        createdAt: Date.now(),
+        kind: "terminal_read",
+        cycleId: null,
+        actorId: undefined,
+        title: "Terminal read",
+        content: JSON.stringify(output),
+        detail: output,
+      } satisfies TerminalActivityItem)
+        : null;
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    const refreshes: Array<Promise<unknown>> = [];
+    if (this.shouldRefreshGlobalTerminalActivity(input.terminalId)) {
+      refreshes.push(
+        this.hydrateGlobalTerminalActivity({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
+    }
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    return output;
   }
 
   async writeGlobalTerminal(input: {
@@ -1952,12 +3287,110 @@ export class RuntimeStore {
     readMode?: "auto" | "diff" | "snapshot";
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   }) {
-    return await this.client.trpc.terminal.write.mutate(input);
+    const output = await this.client.trpc.terminal.write.mutate(input);
+    const writeFact =
+      this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
+        ? ({
+        id: output.eventId,
+        terminalId: input.terminalId,
+        createdAt: Date.now(),
+        kind: "terminal_write",
+        cycleId: null,
+        actorId: undefined,
+        title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+        content: input.text,
+        detail: {
+          submit: input.submit,
+          submitKey: input.submitKey ?? null,
+        },
+      } satisfies TerminalActivityItem)
+        : null;
+    const readFact =
+      this.shouldRefreshGlobalTerminalActivity(input.terminalId) &&
+      output.read &&
+      typeof output.read === "object" &&
+      typeof output.read.eventId === "number"
+        ? ({
+        id: output.read.eventId,
+        terminalId: output.read.terminalId,
+        createdAt: Date.now(),
+        kind: "terminal_read",
+        cycleId: null,
+        actorId: undefined,
+        title: "Terminal read",
+        content: JSON.stringify(output.read),
+        detail: output.read,
+      } satisfies TerminalActivityItem)
+        : null;
+    if (writeFact) {
+      this.projectTerminalActivityFact(writeFact);
+    }
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    const refreshes: Array<Promise<unknown>> = [];
+    if (this.shouldRefreshGlobalTerminalActivity(input.terminalId)) {
+      refreshes.push(
+        this.hydrateGlobalTerminalActivity({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
+    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
+      refreshes.push(
+        this.hydrateGlobalTerminalApprovals({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
+    }
+    if (writeFact) {
+      this.projectTerminalActivityFact(writeFact);
+    }
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    return output;
   }
 
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
-    const output = await this.client.trpc.terminal.listGrants.query({ terminalId });
-    return output.items;
+    return await this.refreshGlobalTerminalGrantsInternal(terminalId, { force: true });
+  }
+
+  getGlobalTerminalGrantsState(terminalId: string): CachedResourceState<GlobalTerminalGrantEntry[]> {
+    return this.ensureGlobalTerminalGrantsState(terminalId);
+  }
+
+  retainGlobalTerminalGrants(terminalId: string): () => void {
+    this.globalTerminalGrantWatchCountById.set(
+      terminalId,
+      (this.globalTerminalGrantWatchCountById.get(terminalId) ?? 0) + 1,
+    );
+    this.state.globalTerminalGrantsById[terminalId] =
+      this.state.globalTerminalGrantsById[terminalId] ??
+      createCachedResourceState<GlobalTerminalGrantEntry[]>([]);
+    return () => {
+      const current = this.globalTerminalGrantWatchCountById.get(terminalId) ?? 0;
+      if (current <= 1) {
+        this.globalTerminalGrantWatchCountById.delete(terminalId);
+        return;
+      }
+      this.globalTerminalGrantWatchCountById.set(terminalId, current - 1);
+    };
+  }
+
+  async hydrateGlobalTerminalGrants(input: {
+    terminalId: string;
+    force?: boolean;
+  }): Promise<GlobalTerminalGrantEntry[]> {
+    return await this.refreshGlobalTerminalGrantsInternal(input.terminalId, input);
   }
 
   async issueGlobalTerminalGrant(input: {
@@ -1969,6 +3402,21 @@ export class RuntimeStore {
     adminCandidateRank?: number | null;
   }): Promise<GlobalTerminalGrantIssueOutput["grant"]> {
     const output = await this.client.trpc.terminal.issueGrant.mutate(input);
+    this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
+      ...resource,
+      data: resource.data
+        .filter((grant) => grant.grantId !== output.grant.grantId)
+        .concat(output.grant),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
+    }
     return output.grant;
   }
 
@@ -1976,7 +3424,21 @@ export class RuntimeStore {
     terminalId: string;
     grantId: string;
   }): Promise<{ ok: boolean }> {
-    return await this.client.trpc.terminal.revokeGrant.mutate(input);
+    const output = await this.client.trpc.terminal.revokeGrant.mutate(input);
+    this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
+      ...resource,
+      data: resource.data.filter((grant) => grant.grantId !== input.grantId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.emit();
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
+    }
+    return output;
   }
 
   async listGlobalTerminalApprovalRequests(input: {
@@ -1989,16 +3451,95 @@ export class RuntimeStore {
     return output.items;
   }
 
+  getGlobalTerminalApprovalsState(terminalId: string): CachedResourceState<GlobalTerminalApprovalRequest[]> {
+    return this.ensureGlobalTerminalApprovalsState(terminalId);
+  }
+
+  retainGlobalTerminalApprovals(terminalId: string): () => void {
+    this.globalTerminalApprovalWatchCountById.set(
+      terminalId,
+      (this.globalTerminalApprovalWatchCountById.get(terminalId) ?? 0) + 1,
+    );
+    this.state.globalTerminalApprovalsById[terminalId] =
+      this.state.globalTerminalApprovalsById[terminalId] ??
+      createCachedResourceState<GlobalTerminalApprovalRequest[]>([]);
+    return () => {
+      const current = this.globalTerminalApprovalWatchCountById.get(terminalId) ?? 0;
+      if (current <= 1) {
+        this.globalTerminalApprovalWatchCountById.delete(terminalId);
+        return;
+      }
+      this.globalTerminalApprovalWatchCountById.set(terminalId, current - 1);
+    };
+  }
+
+  async hydrateGlobalTerminalApprovals(input: {
+    terminalId: string;
+    force?: boolean;
+  }): Promise<GlobalTerminalApprovalRequest[]> {
+    return await this.refreshGlobalTerminalApprovalsInternal(input.terminalId, input);
+  }
+
   async approveGlobalTerminalRequest(input: {
     terminalId: string;
     requestId: string;
     durationMs: number;
   }) {
-    return await this.client.trpc.terminal.approveRequest.mutate(input);
+    const output = await this.client.trpc.terminal.approveRequest.mutate(input);
+    this.projectGlobalTerminalLeaseFact({
+      terminalId: input.terminalId,
+      requestId: input.requestId,
+      lease: {
+        leaseId: output.leaseId,
+        participantId: output.participantId,
+        expiresAt: output.expiresAt,
+      },
+    });
+    const refreshes: Array<Promise<unknown>> = [];
+    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
+      refreshes.push(
+        this.hydrateGlobalTerminalApprovals({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
+    }
+    this.projectGlobalTerminalLeaseFact({
+      terminalId: input.terminalId,
+      requestId: input.requestId,
+      lease: {
+        leaseId: output.leaseId,
+        participantId: output.participantId,
+        expiresAt: output.expiresAt,
+      },
+    });
+    return output;
   }
 
   async denyGlobalTerminalRequest(input: { terminalId: string; requestId: string }) {
-    return await this.client.trpc.terminal.denyRequest.mutate(input);
+    const output = await this.client.trpc.terminal.denyRequest.mutate(input);
+    const refreshes: Array<Promise<unknown>> = [];
+    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
+      refreshes.push(
+        this.hydrateGlobalTerminalApprovals({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
+    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
+    }
+    return output;
   }
 
   async loadGlobalTerminalActivity(
@@ -2020,6 +3561,36 @@ export class RuntimeStore {
       hasMore: output.hasMoreBefore,
       nextBefore: output.nextBefore,
     };
+  }
+
+  getGlobalTerminalActivityState(terminalId: string): CachedResourceState<TerminalActivityItem[]> {
+    return this.ensureGlobalTerminalActivityState(terminalId);
+  }
+
+  retainGlobalTerminalActivity(terminalId: string): () => void {
+    this.globalTerminalActivityWatchCountById.set(
+      terminalId,
+      (this.globalTerminalActivityWatchCountById.get(terminalId) ?? 0) + 1,
+    );
+    this.state.globalTerminalActivityById[terminalId] =
+      this.state.globalTerminalActivityById[terminalId] ??
+      createCachedResourceState<TerminalActivityItem[]>([]);
+    return () => {
+      const current = this.globalTerminalActivityWatchCountById.get(terminalId) ?? 0;
+      if (current <= 1) {
+        this.globalTerminalActivityWatchCountById.delete(terminalId);
+        return;
+      }
+      this.globalTerminalActivityWatchCountById.set(terminalId, current - 1);
+    };
+  }
+
+  async hydrateGlobalTerminalActivity(input: {
+    terminalId: string;
+    limit?: number;
+    force?: boolean;
+  }): Promise<TerminalActivityItem[]> {
+    return await this.refreshGlobalTerminalActivityInternal(input.terminalId, input);
   }
 
   async readSettings(sessionId: string, kind: "settings" | "agenter" | "system" | "template" | "contract") {
@@ -2663,6 +4234,73 @@ export class RuntimeStore {
         snapshot: NotificationSnapshotOutput;
       };
       this.applyNotificationSnapshot(payload.snapshot);
+      return;
+    }
+
+    if (event.type === "terminal.surface.updated") {
+      const payload = event.payload as {
+        catalogChanged?: boolean;
+        grantTerminalIds?: string[];
+        approvalTerminalIds?: string[];
+        activityTerminalIds?: string[];
+      };
+      if (payload.catalogChanged && (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0)) {
+        void this.hydrateGlobalTerminals({ force: true });
+      }
+      for (const terminalId of payload.grantTerminalIds ?? []) {
+        if (!this.shouldRefreshGlobalTerminalGrants(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalGrants({ terminalId, force: true }).catch(() => undefined);
+      }
+      for (const terminalId of payload.approvalTerminalIds ?? []) {
+        if (!this.shouldRefreshGlobalTerminalApprovals(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalApprovals({ terminalId, force: true }).catch(() => undefined);
+      }
+      for (const terminalId of payload.activityTerminalIds ?? []) {
+        if (!this.shouldRefreshGlobalTerminalActivity(terminalId)) {
+          continue;
+        }
+        void this.hydrateGlobalTerminalActivity({ terminalId, force: true }).catch(() => undefined);
+      }
+      return;
+    }
+
+    if (event.type === "message.room.updated") {
+      const payload = event.payload as {
+        catalogChanged?: boolean;
+        snapshotRoomIds?: string[];
+        grantRoomIds?: string[];
+      };
+      if (payload.catalogChanged && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
+        void this.hydrateGlobalRooms({ force: true });
+      }
+      for (const chatId of payload.snapshotRoomIds ?? []) {
+        if (!this.shouldRefreshGlobalRoomSnapshot(chatId)) {
+          continue;
+        }
+        void this.hydrateGlobalRoomSnapshot({ chatId, force: true }).catch(() => undefined);
+      }
+      for (const chatId of payload.grantRoomIds ?? []) {
+        if (!this.shouldRefreshGlobalRoomGrants(chatId)) {
+          continue;
+        }
+        void this.hydrateGlobalRoomGrants({ chatId, force: true }).catch(() => undefined);
+      }
+      return;
+    }
+
+    if (event.type === "workspace.avatarCatalog.updated") {
+      const payload = event.payload as { workspacePaths?: string[] };
+      for (const workspacePath of payload.workspacePaths ?? []) {
+        const resource = this.state.workspaceAvatarCatalogByPath[workspacePath];
+        if (!resource && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
+          continue;
+        }
+        void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
+      }
       return;
     }
 

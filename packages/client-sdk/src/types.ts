@@ -153,6 +153,14 @@ export interface RuntimeClientState {
   tasksBySession: Record<string, RuntimeSnapshotEntry["tasks"]>;
   recentWorkspaces: string[];
   workspaces: WorkspaceEntry[];
+  workspaceAvatarCatalogByPath: Record<string, CachedResourceState<WorkspaceAvatarCatalogEntry[]>>;
+  globalRooms: CachedResourceState<GlobalRoomEntry[]>;
+  globalRoomSnapshotsById: Record<string, CachedResourceState<GlobalRoomSnapshotOutput | null>>;
+  globalRoomGrantsById: Record<string, CachedResourceState<GlobalRoomGrantEntry[]>>;
+  globalTerminals: CachedResourceState<GlobalTerminalEntry[]>;
+  globalTerminalGrantsById: Record<string, CachedResourceState<GlobalTerminalGrantEntry[]>>;
+  globalTerminalApprovalsById: Record<string, CachedResourceState<GlobalTerminalApprovalRequest[]>>;
+  globalTerminalActivityById: Record<string, CachedResourceState<TerminalActivityItem[]>>;
   schedulerLogsBySession: Record<string, SchedulerLogItem[]>;
   observabilityTracesBySession: Record<string, ObservabilityTraceItem[]>;
   modelCallsBySession: Record<string, ModelCallItem[]>;

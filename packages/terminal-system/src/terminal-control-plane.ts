@@ -59,6 +59,25 @@ interface TerminalTransportSocketData {
   accessToken: string;
 }
 
+type TerminalChangeReason =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "activity"
+  | "grant-issued"
+  | "grant-revoked"
+  | "focus"
+  | "presence"
+  | "approval"
+  | "snapshot"
+  | "status";
+
+interface TerminalChangePayload {
+  terminalId: string;
+  reason: TerminalChangeReason;
+  actorId?: TerminalActorId;
+}
+
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted terminal bootstrap";
 const TRUSTED_BOOTSTRAP_PARTICIPANT_ID = "system:trusted-terminal-bootstrap" as const satisfies TerminalActorId;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
@@ -234,6 +253,7 @@ export class TerminalControlPlane {
   private readonly entries = new Map<string, ManagedEntry>();
   private readonly focusedTerminalIdsByActor = new Map<string, Set<string>>();
   private readonly actorPresence = new Map<string, ActorPresence>();
+  private readonly changeListeners = new Set<(payload: TerminalChangePayload) => void>();
   private readonly snapshotListeners = new Set<(payload: { terminalId: string; snapshot: ManagedTerminalSnapshot }) => void>();
   private readonly statusListeners = new Set<
     (payload: { terminalId: string; running: boolean; status: TerminalStatus }) => void
@@ -299,22 +319,35 @@ export class TerminalControlPlane {
     };
   }
 
+  onChanged(listener: (payload: TerminalChangePayload) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+
   setActorPresence(actorId: TerminalActorId, input: { online: boolean; ttlMs?: number } | boolean): void {
     this.assertActorId(actorId);
     const online = typeof input === "boolean" ? input : input.online;
+    const current = this.actorPresence.get(actorId);
     if (!online) {
       this.actorPresence.delete(actorId);
       this.syncAdminAssignments();
+      if (current) {
+        this.emitPresenceChanged(actorId);
+      }
       return;
     }
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
-    const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
       expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : actorId.startsWith("auth:") ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
       invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
+    if (!current?.online) {
+      this.emitPresenceChanged(actorId);
+    }
   }
 
   setCredentialState(actorId: TerminalActorId, input: { invalidCredential: boolean }): void {
@@ -325,6 +358,9 @@ export class TerminalControlPlane {
       expiresAt: current?.expiresAt ?? null,
       invalidCredential: input.invalidCredential,
     });
+    if ((current?.invalidCredential ?? false) !== input.invalidCredential) {
+      this.emitPresenceChanged(actorId);
+    }
   }
 
   has(terminalId: string): boolean {
@@ -378,6 +414,11 @@ export class TerminalControlPlane {
     if (input.start !== false) {
       this.start(created.terminalId);
     }
+    this.emitChange({
+      terminalId: created.terminalId,
+      reason: "created",
+      actorId: bootstrapActorId,
+    });
     return this.describeEntry(this.requireRecord(created.terminalId), {
       focused: false,
       access,
@@ -427,6 +468,7 @@ export class TerminalControlPlane {
       }
       this.emitFocus(actorId as TerminalActorId);
     }
+    this.emitChange({ terminalId, reason: "deleted" });
     return { ok: true, message: "terminal stopped" };
   }
 
@@ -449,7 +491,8 @@ export class TerminalControlPlane {
     const validIds = terminalIds.filter((terminalId) =>
       actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID ? this.has(terminalId) : Boolean(this.getGrantForActor(terminalId, actorId)),
     );
-    const current = new Set(this.getFocusedTerminalIds(actorId));
+    const previous = new Set(this.getFocusedTerminalIds(actorId));
+    const current = new Set(previous);
     switch (op) {
       case "add":
         for (const terminalId of validIds) {
@@ -473,6 +516,12 @@ export class TerminalControlPlane {
     }
     this.focusedTerminalIdsByActor.set(actorId, current);
     this.emitFocus(actorId);
+    for (const terminalId of new Set([...previous, ...current])) {
+      if (previous.has(terminalId) === current.has(terminalId)) {
+        continue;
+      }
+      this.emitChange({ terminalId, reason: "focus", actorId });
+    }
     return [...current];
   }
 
@@ -724,12 +773,18 @@ export class TerminalControlPlane {
     });
     if (!decision.ok) {
       const message = decision.message ?? "terminal write denied";
-      if (input.createApprovalRequest === false || !input.actorId || !decision.grant || decision.grant.role !== "requester") {
+      const approvalActorId = input.actorId ?? decision.grant?.participantId;
+      if (
+        input.createApprovalRequest === false ||
+        !approvalActorId ||
+        !decision.grant ||
+        decision.grant.role !== "requester"
+      ) {
         return { ok: false, message };
       }
       const request = this.createApprovalRequest({
         terminalId: input.terminalId,
-        actorId: input.actorId,
+        actorId: approvalActorId,
         requestedInput: {
           text: input.text,
           submit: input.submit,
@@ -752,6 +807,11 @@ export class TerminalControlPlane {
           submitKey: input.submitKey ?? null,
         },
       },
+    });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "activity",
+      actorId: this.resolveEventActorId(input),
     });
     if (!input.returnRead) {
       return { ok: true, message: "written", eventId: writeEvent.eventId };
@@ -890,6 +950,7 @@ export class TerminalControlPlane {
     if (managed) {
       managed.record = record;
     }
+    this.emitChange({ terminalId: input.terminalId, reason: "updated", actorId: input.actorId });
     return this.describeEntry(record, {
       focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(input.terminalId),
       access: input.actorId ? this.createAccessProjection(input.terminalId, this.requireGrantForActor(input.terminalId, input.actorId)) : this.issueTrustedBootstrapAccess(input.terminalId),
@@ -928,6 +989,11 @@ export class TerminalControlPlane {
     const grant = this.requireGrantForActor(input.terminalId, input.participantId);
     const currentAdminId = this.resolveCurrentAdminActorId(input.terminalId);
     const adminCandidateRank = this.readAdminCandidateRank(input.terminalId, input.participantId);
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "grant-issued",
+      actorId: input.participantId,
+    });
     return {
       ...grant,
       accessToken: access.accessToken,
@@ -957,6 +1023,11 @@ export class TerminalControlPlane {
       this.db.setAdminGroup(input.terminalId, candidates);
       this.syncAdminAssignments(input.terminalId);
     }
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "grant-revoked",
+      actorId: grant.participantId,
+    });
     return { ok };
   }
 
@@ -1020,6 +1091,11 @@ export class TerminalControlPlane {
       leaseId: lease.leaseId,
     });
     this.emitApprovalRequest({ terminalId: input.terminalId, request: updated });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "approval",
+      actorId: request.participantId,
+    });
     return lease;
   }
 
@@ -1038,6 +1114,11 @@ export class TerminalControlPlane {
       decidedBy: actorId ?? input.superadminActorId ?? null,
     });
     this.emitApprovalRequest({ terminalId: input.terminalId, request: updated });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "approval",
+      actorId: request.participantId,
+    });
     return updated;
   }
 
@@ -1102,9 +1183,11 @@ export class TerminalControlPlane {
   private bindTerminalListeners(entry: ManagedEntry): void {
     entry.terminal.onSnapshot((snapshot) => {
       this.emitSnapshot({ terminalId: entry.record.terminalId, snapshot });
+      this.emitChange({ terminalId: entry.record.terminalId, reason: "snapshot" });
     });
     entry.terminal.onStatus((running, status) => {
       this.emitStatus({ terminalId: entry.record.terminalId, running, status });
+      this.emitChange({ terminalId: entry.record.terminalId, reason: "status" });
     });
   }
 
@@ -1229,6 +1312,12 @@ export class TerminalControlPlane {
     }
   }
 
+  private emitChange(payload: TerminalChangePayload): void {
+    for (const listener of this.changeListeners) {
+      listener(payload);
+    }
+  }
+
   private assertActorId(actorId: string): void {
     if (!ACTOR_ID_PATTERN.test(actorId)) {
       throw new Error(`invalid actor id: ${actorId}`);
@@ -1255,17 +1344,20 @@ export class TerminalControlPlane {
     });
   }
 
-  private pruneExpiredPresence(): void {
+  private pruneExpiredPresence(): TerminalActorId[] {
     const now = Date.now();
+    const expiredActors: TerminalActorId[] = [];
     for (const [actorId, presence] of [...this.actorPresence.entries()]) {
       if (presence.expiresAt !== null && presence.expiresAt <= now) {
         this.actorPresence.delete(actorId);
+        expiredActors.push(actorId as TerminalActorId);
       }
     }
+    return expiredActors;
   }
 
   private expireApprovalsAndLeases(): void {
-    this.pruneExpiredPresence();
+    const expiredActors = this.pruneExpiredPresence();
     this.db.revokeExpiredLeases();
     for (const record of this.db.listTerminals()) {
       for (const request of this.db.listPendingApprovalRequests(record.terminalId)) {
@@ -1278,7 +1370,15 @@ export class TerminalControlPlane {
           decidedBy: null,
         });
         this.emitApprovalRequest({ terminalId: record.terminalId, request: expired });
+        this.emitChange({
+          terminalId: record.terminalId,
+          reason: "approval",
+          actorId: request.participantId,
+        });
       }
+    }
+    for (const actorId of expiredActors) {
+      this.emitPresenceChanged(actorId);
     }
   }
 
@@ -1295,6 +1395,11 @@ export class TerminalControlPlane {
           assignedAdminId: currentAdminId ?? null,
         });
         this.emitApprovalRequest({ terminalId: id, request: updated });
+        this.emitChange({
+          terminalId: id,
+          reason: "approval",
+          actorId: request.participantId,
+        });
       }
     }
   }
@@ -1371,6 +1476,19 @@ export class TerminalControlPlane {
 
   private issueTrustedBootstrapAccess(terminalId: string): TerminalAccessProjection {
     return this.ensureActorAccess(terminalId, TRUSTED_BOOTSTRAP_PARTICIPANT_ID, "admin", undefined, TRUSTED_BOOTSTRAP_LABEL);
+  }
+
+  private emitPresenceChanged(actorId: TerminalActorId): void {
+    for (const record of this.db.listTerminals()) {
+      if (!this.getGrantForActor(record.terminalId, actorId)) {
+        continue;
+      }
+      this.emitChange({
+        terminalId: record.terminalId,
+        reason: "presence",
+        actorId,
+      });
+    }
   }
 
   private createAccessProjection(terminalId: string, grant: TerminalGrantRecord): TerminalAccessProjection {
@@ -1525,6 +1643,11 @@ export class TerminalControlPlane {
       requestedInput: input.requestedInput,
     });
     this.emitApprovalRequest({ terminalId: input.terminalId, request });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "approval",
+      actorId: input.actorId,
+    });
     return request;
   }
 
@@ -1539,6 +1662,11 @@ export class TerminalControlPlane {
         decidedAt: Date.now(),
       });
       this.emitApprovalRequest({ terminalId, request: expired });
+      this.emitChange({
+        terminalId,
+        reason: "approval",
+        actorId: request.participantId,
+      });
       throw new Error(`terminal approval request expired: ${requestId}`);
     }
     return request;
@@ -1562,6 +1690,11 @@ export class TerminalControlPlane {
         actorId,
         detail: payload,
       },
+    });
+    this.emitChange({
+      terminalId: payload.terminalId,
+      reason: "activity",
+      actorId,
     });
     return {
       ...payload,

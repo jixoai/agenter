@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { accessSync, existsSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  accessSync,
+  existsSync,
+  constants as fsConstants,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  watch,
+  type FSWatcher,
+} from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { defaultAvatarNickname, normalizeAvatarNickname } from "@agenter/avatar";
@@ -55,6 +66,7 @@ import {
   copyAvatarIntoWorkspace,
   listWorkspaceAvatarCatalog,
   forkAvatarIntoWorkspace,
+  resolveWorkspaceAvatarRoot,
   type WorkspaceAvatarCatalogEntry,
 } from "./avatar-catalog";
 import {
@@ -107,6 +119,9 @@ import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-servic
 
 const now = (): number => Date.now();
 const DEFAULT_MESSAGE_CHAT_TITLE = "Room";
+const AVATAR_CATALOG_INVALIDATION_DEBOUNCE_MS = 120;
+const MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS = 80;
+const TERMINAL_SURFACE_INVALIDATION_DEBOUNCE_MS = 80;
 const INTERNAL_FAILURE_PREFIXES = ["agenter-ai call failed:", "agenter-ai 调用失败:", "agenter-ai 调用失败："];
 
 const hashNumericLabel = (value: string): string => {
@@ -138,6 +153,21 @@ const parseGitOwnerFromUrl = (raw: string): string | null => {
 
 const isInternalFailurePreviewText = (content: string): boolean =>
   INTERNAL_FAILURE_PREFIXES.some((prefix) => content.trim().startsWith(prefix));
+
+const isBuiltInMessageRoomMetadata = (metadata: Record<string, unknown> | undefined): boolean => metadata?.builtIn === true;
+
+const isStandaloneMessageRoomEntry = (channel: { metadata?: Record<string, unknown> } | undefined): boolean =>
+  !isBuiltInMessageRoomMetadata(channel?.metadata);
+
+const sanitizeGlobalRoomMetadata = (metadata?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (!metadata) {
+    return undefined;
+  }
+  const nextMetadata = { ...metadata };
+  delete nextMetadata.builtIn;
+  delete nextMetadata.primaryRoom;
+  return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
+};
 
 const isTerminalEventRefDetail = (
   value: unknown,
@@ -513,8 +543,24 @@ export class AppKernel {
   private readonly terminalStatusByKey = new Map<string, { running: boolean; status: "IDLE" | "BUSY" }>();
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
   private readonly authService: AuthServiceBridge;
+  private readonly avatarCatalogWatchers = new Map<string, FSWatcher>();
+  private readonly avatarCatalogWatchPaths = new Map<string, string>();
+  private readonly pendingAvatarCatalogInvalidations = new Set<string>();
+  private readonly messageControlPlaneSubscriptions: Array<() => void> = [];
+  private readonly terminalControlPlaneSubscriptions: Array<() => void> = [];
+  private readonly pendingMessageRoomSnapshotInvalidations = new Set<string>();
+  private readonly pendingMessageRoomGrantInvalidations = new Set<string>();
+  private readonly pendingTerminalGrantInvalidations = new Set<string>();
+  private readonly pendingTerminalApprovalInvalidations = new Set<string>();
+  private readonly pendingTerminalActivityInvalidations = new Set<string>();
+  private pendingMessageRoomCatalogInvalidation = false;
+  private pendingTerminalCatalogInvalidation = false;
+  private avatarCatalogInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
+  private messageRoomInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
+  private terminalSurfaceInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
   private eventSeq = 0;
   private sessionsCatalogLoaded = false;
+  private started = false;
 
   constructor(private readonly options: AppKernelOptions = {}) {
     this.sessions = new SessionCatalog({
@@ -535,11 +581,289 @@ export class AppKernel {
     });
   }
 
+  private rememberWorkspace(workspacePath: string): void {
+    this.workspaces.add(workspacePath);
+    if (this.started) {
+      this.syncAvatarCatalogWatchers();
+    }
+  }
+
+  private resolveAvatarCatalogWatchPath(workspacePath: string): string | null {
+    const homeDir = homedir();
+    const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : workspacePath;
+    const workspaceCwd = toWorkspaceCwd(normalizedWorkspacePath, homeDir);
+    if (!existsSync(workspaceCwd)) {
+      return null;
+    }
+    const agenterRoot = join(workspaceCwd, ".agenter");
+    const avatarRoot = resolveWorkspaceAvatarRoot(normalizedWorkspacePath, homeDir);
+    if (existsSync(avatarRoot)) {
+      return avatarRoot;
+    }
+    if (existsSync(agenterRoot)) {
+      return agenterRoot;
+    }
+    return workspaceCwd;
+  }
+
+  private closeAvatarCatalogWatcher(workspacePath: string): void {
+    const watcher = this.avatarCatalogWatchers.get(workspacePath);
+    if (watcher) {
+      try {
+        watcher.close();
+      } catch {
+        // Ignore watcher shutdown races during rapid reloads.
+      }
+    }
+    this.avatarCatalogWatchers.delete(workspacePath);
+    this.avatarCatalogWatchPaths.delete(workspacePath);
+  }
+
+  private syncAvatarCatalogWatchers(): void {
+    const desired = new Map<string, string>();
+    for (const workspacePath of this.workspaces.list()) {
+      const watchPath = this.resolveAvatarCatalogWatchPath(workspacePath);
+      if (watchPath) {
+        desired.set(workspacePath, watchPath);
+      }
+    }
+
+    for (const workspacePath of [...this.avatarCatalogWatchers.keys()]) {
+      if (!desired.has(workspacePath) || desired.get(workspacePath) !== this.avatarCatalogWatchPaths.get(workspacePath)) {
+        this.closeAvatarCatalogWatcher(workspacePath);
+      }
+    }
+
+    for (const [workspacePath, watchPath] of desired.entries()) {
+      if (this.avatarCatalogWatchers.has(workspacePath)) {
+        continue;
+      }
+      try {
+        const watcher = watch(watchPath, { persistent: false }, () => {
+          if (!this.started) {
+            return;
+          }
+          const nextWatchPath = this.resolveAvatarCatalogWatchPath(workspacePath);
+          if (nextWatchPath && nextWatchPath !== this.avatarCatalogWatchPaths.get(workspacePath)) {
+            this.syncAvatarCatalogWatchers();
+          }
+          this.queueAvatarCatalogInvalidation(
+            workspacePath === GLOBAL_WORKSPACE_PATH ? this.workspaces.list() : [workspacePath],
+          );
+        });
+        this.avatarCatalogWatchers.set(workspacePath, watcher);
+        this.avatarCatalogWatchPaths.set(workspacePath, watchPath);
+      } catch {
+        // Missing or unsupported watch roots should not block the runtime.
+      }
+    }
+  }
+
+  private queueAvatarCatalogInvalidation(workspacePaths: string[]): void {
+    for (const workspacePath of workspacePaths) {
+      this.pendingAvatarCatalogInvalidations.add(toWorkspacePath(workspacePath));
+    }
+    if (this.avatarCatalogInvalidationTimer) {
+      clearTimeout(this.avatarCatalogInvalidationTimer);
+    }
+    this.avatarCatalogInvalidationTimer = setTimeout(() => {
+      const invalidatedWorkspacePaths = [...this.pendingAvatarCatalogInvalidations];
+      this.pendingAvatarCatalogInvalidations.clear();
+      this.avatarCatalogInvalidationTimer = null;
+      if (invalidatedWorkspacePaths.length === 0) {
+        return;
+      }
+      this.emit("workspace.avatarCatalog.updated", {
+        workspacePaths: invalidatedWorkspacePaths,
+      });
+    }, AVATAR_CATALOG_INVALIDATION_DEBOUNCE_MS);
+  }
+
+  private isStandaloneMessageRoomChange(input: { chatId: string; builtIn?: boolean }): boolean {
+    if (typeof input.builtIn === "boolean") {
+      return !input.builtIn;
+    }
+    return isStandaloneMessageRoomEntry(this.messageControlPlane.getChannel(input.chatId, { includeArchived: true }));
+  }
+
+  private queueMessageRoomInvalidation(input: {
+    catalogChanged?: boolean;
+    snapshotRoomIds?: string[];
+    grantRoomIds?: string[];
+  }): void {
+    if (input.catalogChanged) {
+      this.pendingMessageRoomCatalogInvalidation = true;
+    }
+    for (const chatId of input.snapshotRoomIds ?? []) {
+      this.pendingMessageRoomSnapshotInvalidations.add(chatId);
+    }
+    for (const chatId of input.grantRoomIds ?? []) {
+      this.pendingMessageRoomGrantInvalidations.add(chatId);
+    }
+    if (this.messageRoomInvalidationTimer) {
+      clearTimeout(this.messageRoomInvalidationTimer);
+    }
+    this.messageRoomInvalidationTimer = setTimeout(() => {
+      const catalogChanged = this.pendingMessageRoomCatalogInvalidation;
+      const snapshotRoomIds = [...this.pendingMessageRoomSnapshotInvalidations];
+      const grantRoomIds = [...this.pendingMessageRoomGrantInvalidations];
+      this.pendingMessageRoomCatalogInvalidation = false;
+      this.pendingMessageRoomSnapshotInvalidations.clear();
+      this.pendingMessageRoomGrantInvalidations.clear();
+      this.messageRoomInvalidationTimer = null;
+      if (!catalogChanged && snapshotRoomIds.length === 0 && grantRoomIds.length === 0) {
+        return;
+      }
+      this.emit("message.room.updated", {
+        catalogChanged,
+        snapshotRoomIds,
+        grantRoomIds,
+      });
+    }, MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS);
+  }
+
+  private bindMessageControlPlaneEvents(): void {
+    if (this.messageControlPlaneSubscriptions.length > 0) {
+      return;
+    }
+    this.messageControlPlaneSubscriptions.push(
+      this.messageControlPlane.onChannelChanged((payload) => {
+        if (!this.started || !this.isStandaloneMessageRoomChange(payload)) {
+          return;
+        }
+        switch (payload.reason) {
+          case "created":
+            this.queueMessageRoomInvalidation({ catalogChanged: true });
+            return;
+          case "updated":
+          case "message":
+          case "read":
+            this.queueMessageRoomInvalidation({
+              catalogChanged: true,
+              snapshotRoomIds: [payload.chatId],
+            });
+            return;
+          case "grant-issued":
+          case "grant-revoked":
+            this.queueMessageRoomInvalidation({
+              catalogChanged: true,
+              snapshotRoomIds: [payload.chatId],
+              grantRoomIds: [payload.chatId],
+            });
+            return;
+          case "archived":
+          case "deleted":
+            this.queueMessageRoomInvalidation({ catalogChanged: true });
+            return;
+          case "focus":
+          case "presence":
+            this.queueMessageRoomInvalidation({ snapshotRoomIds: [payload.chatId] });
+            return;
+        }
+      }),
+    );
+  }
+
+  private queueTerminalSurfaceInvalidation(input: {
+    catalogChanged?: boolean;
+    grantTerminalIds?: string[];
+    approvalTerminalIds?: string[];
+    activityTerminalIds?: string[];
+  }): void {
+    if (input.catalogChanged) {
+      this.pendingTerminalCatalogInvalidation = true;
+    }
+    for (const terminalId of input.grantTerminalIds ?? []) {
+      this.pendingTerminalGrantInvalidations.add(terminalId);
+    }
+    for (const terminalId of input.approvalTerminalIds ?? []) {
+      this.pendingTerminalApprovalInvalidations.add(terminalId);
+    }
+    for (const terminalId of input.activityTerminalIds ?? []) {
+      this.pendingTerminalActivityInvalidations.add(terminalId);
+    }
+    if (this.terminalSurfaceInvalidationTimer) {
+      clearTimeout(this.terminalSurfaceInvalidationTimer);
+    }
+    this.terminalSurfaceInvalidationTimer = setTimeout(() => {
+      const catalogChanged = this.pendingTerminalCatalogInvalidation;
+      const grantTerminalIds = [...this.pendingTerminalGrantInvalidations];
+      const approvalTerminalIds = [...this.pendingTerminalApprovalInvalidations];
+      const activityTerminalIds = [...this.pendingTerminalActivityInvalidations];
+      this.pendingTerminalCatalogInvalidation = false;
+      this.pendingTerminalGrantInvalidations.clear();
+      this.pendingTerminalApprovalInvalidations.clear();
+      this.pendingTerminalActivityInvalidations.clear();
+      this.terminalSurfaceInvalidationTimer = null;
+      if (
+        !catalogChanged &&
+        grantTerminalIds.length === 0 &&
+        approvalTerminalIds.length === 0 &&
+        activityTerminalIds.length === 0
+      ) {
+        return;
+      }
+      this.emit("terminal.surface.updated", {
+        catalogChanged,
+        grantTerminalIds,
+        approvalTerminalIds,
+        activityTerminalIds,
+      });
+    }, TERMINAL_SURFACE_INVALIDATION_DEBOUNCE_MS);
+  }
+
+  private bindTerminalControlPlaneEvents(): void {
+    if (this.terminalControlPlaneSubscriptions.length > 0) {
+      return;
+    }
+    this.terminalControlPlaneSubscriptions.push(
+      this.terminalControlPlane.onChanged((payload) => {
+        if (!this.started) {
+          return;
+        }
+        switch (payload.reason) {
+          case "created":
+          case "updated":
+          case "deleted":
+          case "focus":
+          case "presence":
+          case "snapshot":
+          case "status":
+            this.queueTerminalSurfaceInvalidation({ catalogChanged: true });
+            return;
+          case "activity":
+            this.queueTerminalSurfaceInvalidation({
+              activityTerminalIds: [payload.terminalId],
+            });
+            return;
+          case "grant-issued":
+          case "grant-revoked":
+            this.queueTerminalSurfaceInvalidation({
+              catalogChanged: true,
+              grantTerminalIds: [payload.terminalId],
+              approvalTerminalIds: [payload.terminalId],
+            });
+            return;
+          case "approval":
+            this.queueTerminalSurfaceInvalidation({
+              catalogChanged: true,
+              approvalTerminalIds: [payload.terminalId],
+            });
+            return;
+        }
+      }),
+    );
+  }
+
   async start(): Promise<void> {
+    this.started = true;
+    this.bindMessageControlPlaneEvents();
+    this.bindTerminalControlPlaneEvents();
     if (this.options.initialWorkspace) {
-      this.workspaces.add(this.options.initialWorkspace);
+      this.rememberWorkspace(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
+    this.syncAvatarCatalogWatchers();
     await Promise.all([
       this.messageControlPlane.startTransport({ port: 0 }),
       this.terminalControlPlane.startTransport({ port: 0 }),
@@ -548,12 +872,42 @@ export class AppKernel {
   }
 
   async stop(): Promise<void> {
+    this.started = false;
     for (const runtime of this.runtimes.values()) {
       await runtime.abort();
     }
     this.runtimes.clear();
     this.runtimeStopListeners.clear();
     this.terminalStatusByKey.clear();
+    if (this.avatarCatalogInvalidationTimer) {
+      clearTimeout(this.avatarCatalogInvalidationTimer);
+      this.avatarCatalogInvalidationTimer = null;
+    }
+    if (this.messageRoomInvalidationTimer) {
+      clearTimeout(this.messageRoomInvalidationTimer);
+      this.messageRoomInvalidationTimer = null;
+    }
+    if (this.terminalSurfaceInvalidationTimer) {
+      clearTimeout(this.terminalSurfaceInvalidationTimer);
+      this.terminalSurfaceInvalidationTimer = null;
+    }
+    this.pendingAvatarCatalogInvalidations.clear();
+    this.pendingMessageRoomCatalogInvalidation = false;
+    this.pendingMessageRoomSnapshotInvalidations.clear();
+    this.pendingMessageRoomGrantInvalidations.clear();
+    this.pendingTerminalCatalogInvalidation = false;
+    this.pendingTerminalGrantInvalidations.clear();
+    this.pendingTerminalApprovalInvalidations.clear();
+    this.pendingTerminalActivityInvalidations.clear();
+    for (const workspacePath of [...this.avatarCatalogWatchers.keys()]) {
+      this.closeAvatarCatalogWatcher(workspacePath);
+    }
+    while (this.messageControlPlaneSubscriptions.length > 0) {
+      this.messageControlPlaneSubscriptions.pop()?.();
+    }
+    while (this.terminalControlPlaneSubscriptions.length > 0) {
+      this.terminalControlPlaneSubscriptions.pop()?.();
+    }
     this.messageControlPlane.close();
     await this.terminalControlPlane.dispose();
     await this.authService.stop();
@@ -776,11 +1130,13 @@ export class AppKernel {
 
   forkWorkspaceAvatar(input: { workspacePath: string; avatar: string }): WorkspaceAvatarCatalogEntry {
     const workspacePath = toWorkspacePath(input.workspacePath);
-    this.workspaces.add(workspacePath);
-    return forkAvatarIntoWorkspace({
+    this.rememberWorkspace(workspacePath);
+    const avatar = forkAvatarIntoWorkspace({
       workspacePath,
       nickname: input.avatar,
     });
+    this.queueAvatarCatalogInvalidation([workspacePath]);
+    return avatar;
   }
 
   copyWorkspaceAvatar(input: {
@@ -789,12 +1145,14 @@ export class AppKernel {
     targetAvatar: string;
   }): WorkspaceAvatarCatalogEntry {
     const workspacePath = toWorkspacePath(input.workspacePath);
-    this.workspaces.add(workspacePath);
-    return copyAvatarIntoWorkspace({
+    this.rememberWorkspace(workspacePath);
+    const avatar = copyAvatarIntoWorkspace({
       workspacePath,
       sourceNickname: input.sourceAvatar,
       targetNickname: input.targetAvatar,
     });
+    this.queueAvatarCatalogInvalidation([workspacePath]);
+    return avatar;
   }
 
   inspectWorkspaceWelcome(input: {
@@ -1070,7 +1428,7 @@ export class AppKernel {
     const workspace = this.resolveWorkspaceTarget(input.cwd);
     const cwd = workspace.cwd;
     const config = await resolveSessionConfig(cwd, { avatar: input.avatar });
-    this.workspaces.add(workspace.workspacePath);
+    this.rememberWorkspace(workspace.workspacePath);
     return {
       cwd,
       avatar: input.avatar,
@@ -1111,7 +1469,7 @@ export class AppKernel {
 
     const resolved = await resolveSessionConfig(workspace.cwd, { avatar: input.avatar });
     const workspacePath = workspace.workspacePath;
-    this.workspaces.add(workspacePath);
+    this.rememberWorkspace(workspacePath);
     const existing = this.sessions.findByWorkspaceAvatar(workspacePath, resolved.avatar.nickname);
     if (existing) {
       const reusable = existing.storageState === "archived" ? this.sessions.restore(existing.id) : existing;
@@ -1199,7 +1557,7 @@ export class AppKernel {
       throw new Error(`session is archived: ${sessionId}`);
     }
 
-    this.workspaces.add(meta.workspacePath);
+    this.rememberWorkspace(meta.workspacePath);
 
     const existing = this.runtimes.get(sessionId);
     if (existing?.isStarted()) {
@@ -1422,14 +1780,16 @@ export class AppKernel {
     includeArchived?: boolean;
   } = {}): MessageControlPlaneEntry[] {
     if (input.actorId && !input.superadminActorId) {
-      return this.messageControlPlane.listChannelsForActor(input.actorId, {
-        includeArchived: input.includeArchived,
-        touchPresence: false,
-      });
+      return this.messageControlPlane
+        .listChannelsForActor(input.actorId, {
+          includeArchived: input.includeArchived,
+          touchPresence: false,
+        })
+        .filter(isStandaloneMessageRoomEntry);
     }
     return this.messageControlPlane.listChannels({
       includeArchived: input.includeArchived,
-    });
+    }).filter(isStandaloneMessageRoomEntry);
   }
 
   createGlobalRoom(input: {
@@ -1450,7 +1810,7 @@ export class AppKernel {
       kind: "room",
       title: input.title ?? DEFAULT_MESSAGE_CHAT_TITLE,
       participants: input.participants,
-      metadata: input.metadata,
+      metadata: sanitizeGlobalRoomMetadata(input.metadata),
       adminToken: input.adminToken,
       bootstrapActorId: input.actorId && !input.superadminActorId ? input.actorId : undefined,
     });
@@ -1594,7 +1954,10 @@ export class AppKernel {
       chatId: input.chatId,
       accessToken: access.accessToken,
       superadminActorId: input.superadminActorId,
-      patch: input.patch,
+      patch: {
+        ...input.patch,
+        metadata: sanitizeGlobalRoomMetadata(input.patch.metadata),
+      },
     });
   }
 

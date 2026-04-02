@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
-import type { RuntimeSnapshot } from "../src/types";
+import type { RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
 
 type ReversePageResult<T> = {
   items: T[];
@@ -151,6 +151,18 @@ const createMockClient = (input: {
       lastSessionActivityAt?: string;
     }>;
   }>;
+  workspaceAvatarCatalogQuery?: (input: {
+    workspacePath: string;
+  }) => Promise<{ items: WorkspaceAvatarCatalogEntry[] }>;
+  workspaceForkAvatarMutate?: (input: {
+    workspacePath: string;
+    avatar: string;
+  }) => Promise<{ avatar: WorkspaceAvatarCatalogEntry }>;
+  workspaceCopyAvatarMutate?: (input: {
+    workspacePath: string;
+    sourceAvatar: string;
+    targetAvatar: string;
+  }) => Promise<{ avatar: WorkspaceAvatarCatalogEntry }>;
   workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
   authActorsQuery?: () => Promise<{
     items: Array<{
@@ -509,6 +521,63 @@ const createMockClient = (input: {
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   terminalDeleteMutate?: (input: { sessionId: string; terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  terminalGlobalListQuery?: (input?: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
+  terminalGlobalCreateMutate?: (input: {
+    terminalId?: string;
+    processKind?: string;
+    command?: string[];
+    cwd?: string;
+    profile?: unknown;
+    focus?: boolean;
+  }) => Promise<{ result: unknown }>;
+  terminalGlobalFocusMutate?: (input: {
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+    accessToken?: string;
+  }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
+  terminalGlobalDeleteMutate?: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  terminalGlobalReadQuery?: (input: {
+    terminalId: string;
+    accessToken?: string;
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+  }) => Promise<unknown>;
+  terminalGlobalWriteMutate?: (input: {
+    terminalId: string;
+    accessToken?: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+    submitGapMs?: number;
+    createApprovalRequest?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  }) => Promise<unknown>;
+  terminalListGrantsQuery?: (input: { terminalId: string }) => Promise<{ items: unknown[] }>;
+  terminalIssueGrantMutate?: (input: {
+    terminalId: string;
+    role: "admin" | "writer" | "requester" | "readonly";
+    participantId: string;
+    label?: string;
+    accessTokenHint?: string;
+    adminCandidateRank?: number | null;
+  }) => Promise<{ grant: unknown }>;
+  terminalRevokeGrantMutate?: (input: {
+    terminalId: string;
+    grantId: string;
+  }) => Promise<{ ok: boolean }>;
+  terminalListApprovalRequestsQuery?: (input: {
+    terminalId: string;
+    assignedAdminId?: string;
+    participantId?: string;
+    statuses?: Array<"pending" | "approved" | "denied" | "expired">;
+  }) => Promise<{ items: unknown[] }>;
+  terminalApproveRequestMutate?: (input: {
+    terminalId: string;
+    requestId: string;
+    durationMs: number;
+  }) => Promise<unknown>;
+  terminalDenyRequestMutate?: (input: { terminalId: string; requestId: string }) => Promise<unknown>;
   terminalActivityPageQuery?: (input: {
     sessionId: string;
     terminalId: string;
@@ -929,6 +998,130 @@ const createMockClient = (input: {
           mutate: async (payload: { sessionId: string; terminalId: string }) =>
             input.terminalDeleteMutate ? await input.terminalDeleteMutate(payload) : { ok: true, message: "ok" },
         },
+        globalList: {
+          query: async (payload: { includeArchived?: boolean } = {}) =>
+            input.terminalGlobalListQuery ? await input.terminalGlobalListQuery(payload) : { items: [] },
+        },
+        globalCreate: {
+          mutate: async (payload: {
+            terminalId?: string;
+            processKind?: string;
+            command?: string[];
+            cwd?: string;
+            profile?: unknown;
+            focus?: boolean;
+          }) =>
+            input.terminalGlobalCreateMutate
+              ? await input.terminalGlobalCreateMutate(payload)
+              : { result: { ok: true, message: "ok", terminal: null } },
+        },
+        globalFocus: {
+          mutate: async (payload: {
+            op: "add" | "remove" | "replace" | "clear";
+            terminalIds: string[];
+            accessToken?: string;
+          }) =>
+            input.terminalGlobalFocusMutate
+              ? await input.terminalGlobalFocusMutate(payload)
+              : { ok: true, message: "ok", focusedTerminalIds: payload.terminalIds },
+        },
+        globalDelete: {
+          mutate: async (payload: { terminalId: string }) =>
+            input.terminalGlobalDeleteMutate
+              ? await input.terminalGlobalDeleteMutate(payload)
+              : { ok: true, message: "ok" },
+        },
+        activityPage: {
+          query: async (payload: {
+            terminalId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.terminalActivityPageQuery
+              ? await input.terminalActivityPageQuery({ sessionId: "", ...payload })
+              : { items: [], nextBefore: null, hasMoreBefore: false },
+        },
+        read: {
+          query: async (payload: {
+            terminalId: string;
+            accessToken?: string;
+            mode?: "auto" | "diff" | "snapshot";
+            remark?: boolean;
+          }) =>
+            input.terminalGlobalReadQuery
+              ? await input.terminalGlobalReadQuery(payload)
+              : {
+                  kind: "terminal-snapshot",
+                  representation: "snapshot",
+                  terminalId: payload.terminalId,
+                  seq: 0,
+                  cols: 80,
+                  rows: 24,
+                  cursor: { x: 0, y: 0 },
+                  tail: "",
+                  status: "IDLE",
+                  title: payload.terminalId,
+                  running: true,
+                },
+        },
+        write: {
+          mutate: async (payload: {
+            terminalId: string;
+            accessToken?: string;
+            text: string;
+            submit?: boolean;
+            submitKey?: "enter" | "linefeed";
+            submitGapMs?: number;
+            createApprovalRequest?: boolean;
+            readMode?: "auto" | "diff" | "snapshot";
+            returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+          }) =>
+            input.terminalGlobalWriteMutate
+              ? await input.terminalGlobalWriteMutate(payload)
+              : { ok: true, message: "written" },
+        },
+        listGrants: {
+          query: async (payload: { terminalId: string }) =>
+            input.terminalListGrantsQuery ? await input.terminalListGrantsQuery(payload) : { items: [] },
+        },
+        issueGrant: {
+          mutate: async (payload: {
+            terminalId: string;
+            role: "admin" | "writer" | "requester" | "readonly";
+            participantId: string;
+            label?: string;
+            accessTokenHint?: string;
+            adminCandidateRank?: number | null;
+          }) =>
+            input.terminalIssueGrantMutate
+              ? await input.terminalIssueGrantMutate(payload)
+              : { grant: null },
+        },
+        revokeGrant: {
+          mutate: async (payload: { terminalId: string; grantId: string }) =>
+            input.terminalRevokeGrantMutate ? await input.terminalRevokeGrantMutate(payload) : { ok: true },
+        },
+        listApprovalRequests: {
+          query: async (payload: {
+            terminalId: string;
+            assignedAdminId?: string;
+            participantId?: string;
+            statuses?: Array<"pending" | "approved" | "denied" | "expired">;
+          }) =>
+            input.terminalListApprovalRequestsQuery
+              ? await input.terminalListApprovalRequestsQuery(payload)
+              : { items: [] },
+        },
+        approveRequest: {
+          mutate: async (payload: { terminalId: string; requestId: string; durationMs: number }) =>
+            input.terminalApproveRequestMutate
+              ? await input.terminalApproveRequestMutate(payload)
+              : { ok: true, message: "approved" },
+        },
+        denyRequest: {
+          mutate: async (payload: { terminalId: string; requestId: string }) =>
+            input.terminalDenyRequestMutate ? await input.terminalDenyRequestMutate(payload) : { ok: true, message: "denied" },
+        },
       },
       draft: {
         resolve: {
@@ -1121,6 +1314,44 @@ const createMockClient = (input: {
         listAll: { query: async () => (input.workspaceListAllQuery ? input.workspaceListAllQuery() : { items: [] }) },
         listSessions: {
           query: async () => ({ items: [], nextCursor: null, counts: { all: 0, running: 0, stopped: 0, archive: 0 } }),
+        },
+        avatarCatalog: {
+          query: async (payload: { workspacePath: string }) =>
+            input.workspaceAvatarCatalogQuery ? await input.workspaceAvatarCatalogQuery(payload) : { items: [] },
+        },
+        forkAvatar: {
+          mutate: async (payload: { workspacePath: string; avatar: string }) =>
+            input.workspaceForkAvatarMutate
+              ? await input.workspaceForkAvatarMutate(payload)
+              : {
+                  avatar: {
+                    nickname: payload.avatar,
+                    defaultAvatar: payload.avatar === "default",
+                    sourceScope: "workspace",
+                    globalAvailable: true,
+                    workspaceAvailable: true,
+                    globalPath: "",
+                    workspacePath: "",
+                    effectivePath: "",
+                  },
+                },
+        },
+        copyAvatar: {
+          mutate: async (payload: { workspacePath: string; sourceAvatar: string; targetAvatar: string }) =>
+            input.workspaceCopyAvatarMutate
+              ? await input.workspaceCopyAvatarMutate(payload)
+              : {
+                  avatar: {
+                    nickname: payload.targetAvatar,
+                    defaultAvatar: payload.targetAvatar === "default",
+                    sourceScope: "workspace",
+                    globalAvailable: false,
+                    workspaceAvailable: true,
+                    globalPath: "",
+                    workspacePath: "",
+                    effectivePath: "",
+                  },
+                },
         },
         searchPaths: {
           query: async () => ({ items: [] }),
@@ -3724,6 +3955,1090 @@ describe("Feature: runtime store synchronization", () => {
     expect(deleted.chatId).toBe(room.chatId);
   });
 
+  test("Scenario: Given retained room slices When a live room invalidation arrives Then runtime store refreshes only the retained room resources", async () => {
+    const roomA = {
+      chatId: "room-alpha",
+      kind: "room" as const,
+      title: "Alpha",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: false,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_alpha",
+      transportUrl: "ws://127.0.0.1:7777/room/room-alpha?token=msgtok_alpha",
+    };
+    const roomB = {
+      ...roomA,
+      chatId: "room-beta",
+      title: "Beta",
+      accessToken: "msgtok_beta",
+      transportUrl: "ws://127.0.0.1:7777/room/room-beta?token=msgtok_beta",
+    };
+    const snapshotCounts: Record<string, number> = {
+      [roomA.chatId]: 0,
+      [roomB.chatId]: 0,
+    };
+    const grantCounts: Record<string, number> = {
+      [roomA.chatId]: 0,
+      [roomB.chatId]: 0,
+    };
+    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          eventHandlers = handlers;
+        },
+        messageGlobalListQuery: async () => ({
+          items: [roomA, roomB],
+        }),
+        messageGlobalSnapshotQuery: async (input) => {
+          snapshotCounts[input.chatId] += 1;
+          return {
+            channel: input.chatId === roomA.chatId ? roomA : roomB,
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+            headVersion: `${snapshotCounts[input.chatId]}`,
+          };
+        },
+        messageGlobalListGrantsQuery: async (input) => {
+          grantCounts[input.chatId] += 1;
+          return {
+            items: [
+              {
+                grantId: `grant-${input.chatId}`,
+                chatId: input.chatId,
+                role: "member" as const,
+                participantId: "auth:observer",
+                label: "Observer",
+                createdAt: grantCounts[input.chatId],
+              },
+            ],
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    await store.hydrateGlobalRooms();
+    const releaseSnapshot = store.retainGlobalRoomSnapshot(roomA.chatId);
+    const releaseGrants = store.retainGlobalRoomGrants(roomA.chatId);
+    await store.hydrateGlobalRoomSnapshot({
+      chatId: roomA.chatId,
+      accessToken: roomA.accessToken,
+      limit: 20,
+    });
+    await store.hydrateGlobalRoomGrants({
+      chatId: roomA.chatId,
+      accessToken: roomA.accessToken,
+    });
+
+    expect(snapshotCounts[roomA.chatId]).toBe(1);
+    expect(snapshotCounts[roomB.chatId]).toBe(0);
+    expect(grantCounts[roomA.chatId]).toBe(1);
+    expect(grantCounts[roomB.chatId]).toBe(0);
+
+    eventHandlers?.onData?.({
+      version: 1,
+      eventId: 1,
+      timestamp: Date.now(),
+      type: "message.room.updated",
+      payload: {
+        snapshotRoomIds: [roomA.chatId, roomB.chatId],
+        grantRoomIds: [roomA.chatId, roomB.chatId],
+      },
+    });
+
+    await waitFor(() => snapshotCounts[roomA.chatId] === 2 && grantCounts[roomA.chatId] === 2);
+    expect(snapshotCounts[roomB.chatId]).toBe(0);
+    expect(grantCounts[roomB.chatId]).toBe(0);
+
+    releaseSnapshot();
+    releaseGrants();
+    store.disconnect();
+  });
+
+  test("Scenario: Given retained terminal slices When a live terminal invalidation arrives Then runtime store refreshes only the retained terminal resources", async () => {
+    const createTerminalEntry = (terminalId: string, title: string, cwd: string, accessToken: string) => ({
+      terminalId,
+      processKind: "shell",
+      command: ["/bin/bash"],
+      cwd,
+      workspace: null,
+      running: true,
+      status: "IDLE" as const,
+      seq: 1,
+      snapshot: {
+        seq: 1,
+        timestamp: 1,
+        cols: 80,
+        rows: 24,
+        lines: Array.from({ length: 24 }, () => ""),
+        cursor: { x: 0, y: 0 },
+      },
+      focused: false,
+      icon: undefined,
+      title,
+      shortcuts: undefined,
+      rendererEngine: "xterm" as const,
+      transportUrl: `ws://127.0.0.1:7777/pty/${terminalId}?token=${accessToken}`,
+      currentAdminId: "system:trusted-terminal-bootstrap",
+      approvalTimeoutMs: 90_000,
+      pendingRequestCount: 0,
+      access: {
+        role: "admin" as const,
+        accessToken,
+        participantId: "system:trusted-terminal-bootstrap",
+        currentAdmin: true,
+      },
+      actors: [
+        {
+          actorId: "auth:observer",
+          role: "readonly" as const,
+          label: "Observer",
+          currentAdmin: false,
+          online: false,
+          focused: false,
+          invalidCredential: false,
+        },
+      ],
+    });
+
+    const terminalA = createTerminalEntry("term-alpha", "Alpha terminal", "/repo/alpha", "tok-alpha");
+    const terminalB = createTerminalEntry("term-beta", "Beta terminal", "/repo/beta", "tok-beta");
+    let catalogCalls = 0;
+    const grantCounts: Record<string, number> = {
+      [terminalA.terminalId]: 0,
+      [terminalB.terminalId]: 0,
+    };
+    const approvalCounts: Record<string, number> = {
+      [terminalA.terminalId]: 0,
+      [terminalB.terminalId]: 0,
+    };
+    const activityCounts: Record<string, number> = {
+      [terminalA.terminalId]: 0,
+      [terminalB.terminalId]: 0,
+    };
+    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          eventHandlers = handlers;
+        },
+        terminalGlobalListQuery: async () => {
+          catalogCalls += 1;
+          return { items: [terminalA, terminalB] };
+        },
+        terminalListGrantsQuery: async (input) => {
+          grantCounts[input.terminalId] += 1;
+          return {
+            items: [
+              {
+                grantId: `grant:${input.terminalId}`,
+                terminalId: input.terminalId,
+                role: "writer" as const,
+                participantId: "session:reviewer",
+                label: "Reviewer",
+                accessToken: `grant:${input.terminalId}:writer`,
+                currentAdmin: false,
+                createdAt: grantCounts[input.terminalId],
+              },
+            ],
+          };
+        },
+        terminalListApprovalRequestsQuery: async (input) => {
+          approvalCounts[input.terminalId] += 1;
+          return {
+            items: [
+              {
+                requestId: `approval:${input.terminalId}`,
+                terminalId: input.terminalId,
+                participantId: "auth:requester",
+                assignedAdminId: "system:trusted-terminal-bootstrap",
+                status: "pending" as const,
+                requestedInput: {
+                  text: `echo approval-${approvalCounts[input.terminalId]}`,
+                  submit: true,
+                  submitKey: "enter" as const,
+                },
+                createdAt: approvalCounts[input.terminalId],
+                expiresAt: approvalCounts[input.terminalId] + 90_000,
+              },
+            ],
+          };
+        },
+        terminalActivityPageQuery: async (input) => {
+          activityCounts[input.terminalId] += 1;
+          return {
+            items: [
+              {
+                id: activityCounts[input.terminalId],
+                terminalId: input.terminalId,
+                createdAt: activityCounts[input.terminalId],
+                kind: "terminal_write" as const,
+                cycleId: null,
+                actorId: "system:trusted-terminal-bootstrap",
+                title: "Terminal write",
+                content: `echo ${input.terminalId}-${activityCounts[input.terminalId]}`,
+                detail: { submit: true, submitKey: "enter" },
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    const releaseCatalog = store.retainGlobalTerminals();
+    await store.hydrateGlobalTerminals();
+    const releaseGrants = store.retainGlobalTerminalGrants(terminalA.terminalId);
+    const releaseApprovals = store.retainGlobalTerminalApprovals(terminalA.terminalId);
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalA.terminalId);
+    await store.hydrateGlobalTerminalGrants({ terminalId: terminalA.terminalId });
+    await store.hydrateGlobalTerminalApprovals({ terminalId: terminalA.terminalId });
+    await store.hydrateGlobalTerminalActivity({ terminalId: terminalA.terminalId });
+
+    expect(catalogCalls).toBe(1);
+    expect(grantCounts[terminalA.terminalId]).toBe(1);
+    expect(grantCounts[terminalB.terminalId]).toBe(0);
+    expect(approvalCounts[terminalA.terminalId]).toBe(1);
+    expect(approvalCounts[terminalB.terminalId]).toBe(0);
+    expect(activityCounts[terminalA.terminalId]).toBe(1);
+    expect(activityCounts[terminalB.terminalId]).toBe(0);
+
+    eventHandlers?.onData?.({
+      version: 1,
+      eventId: 1,
+      timestamp: Date.now(),
+      type: "terminal.surface.updated",
+      payload: {
+        catalogChanged: true,
+        grantTerminalIds: [terminalA.terminalId, terminalB.terminalId],
+        approvalTerminalIds: [terminalA.terminalId, terminalB.terminalId],
+        activityTerminalIds: [terminalA.terminalId, terminalB.terminalId],
+      },
+    });
+
+    await waitFor(
+      () =>
+        catalogCalls === 2 &&
+        grantCounts[terminalA.terminalId] === 2 &&
+        approvalCounts[terminalA.terminalId] === 2 &&
+        activityCounts[terminalA.terminalId] === 2,
+    );
+    expect(grantCounts[terminalB.terminalId]).toBe(0);
+    expect(approvalCounts[terminalB.terminalId]).toBe(0);
+    expect(activityCounts[terminalB.terminalId]).toBe(0);
+
+    releaseActivity();
+    releaseApprovals();
+    releaseGrants();
+    releaseCatalog();
+    store.disconnect();
+  });
+
+  test("Scenario: Given global terminal authority APIs When runtime store proxies terminal-first calls Then tokens, grants, approvals, and activity stay on the global terminal slices", async () => {
+    const requests: {
+      list?: { includeArchived?: boolean };
+      create?: {
+        terminalId?: string;
+        processKind?: string;
+        cwd?: string;
+      };
+      focus?: { op: string; terminalIds: string[]; accessToken?: string };
+      read?: { terminalId: string; accessToken?: string; mode?: "auto" | "diff" | "snapshot"; remark?: boolean };
+      write?: {
+        terminalId: string;
+        accessToken?: string;
+        text: string;
+        submit?: boolean;
+        createApprovalRequest?: boolean;
+        returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+      };
+      listGrants?: { terminalId: string };
+      issue?: {
+        terminalId: string;
+        role: "admin" | "writer" | "requester" | "readonly";
+        participantId: string;
+        label?: string;
+        adminCandidateRank?: number | null;
+      };
+      revoke?: { terminalId: string; grantId: string };
+      listApprovals?: { terminalId: string; statuses?: Array<"pending" | "approved" | "denied" | "expired"> };
+      approve?: { terminalId: string; requestId: string; durationMs: number };
+      deny?: { terminalId: string; requestId: string };
+      delete?: { terminalId: string };
+      activity?: { terminalId: string; limit?: number };
+    } = {};
+    const terminal = {
+      terminalId: "term-ops",
+      processKind: "shell",
+      command: ["/bin/bash"],
+      cwd: "/repo/ops",
+      workspace: null,
+      running: true,
+      status: "IDLE" as const,
+      seq: 1,
+      snapshot: {
+        seq: 1,
+        timestamp: 1,
+        cols: 80,
+        rows: 24,
+        lines: Array.from({ length: 24 }, () => ""),
+        cursor: { x: 0, y: 0 },
+      },
+      focused: true,
+      icon: undefined,
+      title: "Ops terminal",
+      shortcuts: undefined,
+      rendererEngine: "xterm" as const,
+      transportUrl: "ws://127.0.0.1:7777/pty/term-ops?token=termtok_admin",
+      currentAdminId: "system:trusted-terminal-bootstrap",
+      approvalTimeoutMs: 90_000,
+      pendingRequestCount: 2,
+      access: {
+        role: "admin" as const,
+        accessToken: "termtok_admin",
+        participantId: "system:trusted-terminal-bootstrap",
+        currentAdmin: true,
+      },
+      actors: [
+        {
+          actorId: "auth:reviewer",
+          role: "writer" as const,
+          label: "Reviewer",
+          currentAdmin: false,
+          adminCandidateRank: 1,
+          online: true,
+          focused: false,
+          invalidCredential: false,
+        },
+      ],
+    };
+    const initialGrant = {
+      grantId: "grant-reviewer",
+      terminalId: terminal.terminalId,
+      role: "writer" as const,
+      label: "Reviewer",
+      participantId: "auth:reviewer",
+      accessToken: "termtok_writer",
+      currentAdmin: false,
+      adminCandidateRank: 1,
+      createdAt: 2,
+    };
+    const pendingApproval = {
+      requestId: "approval-1",
+      terminalId: terminal.terminalId,
+      participantId: "auth:requester",
+      assignedAdminId: "system:trusted-terminal-bootstrap",
+      status: "pending" as const,
+      requestedInput: {
+        text: "echo pending",
+        submit: true,
+        submitKey: "enter" as const,
+      },
+      createdAt: 3,
+      expiresAt: 93_000,
+    };
+    const deniedApproval = {
+      requestId: "approval-2",
+      terminalId: terminal.terminalId,
+      participantId: "auth:guest",
+      assignedAdminId: "system:trusted-terminal-bootstrap",
+      status: "pending" as const,
+      requestedInput: {
+        text: "echo deny",
+        submit: false,
+      },
+      createdAt: 4,
+      expiresAt: 94_000,
+    };
+    const approvedLease = {
+      leaseId: "lease-1",
+      terminalId: terminal.terminalId,
+      participantId: pendingApproval.participantId,
+      grantedBy: "system:trusted-terminal-bootstrap",
+      requestId: pendingApproval.requestId,
+      createdAt: 5,
+      expiresAt: 65_000,
+    };
+    let pendingApprovals = [pendingApproval, deniedApproval];
+    let requesterGrantIssued = false;
+    let requesterLeaseActive = false;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalListQuery: async (input) => {
+          requests.list = input;
+          return {
+            items: [
+              {
+                ...terminal,
+                pendingRequestCount: pendingApprovals.length,
+                actors: requesterGrantIssued
+                  ? [
+                      ...(terminal.actors ?? []),
+                      {
+                        actorId: pendingApproval.participantId,
+                        role: "requester" as const,
+                        label: "Requester",
+                        currentAdmin: false,
+                        online: true,
+                        focused: false,
+                        invalidCredential: false,
+                        leaseId: requesterLeaseActive ? approvedLease.leaseId : undefined,
+                        leaseExpiresAt: requesterLeaseActive ? approvedLease.expiresAt : undefined,
+                      },
+                    ]
+                  : terminal.actors,
+              },
+            ],
+          };
+        },
+        terminalGlobalCreateMutate: async (input) => {
+          requests.create = {
+            terminalId: input.terminalId,
+            processKind: input.processKind,
+            cwd: input.cwd,
+          };
+          return { result: { ok: true, message: "created", terminal } };
+        },
+        terminalGlobalFocusMutate: async (input) => {
+          requests.focus = input;
+          return { ok: true, message: "focused", focusedTerminalIds: input.terminalIds };
+        },
+        terminalGlobalReadQuery: async (input) => {
+          requests.read = input;
+          return {
+            kind: "terminal-snapshot",
+            representation: "snapshot",
+            terminalId: input.terminalId,
+            eventId: 8,
+            seq: 2,
+            cols: 80,
+            rows: 24,
+            cursor: { x: 0, y: 0 },
+            tail: "read result",
+            status: "IDLE",
+            title: terminal.title,
+            running: true,
+          };
+        },
+        terminalGlobalWriteMutate: async (input) => {
+          requests.write = {
+            terminalId: input.terminalId,
+            accessToken: input.accessToken,
+            text: input.text,
+            submit: input.submit,
+            createApprovalRequest: input.createApprovalRequest,
+            returnRead: input.returnRead,
+          };
+          return { ok: true, message: "written", eventId: 9 };
+        },
+        terminalListGrantsQuery: async (input) => {
+          requests.listGrants = input;
+          return {
+            items: requesterGrantIssued
+              ? [
+                  initialGrant,
+                  {
+                    grantId: "grant-requester",
+                    terminalId: input.terminalId,
+                    role: "requester" as const,
+                    label: "Requester",
+                    participantId: pendingApproval.participantId,
+                    accessToken: "termtok_requester",
+                    currentAdmin: false,
+                    adminCandidateRank: 2,
+                    createdAt: 5,
+                  },
+                ]
+              : [initialGrant],
+          };
+        },
+        terminalIssueGrantMutate: async (input) => {
+          requests.issue = input;
+          requesterGrantIssued = true;
+          return {
+            grant: {
+              grantId: "grant-requester",
+              terminalId: input.terminalId,
+              role: input.role,
+              label: input.label,
+              participantId: input.participantId,
+              accessToken: "termtok_requester",
+              currentAdmin: false,
+              adminCandidateRank: input.adminCandidateRank ?? undefined,
+              createdAt: 5,
+            },
+          };
+        },
+        terminalRevokeGrantMutate: async (input) => {
+          requests.revoke = input;
+          requesterGrantIssued = false;
+          return { ok: true };
+        },
+        terminalListApprovalRequestsQuery: async (input) => {
+          requests.listApprovals = { terminalId: input.terminalId, statuses: input.statuses };
+          return { items: pendingApprovals };
+        },
+        terminalApproveRequestMutate: async (input) => {
+          requests.approve = input;
+          pendingApprovals = pendingApprovals.filter((request) => request.requestId !== input.requestId);
+          requesterLeaseActive = true;
+          return approvedLease;
+        },
+        terminalDenyRequestMutate: async (input) => {
+          requests.deny = input;
+          pendingApprovals = pendingApprovals.filter((request) => request.requestId !== input.requestId);
+          return {
+            ...deniedApproval,
+            status: "denied" as const,
+            decidedAt: 6,
+            decidedBy: "system:trusted-terminal-bootstrap",
+          };
+        },
+        terminalGlobalDeleteMutate: async (input) => {
+          requests.delete = input;
+          return { ok: true, message: "deleted" };
+        },
+        terminalActivityPageQuery: async (input) => {
+          requests.activity = { terminalId: input.terminalId, limit: input.limit };
+          return {
+            items: [
+              {
+                id: 12,
+                terminalId: input.terminalId,
+                createdAt: 12,
+                kind: "terminal_write" as const,
+                cycleId: null,
+                actorId: "system:trusted-terminal-bootstrap",
+                title: "Terminal write + submit",
+                content: "echo live",
+                detail: { submit: true, submitKey: "enter" },
+              },
+              {
+                id: 11,
+                terminalId: input.terminalId,
+                createdAt: 11,
+                kind: "terminal_read" as const,
+                cycleId: null,
+                actorId: "auth:reviewer",
+                title: "Terminal read",
+                content: "{\"kind\":\"terminal-snapshot\"}",
+                detail: { representation: "snapshot" },
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    expect(await store.listGlobalTerminals()).toEqual([terminal]);
+    expect(
+      await store.createGlobalTerminal({
+        terminalId: terminal.terminalId,
+        processKind: terminal.processKind,
+        cwd: terminal.cwd,
+      }),
+    ).toEqual({
+      ok: true,
+      message: "created",
+      terminal,
+    });
+    expect(store.getState().globalTerminals.data[0]?.terminalId).toBe(terminal.terminalId);
+
+    expect(
+      await store.focusGlobalTerminals({
+        op: "replace",
+        terminalIds: [terminal.terminalId],
+        accessToken: terminal.access.accessToken,
+      }),
+    ).toEqual({
+      ok: true,
+      message: "focused",
+      focusedTerminalIds: [terminal.terminalId],
+    });
+    expect(
+      await store.readGlobalTerminal({
+        terminalId: terminal.terminalId,
+        accessToken: terminal.access.accessToken,
+        mode: "snapshot",
+      }),
+    ).toMatchObject({
+      kind: "terminal-snapshot",
+      terminalId: terminal.terminalId,
+      title: terminal.title,
+    });
+    expect(
+      await store.writeGlobalTerminal({
+        terminalId: terminal.terminalId,
+        accessToken: "termtok_requester",
+        text: "echo requester",
+        submit: true,
+        createApprovalRequest: true,
+        returnRead: false,
+      }),
+    ).toEqual({ ok: true, message: "written", eventId: 9 });
+
+    const releaseGrants = store.retainGlobalTerminalGrants(terminal.terminalId);
+    await store.hydrateGlobalTerminalGrants({ terminalId: terminal.terminalId });
+    expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data).toEqual([initialGrant]);
+
+    const issued = await store.issueGlobalTerminalGrant({
+      terminalId: terminal.terminalId,
+      role: "requester",
+      participantId: "auth:requester",
+      label: "Requester",
+      adminCandidateRank: 2,
+    });
+    expect(issued).toMatchObject({
+      grantId: "grant-requester",
+      accessToken: "termtok_requester",
+    });
+    expect(
+      store
+        .getState()
+        .globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId)
+        .sort(),
+    ).toEqual(["grant-requester", "grant-reviewer"]);
+
+    const releaseApprovals = store.retainGlobalTerminalApprovals(terminal.terminalId);
+    await store.hydrateGlobalTerminalApprovals({ terminalId: terminal.terminalId });
+    expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([pendingApproval, deniedApproval]);
+    await store.approveGlobalTerminalRequest({
+      terminalId: terminal.terminalId,
+      requestId: pendingApproval.requestId,
+      durationMs: 60_000,
+    });
+    await waitFor(() => store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data.length === 1);
+    expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([deniedApproval]);
+    expect(
+      store
+        .getState()
+        .globalTerminals.data[0]?.actors?.find((actor) => actor.actorId === pendingApproval.participantId),
+    ).toMatchObject({
+      actorId: pendingApproval.participantId,
+      leaseId: approvedLease.leaseId,
+      leaseExpiresAt: approvedLease.expiresAt,
+    });
+    await store.denyGlobalTerminalRequest({
+      terminalId: terminal.terminalId,
+      requestId: deniedApproval.requestId,
+    });
+    await waitFor(() => store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data.length === 0);
+
+    const revoked = await store.revokeGlobalTerminalGrant({
+      terminalId: terminal.terminalId,
+      grantId: "grant-requester",
+    });
+    expect(revoked).toEqual({ ok: true });
+    expect(
+      store.getState().globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId),
+    ).toEqual(["grant-reviewer"]);
+
+    const releaseActivity = store.retainGlobalTerminalActivity(terminal.terminalId);
+    await store.hydrateGlobalTerminalActivity({ terminalId: terminal.terminalId, limit: 20 });
+    expect(store.getState().globalTerminalActivityById[terminal.terminalId]?.data.map((item) => item.id)).toEqual([
+      11, 12,
+    ]);
+
+    const deleted = await store.deleteGlobalTerminal({ terminalId: terminal.terminalId });
+    expect(deleted).toEqual({ ok: true, message: "deleted" });
+    expect(store.getState().globalTerminals.data).toEqual([]);
+    expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data).toEqual([]);
+    expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([]);
+    expect(store.getState().globalTerminalActivityById[terminal.terminalId]?.data).toEqual([]);
+
+    expect(requests.list).toEqual({});
+    expect(requests.create).toEqual({
+      terminalId: terminal.terminalId,
+      processKind: terminal.processKind,
+      cwd: terminal.cwd,
+    });
+    expect(requests.focus).toEqual({
+      op: "replace",
+      terminalIds: [terminal.terminalId],
+      accessToken: terminal.access.accessToken,
+    });
+    expect(requests.read).toEqual({
+      terminalId: terminal.terminalId,
+      accessToken: terminal.access.accessToken,
+      mode: "snapshot",
+    });
+    expect(requests.write).toEqual({
+      terminalId: terminal.terminalId,
+      accessToken: "termtok_requester",
+      text: "echo requester",
+      submit: true,
+      createApprovalRequest: true,
+      returnRead: false,
+    });
+    expect(requests.listGrants).toEqual({ terminalId: terminal.terminalId });
+    expect(requests.issue).toEqual({
+      terminalId: terminal.terminalId,
+      role: "requester",
+      participantId: "auth:requester",
+      label: "Requester",
+      adminCandidateRank: 2,
+    });
+    expect(requests.revoke).toEqual({
+      terminalId: terminal.terminalId,
+      grantId: "grant-requester",
+    });
+    expect(requests.listApprovals).toEqual({
+      terminalId: terminal.terminalId,
+      statuses: ["pending"],
+    });
+    expect(requests.approve).toEqual({
+      terminalId: terminal.terminalId,
+      requestId: pendingApproval.requestId,
+      durationMs: 60_000,
+    });
+    expect(requests.deny).toEqual({
+      terminalId: terminal.terminalId,
+      requestId: deniedApproval.requestId,
+    });
+    expect(requests.activity).toEqual({
+      terminalId: terminal.terminalId,
+      limit: 20,
+    });
+    expect(requests.delete).toEqual({
+      terminalId: terminal.terminalId,
+    });
+
+    releaseActivity();
+    releaseApprovals();
+    releaseGrants();
+    store.disconnect();
+  });
+
+  test("Scenario: Given watched global terminal slices When direct terminal tool calls resolve Then runtime store eagerly rehydrates the affected terminal resources", async () => {
+    const terminalId = "term-live-refresh";
+    let terminalListCalls = 0;
+    let approvalListCalls = 0;
+    let activityListCalls = 0;
+    const pendingApproval = {
+      requestId: "approval-refresh",
+      terminalId,
+      participantId: "auth:requester",
+      assignedAdminId: "system:trusted-terminal-bootstrap",
+      status: "pending" as const,
+      requestedInput: {
+        text: "echo pending refresh",
+        submit: true,
+        submitKey: "enter" as const,
+      },
+      createdAt: 10,
+      expiresAt: 90_010,
+    };
+    const readActivity = {
+      id: 20,
+      terminalId,
+      createdAt: 20,
+      kind: "terminal_read" as const,
+      cycleId: null,
+      actorId: "system:trusted-terminal-bootstrap",
+      title: "Terminal read",
+      content: "{\"kind\":\"terminal-snapshot\"}",
+      detail: { representation: "snapshot" },
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalListQuery: async () => {
+          terminalListCalls += 1;
+          return {
+            items: [
+              {
+                terminalId,
+                processKind: "shell",
+                command: ["/bin/bash"],
+                cwd: "/repo/live",
+                workspace: null,
+                running: true,
+                status: "IDLE" as const,
+                seq: 1,
+                snapshot: {
+                  seq: 1,
+                  timestamp: 1,
+                  cols: 80,
+                  rows: 24,
+                  lines: Array.from({ length: 24 }, () => ""),
+                  cursor: { x: 0, y: 0 },
+                },
+                focused: false,
+                icon: undefined,
+                title: "Live refresh terminal",
+                shortcuts: undefined,
+                rendererEngine: "xterm" as const,
+                transportUrl: "ws://127.0.0.1:7777/pty/term-live-refresh?token=token-admin",
+                currentAdminId: "system:trusted-terminal-bootstrap",
+                approvalTimeoutMs: 90_000,
+                pendingRequestCount: approvalListCalls > 1 ? 1 : 0,
+                access: {
+                  role: "admin" as const,
+                  accessToken: "token-admin",
+                  participantId: "system:trusted-terminal-bootstrap",
+                  currentAdmin: true,
+                },
+                actors: [],
+              },
+            ],
+          };
+        },
+        terminalGlobalReadQuery: async (input) => ({
+          kind: "terminal-snapshot",
+          representation: "snapshot",
+          terminalId: input.terminalId,
+          eventId: 20,
+          seq: 2,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          tail: "read refresh",
+          status: "IDLE",
+          title: "Live refresh terminal",
+          running: true,
+        }),
+        terminalGlobalWriteMutate: async () => ({
+          ok: false,
+          message: "approval queued",
+          approvalRequest: pendingApproval,
+        }),
+        terminalListApprovalRequestsQuery: async () => {
+          approvalListCalls += 1;
+          return { items: approvalListCalls > 1 ? [pendingApproval] : [] };
+        },
+        terminalActivityPageQuery: async () => {
+          activityListCalls += 1;
+          return {
+            items: activityListCalls > 1 ? [readActivity] : [],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    const releaseCatalog = store.retainGlobalTerminals();
+    await store.hydrateGlobalTerminals();
+    const releaseApprovals = store.retainGlobalTerminalApprovals(terminalId);
+    await store.hydrateGlobalTerminalApprovals({ terminalId });
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalId);
+    await store.hydrateGlobalTerminalActivity({ terminalId });
+
+    expect(terminalListCalls).toBe(1);
+    expect(approvalListCalls).toBe(1);
+    expect(activityListCalls).toBe(1);
+
+    await store.readGlobalTerminal({
+      terminalId,
+      accessToken: "token-admin",
+      mode: "snapshot",
+    });
+    expect(activityListCalls).toBe(2);
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data).toEqual([readActivity]);
+
+    await store.writeGlobalTerminal({
+      terminalId,
+      accessToken: "token-requester",
+      text: "echo pending refresh",
+      createApprovalRequest: true,
+      returnRead: false,
+    });
+    expect(approvalListCalls).toBe(2);
+    expect(terminalListCalls).toBe(2);
+    expect(store.getState().globalTerminalApprovalsById[terminalId]?.data).toEqual([pendingApproval]);
+    expect(store.getState().globalTerminals.data[0]?.pendingRequestCount).toBe(1);
+
+    releaseActivity();
+    releaseApprovals();
+    releaseCatalog();
+    store.disconnect();
+  });
+
+  test("Scenario: Given a watched global terminal activity slice When read refresh returns a stale page Then runtime store preserves the durable read fact from the tool response", async () => {
+    const terminalId = "term-read-stale-page";
+    let activityCalls = 0;
+    const readActivity = {
+      id: 31,
+      terminalId,
+      createdAt: 31,
+      kind: "terminal_read" as const,
+      cycleId: null,
+      actorId: "system:trusted-terminal-bootstrap",
+      title: "Terminal read",
+      content: "{\"kind\":\"terminal-snapshot\"}",
+      detail: { representation: "snapshot" },
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalReadQuery: async (input) => ({
+          kind: "terminal-snapshot",
+          representation: "snapshot",
+          terminalId: input.terminalId,
+          eventId: readActivity.id,
+          seq: 2,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          tail: "stale page read",
+          status: "IDLE",
+          title: "Stale page terminal",
+          running: true,
+        }),
+        terminalActivityPageQuery: async () => {
+          activityCalls += 1;
+          return {
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalId);
+    await store.hydrateGlobalTerminalActivity({ terminalId });
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data).toEqual([]);
+
+    await store.readGlobalTerminal({
+      terminalId,
+      accessToken: "token-admin",
+      mode: "snapshot",
+    });
+
+    expect(activityCalls).toBe(2);
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data).toHaveLength(1);
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data[0]).toMatchObject({
+      id: readActivity.id,
+      terminalId,
+      kind: "terminal_read",
+      title: "Terminal read",
+      detail: {
+        eventId: readActivity.id,
+        terminalId,
+        representation: "snapshot",
+      },
+    });
+
+    releaseActivity();
+    store.disconnect();
+  });
+
+  test("Scenario: Given a stale inflight terminal activity refresh When a forced read lands newer facts Then runtime store bypasses the stale query and keeps the newest activity", async () => {
+    const terminalId = "term-force-refresh";
+    let activityCalls = 0;
+    const activityResolvers: Array<
+      (value: {
+        items: Array<{
+          id: number;
+          terminalId: string;
+          createdAt: number;
+          kind: "terminal_read" | "terminal_write";
+          cycleId: null;
+          actorId?: string;
+          title: string;
+          content: string;
+          detail?: unknown;
+        }>;
+        nextBefore: null;
+        hasMoreBefore: false;
+      }) => void
+    > = [];
+    const staleWrite = {
+      id: 1,
+      terminalId,
+      createdAt: 1,
+      kind: "terminal_write" as const,
+      cycleId: null,
+      actorId: "system:trusted-terminal-bootstrap",
+      title: "Terminal write",
+      content: "echo stale",
+      detail: { submit: true },
+    };
+    const freshRead = {
+      id: 2,
+      terminalId,
+      createdAt: 2,
+      kind: "terminal_read" as const,
+      cycleId: null,
+      actorId: "system:trusted-terminal-bootstrap",
+      title: "Terminal read",
+      content: "{\"kind\":\"terminal-snapshot\"}",
+      detail: { representation: "snapshot" },
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalReadQuery: async (input) => ({
+          kind: "terminal-snapshot",
+          representation: "snapshot",
+          terminalId: input.terminalId,
+          eventId: freshRead.id,
+          seq: 2,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          tail: "fresh read",
+          status: "IDLE",
+          title: "Force refresh terminal",
+          running: true,
+        }),
+        terminalActivityPageQuery: async () => {
+          activityCalls += 1;
+          return await new Promise((resolve) => {
+            activityResolvers.push(resolve);
+          });
+        },
+      }),
+    );
+
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalId);
+    const staleRefresh = store.hydrateGlobalTerminalActivity({ terminalId, force: true });
+    await waitFor(() => activityCalls === 1);
+
+    const readTask = store.readGlobalTerminal({
+      terminalId,
+      accessToken: "token-admin",
+      mode: "snapshot",
+    });
+    await waitFor(() => activityCalls === 2);
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data.at(-1)).toMatchObject({
+      id: freshRead.id,
+      title: "Terminal read",
+    });
+
+    activityResolvers[0]?.({
+      items: [staleWrite],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    await staleRefresh;
+
+    activityResolvers[1]?.({
+      items: [staleWrite, freshRead],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    await readTask;
+
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data).toEqual([staleWrite, freshRead]);
+
+    releaseActivity();
+    store.disconnect();
+  });
+
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
     const requests: {
       markRead?: { chatId: string; accessToken?: string; messageId?: string; readAt?: number };
@@ -3837,6 +5152,169 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
     expect(store.getState().notifications[0]?.messageId).toBe("9");
+    store.disconnect();
+  });
+
+  test("Scenario: Given a loaded workspace avatar catalog When copy starts Then the optimistic workspace-local avatar appears before server reconciliation", async () => {
+    const workspacePath = "/repo/demo";
+    const helperAvatar: WorkspaceAvatarCatalogEntry = {
+      nickname: "helper",
+      defaultAvatar: false,
+      sourceScope: "global",
+      globalAvailable: true,
+      workspaceAvailable: false,
+      globalPath: "/global/helper",
+      workspacePath: "/repo/demo/.agenter/avatar/helper",
+      effectivePath: "/global/helper",
+    };
+    const copiedAvatar: WorkspaceAvatarCatalogEntry = {
+      nickname: "helper-copy",
+      defaultAvatar: false,
+      sourceScope: "workspace",
+      globalAvailable: false,
+      workspaceAvailable: true,
+      globalPath: "/global/helper-copy",
+      workspacePath: "/repo/demo/.agenter/avatar/helper-copy",
+      effectivePath: "/repo/demo/.agenter/avatar/helper-copy",
+    };
+    let catalog = [helperAvatar];
+    const copyDeferred = createDeferred<{ avatar: WorkspaceAvatarCatalogEntry }>();
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        workspaceAvatarCatalogQuery: async () => ({ items: catalog }),
+        workspaceCopyAvatarMutate: async () => await copyDeferred.promise,
+      }),
+    );
+
+    await store.connect();
+    const releaseCatalog = store.retainWorkspaceAvatarCatalog(workspacePath);
+    await store.hydrateWorkspaceAvatarCatalog(workspacePath);
+
+    const copyPromise = store.copyWorkspaceAvatar({
+      workspacePath,
+      sourceAvatar: "helper",
+      targetAvatar: "helper-copy",
+    });
+
+    await waitFor(() =>
+      store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.some((entry) => entry.nickname === "helper-copy"),
+    );
+    expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.find((entry) => entry.nickname === "helper-copy"))
+      .toMatchObject({
+        nickname: "helper-copy",
+        sourceScope: "workspace",
+        workspaceAvailable: true,
+      });
+
+    catalog = [helperAvatar, copiedAvatar];
+    copyDeferred.resolve({ avatar: copiedAvatar });
+    await expect(copyPromise).resolves.toEqual(copiedAvatar);
+    await waitFor(() =>
+      store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.some(
+        (entry) => entry.nickname === "helper-copy" && entry.effectivePath === copiedAvatar.effectivePath,
+      ),
+    );
+    expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data).toEqual([helperAvatar, copiedAvatar]);
+
+    releaseCatalog();
+    store.disconnect();
+  });
+
+  test("Scenario: Given one invalidated workspace avatar catalog When a live invalidation event arrives Then only the affected catalog is refreshed", async () => {
+    const workspaceA = "/repo/a";
+    const workspaceB = "/repo/b";
+    const queryCounts = {
+      [workspaceA]: 0,
+      [workspaceB]: 0,
+    };
+    const catalogByWorkspace: Record<string, WorkspaceAvatarCatalogEntry[]> = {
+      [workspaceA]: [
+        {
+          nickname: "alpha",
+          defaultAvatar: false,
+          sourceScope: "global",
+          globalAvailable: true,
+          workspaceAvailable: false,
+          globalPath: "/global/alpha",
+          workspacePath: "/repo/a/.agenter/avatar/alpha",
+          effectivePath: "/global/alpha",
+        },
+      ],
+      [workspaceB]: [
+        {
+          nickname: "beta",
+          defaultAvatar: false,
+          sourceScope: "global",
+          globalAvailable: true,
+          workspaceAvailable: false,
+          globalPath: "/global/beta",
+          workspacePath: "/repo/b/.agenter/avatar/beta",
+          effectivePath: "/global/beta",
+        },
+      ],
+    };
+    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          eventHandlers = handlers;
+        },
+        workspaceAvatarCatalogQuery: async ({ workspacePath }) => {
+          queryCounts[workspacePath] += 1;
+          return { items: catalogByWorkspace[workspacePath] ?? [] };
+        },
+      }),
+    );
+
+    await store.connect();
+    const releaseA = store.retainWorkspaceAvatarCatalog(workspaceA);
+    const releaseB = store.retainWorkspaceAvatarCatalog(workspaceB);
+    await store.hydrateWorkspaceAvatarCatalog(workspaceA);
+    await store.hydrateWorkspaceAvatarCatalog(workspaceB);
+
+    catalogByWorkspace[workspaceA] = [
+      ...catalogByWorkspace[workspaceA]!,
+      {
+        nickname: "alpha-copy",
+        defaultAvatar: false,
+        sourceScope: "workspace",
+        globalAvailable: false,
+        workspaceAvailable: true,
+        globalPath: "/global/alpha-copy",
+        workspacePath: "/repo/a/.agenter/avatar/alpha-copy",
+        effectivePath: "/repo/a/.agenter/avatar/alpha-copy",
+      },
+    ];
+
+    eventHandlers?.onData?.({
+      version: 1,
+      eventId: 1,
+      timestamp: Date.now(),
+      type: "workspace.avatarCatalog.updated",
+      payload: {
+        workspacePaths: [workspaceA],
+      },
+    });
+
+    await waitFor(
+      () =>
+        store.getState().workspaceAvatarCatalogByPath[workspaceA]?.data.some(
+          (entry) => entry.nickname === "alpha-copy",
+        ) ?? false,
+    );
+    expect(queryCounts[workspaceB]).toBe(1);
+    expect(store.getState().workspaceAvatarCatalogByPath[workspaceA]?.data.map((entry) => entry.nickname)).toEqual([
+      "alpha",
+      "alpha-copy",
+    ]);
+    expect(store.getState().workspaceAvatarCatalogByPath[workspaceB]?.data.map((entry) => entry.nickname)).toEqual([
+      "beta",
+    ]);
+
+    releaseA();
+    releaseB();
     store.disconnect();
   });
 });
