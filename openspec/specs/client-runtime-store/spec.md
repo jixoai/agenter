@@ -4,7 +4,7 @@
 Define the durable client-side runtime normalization, long-history paging contract, and Welcome access-state derivation across workspaces, running avatars, and global resources.
 ## Requirements
 ### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
-The client runtime store SHALL normalize workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment bindings as first-class resource maps. It SHALL NOT collapse those resources back into session-owned `*BySession` stores as the primary identity axis, and it SHALL continue to preserve terminal focus-set semantics.
+The client runtime store SHALL normalize workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment bindings as first-class resource maps. It SHALL NOT collapse those resources back into session-owned `*BySession` stores as the primary identity axis, and it SHALL continue to preserve terminal focus-set semantics. For global terminals, the normalized projection SHALL preserve render-critical facts such as absolute cwd, renderer metadata, durable snapshot hydration state, and live transport URL across refresh and incremental updates.
 
 #### Scenario: Store receives global resources plus running avatars
 - **WHEN** the runtime store ingests snapshots containing workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment metadata
@@ -15,6 +15,11 @@ The client runtime store SHALL normalize workspaces, running avatars, workspace 
 - **WHEN** the store receives an avatar catalog invalidation event for one workspace path
 - **THEN** it updates only that workspace avatar catalog entry map
 - **THEN** unrelated workspace catalogs remain unchanged
+
+#### Scenario: Global terminal render facts survive refresh
+- **WHEN** the browser refreshes while a global terminal is selected
+- **THEN** the normalized terminal entry still carries its absolute cwd, latest durable snapshot, and transport URL after hydration
+- **THEN** route consumers do not need a second ad hoc refetch to render the terminal again
 
 ### Requirement: Client runtime store SHALL track reverse-time paging state per long-history resource
 The client runtime store SHALL maintain explicit reverse-time page state for each long-history global resource and each long-history running-avatar detail resource, and SHALL hydrate only recent windows by default.
@@ -59,4 +64,3 @@ The client runtime store SHALL derive `Welcome` room and terminal access state f
 - **WHEN** a previously stored room or terminal token fails validation during hydration
 - **THEN** the runtime store does not treat that room or terminal as joined
 - **THEN** the corresponding room or terminal remains visible with a `credential-invalid` state while the stale credential record is preserved until a fresh credential replaces it
-

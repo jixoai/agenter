@@ -39,6 +39,14 @@ The shared room component SHALL render one durable conversation surface with tra
 - **THEN** the host can place surrounding metadata or management controls beside the component
 - **THEN** the shared component still owns the transcript/composer shell instead of requiring a second route-local transcript renderer
 
+### Requirement: Web chat view SHALL own transcript scrolling through ScrollView
+The shared chat component SHALL delegate transcript scrolling to the shared `ScrollView` contract instead of feature-local raw overflow ownership, even when delivered as a reusable custom element.
+
+#### Scenario: Transcript uses shared scroll owner
+- **WHEN** the chat transcript exceeds the visible height
+- **THEN** the component scrolls through the shared `ScrollView` contract
+- **THEN** host surfaces do not need to wrap the transcript in a second competing scroll owner
+
 ### Requirement: Web chat view SHALL support large chat histories
 The web chat view SHALL use virtualized rendering and reverse-time pagination for long-lived room conversations.
 

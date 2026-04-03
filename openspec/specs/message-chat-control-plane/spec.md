@@ -77,6 +77,19 @@ A room transport endpoint SHALL deliver an initial room snapshot followed by inc
 - **THEN** the transport pushes the updated message record with the same `messageId`
 - **AND** the client can update pending/transcript placement without reloading the whole channel
 
+### Requirement: Room messages SHALL preserve durable acting actor identity
+The message control plane SHALL persist the canonical acting actor identity for each room message in addition to any display label, and every snapshot, page, and incremental transport payload SHALL expose that durable sender identity unchanged.
+
+#### Scenario: Same-label actors send distinct room messages
+- **WHEN** two different actors with the same visible label both send messages into one room
+- **THEN** the persisted message records keep distinct canonical actor identities for each send
+- **THEN** room transport consumers can distinguish those sends without inferring identity from labels
+
+#### Scenario: Send-as authority becomes durable message fact
+- **WHEN** an operator chooses a room token and sends a message as that actor
+- **THEN** the resulting room message persists the selected acting actor identity
+- **THEN** later snapshot or page reads preserve that identity even after refresh or reconnect
+
 ### Requirement: Message-system SHALL define communication semantics for model work
 The message control plane SHALL contribute provider-owned system guidance that describes message-system as an asynchronous multi-channel communication surface. That guidance SHALL teach role-aware dispatch instead of reducing message tools to mechanical quote forwarding.
 
@@ -89,4 +102,3 @@ The message control plane SHALL contribute provider-owned system guidance that d
 - **WHEN** the assistant is asked to mediate or judge between channels
 - **THEN** the system prompt reminds it not to speak as another participant
 - **AND** lack of a user reply in one channel does not block unrelated work elsewhere in the runtime
-

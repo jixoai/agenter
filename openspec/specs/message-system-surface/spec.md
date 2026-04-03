@@ -47,6 +47,14 @@ Room user lists, grant dialogs, and avatars SHALL resolve actors from auth/profi
 - **WHEN** the operator opens room access management
 - **THEN** the selectable users are sourced from the auth actor catalog instead of a local freeform list
 
+### Requirement: Message-system route SHALL derive room users and viewer choices from canonical actor truth
+The room viewer selector, room management surface, send-as options, and read-progress details SHALL resolve actors from canonical auth/profile or session actor identity instead of local label-only guesses.
+
+#### Scenario: Viewer selector lists canonical actors
+- **WHEN** the operator opens the room viewer selector
+- **THEN** each option is keyed by canonical actor identity
+- **THEN** duplicate visible labels remain selectable as separate actors
+
 ### Requirement: Room read state SHALL use group read progress semantics
 The room transcript SHALL present participant read progress and read timestamps, and SHALL NOT prioritize attention-style pending labels as the primary unread model.
 

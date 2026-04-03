@@ -38,12 +38,17 @@ Terminal focus behavior in the UI SHALL be modeled per user seat rather than as 
 - **THEN** focus/unfocus controls are available in the user list instead of as one page-level terminal action
 
 ### Requirement: Terminal detail SHALL restore durable activity after refresh
-Refreshing the terminal route SHALL restore transcript/activity evidence and terminal metadata from durable backend state, and the route SHALL continue receiving live updates after hydration.
+Refreshing the terminal route SHALL restore previously renderable terminal evidence from durable backend state, including the latest terminal snapshot, transport endpoint, renderer metadata, absolute cwd, and recent terminal activity. After hydration, the route SHALL continue receiving live updates without requiring a second manual refresh.
 
 #### Scenario: Refresh terminal detail
 - **WHEN** the browser refreshes while viewing a terminal
 - **THEN** the transcript/activity pane reloads previously available terminal activity rather than appearing empty
 - **THEN** subsequent live terminal events continue updating the selected terminal in place
+
+#### Scenario: Refresh restores renderable terminal viewport
+- **WHEN** the selected terminal was previously running and had renderable output
+- **THEN** the route restores a renderable terminal viewport from durable snapshot truth before or while live transport reconnects
+- **THEN** the page does not regress to a permanently blank terminal surface
 
 #### Scenario: Absolute cwd display
 - **WHEN** terminal metadata includes the current working directory
@@ -56,6 +61,11 @@ The terminal-system route SHALL react to terminal activity, grant changes, appro
 - **WHEN** a write, read, or seat focus action occurs for the selected terminal
 - **THEN** the Actions and Users panes update in place from the live terminal event stream
 - **THEN** `call as` options remain consistent with the latest visible grants
+
+#### Scenario: Call-as options update after seat change
+- **WHEN** the operator grants or revokes a seat for the selected terminal
+- **THEN** the `call as` selector updates from the same live terminal state without requiring a page refresh
+- **THEN** subsequent tool invocations can use the new seat immediately
 
 #### Scenario: Approval queue updates in place
 - **WHEN** a terminal approval request is created, approved, or denied
