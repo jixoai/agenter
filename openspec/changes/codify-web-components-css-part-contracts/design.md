@@ -8,6 +8,14 @@ The current `help-hint` implementation violates that separation because:
 - the host does not expose stable `part` names
 - the host does not reflect presentation state needed for stateful `::part(...)` styling
 
+The same structural problem also exists, with different severity, in the other durable atoms that already ship visible internal surfaces:
+
+- `adaptive-icon-button`
+- `async-surface`
+- `json-viewer`
+- `markdown-document`
+- `tool-invocation-card`
+
 ## Goals
 
 - Make HelpHint externally themeable without reopening shadow internals.
@@ -26,6 +34,13 @@ The current `help-hint` implementation violates that separation because:
 
 Any Lit component with internal visual surfaces must publish stable `part` names for those surfaces. Product clients can then style them through `::part(...)` or Tailwind part selectors without depending on internal class names.
 
+For the current rollout, each high-value atom must at minimum expose its top-level semantic surfaces:
+
+- container/root surface
+- primary interactive surface, when one exists
+- primary content viewport/payload surface
+- overlay/menu/status surface, when one exists
+
 ### Stateful theming uses host-reflected facts
 
 If a component needs stateful external theming, the host must reflect the relevant factual state through host attributes. Internal state on shadow children is insufficient because `::part(...)` cannot query shadow-private selectors.
@@ -35,6 +50,14 @@ For HelpHint, the host reflects the presentation mode so WebUI can theme:
 - default/closed
 - passive auto-open
 - active open
+
+The same rule applies to other atoms when the outside world needs factual theming. Examples include:
+
+- `adaptive-icon-button`: whether the label collapsed to icon-only
+- `async-surface`: which async state is currently active
+- `json-viewer`: active render mode and menu open state
+- `markdown-document`: resolved surface / overflow / mode facts
+- `tool-invocation-card`: invocation status
 
 ### HelpHint keeps fallback styles, WebUI owns the product skin
 
@@ -48,7 +71,8 @@ The Lit element keeps minimal fallback styles so it remains legible in isolation
 ## Verification Plan
 
 1. Add a regression test covering HelpHint part names and host state reflection.
-2. Run `pnpm --filter @agenter/web-components test`.
-3. Run `pnpm --filter @agenter/webui typecheck`.
-4. Run `pnpm --filter @agenter/webui test:unit`.
-5. Run `pnpm --filter @agenter/webui test:dom`.
+2. Add regression tests covering the newly exposed part/state contracts on the other shared Lit atoms.
+3. Run `pnpm --filter @agenter/web-components test`.
+4. Run `pnpm --filter @agenter/webui typecheck`.
+5. Run `pnpm --filter @agenter/webui test:unit`.
+6. Run `pnpm --filter @agenter/webui test:dom`.

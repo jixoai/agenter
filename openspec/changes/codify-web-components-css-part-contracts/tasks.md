@@ -9,7 +9,12 @@
 - [x] 2.2 Reflect HelpHint presentation state onto the host so outer clients can theme `::part(...)` selectors by factual state.
 - [x] 2.3 Keep fallback internal styles, but move the richer WebUI HelpHint skin to outer `::part(...)` rules.
 
-## 3. Verification
+## 3. Shared Lit atom rollout
 
-- [x] 3.1 Add regression tests for HelpHint part/state exposure.
-- [x] 3.2 Run targeted `web-components` and WebUI verification.
+- [ ] 3.1 Expose stable top-level `css-part` slots on `adaptive-icon-button`, `async-surface`, `json-viewer`, `markdown-document`, and `tool-invocation-card`.
+- [ ] 3.2 Reflect the minimum factual host state needed for outer `::part(...)` theming on those atoms.
+
+## 4. Verification
+
+- [ ] 4.1 Add regression tests for the expanded Lit atom part/state exposure.
+- [ ] 4.2 Run targeted `web-components` and WebUI verification.

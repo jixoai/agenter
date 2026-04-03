@@ -9,6 +9,11 @@ Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable vi
 - **THEN** the client styles stable `::part(...)` selectors instead of internal class names
 - **THEN** the atom remains reusable across multiple clients without duplicating implementation
 
+#### Scenario: Shared durable atoms expose their primary surfaces
+- **WHEN** a client consumes durable shared atoms such as `adaptive-icon-button`, `async-surface`, `json-viewer`, `markdown-document`, or `tool-invocation-card`
+- **THEN** each atom exposes stable top-level `part` names for its primary visual surfaces
+- **THEN** the client does not need to reopen shadow-private class names to restyle the atom
+
 ### Requirement: Stateful external theming SHALL use host-reflected facts
 
 If a Lit atom requires stateful theming from the outside, the host SHALL reflect the relevant state so outer `::part(...)` rules can key off durable facts instead of shadow-private selectors.
