@@ -34,18 +34,42 @@
 		>;
 
 	let element = $state<TerminalViewHostElement | null>(null);
+	let resolvedTerminalId = '';
+	let resolvedSnapshot: TerminalViewSnapshot | null = null;
+	let resolvedTransportUrl = '';
+	let resolvedCwd = '';
+
+	const syncResolvedProps = (): void => {
+		if (resolvedTerminalId.length === 0 || resolvedTerminalId !== terminalId) {
+			resolvedTerminalId = terminalId;
+			resolvedSnapshot = snapshot ?? null;
+			resolvedTransportUrl = transportUrl ?? '';
+			resolvedCwd = cwd ?? '';
+			return;
+		}
+		if (snapshot) {
+			resolvedSnapshot = snapshot;
+		}
+		if (transportUrl && transportUrl.length > 0) {
+			resolvedTransportUrl = transportUrl;
+		}
+		if (cwd && cwd.trim().length > 0 && cwd !== '.') {
+			resolvedCwd = cwd;
+		}
+	};
 
 	const syncProps = (): void => {
+		syncResolvedProps();
 		if (!element) {
 			return;
 		}
-		element.transportUrl = transportUrl ?? '';
+		element.transportUrl = resolvedTransportUrl;
 		element.terminalId = terminalId;
 		element.terminalTitle = terminalTitle ?? terminalId;
-		element.cwd = cwd ?? '';
+		element.cwd = resolvedCwd;
 		element.status = status;
 		element.viewportMode = viewportMode;
-		element.snapshot = snapshot ?? null;
+		element.snapshot = resolvedSnapshot;
 	};
 
 	onMount(() => {

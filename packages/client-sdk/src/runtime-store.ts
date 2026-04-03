@@ -216,6 +216,47 @@ const sortGlobalRooms = (items: GlobalRoomEntry[]): GlobalRoomEntry[] => [...ite
 
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
 
+const hasRenderableTerminalCwd = (value: string | undefined): boolean =>
+  typeof value === "string" && value.trim().length > 0 && value.trim() !== ".";
+
+const mergeTerminalSnapshot = (
+  current: GlobalTerminalEntry["snapshot"],
+  incoming: GlobalTerminalEntry["snapshot"],
+): GlobalTerminalEntry["snapshot"] => {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  return incoming.seq >= current.seq ? incoming : current;
+};
+
+const mergeGlobalTerminalEntry = (
+  current: GlobalTerminalEntry | undefined,
+  incoming: GlobalTerminalEntry,
+): GlobalTerminalEntry => {
+  if (!current) {
+    return incoming;
+  }
+  return {
+    ...current,
+    ...incoming,
+    cwd: hasRenderableTerminalCwd(incoming.cwd) ? incoming.cwd : current.cwd,
+    snapshot: mergeTerminalSnapshot(current.snapshot, incoming.snapshot),
+    rendererEngine: incoming.rendererEngine ?? current.rendererEngine,
+    transportUrl: incoming.transportUrl ?? current.transportUrl,
+    title: incoming.title ?? current.title,
+    icon: incoming.icon ?? current.icon,
+    shortcuts: incoming.shortcuts ?? current.shortcuts,
+    currentAdminId: incoming.currentAdminId ?? current.currentAdminId,
+    approvalTimeoutMs: incoming.approvalTimeoutMs ?? current.approvalTimeoutMs,
+    pendingRequestCount: incoming.pendingRequestCount ?? current.pendingRequestCount,
+    access: incoming.access ?? current.access,
+    actors: incoming.actors ?? current.actors,
+  };
+};
+
 const isTrpcErrorCode = (error: unknown, code: string): boolean =>
   Boolean(
     error &&
@@ -1267,7 +1308,7 @@ export class RuntimeStore {
       const nextData = [...resource.data];
       const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
       if (index >= 0) {
-        nextData[index] = entry;
+        nextData[index] = mergeGlobalTerminalEntry(nextData[index], entry);
       } else {
         nextData.unshift(entry);
       }
@@ -1332,7 +1373,12 @@ export class RuntimeStore {
       .then((output) => {
         this.setGlobalTerminalsState((resource) => ({
           ...resource,
-          data: output.items,
+          data: output.items.map((entry) =>
+            mergeGlobalTerminalEntry(
+              resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
+              entry,
+            ),
+          ),
           loaded: true,
           loading: false,
           refreshing: false,

@@ -65,6 +65,20 @@ const openCreateRoomDialog = async (page: Page) => {
   return createRoomDialog;
 };
 
+const expectTerminalViewText = async (page: Page, text: string): Promise<void> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  await expect
+    .poll(
+      async () =>
+        await terminalView
+          .evaluate((element, expected) => (element.shadowRoot?.textContent ?? "").includes(expected), text)
+          .catch(() => false),
+      { timeout: 15_000 },
+    )
+    .toBeTruthy();
+};
+
 const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   await page.goto("/workspaces", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/workspaces/, { timeout: 15_000 });
@@ -147,6 +161,8 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     await expect(page.getByText(terminalWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expectTerminalViewText(page, terminalWrite);
+    await expectTerminalViewText(page, terminalCwd);
 
     await activateUntil(page.getByRole("tab", { name: "Read" }), async () => {
       return await page.getByRole("button", { name: "Call read" }).isVisible().catch(() => false);
@@ -160,6 +176,8 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByText(`Absolute cwd: ${terminalCwd}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(terminalWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expectTerminalViewText(page, terminalWrite);
+    await expectTerminalViewText(page, terminalCwd);
   });
 
   test("Scenario: Given an authenticated superadmin When granting requester access and approving a pending terminal write Then the users rail and actions rail stay synchronized after refresh", async ({

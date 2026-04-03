@@ -8,7 +8,7 @@
 	} from '@agenter/client-sdk';
 
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
-	import TerminalSnapshotHost from './terminal-snapshot-host.svelte';
+	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
 	import TerminalSystemSurface from './terminal-system-surface.svelte';
 
 	import type {
@@ -41,6 +41,29 @@
 		},
 	];
 
+	const buildTerminalPrompt = (cwd: string): string => `story@terminal ${cwd} $`;
+
+	const buildTerminalSnapshot = (
+		cwd: string,
+		lines: string[] = [buildTerminalPrompt(cwd)],
+		seq = 1,
+	) => {
+		const nextLines = lines.length > 0 ? lines : [buildTerminalPrompt(cwd)];
+		const cursorLine = nextLines.at(-1) ?? buildTerminalPrompt(cwd);
+		return {
+			seq,
+			timestamp: 1_710_000_000_000 + seq,
+			cols: 80,
+			rows: 24,
+			lines: nextLines,
+			richLines: nextLines.map((line) => ({
+				spans: [{ text: line }],
+			})),
+			cursor: { x: cursorLine.length, y: Math.max(0, nextLines.length - 1) },
+			cursorVisible: true,
+		};
+	};
+
 	const createTerminalEntry = (input: {
 		terminalId: string;
 		title: string;
@@ -56,20 +79,13 @@
 		running: true,
 		status: 'IDLE',
 		seq: 1,
-		snapshot: {
-			seq: 1,
-			timestamp: 1_710_000_000_000,
-			cols: 80,
-			rows: 24,
-			lines: Array.from({ length: 24 }, () => ''),
-			cursor: { x: 0, y: 0 },
-		},
+		snapshot: buildTerminalSnapshot(input.cwd),
 		focused: false,
 		icon: undefined,
 		title: input.title,
 		shortcuts: undefined,
 		rendererEngine: 'xterm',
-		transportUrl: `ws://127.0.0.1:7777/pty/${input.terminalId}?token=token:${input.terminalId}:admin`,
+		transportUrl: undefined,
 		currentAdminId: 'system:trusted-terminal-bootstrap',
 		approvalTimeoutMs: 90_000,
 		pendingRequestCount: input.pendingRequestCount,
@@ -243,6 +259,22 @@
 			data: terminalsState.data.map((terminal) => (terminal.terminalId === terminalId ? updater(terminal) : terminal)),
 			refreshedAt: Date.now(),
 		};
+	};
+
+	const appendViewportTranscript = (terminalId: string, inputText: string): void => {
+		updateTerminalEntry(terminalId, (terminal) => {
+			const prompt = buildTerminalPrompt(terminal.cwd);
+			const currentSnapshot = terminal.snapshot ?? buildTerminalSnapshot(terminal.cwd);
+			const existingLines = currentSnapshot.lines.filter((line) => line.length > 0);
+			const outputLine = inputText.startsWith('echo ') ? inputText.slice(5).trim() : `ran: ${inputText}`;
+			const nextLines = [...existingLines, `${prompt} ${inputText}`, outputLine, prompt];
+			const nextSeq = (currentSnapshot.seq ?? 0) + 1;
+			return {
+				...terminal,
+				seq: nextSeq,
+				snapshot: buildTerminalSnapshot(terminal.cwd, nextLines, nextSeq),
+			};
+		});
 	};
 
 	const syncSeatFacts = (terminalId: string): void => {
@@ -548,6 +580,7 @@
 				submitKey: 'enter',
 			},
 		});
+		appendViewportTranscript(terminal.terminalId, input.text);
 		routeNotice = null;
 		return {
 			approvalRequested: false,
@@ -588,7 +621,7 @@
 		{terminalsState}
 		{selectedTerminalId}
 		{selectedTerminal}
-		terminalViewportComponent={TerminalSnapshotHost}
+		terminalViewportComponent={TerminalViewHost}
 		{terminalGrantsState}
 		{terminalApprovalsState}
 		{terminalActivityState}

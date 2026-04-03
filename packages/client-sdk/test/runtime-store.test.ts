@@ -5039,6 +5039,94 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given a renderable global terminal entry When a later catalog refresh omits render facts Then runtime store preserves the last renderable terminal truth", async () => {
+    const terminalId = "term-renderable-refresh";
+    let listCalls = 0;
+    const durableSnapshot = {
+      seq: 4,
+      timestamp: 4,
+      cols: 80,
+      rows: 24,
+      lines: ["prompt$", "echo keep-rendered", "keep-rendered", "prompt$"],
+      cursor: { x: 7, y: 3 },
+    };
+    const fullEntry = {
+      terminalId,
+      processKind: "shell",
+      command: ["/bin/bash"],
+      cwd: "/repo/renderable",
+      workspace: null,
+      running: true,
+      status: "IDLE" as const,
+      seq: durableSnapshot.seq,
+      snapshot: durableSnapshot,
+      focused: false,
+      icon: undefined,
+      title: "Renderable terminal",
+      shortcuts: undefined,
+      rendererEngine: "xterm" as const,
+      transportUrl: "ws://127.0.0.1:7777/pty/term-renderable-refresh?token=token-admin",
+      currentAdminId: "system:trusted-terminal-bootstrap",
+      approvalTimeoutMs: 90_000,
+      pendingRequestCount: 0,
+      access: {
+        role: "admin" as const,
+        accessToken: "token-admin",
+        participantId: "system:trusted-terminal-bootstrap",
+        currentAdmin: true,
+      },
+      actors: [],
+    };
+    const degradedEntry = {
+      ...fullEntry,
+      cwd: ".",
+      snapshot: undefined,
+      rendererEngine: undefined,
+      transportUrl: undefined,
+      access: undefined,
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalListQuery: async () => {
+          listCalls += 1;
+          return {
+            items: [listCalls === 1 ? fullEntry : degradedEntry],
+          };
+        },
+      }),
+    );
+
+    const releaseCatalog = store.retainGlobalTerminals();
+    await store.hydrateGlobalTerminals();
+    expect(store.getState().globalTerminals.data[0]).toMatchObject({
+      terminalId,
+      cwd: "/repo/renderable",
+      transportUrl: fullEntry.transportUrl,
+      rendererEngine: "xterm",
+      access: {
+        accessToken: "token-admin",
+      },
+    });
+    expect(store.getState().globalTerminals.data[0]?.snapshot).toEqual(durableSnapshot);
+
+    await store.hydrateGlobalTerminals({ force: true });
+
+    expect(store.getState().globalTerminals.data[0]).toMatchObject({
+      terminalId,
+      cwd: "/repo/renderable",
+      transportUrl: fullEntry.transportUrl,
+      rendererEngine: "xterm",
+      access: {
+        accessToken: "token-admin",
+      },
+    });
+    expect(store.getState().globalTerminals.data[0]?.snapshot).toEqual(durableSnapshot);
+
+    releaseCatalog();
+    store.disconnect();
+  });
+
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
     const requests: {
       markRead?: { chatId: string; accessToken?: string; messageId?: string; readAt?: number };
