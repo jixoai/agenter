@@ -4,10 +4,11 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import SaveIcon from '@lucide/svelte/icons/save';
 
-import { getAppControllerContext } from '$lib/app/controller-context';
-import { normalizePrivateKey } from '$lib/app/private-key-auth';
-import ScrollView from '$lib/components/scroll-view.svelte';
+	import { getAppControllerContext } from '$lib/app/controller-context';
+	import { normalizePrivateKey } from '$lib/app/private-key-auth';
+	import ScrollView from '$lib/components/scroll-view.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
+	import PasswordInput from '$lib/components/ui/password-input.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -119,7 +120,7 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 
 				<label class="grid gap-2 text-sm font-medium">
 					<span>Root private key</span>
-					<Input bind:value={privateKeyDraft} type="password" placeholder="0x-prefixed private key" />
+					<PasswordInput bind:value={privateKeyDraft} placeholder="0x-prefixed private key" />
 				</label>
 
 				<div class="flex flex-wrap gap-2">

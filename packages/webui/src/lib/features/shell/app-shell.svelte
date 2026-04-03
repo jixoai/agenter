@@ -11,6 +11,13 @@
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
+	import {
+		buildRunningAvatarRailItems,
+		extractRuntimeSessionId,
+		extractRuntimeTab,
+		RUNTIME_TAB_LABELS,
+	} from '$lib/features/runtime/runtime-shell-state';
 	import { cn } from '$lib/utils.js';
 	import type { AppController } from '$lib/app/types';
 
@@ -32,7 +39,18 @@
 
 	const activeItem = $derived(
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
-			navItems[0],
+			null,
+	);
+	const activeRuntimeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
+	const activeRuntimeTab = $derived(extractRuntimeTab(page.url.pathname));
+	const runningAvatarItems = $derived(
+		buildRunningAvatarRailItems(controller.runtimeState, {
+			activeSessionId: activeRuntimeSessionId,
+			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
+		}),
+	);
+	const activeTitle = $derived(
+		activeRuntimeTab ? RUNTIME_TAB_LABELS[activeRuntimeTab] : (activeItem?.label ?? 'Agenter'),
 	);
 
 	const profileLabel = $derived(
@@ -50,7 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>{activeItem.label} · Agenter</title>
+	<title>{activeTitle} · Agenter</title>
 </svelte:head>
 
 <Sidebar.Provider>
@@ -73,7 +91,7 @@
 				<Sidebar.Menu>
 					{#each navItems as item}
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={activeItem.href === item.href} tooltipContent={item.label}>
+							<Sidebar.MenuButton isActive={activeItem?.href === item.href} tooltipContent={item.label}>
 								{#snippet child({ props })}
 									<a href={item.href} {...props}>
 									<item.icon class="size-4" />
@@ -85,6 +103,8 @@
 					{/each}
 				</Sidebar.Menu>
 			</Sidebar.Group>
+
+			<RunningAvatarRail items={runningAvatarItems} />
 		</Sidebar.Content>
 
 		<Sidebar.Footer class="border-t border-sidebar-border px-2 py-3">
@@ -108,10 +128,10 @@
 			<header class="sticky top-0 z-20 border-b bg-background/90 backdrop-blur">
 				<div class="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
 					<div class="flex min-w-0 items-center gap-3">
-						<Sidebar.Trigger class="md:hidden" />
+						<Sidebar.Trigger class="md:hidden" aria-label="Toggle Sidebar" title="Toggle Sidebar" />
 						<div class="grid min-w-0">
 							<div class="truncate text-xs uppercase tracking-[0.18em] text-muted-foreground">Agenter</div>
-							<div class="truncate text-lg font-semibold">{activeItem.label}</div>
+							<div class="truncate text-lg font-semibold">{activeTitle}</div>
 						</div>
 					</div>
 					<div class="flex items-center gap-2">

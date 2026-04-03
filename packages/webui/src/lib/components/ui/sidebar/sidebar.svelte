@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from "$app/state";
 	import * as Sheet from "$lib/components/ui/sheet/index.js";
 	import { cn, type WithElementRef } from "$lib/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
@@ -20,6 +21,15 @@
 	} = $props();
 
 	const sidebar = useSidebar();
+	let lastNavigationHref = $state("");
+
+	$effect(() => {
+		const href = page.url.href;
+		if (lastNavigationHref && lastNavigationHref !== href && sidebar.isMobile) {
+			sidebar.setOpenMobile(false);
+		}
+		lastNavigationHref = href;
+	});
 </script>
 
 {#if collapsible === "none"}

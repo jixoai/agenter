@@ -58,6 +58,25 @@ interface ActorPresence {
   invalidCredential: boolean;
 }
 
+type MessageChannelChangeReason =
+  | "created"
+  | "updated"
+  | "archived"
+  | "deleted"
+  | "message"
+  | "read"
+  | "grant-issued"
+  | "grant-revoked"
+  | "focus"
+  | "presence";
+
+interface MessageChannelChangePayload {
+  chatId: string;
+  reason: MessageChannelChangeReason;
+  builtIn: boolean;
+  actorId?: MessageActorId;
+}
+
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted bootstrap";
 const TRUSTED_BOOTSTRAP_PARTICIPANT_ID: MessageActorId = "system:trusted-bootstrap";
 const ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY = "roomAdminGroupCandidateIds";
@@ -134,7 +153,8 @@ export class MessageControlPlane {
   private readonly actorPresence = new Map<string, ActorPresence>();
   private readonly trustedBootstrapTokens = new Map<string, string>();
   private readonly messageListeners = new Set<(payload: { chatId: string; message: MessageRecord }) => void>();
-  private readonly focusListeners = new Set<(payload: { actorId: string; chatIds: string[] }) => void>();
+  private readonly channelChangeListeners = new Set<(payload: MessageChannelChangePayload) => void>();
+  private readonly focusListeners = new Set<(payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void>();
   private readonly waiters = new Set<Waiter>();
   private config: MessageControlPlaneConfig;
   private transportServer: Bun.Server<MessageSocketData> | null = null;
@@ -164,7 +184,12 @@ export class MessageControlPlane {
     return () => this.messageListeners.delete(listener);
   }
 
-  onFocus(listener: (payload: { actorId: string; chatIds: string[] }) => void): () => void {
+  onChannelChanged(listener: (payload: MessageChannelChangePayload) => void): () => void {
+    this.channelChangeListeners.add(listener);
+    return () => this.channelChangeListeners.delete(listener);
+  }
+
+  onFocus(listener: (payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void): () => void {
     this.focusListeners.add(listener);
     return () => this.focusListeners.delete(listener);
   }
@@ -172,19 +197,25 @@ export class MessageControlPlane {
   setActorPresence(actorId: MessageActorId, input: { online: boolean; ttlMs?: number } | boolean): void {
     this.assertActorId(actorId);
     const online = typeof input === "boolean" ? input : input.online;
+    const current = this.actorPresence.get(actorId);
     if (!online) {
       this.actorPresence.delete(actorId);
       this.syncAdminAssignments();
+      if (current) {
+        this.emitPresenceChanged(actorId);
+      }
       return;
     }
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
-    const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
       expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : null,
       invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
+    if (!current?.online) {
+      this.emitPresenceChanged(actorId);
+    }
   }
 
   setCredentialState(actorId: MessageActorId, input: { invalidCredential: boolean }): void {
@@ -195,6 +226,9 @@ export class MessageControlPlane {
       expiresAt: current?.expiresAt ?? null,
       invalidCredential: input.invalidCredential,
     });
+    if ((current?.invalidCredential ?? false) !== input.invalidCredential) {
+      this.emitPresenceChanged(actorId);
+    }
   }
 
   listChannelsForActor(
@@ -282,6 +316,13 @@ export class MessageControlPlane {
       },
       this.getFocusedChatIdsForActor(input.bootstrapActorId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId),
     );
+    this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: channel.chatId,
+      reason: "created",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      actorId: input.bootstrapActorId,
+    });
     if (input.bootstrapActorId) {
       const projection = this.ensureActorAccess(input.chatId, input.bootstrapActorId, "admin", input.adminToken);
       this.focusForActor(input.bootstrapActorId, "add", [input.chatId]);
@@ -313,7 +354,8 @@ export class MessageControlPlane {
       const channel = this.db.getChannel(chatId);
       return Boolean(channel) && !channel?.archivedAt;
     });
-    const current = new Set(this.getFocusedChatIdsForActor(actorId));
+    const previous = new Set(this.getFocusedChatIdsForActor(actorId));
+    const current = new Set(previous);
     switch (op) {
       case "add":
         for (const chatId of validIds) {
@@ -336,7 +378,19 @@ export class MessageControlPlane {
         break;
     }
     this.focusedChatIdsByActor.set(actorId, current);
-    const payload = { actorId, chatIds: [...current] };
+    const changedChatIds = [...new Set([...previous, ...current].filter((chatId) => previous.has(chatId) !== current.has(chatId)))];
+    if (changedChatIds.length > 0) {
+      this.bumpVersion();
+      for (const chatId of changedChatIds) {
+        this.emitChannelChanged({
+          chatId,
+          reason: "focus",
+          builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(chatId)?.metadata),
+          actorId,
+        });
+      }
+    }
+    const payload = { actorId, chatIds: [...current], changedChatIds };
     for (const listener of this.focusListeners) {
       listener(payload);
     }
@@ -357,6 +411,32 @@ export class MessageControlPlane {
     return [...this.getFocusedChatIdsForActor(actorId)];
   }
 
+  private isBuiltInChannelMetadata(metadata: Record<string, unknown> | undefined): boolean {
+    return metadata?.builtIn === true;
+  }
+
+  private emitChannelChanged(payload: MessageChannelChangePayload): void {
+    for (const listener of this.channelChangeListeners) {
+      listener(payload);
+    }
+  }
+
+  private emitPresenceChanged(actorId: MessageActorId): void {
+    const seen = new Set<string>();
+    for (const { channel } of this.db.listActorChannelAccess(actorId, true)) {
+      if (seen.has(channel.chatId)) {
+        continue;
+      }
+      seen.add(channel.chatId);
+      this.emitChannelChanged({
+        chatId: channel.chatId,
+        reason: "presence",
+        builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+        actorId,
+      });
+    }
+  }
+
   send(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
     const attentionState = input.attentionState ?? "loaded";
@@ -372,6 +452,11 @@ export class MessageControlPlane {
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "message",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+    });
     return message;
   }
 
@@ -424,6 +509,11 @@ export class MessageControlPlane {
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "message",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+    });
     return message;
   }
 
@@ -433,6 +523,11 @@ export class MessageControlPlane {
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "message",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+    });
     return message;
   }
 
@@ -563,6 +658,12 @@ export class MessageControlPlane {
     });
     if (result.changed) {
       this.bumpVersion();
+      this.emitChannelChanged({
+        chatId: input.chatId,
+        reason: "read",
+        builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+        actorId: grant.participantId as MessageActorId,
+      });
     }
 
     return this.withProjection(
@@ -638,6 +739,12 @@ export class MessageControlPlane {
       grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
     );
     this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "updated",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      actorId: grant.participantId as MessageActorId | undefined,
+    });
     return this.withProjection(
       {
         ...channel,
@@ -668,6 +775,12 @@ export class MessageControlPlane {
       focused.delete(input.chatId);
     }
     this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "archived",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      actorId: grant.participantId as MessageActorId | undefined,
+    });
     return this.withProjection(
       {
         ...channel,
@@ -696,6 +809,12 @@ export class MessageControlPlane {
       focused.delete(input.chatId);
     }
     this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "deleted",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      actorId: grant.participantId as MessageActorId | undefined,
+    });
     return this.withProjection(
       {
         ...channel,
@@ -731,6 +850,12 @@ export class MessageControlPlane {
       tokenHash: hashToken(accessToken),
     });
     this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "grant-issued",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      actorId: input.participantId as MessageActorId,
+    });
     return {
       ...grant,
       ...this.createProjection({
@@ -747,6 +872,11 @@ export class MessageControlPlane {
     const ok = this.db.revokeGrant(input.chatId, input.grantId);
     if (ok) {
       this.bumpVersion();
+      this.emitChannelChanged({
+        chatId: input.chatId,
+        reason: "grant-revoked",
+        builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      });
     }
     return { ok };
   }
@@ -1246,6 +1376,9 @@ export class MessageControlPlane {
       invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
+    if (!current?.online) {
+      this.emitPresenceChanged(actorId);
+    }
   }
 
   private ensureActorAccess(
@@ -1382,6 +1515,12 @@ export class MessageControlPlane {
     });
     this.db.updateChannel(input.chatId, { metadata: nextMetadata }, false);
     this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "updated",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      actorId: input.requestedBy,
+    });
     return item;
   }
 
@@ -1401,12 +1540,27 @@ export class MessageControlPlane {
 
   private syncAdminAssignments(): void {
     this.pruneExpiredPresence();
+    const changedChannels: Array<{ chatId: string; builtIn: boolean }> = [];
     for (const channel of this.db.listChannels(new Set<string>(), true)) {
       const nextMetadata = this.withAdminState(channel.chatId, channel.metadata);
       if (JSON.stringify(nextMetadata) === JSON.stringify(channel.metadata ?? {})) {
         continue;
       }
       this.db.updateChannel(channel.chatId, { metadata: nextMetadata }, false);
+      changedChannels.push({
+        chatId: channel.chatId,
+        builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      });
+    }
+    if (changedChannels.length > 0) {
+      this.bumpVersion();
+      for (const channel of changedChannels) {
+        this.emitChannelChanged({
+          chatId: channel.chatId,
+          reason: "presence",
+          builtIn: channel.builtIn,
+        });
+      }
     }
   }
 

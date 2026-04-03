@@ -17,7 +17,7 @@ export interface WorkspaceAvatarCatalogEntry {
   effectivePath: string;
 }
 
-const resolveAvatarRoot = (workspacePath: string, homeDir: string): string => {
+export const resolveWorkspaceAvatarRoot = (workspacePath: string, homeDir: string): string => {
   return join(toWorkspaceCwd(workspacePath, homeDir), ".agenter", "avatar");
 };
 
@@ -39,8 +39,8 @@ const buildCatalogEntry = (input: {
   nickname: string;
   homeDir: string;
 }): WorkspaceAvatarCatalogEntry => {
-  const globalPath = join(resolveAvatarRoot(GLOBAL_WORKSPACE_PATH, input.homeDir), input.nickname);
-  const workspacePath = join(resolveAvatarRoot(input.workspacePath, input.homeDir), input.nickname);
+  const globalPath = join(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, input.homeDir), input.nickname);
+  const workspacePath = join(resolveWorkspaceAvatarRoot(input.workspacePath, input.homeDir), input.nickname);
   const globalAvailable = existsSync(globalPath);
   const workspaceAvailable = !isGlobalWorkspacePath(input.workspacePath, input.homeDir) && existsSync(workspacePath);
   const sourceScope = workspaceAvailable ? "workspace" : "global";
@@ -59,9 +59,13 @@ const buildCatalogEntry = (input: {
 export const listWorkspaceAvatarCatalog = (workspacePath: string, homeDir = homedir()): WorkspaceAvatarCatalogEntry[] => {
   const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : workspacePath;
   const nicknames = new Set<string>([normalizeAvatarNickname(defaultAvatarNickname())]);
-  listAvatarNicknames(resolveAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir)).forEach((nickname) => nicknames.add(nickname));
+  listAvatarNicknames(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir)).forEach((nickname) =>
+    nicknames.add(nickname),
+  );
   if (!isGlobalWorkspacePath(normalizedWorkspacePath, homeDir)) {
-    listAvatarNicknames(resolveAvatarRoot(normalizedWorkspacePath, homeDir)).forEach((nickname) => nicknames.add(nickname));
+    listAvatarNicknames(resolveWorkspaceAvatarRoot(normalizedWorkspacePath, homeDir)).forEach((nickname) =>
+      nicknames.add(nickname),
+    );
   }
 
   return [...nicknames]
@@ -114,10 +118,10 @@ export const copyAvatarIntoWorkspace = (input: {
 
   const sourceNickname = normalizeAvatarNickname(input.sourceNickname);
   const targetNickname = normalizeAvatarNickname(input.targetNickname);
-  const workspaceSourcePath = join(resolveAvatarRoot(workspacePath, homeDir), sourceNickname);
-  const globalSourcePath = join(resolveAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir), sourceNickname);
+  const workspaceSourcePath = join(resolveWorkspaceAvatarRoot(workspacePath, homeDir), sourceNickname);
+  const globalSourcePath = join(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir), sourceNickname);
   const sourcePath = existsSync(workspaceSourcePath) ? workspaceSourcePath : globalSourcePath;
-  const targetPath = join(resolveAvatarRoot(workspacePath, homeDir), targetNickname);
+  const targetPath = join(resolveWorkspaceAvatarRoot(workspacePath, homeDir), targetNickname);
 
   mkdirSync(dirname(targetPath), { recursive: true });
   if (!existsSync(targetPath) && existsSync(sourcePath)) {

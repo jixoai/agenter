@@ -5,6 +5,8 @@ import type {
 	GlobalTerminalGrantEntry,
 	TerminalActivityItem,
 } from '@agenter/client-sdk';
+import type { TerminalViewSnapshot } from '@agenter/terminal-view';
+import type { Component } from 'svelte';
 
 import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
 
@@ -67,10 +69,23 @@ export interface TerminalSystemWriteToolResult {
 	message?: string;
 }
 
+export interface TerminalViewportProps {
+	terminalId: string;
+	terminalTitle?: string;
+	cwd?: string;
+	status: 'IDLE' | 'BUSY';
+	transportUrl?: string;
+	snapshot?: TerminalViewSnapshot | null;
+	class?: string;
+}
+
+export type TerminalViewportComponent = Component<TerminalViewportProps>;
+
 export interface TerminalSystemSurfaceProps {
 	terminalsState: CachedResourceState<GlobalTerminalEntry[]>;
 	selectedTerminalId: string;
 	selectedTerminal: GlobalTerminalEntry | null;
+	terminalViewportComponent: TerminalViewportComponent;
 	terminalGrantsState: CachedResourceState<GlobalTerminalGrantEntry[]>;
 	terminalApprovalsState: CachedResourceState<GlobalTerminalApprovalRequest[]>;
 	terminalActivityState: CachedResourceState<TerminalActivityItem[]>;

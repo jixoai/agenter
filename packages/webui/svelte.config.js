@@ -6,13 +6,17 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
 	preprocess: vitePreprocess(),
 	compilerOptions: {
-		// defaults to rune mode for the project, except for `node_modules`. Can be removed in svelte 6.
 		runes: ({ filename }) => {
 			const relativePath = relative(import.meta.dirname, filename);
-			const pathSegments = relativePath.toLowerCase().split(sep);
-			const isExternalLibrary = pathSegments.includes('node_modules');
+			const normalizedPath = relativePath.toLowerCase();
+			const pathSegments = normalizedPath.split(sep);
+			const isNodeModules = pathSegments.includes('node_modules');
+			const isAgenterWorkspacePackage =
+				normalizedPath.includes('@agenter/web-chat-view') ||
+				normalizedPath.includes('@agenter/web-components') ||
+				normalizedPath.includes('@agenter/webui');
 
-			return isExternalLibrary ? undefined : true;
+			return isNodeModules && !isAgenterWorkspacePackage ? undefined : true;
 		}
 	},
 	kit: {

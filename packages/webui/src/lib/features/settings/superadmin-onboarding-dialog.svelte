@@ -3,9 +3,9 @@
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 
 	import ScrollView from '$lib/components/scroll-view.svelte';
+	import PasswordInput from '$lib/components/ui/password-input.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import type { AuthServiceInfoOutput } from '@agenter/client-sdk';
 
 	let {
@@ -83,7 +83,7 @@
 
 			<label class="grid gap-2 text-sm font-medium text-foreground">
 				<span>Root private key</span>
-				<Input bind:value={privateKeyDraft} placeholder="0x-prefixed private key" type="password" />
+				<PasswordInput bind:value={privateKeyDraft} placeholder="0x-prefixed private key" />
 			</label>
 
 			<p class="text-xs text-muted-foreground">

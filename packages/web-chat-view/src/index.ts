@@ -1,17 +1,17 @@
-export { useWebChatChannel } from "./chat-channel-state";
-export { DefaultWebChatComposer } from "./default-composer";
-export { WebChatView, type WebChatViewProps } from "./web-chat-view";
+export { default as DefaultWebChatComposer } from "./default-composer.svelte";
+export { default as WebChatView } from "./web-chat-view-host.svelte";
+export { default as WebChatViewHost } from "./web-chat-view-host.svelte";
 export type {
   WebChatChannel,
-  WebChatChannelState,
   WebChatComposerRenderProps,
   WebChatComposerSubmitPayload,
   WebChatConnectionState,
   WebChatCursor,
   WebChatMessage,
-  WebChatMessageRenderInput,
   WebChatNotice,
+  WebChatRootProps,
   WebChatSocketFactory,
   WebChatSocketLike,
   WebChatTransportMessage,
+  WebChatViewHostProps,
 } from "./types";

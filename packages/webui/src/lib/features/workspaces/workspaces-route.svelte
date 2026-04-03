@@ -1,13 +1,18 @@
 <script lang="ts">
 	import CopyIcon from '@lucide/svelte/icons/copy';
+	import EyeIcon from '@lucide/svelte/icons/eye';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import { resolveAsyncSurfaceState } from '@agenter/web-components';
+	import type { CachedResourceState, WorkspaceAvatarCatalogEntry } from '@agenter/client-sdk';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-
-import { getAppControllerContext } from '$lib/app/controller-context';
-import ScrollView from '$lib/components/scroll-view.svelte';
+	import { getAppControllerContext } from '$lib/app/controller-context';
+	import AdaptiveIconButton from '$lib/components/web-components/adaptive-icon-button.svelte';
+	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
+	import HelpHint from '$lib/components/web-components/help-hint.svelte';
+	import ScrollView from '$lib/components/scroll-view.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -15,21 +20,45 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 	import { describeWorkspace, sortWorkspacesForCatalog } from './workspace-sorting';
 
 	const controller = getAppControllerContext();
+	const emptyAvatarCatalogState: CachedResourceState<WorkspaceAvatarCatalogEntry[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
 
 	let selectedWorkspacePath = $state(page.url.searchParams.get('path') ?? '');
-	let avatars = $state<Awaited<ReturnType<typeof controller.runtimeStore.listWorkspaceAvatarCatalog>>>([]);
-	let avatarLoading = $state(false);
 	let selectedAvatar = $state('default');
 	let createBusy = $state(false);
 	let copyDialogOpen = $state(false);
+	let copyBusy = $state(false);
 	let copyAvatarDraft = $state('');
+	let detailsDialogOpen = $state(false);
 
 	const sortedWorkspaces = $derived(
 		sortWorkspacesForCatalog(controller.runtimeState.workspaces, controller.runtimeState.recentWorkspaces),
 	);
 
+	const preferredWorkspace = $derived(
+		sortedWorkspaces.find((workspace) => workspace.path !== '~/') ?? sortedWorkspaces[0] ?? null,
+	);
 	const selectedWorkspace = $derived(
-		sortedWorkspaces.find((workspace) => workspace.path === selectedWorkspacePath) ?? sortedWorkspaces[0] ?? null,
+		sortedWorkspaces.find((workspace) => workspace.path === selectedWorkspacePath) ?? preferredWorkspace ?? null,
+	);
+	const selectedWorkspaceAvatarCatalog = $derived(
+		selectedWorkspace
+			? (controller.runtimeState.workspaceAvatarCatalogByPath[selectedWorkspace.path] ?? emptyAvatarCatalogState)
+			: emptyAvatarCatalogState,
+	);
+	const avatars = $derived(selectedWorkspaceAvatarCatalog.data);
+	const avatarLoading = $derived(selectedWorkspaceAvatarCatalog.loading && !selectedWorkspaceAvatarCatalog.loaded);
+	const avatarSurfaceState = $derived(
+		resolveAsyncSurfaceState({
+			loading: avatarLoading,
+			hasData: avatars.length > 0,
+		}),
 	);
 
 	const selectedAvatarEntry = $derived(
@@ -41,30 +70,18 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 		await goto(`/workspaces?path=${encodeURIComponent(path)}`, { replaceState: true, noScroll: true, keepFocus: true });
 	};
 
-	const loadAvatars = async (workspacePath: string): Promise<void> => {
-		avatarLoading = true;
-		try {
-			avatars = await controller.runtimeStore.listWorkspaceAvatarCatalog(workspacePath);
-			if (!avatars.some((avatar) => avatar.nickname === selectedAvatar)) {
-				selectedAvatar = avatars[0]?.nickname ?? 'default';
-			}
-		} finally {
-			avatarLoading = false;
-		}
-	};
-
 	const startAvatarSession = async (): Promise<void> => {
 		if (!selectedWorkspace) {
 			return;
 		}
 		createBusy = true;
 		try {
-			await controller.runtimeStore.createSession({
+			const session = await controller.runtimeStore.createSession({
 				cwd: selectedWorkspace.path,
 				avatar: selectedAvatar,
 				autoStart: true,
 			});
-			await controller.refreshBootstrap();
+			await goto(`/runtime/${encodeURIComponent(session.id)}/attention`);
 		} finally {
 			createBusy = false;
 		}
@@ -75,13 +92,29 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 			return;
 		}
 		if (!selectedWorkspacePath || !sortedWorkspaces.some((workspace) => workspace.path === selectedWorkspacePath)) {
-			void syncWorkspaceSelection(sortedWorkspaces[0]!.path);
+			void syncWorkspaceSelection(preferredWorkspace?.path ?? sortedWorkspaces[0]!.path);
 		}
 	});
 
 	$effect(() => {
-		if (selectedWorkspace?.path) {
-			void loadAvatars(selectedWorkspace.path);
+		const workspacePath = selectedWorkspace?.path;
+		if (!workspacePath) {
+			return;
+		}
+		const release = controller.runtimeStore.retainWorkspaceAvatarCatalog(workspacePath);
+		void controller.runtimeStore.hydrateWorkspaceAvatarCatalog(workspacePath);
+		return () => {
+			release();
+		};
+	});
+
+	$effect(() => {
+		if (!avatars.length) {
+			selectedAvatar = 'default';
+			return;
+		}
+		if (!avatars.some((avatar) => avatar.nickname === selectedAvatar)) {
+			selectedAvatar = avatars[0]?.nickname ?? 'default';
 		}
 	});
 </script>
@@ -145,30 +178,33 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 				<div class="grid gap-3">
 					<div class="flex items-center justify-between gap-3">
 						<div>
-							<div class="text-sm font-semibold">Avatar catalog</div>
-							<div class="text-xs text-muted-foreground">
-								Select an existing avatar. Copy creates a full workspace-local duplicate for editing.
+							<div class="flex items-center gap-2 text-sm font-semibold">
+								<span>Avatar catalog</span>
+								<HelpHint textContext="workspace avatar catalog selects an existing avatar and copy creates a workspace-local duplicate.">
+									<p>Select an existing avatar. Copy creates a full workspace-local duplicate for editing.</p>
+								</HelpHint>
 							</div>
 						</div>
-						<Button
-							variant="outline"
-							size="icon-sm"
-							onclick={() => {
-								copyAvatarDraft = `${selectedAvatar}-copy`;
-								copyDialogOpen = true;
-							}}
-							disabled={!selectedWorkspace || !selectedAvatarEntry}
-							aria-label="Copy avatar"
-							title="Copy avatar"
-						>
-							<CopyIcon class="size-4" />
-						</Button>
 					</div>
 
-					<div class="grid gap-2 md:grid-cols-2">
-						{#if avatarLoading}
-							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Loading avatars…</div>
-						{:else}
+					<AsyncSurface
+						state={avatarSurfaceState}
+						emptyLoadingLabel="Loading avatars…"
+						loadingOverlayLabel="Refreshing avatars…"
+					>
+						{#snippet empty()}
+							{#if selectedWorkspaceAvatarCatalog.error}
+								<div class="rounded-2xl border border-dashed p-4 text-sm text-destructive">
+									{selectedWorkspaceAvatarCatalog.error}
+								</div>
+							{:else}
+								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+									No avatars available for this workspace.
+								</div>
+							{/if}
+						{/snippet}
+
+						<div class="grid gap-2 md:grid-cols-2">
 							{#each avatars as avatar (avatar.nickname)}
 								<button
 									class={`rounded-2xl border p-4 text-left transition-colors hover:bg-muted/40 ${
@@ -189,24 +225,49 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 									</div>
 								</button>
 							{/each}
-						{/if}
-					</div>
+						</div>
+					</AsyncSurface>
 				</div>
 
 				<div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-4">
 					<div class="flex items-start gap-3">
 						<SparklesIcon class="mt-0.5 size-5 text-primary" />
 						<div>
-							<div class="text-sm font-semibold">Stable session</div>
-							<div class="text-xs text-muted-foreground">
-								Session id remains stable for the same workspace and avatar pair.
+							<div class="flex items-center gap-2 text-sm font-semibold">
+								<span>Stable session</span>
+								<HelpHint textContext="stable avatar sessions keep the same session id for the same workspace avatar pair.">
+									<p>Session id remains stable for the same workspace and avatar pair.</p>
+								</HelpHint>
 							</div>
 						</div>
 					</div>
-					<Button onclick={() => void startAvatarSession()} disabled={!selectedWorkspace || createBusy}>
-						<PlayIcon class="size-4" />
-						{createBusy ? 'Starting…' : 'Start avatar'}
-					</Button>
+					<div class="flex flex-wrap items-center gap-2">
+						<AdaptiveIconButton
+							label="Details"
+							tooltip="View avatar source paths"
+							disabled={!selectedAvatarEntry}
+							onclick={() => {
+								detailsDialogOpen = true;
+							}}
+						>
+							<EyeIcon class="size-4" />
+						</AdaptiveIconButton>
+						<AdaptiveIconButton
+							label="Copy avatar"
+							tooltip="Create a workspace-local full copy"
+							disabled={!selectedWorkspace || !selectedAvatarEntry}
+							onclick={() => {
+								copyAvatarDraft = `${selectedAvatar}-copy`;
+								copyDialogOpen = true;
+							}}
+						>
+							<CopyIcon class="size-4" />
+						</AdaptiveIconButton>
+						<Button onclick={() => void startAvatarSession()} disabled={!selectedWorkspace || createBusy}>
+							<PlayIcon class="size-4" />
+							{createBusy ? 'Starting…' : 'Start avatar'}
+						</Button>
+					</div>
 				</div>
 			</CardContent>
 		</Card>
@@ -267,18 +328,64 @@ import ScrollView from '$lib/components/scroll-view.svelte';
 					if (!selectedWorkspace || !selectedAvatarEntry || !copyAvatarDraft.trim()) {
 						return;
 					}
-					const created = await controller.runtimeStore.copyWorkspaceAvatar({
-						workspacePath: selectedWorkspace.path,
-						sourceAvatar: selectedAvatarEntry.nickname,
-						targetAvatar: copyAvatarDraft,
-					});
-					selectedAvatar = created.nickname;
-					copyDialogOpen = false;
-					await loadAvatars(selectedWorkspace.path);
+					copyBusy = true;
+					selectedAvatar = copyAvatarDraft.trim();
+					try {
+						const created = await controller.runtimeStore.copyWorkspaceAvatar({
+							workspacePath: selectedWorkspace.path,
+							sourceAvatar: selectedAvatarEntry.nickname,
+							targetAvatar: copyAvatarDraft,
+						});
+						selectedAvatar = created.nickname;
+						copyDialogOpen = false;
+					} finally {
+						copyBusy = false;
+					}
 				}}
+				disabled={copyBusy}
 			>
-				Copy avatar
+				{copyBusy ? 'Copying…' : 'Copy avatar'}
 			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={detailsDialogOpen}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>Avatar details</Dialog.Title>
+			<Dialog.Description>
+				Objective catalog facts for the currently selected avatar.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		{#if selectedAvatarEntry}
+			<div class="grid gap-3 text-sm">
+				<div class="rounded-2xl border bg-muted/30 p-4">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Nickname</div>
+					<div class="mt-2 font-semibold">{selectedAvatarEntry.nickname}</div>
+				</div>
+				<div class="rounded-2xl border bg-muted/30 p-4">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Scope</div>
+					<div class="mt-2">{selectedAvatarEntry.sourceScope}</div>
+				</div>
+				<div class="rounded-2xl border bg-muted/30 p-4">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Effective path</div>
+					<div class="mt-2 break-all font-medium">{selectedAvatarEntry.effectivePath}</div>
+				</div>
+				<div class="rounded-2xl border bg-muted/30 p-4">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Workspace path</div>
+					<div class="mt-2 break-all">{selectedAvatarEntry.workspacePath}</div>
+				</div>
+				<div class="rounded-2xl border bg-muted/30 p-4">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Global path</div>
+					<div class="mt-2 break-all">{selectedAvatarEntry.globalPath}</div>
+				</div>
+			</div>
+		{/if}
+
+		<Dialog.Footer>
+			<Button variant="ghost" onclick={() => (detailsDialogOpen = false)}>Close</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

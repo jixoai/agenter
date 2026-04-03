@@ -11,6 +11,9 @@ const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(file
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  optimizeDeps: {
+    include: ['@lucide/svelte/icons/message-square-more', 'lit/static-html.js']
+  },
   test: {
     expect: {
       requireAssertions: true

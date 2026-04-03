@@ -16,6 +16,7 @@
 		fallbackActorLabel,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
+	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
 
 	import TerminalSystemSurface from './terminal-system-surface.svelte';
 	import type {
@@ -594,6 +595,7 @@
 	{terminalsState}
 	{selectedTerminalId}
 	{selectedTerminal}
+	terminalViewportComponent={TerminalViewHost}
 	terminalGrantsState={selectedTerminalGrantsState}
 	terminalApprovalsState={selectedTerminalApprovalsState}
 	terminalActivityState={selectedTerminalActivityState}

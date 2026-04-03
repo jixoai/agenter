@@ -5,10 +5,14 @@
 	import ShieldUserIcon from '@lucide/svelte/icons/shield-user';
 	import TerminalSquareIcon from '@lucide/svelte/icons/terminal-square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
-	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
+	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
+	import HelpHint from '$lib/components/web-components/help-hint.svelte';
+	import ToolInvocationCard from '$lib/components/web-components/tool-invocation-card.svelte';
+	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -23,6 +27,7 @@
 		terminalsState,
 		selectedTerminalId,
 		selectedTerminal,
+		terminalViewportComponent,
 		terminalGrantsState,
 		terminalApprovalsState,
 		terminalActivityState,
@@ -49,21 +54,28 @@
 	let createProcessKind = $state('shell');
 	let createCwd = $state('');
 	let createBusy = $state(false);
-	let createError = $state<string | null>(null);
+	let createError: string | null = $state(null);
 	let deleteBusy = $state(false);
-	let actionToolTab = $state<'write' | 'read'>('write');
-	let sidePanelTab = $state<'actions' | 'users'>('actions');
+	let actionToolTab: 'write' | 'read' = $state('write');
+	let sidePanelTab: 'actions' | 'users' = $state('actions');
 	let grantParticipantId = $state('');
-	let grantRole = $state<'admin' | 'writer' | 'requester' | 'readonly'>('writer');
+	let grantRole: 'admin' | 'writer' | 'requester' | 'readonly' = $state('writer');
 	let grantBusy = $state(false);
-	let grantError = $state<string | null>(null);
+	let grantError: string | null = $state(null);
 	let writeText = $state('');
 	let writeBusy = $state(false);
-	let readMode = $state<'auto' | 'diff' | 'snapshot'>('snapshot');
+	let readMode: 'auto' | 'diff' | 'snapshot' = $state('snapshot');
 	let readBusy = $state(false);
 
 	const actionEvents = $derived.by(() => [...terminalActivityState.data].reverse());
+	const actionsSurfaceState = $derived(
+		resolveAsyncSurfaceState({
+			loading: terminalActivityState.loading && !terminalActivityState.loaded,
+			hasData: actionEvents.length > 0,
+		}),
+	);
 	const effectiveCallerToken = $derived(selectedCallerToken ?? callAsOptions[0]?.accessToken ?? null);
+	const TerminalViewport = $derived(terminalViewportComponent);
 
 	const formatTimestamp = (value?: number): string => {
 		if (!value) {
@@ -175,6 +187,66 @@
 			readBusy = false;
 		}
 	};
+
+	const resolveActionToolName = (kind: string): string => {
+		if (kind === 'terminal_write') {
+			return 'terminal.write';
+		}
+		if (kind === 'terminal_read') {
+			return 'terminal.read';
+		}
+		return kind;
+	};
+
+	const toActionInvocation = (
+		event: TerminalSystemSurfaceProps['terminalActivityState']['data'][number],
+	): ToolInvocationView => {
+		const detailText = stringifyDetail(event.detail);
+		if (event.kind === 'terminal_read') {
+			return {
+				invocationId: `${event.terminalId}:${event.id}`,
+				toolName: resolveActionToolName(event.kind),
+				status: 'success',
+				call: {
+					value:
+						event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)
+							? { mode: (event.detail as { mode?: string }).mode ?? 'snapshot' }
+							: { mode: 'snapshot' },
+				},
+				result: {
+					value: event.detail ?? event.content,
+					rawText: detailText ?? event.content,
+				},
+				meta: {
+					title: event.title,
+					actorId: event.actorId,
+				},
+				startedAt: event.createdAt,
+				finishedAt: event.createdAt,
+			};
+		}
+		return {
+			invocationId: `${event.terminalId}:${event.id}`,
+			toolName: resolveActionToolName(event.kind),
+			status: 'success',
+			call: {
+				value:
+					event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)
+						? {
+								text: event.content,
+								...(event.detail as Record<string, unknown>),
+							}
+						: { text: event.content },
+				rawText: event.content,
+			},
+			meta: {
+				title: event.title,
+				actorId: event.actorId,
+			},
+			startedAt: event.createdAt,
+			finishedAt: event.createdAt,
+		};
+	};
 </script>
 
 <div class="grid h-full gap-4 p-4 xl:grid-cols-[18rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)_24rem] md:p-6">
@@ -183,8 +255,11 @@
 			<div class="flex items-center justify-between gap-3">
 				<div class="min-w-0">
 					<CardTitle>Terminals</CardTitle>
-					<CardDescription>
-						terminal-system is global and orthogonal. Focus belongs to a seat, not the terminal object.
+					<CardDescription class="flex items-center gap-2">
+						<span>terminal-system is global and orthogonal.</span>
+						<HelpHint textContext="terminal-system focus belongs to terminal seats, not the terminal object.">
+							<p>Focus is a seat-level fact. Multiple AvatarSessions can watch or operate the same terminal.</p>
+						</HelpHint>
 					</CardDescription>
 				</div>
 				<Button
@@ -253,17 +328,7 @@
 				</Button>
 			</div>
 			{#if routeNotice}
-				<div
-					class={`rounded-xl border px-3 py-2 text-sm ${
-						routeNotice.tone === 'destructive'
-							? 'border-destructive/40 bg-destructive/5 text-destructive'
-							: routeNotice.tone === 'warning'
-								? 'border-amber-300 bg-amber-50 text-amber-900'
-								: 'border-border bg-muted/40 text-foreground'
-					}`}
-				>
-					{routeNotice.message}
-				</div>
+				<NoticeBanner tone={routeNotice.tone} message={routeNotice.message} />
 			{/if}
 		</CardHeader>
 		<CardContent class="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] p-0">
@@ -271,7 +336,7 @@
 				{#if selectedTerminal}
 					<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
 						<div class="min-h-0 rounded-2xl border bg-black p-2 text-white">
-							<TerminalViewHost
+							<TerminalViewport
 								class="block h-full min-h-[18rem] w-full"
 								terminalId={selectedTerminal.terminalId}
 								terminalTitle={selectedTerminal.title}
@@ -369,11 +434,14 @@
 
 	<Card class="min-h-0 min-w-0 py-0 xl:col-span-2 2xl:col-span-1">
 		<CardHeader class="gap-2 border-b">
-			<CardTitle>Actions + Users</CardTitle>
-			<CardDescription>
-				Actions are terminal tool facts. Users are seats, grants, approvals, and per-seat focus.
-			</CardDescription>
-		</CardHeader>
+				<CardTitle>Actions + Users</CardTitle>
+				<CardDescription class="flex items-center gap-2">
+					<span>Actions are tool facts. Users are seats, grants, approvals, and per-seat focus.</span>
+					<HelpHint textContext="terminal actions render as tool facts while users owns seat authorization and per-seat focus.">
+						<p>Actions render through the shared tool invocation surface so reads and writes follow one factual shape.</p>
+					</HelpHint>
+				</CardDescription>
+			</CardHeader>
 		<CardContent class="min-h-0 p-0">
 			<Tabs bind:value={sidePanelTab} class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 				<TabsList class="mx-4 mt-4 grid grid-cols-2">
@@ -382,20 +450,25 @@
 				</TabsList>
 
 				<TabsContent value="actions" class="min-h-0">
-					<ScrollView class="h-full" contentClass="grid gap-3 p-4">
-						{#if terminalActivityState.loading && !terminalActivityState.loaded}
-							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-								Loading terminal actions…
-							</div>
-						{:else if terminalActivityState.error && terminalActivityState.data.length === 0}
-							<div class="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-								{terminalActivityState.error}
-							</div>
-						{:else if actionEvents.length === 0}
-							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-								No terminal actions yet.
-							</div>
-						{:else}
+					<AsyncSurface
+						class="h-full"
+						state={actionsSurfaceState}
+						emptyLoadingLabel="Loading terminal actions…"
+						loadingOverlayLabel="Refreshing terminal actions…"
+					>
+						{#snippet empty()}
+							{#if terminalActivityState.error && terminalActivityState.data.length === 0}
+								<div class="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+									{terminalActivityState.error}
+								</div>
+							{:else}
+								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+									No terminal actions yet.
+								</div>
+							{/if}
+						{/snippet}
+
+						<ScrollView class="h-full" contentClass="grid gap-3 p-4">
 							{#each actionEvents as event (event.id)}
 								<div class="grid gap-3 rounded-2xl border p-3">
 									<div class="flex items-center gap-3">
@@ -411,21 +484,15 @@
 													event.terminalId}
 											</div>
 											<div class="truncate text-xs text-muted-foreground">
-												{event.kind} · {formatTimestamp(event.createdAt)}
+												{event.title} · {formatTimestamp(event.createdAt)}
 											</div>
 										</div>
 									</div>
-									<div class="rounded-xl border bg-muted/40 p-3">
-										<div class="text-sm font-semibold">{event.title}</div>
-										<pre class="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{event.content}</pre>
-										{#if stringifyDetail(event.detail)}
-											<pre class="mt-2 whitespace-pre-wrap break-words rounded-lg bg-background p-2 text-[11px] text-muted-foreground">{stringifyDetail(event.detail)}</pre>
-										{/if}
-									</div>
+									<ToolInvocationCard invocation={toActionInvocation(event)} />
 								</div>
 							{/each}
-						{/if}
-					</ScrollView>
+						</ScrollView>
+					</AsyncSurface>
 				</TabsContent>
 
 				<TabsContent value="users" class="min-h-0">
@@ -458,9 +525,7 @@
 								Grant seat
 							</Button>
 							{#if grantError}
-								<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-									{grantError}
-								</div>
+								<NoticeBanner tone="destructive" message={grantError} />
 							{/if}
 						</div>
 

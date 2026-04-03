@@ -21,6 +21,7 @@ export interface WebChatComposerRenderProps {
   disabled: boolean;
   sending: boolean;
   connectionState: WebChatConnectionState;
+  hintText: string;
   onSubmit: (payload: WebChatComposerSubmitPayload) => Promise<void>;
 }
 
@@ -46,16 +47,26 @@ export interface WebChatSocketLike {
 
 export type WebChatSocketFactory = (url: string) => WebChatSocketLike;
 
-export interface WebChatChannelState {
-  connectionState: WebChatConnectionState;
-  messages: WebChatMessage[];
-  transcriptMessages: WebChatMessage[];
-  focused: boolean;
-  hasMoreBefore: boolean;
-  loadingInitial: boolean;
-  loadingMore: boolean;
-  errorMessage: string | null;
-  loadOlder: () => void;
-  sendText: (text: string) => Promise<void>;
-  editMessage: (messageId: string, text: string) => Promise<void>;
+export interface WebChatViewBaseProps {
+  channel: WebChatChannel | null;
+  initialMessages?: WebChatMessage[];
+  disabled?: boolean;
+  class?: string;
+  showHeader?: boolean;
+  emptyTitle?: string;
+  emptyMessage?: string;
+  routeNotice?: WebChatNotice | null;
+  socketFactory?: WebChatSocketFactory;
+}
+
+export interface WebChatRootProps extends WebChatViewBaseProps {
+  submitMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
+  latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
+  latestVisibleMessageIdHandler?: (messageId: string | null) => void;
+}
+
+export interface WebChatViewHostProps extends WebChatViewBaseProps {
+  onSendMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
+  onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
+  onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
 }
