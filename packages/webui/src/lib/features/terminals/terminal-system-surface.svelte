@@ -288,11 +288,14 @@
 								selectedTerminalId === terminal.terminalId ? 'bg-primary/5' : ''
 							}`}
 							onclick={() => onSelectTerminal(terminal.terminalId)}
-							aria-label={`Select terminal ${terminal.title ?? terminal.terminalId}`}
+							aria-label={`Select terminal ${terminal.terminalId}`}
 						>
 							<div class="flex items-center justify-between gap-3">
 								<div class="min-w-0">
-									<div class="truncate text-sm font-semibold">{terminal.title || terminal.terminalId}</div>
+									<div class="truncate text-sm font-semibold">{terminal.terminalId}</div>
+									{#if terminal.title && terminal.title !== terminal.terminalId}
+										<div class="truncate text-[11px] text-muted-foreground">{terminal.title}</div>
+									{/if}
 									<div class="truncate text-[11px] text-muted-foreground">{terminal.cwd}</div>
 								</div>
 								<div class="rounded-full border px-2 py-1 text-[11px]">{terminal.status}</div>
@@ -311,10 +314,13 @@
 		<CardHeader class="gap-2 border-b">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div class="min-w-0">
-					<CardTitle>{selectedTerminal?.title ?? 'Terminal view'}</CardTitle>
+					<CardTitle>{selectedTerminal?.terminalId ?? 'Terminal view'}</CardTitle>
 					<CardDescription>
 						{selectedTerminal?.cwd ?? 'Select one terminal to inspect its shared runtime.'}
 					</CardDescription>
+					{#if selectedTerminal?.title && selectedTerminal.title !== selectedTerminal.terminalId}
+						<div class="text-xs text-muted-foreground">{selectedTerminal.title}</div>
+					{/if}
 				</div>
 				<Button
 					variant="outline"
@@ -652,18 +658,36 @@
 				</Dialog.Description>
 			</Dialog.Header>
 
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Terminal id</span>
-				<Input bind:value={createTerminalId} placeholder="global-ops" />
-			</label>
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Process kind</span>
-				<Input bind:value={createProcessKind} placeholder="shell" />
-			</label>
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Absolute cwd</span>
-				<Input bind:value={createCwd} placeholder="/Users/kzf/Dev/GitHub/jixoai-labs/agenter" />
-			</label>
+			<div class="grid gap-2">
+				<label class="text-sm font-medium" for="create-terminal-id">Terminal id</label>
+				<Input
+					id="create-terminal-id"
+					name="terminalId"
+					aria-label="Terminal id"
+					bind:value={createTerminalId}
+					placeholder="global-ops"
+				/>
+			</div>
+			<div class="grid gap-2">
+				<label class="text-sm font-medium" for="create-terminal-process-kind">Process kind</label>
+				<Input
+					id="create-terminal-process-kind"
+					name="processKind"
+					aria-label="Process kind"
+					bind:value={createProcessKind}
+					placeholder="shell"
+				/>
+			</div>
+			<div class="grid gap-2">
+				<label class="text-sm font-medium" for="create-terminal-cwd">Absolute cwd</label>
+				<Input
+					id="create-terminal-cwd"
+					name="cwd"
+					aria-label="Absolute cwd"
+					bind:value={createCwd}
+					placeholder="/Users/kzf/Dev/GitHub/jixoai-labs/agenter"
+				/>
+			</div>
 			{#if createError}
 				<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
 					{createError}

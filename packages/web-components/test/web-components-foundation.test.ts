@@ -5,8 +5,10 @@ import {
   DEFAULT_JSON_VIEWER_MODE,
   JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY,
   MARKDOWN_DOCUMENT_TAG,
+  TOOL_INVOCATION_CARD_TAG,
   defineAsyncSurface,
   defineMarkdownDocument,
+  defineToolInvocationCard,
   getGlobalJsonViewerModeSnapshot,
   normalizeMarkdownCodeLanguage,
   resolveAsyncSurfaceState,
@@ -52,5 +54,29 @@ describe("Feature: web-components foundation", () => {
 
     expect(customElements.get(ASYNC_SURFACE_TAG)).toBeDefined();
     expect(customElements.get(MARKDOWN_DOCUMENT_TAG)).toBeDefined();
+  });
+
+  test("Scenario: Given a human-readable tool title in invocation metadata When the shared card renders Then the visible heading stays user-facing instead of collapsing to the raw tool id", async () => {
+    defineToolInvocationCard();
+
+    const element = document.createElement(TOOL_INVOCATION_CARD_TAG) as HTMLElement & {
+      invocation: unknown;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    element.invocation = {
+      invocationId: "invoke-1",
+      toolName: "terminal.read",
+      status: "success",
+      meta: { title: "Terminal read" },
+      call: { value: { mode: "snapshot" } },
+    };
+    document.body.append(element);
+
+    await element.updateComplete;
+
+    const shadowText = element.shadowRoot?.textContent?.replace(/\s+/gu, " ").trim() ?? "";
+    expect(shadowText).toContain("Terminal read");
+    expect(shadowText).toContain("terminal.read");
   });
 });

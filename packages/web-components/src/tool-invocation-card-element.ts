@@ -59,6 +59,11 @@ const hasVisiblePayload = (payload: ToolInvocationPayloadView | null | undefined
 const renderJsonViewer = (payload: ToolInvocationPayloadView) =>
   staticHtml`<${jsonViewerTag} .value=${payload.value} .rawText=${payload.rawText ?? ""}></${jsonViewerTag}>`;
 
+const resolveVisibleTitle = (invocation: ToolInvocationView): string => {
+  const title = invocation.meta?.title;
+  return typeof title === "string" && title.trim().length > 0 ? title.trim() : invocation.toolName;
+};
+
 export class ToolInvocationCardElement extends LitElement {
   static properties = {
     invocation: { attribute: false },
@@ -83,7 +88,14 @@ export class ToolInvocationCardElement extends LitElement {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: space-between;
       gap: 0.5rem;
+    }
+
+    .heading {
+      display: grid;
+      gap: 0.15rem;
+      min-width: 0;
     }
 
     .title {
@@ -93,6 +105,21 @@ export class ToolInvocationCardElement extends LitElement {
       font-size: 0.9375rem;
       font-weight: 600;
       color: hsl(var(--foreground, 222 47% 11%));
+    }
+
+    .tool-name {
+      color: hsl(var(--muted-foreground, 215 16% 47%));
+      font-size: 0.75rem;
+      line-height: 1.2;
+    }
+
+    .meta {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-left: auto;
     }
 
     .status-dot {
@@ -168,25 +195,31 @@ export class ToolInvocationCardElement extends LitElement {
     if (!invocation) {
       return null;
     }
+    const visibleTitle = resolveVisibleTitle(invocation);
     const visibleCall = hasVisiblePayload(invocation.call) ? invocation.call : null;
     const visibleResult = hasVisiblePayload(invocation.result) ? invocation.result : null;
     return html`
       <article class="card">
         <header class="header">
-          <div class="title">
-            <span class="status-dot"></span>
-            <span>${invocation.toolName}</span>
+          <div class="heading">
+            <div class="title">
+              <span class="status-dot"></span>
+              <span>${visibleTitle}</span>
+            </div>
+            ${visibleTitle !== invocation.toolName ? html`<div class="tool-name">${invocation.toolName}</div>` : null}
           </div>
-          <span class=${statusTone(invocation.status)}>${statusLabel(invocation.status)}</span>
-          ${invocation.startedAt
-            ? html`<span class="timestamp"
-                >${new Date(invocation.startedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}</span
-              >`
-            : null}
+          <div class="meta">
+            <span class=${statusTone(invocation.status)}>${statusLabel(invocation.status)}</span>
+            ${invocation.startedAt
+              ? html`<span class="timestamp"
+                  >${new Date(invocation.startedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}</span
+                >`
+              : null}
+          </div>
         </header>
 
         ${invocation.error ? html`<div class="error">${invocation.error}</div>` : null}

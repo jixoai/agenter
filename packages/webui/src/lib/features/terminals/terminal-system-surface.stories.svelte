@@ -20,9 +20,10 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const terminalSelectName = /Select terminal term-story/i;
 		const requestedWrite = 'echo requester approval';
 		const leasedWrite = 'echo requester after lease';
-		await expect(canvas.getByRole('button', { name: /Select terminal Ops terminal/i })).toBeInTheDocument();
+		await expect(canvas.getByRole('button', { name: terminalSelectName })).toBeInTheDocument();
 
 		await userEvent.click(canvas.getByRole('tab', { name: 'Users' }));
 		await userEvent.selectOptions(canvas.getByLabelText('Grant actor'), 'auth:wallet_evm');

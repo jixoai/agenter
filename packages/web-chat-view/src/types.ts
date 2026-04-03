@@ -50,11 +50,14 @@ export type WebChatSocketFactory = (url: string) => WebChatSocketLike;
 export interface WebChatViewBaseProps {
   channel: WebChatChannel | null;
   initialMessages?: WebChatMessage[];
+  initialSnapshotResolved?: boolean;
   disabled?: boolean;
   class?: string;
   showHeader?: boolean;
   emptyTitle?: string;
   emptyMessage?: string;
+  emptyTranscriptTitle?: string;
+  emptyTranscriptMessage?: string;
   routeNotice?: WebChatNotice | null;
   socketFactory?: WebChatSocketFactory;
 }

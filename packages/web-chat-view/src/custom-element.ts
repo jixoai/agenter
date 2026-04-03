@@ -11,10 +11,13 @@ export const defineWebChatView = async (): Promise<void> => {
 export type WebChatViewElement = HTMLElement & {
   channel: import("./types").WebChatChannel | null;
   initialMessages: import("./types").WebChatMessage[];
+  initialSnapshotResolved: boolean;
   disabled: boolean;
   showHeader: boolean;
   emptyTitle: string;
   emptyMessage: string;
+  emptyTranscriptTitle: string;
+  emptyTranscriptMessage: string;
   routeNotice: import("./types").WebChatNotice | null;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;

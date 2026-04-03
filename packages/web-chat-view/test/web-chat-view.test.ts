@@ -379,6 +379,45 @@ describe("Feature: web-chat-view package", () => {
     expect(WebSocketMock.instances).toHaveLength(0);
   });
 
+  test("Scenario: Given an empty room snapshot already resolved When the host mounts before any websocket snapshot arrives Then the transcript shows the empty state instead of infinite loading", async () => {
+    mountHost({
+      socketFactory,
+      channel: {
+        chatId: "chat-empty",
+        kind: "room",
+        title: "Empty room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+        transportUrl: "ws://localhost:7777/room/chat-empty?token=msgtok_admin",
+      },
+      initialMessages: [],
+      initialSnapshotResolved: true,
+      emptyTitle: "No room selected",
+      emptyMessage: "Choose a room first.",
+      emptyTranscriptTitle: "No room facts yet",
+      emptyTranscriptMessage: "Send the first message to begin.",
+    });
+
+    await vi.waitFor(() => {
+      expect(WebSocketMock.instances).toHaveLength(1);
+    });
+    flushSync();
+    await settleLitUpdates();
+
+    const rendered = readRenderedText(document.body);
+    expect(rendered).toContain("No room facts yet");
+    expect(rendered).toContain("Send the first message to begin.");
+    expect(rendered).not.toContain("Loading channel history...");
+  });
+
   test("Scenario: Given queued room messages without visibleAt When the transcript renders Then they stay visible in createdAt order without a pending strip", async () => {
     mountHost({
       channel: {

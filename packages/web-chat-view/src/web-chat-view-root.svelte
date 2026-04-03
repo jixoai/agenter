@@ -33,11 +33,14 @@
   let {
     channel,
     initialMessages = [],
+    initialSnapshotResolved = false,
     disabled = false,
     class: className = "",
     showHeader = true,
     emptyTitle = "No messages yet",
     emptyMessage = "Send a message to start this chat channel.",
+    emptyTranscriptTitle = emptyTitle,
+    emptyTranscriptMessage = emptyMessage,
     routeNotice = null,
     submitMessage,
     latestVisibleAssistantMessageIdHandler,
@@ -179,6 +182,7 @@
     transportUrl: string | null;
     factory: WebChatSocketFactory;
     seedMessages: WebChatMessage[];
+    initialSnapshotResolved: boolean;
   }): (() => void) | undefined => {
     messages = input.seedMessages;
     errorMessage = null;
@@ -197,7 +201,7 @@
       return undefined;
     }
 
-    loadingInitial = true;
+    loadingInitial = !input.initialSnapshotResolved && input.seedMessages.length === 0;
     connectionState = "connecting";
     let disposed = false;
     let localSocket: WebChatSocketLike | null = null;
@@ -380,6 +384,7 @@
       transportUrl,
       factory,
       seedMessages,
+      initialSnapshotResolved,
     });
   });
 
@@ -394,6 +399,14 @@
       return;
     }
     messages = mergeMessages(untrack(() => messages), normalizeMessageRecords(seedMessages));
+  });
+
+  $effect(() => {
+    const currentChatId = channel?.chatId;
+    if (!currentChatId || !initialSnapshotResolved || !loadingInitial) {
+      return;
+    }
+    loadingInitial = false;
   });
 
   $effect(() => {
@@ -529,8 +542,8 @@
               </div>
             {:else if transcriptMessages.length === 0}
               <div class="empty-state">
-                <h3>{emptyTitle}</h3>
-                <p>{emptyMessage}</p>
+                <h3>{emptyTranscriptTitle}</h3>
+                <p>{emptyTranscriptMessage}</p>
               </div>
             {:else}
               {#each transcriptMessages as message (message.messageId)}

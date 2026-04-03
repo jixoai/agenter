@@ -43,15 +43,19 @@
 </script>
 
 <svelte:element this={ASYNC_SURFACE_TAG} bind:this={element} class={className}>
-	{#if empty}
-		<div slot="empty">
-			{@render empty()}
-		</div>
+	{#if surfaceState === 'empty-idle'}
+		{#if empty}
+			<div slot="empty">
+				{@render empty()}
+			</div>
+		{/if}
+	{:else if surfaceState === 'empty-loading'}
+		{#if skeleton}
+			<div slot="skeleton">
+				{@render skeleton()}
+			</div>
+		{/if}
+	{:else}
+		{@render children?.()}
 	{/if}
-	{#if skeleton}
-		<div slot="skeleton">
-			{@render skeleton()}
-		</div>
-	{/if}
-	{@render children?.()}
 </svelte:element>

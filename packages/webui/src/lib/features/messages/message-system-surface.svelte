@@ -29,6 +29,7 @@
 		selectedRoomId,
 		selectedRoom,
 		initialMessages,
+		initialSnapshotResolved,
 		routeNotice,
 		readSeatCount,
 		readSeatTotal,
@@ -354,10 +355,13 @@
 				<WebChatViewHost
 					channel={selectedRoom}
 					{initialMessages}
+					{initialSnapshotResolved}
 					class="h-full"
 					showHeader={false}
 					emptyTitle="No room selected"
 					emptyMessage="Choose one room from the left rail or create a new room to begin."
+					emptyTranscriptTitle="No room facts yet"
+					emptyTranscriptMessage="Send the first message to begin this room."
 					{routeNotice}
 					onSendMessage={onSendMessage}
 					onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}

@@ -556,6 +556,7 @@
 	{selectedRoomId}
 	selectedRoom={selectedRoomProjection}
 	initialMessages={selectedRoomSnapshot?.items ?? []}
+	initialSnapshotResolved={selectedRoomSnapshotState.loaded}
 	routeNotice={chatNotice}
 	readSeatCount={roomReadSeatCount}
 	readSeatTotal={roomReadTotalSeatCount}

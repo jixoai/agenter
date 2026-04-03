@@ -54,6 +54,7 @@ export interface MessageSystemSurfaceProps {
 	selectedRoomId: string;
 	selectedRoom: GlobalRoomEntry | null;
 	initialMessages: GlobalRoomSnapshotOutput['items'];
+	initialSnapshotResolved: boolean;
 	routeNotice: WebChatNotice | null;
 	readSeatCount: number;
 	readSeatTotal: number;

@@ -7,7 +7,7 @@
 ## 2. Async surface DOM exclusivity
 
 - [x] 2.1 Update the Svelte `AsyncSurface` wrapper so only the active state payload is rendered into light DOM.
-- [ ] 2.2 Verify the hidden empty/skeleton copy no longer leaks into WebUI system-surface DOM.
+- [x] 2.2 Verify the hidden empty/skeleton copy no longer leaks into WebUI system-surface DOM.
 
 ## 3. Terminal activity visible-title contract
 
@@ -17,4 +17,4 @@
 ## 4. Acceptance verification
 
 - [x] 4.1 Run targeted shared-package tests and WebUI typecheck.
-- [ ] 4.2 Run WebUI DOM/E2E regression and desktop/mobile dogfooding against the repaired surfaces.
+- [x] 4.2 Run WebUI DOM/E2E regression and desktop/mobile dogfooding against the repaired surfaces.

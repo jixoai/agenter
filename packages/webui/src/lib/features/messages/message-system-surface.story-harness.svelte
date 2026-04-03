@@ -459,6 +459,7 @@
 		{selectedRoomId}
 		{selectedRoom}
 		initialMessages={selectedMessages}
+		initialSnapshotResolved={true}
 		{routeNotice}
 		{readSeatCount}
 		{readSeatTotal}
