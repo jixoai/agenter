@@ -18,3 +18,5 @@
 
 - `HelpHint` 的可定制 surface 至少包括 trigger 和 popup，并通过稳定 `part` 名称暴露。
 - `HelpHint` 的宿主必须反射 presentation fact，至少覆盖 `closed`、`passive-auto`、`active-open`，供外部 `::part(...)` 主题规则使用。
+- `HelpHint` 默认必须保持 `closed`；只有宿主显式启用一次性 onboarding 时，才允许进入 `passive-auto`。
+- `HelpHint` 的 hover / focus / click / 全局 `?` 可发现性不得依赖持久化 dismissal；持久化只约束显式 onboarding 的“仅一次”语义。

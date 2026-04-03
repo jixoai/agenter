@@ -1,9 +1,5 @@
-# persistent-help-hints Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the durable WebUI contract for contextual `?` help disclosures that onboard first-time users without permanently occupying layout space.
-
-## Requirements
 ### Requirement: WebUI contextual help SHALL use persistent `?` disclosures
 Panels and dialog headers that provide non-critical explanatory guidance SHALL expose that guidance through a reusable `?` help disclosure instead of always-visible helper text blocks. The default disclosure state SHALL remain quiet unless the host explicitly opts into onboarding behavior.
 

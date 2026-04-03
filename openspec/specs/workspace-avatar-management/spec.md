@@ -16,6 +16,13 @@ The Workspaces surface SHALL expose Avatar catalogs through the special global w
 - **THEN** the copied avatar appears in the visible catalog immediately without a manual page refresh
 - **THEN** the selection can move directly to the new avatar before the next route reload
 
+#### Scenario: Copy dialog submits reliably
+- **GIVEN** the operator opened the `Copy avatar` dialog and entered a valid target nickname
+- **WHEN** the operator activates the primary submit action with pointer or keyboard
+- **THEN** the system submits the copy exactly once
+- **THEN** the dialog closes after success
+- **THEN** the newly created avatar becomes the selected avatar in the visible catalog
+
 ### Requirement: Editing a global-source avatar inside a workspace SHALL fork by full copy
 When the user edits or copies a global-source avatar from inside a regular workspace, the system SHALL first create a full workspace-local copy and SHALL then apply future workspace-local edits to that copied avatar.
 
@@ -87,4 +94,3 @@ Room and terminal credentials for an AvatarSession SHALL be persisted in the loc
 - **WHEN** a room token or terminal token stored in the avatar-local `settings.local.json` fails validation
 - **THEN** the system keeps that stored credential record in place instead of deleting it automatically
 - **THEN** the same avatar-local file records that seat as `credential-invalid` until a fresh credential replaces it
-
