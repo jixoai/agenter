@@ -19,6 +19,16 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 - **THEN** that component still uses the shared `ScrollView` contract internally
 - **THEN** host applications do not reintroduce raw overflow to recover scrolling
 
+#### Scenario: Dialog management shell uses one detail scroll owner
+- **WHEN** a dialog contains a sidebar rail plus a stretchable detail stage
+- **THEN** the rail and detail stage each keep explicit scroll ownership boundaries
+- **THEN** the detail stage delegates its long content to one `ScrollView` instead of mixing multiple competing scroll containers
+
+#### Scenario: Runtime shell uses explicit primary and secondary scroll owners
+- **WHEN** a runtime page contains a primary stage and a secondary facts rail
+- **THEN** each stretchable column uses one explicit `ScrollView` owner
+- **THEN** outer layout wrappers remain responsible only for sizing and placement
+
 ### Requirement: ScrollView SHALL support static and virtual rendering
 The shared scrolling primitive SHALL support plain content scrolling and item virtualization through one durable component contract.
 
@@ -40,3 +50,4 @@ If raw overflow behavior remains necessary for implementation details, the excep
 #### Scenario: Static analysis review
 - **WHEN** new feature code introduces raw `overflow-*` scroll ownership
 - **THEN** verification flags it as a contract violation
+

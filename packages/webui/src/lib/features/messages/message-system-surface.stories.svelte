@@ -21,10 +21,13 @@
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await expect(canvas.getByRole('button', { name: /Ops bridge/i })).toBeInTheDocument();
+		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+		await expect(canvas.getByTestId('room-manage-rail')).toBeInTheDocument();
+		await expect(canvas.getByTestId('room-manage-stage')).toBeInTheDocument();
 		await userEvent.selectOptions(canvas.getByLabelText('Grant actor'), 'auth:wallet_evm');
 		await userEvent.selectOptions(canvas.getByLabelText('Grant role'), 'readonly');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
-		(canvas.getByRole('button', { name: 'Users' }) as HTMLButtonElement).click();
+			(canvas.getByRole('button', { name: /^Users/u }) as HTMLButtonElement).click();
 
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
@@ -58,6 +61,7 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 		await userEvent.selectOptions(canvas.getByLabelText('Grant actor'), 'session:reviewer');
 		await userEvent.selectOptions(canvas.getByLabelText('Grant role'), 'member');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();

@@ -16,18 +16,18 @@ The WebUI SHALL expose running-avatar detail through a secondary runtime shell t
 - **THEN** the application opens the same running-avatar detail shell model used by the secondary rail
 - **THEN** the detail behavior does not depend on which launcher initiated it
 
-### Requirement: Running-avatar detail SHALL expose flat runtime-specific peer tabs
-The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Former Devtools sub-tabs and `Settings` SHALL remain siblings at the same hierarchy level, and the default selected tab SHALL be `Attention`.
+### Requirement: Running-avatar detail SHALL use a primary runtime stage plus a secondary facts rail
+The runtime shell SHALL present the active tab content as the primary stage and SHALL keep linked systems, runtime facts, and auxiliary navigation in a visually quieter secondary rail.
 
-#### Scenario: Runtime peer tabs are visible at the same level
-- **WHEN** the user opens a running-avatar detail shell
-- **THEN** `Attention`, `Cycles`, `Systems`, `Observability`, and `Settings` are available as peer tabs in the same shell layer
-- **THEN** the user does not descend through a nested tab stack to reach technical runtime surfaces
+#### Scenario: Attention opens with a strong primary stage
+- **WHEN** the user opens the runtime shell on `Attention`
+- **THEN** the page shows a summary band plus a primary attention stage that explains the current runtime state
+- **THEN** linked systems and runtime facts remain available in a smaller secondary rail instead of competing as peer empty canvases
 
-#### Scenario: Attention is the default runtime tab
-- **WHEN** the user opens a running-avatar detail shell without an explicit tab
-- **THEN** the shell lands on `Attention` by default
-- **THEN** the most critical runtime surface is visible without an extra tab switch
+#### Scenario: Peer runtime tabs reuse the same shell hierarchy
+- **WHEN** the user switches to `Cycles`, `Systems`, `Observability`, or `Settings`
+- **THEN** the selected tab renders through the same primary-stage shell model
+- **THEN** the right rail remains secondary and does not become the dominant surface
 
 ### Requirement: Cycles tab SHALL surface the current running round as an active badge
 The `Cycles` tab SHALL display the current running cycle number as a badge. When the avatar is actively running, the badge background SHALL follow the latest cycle-kind icon color and SHALL render a breathing state.
@@ -41,6 +41,19 @@ The `Cycles` tab SHALL display the current running cycle number as a badge. When
 - **WHEN** the running-avatar detail shell is not currently executing a cycle but has prior cycle history
 - **THEN** the `Cycles` tab badge shows the latest known cycle number without a breathing state
 - **THEN** the user can still scan the current round index without mistaking it for active execution
+
+### Requirement: Running-avatar detail SHALL expose flat runtime-specific peer tabs
+The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Former Devtools sub-tabs and `Settings` SHALL remain siblings at the same hierarchy level, and the default selected tab SHALL be `Attention`.
+
+#### Scenario: Runtime peer tabs are visible at the same level
+- **WHEN** the user opens a running-avatar detail shell
+- **THEN** `Attention`, `Cycles`, `Systems`, `Observability`, and `Settings` are available as peer tabs in the same shell layer
+- **THEN** the user does not descend through a nested tab stack to reach technical runtime surfaces
+
+#### Scenario: Attention is the default runtime tab
+- **WHEN** the user opens a running-avatar detail shell without an explicit tab
+- **THEN** the shell lands on `Attention` by default
+- **THEN** the most critical runtime surface is visible without an extra tab switch
 
 ### Requirement: Running-avatar detail SHALL link out to global resource pages instead of duplicating them
 The running-avatar detail shell SHALL NOT duplicate the global `Chats` or `Terminals` browsing surfaces, and it SHALL use explicit links or source jumps when the user needs to inspect a room or terminal.

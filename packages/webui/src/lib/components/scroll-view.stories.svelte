@@ -14,6 +14,7 @@
 
 	const staticItems = Array.from({ length: 24 }, (_, index) => `Static item ${index + 1}`);
 	const virtualItems = Array.from({ length: 120 }, (_, index) => `Virtual item ${index + 1}`);
+	const sparseItems = ['Overview', 'Users', 'Access'];
 
 	const queryViewport = (canvasElement: HTMLElement): HTMLElement => {
 		const viewport = canvasElement.querySelector<HTMLElement>('[data-scroll-view-viewport]');
@@ -42,6 +43,28 @@
 		<ScrollView class="h-full" contentClass="grid gap-2 p-3">
 			{#each staticItems as itemLabel}
 				<div class="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{itemLabel}</div>
+			{/each}
+		</ScrollView>
+	</div>
+</Story>
+
+<Story
+	name="Sparse grid content stays top aligned"
+	asChild
+	play={async ({ canvasElement }) => {
+		const buttons = Array.from(canvasElement.querySelectorAll<HTMLButtonElement>('button'));
+		const heights = buttons.map((button) => button.getBoundingClientRect().height);
+
+		await expect(heights).toHaveLength(3);
+		await expect(Math.max(...heights)).toBeLessThan(72);
+	}}
+>
+	<div class="h-80 w-80 rounded-xl border">
+		<ScrollView class="h-full" contentClass="grid gap-2 p-3">
+			{#each sparseItems as label}
+				<button class="rounded-lg border bg-muted/40 px-3 py-3 text-left text-sm font-medium">
+					{label}
+				</button>
 			{/each}
 		</ScrollView>
 	</div>

@@ -142,7 +142,9 @@ test.describe("Feature: Svelte system surfaces", () => {
       .poll(
         async () =>
           await page
-            .locator("agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']")
+            .locator(
+              "agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']",
+            )
             .count(),
         { timeout: 15_000 },
       )
@@ -153,7 +155,9 @@ test.describe("Feature: Svelte system surfaces", () => {
       .poll(
         async () =>
           await page
-            .locator("agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']")
+            .locator(
+              "agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']",
+            )
             .count(),
         { timeout: 15_000 },
       )
@@ -328,6 +332,20 @@ test.describe("Feature: Svelte system surfaces", () => {
     await clickStable(page.getByRole("button", { name: "Manage room" }));
     const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
     await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+    await expect(manageRoomDialog.getByTestId("room-manage-shell")).toBeVisible({ timeout: 15_000 });
+    await expect(manageRoomDialog.getByTestId("room-manage-rail")).toBeVisible({ timeout: 15_000 });
+    await expect(manageRoomDialog.getByTestId("room-manage-stage")).toBeVisible({ timeout: 15_000 });
+    if ((page.viewportSize()?.width ?? 0) >= 768) {
+      const railButtonHeights = await manageRoomDialog
+        .getByTestId("room-manage-rail")
+        .locator("button[aria-pressed]")
+        .evaluateAll((buttons) =>
+          buttons
+            .map((button) => button.getBoundingClientRect().height)
+            .filter((height) => height > 0),
+        );
+      expect(Math.max(...railButtonHeights)).toBeLessThan(96);
+    }
     await activateUntil(manageRoomDialog.getByRole("button", { name: "Access" }), async () => {
       return await manageRoomDialog
         .getByLabel("Grant actor")
@@ -414,6 +432,22 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await expect(page).toHaveURL(/\/runtime\/.+\/attention$/, { timeout: 30_000 });
     await expect(page.getByRole("tab", { name: /attention/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("runtime-primary-stage")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("runtime-secondary-rail")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("runtime-attention-summary")).toBeVisible({ timeout: 15_000 });
+    if ((page.viewportSize()?.width ?? 0) >= 768) {
+      const summaryHeights = await page
+        .getByTestId("runtime-attention-summary")
+        .locator(":scope > *")
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+      expect(Math.max(...summaryHeights)).toBeLessThan(112);
+    } else {
+      await expect(page.getByTestId("runtime-secondary-rail-mobile")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: /Quick jumps/i })).toBeVisible({ timeout: 15_000 });
+    }
+    await clickStable(page.getByRole("tab", { name: /systems/i }));
+    await expect(page.getByTestId("runtime-systems-stage")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("runtime-secondary-rail")).toBeVisible({ timeout: 15_000 });
 
     const desktopRunningRail = page.getByText("Running Avatars");
     const runtimeLinks = page.locator("[data-running-avatar-link]");

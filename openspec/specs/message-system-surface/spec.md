@@ -20,10 +20,11 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** the transcript rerenders from that viewer's perspective instead of guessing from message labels or the current route owner
 - **THEN** the selected viewer does not change which actor is configured in the `Send as` control unless the operator changes it explicitly
 
-#### Scenario: Room administration opens in a management surface
+#### Scenario: Room administration opens in a dialog-sidebar management shell
 - **WHEN** the operator needs room users, grants, or membership controls
-- **THEN** the route opens a dedicated management surface instead of keeping those controls permanently expanded beside the transcript
-- **THEN** the management surface organizes room overview, users, and access actions without hiding the main chat workflow
+- **THEN** the route opens a dedicated management dialog with a left management rail and a right detail stage
+- **THEN** the dialog organizes `Overview`, `Users`, and `Access` as section-level destinations without hiding the main transcript workflow
+- **THEN** each stretchable detail section uses one explicit `ScrollView` owner instead of ad hoc overflow behavior
 
 ### Requirement: Message send SHALL require an explicit acting actor
 The room composer SHALL let the operator choose which auth-backed actor sends a message, and message submission SHALL use that actor's room authority context.
@@ -91,3 +92,4 @@ The message-system route SHALL treat the transcript as the primary center surfac
 - **WHEN** the operator uses the message-system route on a desktop-sized viewport
 - **THEN** the room catalog may remain visible beside the selected transcript
 - **THEN** secondary room controls can expand without demoting the transcript from the primary task surface
+

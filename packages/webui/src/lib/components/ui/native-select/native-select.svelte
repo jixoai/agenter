@@ -7,13 +7,16 @@
 		ref = $bindable(null),
 		value = $bindable(),
 		class: className,
+		wrapperClass = '',
 		children,
 		...restProps
-	}: WithElementRef<HTMLSelectAttributes> = $props();
+	}: WithElementRef<HTMLSelectAttributes> & {
+		wrapperClass?: string;
+	} = $props();
 </script>
 
 <div
-	class="group/native-select relative w-fit has-[select:disabled]:opacity-50"
+	class={cn('group/native-select relative w-fit has-[select:disabled]:opacity-50', wrapperClass)}
 	data-slot="native-select-wrapper"
 >
 	<select

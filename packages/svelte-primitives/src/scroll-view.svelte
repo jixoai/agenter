@@ -179,6 +179,7 @@
   .scroll-view-content {
     min-block-size: 100%;
     min-inline-size: 0;
+    align-content: start;
   }
 
   .scroll-view-viewport[data-scroll-view-viewport="horizontal"] .scroll-view-content {
