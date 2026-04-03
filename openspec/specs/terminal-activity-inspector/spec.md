@@ -26,3 +26,7 @@ Tool lifecycle rows in terminal activity SHALL use structured invocation metadat
 - **THEN** terminal activity renders one invocation card from the row's structured tool metadata
 - **THEN** lifecycle status includes `waiting/running/success/failed/cancelled` without markdown parsing
 
+#### Scenario: Terminal activity keeps a visible human title
+- **WHEN** the tool lifecycle metadata provides a human-readable title such as `Terminal read`
+- **THEN** the invocation card shows that human title as visible primary copy
+- **THEN** the raw tool id remains available as secondary technical metadata instead of replacing the primary title

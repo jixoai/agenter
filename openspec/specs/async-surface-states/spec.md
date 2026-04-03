@@ -52,6 +52,11 @@ The WebUI SHALL provide shared async-surface primitives for fetch-driven applica
 - **THEN** the async surface does not add its own competing background color
 - **THEN** the caller keeps background ownership on the semantic surface that already frames that panel
 
+#### Scenario: Inactive async-state copy does not leak into live DOM
+- **WHEN** a surface is currently in one async state
+- **THEN** only that state's payload is mounted into light DOM
+- **THEN** inactive empty-state or skeleton copy does not remain queryable as hidden text alongside the active surface
+
 ### Requirement: Shared async surface primitives SHALL support long-list pagination affordances
 The shared async surface contract SHALL support long-list loading without clearing already visible content or forcing panel-specific loading shells.
 
@@ -64,4 +69,3 @@ The shared async surface contract SHALL support long-list loading without cleari
 - **WHEN** a long-list panel has not hydrated any rows yet and begins its first fetch
 - **THEN** it renders the shared first-load treatment
 - **THEN** later refresh or older-page requests reuse the shared non-destructive ready-state affordances instead of reverting to empty-state copy
-

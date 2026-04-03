@@ -11,6 +11,11 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **THEN** it renders the initial room snapshot
 - **THEN** it can load older room history without replacing newer messages
 
+#### Scenario: Empty resolved room snapshot does not look like a hanging transport
+- **WHEN** the host has already resolved the room snapshot and that snapshot contains zero messages
+- **THEN** the transcript stops rendering the initial loading shell
+- **THEN** the empty-state copy is shown until new messages arrive or the websocket pushes a later snapshot
+
 #### Scenario: Shared custom element is reusable
 - **WHEN** the operator WebUI mounts the shared chat view or another frontend mounts the exported custom element
 - **THEN** both consumers use the same room transport contract and transcript behavior
@@ -23,4 +28,3 @@ The web chat view SHALL use virtualized rendering and reverse-time pagination fo
 - **WHEN** the room has a long history
 - **THEN** the viewport only renders the visible message window
 - **THEN** older history is loaded by time-based reverse pagination
-
