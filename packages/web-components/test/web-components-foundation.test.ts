@@ -1,15 +1,24 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  ADAPTIVE_ICON_BUTTON_PARTS,
+  ADAPTIVE_ICON_BUTTON_TAG,
   ASYNC_SURFACE_TAG,
+  ASYNC_SURFACE_PARTS,
   DEFAULT_JSON_VIEWER_MODE,
   HELP_HINT_PARTS,
   HELP_HINT_TAG,
+  JSON_VIEWER_PARTS,
+  JSON_VIEWER_TAG,
   JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY,
+  MARKDOWN_DOCUMENT_PARTS,
   MARKDOWN_DOCUMENT_TAG,
+  TOOL_INVOCATION_CARD_PARTS,
   TOOL_INVOCATION_CARD_TAG,
+  defineAdaptiveIconButton,
   defineAsyncSurface,
   defineHelpHint,
+  defineJsonViewer,
   defineMarkdownDocument,
   defineToolInvocationCard,
   dismissHelpHint,
@@ -120,5 +129,96 @@ describe("Feature: web-components foundation", () => {
 
     expect(element.getAttribute("data-presentation")).toBe("active-open");
     expect(element.hasAttribute("open")).toBe(true);
+  });
+
+  test("Scenario: Given shared Lit atoms When they render their primary surfaces Then css-part slots and host factual state stay externally themeable", async () => {
+    defineAdaptiveIconButton();
+    defineAsyncSurface();
+    defineJsonViewer();
+    defineMarkdownDocument();
+    defineToolInvocationCard();
+
+    const adaptive = document.createElement(ADAPTIVE_ICON_BUTTON_TAG) as HTMLElement & {
+      label: string;
+      labelPriority: string;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    adaptive.label = "Ops";
+    adaptive.labelPriority = "icon-only";
+    document.body.append(adaptive);
+    await adaptive.updateComplete;
+    expect(adaptive.getAttribute("data-icon-only")).toBe("true");
+    expect(adaptive.shadowRoot?.querySelector(".root")?.getAttribute("part")).toBe(ADAPTIVE_ICON_BUTTON_PARTS.root);
+    expect(adaptive.shadowRoot?.querySelector(".button")?.getAttribute("part")).toBe(ADAPTIVE_ICON_BUTTON_PARTS.button);
+    expect(adaptive.shadowRoot?.querySelector(".icon")?.getAttribute("part")).toBe(ADAPTIVE_ICON_BUTTON_PARTS.icon);
+
+    const asyncSurface = document.createElement(ASYNC_SURFACE_TAG) as HTMLElement & {
+      state: string;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    asyncSurface.state = "ready-loading";
+    document.body.append(asyncSurface);
+    await asyncSurface.updateComplete;
+    expect(asyncSurface.getAttribute("data-state")).toBe("ready-loading");
+    expect(asyncSurface.shadowRoot?.querySelector(".root")?.getAttribute("part")).toBe(ASYNC_SURFACE_PARTS.root);
+    expect(asyncSurface.shadowRoot?.querySelector(".content")?.getAttribute("part")).toBe(ASYNC_SURFACE_PARTS.content);
+    expect(asyncSurface.shadowRoot?.querySelector(".overlay")?.getAttribute("part")).toBe(ASYNC_SURFACE_PARTS.overlay);
+
+    const jsonViewer = document.createElement(JSON_VIEWER_TAG) as HTMLElement & {
+      value: unknown;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    jsonViewer.value = { hello: "world" };
+    document.body.append(jsonViewer);
+    await jsonViewer.updateComplete;
+    const menuTrigger = jsonViewer.shadowRoot?.querySelector<HTMLButtonElement>(".menu-trigger");
+    menuTrigger?.click();
+    await jsonViewer.updateComplete;
+    expect(jsonViewer.getAttribute("data-mode")).toBeTruthy();
+    expect(jsonViewer.hasAttribute("menu-open")).toBe(true);
+    expect(jsonViewer.shadowRoot?.querySelector(".root")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.root);
+    expect(menuTrigger?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menuTrigger);
+    expect(jsonViewer.shadowRoot?.querySelector(".menu")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.menu);
+    expect(jsonViewer.shadowRoot?.querySelector(".content")?.getAttribute("part")).toBe(JSON_VIEWER_PARTS.content);
+
+    const markdown = document.createElement(MARKDOWN_DOCUMENT_TAG) as HTMLElement & {
+      value: string;
+      mode: string;
+      surface: string;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    markdown.value = "**Hi**";
+    markdown.mode = "raw";
+    markdown.surface = "muted";
+    document.body.append(markdown);
+    await markdown.updateComplete;
+    expect(markdown.getAttribute("data-mode")).toBe("raw");
+    expect(markdown.getAttribute("data-surface")).toBe("muted");
+    expect(markdown.shadowRoot?.querySelector(".surface")?.getAttribute("part")).toBe(MARKDOWN_DOCUMENT_PARTS.root);
+    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(MARKDOWN_DOCUMENT_PARTS.viewport);
+    expect(markdown.shadowRoot?.querySelector(".viewport")?.getAttribute("part")).toContain(MARKDOWN_DOCUMENT_PARTS.rawContent);
+
+    const toolCard = document.createElement(TOOL_INVOCATION_CARD_TAG) as HTMLElement & {
+      invocation: unknown;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    toolCard.invocation = {
+      invocationId: "invoke-2",
+      toolName: "terminal.write",
+      status: "running",
+      call: { value: { text: "echo hi" } },
+    };
+    document.body.append(toolCard);
+    await toolCard.updateComplete;
+    expect(toolCard.getAttribute("data-status")).toBe("running");
+    expect(toolCard.shadowRoot?.querySelector(".card")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.card);
+    expect(toolCard.shadowRoot?.querySelector(".header")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.header);
+    expect(toolCard.shadowRoot?.querySelector(".badge")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.statusBadge);
+    expect(toolCard.shadowRoot?.querySelector(".section")?.getAttribute("part")).toContain(TOOL_INVOCATION_CARD_PARTS.section);
   });
 });

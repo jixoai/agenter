@@ -3,6 +3,15 @@ import { LitElement, css, html } from "lit";
 import { defineElement } from "./custom-element";
 
 export const ASYNC_SURFACE_TAG = "agenter-async-surface";
+export const ASYNC_SURFACE_PARTS = {
+  root: "root",
+  content: "content",
+  overlay: "overlay",
+  emptyState: "empty-state",
+  emptySlot: "empty-slot",
+  skeletonSlot: "skeleton-slot",
+  skeletonCopy: "skeleton-copy",
+} as const;
 
 export type AsyncSurfaceState = "empty-loading" | "empty-idle" | "ready-loading" | "ready-idle";
 
@@ -18,7 +27,7 @@ export const resolveAsyncSurfaceState = (input: {
 
 export class AsyncSurfaceElement extends LitElement {
   static properties = {
-    state: { type: String },
+    state: { type: String, reflect: true },
     emptyLoadingLabel: { type: String },
     loadingOverlayLabel: { type: String },
   };
@@ -35,6 +44,11 @@ export class AsyncSurfaceElement extends LitElement {
       position: relative;
       display: grid;
       width: 100%;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .content {
       min-width: 0;
       min-height: 0;
     }
@@ -96,12 +110,20 @@ export class AsyncSurfaceElement extends LitElement {
 
   loadingOverlayLabel = "Refreshing…";
 
+  protected updated(): void {
+    this.setAttribute("data-state", this.state);
+  }
+
   render() {
     if (this.state === "empty-loading") {
       return html`
-        <div class="empty-loading" data-async-surface-state=${this.state}>
-          <slot name="skeleton">
-            <div class="empty-loading-copy">${this.emptyLoadingLabel}</div>
+        <div
+          class="empty-loading"
+          part="${ASYNC_SURFACE_PARTS.root} ${ASYNC_SURFACE_PARTS.emptyState}"
+          data-async-surface-state=${this.state}
+        >
+          <slot name="skeleton" part=${ASYNC_SURFACE_PARTS.skeletonSlot}>
+            <div class="empty-loading-copy" part=${ASYNC_SURFACE_PARTS.skeletonCopy}>${this.emptyLoadingLabel}</div>
           </slot>
         </div>
       `;
@@ -109,17 +131,23 @@ export class AsyncSurfaceElement extends LitElement {
 
     if (this.state === "empty-idle") {
       return html`
-        <div class="empty-idle" data-async-surface-state=${this.state}>
-          <slot name="empty"></slot>
+        <div
+          class="empty-idle"
+          part="${ASYNC_SURFACE_PARTS.root} ${ASYNC_SURFACE_PARTS.emptyState}"
+          data-async-surface-state=${this.state}
+        >
+          <slot name="empty" part=${ASYNC_SURFACE_PARTS.emptySlot}></slot>
         </div>
       `;
     }
 
     return html`
-      <div class="root" data-async-surface-state=${this.state}>
-        <slot></slot>
+      <div class="root" part=${ASYNC_SURFACE_PARTS.root} data-async-surface-state=${this.state}>
+        <div class="content" part=${ASYNC_SURFACE_PARTS.content}>
+          <slot></slot>
+        </div>
         ${this.state === "ready-loading"
-          ? html`<div class="overlay">${this.loadingOverlayLabel}</div>`
+          ? html`<div class="overlay" part=${ASYNC_SURFACE_PARTS.overlay}>${this.loadingOverlayLabel}</div>`
           : null}
       </div>
     `;

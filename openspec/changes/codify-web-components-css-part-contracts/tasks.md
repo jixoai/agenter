@@ -11,10 +11,10 @@
 
 ## 3. Shared Lit atom rollout
 
-- [ ] 3.1 Expose stable top-level `css-part` slots on `adaptive-icon-button`, `async-surface`, `json-viewer`, `markdown-document`, and `tool-invocation-card`.
-- [ ] 3.2 Reflect the minimum factual host state needed for outer `::part(...)` theming on those atoms.
+- [x] 3.1 Expose stable top-level `css-part` slots on `adaptive-icon-button`, `async-surface`, `json-viewer`, `markdown-document`, and `tool-invocation-card`.
+- [x] 3.2 Reflect the minimum factual host state needed for outer `::part(...)` theming on those atoms.
 
 ## 4. Verification
 
-- [ ] 4.1 Add regression tests for the expanded Lit atom part/state exposure.
-- [ ] 4.2 Run targeted `web-components` and WebUI verification.
+- [x] 4.1 Add regression tests for the expanded Lit atom part/state exposure.
+- [x] 4.2 Run targeted `web-components` and WebUI verification.

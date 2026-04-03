@@ -13,6 +13,17 @@ import {
 } from "./json-viewer-store";
 
 export const JSON_VIEWER_TAG = "agenter-json-viewer";
+export const JSON_VIEWER_PARTS = {
+  root: "root",
+  toolbar: "toolbar",
+  menuTrigger: "menu-trigger",
+  menu: "menu",
+  menuLabel: "menu-label",
+  menuOption: "menu-option",
+  content: "content",
+  rawContent: "raw-content",
+  line: "line",
+} as const;
 
 const JSON_PUNCTUATION_CLASS_NAME = "punctuation";
 const JSON_KEY_CLASS_NAME = "key";
@@ -61,7 +72,7 @@ const renderJsonLine = (line: string, index: number) => {
     const [, indent, key, separator, remainder] = keyMatch;
     const { value, comma } = splitTrailingComma(remainder);
     return html`
-      <div class="line" data-line=${index}>
+      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
         <span>${indent}</span>
         <span class=${JSON_KEY_CLASS_NAME}>"${key}"</span>
         <span class=${JSON_PUNCTUATION_CLASS_NAME}>${separator}</span>
@@ -73,7 +84,7 @@ const renderJsonLine = (line: string, index: number) => {
   const [, indent, remainder] = line.match(/^(\s*)(.*)$/) ?? ["", "", line];
   const { value, comma } = splitTrailingComma(remainder);
   return html`
-    <div class="line" data-line=${index}>
+    <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
       <span>${indent}</span>
       ${renderScalarFragment(value)}
       ${comma ? html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${comma}</span>` : null}
@@ -152,7 +163,7 @@ const renderYamlLine = (line: string, index: number) => {
   const keyMatch = parseYamlMappingLine(line);
   if (keyMatch) {
     return html`
-      <div class="line" data-line=${index}>
+      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
         <span>${keyMatch.indent}</span>
         ${keyMatch.dash ? html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${keyMatch.dash}</span>` : null}
         <span class=${JSON_KEY_CLASS_NAME}>${keyMatch.key}</span>
@@ -165,14 +176,14 @@ const renderYamlLine = (line: string, index: number) => {
   if (listScalarMatch) {
     const [, indent, dash, remainder] = listScalarMatch;
     return html`
-      <div class="line" data-line=${index}>
+      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
         <span>${indent}</span>
         <span class=${JSON_PUNCTUATION_CLASS_NAME}>${dash}</span>
         ${renderScalarFragment(remainder, true)}
       </div>
     `;
   }
-  return html`<div class="line text" data-line=${index}>${line}</div>`;
+  return html`<div class="line text" part=${JSON_VIEWER_PARTS.line} data-line=${index}>${line}</div>`;
 };
 
 const renderHighlightedText = (mode: JsonViewerMode, text: string) => {
@@ -378,6 +389,12 @@ export class JsonViewerElement extends LitElement {
     super.disconnectedCallback();
   }
 
+  protected updated(): void {
+    const activeMode = this.resolveActiveMode();
+    this.setAttribute("data-mode", activeMode);
+    this.toggleAttribute("menu-open", this.menuOpen);
+  }
+
   private readonly handleDocumentPointerDown = (event: PointerEvent): void => {
     if (!this.menuOpen) {
       return;
@@ -404,11 +421,15 @@ export class JsonViewerElement extends LitElement {
     this.menuOpen = false;
   }
 
-  render() {
-    const activeMode = resolveJsonViewerMode({
+  private resolveActiveMode(): JsonViewerMode {
+    return resolveJsonViewerMode({
       localMode: this.localMode,
       globalMode: this.globalMode,
     });
+  }
+
+  render() {
+    const activeMode = this.resolveActiveMode();
     const jsonText = serializeJson(this.value);
     const yamlText = serializeYaml(this.value);
     const rawJsonText = this.rawText || jsonText;
@@ -416,10 +437,11 @@ export class JsonViewerElement extends LitElement {
       activeMode === "highlight-yaml" ? yamlText : activeMode === "fmt-highlight-json" ? jsonText : rawJsonText;
 
     return html`
-      <div class="root" data-json-viewer-mode=${activeMode}>
-        <div class="toolbar">
+      <div class="root" part=${JSON_VIEWER_PARTS.root} data-json-viewer-mode=${activeMode}>
+        <div class="toolbar" part=${JSON_VIEWER_PARTS.toolbar}>
           <button
             class="menu-trigger"
+            part=${JSON_VIEWER_PARTS.menuTrigger}
             type="button"
             aria-label=${this.menuLabel}
             aria-expanded=${this.menuOpen ? "true" : "false"}
@@ -433,12 +455,15 @@ export class JsonViewerElement extends LitElement {
 
         ${this.menuOpen
           ? html`
-              <div class="menu" role="menu">
-                <div class="menu-label">This viewer</div>
+              <div class="menu" part=${JSON_VIEWER_PARTS.menu} role="menu">
+                <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>This viewer</div>
                 ${JSON_VIEWER_MODE_OPTIONS.map(
                   (option) => html`
                     <button
                       class="menu-option"
+                      part=${activeMode === option.mode
+                        ? `${JSON_VIEWER_PARTS.menuOption} active-option`
+                        : JSON_VIEWER_PARTS.menuOption}
                       type="button"
                       data-active=${activeMode === option.mode ? "true" : "false"}
                       @click=${() => this.setViewerMode("local", option.mode)}
@@ -448,11 +473,14 @@ export class JsonViewerElement extends LitElement {
                     </button>
                   `,
                 )}
-                <div class="menu-label">All JSON viewers</div>
+                <div class="menu-label" part=${JSON_VIEWER_PARTS.menuLabel}>All JSON viewers</div>
                 ${JSON_VIEWER_MODE_OPTIONS.map(
                   (option) => html`
                     <button
                       class="menu-option"
+                      part=${this.globalMode === option.mode
+                        ? `${JSON_VIEWER_PARTS.menuOption} global-active-option`
+                        : JSON_VIEWER_PARTS.menuOption}
                       type="button"
                       data-active=${this.globalMode === option.mode ? "true" : "false"}
                       @click=${() => this.setViewerMode("global", option.mode)}
@@ -466,9 +494,9 @@ export class JsonViewerElement extends LitElement {
             `
           : null}
 
-        <div class="content">
+        <div class="content" part=${JSON_VIEWER_PARTS.content}>
           ${activeMode === "raw-text-json"
-            ? html`<pre class="content-plain">${renderedText}</pre>`
+            ? html`<pre class="content-plain" part=${JSON_VIEWER_PARTS.rawContent}>${renderedText}</pre>`
             : html`${renderHighlightedText(activeMode, renderedText)}`}
         </div>
       </div>

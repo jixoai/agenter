@@ -1,8 +1,14 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type PropertyValues } from "lit";
 
 import { defineElement } from "./custom-element";
 
 export const ADAPTIVE_ICON_BUTTON_TAG = "agenter-adaptive-icon-button";
+export const ADAPTIVE_ICON_BUTTON_PARTS = {
+  root: "root",
+  button: "button",
+  icon: "icon",
+  label: "label",
+} as const;
 
 export type AdaptiveIconButtonVariant = "default" | "destructive" | "outline" | "secondary" | "ghost";
 export type AdaptiveIconButtonSize = "default" | "sm" | "lg" | "icon" | "icon-sm" | "icon-lg";
@@ -50,10 +56,10 @@ export class AdaptiveIconButtonElement extends LitElement {
     label: { type: String },
     tooltip: { type: String },
     titleText: { type: String },
-    variant: { type: String },
-    size: { type: String },
-    labelPriority: { type: String },
-    disabled: { type: Boolean },
+    variant: { type: String, reflect: true },
+    size: { type: String, reflect: true },
+    labelPriority: { type: String, attribute: "label-priority", reflect: true },
+    disabled: { type: Boolean, reflect: true },
     buttonType: { type: String, attribute: "button-type" },
   };
 
@@ -221,11 +227,31 @@ export class AdaptiveIconButtonElement extends LitElement {
 
   protected firstUpdated(): void {
     this.setupResizeObserver();
-    this.syncIconOnly();
+    if (this.labelPriority === "auto") {
+      this.syncAutoIconOnly();
+    }
   }
 
-  protected updated(): void {
-    this.syncIconOnly();
+  protected willUpdate(): void {
+    if (this.labelPriority === "icon-only") {
+      this.iconOnly = true;
+      return;
+    }
+    if (this.labelPriority === "always") {
+      this.iconOnly = false;
+    }
+  }
+
+  protected updated(changedProperties: PropertyValues<this>): void {
+    if (
+      this.labelPriority === "auto" &&
+      (changedProperties.has("label") ||
+        changedProperties.has("size") ||
+        changedProperties.has("labelPriority"))
+    ) {
+      this.syncAutoIconOnly();
+    }
+    this.setAttribute("data-icon-only", this.iconOnly ? "true" : "false");
   }
 
   private setupResizeObserver(): void {
@@ -233,7 +259,9 @@ export class AdaptiveIconButtonElement extends LitElement {
       return;
     }
     this.resizeObserver = new ResizeObserver(() => {
-      this.syncIconOnly();
+      if (this.labelPriority === "auto") {
+        this.syncAutoIconOnly();
+      }
     });
     if (this.rootElement) {
       this.resizeObserver.observe(this.rootElement);
@@ -243,21 +271,7 @@ export class AdaptiveIconButtonElement extends LitElement {
     }
   }
 
-  private syncIconOnly(): void {
-    if (this.labelPriority === "icon-only") {
-      if (!this.iconOnly) {
-        this.iconOnly = true;
-        this.requestUpdate();
-      }
-      return;
-    }
-    if (this.labelPriority === "always") {
-      if (this.iconOnly) {
-        this.iconOnly = false;
-        this.requestUpdate();
-      }
-      return;
-    }
+  private syncAutoIconOnly(): void {
     const width = this.rootElement?.clientWidth ?? 0;
     const labelWidth = this.measureElement?.scrollWidth ?? 0;
     const nextIconOnly = width > 0 && width < labelWidth + ICON_ONLY_ALLOWANCE_PX;
@@ -270,17 +284,24 @@ export class AdaptiveIconButtonElement extends LitElement {
   render() {
     const title = this.tooltip || this.titleText || this.label;
     return html`
-      <span class="root" data-adaptive-icon-only=${this.iconOnly ? "true" : "false"}>
+      <span
+        class="root"
+        part=${ADAPTIVE_ICON_BUTTON_PARTS.root}
+        data-adaptive-icon-only=${this.iconOnly ? "true" : "false"}
+      >
         <span class="measure" aria-hidden="true">${this.label}</span>
         <button
           class=${`${variantClassName(this.variant)} ${sizeClassName(this.size, this.iconOnly)}`}
+          part=${ADAPTIVE_ICON_BUTTON_PARTS.button}
           type=${this.buttonType}
           ?disabled=${this.disabled}
           aria-label=${this.label}
           title=${title}
         >
-          <span class="icon"><slot name="icon"></slot></span>
-          ${this.iconOnly ? null : html`<span class="label">${this.label}</span>`}
+          <span class="icon" part=${ADAPTIVE_ICON_BUTTON_PARTS.icon}><slot name="icon"></slot></span>
+          ${this.iconOnly
+            ? null
+            : html`<span class="label" part=${ADAPTIVE_ICON_BUTTON_PARTS.label}>${this.label}</span>`}
         </button>
       </span>
     `;

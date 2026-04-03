@@ -18,6 +18,12 @@ import {
 } from "./markdown-config";
 
 export const MARKDOWN_DOCUMENT_TAG = "agenter-markdown-document";
+export const MARKDOWN_DOCUMENT_PARTS = {
+  root: "root",
+  viewport: "viewport",
+  rawContent: "raw-content",
+  markdownContent: "markdown-content",
+} as const;
 
 export type MarkdownDocumentChrome = "surface" | "plain";
 
@@ -315,8 +321,17 @@ export class MarkdownDocumentElement extends LitElement {
 
   padding: MarkdownDocumentPadding | "default" | "none" = "default";
 
-  render() {
-    const profile = resolveMarkdownDocumentProfile({
+  protected updated(): void {
+    const profile = this.resolveProfile();
+    this.setAttribute("data-mode", this.mode);
+    this.setAttribute("data-usage", profile.usage);
+    this.setAttribute("data-surface", profile.surface);
+    this.setAttribute("data-overflow", profile.overflow);
+    this.setAttribute("data-density", profile.density);
+  }
+
+  private resolveProfile() {
+    return resolveMarkdownDocumentProfile({
       usage: this.usage,
       surface: (this.surface || legacySurface(this.chrome || undefined)) || undefined,
       overflow: this.overflow || undefined,
@@ -326,6 +341,10 @@ export class MarkdownDocumentElement extends LitElement {
       syntaxTone: this.syntaxTone || undefined,
       maxHeight: this.maxHeight > 0 ? this.maxHeight : undefined,
     });
+  }
+
+  render() {
+    const profile = this.resolveProfile();
     const density = densityTokens[profile.density];
     const resolvedPadding = profile.padding === "default" ? density.padding : paddingTokens[profile.padding];
     const palette =
@@ -351,9 +370,12 @@ export class MarkdownDocumentElement extends LitElement {
     };
     const previewHtml = markdownIt.render(this.value);
     return html`
-      <div class=${surfaceClassNames[profile.surface]}>
+      <div class=${surfaceClassNames[profile.surface]} part=${MARKDOWN_DOCUMENT_PARTS.root}>
         <div
           class=${`viewport ${this.mode === "raw" ? "raw" : "markdown"}`}
+          part=${this.mode === "raw"
+            ? `${MARKDOWN_DOCUMENT_PARTS.viewport} ${MARKDOWN_DOCUMENT_PARTS.rawContent}`
+            : `${MARKDOWN_DOCUMENT_PARTS.viewport} ${MARKDOWN_DOCUMENT_PARTS.markdownContent}`}
           data-overflow=${profile.overflow}
           style=${styleMap(style)}
         >

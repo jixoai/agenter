@@ -1,5 +1,6 @@
 export {
   ADAPTIVE_ICON_BUTTON_TAG,
+  ADAPTIVE_ICON_BUTTON_PARTS,
   AdaptiveIconButtonElement,
   defineAdaptiveIconButton,
   type AdaptiveIconButtonElementType,
@@ -9,6 +10,7 @@ export {
 } from "./adaptive-icon-button-element";
 export {
   ASYNC_SURFACE_TAG,
+  ASYNC_SURFACE_PARTS,
   AsyncSurfaceElement,
   defineAsyncSurface,
   resolveAsyncSurfaceState,
@@ -17,6 +19,7 @@ export {
 } from "./async-surface-element";
 export {
   JSON_VIEWER_TAG,
+  JSON_VIEWER_PARTS,
   JsonViewerElement,
   defineJsonViewer,
   type JsonViewerElementType,
@@ -62,6 +65,7 @@ export {
 } from "./help-hint-element";
 export {
   MARKDOWN_DOCUMENT_TAG,
+  MARKDOWN_DOCUMENT_PARTS,
   MarkdownDocumentElement,
   defineMarkdownDocument,
   type MarkdownDocumentChrome,
@@ -69,6 +73,7 @@ export {
 } from "./markdown-document-element";
 export {
   TOOL_INVOCATION_CARD_TAG,
+  TOOL_INVOCATION_CARD_PARTS,
   ToolInvocationCardElement,
   defineToolInvocationCard,
   type ToolInvocationCardElementType,

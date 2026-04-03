@@ -5,6 +5,23 @@ import { defineElement } from "./custom-element";
 import { JSON_VIEWER_TAG, defineJsonViewer } from "./json-viewer-element";
 
 export const TOOL_INVOCATION_CARD_TAG = "agenter-tool-invocation-card";
+export const TOOL_INVOCATION_CARD_PARTS = {
+  card: "card",
+  header: "header",
+  heading: "heading",
+  title: "title",
+  titleText: "title-text",
+  statusDot: "status-dot",
+  toolName: "tool-name",
+  meta: "meta",
+  statusBadge: "status-badge",
+  timestamp: "timestamp",
+  error: "error",
+  section: "section",
+  sectionLabel: "section-label",
+  callSection: "call-section",
+  resultSection: "result-section",
+} as const;
 
 export type ToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
 
@@ -190,6 +207,14 @@ export class ToolInvocationCardElement extends LitElement {
 
   invocation: ToolInvocationView | null = null;
 
+  protected updated(): void {
+    if (!this.invocation) {
+      this.removeAttribute("data-status");
+      return;
+    }
+    this.setAttribute("data-status", this.invocation.status);
+  }
+
   render() {
     const invocation = this.invocation;
     if (!invocation) {
@@ -199,19 +224,23 @@ export class ToolInvocationCardElement extends LitElement {
     const visibleCall = hasVisiblePayload(invocation.call) ? invocation.call : null;
     const visibleResult = hasVisiblePayload(invocation.result) ? invocation.result : null;
     return html`
-      <article class="card">
-        <header class="header">
-          <div class="heading">
-            <div class="title">
-              <span class="status-dot"></span>
-              <span>${visibleTitle}</span>
+      <article class="card" part=${TOOL_INVOCATION_CARD_PARTS.card}>
+        <header class="header" part=${TOOL_INVOCATION_CARD_PARTS.header}>
+          <div class="heading" part=${TOOL_INVOCATION_CARD_PARTS.heading}>
+            <div class="title" part=${TOOL_INVOCATION_CARD_PARTS.title}>
+              <span class="status-dot" part=${TOOL_INVOCATION_CARD_PARTS.statusDot}></span>
+              <span part=${TOOL_INVOCATION_CARD_PARTS.titleText}>${visibleTitle}</span>
             </div>
-            ${visibleTitle !== invocation.toolName ? html`<div class="tool-name">${invocation.toolName}</div>` : null}
+            ${visibleTitle !== invocation.toolName
+              ? html`<div class="tool-name" part=${TOOL_INVOCATION_CARD_PARTS.toolName}>${invocation.toolName}</div>`
+              : null}
           </div>
-          <div class="meta">
-            <span class=${statusTone(invocation.status)}>${statusLabel(invocation.status)}</span>
+          <div class="meta" part=${TOOL_INVOCATION_CARD_PARTS.meta}>
+            <span class=${statusTone(invocation.status)} part=${TOOL_INVOCATION_CARD_PARTS.statusBadge}>
+              ${statusLabel(invocation.status)}
+            </span>
             ${invocation.startedAt
-              ? html`<span class="timestamp"
+              ? html`<span class="timestamp" part=${TOOL_INVOCATION_CARD_PARTS.timestamp}
                   >${new Date(invocation.startedAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -222,12 +251,12 @@ export class ToolInvocationCardElement extends LitElement {
           </div>
         </header>
 
-        ${invocation.error ? html`<div class="error">${invocation.error}</div>` : null}
+        ${invocation.error ? html`<div class="error" part=${TOOL_INVOCATION_CARD_PARTS.error}>${invocation.error}</div>` : null}
 
         ${visibleCall
           ? html`
-              <section class="section">
-                <div class="section-label">Call</div>
+              <section class="section" part="${TOOL_INVOCATION_CARD_PARTS.section} ${TOOL_INVOCATION_CARD_PARTS.callSection}">
+                <div class="section-label" part=${TOOL_INVOCATION_CARD_PARTS.sectionLabel}>Call</div>
                 ${renderJsonViewer(visibleCall)}
               </section>
             `
@@ -235,8 +264,8 @@ export class ToolInvocationCardElement extends LitElement {
 
         ${visibleResult
           ? html`
-              <section class="section">
-                <div class="section-label">Result</div>
+              <section class="section" part="${TOOL_INVOCATION_CARD_PARTS.section} ${TOOL_INVOCATION_CARD_PARTS.resultSection}">
+                <div class="section-label" part=${TOOL_INVOCATION_CARD_PARTS.sectionLabel}>Result</div>
                 ${renderJsonViewer(visibleResult)}
               </section>
             `
