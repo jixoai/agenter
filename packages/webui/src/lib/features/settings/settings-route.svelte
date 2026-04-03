@@ -6,11 +6,12 @@
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import { normalizePrivateKey } from '$lib/app/private-key-auth';
+	import PanelShell from '$lib/components/panel-shell.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import PasswordInput from '$lib/components/ui/password-input.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
@@ -81,14 +82,14 @@
 	});
 </script>
 
-<div class="grid h-full min-h-0 gap-4 p-4 md:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.15fr)] md:p-6">
-	<div class="grid min-h-0 gap-4">
-		<Card class="py-0">
-			<CardHeader class="gap-2 border-b">
-				<CardTitle>Superadmin session</CardTitle>
-				<CardDescription>Root auth, browser token state, and backend-managed key entry all live here.</CardDescription>
-			</CardHeader>
-			<CardContent class="grid gap-4 p-4">
+<div class="grid h-full gap-4 p-4 md:grid-cols-[minmax(20rem,0.85fr)_minmax(0,1.15fr)] md:p-6">
+	<div class="grid gap-4">
+		<Card.Root>
+			<Card.Header class="gap-2 border-b">
+				<Card.Title>Superadmin session</Card.Title>
+				<Card.Description>Root auth, browser token state, and backend-managed key entry all live here.</Card.Description>
+			</Card.Header>
+			<Card.Content class="grid gap-4">
 				<div class="flex items-center gap-3 rounded-2xl border bg-muted/30 p-4">
 					<ProfileAvatar
 						label={controller.authSession?.profile.metadata.displayName ?? controller.authSession?.claims.authId ?? 'Superadmin'}
@@ -146,17 +147,17 @@
 						Sign out
 					</Button>
 				</div>
-			</CardContent>
-		</Card>
+			</Card.Content>
+		</Card.Root>
 	</div>
 
-	<Card class="min-h-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<CardTitle>Profiles</CardTitle>
-			<CardDescription>Auth-system is the only truth for human identity, labels, and icons.</CardDescription>
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<ScrollView class="h-full" contentClass="grid gap-4 p-4">
+	<PanelShell bodyClass="h-full">
+		{#snippet header()}
+			<h2 class="text-base font-semibold">Profiles</h2>
+			<p class="text-sm text-muted-foreground">Auth-system is the only truth for human identity, labels, and icons.</p>
+		{/snippet}
+
+		<ScrollView class="h-full" contentClass="grid gap-4 p-4">
 				<div class="grid gap-2">
 					<span class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Select profile</span>
 					<NativeSelect.Root bind:value={selectedProfileReference} onchange={(event) => void syncSelectedProfile(event.currentTarget.value)}>
@@ -200,7 +201,6 @@
 				{:else}
 					<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">No profiles available.</div>
 				{/if}
-			</ScrollView>
-		</CardContent>
-	</Card>
+		</ScrollView>
+	</PanelShell>
 </div>

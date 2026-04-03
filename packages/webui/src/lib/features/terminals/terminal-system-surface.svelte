@@ -7,6 +7,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
 
+	import PanelShell from '$lib/components/panel-shell.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
@@ -14,11 +15,10 @@
 	import ToolInvocationCard from '$lib/components/web-components/tool-invocation-card.svelte';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
-	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 
 	import type { TerminalSystemSurfaceProps } from './terminal-system-surface.types';
@@ -250,17 +250,17 @@
 </script>
 
 <div class="grid h-full gap-4 p-4 xl:grid-cols-[18rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)_24rem] md:p-6">
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
+	<PanelShell>
+		{#snippet header()}
 			<div class="flex items-center justify-between gap-3">
 				<div class="min-w-0">
-					<CardTitle>Terminals</CardTitle>
-					<CardDescription class="flex items-center gap-2">
+					<h1 class="text-base font-semibold">Terminals</h1>
+					<div class="flex items-center gap-2 text-sm text-muted-foreground">
 						<span>terminal-system is global and orthogonal.</span>
 						<HelpHint textContext="terminal-system focus belongs to terminal seats, not the terminal object.">
 							<p>Focus is a seat-level fact. Multiple AvatarSessions can watch or operate the same terminal.</p>
 						</HelpHint>
-					</CardDescription>
+					</div>
 				</div>
 				<Button
 					size="icon-sm"
@@ -272,52 +272,51 @@
 					<PlusIcon class="size-4" />
 				</Button>
 			</div>
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<ScrollView class="h-full" contentClass="divide-y">
-				{#if terminalsState.loading && !terminalsState.loaded}
-					<div class="p-4 text-sm text-muted-foreground">Loading terminals…</div>
-				{:else if terminalsState.error && terminalsState.data.length === 0}
-					<div class="p-4 text-sm text-destructive">{terminalsState.error}</div>
-				{:else if terminalsState.data.length === 0}
-					<div class="p-4 text-sm text-muted-foreground">No terminals yet. Create the first standalone terminal.</div>
-				{:else}
-					{#each terminalsState.data as terminal (terminal.terminalId)}
-						<button
-							class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
-								selectedTerminalId === terminal.terminalId ? 'bg-primary/5' : ''
-							}`}
-							onclick={() => onSelectTerminal(terminal.terminalId)}
-							aria-label={`Select terminal ${terminal.terminalId}`}
-						>
-							<div class="flex items-center justify-between gap-3">
-								<div class="min-w-0">
-									<div class="truncate text-sm font-semibold">{terminal.terminalId}</div>
-									{#if terminal.title && terminal.title !== terminal.terminalId}
-										<div class="truncate text-[11px] text-muted-foreground">{terminal.title}</div>
-									{/if}
-									<div class="truncate text-[11px] text-muted-foreground">{terminal.cwd}</div>
-								</div>
-								<div class="rounded-full border px-2 py-1 text-[11px]">{terminal.status}</div>
-							</div>
-							<div class="truncate text-[11px] text-muted-foreground">
-								{(terminal.actors ?? []).length} seats · pending approvals {terminal.pendingRequestCount}
-							</div>
-						</button>
-					{/each}
-				{/if}
-			</ScrollView>
-		</CardContent>
-	</Card>
+		{/snippet}
 
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
+		<ScrollView class="h-full" contentClass="divide-y">
+			{#if terminalsState.loading && !terminalsState.loaded}
+				<div class="p-4 text-sm text-muted-foreground">Loading terminals…</div>
+			{:else if terminalsState.error && terminalsState.data.length === 0}
+				<div class="p-4 text-sm text-destructive">{terminalsState.error}</div>
+			{:else if terminalsState.data.length === 0}
+				<div class="p-4 text-sm text-muted-foreground">No terminals yet. Create the first standalone terminal.</div>
+			{:else}
+				{#each terminalsState.data as terminal (terminal.terminalId)}
+					<button
+						class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
+							selectedTerminalId === terminal.terminalId ? 'bg-primary/5' : ''
+						}`}
+						onclick={() => onSelectTerminal(terminal.terminalId)}
+						aria-label={`Select terminal ${terminal.terminalId}`}
+					>
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0">
+								<div class="truncate text-sm font-semibold">{terminal.terminalId}</div>
+								{#if terminal.title && terminal.title !== terminal.terminalId}
+									<div class="truncate text-[11px] text-muted-foreground">{terminal.title}</div>
+								{/if}
+								<div class="truncate text-[11px] text-muted-foreground">{terminal.cwd}</div>
+							</div>
+							<div class="rounded-full border px-2 py-1 text-[11px]">{terminal.status}</div>
+						</div>
+						<div class="truncate text-[11px] text-muted-foreground">
+							{(terminal.actors ?? []).length} seats · pending approvals {terminal.pendingRequestCount}
+						</div>
+					</button>
+				{/each}
+			{/if}
+		</ScrollView>
+	</PanelShell>
+
+	<PanelShell>
+		{#snippet header()}
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div class="min-w-0">
-					<CardTitle>{selectedTerminal?.terminalId ?? 'Terminal view'}</CardTitle>
-					<CardDescription>
+					<h2 class="text-base font-semibold">{selectedTerminal?.terminalId ?? 'Terminal view'}</h2>
+					<p class="text-sm text-muted-foreground">
 						{selectedTerminal?.cwd ?? 'Select one terminal to inspect its shared runtime.'}
-					</CardDescription>
+					</p>
 					{#if selectedTerminal?.title && selectedTerminal.title !== selectedTerminal.terminalId}
 						<div class="text-xs text-muted-foreground">{selectedTerminal.title}</div>
 					{/if}
@@ -336,12 +335,13 @@
 			{#if routeNotice}
 				<NoticeBanner tone={routeNotice.tone} message={routeNotice.message} />
 			{/if}
-		</CardHeader>
-		<CardContent class="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] p-0">
-			<div class="min-h-0 p-4">
+		{/snippet}
+
+		<div class="grid h-full grid-rows-[minmax(0,1fr)_auto]">
+			<div class="p-4">
 				{#if selectedTerminal}
-					<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
-						<div class="min-h-0 rounded-2xl border bg-black p-2 text-white">
+					<div class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-3">
+						<div class="rounded-2xl border bg-black p-2 text-white">
 							<TerminalViewport
 								class="block h-full min-h-[18rem] w-full"
 								terminalId={selectedTerminal.terminalId}
@@ -366,13 +366,13 @@
 			</div>
 
 			<div class="relative z-10 border-t bg-card p-4">
-				<Tabs bind:value={actionToolTab}>
-					<TabsList class="grid w-full grid-cols-2">
-						<TabsTrigger value="write">Write</TabsTrigger>
-						<TabsTrigger value="read">Read</TabsTrigger>
-					</TabsList>
+				<Tabs.Root bind:value={actionToolTab}>
+					<Tabs.List class="grid w-full grid-cols-2">
+						<Tabs.Trigger value="write">Write</Tabs.Trigger>
+						<Tabs.Trigger value="read">Read</Tabs.Trigger>
+					</Tabs.List>
 
-					<TabsContent value="write" class="mt-3 grid gap-3">
+					<Tabs.Content value="write" class="mt-3 grid gap-3">
 						<div class="grid gap-3 xl:grid-cols-[14rem_minmax(0,1fr)_auto]">
 							<NativeSelect.Root
 								aria-label="Call tool as"
@@ -399,9 +399,9 @@
 								Call tool
 							</Button>
 						</div>
-					</TabsContent>
+					</Tabs.Content>
 
-					<TabsContent value="read" class="mt-3 grid gap-3">
+					<Tabs.Content value="read" class="mt-3 grid gap-3">
 						<div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
 							<NativeSelect.Root
 								aria-label="Call tool as"
@@ -432,30 +432,31 @@
 								Call read
 							</Button>
 						</div>
-					</TabsContent>
-				</Tabs>
+					</Tabs.Content>
+				</Tabs.Root>
 			</div>
-		</CardContent>
-	</Card>
+		</div>
+	</PanelShell>
 
-	<Card class="min-h-0 min-w-0 py-0 xl:col-span-2 2xl:col-span-1">
-		<CardHeader class="gap-2 border-b">
-				<CardTitle>Actions + Users</CardTitle>
-				<CardDescription class="flex items-center gap-2">
+	<PanelShell class="xl:col-span-2 2xl:col-span-1">
+		{#snippet header()}
+				<h2 class="text-base font-semibold">Actions + Users</h2>
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					<span>Actions are tool facts. Users are seats, grants, approvals, and per-seat focus.</span>
 					<HelpHint textContext="terminal actions render as tool facts while users owns seat authorization and per-seat focus.">
 						<p>Actions render through the shared tool invocation surface so reads and writes follow one factual shape.</p>
 					</HelpHint>
-				</CardDescription>
-			</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<Tabs bind:value={sidePanelTab} class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-				<TabsList class="mx-4 mt-4 grid grid-cols-2">
-					<TabsTrigger value="actions">Actions</TabsTrigger>
-					<TabsTrigger value="users">Users</TabsTrigger>
-				</TabsList>
+				</div>
+		{/snippet}
 
-				<TabsContent value="actions" class="min-h-0">
+		<div class="h-full">
+			<Tabs.Root bind:value={sidePanelTab} class="grid h-full grid-rows-[auto_minmax(0,1fr)]">
+				<Tabs.List class="mx-4 mt-4 grid grid-cols-2">
+					<Tabs.Trigger value="actions">Actions</Tabs.Trigger>
+					<Tabs.Trigger value="users">Users</Tabs.Trigger>
+				</Tabs.List>
+
+				<Tabs.Content value="actions" class="h-full">
 					<AsyncSurface
 						class="h-full"
 						state={actionsSurfaceState}
@@ -499,10 +500,10 @@
 							{/each}
 						</ScrollView>
 					</AsyncSurface>
-				</TabsContent>
+				</Tabs.Content>
 
-				<TabsContent value="users" class="min-h-0">
-					<div class="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4 p-4">
+				<Tabs.Content value="users" class="h-full">
+					<div class="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-4 p-4">
 						<div class="grid gap-2">
 							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
 							<NativeSelect.Root
@@ -642,10 +643,10 @@
 							{/if}
 						</ScrollView>
 					</div>
-				</TabsContent>
-			</Tabs>
-		</CardContent>
-	</Card>
+				</Tabs.Content>
+			</Tabs.Root>
+		</div>
+	</PanelShell>
 </div>
 
 <Dialog.Root bind:open={createDialogOpen}>

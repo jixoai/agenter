@@ -6,17 +6,11 @@
 	import { WebChatViewHost } from '@agenter/web-chat-view';
 	import { untrack } from 'svelte';
 
+	import PanelShell from '$lib/components/panel-shell.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
 	import StatusRing from '$lib/components/status-ring.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardHeader,
-		CardTitle,
-	} from '$lib/components/ui/card/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -271,14 +265,14 @@
 </script>
 
 <div class="grid h-full gap-4 p-4 md:grid-cols-[18rem_minmax(0,1fr)] md:p-6">
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
+	<PanelShell>
+		{#snippet header()}
 			<div class="flex items-center justify-between gap-3">
 				<div class="min-w-0">
-					<CardTitle>Rooms</CardTitle>
-					<CardDescription>
+					<h1 class="text-base font-semibold">Rooms</h1>
+					<p class="text-sm text-muted-foreground">
 						message-system lists standalone rooms, not workspace-owned session chats.
-					</CardDescription>
+					</p>
 				</div>
 				<Button
 					size="icon-sm"
@@ -290,55 +284,54 @@
 					<MailPlusIcon class="size-4" />
 				</Button>
 			</div>
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<ScrollView class="h-full" contentClass="divide-y">
-				{#if roomsState.loading && !roomsState.loaded}
-					<div class="p-4 text-sm text-muted-foreground">Loading rooms…</div>
-				{:else if roomsState.error && roomCount === 0}
-					<div class="p-4 text-sm text-destructive">{roomsState.error}</div>
-				{:else if roomCount === 0}
-					<div class="p-4 text-sm text-muted-foreground">No rooms yet. Create the first standalone room.</div>
-				{:else}
-					{#each roomsState.data as room (room.chatId)}
-						<button
-							class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
-								selectedRoomId === room.chatId ? 'bg-primary/5' : ''
-							}`}
-							onclick={() => onSelectRoom(room.chatId)}
-						>
-							<div class="flex items-center justify-between gap-3">
-								<div class="min-w-0">
-									<div class="truncate text-sm font-semibold">{room.title || room.chatId}</div>
-									<div class="truncate text-[11px] text-muted-foreground">{room.chatId}</div>
-								</div>
-								{#if room.readProgress}
-									<StatusRing
-										value={room.readProgress.readSeatCount}
-										total={Math.max(room.readProgress.totalSeatCount, 1)}
-										label={`${room.readProgress.readSeatCount}/${room.readProgress.totalSeatCount} seats read`}
-										class="text-primary"
-									/>
-								{/if}
-							</div>
-							<div class="truncate text-[11px] text-muted-foreground">
-								{room.participants.length} participants · updated {formatTimestamp(room.updatedAt)}
-							</div>
-						</button>
-					{/each}
-				{/if}
-			</ScrollView>
-		</CardContent>
-	</Card>
+		{/snippet}
 
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
+		<ScrollView class="h-full" contentClass="divide-y">
+			{#if roomsState.loading && !roomsState.loaded}
+				<div class="p-4 text-sm text-muted-foreground">Loading rooms…</div>
+			{:else if roomsState.error && roomCount === 0}
+				<div class="p-4 text-sm text-destructive">{roomsState.error}</div>
+			{:else if roomCount === 0}
+				<div class="p-4 text-sm text-muted-foreground">No rooms yet. Create the first standalone room.</div>
+			{:else}
+				{#each roomsState.data as room (room.chatId)}
+					<button
+						class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
+							selectedRoomId === room.chatId ? 'bg-primary/5' : ''
+						}`}
+						onclick={() => onSelectRoom(room.chatId)}
+					>
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0">
+								<div class="truncate text-sm font-semibold">{room.title || room.chatId}</div>
+								<div class="truncate text-[11px] text-muted-foreground">{room.chatId}</div>
+							</div>
+							{#if room.readProgress}
+								<StatusRing
+									value={room.readProgress.readSeatCount}
+									total={Math.max(room.readProgress.totalSeatCount, 1)}
+									label={`${room.readProgress.readSeatCount}/${room.readProgress.totalSeatCount} seats read`}
+									class="text-primary"
+								/>
+							{/if}
+						</div>
+						<div class="truncate text-[11px] text-muted-foreground">
+							{room.participants.length} participants · updated {formatTimestamp(room.updatedAt)}
+						</div>
+					</button>
+				{/each}
+			{/if}
+		</ScrollView>
+	</PanelShell>
+
+	<PanelShell>
+		{#snippet header()}
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div class="min-w-0">
-					<CardTitle>{selectedRoom?.title ?? 'Room transcript'}</CardTitle>
-					<CardDescription>
+					<h2 class="text-base font-semibold">{selectedRoom?.title ?? 'Room transcript'}</h2>
+					<p class="text-sm text-muted-foreground">
 						{selectedRoom?.chatId ?? 'Select a room to inspect the shared room transcript.'}
-					</CardDescription>
+					</p>
 				</div>
 				<div class="flex gap-2">
 					<Button
@@ -401,27 +394,26 @@
 					</label>
 				</div>
 			{/if}
-		</CardHeader>
-		<CardContent class="min-h-0 p-0">
-			<div class="h-full min-h-0">
-				<WebChatViewHost
-					channel={selectedRoom}
-					viewerActorId={selectedViewerActorId}
-					{initialMessages}
-					{initialSnapshotResolved}
-					class="h-full"
-					showHeader={false}
-					emptyTitle="No room selected"
-					emptyMessage="Choose one room from the left rail or create a new room to begin."
-					emptyTranscriptTitle="No room facts yet"
-					emptyTranscriptMessage="Send the first message to begin this room."
-					{routeNotice}
-					onSendMessage={onSendMessage}
-					onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
-				/>
-			</div>
-		</CardContent>
-	</Card>
+		{/snippet}
+
+		<div class="h-full">
+			<WebChatViewHost
+				channel={selectedRoom}
+				viewerActorId={selectedViewerActorId}
+				{initialMessages}
+				{initialSnapshotResolved}
+				class="h-full"
+				showHeader={false}
+				emptyTitle="No room selected"
+				emptyMessage="Choose one room from the left rail or create a new room to begin."
+				emptyTranscriptTitle="No room facts yet"
+				emptyTranscriptMessage="Send the first message to begin this room."
+				{routeNotice}
+				onSendMessage={onSendMessage}
+				onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
+			/>
+		</div>
+	</PanelShell>
 </div>
 
 <Dialog.Root bind:open={manageDialogOpen}>
@@ -430,8 +422,15 @@
 		portalProps={disableManageDialogPortal ? { disabled: true } : undefined}
 	>
 		{#if selectedRoom}
+			<Dialog.Header class="sr-only">
+				<Dialog.Title>Manage room</Dialog.Title>
+				<Dialog.Description>
+					Manage overview, users, and access for {selectedRoom.title || selectedRoom.chatId}.
+				</Dialog.Description>
+			</Dialog.Header>
+
 			<Sidebar.Provider open={true}>
-				<div class="flex h-[min(80vh,46rem)] min-h-0">
+				<div class="grid h-[min(80vh,46rem)] grid-cols-[16rem_minmax(0,1fr)]">
 					<Sidebar.Sidebar collapsible="none" class="border-r">
 						<Sidebar.Header class="border-b px-3 py-3">
 							<div class="text-sm font-semibold">{selectedRoom.title || selectedRoom.chatId}</div>
@@ -474,7 +473,7 @@
 							</Sidebar.Group>
 						</Sidebar.Content>
 					</Sidebar.Sidebar>
-					<Sidebar.Inset class="min-h-0">
+					<Sidebar.Inset class="h-full">
 						<ScrollView class="h-full" contentClass="grid gap-4 p-6">
 							{#if manageSection === 'overview'}
 								<div class="grid gap-4">

@@ -62,34 +62,38 @@
 
 <div
   class="row"
+  part={`message-row ${assistant ? "message-row-assistant" : viewerOwned ? "message-row-viewer" : "message-row-participant"}`}
   class:assistant={assistant}
   class:viewer-owned={viewerOwned && !assistant}
   data-kind={message.kind}
   data-message-author={viewerOwned ? "viewer" : assistant ? "assistant" : "participant"}
 >
-  <article class="bubble">
-    <div class="meta">
-      <span class="author">{message.from}</span>
+  <article
+    class="bubble"
+    part={`message-bubble ${assistant ? "message-bubble-assistant" : viewerOwned ? "message-bubble-viewer" : "message-bubble-participant"}`}
+  >
+    <div class="meta" part="message-meta">
+      <span class="author" part="message-author">{message.from}</span>
       <span>{formatTimestamp(message.createdAt)}</span>
     </div>
 
     {#if message.kind === "error"}
-      <div class="error-block">
-        <div class="error-title">{message.payload?.error?.title ?? "Error"}</div>
+      <div class="error-block" part="message-error">
+        <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
         <p>{message.content}</p>
         {#if message.payload?.error?.detail}
           <p class="error-detail">{message.payload.error.detail}</p>
         {/if}
       </div>
     {:else if message.kind === "interactive" && interactive}
-      <div class="interactive-block">
-        <p class="interactive-title">{interactive.title}</p>
+      <div class="interactive-block" part="message-interactive">
+        <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
         {#if interactive.description}
           <p class="interactive-description">{interactive.description}</p>
         {/if}
-        <div class="interactive-fields">
+        <div class="interactive-fields" part="message-interactive-fields">
           {#each interactive.fields as field (field.id)}
-            <label class="interactive-field">
+            <label class="interactive-field" part="message-interactive-field">
               <span>{field.label}</span>
               {#if field.multiline}
                 <textarea
@@ -114,12 +118,18 @@
             </label>
           {/each}
         </div>
-        <button type="button" class="interactive-submit" disabled={interactiveSubmitting} onclick={() => void submitInteractive()}>
+        <button
+          type="button"
+          class="interactive-submit"
+          part="message-interactive-submit"
+          disabled={interactiveSubmitting}
+          onclick={() => void submitInteractive()}
+        >
           {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
         </button>
       </div>
     {:else if message.content.trim().length > 0}
-      <div class="content">
+      <div class="content" part="message-content">
         <MarkdownDocumentHost
           value={message.content}
           mode="preview"
@@ -131,7 +141,7 @@
     {/if}
 
     {#if (message.attachments?.length ?? 0) > 0}
-      <ul class="attachments">
+      <ul class="attachments" part="message-attachments">
         {#each message.attachments ?? [] as attachment (attachment.assetId)}
           <li>{attachment.name}</li>
         {/each}

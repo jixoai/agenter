@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { type WebChatSocketFactory, type WebChatSocketLike } from "../src";
 import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
-import WebChatHostHarness from "./web-chat-host-harness.svelte";
 import WebChatViewHost from "../src/web-chat-view-host.svelte";
+import WebChatHostHarness from "./web-chat-host-harness.svelte";
 
 class WebSocketMock implements WebChatSocketLike {
   static readonly OPEN = 1;
@@ -369,7 +369,9 @@ describe("Feature: web-chat-view package", () => {
     textarea.dispatchEvent(new Event("input"));
     flushSync();
 
-    const sendButton = [...document.body.querySelectorAll("button")].find((button) => button.textContent?.includes("Send"));
+    const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Send"),
+    );
     sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
 
@@ -377,6 +379,37 @@ describe("Feature: web-chat-view package", () => {
       expect(submitMessage).toHaveBeenCalledWith({ text: "hello channel", assets: [] });
     });
     expect(WebSocketMock.instances).toHaveLength(0);
+  });
+
+  test("Scenario: Given the shared chat surface When it mounts Then transcript and composer regions expose durable styling parts", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-parts",
+        kind: "room",
+        title: "Parts room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: false,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      onSendMessage: async () => undefined,
+    });
+
+    const surface = document.body.querySelector('[part~="surface"]');
+    const transcriptShell = document.body.querySelector('[part~="transcript-shell"]');
+    const composer = document.body.querySelector('[part~="composer"]');
+    const composerSend = document.body.querySelector('[part~="composer-send"]');
+
+    expect(surface).toBeTruthy();
+    expect(transcriptShell).toBeTruthy();
+    expect(composer).toBeTruthy();
+    expect(composerSend).toBeTruthy();
   });
 
   test("Scenario: Given an empty room snapshot already resolved When the host mounts before any websocket snapshot arrives Then the transcript shows the empty state instead of infinite loading", async () => {
@@ -833,7 +866,9 @@ describe("Feature: web-chat-view package", () => {
     textarea.dispatchEvent(new Event("input"));
     flushSync();
 
-    const sendButton = [...shadowRoot.querySelectorAll("button")].find((button) => button.textContent?.includes("Send"));
+    const sendButton = [...shadowRoot.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Send"),
+    );
     sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
 

@@ -43,7 +43,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<ScrollView class="min-h-0" contentClass="space-y-4 p-6">
+		<ScrollView class="h-full" contentClass="space-y-4 p-6">
 			<div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
 				<div class="rounded-full border bg-muted px-3 py-1">{authService?.authMode ?? 'wallet_challenge_jwt'}</div>
 				<div class="rounded-full border bg-muted px-3 py-1">{authService?.rootAuthId ?? 'root auth unavailable'}</div>

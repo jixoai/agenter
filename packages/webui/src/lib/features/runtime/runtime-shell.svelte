@@ -13,10 +13,11 @@
 	import { goto } from '$app/navigation';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import PanelShell from '$lib/components/panel-shell.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
 	import { cn } from '$lib/utils.js';
 	import RuntimeTabBar from './runtime-tab-bar.svelte';
 	import {
@@ -81,17 +82,17 @@
 
 {#if !session}
 	<div class="flex h-full items-center justify-center p-6">
-		<Card class="max-w-lg">
-			<CardHeader>
-				<CardTitle>Runtime unavailable</CardTitle>
-				<CardDescription>The selected AvatarSession no longer exists in the global runtime snapshot.</CardDescription>
-			</CardHeader>
-		</Card>
+		<Card.Root class="max-w-lg">
+			<Card.Header>
+				<Card.Title>Runtime unavailable</Card.Title>
+				<Card.Description>The selected AvatarSession no longer exists in the global runtime snapshot.</Card.Description>
+			</Card.Header>
+		</Card.Root>
 	</div>
 {:else}
-	<div class="grid h-full min-h-0 gap-4 p-4 md:grid-rows-[auto_minmax(0,1fr)] md:p-6">
-		<Card class="py-0">
-			<CardHeader class="gap-4 border-b">
+	<div class="grid h-full gap-4 p-4 md:grid-rows-[auto_minmax(0,1fr)] md:p-6">
+		<PanelShell headerClass="gap-4">
+			{#snippet header()}
 				<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 					<div class="flex min-w-0 items-start gap-4">
 						<div class="relative shrink-0">
@@ -136,13 +137,12 @@
 				</div>
 
 				<RuntimeTabBar {sessionId} {tabs} activeTab={activeTab} />
-			</CardHeader>
-		</Card>
+			{/snippet}
+		</PanelShell>
 
-		<div class="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-			<Card class="min-h-0 py-0">
-				<CardContent class="min-h-0 p-0">
-					<ScrollView class="h-full" contentClass="grid gap-4 p-4">
+		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+			<PanelShell bodyClass="h-full">
+				<ScrollView class="h-full" contentClass="grid gap-4 p-4">
 						{#if activeTab === 'attention'}
 							<div class="grid gap-4 md:grid-cols-3">
 								<div class="rounded-2xl border bg-muted/25 p-4">
@@ -239,17 +239,18 @@
 								</div>
 							</div>
 						{/if}
-					</ScrollView>
-				</CardContent>
-			</Card>
+				</ScrollView>
+			</PanelShell>
 
-			<Card class="min-h-0 py-0">
-				<CardHeader class="gap-2 border-b">
-					<CardTitle>Linked Systems</CardTitle>
-					<CardDescription>Jump out to the orthogonal global system surfaces. Runtime shell does not embed duplicate catalogs.</CardDescription>
-				</CardHeader>
-				<CardContent class="min-h-0 p-0">
-					<ScrollView class="h-full" contentClass="grid gap-3 p-4">
+			<PanelShell bodyClass="h-full">
+				{#snippet header()}
+					<h2 class="text-base font-semibold">Linked Systems</h2>
+					<p class="text-sm text-muted-foreground">
+						Jump out to the orthogonal global system surfaces. Runtime shell does not embed duplicate catalogs.
+					</p>
+				{/snippet}
+
+				<ScrollView class="h-full" contentClass="grid gap-3 p-4">
 						<div class="rounded-2xl border p-4">
 							<div class="flex items-center gap-2 text-sm font-semibold">
 								<MailIcon class="size-4" />
@@ -312,9 +313,8 @@
 								<div class="flex items-center gap-2"><SquareTerminalIcon class="size-4" /> <span>{terminals.length} terminals</span></div>
 							</div>
 						</div>
-					</ScrollView>
-				</CardContent>
-			</Card>
+				</ScrollView>
+			</PanelShell>
 		</div>
 	</div>
 {/if}

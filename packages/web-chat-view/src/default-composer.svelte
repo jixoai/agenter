@@ -39,19 +39,26 @@
   };
 </script>
 
-<section class="composer">
-  <div class="composer-frame">
+<section class="composer" part="composer">
+  <div class="composer-frame" part="composer-frame">
     <textarea
       class="composer-textarea"
+      part="composer-textarea"
       bind:value={draft}
       rows="4"
       disabled={disabled || sending}
       placeholder={`Message ${channel.title}...`}
       onkeydown={handleKeydown}
     ></textarea>
-    <div class="composer-footer">
-      <span>{hintText}</span>
-      <button type="button" class="composer-send" disabled={!canSubmit} onclick={() => void submit()}>
+    <div class="composer-footer" part="composer-footer">
+      <span part="composer-hint" aria-live="polite">{hintText}</span>
+      <button
+        type="button"
+        class="composer-send"
+        part="composer-send"
+        disabled={!canSubmit}
+        onclick={() => void submit()}
+      >
         {sending ? "Sending..." : "Send"}
       </button>
     </div>
@@ -63,6 +70,10 @@
     border-top: 1px solid var(--web-chat-border, #dbe1ea);
     background: var(--web-chat-surface, rgba(255, 255, 255, 0.94));
     padding: 0.75rem;
+  }
+
+  .composer[part~="composer"] {
+    container-type: inline-size;
   }
 
   .composer-frame {
@@ -123,5 +134,16 @@
   .composer-send:disabled {
     cursor: not-allowed;
     opacity: 0.45;
+  }
+
+  @container (max-width: 34rem) {
+    .composer-footer {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .composer-send {
+      width: 100%;
+    }
   }
 </style>

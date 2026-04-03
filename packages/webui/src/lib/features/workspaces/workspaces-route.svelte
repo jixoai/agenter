@@ -9,12 +9,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import PanelShell from '$lib/components/panel-shell.svelte';
 	import AdaptiveIconButton from '$lib/components/web-components/adaptive-icon-button.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { describeWorkspace, sortWorkspacesForCatalog } from './workspace-sorting';
@@ -119,57 +120,56 @@
 	});
 </script>
 
-<div class="grid h-full min-h-0 gap-4 p-4 md:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.15fr)] md:p-6">
-	<Card class="min-h-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<CardTitle>Workspaces</CardTitle>
-			<CardDescription>
+<div class="grid h-full gap-4 p-4 md:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.15fr)] md:p-6">
+	<PanelShell>
+		{#snippet header()}
+			<h1 class="text-base font-semibold">Workspaces</h1>
+			<p class="text-sm text-muted-foreground">
 				Global workspace first, then favorites, then most recently active workspaces with started sessions.
-			</CardDescription>
-		</CardHeader>
-		<CardContent class="min-h-0 flex-1 p-0">
-			<ScrollView class="h-full" contentClass="divide-y">
-				{#each sortedWorkspaces as workspace (workspace.path)}
-					<button
-						class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/50 ${
-							selectedWorkspace?.path === workspace.path ? 'bg-primary/5' : ''
-						}`}
-						onclick={() => void syncWorkspaceSelection(workspace.path)}
-					>
-						<div class="flex items-center justify-between gap-3">
-							<div class="min-w-0">
-								<div class="truncate text-sm font-semibold">{workspace.path === '~/' ? 'Global workspace' : workspace.path}</div>
-								<div class="truncate text-xs text-muted-foreground">
-									{workspace.group} · {workspace.counts.running} running · {workspace.counts.all} total
-								</div>
-							</div>
-							{#if workspace.favorite}
-								<div class="rounded-full border px-2 py-1 text-[11px]">Favorite</div>
-							{/if}
-						</div>
-						{#if workspace.lastSessionActivityAt}
-							<div class="text-[11px] text-muted-foreground">Last used {workspace.lastSessionActivityAt}</div>
-						{/if}
-					</button>
-				{/each}
-			</ScrollView>
-		</CardContent>
-	</Card>
+			</p>
+		{/snippet}
 
-	<div class="grid min-h-0 gap-4 md:grid-rows-[auto_minmax(0,1fr)]">
-		<Card class="py-0">
-			<CardHeader class="gap-2 border-b">
+		<ScrollView class="h-full" contentClass="divide-y">
+			{#each sortedWorkspaces as workspace (workspace.path)}
+				<button
+					class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/50 ${
+						selectedWorkspace?.path === workspace.path ? 'bg-primary/5' : ''
+					}`}
+					onclick={() => void syncWorkspaceSelection(workspace.path)}
+				>
+					<div class="flex items-center justify-between gap-3">
+						<div class="min-w-0">
+							<div class="truncate text-sm font-semibold">{workspace.path === '~/' ? 'Global workspace' : workspace.path}</div>
+							<div class="truncate text-xs text-muted-foreground">
+								{workspace.group} · {workspace.counts.running} running · {workspace.counts.all} total
+							</div>
+						</div>
+						{#if workspace.favorite}
+							<div class="rounded-full border px-2 py-1 text-[11px]">Favorite</div>
+						{/if}
+					</div>
+					{#if workspace.lastSessionActivityAt}
+						<div class="text-[11px] text-muted-foreground">Last used {workspace.lastSessionActivityAt}</div>
+					{/if}
+				</button>
+			{/each}
+		</ScrollView>
+	</PanelShell>
+
+	<div class="grid gap-4 md:grid-rows-[auto_minmax(0,1fr)]">
+		<Card.Root>
+			<Card.Header class="gap-2 border-b">
 				<div class="flex items-center justify-between gap-3">
 					<div>
-						<CardTitle>Quick Start</CardTitle>
-						<CardDescription>Choose one workspace, choose one avatar, then launch the stable avatar session.</CardDescription>
+						<Card.Title>Quick Start</Card.Title>
+						<Card.Description>Choose one workspace, choose one avatar, then launch the stable avatar session.</Card.Description>
 					</div>
 					<Button variant="outline" size="icon-sm" onclick={() => void controller.refreshBootstrap()} aria-label="Refresh workspaces">
 						<FolderPlusIcon class="size-4" />
 					</Button>
 				</div>
-			</CardHeader>
-			<CardContent class="grid gap-4 p-4">
+			</Card.Header>
+			<Card.Content class="grid gap-4">
 				<div class="rounded-2xl border bg-muted/30 p-4">
 					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected workspace</div>
 					<div class="mt-2 text-sm font-semibold">{selectedWorkspace ? describeWorkspace(selectedWorkspace.path) : 'No workspace'}</div>
@@ -269,16 +269,16 @@
 						</Button>
 					</div>
 				</div>
-			</CardContent>
-		</Card>
+			</Card.Content>
+		</Card.Root>
 
-		<Card class="min-h-0 py-0">
-			<CardHeader class="gap-2 border-b">
-				<CardTitle>Workspace facts</CardTitle>
-				<CardDescription>Keep the selection visible and factual. No hidden workspace/session coupling.</CardDescription>
-			</CardHeader>
-			<CardContent class="min-h-0 p-0">
-				<ScrollView class="h-full" contentClass="grid gap-3 p-4">
+		<PanelShell bodyClass="h-full">
+			{#snippet header()}
+				<h2 class="text-base font-semibold">Workspace facts</h2>
+				<p class="text-sm text-muted-foreground">Keep the selection visible and factual. No hidden workspace/session coupling.</p>
+			{/snippet}
+
+			<ScrollView class="h-full" contentClass="grid gap-3 p-4">
 					{#if selectedWorkspace}
 						<div class="rounded-2xl border bg-muted/30 p-4">
 							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Path</div>
@@ -299,9 +299,8 @@
 					{:else}
 						<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">No workspace selected.</div>
 					{/if}
-				</ScrollView>
-			</CardContent>
-		</Card>
+			</ScrollView>
+		</PanelShell>
 	</div>
 </div>
 

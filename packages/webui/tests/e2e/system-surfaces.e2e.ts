@@ -19,10 +19,7 @@ const typeStable = async (locator: Locator, value: string): Promise<void> => {
   await expect(locator).toHaveValue(value, { timeout: 15_000 });
 };
 
-const activateUntil = async (
-  locator: Locator,
-  predicate: () => Promise<boolean>,
-): Promise<void> => {
+const activateUntil = async (locator: Locator, predicate: () => Promise<boolean>): Promise<void> => {
   await clickStable(locator);
   const activated = await expect
     .poll(predicate, { timeout: 2_000 })
@@ -151,7 +148,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     await createTerminalDialog.getByLabel("Absolute cwd").fill(terminalCwd);
     await clickStable(createTerminalDialog.getByRole("button", { name: "Create terminal" }));
 
-    await expect(page.getByText(terminalId, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible();
     await expect(page.getByText(`Absolute cwd: ${terminalCwd}`)).toBeVisible();
     await expect(page.locator('select[aria-label="Call tool as"]').first()).toContainText("Bootstrap admin");
 
@@ -165,14 +162,17 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expectTerminalViewText(page, terminalCwd);
 
     await activateUntil(page.getByRole("tab", { name: "Read" }), async () => {
-      return await page.getByRole("button", { name: "Call read" }).isVisible().catch(() => false);
+      return await page
+        .getByRole("button", { name: "Call read" })
+        .isVisible()
+        .catch(() => false);
     });
     await page.getByLabel("Read mode").selectOption("snapshot");
     await clickStable(page.getByRole("button", { name: "Call read" }));
     await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText(terminalId, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(`Absolute cwd: ${terminalCwd}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(terminalWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
@@ -195,22 +195,21 @@ test.describe("Feature: Svelte system surfaces", () => {
     await createTerminalDialog.getByLabel("Absolute cwd").fill(terminalCwd);
     await clickStable(createTerminalDialog.getByRole("button", { name: "Create terminal" }));
 
-    await expect(page.getByText(terminalId, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
     await activateUntil(page.getByRole("tab", { name: "Users" }), async () => {
-      return await page.getByLabel("Grant actor").isVisible().catch(() => false);
+      return await page
+        .getByLabel("Grant actor")
+        .isVisible()
+        .catch(() => false);
     });
 
     const grantActorSelect = page.getByLabel("Grant actor");
     const requesterOption = await grantActorSelect.evaluate((select) => {
       const htmlSelect = select as HTMLSelectElement;
       const candidate = Array.from(htmlSelect.options).find(
-        (option: HTMLOptionElement) =>
-          option.value.length > 0 &&
-          option.value.startsWith("auth:"),
+        (option: HTMLOptionElement) => option.value.length > 0 && option.value.startsWith("auth:"),
       );
-      return candidate
-        ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value }
-        : null;
+      return candidate ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value } : null;
     });
     expect(requesterOption).not.toBeNull();
     if (!requesterOption) {
@@ -231,12 +230,10 @@ test.describe("Feature: Svelte system surfaces", () => {
     const requesterLabel = requesterOption.label.split(" · ")[0] ?? requesterOption.label;
     const requesterCallOption = await callAsSelect.evaluate((select, visibleLabel) => {
       const htmlSelect = select as HTMLSelectElement;
-      const candidate = Array.from(htmlSelect.options).find(
-        (option: HTMLOptionElement) => option.textContent?.includes(visibleLabel as string),
+      const candidate = Array.from(htmlSelect.options).find((option: HTMLOptionElement) =>
+        option.textContent?.includes(visibleLabel as string),
       );
-      return candidate
-        ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value }
-        : null;
+      return candidate ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value } : null;
     }, requesterLabel);
     expect(requesterCallOption).not.toBeNull();
     if (!requesterCallOption) {
@@ -261,19 +258,30 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     await activateUntil(page.getByRole("tab", { name: "Actions" }), async () => {
-      return await page.getByText(leasedWrite, { exact: true }).first().isVisible().catch(() => false);
+      return await page
+        .getByText(leasedWrite, { exact: true })
+        .first()
+        .isVisible()
+        .catch(() => false);
     });
     await expect(page.getByText(leasedWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText(terminalId, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
     await activateUntil(page.getByRole("tab", { name: "Users" }), async () => {
-      return await page.getByTestId(`terminal-seat-${requesterOption.value}`).isVisible().catch(() => false);
+      return await page
+        .getByTestId(`terminal-seat-${requesterOption.value}`)
+        .isVisible()
+        .catch(() => false);
     });
     await expect(page.getByTestId(`terminal-seat-${requesterOption.value}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Lease until/)).toBeVisible({ timeout: 15_000 });
     await activateUntil(page.getByRole("tab", { name: "Actions" }), async () => {
-      return await page.getByText(leasedWrite, { exact: true }).first().isVisible().catch(() => false);
+      return await page
+        .getByText(leasedWrite, { exact: true })
+        .first()
+        .isVisible()
+        .catch(() => false);
     });
     await expect(page.getByText(leasedWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
   });
@@ -291,17 +299,22 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     await expect(page.getByRole("button", { name: new RegExp(roomTitle) }).first()).toBeVisible({ timeout: 15_000 });
+    await clickStable(page.getByRole("button", { name: "Manage room" }));
+    const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
+    await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+    await activateUntil(manageRoomDialog.getByRole("button", { name: "Access" }), async () => {
+      return await manageRoomDialog
+        .getByLabel("Grant actor")
+        .isVisible()
+        .catch(() => false);
+    });
 
-    const grantActorSelect = page.getByLabel("Grant actor");
-    const grantRoleSelect = page.getByLabel("Grant role");
+    const grantActorSelect = manageRoomDialog.getByLabel("Grant actor");
+    const grantRoleSelect = manageRoomDialog.getByLabel("Grant role");
     const grantedOption = await grantActorSelect.evaluate((select) => {
       const htmlSelect = select as HTMLSelectElement;
-      const candidate = Array.from(htmlSelect.options).find(
-        (option: HTMLOptionElement) => option.value.length > 0,
-      );
-      return candidate
-        ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value }
-        : null;
+      const candidate = Array.from(htmlSelect.options).find((option: HTMLOptionElement) => option.value.length > 0);
+      return candidate ? { value: candidate.value, label: candidate.textContent?.trim() ?? candidate.value } : null;
     });
     expect(grantedOption).not.toBeNull();
     if (!grantedOption) {
@@ -310,13 +323,19 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await grantActorSelect.selectOption(grantedOption.value);
     await grantRoleSelect.selectOption("readonly");
-    await clickStable(page.getByRole("button", { name: "Grant seat" }));
+    await clickStable(manageRoomDialog.getByRole("button", { name: "Grant seat" }));
+    await activateUntil(manageRoomDialog.getByRole("button", { name: "Users" }), async () => {
+      return await manageRoomDialog
+        .getByTestId(`room-seat-${grantedOption.value}`)
+        .isVisible()
+        .catch(() => false);
+    });
 
     const grantedLabel = grantedOption.label.split(" · ")[0] ?? grantedOption.label;
-    const grantedSeat = page.getByTestId(`room-seat-${grantedOption.value}`);
+    const grantedSeat = manageRoomDialog.getByTestId(`room-seat-${grantedOption.value}`);
     await expect(grantedSeat).toBeVisible({ timeout: 15_000 });
     await expect(grantedSeat.getByText(grantedLabel, { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId(`room-seat-role-${grantedOption.value}`)).toHaveText("readonly", {
+    await expect(manageRoomDialog.getByTestId(`room-seat-role-${grantedOption.value}`)).toHaveText("readonly", {
       timeout: 15_000,
     });
   });

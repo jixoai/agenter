@@ -503,36 +503,41 @@
   });
 </script>
 
-<div class={`web-chat-view ${className}`} data-connected={connectionState}>
+<div
+  class={`web-chat-view ${className}`}
+  part="surface"
+  data-connected={connectionState}
+  data-focused={focused ? "true" : "false"}
+>
   {#if showHeader && channel}
-    <header class="header">
-      <div class="header-copy">
-        <div class="eyebrow">Room transcript</div>
+    <header class="header" part="header">
+      <div class="header-copy" part="header-copy">
+        <div class="eyebrow" part="eyebrow">Room transcript</div>
         <h2>{channel.title}</h2>
       </div>
-      <div class="status-block">
-        <span class="status-chip" data-state={connectionState}>{connectionState}</span>
+      <div class="status-block" part="status-block">
+        <span class="status-chip" part="status-chip" data-state={connectionState}>{connectionState}</span>
         {#if focused}
-          <span class="focus-chip">Focused</span>
+          <span class="focus-chip" part="focus-chip">Focused</span>
         {/if}
       </div>
     </header>
   {/if}
 
   {#if routeNotice || errorMessage}
-    <div class="notice" data-tone={errorMessage ? "destructive" : routeNotice?.tone ?? "info"}>
+    <div class="notice" part="notice" data-tone={errorMessage ? "destructive" : routeNotice?.tone ?? "info"}>
       {errorMessage ?? routeNotice?.message}
     </div>
   {/if}
 
-  <div class="body">
+  <div class="body" part="body">
     {#if !channel}
-      <div class="empty-state">
+      <div class="empty-state" part="empty-state">
         <h3>{emptyTitle}</h3>
         <p>{emptyMessage}</p>
       </div>
     {:else}
-      <div class="transcript-shell">
+      <div class="transcript-shell" part="transcript-shell">
         <ScrollView
           bind:viewportRef
           bind:contentRef
@@ -543,12 +548,12 @@
           onViewportScroll={handleScroll}
         >
           {#if loadingInitial && transcriptMessages.length === 0}
-            <div class="empty-state">
+            <div class="empty-state" part="empty-state loading-state">
               <h3>Loading channel history...</h3>
               <p>Connecting to the room transport.</p>
             </div>
           {:else if transcriptMessages.length === 0}
-            <div class="empty-state">
+            <div class="empty-state" part="empty-state transcript-empty-state">
               <h3>{emptyTranscriptTitle}</h3>
               <p>{emptyTranscriptMessage}</p>
             </div>
@@ -587,6 +592,7 @@
     --web-chat-border: #dbe1ea;
     --web-chat-surface: rgba(255, 255, 255, 0.96);
     --web-chat-foreground: #0f172a;
+    container-type: inline-size;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     height: 100%;
@@ -601,9 +607,9 @@
   }
 
   .header {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: flex-start;
-    justify-content: space-between;
     gap: 1rem;
     padding: 1rem 1.25rem 0.75rem;
   }
@@ -742,5 +748,23 @@
     max-width: 24rem;
     font-size: 0.9rem;
     line-height: 1.6;
+  }
+
+  @container (max-width: 38rem) {
+    .header {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .status-block {
+      justify-content: flex-start;
+    }
+
+    .notice {
+      margin-inline: 1rem;
+    }
+
+    .transcript-viewport {
+      padding-inline: 0.75rem;
+    }
   }
 </style>

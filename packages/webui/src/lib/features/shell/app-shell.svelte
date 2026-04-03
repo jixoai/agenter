@@ -124,7 +124,7 @@
 	</Sidebar.Sidebar>
 
 	<Sidebar.Inset class="min-h-svh bg-background">
-		<div class="flex h-svh min-h-0 flex-col">
+		<div class="grid h-svh grid-rows-[auto_minmax(0,1fr)]">
 			<header class="sticky top-0 z-20 border-b bg-background/90 backdrop-blur">
 				<div class="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
 					<div class="flex min-w-0 items-center gap-3">
@@ -152,7 +152,7 @@
 				</div>
 			</header>
 
-			<main class="min-h-0 flex-1">{@render children?.()}</main>
+			<main class="h-full">{@render children?.()}</main>
 		</div>
 	</Sidebar.Inset>
 </Sidebar.Provider>

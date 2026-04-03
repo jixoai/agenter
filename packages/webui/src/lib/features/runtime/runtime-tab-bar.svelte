@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 
 	import ScrollView from '$lib/components/scroll-view.svelte';
-	import { Tabs, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { cn } from '$lib/utils.js';
 	import type { RuntimeTabId, RuntimeTabItem } from './runtime-shell-state';
 
@@ -19,7 +19,7 @@
 	} = $props();
 </script>
 
-<Tabs
+<Tabs.Root
 	value={activeTab}
 	onValueChange={(value) => {
 		if (onNavigate) {
@@ -34,9 +34,9 @@
 	}}
 >
 	<ScrollView class="w-full" orientation="horizontal" contentClass="min-w-max">
-		<TabsList class="w-max min-w-full">
+		<Tabs.List class="w-max min-w-full">
 			{#each tabs as tab (tab.id)}
-				<TabsTrigger value={tab.id} class="gap-2" data-runtime-tab={tab.id}>
+				<Tabs.Trigger value={tab.id} class="gap-2" data-runtime-tab={tab.id}>
 					<span>{tab.label}</span>
 					{#if tab.badgeLabel}
 						<span
@@ -49,8 +49,8 @@
 							{tab.badgeLabel}
 						</span>
 					{/if}
-				</TabsTrigger>
+				</Tabs.Trigger>
 			{/each}
-		</TabsList>
+		</Tabs.List>
 	</ScrollView>
-</Tabs>
+</Tabs.Root>
