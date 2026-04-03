@@ -6,6 +6,7 @@
 
   let {
     channel = null,
+    viewerActorId = null,
     initialMessages = [],
     initialSnapshotResolved = false,
     disabled = false,
@@ -25,6 +26,7 @@
 
 <WebChatViewRoot
   {channel}
+  {viewerActorId}
   {initialMessages}
   {initialSnapshotResolved}
   {disabled}

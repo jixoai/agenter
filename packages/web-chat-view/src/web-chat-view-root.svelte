@@ -4,6 +4,7 @@
     MessageTransportServerMessage,
     ReverseTimeCursor,
   } from "@agenter/message-system/types";
+  import { ScrollView } from "@agenter/svelte-primitives";
   import { onMount, untrack } from "svelte";
 
   import DefaultWebChatComposer from "./default-composer.svelte";
@@ -13,6 +14,7 @@
     isAssistantMessage,
     mergeMessages,
     normalizeMessageRecords,
+    resolveViewerActorId,
     resolveUserSender,
   } from "./message-utils";
   import type {
@@ -32,6 +34,7 @@
 
   let {
     channel,
+    viewerActorId = null,
     initialMessages = [],
     initialSnapshotResolved = false,
     disabled = false,
@@ -73,6 +76,7 @@
 
   const transcriptMessages = $derived([...messages].sort(compareMessages));
   const effectiveSocketFactory = $derived(socketFactory ?? defaultSocketFactory);
+  const effectiveViewerActorId = $derived(resolveViewerActorId(channel, viewerActorId));
   const composerHint = $derived(
     submitMessage
       ? "Enter to send, Shift+Enter for newline"
@@ -306,10 +310,11 @@
     if (normalized.length === 0) {
       return;
     }
-    const sender = resolveUserSender(channel);
+    const sender = resolveUserSender(channel, effectiveViewerActorId);
     const payload: MessageTransportClientMessage = {
       type: "send",
       message: {
+        senderActorId: sender.senderActorId,
         from: sender.from,
         to: sender.to,
         content: normalized,
@@ -528,41 +533,43 @@
       </div>
     {:else}
       <div class="transcript-shell">
-        <div
-          bind:this={viewportRef}
-          class="transcript-viewport"
-          data-testid="web-chat-scroll-viewport"
-          onscroll={handleScroll}
+        <ScrollView
+          bind:viewportRef
+          bind:contentRef
+          class="transcript-scroll"
+          viewportClass="transcript-viewport"
+          contentClass="transcript-content"
+          viewportTestId="web-chat-scroll-viewport"
+          onViewportScroll={handleScroll}
         >
-          <div bind:this={contentRef} class="transcript-content">
-            {#if loadingInitial && transcriptMessages.length === 0}
-              <div class="empty-state">
-                <h3>Loading channel history...</h3>
-                <p>Connecting to the room transport.</p>
-              </div>
-            {:else if transcriptMessages.length === 0}
-              <div class="empty-state">
-                <h3>{emptyTranscriptTitle}</h3>
-                <p>{emptyTranscriptMessage}</p>
-              </div>
-            {:else}
-              {#each transcriptMessages as message (message.messageId)}
-                <section
-                  data-message-id={message.messageId}
-                  data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
-                >
-                  <MessageRow
-                    {channel}
-                    {message}
-                    onSubmitInteractive={async (text) => {
-                      await handleSubmit({ text, assets: [] });
-                    }}
-                  />
-                </section>
-              {/each}
-            {/if}
-          </div>
-        </div>
+          {#if loadingInitial && transcriptMessages.length === 0}
+            <div class="empty-state">
+              <h3>Loading channel history...</h3>
+              <p>Connecting to the room transport.</p>
+            </div>
+          {:else if transcriptMessages.length === 0}
+            <div class="empty-state">
+              <h3>{emptyTranscriptTitle}</h3>
+              <p>{emptyTranscriptMessage}</p>
+            </div>
+          {:else}
+            {#each transcriptMessages as message (message.messageId)}
+              <section
+                data-message-id={message.messageId}
+                data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
+              >
+                <MessageRow
+                  {channel}
+                  viewerActorId={effectiveViewerActorId}
+                  {message}
+                  onSubmitInteractive={async (text) => {
+                    await handleSubmit({ text, assets: [] });
+                  }}
+                />
+              </section>
+            {/each}
+          {/if}
+        </ScrollView>
         {#if composerProps}
           <DefaultWebChatComposer {...composerProps} />
         {/if}
@@ -702,12 +709,13 @@
     height: 100%;
   }
 
+  .transcript-scroll,
   .transcript-viewport {
     min-height: 0;
-    overflow: auto;
+  }
+
+  .transcript-viewport {
     padding: 0 1rem 0.5rem;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
   }
 
   .transcript-content {

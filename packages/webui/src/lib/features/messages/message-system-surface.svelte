@@ -4,6 +4,7 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { WebChatViewHost } from '@agenter/web-chat-view';
+	import { untrack } from 'svelte';
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import ScrollView from '$lib/components/scroll-view.svelte';
@@ -20,6 +21,7 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	import type { MessageSystemSurfaceProps } from './message-system-surface.types';
@@ -28,6 +30,8 @@
 		roomsState,
 		selectedRoomId,
 		selectedRoom,
+		disableManageDialogPortal = false,
+		initialManageDialogSection = null,
 		initialMessages,
 		initialSnapshotResolved,
 		routeNotice,
@@ -35,10 +39,12 @@
 		readSeatTotal,
 		sendAsOptions,
 		selectedCallerToken,
+		selectedViewerActorId,
 		selectableActors,
 		roomSeatStates,
 		onSelectRoom,
 		onChangeCallerToken,
+		onChangeViewerActorId,
 		onSaveRoomTitle,
 		onArchiveRoom,
 		onDeleteRoom,
@@ -52,6 +58,10 @@
 
 	let editableTitlesByRoomId: Record<string, string> = $state({});
 	let createDialogOpen = $state(false);
+	let manageDialogOpen = $state(untrack(() => initialManageDialogSection !== null));
+	let manageSection = $state<'overview' | 'users' | 'access'>(
+		untrack(() => initialManageDialogSection ?? 'overview'),
+	);
 	let createTitle = $state('');
 	let createSelection: Record<string, boolean> = $state({});
 	let createBusy = $state(false);
@@ -73,6 +83,20 @@
 		selectedRoomChatId ? (grantParticipantIdsByRoomId[selectedRoomChatId] ?? '') : '',
 	);
 	const grantError = $derived(selectedRoomChatId ? (grantErrorsByRoomId[selectedRoomChatId] ?? null) : null);
+	const duplicateSeatLabels = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const state of roomSeatStates) {
+			counts.set(state.label, (counts.get(state.label) ?? 0) + 1);
+		}
+		return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([label]) => label));
+	});
+	const duplicateSendAsLabels = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const option of sendAsOptions) {
+			counts.set(option.label, (counts.get(option.label) ?? 0) + 1);
+		}
+		return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([label]) => label));
+	});
 
 	const resetCreateDialog = (): void => {
 		createTitle = '';
@@ -85,11 +109,30 @@
 		createDialogOpen = true;
 	};
 
+	const openManageDialog = (section: 'overview' | 'users' | 'access' = 'overview'): void => {
+		manageSection = section;
+		manageDialogOpen = true;
+	};
+
 	const formatTimestamp = (value?: number): string => {
 		if (!value) {
 			return 'unknown';
 		}
 		return new Date(value).toLocaleString();
+	};
+
+	const describeSeatOption = (state: MessageSystemSurfaceProps['roomSeatStates'][number]): string => {
+		if (!duplicateSeatLabels.has(state.label)) {
+			return `${state.label} · ${state.role}`;
+		}
+		return `${state.label} · ${state.subtitle ?? state.actorId} · ${state.role}`;
+	};
+
+	const describeSendAsOption = (option: MessageSystemSurfaceProps['sendAsOptions'][number]): string => {
+		if (!duplicateSendAsLabels.has(option.label)) {
+			return `${option.label} · ${option.role}`;
+		}
+		return `${option.label} · ${option.participantId ?? option.accessToken} · ${option.role}`;
 	};
 
 	const setEditableTitle = (value: string): void => {
@@ -227,7 +270,7 @@
 	};
 </script>
 
-<div class="grid h-full gap-4 p-4 md:grid-cols-[18rem_minmax(0,1fr)_22rem] md:p-6">
+<div class="grid h-full gap-4 p-4 md:grid-cols-[18rem_minmax(0,1fr)] md:p-6">
 	<Card class="min-h-0 min-w-0 py-0">
 		<CardHeader class="gap-2 border-b">
 			<div class="flex items-center justify-between gap-3">
@@ -294,18 +337,17 @@
 				<div class="min-w-0">
 					<CardTitle>{selectedRoom?.title ?? 'Room transcript'}</CardTitle>
 					<CardDescription>
-						{selectedRoom?.chatId ?? 'Select a room to inspect transcript and operate the room seats.'}
+						{selectedRoom?.chatId ?? 'Select a room to inspect the shared room transcript.'}
 					</CardDescription>
 				</div>
 				<div class="flex gap-2">
 					<Button
 						variant="outline"
-						size="icon-sm"
-						disabled={!selectedRoom || editableTitle.trim().length === 0 || titleBusy}
-						onclick={() => void handleSaveTitle()}
-						aria-label="Save room title"
+						size="sm"
+						disabled={!selectedRoom}
+						onclick={() => openManageDialog('overview')}
 					>
-						<PencilIcon class="size-4" />
+						Manage room
 					</Button>
 					<Button
 						variant="outline"
@@ -328,25 +370,35 @@
 				</div>
 			</div>
 			{#if selectedRoom}
-				<div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_14rem]">
-					<Input
-						value={editableTitle}
-						placeholder="Room title"
-						oninput={(event) => {
-							setEditableTitle((event.currentTarget as HTMLInputElement).value);
-						}}
-					/>
-					<NativeSelect.Root
-						aria-label="Send as"
-						value={selectedCallerToken ?? ''}
-						onchange={(event) => {
-							onChangeCallerToken((event.currentTarget as HTMLSelectElement).value);
-						}}
-					>
-						{#each sendAsOptions as option (option.accessToken)}
-							<option value={option.accessToken}>{option.label} · {option.role}</option>
-						{/each}
-					</NativeSelect.Root>
+				<div class="grid gap-2 md:grid-cols-[14rem_14rem]">
+					<label class="grid gap-1 text-xs font-medium text-muted-foreground">
+						<span>View as</span>
+						<NativeSelect.Root
+							aria-label="View as"
+							value={selectedViewerActorId ?? ''}
+							onchange={(event) => {
+								onChangeViewerActorId((event.currentTarget as HTMLSelectElement).value);
+							}}
+						>
+							{#each roomSeatStates as state (state.actorId)}
+								<option value={state.actorId}>{describeSeatOption(state)}</option>
+							{/each}
+						</NativeSelect.Root>
+					</label>
+					<label class="grid gap-1 text-xs font-medium text-muted-foreground">
+						<span>Send as</span>
+						<NativeSelect.Root
+							aria-label="Send as"
+							value={selectedCallerToken ?? ''}
+							onchange={(event) => {
+								onChangeCallerToken((event.currentTarget as HTMLSelectElement).value);
+							}}
+						>
+							{#each sendAsOptions as option (option.accessToken)}
+								<option value={option.accessToken}>{describeSendAsOption(option)}</option>
+							{/each}
+						</NativeSelect.Root>
+					</label>
 				</div>
 			{/if}
 		</CardHeader>
@@ -354,6 +406,7 @@
 			<div class="h-full min-h-0">
 				<WebChatViewHost
 					channel={selectedRoom}
+					viewerActorId={selectedViewerActorId}
 					{initialMessages}
 					{initialSnapshotResolved}
 					class="h-full"
@@ -369,135 +422,228 @@
 			</div>
 		</CardContent>
 	</Card>
+</div>
 
-	<Card class="min-h-0 min-w-0 py-0">
-		<CardHeader class="gap-2 border-b">
-			<CardTitle>Users</CardTitle>
-			<CardDescription>
-				Seats, grants, read receipts, credential state, and per-seat focus all live here.
-			</CardDescription>
-		</CardHeader>
-		<CardContent class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-			<div class="grid gap-2">
-				<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
-				<NativeSelect.Root
-					aria-label="Grant actor"
-					value={grantParticipantId}
-					onchange={(event) => {
-						setGrantParticipantId((event.currentTarget as HTMLSelectElement).value);
-					}}
-				>
-					<option value="">Select actor</option>
-					{#each selectableActors as actor (actor.actorId)}
-						<option value={actor.actorId}>{actor.label} · {actor.subtitle ?? actor.actorId}</option>
-					{/each}
-				</NativeSelect.Root>
-				<NativeSelect.Root aria-label="Grant role" bind:value={grantRole}>
-					<option value="member">member</option>
-					<option value="readonly">readonly</option>
-					<option value="admin">admin</option>
-				</NativeSelect.Root>
-				<Button disabled={!selectedRoom || !grantParticipantId || grantBusy} onclick={() => void handleGrantSeat()}>
-					Grant seat
-				</Button>
-				{#if grantError}
-					<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-						{grantError}
-					</div>
-				{/if}
-			</div>
-
-			<ScrollView class="h-full" contentClass="grid gap-3">
-				{#if roomSeatStates.length}
-					<Tooltip.Provider>
-						<div class="flex items-center justify-end">
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<StatusRing
-										value={readSeatCount}
-										total={readSeatTotal}
-										label="Read progress"
-										class="text-primary"
-									/>
-								</Tooltip.Trigger>
-								<Tooltip.Content class="max-w-sm">
-									<div class="grid gap-1 text-xs">
-										{#each roomSeatStates as state (state.actorId)}
-											<div>
-												{state.label} ·
-												{state.hasReadLatestVisible ? `read @ ${formatTimestamp(state.readAt)}` : 'unread'}
-											</div>
-										{/each}
+<Dialog.Root bind:open={manageDialogOpen}>
+	<Dialog.Content
+		class="max-w-5xl p-0"
+		portalProps={disableManageDialogPortal ? { disabled: true } : undefined}
+	>
+		{#if selectedRoom}
+			<Sidebar.Provider open={true}>
+				<div class="flex h-[min(80vh,46rem)] min-h-0">
+					<Sidebar.Sidebar collapsible="none" class="border-r">
+						<Sidebar.Header class="border-b px-3 py-3">
+							<div class="text-sm font-semibold">{selectedRoom.title || selectedRoom.chatId}</div>
+							<div class="text-xs text-muted-foreground">{selectedRoom.chatId}</div>
+						</Sidebar.Header>
+						<Sidebar.Content>
+							<Sidebar.Group>
+								<Sidebar.Menu>
+									<Sidebar.MenuItem>
+										<Sidebar.MenuButton
+											isActive={manageSection === 'overview'}
+											onclick={() => {
+												manageSection = 'overview';
+											}}
+										>
+											<span>Overview</span>
+										</Sidebar.MenuButton>
+									</Sidebar.MenuItem>
+									<Sidebar.MenuItem>
+										<Sidebar.MenuButton
+											isActive={manageSection === 'users'}
+											onclick={() => {
+												manageSection = 'users';
+											}}
+										>
+											<span>Users</span>
+										</Sidebar.MenuButton>
+									</Sidebar.MenuItem>
+									<Sidebar.MenuItem>
+										<Sidebar.MenuButton
+											isActive={manageSection === 'access'}
+											onclick={() => {
+												manageSection = 'access';
+											}}
+										>
+											<span>Access</span>
+										</Sidebar.MenuButton>
+									</Sidebar.MenuItem>
+								</Sidebar.Menu>
+							</Sidebar.Group>
+						</Sidebar.Content>
+					</Sidebar.Sidebar>
+					<Sidebar.Inset class="min-h-0">
+						<ScrollView class="h-full" contentClass="grid gap-4 p-6">
+							{#if manageSection === 'overview'}
+								<div class="grid gap-4">
+									<div class="grid gap-2">
+										<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Room title</div>
+										<div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+											<Input
+												value={editableTitle}
+												placeholder="Room title"
+												oninput={(event) => {
+													setEditableTitle((event.currentTarget as HTMLInputElement).value);
+												}}
+											/>
+											<Button
+												variant="outline"
+												disabled={editableTitle.trim().length === 0 || titleBusy}
+												onclick={() => void handleSaveTitle()}
+											>
+												<PencilIcon class="mr-2 size-4" />
+												Save title
+											</Button>
+										</div>
 									</div>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</div>
-					</Tooltip.Provider>
-				{/if}
-
-				{#if roomSeatStates.length}
-					{#each roomSeatStates as state (state.actorId)}
-						<div class="rounded-2xl border p-3" data-testid={`room-seat-${state.actorId}`}>
-							<div class="flex items-center justify-between gap-3">
-								<div class="flex min-w-0 items-center gap-3">
-									<ProfileAvatar label={state.label} src={state.iconUrl} class="size-9" />
-									<div class="min-w-0">
-										<div class="truncate text-sm font-semibold">{state.label}</div>
-										<div class="truncate text-xs text-muted-foreground">
-											{state.subtitle ?? state.actorId}
+									<div class="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
+										<div class="flex items-start">
+											<StatusRing
+												value={readSeatCount}
+												total={readSeatTotal}
+												label="Read progress"
+												class="text-primary"
+											/>
+										</div>
+										<div class="grid gap-1 text-sm text-muted-foreground">
+											<div>{roomSeatStates.length} seats are currently visible in this room.</div>
+											<div>Updated {formatTimestamp(selectedRoom.updatedAt)}</div>
+											<div>
+												Viewer is {roomSeatStates.find((seat) => seat.actorId === selectedViewerActorId)?.label ??
+													'unset'}
+											</div>
 										</div>
 									</div>
 								</div>
-								<div
-									class="rounded-full border px-2 py-1 text-[11px]"
-									data-testid={`room-seat-role-${state.actorId}`}
-								>
-									{state.role}
+							{:else if manageSection === 'users'}
+								<div class="grid gap-3">
+									<Tooltip.Provider>
+										<div class="flex items-center justify-end">
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<StatusRing
+														value={readSeatCount}
+														total={readSeatTotal}
+														label="Read progress"
+														class="text-primary"
+													/>
+												</Tooltip.Trigger>
+												<Tooltip.Content class="max-w-sm">
+													<div class="grid gap-1 text-xs">
+														{#each roomSeatStates as state (state.actorId)}
+															<div>
+																{state.label} ·
+																{state.hasReadLatestVisible
+																	? `read @ ${formatTimestamp(state.readAt)}`
+																	: 'unread'}
+															</div>
+														{/each}
+													</div>
+												</Tooltip.Content>
+											</Tooltip.Root>
+										</div>
+									</Tooltip.Provider>
+
+									{#if roomSeatStates.length}
+										{#each roomSeatStates as state (state.actorId)}
+											<div class="rounded-2xl border p-3" data-testid={`room-seat-${state.actorId}`}>
+												<div class="flex items-center justify-between gap-3">
+													<div class="flex min-w-0 items-center gap-3">
+														<ProfileAvatar label={state.label} src={state.iconUrl} class="size-9" />
+														<div class="min-w-0">
+															<div class="truncate text-sm font-semibold">{state.label}</div>
+															<div class="truncate text-xs text-muted-foreground">
+																{state.subtitle ?? state.actorId}
+															</div>
+														</div>
+													</div>
+													<div
+														class="rounded-full border px-2 py-1 text-[11px]"
+														data-testid={`room-seat-role-${state.actorId}`}
+													>
+														{state.role}
+													</div>
+												</div>
+												<div class="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+													<div>{state.hasReadLatestVisible ? 'Read latest visible' : 'Unread'}</div>
+													<div>{state.focused ? 'Focused' : 'Unfocused'}</div>
+													<div>{state.online ? 'Online' : 'Offline'}</div>
+													{#if state.invalidCredential}
+														<div>Credential invalid</div>
+													{/if}
+												</div>
+												<div class="mt-3 flex flex-wrap gap-2">
+													{#if state.accessToken}
+														<Button
+															size="sm"
+															variant="outline"
+															onclick={() => handleSeatFocusClick(state)}
+														>
+															{state.focused ? 'Unfocus seat' : 'Focus seat'}
+														</Button>
+													{/if}
+													{#if state.grantId}
+														<Button
+															size="sm"
+															variant="outline"
+															onclick={() => handleSeatRevokeClick(state)}
+														>
+															Revoke
+														</Button>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									{:else}
+										<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+											No room seats are visible yet.
+										</div>
+									{/if}
 								</div>
-							</div>
-							<div class="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-								<div>{state.hasReadLatestVisible ? 'Read latest visible' : 'Unread'}</div>
-								<div>{state.focused ? 'Focused' : 'Unfocused'}</div>
-								<div>{state.online ? 'Online' : 'Offline'}</div>
-								{#if state.invalidCredential}
-									<div>Credential invalid</div>
-								{/if}
-							</div>
-							<div class="mt-3 flex flex-wrap gap-2">
-								{#if state.accessToken}
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => handleSeatFocusClick(state)}
+							{:else}
+								<div class="grid gap-2">
+									<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
+									<NativeSelect.Root
+										aria-label="Grant actor"
+										value={grantParticipantId}
+										onchange={(event) => {
+											setGrantParticipantId((event.currentTarget as HTMLSelectElement).value);
+										}}
 									>
-										{state.focused ? 'Unfocus seat' : 'Focus seat'}
-									</Button>
-								{/if}
-								{#if state.grantId}
+										<option value="">Select actor</option>
+										{#each selectableActors as actor (actor.actorId)}
+											<option value={actor.actorId}>{actor.label} · {actor.subtitle ?? actor.actorId}</option>
+										{/each}
+									</NativeSelect.Root>
+									<NativeSelect.Root aria-label="Grant role" bind:value={grantRole}>
+										<option value="member">member</option>
+										<option value="readonly">readonly</option>
+										<option value="admin">admin</option>
+									</NativeSelect.Root>
 									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => handleSeatRevokeClick(state)}
+										disabled={!selectedRoom || !grantParticipantId || grantBusy}
+										onclick={() => void handleGrantSeat()}
 									>
-										Revoke
+										Grant seat
 									</Button>
-								{/if}
-							</div>
-						</div>
-					{/each}
-				{:else if selectedRoomChatId}
-					<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-						No room seats are visible yet.
-					</div>
-				{:else}
-					<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-						Select a room to inspect seats and grant management.
-					</div>
-				{/if}
-			</ScrollView>
-		</CardContent>
-	</Card>
-</div>
+									{#if grantError}
+										<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+											{grantError}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</ScrollView>
+					</Sidebar.Inset>
+				</div>
+			</Sidebar.Provider>
+		{:else}
+			<div class="p-6 text-sm text-muted-foreground">Select a room first.</div>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={createDialogOpen}>
 	<Dialog.Content class="sm:max-w-xl">

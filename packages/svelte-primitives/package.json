@@ -1,0 +1,24 @@
+{
+  "name": "@agenter/svelte-primitives",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "echo 'No tests for @agenter/svelte-primitives'",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "svelte": "./src/index.ts",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "svelte": "^5.54.0",
+    "svelte-check": "^4.4.2",
+    "typescript": "latest"
+  }
+}

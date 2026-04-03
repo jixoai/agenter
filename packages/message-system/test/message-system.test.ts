@@ -291,6 +291,56 @@ describe("Feature: message-chat-control-plane", () => {
     expect(grants.map((grant) => grant.participantId).sort()).toEqual(["auth:owner", "auth:viewer", "session:relay"]);
   });
 
+  test("Scenario: Given same-label room seats When authorized sends persist Then durable senderActorId survives snapshot and paging", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: "room-durable-sender" });
+    const seatA = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Analyst",
+      participantId: "auth:analyst-a",
+    });
+    const seatB = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Analyst",
+      participantId: "session:reviewer",
+    });
+
+    const fromA = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: seatA.accessToken,
+      content: "message from analyst a",
+    });
+    const fromB = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: seatB.accessToken,
+      content: "message from reviewer",
+    });
+
+    expect(fromA.senderActorId).toBe("auth:analyst-a");
+    expect(fromB.senderActorId).toBe("session:reviewer");
+    expect(fromA.from).toBe("Analyst");
+    expect(fromB.from).toBe("Analyst");
+
+    const snapshot = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: seatA.accessToken,
+    });
+    expect(snapshot.items.find((item) => item.content === "message from analyst a")?.senderActorId).toBe("auth:analyst-a");
+    expect(snapshot.items.find((item) => item.content === "message from reviewer")?.senderActorId).toBe("session:reviewer");
+
+    const page = plane.queryMessagesAuthorized({
+      chatId: room.chatId,
+      accessToken: seatB.accessToken,
+      limit: 20,
+    });
+    expect(page.items.find((item) => item.messageId === fromA.messageId)?.senderActorId).toBe("auth:analyst-a");
+    expect(page.items.find((item) => item.messageId === fromB.messageId)?.senderActorId).toBe("session:reviewer");
+  });
+
   test("Scenario: Given a room with grants transcript and read state When it is dissolved Then the room and its dependent facts disappear together", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: "room-dissolve" });

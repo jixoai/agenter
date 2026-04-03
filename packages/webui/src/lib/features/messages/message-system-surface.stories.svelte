@@ -21,17 +21,26 @@
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await expect(canvas.getByRole('button', { name: /Ops bridge/i })).toBeInTheDocument();
-
 		await userEvent.selectOptions(canvas.getByLabelText('Grant actor'), 'auth:wallet_evm');
 		await userEvent.selectOptions(canvas.getByLabelText('Grant role'), 'readonly');
-		await userEvent.click(canvas.getByRole('button', { name: 'Grant seat' }));
+		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		(canvas.getByRole('button', { name: 'Users' }) as HTMLButtonElement).click();
 
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
 		});
+		await userEvent.keyboard('{Escape}');
+		await waitFor(() => {
+			expect(canvas.queryByLabelText('Grant actor')).toBeNull();
+		});
 
-		await userEvent.type(canvas.getByPlaceholderText('Message Ops bridge...'), 'Story transcript append');
-		await userEvent.click(canvas.getByRole('button', { name: 'Send' }));
+		const composer = canvas.getByPlaceholderText('Message Ops bridge...') as HTMLTextAreaElement;
+		composer.value = 'Story transcript append';
+		composer.dispatchEvent(new Event('input', { bubbles: true }));
+		await waitFor(() => {
+			expect(canvas.getByRole('button', { name: 'Send' })).toBeEnabled();
+		});
+		(canvas.getByRole('button', { name: 'Send' }) as HTMLButtonElement).click();
 
 		await waitFor(() => {
 			expect(containsVisibleTextDeep(canvasElement, 'Story transcript append')).toBe(true);
@@ -41,5 +50,35 @@
 		});
 	}}
 >
-	<Harness />
+	<Harness disableManageDialogPortal initialManageDialogSection="access" />
+</Story>
+
+<Story
+	name="Scenario: Given duplicate-label actors When viewer changes Then viewer perspective stays independent from send-as authority"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.selectOptions(canvas.getByLabelText('Grant actor'), 'session:reviewer');
+		await userEvent.selectOptions(canvas.getByLabelText('Grant role'), 'member');
+		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		await userEvent.keyboard('{Escape}');
+		await waitFor(() => {
+			expect(canvas.queryByLabelText('Grant actor')).toBeNull();
+		});
+
+		const viewerSelect = canvas.getByLabelText('View as') as HTMLSelectElement;
+		const sendAsSelect = canvas.getByLabelText('Send as') as HTMLSelectElement;
+		const sendAsBefore = sendAsSelect.value;
+
+		await waitFor(() => {
+			expect([...viewerSelect.options].some((option) => option.textContent?.includes('/repo/reviewer'))).toBe(true);
+		});
+		await userEvent.selectOptions(viewerSelect, 'session:reviewer');
+		await waitFor(() => {
+			expect(viewerSelect.value).toBe('session:reviewer');
+		});
+		expect(sendAsSelect.value).toBe(sendAsBefore);
+	}}
+>
+	<Harness disableManageDialogPortal initialManageDialogSection="access" />
 </Story>

@@ -114,6 +114,7 @@ const hashToken = (token: string): string => createHash("sha256").update(token).
 const createOpaqueToken = (): string => `msgtok_${randomUUID().replace(/-/g, "")}`;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
 
 const isCanonicalActorId = (value: string): value is MessageActorId =>
   ACTOR_ID_PATTERN.test(value) &&
@@ -441,8 +442,12 @@ export class MessageControlPlane {
     const createdAt = input.createdAt ?? Date.now();
     const attentionState = input.attentionState ?? "loaded";
     const visibleAt = input.visibleAt ?? createdAt;
+    const from =
+      input.from?.trim() ||
+      (input.senderActorId ? fallbackActorLabel(input.senderActorId) : "User");
     const message = this.db.appendMessage({
       ...input,
+      from,
       createdAt,
       attentionState,
       visibleAt,
@@ -479,7 +484,8 @@ export class MessageControlPlane {
         payload: { interactive: input.payload.interactive },
       });
     }
-    this.requireAccess(input.chatId, input.accessToken, "member");
+    const grant = this.requireAccess(input.chatId, input.accessToken, "member");
+    const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
     const createdAt = input.createdAt ?? Date.now();
     const attentionState = input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued");
     const visibleAt = input.visibleAt ?? createdAt;
@@ -487,7 +493,8 @@ export class MessageControlPlane {
       chatId: input.chatId,
       messageId: input.messageId,
       rootId: input.rootId,
-      from: input.from,
+      senderActorId: sender.senderActorId,
+      from: sender.from,
       to: input.to,
       kind: input.kind,
       content: input.content,
@@ -538,12 +545,14 @@ export class MessageControlPlane {
       };
     },
   ): MessageRecord {
-    this.requireAccess(input.chatId, input.accessToken, "admin");
+    const grant = this.requireAccess(input.chatId, input.accessToken, "admin");
+    const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
     return this.send({
       chatId: input.chatId,
       messageId: input.messageId,
       rootId: input.rootId,
-      from: input.from,
+      senderActorId: sender.senderActorId,
+      from: sender.from,
       to: input.to,
       kind: "error",
       content: input.content,
@@ -567,12 +576,14 @@ export class MessageControlPlane {
       };
     },
   ): MessageRecord {
-    this.requireAccess(input.chatId, input.accessToken, "member");
+    const grant = this.requireAccess(input.chatId, input.accessToken, "member");
+    const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
     return this.send({
       chatId: input.chatId,
       messageId: input.messageId,
       rootId: input.rootId,
-      from: input.from,
+      senderActorId: sender.senderActorId,
+      from: sender.from,
       to: input.to,
       kind: "interactive",
       content: input.content,
@@ -1301,6 +1312,27 @@ export class MessageControlPlane {
       );
     }
     return grant;
+  }
+
+  private resolveAuthorizedSender(
+    chatId: string,
+    grant: MessageChannelGrantRecord,
+    input: Pick<MessageAppendInput, "senderActorId" | "from">,
+  ): { senderActorId?: MessageActorId; from: string } {
+    const senderActorId =
+      input.senderActorId ??
+      (grant.participantId && isCanonicalActorId(grant.participantId) ? grant.participantId : undefined);
+    const channel = this.db.getChannel(chatId);
+    const participantLabel =
+      senderActorId
+        ? channel?.participants.find((participant) => participant.id === senderActorId)?.label?.trim()
+        : undefined;
+    const from =
+      participantLabel ||
+      grant.label?.trim() ||
+      input.from?.trim() ||
+      (senderActorId ? fallbackActorLabel(senderActorId) : "User");
+    return { senderActorId, from };
   }
 
   private requireAdministrativeGrant(

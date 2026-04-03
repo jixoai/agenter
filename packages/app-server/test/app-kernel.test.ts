@@ -936,6 +936,7 @@ describe("Feature: app kernel event replay", () => {
     const sentMessage = snapshot.items.find((item) => item.content === "global hello");
     expect(sentMessage?.attentionState).toBe("queued");
     expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
+    expect(sentMessage?.senderActorId).toBe("system:trusted-bootstrap");
     const issued = kernel.issueGlobalRoomGrant({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -945,14 +946,29 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(issued.accessToken).toStartWith("msgtok_");
 
+    const memberSent = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: issued.accessToken,
+      text: "pair operator hello",
+    });
+    expect(memberSent.ok).toBeTrue();
+
+    const memberSnapshot = kernel.snapshotGlobalRoom({
+      chatId: room.chatId,
+      accessToken: issued.accessToken,
+      limit: 20,
+    });
+    const memberMessage = memberSnapshot.items.find((item) => item.content === "pair operator hello");
+    expect(memberMessage?.senderActorId).toBe("session:avatar-pair");
+
     const readProjection = kernel.markGlobalRoomRead({
       chatId: room.chatId,
       accessToken: issued.accessToken,
-      messageId: sentMessage?.messageId,
+      messageId: memberMessage?.messageId,
       readAt: 2_000,
     });
     expect(readProjection.readProgress).toMatchObject({
-      latestVisibleMessageId: sentMessage?.messageId,
+      latestVisibleMessageId: memberMessage?.messageId,
       totalSeatCount: 1,
       readSeatCount: 1,
       unreadSeatCount: 0,
@@ -964,6 +980,7 @@ describe("Feature: app kernel event replay", () => {
       limit: 20,
     });
     expect(page.items.some((item) => item.content === "global hello")).toBeTrue();
+    expect(page.items.find((item) => item.content === "pair operator hello")?.senderActorId).toBe("session:avatar-pair");
 
     const updated = kernel.updateGlobalRoom({
       chatId: room.chatId,

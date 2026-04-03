@@ -145,6 +145,7 @@ const mapMessage = (row: {
   message_id: string;
   chat_id: string;
   root_id: string | null;
+  sender_actor_id: string | null;
   from_id: string;
   to_id: string | null;
   kind: string | null;
@@ -163,6 +164,7 @@ const mapMessage = (row: {
   messageId: row.message_id,
   chatId: row.chat_id,
   rootId: row.root_id ?? undefined,
+  senderActorId: (row.sender_actor_id ?? undefined) as MessageActorId | undefined,
   from: row.from_id,
   to: row.to_id ?? undefined,
   content: row.content,
@@ -492,17 +494,19 @@ export class MessageDb {
     const attentionState = input.attentionState ?? "loaded";
     const visibleAt = input.visibleAt ?? createdAt;
     const attentionLoadedAt = input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : null);
+    const from = input.from ?? (input.senderActorId ? input.senderActorId.split(":").at(-1) ?? "User" : "User");
     const result = this.db
       .query(
         `insert into chat_message (
-          message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.messageId ?? createId(),
         input.chatId,
         input.rootId ?? null,
-        input.from,
+        input.senderActorId ?? null,
+        from,
         input.to ?? null,
         kind,
         input.content,
@@ -527,7 +531,7 @@ export class MessageDb {
   getMessage(chatId: string, messageId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ? and message_id = ?`,
       )
@@ -598,7 +602,7 @@ export class MessageDb {
     const before = input.before ?? undefined;
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and (
@@ -639,7 +643,7 @@ export class MessageDb {
   resolveLatestVisibleMessage(chatId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -718,7 +722,7 @@ export class MessageDb {
   private getMessageRowByDbId(id: number): Parameters<typeof mapMessage>[0] | null {
     return this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
          from chat_message where id = ?`,
       )
       .get(id) as Parameters<typeof mapMessage>[0] | null;
@@ -758,6 +762,7 @@ export class MessageDb {
         message_id text not null unique,
         chat_id text not null,
         root_id text,
+        sender_actor_id text,
         from_id text not null,
         to_id text,
         kind text not null default 'text',
@@ -819,6 +824,10 @@ export class MessageDb {
     if (!hasAttentionLoadedAtColumn) {
       this.db.exec(`alter table chat_message add column attention_loaded_at integer;`);
       this.db.exec(`update chat_message set attention_loaded_at = coalesce(attention_loaded_at, visible_at, created_at);`);
+    }
+    const hasSenderActorIdColumn = messageColumns.some((column) => column.name === "sender_actor_id");
+    if (!hasSenderActorIdColumn) {
+      this.db.exec(`alter table chat_message add column sender_actor_id text;`);
     }
     this.db.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
     this.db.exec(`update chat_message set attention_state = coalesce(attention_state, 'loaded');`);

@@ -7,6 +7,14 @@
 
 	import type { MessageSystemRoomSeatState, MessageSystemSendAsOption } from './message-system-surface.types';
 
+	let {
+		disableManageDialogPortal = false,
+		initialManageDialogSection = null,
+	}: {
+		disableManageDialogPortal?: boolean;
+		initialManageDialogSection?: 'overview' | 'users' | 'access' | null;
+	} = $props();
+
 	const createRoomEntry = (input: {
 		chatId: string;
 		title: string;
@@ -57,7 +65,7 @@
 		{
 			actorId: 'session:reviewer',
 			actorKind: 'session',
-			label: 'Reviewer',
+			label: 'Analyst',
 			subtitle: '/repo/reviewer',
 			iconUrl: null,
 		},
@@ -70,6 +78,7 @@
 				rowId: 1,
 				messageId: 'msg-1',
 				chatId: initialRoomId,
+				senderActorId: 'system:trusted-bootstrap',
 				from: 'Bootstrap admin',
 				kind: 'text',
 				content: 'Current operator room is live.',
@@ -125,6 +134,9 @@
 	let routeNotice: WebChatNotice | null = $state(null);
 	let selectedCallerTokenByRoomId: Record<string, string> = $state({
 		[initialRoomId]: `token:${initialRoomId}:admin`,
+	});
+	let selectedViewerActorIdByRoomId: Record<string, string> = $state({
+		[initialRoomId]: 'system:trusted-bootstrap',
 	});
 	let roomMessagesById: Record<string, GlobalRoomSnapshotOutput['items']> = $state(initialMessages);
 	let roomSeatsById: Record<string, MessageSystemRoomSeatState[]> = $state(initialSeats);
@@ -182,6 +194,9 @@
 	});
 	const selectedCallerToken = $derived(
 		selectedCallerTokenByRoomId[selectedRoomId] ?? sendAsOptions[0]?.accessToken ?? null,
+	);
+	const selectedViewerActorId = $derived(
+		selectedViewerActorIdByRoomId[selectedRoomId] ?? roomSeatStates[0]?.actorId ?? null,
 	);
 
 	const updateRoomEntry = (chatId: string, updater: (room: GlobalRoomEntry) => GlobalRoomEntry): void => {
@@ -281,6 +296,10 @@
 			...selectedCallerTokenByRoomId,
 			[chatId]: `token:${chatId}:admin`,
 		};
+		selectedViewerActorIdByRoomId = {
+			...selectedViewerActorIdByRoomId,
+			[chatId]: 'system:trusted-bootstrap',
+		};
 		setSelectedRoom(chatId);
 	};
 
@@ -300,12 +319,13 @@
 		if (!room) {
 			return;
 		}
+		const nextRooms = roomsState.data.filter((entry) => entry.chatId !== room.chatId);
 		roomsState = {
 			...roomsState,
-			data: roomsState.data.filter((entry) => entry.chatId !== room.chatId),
+			data: nextRooms,
 			refreshedAt: Date.now(),
 		};
-		selectedRoomId = roomsState.data[0]?.chatId ?? '';
+		selectedRoomId = nextRooms[0]?.chatId ?? '';
 	};
 
 	const handleDeleteRoom = handleArchiveRoom;
@@ -387,7 +407,8 @@
 		const selectedToken = selectedCallerToken;
 		const senderOption = sendAsOptions.find((option) => option.accessToken === selectedToken);
 		const sender = senderOption?.label ?? 'Bootstrap admin';
-		const senderActorId = senderOption?.participantId ?? 'system:trusted-bootstrap';
+		const senderActorId = (senderOption?.participantId ??
+			'system:trusted-bootstrap') as GlobalRoomSnapshotOutput['items'][number]['senderActorId'];
 		roomMessagesById = {
 			...roomMessagesById,
 			[room.chatId]: [
@@ -398,6 +419,7 @@
 					rowId: messageCounter,
 					messageId,
 					chatId: room.chatId,
+					senderActorId,
 					from: sender,
 					kind: 'text',
 					content: input.text,
@@ -427,9 +449,7 @@
 		if (!room || !messageId) {
 			return;
 		}
-		const selectedToken = selectedCallerToken;
-		const actorId =
-			sendAsOptions.find((option) => option.accessToken === selectedToken)?.participantId ?? 'system:trusted-bootstrap';
+		const actorId = selectedViewerActorId ?? 'system:trusted-bootstrap';
 		roomSeatsById = {
 			...roomSeatsById,
 			[room.chatId]: (roomSeatsById[room.chatId] ?? []).map((seat) =>
@@ -451,6 +471,13 @@
 			[selectedRoomId]: accessToken,
 		};
 	};
+
+	const handleViewerActorIdChange = (actorId: string): void => {
+		selectedViewerActorIdByRoomId = {
+			...selectedViewerActorIdByRoomId,
+			[selectedRoomId]: actorId,
+		};
+	};
 </script>
 
 <div class="h-[52rem] w-full min-w-[72rem] bg-background">
@@ -458,6 +485,8 @@
 		{roomsState}
 		{selectedRoomId}
 		{selectedRoom}
+		{disableManageDialogPortal}
+		{initialManageDialogSection}
 		initialMessages={selectedMessages}
 		initialSnapshotResolved={true}
 		{routeNotice}
@@ -465,10 +494,12 @@
 		{readSeatTotal}
 		{sendAsOptions}
 		{selectedCallerToken}
+		{selectedViewerActorId}
 		selectableActors={actorCatalog}
 		{roomSeatStates}
 		onSelectRoom={setSelectedRoom}
 		onChangeCallerToken={handleCallerTokenChange}
+		onChangeViewerActorId={handleViewerActorIdChange}
 		onSaveRoomTitle={handleSaveRoomTitle}
 		onArchiveRoom={handleArchiveRoom}
 		onDeleteRoom={handleDeleteRoom}

@@ -1,3 +1,5 @@
+import type { MessageActorId } from "@agenter/message-system/types";
+
 import type { WebChatChannel, WebChatMessage } from "./types";
 
 export const compareMessages = (left: WebChatMessage, right: WebChatMessage): number => {
@@ -34,6 +36,7 @@ const sameAttachmentSet = (
 const sameSemanticMessage = (left: WebChatMessage, right: WebChatMessage): boolean => {
   return (
     left.chatId === right.chatId &&
+    (left.senderActorId ?? null) === (right.senderActorId ?? null) &&
     left.from === right.from &&
     (left.to ?? null) === (right.to ?? null) &&
     left.content === right.content &&
@@ -97,16 +100,31 @@ export const normalizeMessageRecords = (messages: WebChatMessage[]): WebChatMess
 
 export const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
 
-export const resolveUserSender = (channel: WebChatChannel): { from: string; to?: string } => {
-  const currentParticipant = channel.participantId
-    ? channel.participants.find((participant) => participant.id === channel.participantId)
+export const resolveViewerActorId = (
+  channel: WebChatChannel | null,
+  viewerActorId?: string | null,
+): string | null => {
+  if (viewerActorId) {
+    return viewerActorId;
+  }
+  return channel?.participantId ?? null;
+};
+
+export const resolveUserSender = (
+  channel: WebChatChannel,
+  viewerActorId?: string | null,
+): { from?: string; senderActorId?: MessageActorId; to?: string } => {
+  const effectiveViewerActorId = resolveViewerActorId(channel, viewerActorId);
+  const currentParticipant = effectiveViewerActorId
+    ? channel.participants.find((participant) => participant.id === effectiveViewerActorId)
     : undefined;
   const fallbackParticipant =
     currentParticipant ??
-    channel.participants.find((participant) => (participant.label ?? fallbackActorLabel(participant.id)) !== channel.owner) ??
+    channel.participants.find((participant) => participant.id !== channel.owner) ??
     channel.participants[0];
   return {
-    from: fallbackParticipant?.label ?? (fallbackParticipant ? fallbackActorLabel(fallbackParticipant.id) : "User"),
+    from: fallbackParticipant?.label,
+    senderActorId: (effectiveViewerActorId ?? fallbackParticipant?.id) as MessageActorId | undefined,
     to: channel.owner,
   };
 };
@@ -116,4 +134,14 @@ export const isAssistantMessage = (channel: WebChatChannel | null, message: WebC
     return false;
   }
   return message.from === channel.owner || message.from === `avatar:${channel.owner}`;
+};
+
+export const isViewerOwnedMessage = (
+  viewerActorId: string | null,
+  message: WebChatMessage,
+): boolean => {
+  if (!viewerActorId) {
+    return false;
+  }
+  return message.senderActorId === viewerActorId;
 };

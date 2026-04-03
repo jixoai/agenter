@@ -49,6 +49,7 @@ export type WebChatSocketFactory = (url: string) => WebChatSocketLike;
 
 export interface WebChatViewBaseProps {
   channel: WebChatChannel | null;
+  viewerActorId?: string | null;
   initialMessages?: WebChatMessage[];
   initialSnapshotResolved?: boolean;
   disabled?: boolean;

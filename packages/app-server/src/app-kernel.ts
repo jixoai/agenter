@@ -1927,7 +1927,6 @@ export class AppKernel {
       this.messageControlPlane.sendAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
-        from: access.room.owner,
         kind: "text",
         content: input.text,
         messageId: input.clientMessageId ?? `msg-${randomUUID()}`,

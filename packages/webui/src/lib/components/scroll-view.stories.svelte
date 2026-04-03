@@ -16,7 +16,7 @@
 	const virtualItems = Array.from({ length: 120 }, (_, index) => `Virtual item ${index + 1}`);
 
 	const queryViewport = (canvasElement: HTMLElement): HTMLElement => {
-		const viewport = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+		const viewport = canvasElement.querySelector<HTMLElement>('[data-scroll-view-viewport]');
 		if (!viewport) {
 			throw new Error('ScrollView viewport not found');
 		}

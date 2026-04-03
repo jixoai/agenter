@@ -53,6 +53,8 @@ export interface MessageSystemSurfaceProps {
 	roomsState: CachedResourceState<GlobalRoomEntry[]>;
 	selectedRoomId: string;
 	selectedRoom: GlobalRoomEntry | null;
+	disableManageDialogPortal?: boolean;
+	initialManageDialogSection?: 'overview' | 'users' | 'access' | null;
 	initialMessages: GlobalRoomSnapshotOutput['items'];
 	initialSnapshotResolved: boolean;
 	routeNotice: WebChatNotice | null;
@@ -60,10 +62,12 @@ export interface MessageSystemSurfaceProps {
 	readSeatTotal: number;
 	sendAsOptions: MessageSystemSendAsOption[];
 	selectedCallerToken: string | null;
+	selectedViewerActorId: string | null;
 	selectableActors: ActorDirectoryEntry[];
 	roomSeatStates: MessageSystemRoomSeatState[];
 	onSelectRoom: (chatId: string) => void;
 	onChangeCallerToken: (accessToken: string) => void;
+	onChangeViewerActorId: (actorId: string) => void;
 	onSaveRoomTitle: (title: string) => Promise<void>;
 	onArchiveRoom: () => Promise<void>;
 	onDeleteRoom: () => Promise<void>;

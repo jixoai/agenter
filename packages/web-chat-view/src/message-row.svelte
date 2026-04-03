@@ -1,19 +1,22 @@
 <script lang="ts">
   import MarkdownDocumentHost from "./components/markdown-document-host.svelte";
   import type { WebChatChannel, WebChatMessage } from "./types";
-  import { isAssistantMessage } from "./message-utils";
+  import { isAssistantMessage, isViewerOwnedMessage } from "./message-utils";
 
   let {
     channel,
+    viewerActorId,
     message,
     onSubmitInteractive,
   }: {
     channel: WebChatChannel;
+    viewerActorId: string | null;
     message: WebChatMessage;
     onSubmitInteractive: (text: string) => Promise<void>;
   } = $props();
 
   const assistant = $derived(isAssistantMessage(channel, message));
+  const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message));
   const interactive = $derived(message.kind === "interactive" ? message.payload?.interactive : undefined);
   let interactiveDraft: Record<string, string> = $state({});
   let interactiveSubmitting = $state(false);
@@ -57,7 +60,13 @@
   };
 </script>
 
-<div class:assistant class="row" data-kind={message.kind}>
+<div
+  class="row"
+  class:assistant={assistant}
+  class:viewer-owned={viewerOwned && !assistant}
+  data-kind={message.kind}
+  data-message-author={viewerOwned ? "viewer" : assistant ? "assistant" : "participant"}
+>
   <article class="bubble">
     <div class="meta">
       <span class="author">{message.from}</span>
@@ -115,7 +124,7 @@
           value={message.content}
           mode="preview"
           usage="chat"
-          surface={assistant ? "bubble-assistant" : "bubble-user"}
+          surface={assistant ? "bubble-assistant" : viewerOwned ? "bubble-user" : "panel"}
           syntaxTone={assistant ? "accented" : "inherit"}
         />
       </div>
@@ -134,29 +143,29 @@
 <style>
   .row {
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
     width: 100%;
     padding: 0.35rem 0;
   }
 
-  .row.assistant {
-    justify-content: flex-start;
+  .row.viewer-owned {
+    justify-content: flex-end;
   }
 
   .bubble {
     max-width: min(44rem, 92%);
     border-radius: 1.25rem;
     padding: 0.9rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+  }
+
+  .row.viewer-owned .bubble {
     background: #0f172a;
     color: #fff;
     box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-  }
-
-  .row.assistant .bubble {
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    background: #fff;
-    color: #0f172a;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
   }
 
   .row[data-kind="error"] .bubble {

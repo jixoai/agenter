@@ -21,6 +21,7 @@
   "svelte": "./src/index.ts",
   "dependencies": {
     "@agenter/message-system": "workspace:*",
+    "@agenter/svelte-primitives": "workspace:*",
     "@agenter/web-components": "workspace:*"
   },
   "devDependencies": {

@@ -67,6 +67,7 @@
 
 	let selectedRoomId = $state(page.url.searchParams.get('roomId') ?? '');
 	let selectedCallerTokenByRoomId = $state<Record<string, string>>({});
+	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
 	let latestMarkedReadBySeat = $state<Record<string, string | null>>({});
 	let routeNotice = $state<WebChatNotice | null>(null);
 
@@ -238,6 +239,18 @@
 		});
 	});
 
+	const selectedViewerActorId = $derived.by(() => {
+		const room = selectedRoomProjection;
+		if (!room) {
+			return null;
+		}
+		const selected = selectedViewerActorIdByRoomId[room.chatId];
+		if (selected && roomSeatStates.some((state) => state.actorId === selected)) {
+			return selected;
+		}
+		return room.participantId ?? roomSeatStates[0]?.actorId ?? null;
+	});
+
 	const resolvedRoomSeatStates = $derived.by(() => {
 		return roomSeatStates.map((state) => {
 			const actor = describeActor(state.actorId, state.label ?? state.actorId);
@@ -304,6 +317,17 @@
 		selectedCallerTokenByRoomId = {
 			...selectedCallerTokenByRoomId,
 			[room.chatId]: accessToken,
+		};
+	};
+
+	const handleChangeViewerActorId = (actorId: string): void => {
+		const room = selectedRoomProjection;
+		if (!room) {
+			return;
+		}
+		selectedViewerActorIdByRoomId = {
+			...selectedViewerActorIdByRoomId,
+			[room.chatId]: actorId,
 		};
 	};
 
@@ -413,7 +437,13 @@
 
 	const handleLatestVisibleMessageIdChange = async (messageId: string | null): Promise<void> => {
 		const room = selectedRoomProjection;
-		const accessToken = selectedCallerToken;
+		const viewerActorId = selectedViewerActorId;
+		const viewerSeat = viewerActorId
+			? resolvedRoomSeatStates.find((state) => state.actorId === viewerActorId)
+			: null;
+		const accessToken =
+			viewerSeat?.accessToken ??
+			(viewerActorId && room?.participantId === viewerActorId ? room.accessToken : null);
 		if (!room || !accessToken) {
 			return;
 		}
@@ -549,6 +579,21 @@
 			[room.chatId]: accessToken,
 		};
 	});
+
+	$effect(() => {
+		const room = selectedRoomProjection;
+		const viewerActorId = selectedViewerActorId;
+		if (!room || !viewerActorId) {
+			return;
+		}
+		if (selectedViewerActorIdByRoomId[room.chatId] === viewerActorId) {
+			return;
+		}
+		selectedViewerActorIdByRoomId = {
+			...selectedViewerActorIdByRoomId,
+			[room.chatId]: viewerActorId,
+		};
+	});
 </script>
 
 <MessageSystemSurface
@@ -562,10 +607,12 @@
 	readSeatTotal={roomReadTotalSeatCount}
 	{sendAsOptions}
 	{selectedCallerToken}
+	{selectedViewerActorId}
 	{selectableActors}
 	roomSeatStates={resolvedRoomSeatStates}
 	onSelectRoom={selectRoom}
 	onChangeCallerToken={handleChangeCallerToken}
+	onChangeViewerActorId={handleChangeViewerActorId}
 	onSaveRoomTitle={handleSaveRoomTitle}
 	onArchiveRoom={handleArchiveRoom}
 	onDeleteRoom={handleDeleteRoom}

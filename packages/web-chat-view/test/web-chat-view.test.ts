@@ -475,6 +475,71 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).not.toContain("Pending for attention");
   });
 
+  test("Scenario: Given duplicate-label participants and an explicit viewer actor When the transcript renders Then ownership follows senderActorId instead of labels", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-duplicate-viewers",
+        kind: "room",
+        title: "Duplicate labels",
+        owner: "ops-bot",
+        participants: [
+          { id: "auth:analyst-a", label: "Analyst" },
+          { id: "session:reviewer", label: "Analyst" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      viewerActorId: "session:reviewer",
+      initialMessages: [
+        {
+          rowId: 1,
+          messageId: "msg-analyst-a",
+          chatId: "chat-duplicate-viewers",
+          senderActorId: "auth:analyst-a",
+          from: "Analyst",
+          kind: "text",
+          content: "first analyst",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [],
+        },
+        {
+          rowId: 2,
+          messageId: "msg-reviewer",
+          chatId: "chat-duplicate-viewers",
+          senderActorId: "session:reviewer",
+          from: "Analyst",
+          kind: "text",
+          content: "viewer analyst",
+          createdAt: 200,
+          updatedAt: 200,
+          visibleAt: 200,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      initialSnapshotResolved: true,
+    });
+
+    await settleLitUpdates();
+
+    const rows = [...document.body.querySelectorAll<HTMLElement>("[data-message-author]")];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.dataset.messageAuthor).toBe("participant");
+    expect(rows[1]?.dataset.messageAuthor).toBe("viewer");
+    expect(readRenderedText(rows[0] ?? null)).toContain("first analyst");
+    expect(readRenderedText(rows[1] ?? null)).toContain("viewer analyst");
+  });
+
   test("Scenario: Given bootstrap transcript rows mirror the transport snapshot with legacy ids When the websocket snapshot arrives Then the view collapses semantic duplicates into one transcript", async () => {
     mountHost({
       socketFactory,

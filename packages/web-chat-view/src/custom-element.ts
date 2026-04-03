@@ -10,6 +10,7 @@ export const defineWebChatView = async (): Promise<void> => {
 
 export type WebChatViewElement = HTMLElement & {
   channel: import("./types").WebChatChannel | null;
+  viewerActorId?: string | null;
   initialMessages: import("./types").WebChatMessage[];
   initialSnapshotResolved: boolean;
   disabled: boolean;
