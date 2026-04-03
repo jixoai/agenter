@@ -38,6 +38,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `message-system`、`terminal-system`、`task-system`、未来的 `browser-system` / `os-system` 都是 source adapter，不得把自己的私有语义硬编码进 LoopBus core。
 - `AgenterAI` 是 attention-first decision engine，不应直接绑定 terminal/task 等 source-specific gateway、payload 结构或 stage 语义。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
+- `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/webui` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。
@@ -65,6 +66,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `workspace + avatar` 是 durable active-session identity；再次启动同一 pair 时必须复用同一个稳定 session id，而不是创建重复 session。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
+- Svelte WebUI feature code 只能使用 canonical shadcn-svelte multipart composition；`Card.Root/Header/Content`、`Tabs.Root/List/Trigger/Content` 这类显式 slot 是 durable contract，alias-style wrapper 不是。
+- WebUI route panel 必须通过显式 shell primitive 声明 `header + primary ScrollView body` 的结构；feature code 不得继续用 `p-0/py-0/min-h-0` 之类补丁去修复错误的容器语义。
 - `Terminals` 是 app-level global workbench，不是 session-private surface；session route 只允许链接或投影该工作台，不能重新定义第二套 terminal truth。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
 - regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
