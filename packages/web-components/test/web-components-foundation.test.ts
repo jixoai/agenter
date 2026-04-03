@@ -131,6 +131,82 @@ describe("Feature: web-components foundation", () => {
     expect(element.hasAttribute("open")).toBe(true);
   });
 
+  test("Scenario: Given a fresh help hint without onboarding opt-in When it first renders Then it stays closed until explicit user intent", async () => {
+    defineHelpHint();
+
+    const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
+      helpId: string;
+      textContext: string;
+      passiveOnFirstVisit: boolean;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    element.helpId = `help-hint-default-closed-${crypto.randomUUID()}`;
+    element.textContext = "default closed behavior";
+    element.passiveOnFirstVisit = false;
+    document.body.append(element);
+
+    await element.updateComplete;
+    await Promise.resolve();
+
+    const trigger = element.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
+    expect(element.getAttribute("data-presentation")).toBe("closed");
+    expect(element.hasAttribute("open")).toBe(false);
+
+    trigger?.dispatchEvent(new FocusEvent("focus"));
+    await element.updateComplete;
+
+    expect(element.getAttribute("data-presentation")).toBe("active-open");
+    expect(element.hasAttribute("open")).toBe(true);
+  });
+
+  test("Scenario: Given a help hint that opts into passive onboarding When it is dismissed and remounted Then passive auto-open happens only once", async () => {
+    defineHelpHint();
+
+    const identity = {
+      helpId: `help-hint-passive-once-${crypto.randomUUID()}`,
+      textContext: "passive first visit behavior",
+    };
+
+    const mountHint = async () => {
+      const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
+        helpId: string;
+        textContext: string;
+        passiveOnFirstVisit: boolean;
+        updateComplete?: Promise<unknown>;
+        shadowRoot: ShadowRoot | null;
+      };
+      element.helpId = identity.helpId;
+      element.textContext = identity.textContext;
+      element.passiveOnFirstVisit = true;
+      document.body.append(element);
+      await element.updateComplete;
+      await Promise.resolve();
+      return element;
+    };
+
+    const firstMount = await mountHint();
+    await vi.waitFor(() => {
+      expect(firstMount.getAttribute("data-presentation")).toBe("passive-auto");
+      expect(firstMount.hasAttribute("open")).toBe(true);
+    });
+
+    firstMount.shadowRoot?.querySelector<HTMLButtonElement>(".trigger")?.click();
+    await firstMount.updateComplete;
+    await Promise.resolve();
+
+    expect(firstMount.getAttribute("data-presentation")).toBe("closed");
+    expect(firstMount.hasAttribute("open")).toBe(false);
+
+    firstMount.remove();
+
+    const secondMount = await mountHint();
+    await vi.waitFor(() => {
+      expect(secondMount.getAttribute("data-presentation")).toBe("closed");
+      expect(secondMount.hasAttribute("open")).toBe(false);
+    });
+  });
+
   test("Scenario: Given shared Lit atoms When they render their primary surfaces Then css-part slots and host factual state stay externally themeable", async () => {
     defineAdaptiveIconButton();
     defineAsyncSurface();

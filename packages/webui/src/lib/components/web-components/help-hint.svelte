@@ -16,6 +16,7 @@
 		side = 'top',
 		align = 'center',
 		sideOffset = 8,
+		passiveOnFirstVisit = false,
 		disabled = false,
 		class: className = '',
 		children,
@@ -26,6 +27,7 @@
 		side?: HelpHintSide;
 		align?: HelpHintAlign;
 		sideOffset?: number;
+		passiveOnFirstVisit?: boolean;
 		disabled?: boolean;
 		class?: string;
 		children?: import('svelte').Snippet;
@@ -43,6 +45,7 @@
 		element.side = side;
 		element.align = align;
 		element.sideOffset = sideOffset;
+		element.passiveOnFirstVisit = passiveOnFirstVisit;
 		element.disabled = disabled;
 	};
 

@@ -18,6 +18,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { describeWorkspace, sortWorkspacesForCatalog } from './workspace-sorting';
 
 	const controller = getAppControllerContext();
@@ -37,6 +38,7 @@
 	let copyBusy = $state(false);
 	let copyAvatarDraft = $state('');
 	let detailsDialogOpen = $state(false);
+	const copyAvatarInputId = `copy-avatar-${crypto.randomUUID()}`;
 
 	const sortedWorkspaces = $derived(
 		sortWorkspacesForCatalog(controller.runtimeState.workspaces, controller.runtimeState.recentWorkspaces),
@@ -85,6 +87,43 @@
 			await goto(`/runtime/${encodeURIComponent(session.id)}/attention`);
 		} finally {
 			createBusy = false;
+		}
+	};
+
+	const openCopyDialog = (): void => {
+		if (!selectedWorkspace || !selectedAvatarEntry) {
+			return;
+		}
+		copyAvatarDraft = `${selectedAvatarEntry.nickname}-copy`;
+		copyDialogOpen = true;
+	};
+
+	const submitCopyAvatar = async (event: SubmitEvent): Promise<void> => {
+		event.preventDefault();
+		const workspacePath = selectedWorkspace?.path;
+		const sourceAvatar = selectedAvatarEntry?.nickname;
+		const targetAvatar = copyAvatarDraft.trim();
+		if (!workspacePath || !sourceAvatar || targetAvatar.length === 0 || copyBusy) {
+			return;
+		}
+		copyBusy = true;
+		const previousAvatar = selectedAvatar;
+		const copyPromise = controller.runtimeStore.copyWorkspaceAvatar({
+			workspacePath,
+			sourceAvatar,
+			targetAvatar,
+		});
+		selectedAvatar = targetAvatar;
+		try {
+			const created = await copyPromise;
+			selectedAvatar = created.nickname;
+			copyAvatarDraft = created.nickname;
+			copyDialogOpen = false;
+		} catch (error) {
+			selectedAvatar = previousAvatar;
+			throw error;
+		} finally {
+			copyBusy = false;
 		}
 	};
 
@@ -256,10 +295,7 @@
 							label="Copy avatar"
 							tooltip="Create a workspace-local full copy"
 							disabled={!selectedWorkspace || !selectedAvatarEntry}
-							onclick={() => {
-								copyAvatarDraft = `${selectedAvatar}-copy`;
-								copyDialogOpen = true;
-							}}
+							onclick={openCopyDialog}
 						>
 							<CopyIcon class="size-4" />
 						</AdaptiveIconButton>
@@ -306,46 +342,28 @@
 
 <Dialog.Root bind:open={copyDialogOpen}>
 	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Copy avatar</Dialog.Title>
-			<Dialog.Description>
-				Create a workspace-local full copy so you can diverge from the existing avatar without mutating the original.
-			</Dialog.Description>
-		</Dialog.Header>
+		<form class="grid gap-4" onsubmit={submitCopyAvatar}>
+			<Dialog.Header>
+				<Dialog.Title>Copy avatar</Dialog.Title>
+				<Dialog.Description>
+					Create a workspace-local full copy so you can diverge from the existing avatar without mutating the original.
+				</Dialog.Description>
+			</Dialog.Header>
 
-		<div class="grid gap-3">
-			<label class="grid gap-2 text-sm font-medium">
-				<span>New avatar nickname</span>
-				<Input bind:value={copyAvatarDraft} placeholder="ops-assistant-copy" />
-			</label>
-		</div>
+			<div class="grid gap-3">
+				<Label class="grid gap-2" for={copyAvatarInputId}>
+					<span>New avatar nickname</span>
+					<Input id={copyAvatarInputId} bind:value={copyAvatarDraft} placeholder="ops-assistant-copy" />
+				</Label>
+			</div>
 
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (copyDialogOpen = false)}>Cancel</Button>
-			<Button
-				onclick={async () => {
-					if (!selectedWorkspace || !selectedAvatarEntry || !copyAvatarDraft.trim()) {
-						return;
-					}
-					copyBusy = true;
-					selectedAvatar = copyAvatarDraft.trim();
-					try {
-						const created = await controller.runtimeStore.copyWorkspaceAvatar({
-							workspacePath: selectedWorkspace.path,
-							sourceAvatar: selectedAvatarEntry.nickname,
-							targetAvatar: copyAvatarDraft,
-						});
-						selectedAvatar = created.nickname;
-						copyDialogOpen = false;
-					} finally {
-						copyBusy = false;
-					}
-				}}
-				disabled={copyBusy}
-			>
-				{copyBusy ? 'Copying…' : 'Copy avatar'}
-			</Button>
-		</Dialog.Footer>
+			<Dialog.Footer>
+				<Button type="button" variant="ghost" onclick={() => (copyDialogOpen = false)}>Cancel</Button>
+				<Button type="submit" disabled={copyBusy || copyAvatarDraft.trim().length === 0}>
+					{copyBusy ? 'Copying…' : 'Copy avatar'}
+				</Button>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
 

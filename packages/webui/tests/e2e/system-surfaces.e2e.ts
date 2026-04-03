@@ -134,6 +134,32 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByText(roomMessage)).toBeVisible({ timeout: 15_000 });
   });
 
+  test("Scenario: Given first-visit system surfaces When Workspaces or Terminals load Then help hints stay collapsed until requested", async ({
+    page,
+  }) => {
+    await navigateToSystem(page, "Workspaces");
+    await expect
+      .poll(
+        async () =>
+          await page
+            .locator("agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']")
+            .count(),
+        { timeout: 15_000 },
+      )
+      .toBe(0);
+
+    await navigateToSystem(page, "Terminals");
+    await expect
+      .poll(
+        async () =>
+          await page
+            .locator("agenter-help-hint[data-presentation='passive-auto'], agenter-help-hint[data-presentation='active-open']")
+            .count(),
+        { timeout: 15_000 },
+      )
+      .toBe(0);
+  });
+
   test("Scenario: Given an authenticated superadmin When creating a global terminal and issuing write plus read tool calls Then the terminal-system action log survives refresh", async ({
     page,
   }, testInfo) => {
@@ -415,7 +441,9 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
     await copyDialog.getByLabel("New avatar nickname").fill(copiedAvatarName);
-    await clickStable(copyDialog.getByRole("button", { name: "Copy avatar" }));
+    await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+      return !(await copyDialog.isVisible().catch(() => false));
+    });
 
     await expect(page.getByRole("button", { name: copiedAvatarName })).toBeVisible({ timeout: 15_000 });
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -426,5 +454,22 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await expect(page).toHaveURL(/\/runtime\/.+\/attention$/, { timeout: 30_000 });
     await expect(page.getByRole("tab", { name: /attention/i })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given quick start avatar copy dialog When the operator presses Enter Then the avatar copy submits through form semantics", async ({
+    page,
+  }, testInfo) => {
+    const copiedAvatarName = `playwright-enter-copy-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+
+    await navigateToSystem(page, "Workspaces");
+    await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+
+    const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+    const nicknameInput = copyDialog.getByLabel("New avatar nickname");
+    await nicknameInput.fill(copiedAvatarName);
+    await nicknameInput.press("Enter");
+
+    await expect(copyDialog).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: copiedAvatarName })).toBeVisible({ timeout: 15_000 });
   });
 });

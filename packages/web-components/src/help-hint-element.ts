@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 
 import { defineElement } from "./custom-element";
@@ -58,6 +58,7 @@ export class HelpHintElement extends LitElement {
     side: { type: String },
     align: { type: String },
     sideOffset: { type: Number },
+    passiveOnFirstVisit: { type: Boolean, attribute: "passive-on-first-visit" },
     disabled: { type: Boolean, reflect: true },
     displayState: { attribute: false, state: true },
     popupStyle: { attribute: false, state: true },
@@ -146,6 +147,8 @@ export class HelpHintElement extends LitElement {
 
   sideOffset = 8;
 
+  passiveOnFirstVisit = false;
+
   disabled = false;
 
   private displayState: HelpHintDisplayState = createClosedState();
@@ -196,8 +199,16 @@ export class HelpHintElement extends LitElement {
     super.disconnectedCallback();
   }
 
-  protected updated(): void {
+  protected updated(changedProperties: PropertyValues<this>): void {
     this.syncHostStateAttributes();
+    if (
+      changedProperties.has("disabled") ||
+      changedProperties.has("textContext") ||
+      changedProperties.has("helpId") ||
+      changedProperties.has("passiveOnFirstVisit")
+    ) {
+      void this.syncPersistence();
+    }
     if (this.displayState.kind === "closed") {
       if (
         this.popupStyle.left !== HIDDEN_POPUP_STYLE.left ||
@@ -243,6 +254,12 @@ export class HelpHintElement extends LitElement {
       this.displayState = createClosedState();
       return;
     }
+    if (!this.passiveOnFirstVisit) {
+      if (this.isOnboardingPassive) {
+        this.displayState = createClosedState();
+      }
+      return;
+    }
     const dismissed = await readHelpHintDismissed({
       helpId: this.helpId || undefined,
       textContext: this.textContext,
@@ -253,7 +270,7 @@ export class HelpHintElement extends LitElement {
     this.displayState = createPassiveState("onboarding");
   }
 
-  private async dismissPersistentHint(): Promise<void> {
+  private async dismissOnboardingHint(): Promise<void> {
     this.displayState = createClosedState();
     await dismissHelpHint({
       helpId: this.helpId || undefined,
@@ -341,15 +358,7 @@ export class HelpHintElement extends LitElement {
     if (this.displayState.kind !== "closed") {
       return;
     }
-    void readHelpHintDismissed({
-      helpId: this.helpId || undefined,
-      textContext: this.textContext,
-    }).then((dismissed) => {
-      if (!dismissed || this.displayState.kind !== "closed") {
-        return;
-      }
-      this.displayState = createActiveState("transient");
-    });
+    this.displayState = createActiveState("transient");
   }
 
   private closeTransientHint(): void {
@@ -360,7 +369,7 @@ export class HelpHintElement extends LitElement {
 
   private handleTriggerClick(): void {
     if (this.isOnboardingPassive) {
-      void this.dismissPersistentHint();
+      void this.dismissOnboardingHint();
       return;
     }
     this.displayState =
@@ -404,7 +413,7 @@ export class HelpHintElement extends LitElement {
         style=${styleMap(this.popupStyle)}
         @click=${() => {
           if (this.isOnboardingPassive) {
-            void this.dismissPersistentHint();
+            void this.dismissOnboardingHint();
           }
         }}
       >
@@ -427,6 +436,7 @@ export type HelpHintElementType = HTMLElement & {
   side: HelpHintSide;
   align: HelpHintAlign;
   sideOffset: number;
+  passiveOnFirstVisit: boolean;
   disabled: boolean;
   open: boolean;
   getAttribute(qualifiedName: "data-presentation"): HelpHintPresentationMode | null;
