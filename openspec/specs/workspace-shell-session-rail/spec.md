@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the durable secondary running-avatar navigation contract for desktop and compact application shells.
-
 ## Requirements
-
 ### Requirement: Workspace shell SHALL expose running sessions through a secondary rail
 The WebUI SHALL expose running avatars through a secondary navigation rail inside the application shell, and each entry SHALL identify the avatar, its workspace context, unread state, and runtime status without being promoted into the primary navigation set.
 
@@ -18,7 +16,7 @@ The WebUI SHALL expose running avatars through a secondary navigation rail insid
 - **THEN** it shows the avatar identity, workspace context, unread state, and runtime status needed to distinguish it from other entries
 - **THEN** the entry stays visually compact enough to remain a secondary navigation surface
 
-### Requirement: Compact layouts SHALL expose running sessions through a header-driven switcher
+### Requirement: Compact layouts SHALL expose running sessions through the shared navigation drawer
 Compact layouts SHALL expose the same running avatars through the shared navigation drawer or compact secondary navigation surface instead of inventing a different primary-navigation shortcut model. That surface SHALL remain distinct from workspace-local tabs and route-local actions.
 
 #### Scenario: Mobile navigation drawer shows running avatars
@@ -30,3 +28,4 @@ Compact layouts SHALL expose the same running avatars through the shared navigat
 - **WHEN** the user opens compact navigation while already inside `Workspaces` or a running-avatar detail shell
 - **THEN** the drawer shows primary destinations plus `Running Avatars`
 - **THEN** it does not duplicate workspace-local tabs such as `Settings` or `Avatars`, and it does not duplicate route-local runtime actions
+

@@ -1,30 +1,20 @@
 # web-chat-view Specification
 
 ## Purpose
-Define the room-backed Web chat transport contract, including websocket hydration, pending-message presentation, and reverse-time paging.
+Define the framework-agnostic room-backed Web chat transport contract, including websocket hydration, a reusable custom-element delivery surface, and reverse-time paging for long histories.
 ## Requirements
 ### Requirement: Web chat view SHALL connect to one chat channel over websocket
-The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging.
+The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging. The shared component SHALL be shipped as a framework-agnostic custom element with a Svelte host wrapper so multiple WebUI clients can reuse the same room transport contract.
 
 #### Scenario: Connect and hydrate a room
 - **WHEN** the component receives an authorized room transport URL
 - **THEN** it renders the initial room snapshot
 - **THEN** it can load older room history without replacing newer messages
 
-#### Scenario: Pending queue stays above the composer until attention reads it
-- **WHEN** a room contains queued unread user messages
-- **THEN** the view renders them in a pending strip above the composer
-- **AND** those queued messages do not appear in the main transcript until `visibleAt` is set
-
-#### Scenario: Transcript ordering follows visibility, not raw creation time
-- **WHEN** a delayed queued message becomes visible after a later assistant reply already exists
-- **THEN** the transcript orders the visible rows by `visibleAt` and stable tie-breakers
-- **AND** the pending strip only contains messages that still lack visibility
-
-#### Scenario: Unread queued messages stay editable
-- **WHEN** a queued unread message is still in pending state
-- **THEN** the user can edit and resend that message in place
-- **AND** the updated content is reflected through the same `messageId`
+#### Scenario: Shared custom element is reusable
+- **WHEN** the operator WebUI mounts the shared chat view or another frontend mounts the exported custom element
+- **THEN** both consumers use the same room transport contract and transcript behavior
+- **THEN** the package does not require React-specific runtime dependencies to render the shared room experience
 
 ### Requirement: Web chat view SHALL support large chat histories
 The web chat view SHALL use virtualized rendering and reverse-time pagination for long-lived room conversations.
@@ -33,3 +23,4 @@ The web chat view SHALL use virtualized rendering and reverse-time pagination fo
 - **WHEN** the room has a long history
 - **THEN** the viewport only renders the visible message window
 - **THEN** older history is loaded by time-based reverse pagination
+

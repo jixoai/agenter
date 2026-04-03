@@ -2,31 +2,19 @@
 
 ## Purpose
 Define the durable client-side runtime normalization, long-history paging contract, and Welcome access-state derivation across workspaces, running avatars, and global resources.
-
 ## Requirements
-
 ### Requirement: Client runtime store SHALL normalize the terminal contract without losing set semantics
 The client runtime store SHALL normalize workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment bindings as first-class resource maps. It SHALL NOT collapse those resources back into session-owned `*BySession` stores as the primary identity axis, and it SHALL continue to preserve terminal focus-set semantics.
 
 #### Scenario: Store receives global resources plus running avatars
 - **WHEN** the runtime store ingests snapshots containing workspaces, running avatars, workspace avatar catalogs, global rooms, global terminals, and attachment metadata
-- **THEN** it preserves workspace ids, avatar/session ids, room ids, and terminal ids as distinct primary identities
+- **THEN** it preserves workspace ids, avatar/session ids, room ids, terminal ids, and workspace avatar catalogs as distinct primary identities
 - **THEN** selectors can derive workspace and running-avatar views without copying those resources into session-owned authority maps
 
-#### Scenario: Store preserves multiple focused terminals
-- **WHEN** the runtime store ingests focus state containing several focused terminal ids
-- **THEN** it preserves the full ordered id set
-- **THEN** selectors can derive a primary terminal view without discarding the rest of the set
-
-#### Scenario: Store receives a terminal diff representation
-- **WHEN** the runtime store ingests a terminal read result marked as `representation = diff`
-- **THEN** it keeps that representation metadata in state
-- **THEN** UI selectors can distinguish compact diff reads from full snapshots
-
-#### Scenario: Terminal live resources update by terminal id
-- **WHEN** the store receives a live terminal snapshot, status, activity, grant, approval, or focus event
-- **THEN** it updates the affected terminal resource slices keyed by terminal id
-- **THEN** unrelated terminals remain unchanged and selected route views can refresh from the normalized state without polling
+#### Scenario: Avatar catalog subscription updates one workspace
+- **WHEN** the store receives an avatar catalog invalidation event for one workspace path
+- **THEN** it updates only that workspace avatar catalog entry map
+- **THEN** unrelated workspace catalogs remain unchanged
 
 ### Requirement: Client runtime store SHALL track reverse-time paging state per long-history resource
 The client runtime store SHALL maintain explicit reverse-time page state for each long-history global resource and each long-history running-avatar detail resource, and SHALL hydrate only recent windows by default.
@@ -71,3 +59,4 @@ The client runtime store SHALL derive `Welcome` room and terminal access state f
 - **WHEN** a previously stored room or terminal token fails validation during hydration
 - **THEN** the runtime store does not treat that room or terminal as joined
 - **THEN** the corresponding room or terminal remains visible with a `credential-invalid` state while the stale credential record is preserved until a fresh credential replaces it
+
