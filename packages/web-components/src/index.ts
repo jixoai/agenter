@@ -51,11 +51,13 @@ export {
   type MarkdownDocumentUsage,
 } from "./markdown-config";
 export {
+  HELP_HINT_PARTS,
   HELP_HINT_TAG,
   HelpHintElement,
   defineHelpHint,
   type HelpHintAlign,
   type HelpHintElementType,
+  type HelpHintPresentationMode,
   type HelpHintSide,
 } from "./help-hint-element";
 export {

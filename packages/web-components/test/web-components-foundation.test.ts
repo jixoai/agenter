@@ -3,12 +3,16 @@ import { describe, expect, test, vi } from "vitest";
 import {
   ASYNC_SURFACE_TAG,
   DEFAULT_JSON_VIEWER_MODE,
+  HELP_HINT_PARTS,
+  HELP_HINT_TAG,
   JSON_VIEWER_GLOBAL_MODE_STORAGE_KEY,
   MARKDOWN_DOCUMENT_TAG,
   TOOL_INVOCATION_CARD_TAG,
   defineAsyncSurface,
+  defineHelpHint,
   defineMarkdownDocument,
   defineToolInvocationCard,
+  dismissHelpHint,
   getGlobalJsonViewerModeSnapshot,
   normalizeMarkdownCodeLanguage,
   resolveAsyncSurfaceState,
@@ -78,5 +82,43 @@ describe("Feature: web-components foundation", () => {
     const shadowText = element.shadowRoot?.textContent?.replace(/\s+/gu, " ").trim() ?? "";
     expect(shadowText).toContain("Terminal read");
     expect(shadowText).toContain("terminal.read");
+  });
+
+  test("Scenario: Given help-hint host theming When the Lit atom renders and opens Then css-part slots and host-reflected presentation facts stay available to outer clients", async () => {
+    defineHelpHint();
+
+    const identity = {
+      helpId: `help-hint-parts-${crypto.randomUUID()}`,
+      textContext: "css-part contract",
+    };
+    await dismissHelpHint(identity);
+
+    const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
+      helpId: string;
+      textContext: string;
+      updateComplete?: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    element.helpId = identity.helpId;
+    element.textContext = identity.textContext;
+    document.body.append(element);
+
+    await element.updateComplete;
+
+    const trigger = element.shadowRoot?.querySelector<HTMLButtonElement>(".trigger");
+    const popup = element.shadowRoot?.querySelector<HTMLDivElement>(".popup");
+    const content = popup?.querySelector<HTMLDivElement>('[part~="content"]');
+
+    expect(trigger?.getAttribute("part")).toBe(HELP_HINT_PARTS.trigger);
+    expect(popup?.getAttribute("part")).toBe(HELP_HINT_PARTS.popup);
+    expect(content?.getAttribute("part")).toBe(HELP_HINT_PARTS.content);
+    expect(element.getAttribute("data-presentation")).toBe("closed");
+    expect(element.hasAttribute("open")).toBe(false);
+
+    trigger?.click();
+    await element.updateComplete;
+
+    expect(element.getAttribute("data-presentation")).toBe("active-open");
+    expect(element.hasAttribute("open")).toBe(true);
   });
 });

@@ -128,4 +128,85 @@
 	html {
 		@apply font-sans;
 	}
+
+	@keyframes help-hint-breathe {
+		0%,
+		100% {
+			background-color: color-mix(in oklch, var(--popover) 74%, transparent);
+			border-color: color-mix(in oklch, var(--border) 76%, transparent);
+		}
+		50% {
+			background-color: color-mix(in oklch, var(--popover) 82%, transparent);
+			border-color: color-mix(in oklch, var(--primary) 10%, var(--border));
+		}
+	}
+
+	agenter-help-hint::part(trigger) {
+		@apply inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] leading-none font-semibold shadow-xs;
+		background-color: var(--background);
+		border-color: color-mix(in oklch, var(--border) 82%, transparent);
+		color: color-mix(in oklch, var(--muted-foreground) 90%, white 10%);
+		transition:
+			background-color 160ms ease,
+			border-color 160ms ease,
+			color 160ms ease,
+			box-shadow 160ms ease,
+			opacity 160ms ease;
+	}
+
+	agenter-help-hint::part(trigger-label) {
+		@apply inline-flex items-center justify-center;
+	}
+
+	agenter-help-hint::part(popup) {
+		@apply rounded-md border px-2.5 py-1.5 text-[11px] leading-5 shadow-sm;
+		background-color: var(--popover);
+		border-color: color-mix(in oklch, var(--border) 82%, transparent);
+		color: var(--popover-foreground);
+		transition:
+			opacity 180ms ease,
+			border-color 180ms ease,
+			background-color 180ms ease,
+			color 180ms ease,
+			box-shadow 180ms ease;
+	}
+
+	agenter-help-hint::part(content) {
+		@apply block;
+	}
+
+	agenter-help-hint[data-presentation='passive-auto']::part(popup) {
+		background-color: color-mix(in oklch, var(--popover) 76%, transparent);
+		border-color: color-mix(in oklch, var(--border) 78%, transparent);
+		color: color-mix(in oklch, var(--popover-foreground) 84%, white 16%);
+		box-shadow: 0 12px 24px color-mix(in srgb, black 8%, transparent);
+		will-change: background-color, border-color;
+		animation: help-hint-breathe 3.2s ease-in-out infinite;
+	}
+
+	agenter-help-hint[open]::part(trigger) {
+		background-color: color-mix(in oklch, var(--primary) 8%, var(--background));
+		border-color: color-mix(in oklch, var(--primary) 22%, var(--border));
+		color: color-mix(in oklch, var(--primary) 72%, black 28%);
+		box-shadow: 0 1px 2px color-mix(in srgb, black 8%, transparent);
+	}
+
+	agenter-help-hint:focus-within::part(trigger) {
+		box-shadow:
+			0 0 0 2px color-mix(in oklch, var(--background) 92%, transparent),
+			0 0 0 4px color-mix(in oklch, var(--primary) 24%, transparent);
+	}
+
+	@media (hover: hover) {
+		agenter-help-hint:hover::part(trigger) {
+			background-color: color-mix(in oklch, var(--muted) 88%, var(--background));
+			border-color: color-mix(in oklch, var(--border) 88%, transparent);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		agenter-help-hint[data-presentation='passive-auto']::part(popup) {
+			animation: none;
+		}
+	}
 }

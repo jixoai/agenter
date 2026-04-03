@@ -9,12 +9,19 @@ export const HELP_HINT_TAG = "agenter-help-hint";
 
 export type HelpHintSide = "top" | "right" | "bottom" | "left";
 export type HelpHintAlign = "start" | "center" | "end";
-type HelpHintPresentationMode = "closed" | "passive-auto" | "active-open";
+export type HelpHintPresentationMode = "closed" | "passive-auto" | "active-open";
 type HelpHintPassiveReason = "onboarding" | "global-shortcut";
 type HelpHintDisplayState =
   | { kind: "closed" }
   | { kind: "passive"; reason: HelpHintPassiveReason }
   | { kind: "active"; reason: "manual-click" | "transient" };
+
+export const HELP_HINT_PARTS = {
+  trigger: "trigger",
+  triggerLabel: "trigger-label",
+  popup: "popup",
+  content: "content",
+} as const;
 
 const VIEWPORT_PADDING = 8;
 const HIDDEN_POSITION = -10_000;
@@ -51,7 +58,7 @@ export class HelpHintElement extends LitElement {
     side: { type: String },
     align: { type: String },
     sideOffset: { type: Number },
-    disabled: { type: Boolean },
+    disabled: { type: Boolean, reflect: true },
     displayState: { attribute: false, state: true },
     popupStyle: { attribute: false, state: true },
   };
@@ -149,6 +156,7 @@ export class HelpHintElement extends LitElement {
 
   private frameHandle: number | null = null;
   private unregisterRuntimeHandle: (() => void) | null = null;
+  private readonly popupId = `help-hint-${crypto.randomUUID()}`;
 
   private get triggerElement(): HTMLButtonElement | null {
     return this.renderRoot?.querySelector<HTMLButtonElement>(".trigger") ?? null;
@@ -189,6 +197,7 @@ export class HelpHintElement extends LitElement {
   }
 
   protected updated(): void {
+    this.syncHostStateAttributes();
     if (this.displayState.kind === "closed") {
       if (
         this.popupStyle.left !== HIDDEN_POPUP_STYLE.left ||
@@ -199,6 +208,11 @@ export class HelpHintElement extends LitElement {
       return;
     }
     this.schedulePositioning();
+  }
+
+  private syncHostStateAttributes(): void {
+    this.toggleAttribute("open", this.open);
+    this.setAttribute("data-presentation", this.presentationMode);
   }
 
   private get open(): boolean {
@@ -363,7 +377,10 @@ export class HelpHintElement extends LitElement {
     return html`
       <button
         class="trigger"
+        part=${HELP_HINT_PARTS.trigger}
         type="button"
+        aria-controls=${this.popupId}
+        aria-describedby=${this.open ? this.popupId : nothing}
         aria-label=${this.ariaLabel}
         title=${this.ariaLabel}
         aria-expanded=${this.open ? "true" : "false"}
@@ -374,11 +391,14 @@ export class HelpHintElement extends LitElement {
         @mouseenter=${() => this.openTransientHint()}
         @mouseleave=${() => this.closeTransientHint()}
       >
-        ?
+        <span part=${HELP_HINT_PARTS.triggerLabel}>?</span>
       </button>
       <div
         class="popup"
+        id=${this.popupId}
+        part=${HELP_HINT_PARTS.popup}
         role="tooltip"
+        aria-hidden=${this.open ? "false" : "true"}
         data-help-hint-presentation=${this.presentationMode}
         ?hidden=${!this.open}
         style=${styleMap(this.popupStyle)}
@@ -388,7 +408,9 @@ export class HelpHintElement extends LitElement {
           }
         }}
       >
-        <slot></slot>
+        <div part=${HELP_HINT_PARTS.content}>
+          <slot></slot>
+        </div>
       </div>
     `;
   }
@@ -406,4 +428,6 @@ export type HelpHintElementType = HTMLElement & {
   align: HelpHintAlign;
   sideOffset: number;
   disabled: boolean;
+  open: boolean;
+  getAttribute(qualifiedName: "data-presentation"): HelpHintPresentationMode | null;
 };
