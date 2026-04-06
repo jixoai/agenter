@@ -22,6 +22,14 @@
 		initialManageDialogSection?: 'overview' | 'users' | 'permissions' | null;
 	} = $props();
 
+	type RoomMessage = GlobalRoomSnapshotOutput['items'][number];
+	type RoomActorId = RoomMessage['readActorIds'][number];
+
+	const isRoomActorId = (actorId: string): actorId is RoomActorId =>
+		actorId.startsWith('auth:') || actorId.startsWith('session:') || actorId.startsWith('system:');
+	const normalizeRoomActorIds = (actorIds: readonly string[]): RoomActorId[] =>
+		[...new Set(actorIds.filter(isRoomActorId))].sort();
+
 	const createRoomEntry = (input: {
 		chatId: string;
 		title: string;
@@ -94,6 +102,8 @@
 				visibleAt: 1_710_000_000_000,
 				attentionState: 'loaded',
 				editable: false,
+				readActorIds: normalizeRoomActorIds(['auth:analyst']),
+				unreadActorIds: normalizeRoomActorIds([]),
 				metadata: {},
 				attachments: [],
 			},
@@ -130,9 +140,7 @@
 				online: true,
 				focused: true,
 				invalidCredential: false,
-				readMessageId: 'msg-1',
-				readMessageRowId: 1,
-				readAt: 1_710_000_000_500,
+				trackedByLatestVisible: true,
 				hasReadLatestVisible: true,
 				accessToken: `token:${initialRoomId}:analyst`,
 				grantId: `${initialRoomId}:grant:analyst`,
@@ -196,8 +204,10 @@
 			refreshedAt: Date.now(),
 		}) satisfies CachedResourceState<(typeof initialRoomAssets)[typeof initialRoomId]>,
 	);
-	const readSeatCount = $derived(roomSeatStates.filter((seat) => seat.hasReadLatestVisible).length);
-	const readSeatTotal = $derived(Math.max(roomSeatStates.length, 1));
+	const readSeatCount = $derived(
+		roomSeatStates.filter((seat) => seat.trackedByLatestVisible && seat.hasReadLatestVisible).length,
+	);
+	const readSeatTotal = $derived(roomSeatStates.filter((seat) => seat.trackedByLatestVisible).length);
 	const sendAsOptions = $derived.by(() => {
 		const room = selectedRoom;
 		if (!room) {
@@ -244,10 +254,33 @@
 		};
 	};
 
+	const filterTrackedActorIds = (actorIds: readonly string[]): RoomActorId[] =>
+		normalizeRoomActorIds(actorIds).filter((actorId) => !actorId.startsWith('system:'));
+
 	const syncRoomProgress = (chatId: string): void => {
-		const seats = roomSeatsById[chatId] ?? [];
 		const messages = roomMessagesById[chatId] ?? [];
 		const latestMessage = messages.at(-1);
+		const latestReadActorIds = new Set(filterTrackedActorIds(latestMessage?.readActorIds ?? []));
+		const latestUnreadActorIds = new Set(filterTrackedActorIds(latestMessage?.unreadActorIds ?? []));
+		const seats = (roomSeatsById[chatId] ?? []).map((seat) => {
+			const seatActorId = isRoomActorId(seat.actorId) ? seat.actorId : null;
+			const trackedByLatestVisible =
+				seatActorId !== null &&
+				(latestReadActorIds.has(seatActorId) || latestUnreadActorIds.has(seatActorId));
+			return {
+				...seat,
+				trackedByLatestVisible,
+				hasReadLatestVisible: trackedByLatestVisible && seatActorId !== null && latestReadActorIds.has(seatActorId),
+			};
+		});
+		roomSeatsById = {
+			...roomSeatsById,
+			[chatId]: seats,
+		};
+		const totalSeatCount = seats.filter((seat) => seat.trackedByLatestVisible).length;
+		const readSeatCount = seats.filter(
+			(seat) => seat.trackedByLatestVisible && seat.hasReadLatestVisible,
+		).length;
 		updateRoomEntry(chatId, (room) => ({
 			...room,
 			updatedAt: latestMessage?.updatedAt ?? room.updatedAt,
@@ -255,10 +288,12 @@
 				latestVisibleMessageId: latestMessage?.messageId,
 				latestVisibleMessageRowId: latestMessage?.rowId,
 				latestVisibleAt: latestMessage?.visibleAt,
-				totalSeatCount: Math.max(seats.length, 1),
-				readSeatCount: seats.filter((seat) => seat.hasReadLatestVisible).length,
-				unreadSeatCount: seats.filter((seat) => !seat.hasReadLatestVisible).length,
-				invalidCredentialSeatCount: seats.filter((seat) => seat.invalidCredential).length,
+				totalSeatCount,
+				readSeatCount,
+				unreadSeatCount: Math.max(totalSeatCount - readSeatCount, 0),
+				invalidCredentialSeatCount: seats.filter(
+					(seat) => seat.trackedByLatestVisible && seat.invalidCredential,
+				).length,
 			},
 		}));
 	};
@@ -320,8 +355,7 @@
 					online: false,
 					focused: false,
 					invalidCredential: false,
-					readMessageId: undefined,
-					readMessageRowId: undefined,
+					trackedByLatestVisible: false,
 					hasReadLatestVisible: false,
 					accessToken: `token:${room.chatId}:${input.participantId}`,
 					grantId,
@@ -402,20 +436,23 @@
 					visibleAt: 1_710_000_000_000 + messageCounter * 1_000,
 					attentionState: 'loaded',
 					editable: false,
+					readActorIds:
+						senderActorId === 'system:trusted-bootstrap'
+							? normalizeRoomActorIds([])
+							: normalizeRoomActorIds(
+									(roomSeatsById[room.chatId] ?? [])
+									.filter((seat) => seat.actorId === senderActorId)
+									.map((seat) => seat.actorId),
+								),
+					unreadActorIds: normalizeRoomActorIds(
+						(roomSeatsById[room.chatId] ?? [])
+							.map((seat) => seat.actorId)
+							.filter((actorId) => actorId !== senderActorId),
+					),
 					metadata: {},
 					attachments: [],
 				},
 			],
-		};
-		roomSeatsById = {
-			...roomSeatsById,
-			[room.chatId]: (roomSeatsById[room.chatId] ?? []).map((seat) => ({
-				...seat,
-				readMessageId: seat.actorId === senderActorId ? messageId : seat.readMessageId,
-				readMessageRowId: seat.actorId === senderActorId ? messageCounter : seat.readMessageRowId,
-				hasReadLatestVisible: seat.actorId === senderActorId,
-				readAt: seat.actorId === senderActorId ? Date.now() : seat.readAt,
-			})),
 		};
 		syncRoomProgress(room.chatId);
 	};
@@ -430,18 +467,22 @@
 			return;
 		}
 		const targetMessage = (roomMessagesById[room.chatId] ?? []).find((message) => message.messageId === messageId);
-		roomSeatsById = {
-			...roomSeatsById,
-			[room.chatId]: (roomSeatsById[room.chatId] ?? []).map((seat) =>
-				seat.actorId === actorId
-					? {
-							...seat,
-							readMessageId: messageId,
-							readMessageRowId: targetMessage?.rowId,
-							hasReadLatestVisible: true,
-							readAt: Date.now(),
-						}
-					: seat,
+		const targetRowId = targetMessage?.rowId;
+		if (!targetRowId) {
+			return;
+		}
+		roomMessagesById = {
+			...roomMessagesById,
+			[room.chatId]: (roomMessagesById[room.chatId] ?? []).map((message) =>
+				message.rowId > targetRowId
+					? message
+					: {
+							...message,
+							readActorIds: normalizeRoomActorIds([...(message.readActorIds ?? []), actorId]),
+							unreadActorIds: normalizeRoomActorIds(
+								(message.unreadActorIds ?? []).filter((candidateActorId) => candidateActorId !== actorId),
+							),
+						},
 			),
 		};
 		syncRoomProgress(room.chatId);

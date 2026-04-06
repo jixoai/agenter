@@ -204,12 +204,15 @@
 	};
 
 	const resolveMessageReadProgress = (input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
-		const relevantSeats = roomSeatStates.filter((seat) => seat.actorKind !== 'system');
-		if (relevantSeats.length === 0) {
+		const trackedActorIds = [
+			...(input.message.readActorIds ?? []),
+			...(input.message.unreadActorIds ?? []),
+		].filter((actorId) => !actorId.startsWith('system:'));
+		const totalCount = trackedActorIds.length;
+		if (totalCount === 0) {
 			return null;
 		}
-		const readCount = relevantSeats.filter((seat) => (seat.readMessageRowId ?? -1) >= input.message.rowId).length;
-		const totalCount = relevantSeats.length;
+		const readCount = (input.message.readActorIds ?? []).filter((actorId) => !actorId.startsWith('system:')).length;
 		return {
 			readCount,
 			totalCount,

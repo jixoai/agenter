@@ -21,13 +21,7 @@ import type {
   ReverseTimeCursor,
 } from "./types";
 
-interface MessageStoredReadState {
-  chatId: string;
-  actorId: MessageActorId;
-  readMessageId?: string;
-  readMessageRowId?: number;
-  readAt: number;
-}
+const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -42,6 +36,13 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
+const MESSAGE_DB_SCHEMA_VERSION = 2;
+const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
+  [...new Set(value)].sort((left, right) => left.localeCompare(right));
+const parseActorIds = (value: string | null): MessageActorId[] =>
+  normalizeActorIds(
+    parseJson<string[]>(value, []).filter((actor): actor is MessageActorId => MESSAGE_ACTOR_ID_PATTERN.test(actor)),
+  );
 
 const normalizeMessageKind = (value: string | null): MessageKind => {
   if (value === "error" || value === "interactive") {
@@ -155,6 +156,8 @@ const mapMessage = (row: {
   visible_at: number | null;
   attention_state: string | null;
   attention_loaded_at: number | null;
+  read_actor_ids_json: string | null;
+  unread_actor_ids_json: string | null;
   metadata_json: string | null;
   attachments_json: string | null;
   payload_json: string | null;
@@ -174,23 +177,11 @@ const mapMessage = (row: {
   attentionState: normalizeAttentionState(row.attention_state),
   attentionLoadedAt: row.attention_loaded_at ?? undefined,
   editable: normalizeAttentionState(row.attention_state) === "queued",
+  readActorIds: parseActorIds(row.read_actor_ids_json),
+  unreadActorIds: parseActorIds(row.unread_actor_ids_json),
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
   attachments: parseJson(row.attachments_json, []),
   payload: parseMessagePayload(normalizeMessageKind(row.kind), row.payload_json),
-});
-
-const mapReadState = (row: {
-  chat_id: string;
-  actor_id: string;
-  read_message_id: string | null;
-  read_message_row_id: number | null;
-  read_at: number;
-}): MessageStoredReadState => ({
-  chatId: row.chat_id,
-  actorId: row.actor_id as MessageActorId,
-  readMessageId: row.read_message_id ?? undefined,
-  readMessageRowId: row.read_message_row_id ?? undefined,
-  readAt: row.read_at,
 });
 
 export class MessageDb {
@@ -498,8 +489,8 @@ export class MessageDb {
     const result = this.db
       .query(
         `insert into chat_message (
-          message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.messageId ?? createId(),
@@ -515,6 +506,8 @@ export class MessageDb {
         visibleAt,
         attentionState,
         attentionLoadedAt,
+        toJson(normalizeActorIds(input.readActorIds ?? [])),
+        toJson(normalizeActorIds(input.unreadActorIds ?? [])),
         toJson(input.metadata ?? {}),
         toJson(input.attachments ?? []),
         toJson(input.payload ?? {}),
@@ -531,7 +524,7 @@ export class MessageDb {
   getMessage(chatId: string, messageId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ? and message_id = ?`,
       )
@@ -602,7 +595,7 @@ export class MessageDb {
     const before = input.before ?? undefined;
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and (
@@ -643,7 +636,7 @@ export class MessageDb {
   resolveLatestVisibleMessage(chatId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -654,81 +647,84 @@ export class MessageDb {
     return row ? mapMessage(row) : undefined;
   }
 
-  listReadStates(chatId: string): MessageStoredReadState[] {
-    const rows = this.db
-      .query(
-        `select chat_id, actor_id, read_message_id, read_message_row_id, read_at
-         from chat_read_state
-         where chat_id = ?
-         order by read_at desc, actor_id asc`,
-      )
-      .all(chatId) as Array<Parameters<typeof mapReadState>[0]>;
-    return rows.map(mapReadState);
-  }
-
-  markReadState(input: {
+  markMessagesReadUpTo(input: {
     chatId: string;
     actorId: MessageActorId;
-    readMessageId: string;
-    readMessageRowId: number;
-    readAt: number;
-  }): { state: MessageStoredReadState; changed: boolean } {
-    const current = this.getReadState(input.chatId, input.actorId);
-    if (
-      current &&
-      (current.readMessageRowId ?? -1) > input.readMessageRowId
-    ) {
-      return { state: current, changed: false };
-    }
-    if (
-      current &&
-      (current.readMessageRowId ?? -1) === input.readMessageRowId &&
-      current.readAt >= input.readAt
-    ) {
-      return { state: current, changed: false };
-    }
-    this.db
+    targetRowId: number;
+  }): { changed: boolean } {
+    const rows = this.db
       .query(
-        `insert into chat_read_state (
-          chat_id, actor_id, read_message_id, read_message_row_id, read_at
-        ) values (?, ?, ?, ?, ?)
-        on conflict(chat_id, actor_id) do update set
-          read_message_id = excluded.read_message_id,
-          read_message_row_id = excluded.read_message_row_id,
-          read_at = excluded.read_at`,
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+         from chat_message
+         where chat_id = ?
+           and visible_at is not null
+           and id <= ?
+         order by id asc`,
       )
-      .run(input.chatId, input.actorId, input.readMessageId, input.readMessageRowId, input.readAt);
-    return {
-      state: this.getReadState(input.chatId, input.actorId)!,
-      changed: true,
-    };
+      .all(input.chatId, input.targetRowId) as Array<Parameters<typeof mapMessage>[0]>;
+
+    let changed = false;
+    const updateReadState = this.db.query(
+      `update chat_message
+       set read_actor_ids_json = ?, unread_actor_ids_json = ?
+       where id = ?`,
+    );
+
+    for (const row of rows) {
+      const message = mapMessage(row);
+      const hasReadActor = message.readActorIds.includes(input.actorId);
+      const hasUnreadActor = message.unreadActorIds.includes(input.actorId);
+      if (!hasReadActor && !hasUnreadActor) {
+        continue;
+      }
+      const nextReadActorIds = normalizeActorIds([...message.readActorIds, input.actorId]);
+      const nextUnreadActorIds = message.unreadActorIds.filter((actorId) => actorId !== input.actorId);
+      if (
+        nextReadActorIds.length === message.readActorIds.length &&
+        nextUnreadActorIds.length === message.unreadActorIds.length
+      ) {
+        continue;
+      }
+      updateReadState.run(toJson(nextReadActorIds), toJson(nextUnreadActorIds), message.rowId);
+      changed = true;
+    }
+
+    return { changed };
   }
 
   private touchChannel(chatId: string, updatedAt: number): void {
     this.db.query(`update chat_channel set updated_at = ? where chat_id = ?`).run(updatedAt, chatId);
   }
 
-  private getReadState(chatId: string, actorId: MessageActorId): MessageStoredReadState | undefined {
-    const row = this.db
-      .query(
-        `select chat_id, actor_id, read_message_id, read_message_row_id, read_at
-         from chat_read_state
-         where chat_id = ? and actor_id = ?`,
-      )
-      .get(chatId, actorId) as Parameters<typeof mapReadState>[0] | null;
-    return row ? mapReadState(row) : undefined;
-  }
-
   private getMessageRowByDbId(id: number): Parameters<typeof mapMessage>[0] | null {
     return this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message where id = ?`,
       )
       .get(id) as Parameters<typeof mapMessage>[0] | null;
   }
 
   private migrate(): void {
+    const userVersionRow = this.db.query(`pragma user_version`).get() as { user_version?: number } | null;
+    const currentSchemaVersion = userVersionRow?.user_version ?? 0;
+    const hasLegacyMessageTables =
+      this.hasTable("chat_channel") || this.hasTable("chat_channel_grant") || this.hasTable("chat_message");
+    const hasLegacyReadStateTable = this.hasTable("chat_read_state");
+    const needsBreakingReset =
+      currentSchemaVersion < MESSAGE_DB_SCHEMA_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
+
+    if (needsBreakingReset) {
+      // The read model moved from mutable per-seat cursors to frozen per-message arrays.
+      // Old room durability cannot be upgraded losslessly, so reset message-system truth.
+      this.db.exec(`
+        drop table if exists chat_message;
+        drop table if exists chat_channel_grant;
+        drop table if exists chat_channel;
+        drop table if exists chat_read_state;
+      `);
+    }
+
     this.db.exec(`
       create table if not exists chat_channel (
         chat_id text primary key,
@@ -772,19 +768,11 @@ export class MessageDb {
         visible_at integer,
         attention_state text not null default 'loaded',
         attention_loaded_at integer,
+        read_actor_ids_json text not null default '[]',
+        unread_actor_ids_json text not null default '[]',
         metadata_json text,
         attachments_json text,
         payload_json text,
-        foreign key(chat_id) references chat_channel(chat_id) on delete cascade
-      );
-
-      create table if not exists chat_read_state (
-        chat_id text not null,
-        actor_id text not null,
-        read_message_id text,
-        read_message_row_id integer,
-        read_at integer not null,
-        primary key(chat_id, actor_id),
         foreign key(chat_id) references chat_channel(chat_id) on delete cascade
       );
 
@@ -792,7 +780,6 @@ export class MessageDb {
       create index if not exists idx_chat_channel_archived on chat_channel(archived_at, updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
       create index if not exists idx_chat_message_chat_created on chat_message(chat_id, created_at desc, id desc);
-      create index if not exists idx_chat_read_state_chat_read on chat_read_state(chat_id, read_at desc, actor_id asc);
     `);
 
     const messageColumns = this.db
@@ -829,8 +816,18 @@ export class MessageDb {
     if (!hasSenderActorIdColumn) {
       this.db.exec(`alter table chat_message add column sender_actor_id text;`);
     }
+    const hasReadActorIdsColumn = messageColumns.some((column) => column.name === "read_actor_ids_json");
+    if (!hasReadActorIdsColumn) {
+      this.db.exec(`alter table chat_message add column read_actor_ids_json text not null default '[]';`);
+    }
+    const hasUnreadActorIdsColumn = messageColumns.some((column) => column.name === "unread_actor_ids_json");
+    if (!hasUnreadActorIdsColumn) {
+      this.db.exec(`alter table chat_message add column unread_actor_ids_json text not null default '[]';`);
+    }
     this.db.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
     this.db.exec(`update chat_message set attention_state = coalesce(attention_state, 'loaded');`);
+    this.db.exec(`update chat_message set read_actor_ids_json = coalesce(read_actor_ids_json, '[]');`);
+    this.db.exec(`update chat_message set unread_actor_ids_json = coalesce(unread_actor_ids_json, '[]');`);
 
     const channelColumns = this.db
       .query(`pragma table_info(chat_channel)`)
@@ -851,5 +848,15 @@ export class MessageDb {
     if (!hasAccessTokenColumn) {
       this.db.exec(`alter table chat_channel_grant add column access_token text;`);
     }
+
+    this.db.exec(`drop table if exists chat_read_state;`);
+    this.db.exec(`pragma user_version = ${MESSAGE_DB_SCHEMA_VERSION};`);
+  }
+
+  private hasTable(name: string): boolean {
+    const row = this.db
+      .query(`select 1 from sqlite_master where type = 'table' and name = ? limit 1`)
+      .get(name) as { 1?: number } | null;
+    return row !== null;
   }
 }

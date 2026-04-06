@@ -25,7 +25,6 @@
 		grantRole: MessageSystemGrantRole;
 		grantBusy: boolean;
 		grantError: string | null;
-		formatTimestamp: (value?: number) => string;
 		onSeatFocusClick: (state: MessageSystemRoomSeatState) => void;
 		onSeatRevokeClick: (state: MessageSystemRoomSeatState) => void;
 		onGrantParticipantIdChange: (value: string) => void;
@@ -41,7 +40,6 @@
 		grantRole,
 		grantBusy,
 		grantError,
-		formatTimestamp,
 		onSeatFocusClick,
 		onSeatRevokeClick,
 		onGrantParticipantIdChange,
@@ -205,7 +203,11 @@
 										class="rounded-full text-[11px]"
 										variant={state.hasReadLatestVisible ? 'secondary' : 'outline'}
 									>
-										{state.hasReadLatestVisible ? `Read @ ${formatTimestamp(state.readAt)}` : 'Unread'}
+										{state.trackedByLatestVisible
+											? state.hasReadLatestVisible
+												? 'Read'
+												: 'Unread'
+											: 'Joined later'}
 									</Badge>
 									<Badge
 										class="rounded-full text-[11px]"

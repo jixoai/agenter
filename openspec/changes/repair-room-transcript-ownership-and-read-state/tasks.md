@@ -11,10 +11,10 @@
 
 ## 3. Message Read-State Breaking Upgrade
 
-- [ ] 3.1 Replace `chat_read_state` durability with per-message `readActorIds` / `unreadActorIds` arrays in `message-system`
-- [ ] 3.2 Update room projections and webui read indicators to resolve from per-message arrays instead of seat cursors
+- [x] 3.1 Replace `chat_read_state` durability with per-message `readActorIds` / `unreadActorIds` arrays in `message-system`
+- [x] 3.2 Update room projections and webui read indicators to resolve from per-message arrays instead of seat cursors
 
 ## 4. Verification
 
-- [ ] 4.1 Update targeted unit/integration tests for sender identity and read-state durability
-- [ ] 4.2 Run focused typecheck/tests for `message-system`, `app-server`, `web-chat-view`, and `webui`
+- [x] 4.1 Update targeted unit/integration tests for sender identity and read-state durability
+- [x] 4.2 Run focused typecheck/tests for `message-system`, `app-server`, `web-chat-view`, and `webui`

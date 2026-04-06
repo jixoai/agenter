@@ -66,9 +66,7 @@
 		online: boolean;
 		focused: boolean;
 		invalidCredential: boolean;
-		readMessageId?: string;
-		readMessageRowId?: number;
-		readAt?: number;
+		trackedByLatestVisible: boolean;
 		hasReadLatestVisible: boolean;
 		accessToken?: string;
 		grantId?: string;
@@ -226,6 +224,7 @@
 				online: false,
 				focused: room.focused,
 				invalidCredential: false,
+				trackedByLatestVisible: false,
 				hasReadLatestVisible: false,
 				accessToken: room.accessToken,
 			});
@@ -244,6 +243,7 @@
 				online: false,
 				focused: room.focused,
 				invalidCredential: false,
+				trackedByLatestVisible: false,
 				hasReadLatestVisible: false,
 				accessToken: room.accessToken,
 			});
@@ -261,6 +261,7 @@
 				online: false,
 				focused: false,
 				invalidCredential: !grant.accessToken,
+				trackedByLatestVisible: false,
 				hasReadLatestVisible: false,
 				accessToken: grant.accessToken,
 				grantId: grant.grantId,
@@ -279,9 +280,7 @@
 				online: state.online,
 				focused: state.focused,
 				invalidCredential: state.invalidCredential,
-				readMessageId: state.readMessageId,
-				readMessageRowId: state.readMessageRowId,
-				readAt: state.readAt,
+				trackedByLatestVisible: state.trackedByLatestVisible,
 				hasReadLatestVisible: state.hasReadLatestVisible,
 			});
 		}
@@ -354,10 +353,11 @@
 
 	const roomReadSeatCount = $derived(
 		selectedRoomProjection?.readProgress?.readSeatCount ??
-			resolvedRoomSeatStates.filter((state) => state.hasReadLatestVisible).length,
+			resolvedRoomSeatStates.filter((state) => state.trackedByLatestVisible && state.hasReadLatestVisible).length,
 	);
 	const roomReadTotalSeatCount = $derived(
-		Math.max(selectedRoomProjection?.readProgress?.totalSeatCount ?? resolvedRoomSeatStates.length, 1),
+		selectedRoomProjection?.readProgress?.totalSeatCount ??
+			resolvedRoomSeatStates.filter((state) => state.trackedByLatestVisible).length,
 	);
 	const chatNotice = $derived.by(() => {
 		if (routeNotice) {
@@ -527,7 +527,6 @@
 				chatId: room.chatId,
 				accessToken,
 				messageId,
-				readAt: Date.now(),
 			});
 		} catch (error) {
 			if ((latestMarkedReadBySeat[markKey] ?? null) !== null) {

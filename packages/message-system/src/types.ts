@@ -127,9 +127,7 @@ export interface MessageReadStateProjection {
   online: boolean;
   focused: boolean;
   invalidCredential: boolean;
-  readMessageId?: string;
-  readMessageRowId?: number;
-  readAt?: number;
+  trackedByLatestVisible: boolean;
   hasReadLatestVisible: boolean;
 }
 
@@ -170,6 +168,8 @@ export interface MessageRecord {
   attentionState: MessageAttentionState;
   attentionLoadedAt?: number;
   editable: boolean;
+  readActorIds: MessageActorId[];
+  unreadActorIds: MessageActorId[];
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -234,6 +234,8 @@ export interface MessageAppendInput {
   visibleAt?: number;
   attentionState?: MessageAttentionState;
   attentionLoadedAt?: number;
+  readActorIds?: MessageActorId[];
+  unreadActorIds?: MessageActorId[];
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -268,7 +270,6 @@ export interface MessageAuthorizedPageInput extends MessageAuthorizedReadInput {
 
 export interface MessageAuthorizedMarkReadInput extends MessageAuthorizedReadInput {
   messageId?: string;
-  readAt?: number;
 }
 
 export interface MessageChannelPatchInput {

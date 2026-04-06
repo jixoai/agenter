@@ -1881,7 +1881,6 @@ export class AppKernel {
   markGlobalRoomRead(input: {
     chatId: string;
     messageId?: string;
-    readAt?: number;
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
@@ -1891,7 +1890,6 @@ export class AppKernel {
       chatId: input.chatId,
       accessToken: access.accessToken,
       messageId: input.messageId,
-      readAt: input.readAt,
     });
   }
 

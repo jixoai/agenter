@@ -232,7 +232,6 @@
 								{grantRole}
 								{grantBusy}
 								{grantError}
-								{formatTimestamp}
 								onSeatFocusClick={onSeatFocusClick}
 								onSeatRevokeClick={onSeatRevokeClick}
 								onGrantParticipantIdChange={onGrantParticipantIdChange}

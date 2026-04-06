@@ -202,7 +202,6 @@ const createMockClient = (input: {
     chatId: string;
     accessToken?: string;
     messageId?: string;
-    readAt?: number;
   }) => Promise<{
     channel: {
       chatId: string;
@@ -234,9 +233,7 @@ const createMockClient = (input: {
         online: boolean;
         focused: boolean;
         invalidCredential: boolean;
-        readMessageId?: string;
-        readMessageRowId?: number;
-        readAt?: number;
+        trackedByLatestVisible: boolean;
         hasReadLatestVisible: boolean;
       }>;
     };
@@ -905,7 +902,7 @@ const createMockClient = (input: {
                 },
         },
         globalMarkRead: {
-          mutate: async (payload: { chatId: string; accessToken?: string; messageId?: string; readAt?: number }) =>
+          mutate: async (payload: { chatId: string; accessToken?: string; messageId?: string }) =>
             input.messageGlobalMarkReadMutate
               ? await input.messageGlobalMarkReadMutate(payload)
               : { channel: null },
@@ -5172,7 +5169,7 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
     const requests: {
-      markRead?: { chatId: string; accessToken?: string; messageId?: string; readAt?: number };
+      markRead?: { chatId: string; accessToken?: string; messageId?: string };
     } = {};
     const room = {
       chatId: "room-ops",
@@ -5208,9 +5205,7 @@ describe("Feature: runtime store synchronization", () => {
           online: true,
           focused: true,
           invalidCredential: false,
-          readMessageId: "12",
-          readMessageRowId: 12,
-          readAt: 5_000,
+          trackedByLatestVisible: true,
           hasReadLatestVisible: true,
         },
         {
@@ -5221,6 +5216,7 @@ describe("Feature: runtime store synchronization", () => {
           online: true,
           focused: false,
           invalidCredential: false,
+          trackedByLatestVisible: true,
           hasReadLatestVisible: false,
         },
       ],
@@ -5262,14 +5258,12 @@ describe("Feature: runtime store synchronization", () => {
       chatId: room.chatId,
       accessToken: room.accessToken,
       messageId: "12",
-      readAt: 5_000,
     });
 
     expect(requests.markRead).toEqual({
       chatId: room.chatId,
       accessToken: room.accessToken,
       messageId: "12",
-      readAt: 5_000,
     });
     expect(readChannel.readProgress).toMatchObject({
       latestVisibleMessageId: "12",
@@ -5278,8 +5272,8 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(readChannel.readStates?.find((state) => state.actorId === "session:relay")).toMatchObject({
       actorId: "session:relay",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: true,
-      readAt: 5_000,
     });
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
     expect(store.getState().notifications[0]?.messageId).toBe("9");

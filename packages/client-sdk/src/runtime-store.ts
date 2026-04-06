@@ -3140,7 +3140,6 @@ export class RuntimeStore {
     chatId: string;
     accessToken?: string;
     messageId?: string;
-    readAt?: number;
   }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalMarkRead.mutate(input);
     this.reconcileGlobalRoomEntry(output.channel);

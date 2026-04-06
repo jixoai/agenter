@@ -545,7 +545,6 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: relay.accessToken,
       messageId: visible.messageId,
-      readAt: 2_000,
     });
     expect(relayRead.readProgress).toMatchObject({
       latestVisibleMessageId: visible.messageId,
@@ -556,8 +555,8 @@ describe("Feature: message-chat-control-plane", () => {
     const relayState = relayRead.readStates?.find((state) => state.actorId === "session:relay");
     expect(relayState).toMatchObject({
       actorId: "session:relay",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: true,
-      readAt: 2_000,
       focused: true,
       online: true,
     });
@@ -565,7 +564,6 @@ describe("Feature: message-chat-control-plane", () => {
     const ownerRead = plane.markChannelReadAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      readAt: 3_000,
     });
     expect(ownerRead.readProgress).toMatchObject({
       latestVisibleMessageId: visible.messageId,
@@ -577,14 +575,14 @@ describe("Feature: message-chat-control-plane", () => {
     const viewerState = ownerRead.readStates?.find((state) => state.actorId === "auth:viewer");
     expect(ownerState).toMatchObject({
       actorId: "auth:owner",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: true,
-      readAt: 3_000,
       online: true,
     });
     expect(viewerState).toMatchObject({
       actorId: "auth:viewer",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: false,
-      readAt: undefined,
       online: true,
     });
     expect(plane.snapshotAuthorized({ chatId: room.chatId, accessToken: viewer.accessToken }).channel.readProgress).toMatchObject({
@@ -625,7 +623,6 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: relay.accessToken,
       messageId: visible.messageId,
-      readAt: 5_000,
     });
 
     const projected = plane.snapshotAuthorized({
@@ -641,6 +638,7 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(projected.readStates?.find((state) => state.actorId === "auth:viewer")).toMatchObject({
       actorId: "auth:viewer",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: false,
       invalidCredential: true,
     });

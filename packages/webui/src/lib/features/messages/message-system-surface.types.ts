@@ -24,9 +24,7 @@ export interface MessageSystemRoomSeatState extends ActorDirectoryEntry {
   online: boolean;
   focused: boolean;
   invalidCredential: boolean;
-  readMessageId?: string;
-  readMessageRowId?: number;
-  readAt?: number;
+  trackedByLatestVisible: boolean;
   hasReadLatestVisible: boolean;
   accessToken?: string;
   grantId?: string;

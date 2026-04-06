@@ -1059,7 +1059,6 @@ describe("Feature: app kernel event replay", () => {
       chatId: room.chatId,
       accessToken: issued.accessToken,
       messageId: memberMessage?.messageId,
-      readAt: 2_000,
     });
     expect(readProjection.readProgress).toMatchObject({
       latestVisibleMessageId: memberMessage?.messageId,

@@ -362,12 +362,11 @@ describe("Feature: app-server trpc procedures", () => {
       chatId: room.chatId,
       accessToken: relay.grant.accessToken,
       messageId: sentMessage?.messageId,
-      readAt: 2_000,
     });
     expect(relayRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: sentMessage?.messageId,
-      totalSeatCount: 1,
-      readSeatCount: 1,
+      totalSeatCount: 0,
+      readSeatCount: 0,
       unreadSeatCount: 0,
     });
 
@@ -516,7 +515,6 @@ describe("Feature: app-server trpc procedures", () => {
       chatId: room.chatId,
       accessToken: relay.grant.accessToken,
       messageId: latestMessageId,
-      readAt: 2_000,
     });
     expect(relayRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: latestMessageId,
@@ -526,14 +524,13 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(relayRead.channel.readStates.find((state) => state.actorId === "session:relay")).toMatchObject({
       actorId: "session:relay",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: true,
-      readAt: 2_000,
     });
 
     const superadminRead = await superadminCaller.message.globalMarkRead({
       chatId: room.chatId,
       messageId: latestMessageId,
-      readAt: 3_000,
     });
     expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
     expect(superadminRead.channel.readStates.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`)).toBeFalse();
@@ -542,7 +539,6 @@ describe("Feature: app-server trpc procedures", () => {
       chatId: room.chatId,
       accessToken: viewer.grant.accessToken,
       messageId: latestMessageId,
-      readAt: 4_000,
     });
     expect(viewerRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: latestMessageId,
@@ -552,8 +548,8 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(viewerRead.channel.readStates.find((state) => state.actorId === "auth:viewer")).toMatchObject({
       actorId: "auth:viewer",
+      trackedByLatestVisible: true,
       hasReadLatestVisible: true,
-      readAt: 4_000,
     });
 
     await kernel.stop();

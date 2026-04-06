@@ -537,7 +537,6 @@ export const appRouter = t.router({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
           messageId: z.string().min(1).optional(),
-          readAt: z.number().int().positive().optional(),
         }),
       )
       .mutation(({ ctx, input }) => ({

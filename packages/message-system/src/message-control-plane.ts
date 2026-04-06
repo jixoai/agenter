@@ -445,6 +445,13 @@ export class MessageControlPlane {
     const from =
       input.from?.trim() ||
       (input.senderActorId ? fallbackActorLabel(input.senderActorId) : "User");
+    const readMembership =
+      input.readActorIds || input.unreadActorIds
+        ? {
+            readActorIds: input.readActorIds ?? [],
+            unreadActorIds: input.unreadActorIds ?? [],
+          }
+        : this.createInitialReadMembership(input.chatId, input.senderActorId);
     const message = this.db.appendMessage({
       ...input,
       from,
@@ -452,6 +459,8 @@ export class MessageControlPlane {
       attentionState,
       visibleAt,
       attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
+      readActorIds: readMembership.readActorIds,
+      unreadActorIds: readMembership.unreadActorIds,
     });
     this.bumpVersion();
     for (const listener of this.messageListeners) {
@@ -486,6 +495,7 @@ export class MessageControlPlane {
     }
     const grant = this.requireAccess(input.chatId, input.accessToken, "member");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     const createdAt = input.createdAt ?? Date.now();
     const attentionState = input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued");
     const visibleAt = input.visibleAt ?? createdAt;
@@ -503,6 +513,8 @@ export class MessageControlPlane {
       attentionState,
       visibleAt,
       attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
+      readActorIds: readMembership.readActorIds,
+      unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
       attachments: input.attachments,
       payload: input.payload,
@@ -547,6 +559,7 @@ export class MessageControlPlane {
   ): MessageRecord {
     const grant = this.requireAccess(input.chatId, input.accessToken, "admin");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
       messageId: input.messageId,
@@ -561,6 +574,8 @@ export class MessageControlPlane {
       attentionState: "loaded",
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
       attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
+      readActorIds: readMembership.readActorIds,
+      unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
       attachments: input.attachments,
       payload: {
@@ -578,6 +593,7 @@ export class MessageControlPlane {
   ): MessageRecord {
     const grant = this.requireAccess(input.chatId, input.accessToken, "member");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
       messageId: input.messageId,
@@ -592,6 +608,8 @@ export class MessageControlPlane {
       attentionState: "loaded",
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
       attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
+      readActorIds: readMembership.readActorIds,
+      unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
       attachments: input.attachments,
       payload: {
@@ -660,12 +678,10 @@ export class MessageControlPlane {
         }),
       );
     }
-    const result = this.db.markReadState({
+    const result = this.db.markMessagesReadUpTo({
       chatId: input.chatId,
       actorId: grant.participantId as MessageActorId,
-      readMessageId: target.messageId,
-      readMessageRowId: target.rowId,
-      readAt: input.readAt ?? Date.now(),
+      targetRowId: target.rowId,
     });
     if (result.changed) {
       this.bumpVersion();
@@ -1208,21 +1224,21 @@ export class MessageControlPlane {
     return {
       ...channel,
       ...projection,
-      readProgress: this.createReadProgress(channel.chatId, latestVisibleMessage, readStates),
+      readProgress: this.createReadProgress(latestVisibleMessage, readStates),
       readStates,
     };
   }
 
   private listReadStateProjections(chatId: string, latestVisibleMessage?: MessageRecord): MessageReadStateProjection[] {
-    const readStateByActorId = new Map(this.db.listReadStates(chatId).map((state) => [state.actorId, state]));
     const currentAdminId = this.resolveCurrentAdminActorId(chatId);
     const focusedByActor = new Map<string, boolean>();
+    const latestReadActorIds = new Set(latestVisibleMessage?.readActorIds ?? []);
+    const latestUnreadActorIds = new Set(latestVisibleMessage?.unreadActorIds ?? []);
     for (const [actorId, focusedIds] of this.focusedChatIdsByActor.entries()) {
       if (focusedIds.has(chatId)) {
         focusedByActor.set(actorId, true);
       }
     }
-    const latestVisibleRowId = latestVisibleMessage?.rowId ?? null;
     const entries = this.db
       .listActiveGrants(chatId)
       .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageActorId } => {
@@ -1230,7 +1246,8 @@ export class MessageControlPlane {
       })
       .map((grant) => {
         const presence = this.actorPresence.get(grant.participantId);
-        const readState = readStateByActorId.get(grant.participantId);
+        const trackedByLatestVisible =
+          latestReadActorIds.has(grant.participantId) || latestUnreadActorIds.has(grant.participantId);
         return {
           actorId: grant.participantId,
           role: grant.role,
@@ -1239,10 +1256,8 @@ export class MessageControlPlane {
           online: presence?.online ?? false,
           focused: focusedByActor.get(grant.participantId) ?? false,
           invalidCredential: presence?.invalidCredential ?? false,
-          readMessageId: readState?.readMessageId,
-          readMessageRowId: readState?.readMessageRowId,
-          readAt: readState?.readAt,
-          hasReadLatestVisible: latestVisibleRowId !== null && (readState?.readMessageRowId ?? -1) >= latestVisibleRowId,
+          trackedByLatestVisible,
+          hasReadLatestVisible: latestVisibleMessage ? latestReadActorIds.has(grant.participantId) : false,
         } satisfies MessageReadStateProjection;
       });
     return entries.sort((left, right) => {
@@ -1258,28 +1273,51 @@ export class MessageControlPlane {
   }
 
   private createReadProgress(
-    chatId: string,
     latestVisibleMessage: MessageRecord | undefined,
     readStates: MessageReadStateProjection[],
   ): MessageReadProgressProjection {
-    void chatId;
     if (!latestVisibleMessage) {
       return {
-        totalSeatCount: readStates.length,
+        totalSeatCount: 0,
         readSeatCount: 0,
         unreadSeatCount: 0,
-        invalidCredentialSeatCount: readStates.filter((state) => state.invalidCredential).length,
+        invalidCredentialSeatCount: 0,
       };
     }
-    const readSeatCount = readStates.filter((state) => state.hasReadLatestVisible).length;
+    const readSeatCount = latestVisibleMessage.readActorIds.filter(
+      (actorId) => actorId !== TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
+    ).length;
+    const unreadSeatCount = latestVisibleMessage.unreadActorIds.filter(
+      (actorId) => actorId !== TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
+    ).length;
     return {
       latestVisibleMessageId: latestVisibleMessage.messageId,
       latestVisibleMessageRowId: latestVisibleMessage.rowId,
       latestVisibleAt: latestVisibleMessage.visibleAt ?? latestVisibleMessage.createdAt,
-      totalSeatCount: readStates.length,
+      totalSeatCount: readSeatCount + unreadSeatCount,
       readSeatCount,
-      unreadSeatCount: Math.max(0, readStates.length - readSeatCount),
-      invalidCredentialSeatCount: readStates.filter((state) => state.invalidCredential).length,
+      unreadSeatCount,
+      invalidCredentialSeatCount: readStates.filter(
+        (state) => state.trackedByLatestVisible && state.invalidCredential,
+      ).length,
+    };
+  }
+
+  private createInitialReadMembership(
+    chatId: string,
+    senderActorId?: MessageActorId,
+  ): { readActorIds: MessageActorId[]; unreadActorIds: MessageActorId[] } {
+    const participantActorIds = this.db
+      .listActiveGrants(chatId)
+      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageActorId } => {
+        return Boolean(grant.participantId) && !this.isTrustedBootstrapGrant(grant);
+      })
+      .map((grant) => grant.participantId);
+    const readActorIds =
+      senderActorId && participantActorIds.includes(senderActorId) ? [senderActorId] : [];
+    return {
+      readActorIds,
+      unreadActorIds: participantActorIds.filter((actorId) => !readActorIds.includes(actorId)),
     };
   }
 
