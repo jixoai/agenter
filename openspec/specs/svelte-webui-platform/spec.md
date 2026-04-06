@@ -26,20 +26,53 @@ The CLI WebUI delivery path SHALL continue serving copied static assets, and unk
 - **THEN** the CLI returns the SPA fallback document instead of a 404
 
 ### Requirement: The platform SHALL expose system-first navigation
-The top-level WebUI shell SHALL organize navigation around orthogonal systems, not around the old session-first route hierarchy. The active Svelte shell SHALL expose primary routes for `Workspaces`, `History`, `Messages`, `Terminals`, and `Settings`, and it SHALL also expose a secondary `Running Avatars` rail that opens the running-avatar detail shell without mutating the primary destination set.
+The top-level WebUI shell SHALL expose only `Avatars`, `Messages`, and `Terminals` as primary destinations. The shell SHALL expose `/admin` only through the footer superadmin affordance, and running avatars SHALL appear as dynamic tabs inside the Avatars workbench instead of a separate primary destination, global top bar, or secondary rail card. The shell SHALL NOT inject a redundant top header or refresh-only control above the currently selected workbench window.
 
-#### Scenario: Primary navigation
+#### Scenario: Primary shell exposes exactly three destinations
 - **WHEN** the operator opens the WebUI
-- **THEN** the primary shell exposes dedicated entry points for workspaces, message-system, terminal-system, history, and global settings/profile
+- **THEN** the left primary navigation shows only `Avatars`, `Messages`, and `Terminals`
+- **THEN** neither global settings nor running avatars are promoted into that primary destination set
 
-#### Scenario: Secondary runtime navigation
-- **WHEN** one or more avatars are running
-- **THEN** the shell exposes them in a dedicated `Running Avatars` section outside the primary destination set
-- **THEN** activating one of those entries opens the running-avatar detail shell instead of changing the primary navigation model
+#### Scenario: Superadmin uses the footer auxiliary route
+- **WHEN** the operator needs global administration
+- **THEN** they enter `/admin` from the footer superadmin affordance
+- **THEN** the application does not add a fourth primary destination for that workflow
 
-#### Scenario: Route ownership
-- **WHEN** a system surface or running-avatar detail surface is rendered
-- **THEN** its route layout owns local navigation and state without depending on React-era shell contracts
+#### Scenario: Auth bootstrap helper does not become a destination card
+- **WHEN** the operator has not yet bound a root key
+- **THEN** the shell keeps the helper state inside the auxiliary superadmin affordance
+- **THEN** the shell does not render an extra auth/bootstrap card in the main navigation surface
+
+#### Scenario: Selected workbench owns local chrome
+- **WHEN** the operator switches to a primary destination
+- **THEN** the selected workbench renders its own title, metadata, and local actions inside its window chrome
+- **THEN** there is no redundant global top bar or manual refresh button rendered above that workbench
+
+### Requirement: Workbench routes SHALL provide objective workspace path presentation
+Workspace-aware workbench surfaces SHALL present the global workspace as `~/.agenter`, SHALL use compact objective labels for dense navigation surfaces, and SHALL use the full objective path for detail titles. Compact workspace labels in tabs, rails, and summary chrome SHALL use the final two path segments when more than two segments exist.
+
+#### Scenario: Global workspace uses the objective home-relative form
+- **WHEN** a workspace-aware surface renders the special global workspace rooted at `~/`
+- **THEN** the visible label is `~/.agenter`
+- **THEN** the UI does not replace that objective path with subjective titles such as `Global workspace`
+
+#### Scenario: Dense navigation uses compact objective paths
+- **WHEN** a workbench list or tab renders a regular workspace path such as `/Users/kzf/Dev/GitHub/jixoai-labs/agenter`
+- **THEN** the dense navigation label is shown as `jixoai-labs/agenter`
+- **THEN** the detail title for the selected workspace still uses the full objective path
+
+### Requirement: Workbench window chrome SHALL expose shared sidebar visibility control
+Each selected primary workbench window SHALL expose a local sidebar visibility control through shared workbench chrome so desktop and compact operators can collapse or expand the left shell without reintroducing a global shell header.
+
+#### Scenario: Desktop workbench can collapse the application sidebar
+- **WHEN** the operator is viewing a primary workbench on a desktop-sized viewport
+- **THEN** the workbench chrome exposes a sidebar collapse control
+- **THEN** activating that control toggles the left application shell without depending on a separate global header
+
+#### Scenario: Compact workbench still exposes the navigation trigger
+- **WHEN** the operator is viewing a primary workbench on a compact viewport
+- **THEN** the workbench chrome exposes the same shared navigation trigger
+- **THEN** the operator can reopen the shell without leaving the current workbench
 
 ### Requirement: Svelte WebUI SHALL use canonical shadcn-svelte multipart composition
 The active Svelte WebUI SHALL consume multipart shadcn-svelte primitives through their canonical composition model rather than through alias-style wrappers that mimic a different framework. Shared UI exports MAY centralize imports, but feature code MUST compose multipart primitives through `Root`, `Header`, `Content`, `List`, `Trigger`, and similar explicit slots.
@@ -55,7 +88,7 @@ The active Svelte WebUI SHALL consume multipart shadcn-svelte primitives through
 - **THEN** responsive layout decisions remain visible in the route structure instead of being hidden behind alias wrappers
 
 ### Requirement: Svelte WebUI SHALL place primary and secondary content through responsive shells
-The active Svelte WebUI SHALL model primary content, navigation, secondary context, and parallel tools through explicit responsive shells. Compact layouts SHALL collapse secondary content into `left-sidebar`, `right-sidebar`, `bottom-sheet`, `Dialog`, or `tabs`, while larger layouts MAY reveal those same surfaces by default without changing the primary task hierarchy.
+The active Svelte WebUI SHALL model primary content, navigation, secondary context, and parallel tools through explicit responsive shells. Compact layouts SHALL collapse secondary content into `left-sidebar`, `right-sidebar`, `bottom-sheet`, `Dialog`, or `tabs`, while larger layouts MAY reveal those same surfaces by default without changing the primary task hierarchy. Shared structural shells such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SplitView` SHALL be consumed from `@agenter/svelte-components` rather than being implemented inside `@agenter/webui`.
 
 #### Scenario: Compact route collapses secondary content first
 - **WHEN** the viewport becomes constrained
@@ -66,3 +99,8 @@ The active Svelte WebUI SHALL model primary content, navigation, secondary conte
 - **WHEN** the viewport becomes wider
 - **THEN** the route may reveal sidebars or secondary panes by default
 - **THEN** those expanded surfaces remain visually and structurally secondary to the primary task stage
+
+#### Scenario: WebUI route consumes shared structural package
+- **WHEN** a WebUI route or shell needs scrolling or scaffold-family layout
+- **THEN** it composes the shared primitives from `@agenter/svelte-components`
+- **THEN** `@agenter/webui` stays a product assembly layer instead of becoming the source of truth for shared layout law

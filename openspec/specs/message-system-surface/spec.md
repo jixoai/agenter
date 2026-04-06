@@ -56,12 +56,13 @@ The room viewer selector, room management surface, send-as options, and read-pro
 - **THEN** each option is keyed by canonical actor identity
 - **THEN** duplicate visible labels remain selectable as separate actors
 
-### Requirement: Room read state SHALL use group read progress semantics
-The room transcript SHALL present participant read progress and read timestamps, and SHALL NOT prioritize attention-style pending labels as the primary unread model.
+### Requirement: Room read state SHALL use message-level group read progress semantics
+The room transcript SHALL present participant read progress and read timestamps as message-level collaboration facts, and SHALL NOT project latest-read progress as a room-header aggregate chip or as an attention-style pending label.
 
 #### Scenario: Participant read progress
 - **WHEN** room messages contain read-state projections
-- **THEN** the UI shows a progress indicator and participant read metadata for the message
+- **THEN** the UI shows a per-message inline-end progress indicator for that message
+- **THEN** a fully read message upgrades that indicator into a completed check state instead of a room-level `x/y read` badge
 
 #### Scenario: Transcript ordering
 - **WHEN** the room list and transcript render
@@ -81,7 +82,7 @@ The message-system route SHALL react to room catalog updates, new messages, read
 - **THEN** the `Send as` options and read progress indicators stay consistent with the latest room truth
 
 ### Requirement: Message-system route SHALL place secondary room controls responsively
-The message-system route SHALL treat the transcript as the primary center surface and place navigation, management, and secondary facts into responsive containers such as left-side room lists, dialog sidebars, tabs, or compact sheets according to available space.
+The message-system route SHALL treat the transcript as the primary center surface and place navigation, management, and secondary facts into responsive containers such as left-side room lists, dialog sidebars, tabs, or compact sheets according to available space. When a room is selected, the workbench window SHALL render explicit `chrome_tabs`, `page_toolbar`, and `page_content` bands, and the toolbar SHALL remain outside transcript flow.
 
 #### Scenario: Compact viewport preserves the transcript stage
 - **WHEN** the operator uses the message-system route on a narrow viewport
@@ -93,3 +94,33 @@ The message-system route SHALL treat the transcript as the primary center surfac
 - **THEN** the room catalog may remain visible beside the selected transcript
 - **THEN** secondary room controls can expand without demoting the transcript from the primary task surface
 
+#### Scenario: Selected room keeps toolbar chrome outside transcript flow
+- **WHEN** a room tab is active
+- **THEN** avatar, viewer title, actions, and room-mode chips render inside the fixed `page_toolbar` band
+- **THEN** those controls do not overlap or visually collapse into the transcript list
+
+### Requirement: Message-system tabs SHALL resolve canonical room icon identity
+The message-system workbench SHALL render icon-bearing tabs for fixed views and room views. Dynamic room tabs SHALL resolve room-owned icons from the canonical icon authority instead of falling back to label-only initials as the durable navigation model.
+
+#### Scenario: Room tab shows canonical room icon
+- **WHEN** the operator opens or reopens a room tab in Messages
+- **THEN** that tab renders the room's canonical icon from the room icon authority
+- **THEN** the tab does not rely on a feature-local initials-only fallback as its primary identity surface
+
+#### Scenario: Fixed tabs keep stable non-room icons
+- **WHEN** the workbench renders fixed tabs such as `New room`
+- **THEN** those tabs still render their stable non-room icon affordances
+- **THEN** the presence of room icons does not remove icon affordances from the rest of the workbench
+
+### Requirement: Message-system route SHALL expose a rich shared room transcript surface
+The selected room transcript SHALL present canonical avatars, improved message bubbles, attachment rendering, and local hover/context actions through the shared chat component, while keeping room orchestration and management outside the transcript renderer.
+
+#### Scenario: Hover or context interaction reveals room message actions
+- **WHEN** the operator hovers a room message or opens its context menu
+- **THEN** the transcript exposes the shared local message action affordances for that message
+- **THEN** the route does not need a second feature-local bubble implementation to provide those actions
+
+#### Scenario: Room attachment renders after reload
+- **WHEN** the operator reloads a room whose transcript contains persisted room attachments
+- **THEN** the transcript renders those attachments with kind-appropriate preview or file affordances
+- **THEN** the operator can inspect the same room history without re-uploading the assets

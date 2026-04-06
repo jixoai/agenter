@@ -27,7 +27,7 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **THEN** it does not guess viewer ownership from duplicate labels or unrelated room metadata
 
 ### Requirement: Web chat view SHALL present a conversation-first shared surface
-The shared room component SHALL render one durable conversation surface with transcript, notices, and composer organized as explicit primary regions. The transcript SHALL remain the dominant viewport, while metadata or helper details SHALL collapse into secondary regions without forcing hosts to duplicate the same controls around the component.
+The shared room component SHALL render one durable conversation surface with transcript, notices, and composer organized as explicit primary regions. The transcript SHALL remain the dominant viewport, while metadata or helper details SHALL collapse into secondary regions without forcing hosts to duplicate the same controls around the component. The transcript/composer shell SHALL compose shared Svelte structural primitives from `@agenter/svelte-components` instead of maintaining a private layout law inside the package.
 
 #### Scenario: Transcript remains primary on compact viewports
 - **WHEN** the chat component is rendered in a narrow container
@@ -39,13 +39,50 @@ The shared room component SHALL render one durable conversation surface with tra
 - **THEN** the host can place surrounding metadata or management controls beside the component
 - **THEN** the shared component still owns the transcript/composer shell instead of requiring a second route-local transcript renderer
 
+#### Scenario: Chat shell reuses shared Svelte layout law
+- **WHEN** the shared chat package renders its transcript shell
+- **THEN** it uses `Scaffold` and `ScrollView` from `@agenter/svelte-components`
+- **THEN** chat-specific visuals and transport behavior remain local to `web-chat-view`
+- **THEN** the package still avoids any dependency on `@agenter/webui`
+
+### Requirement: Web chat view SHALL expose a rich shared composer surface
+The shared chat package SHALL render a responsive CodeMirror-based composer surface with attachment previews, action/status toolbars, help hints, and host-driven send orchestration instead of a minimal textarea-only input.
+
+#### Scenario: Composer shows rich pending attachment state
+- **WHEN** the host adds pending files, images, or screenshots to the shared composer
+- **THEN** the chat package renders visible pending attachment previews before send
+- **THEN** the same composer surface still owns Enter/Shift+Enter and toolbar interaction semantics
+
+#### Scenario: Composer toolbar stays responsive
+- **WHEN** the chat package is rendered in a compact or desktop container
+- **THEN** the composer toolbar adapts its controls without hiding the primary send action
+- **THEN** help/status hints remain available through the same shared surface
+
+### Requirement: Web chat view SHALL render canonical avatar and message action affordances
+The shared chat package SHALL support host-provided canonical avatar/icon resolution for room and actor identity, and it SHALL expose local hover/context message action affordances from the shared message row implementation.
+
+#### Scenario: Host resolves canonical avatars
+- **WHEN** the host provides canonical icon or avatar URLs for the channel or participants
+- **THEN** the shared message rows render those canonical avatars in transcript presentation
+- **THEN** the chat package does not guess durable identity solely from visible labels
+
+#### Scenario: Shared row exposes local message actions
+- **WHEN** the operator hovers or context-clicks a transcript row
+- **THEN** the row reveals the shared local message action affordance
+- **THEN** host routes can extend those actions without replacing the shared row renderer
+
 ### Requirement: Web chat view SHALL own transcript scrolling through ScrollView
-The shared chat component SHALL delegate transcript scrolling to the shared `ScrollView` contract instead of feature-local raw overflow ownership, even when delivered as a reusable custom element.
+The shared chat component SHALL delegate transcript scrolling to the shared `ScrollView` contract instead of feature-local raw overflow ownership, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only scroll owner and `message_toolbar` pinned to the stage bottom.
 
 #### Scenario: Transcript uses shared scroll owner
 - **WHEN** the chat transcript exceeds the visible height
 - **THEN** the component scrolls through the shared `ScrollView` contract
 - **THEN** host surfaces do not need to wrap the transcript in a second competing scroll owner
+
+#### Scenario: Composer stays pinned while transcript scrolls
+- **WHEN** the transcript grows beyond the available room stage height
+- **THEN** only `messages_list` scrolls
+- **THEN** the composer stays pinned at the bottom of the shared chat stage instead of entering a second page-level scroll region
 
 ### Requirement: Web chat view SHALL support large chat histories
 The web chat view SHALL use virtualized rendering and reverse-time pagination for long-lived room conversations.
