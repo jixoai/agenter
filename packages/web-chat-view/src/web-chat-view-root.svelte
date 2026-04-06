@@ -868,7 +868,7 @@
   }
 
   .chat-scroll-viewport-embedded {
-    padding: 0.9rem 0 0.8rem;
+    padding: 0.55rem 0 0.5rem;
   }
 
   .chat-footer-embedded {
@@ -926,6 +926,7 @@
 
     .chat-scroll-viewport-embedded {
       padding-inline: 0;
+      padding-block: 0.4rem 0.4rem;
     }
   }
 </style>

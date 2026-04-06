@@ -301,6 +301,17 @@
 		}
 	}
 
+	@container (max-width: 31rem) {
+		:global([data-workbench-tab]) {
+			block-size: 2.25rem;
+			max-inline-size: 9rem;
+			min-inline-size: 5.75rem;
+			gap: 0.375rem;
+			padding-inline: 0.75rem;
+			font-size: 0.72rem;
+		}
+	}
+
 	@container (min-width: 64rem) {
 		:global([data-workbench-tab]) {
 			max-inline-size: 20rem;

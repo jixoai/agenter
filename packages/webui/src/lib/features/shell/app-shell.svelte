@@ -8,15 +8,10 @@
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import {
-		buildOpenAvatarRailItems,
-		extractOpenAvatarTabId,
-		OPEN_AVATAR_TABS_CHANGE_EVENT,
-		readOpenAvatarTabs,
-		reconcileOpenAvatarTabs,
-		resolveOpenAvatarTabFromUrl,
-		upsertOpenAvatarTab,
-		type OpenAvatarTabEntry,
-	} from '$lib/features/avatars/avatar-open-tabs-state';
+		AVATAR_SESSION_TABS_CHANGE_EVENT,
+		readAvatarSessionTabIds,
+		upsertAvatarSessionTabId,
+	} from '$lib/features/avatars/avatar-session-tabs-state';
 	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
 	import {
 		readPinnedRunningAvatarIds,
@@ -24,7 +19,7 @@
 		togglePinnedRunningAvatarId,
 	} from '$lib/features/shell/running-avatar-rail-state';
 	import {
-		buildRunningAvatarRailItems,
+		buildAvatarSessionRailItems,
 		extractRuntimeSessionId,
 	} from '$lib/features/runtime/runtime-shell-state';
 	import { cn } from '$lib/utils.js';
@@ -48,32 +43,27 @@
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
 			null,
 	);
-	let openAvatarTabs = $state<OpenAvatarTabEntry[]>(readOpenAvatarTabs());
+	let openedAvatarSessionIds = $state<string[]>(readAvatarSessionTabIds());
 	let pinnedAvatarSessionIds = $state<string[]>(readPinnedRunningAvatarIds());
 	const activeAvatarSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
-	const activeOpenAvatarTabId = $derived(extractOpenAvatarTabId(page.url));
-	const openAvatarItems = $derived(
-		buildOpenAvatarRailItems(openAvatarTabs, {
-			activeTabId: activeOpenAvatarTabId,
-		}),
-	);
-	const runningAvatarItems = $derived(
-		buildRunningAvatarRailItems(controller.runtimeState, {
+	const avatarSubmenuItems = $derived(
+		buildAvatarSessionRailItems(controller.runtimeState, {
 			activeSessionId: activeAvatarSessionId,
+			openedSessionIds: openedAvatarSessionIds,
 			pinnedSessionIds: pinnedAvatarSessionIds,
 			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
 		}),
 	);
-	const avatarSubmenuItems = $derived([...openAvatarItems, ...runningAvatarItems]);
 	const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars');
 	const adminActive = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const activeTitle = $derived(adminActive ? 'Admin' : activeItem?.label ?? 'Agenter');
 
-	const profileLabel = $derived(
+	const profileLabel = $derived('Super admin');
+	const profileDetailLabel = $derived(
 		controller.authSession?.profile.metadata.displayName ??
 			controller.authSession?.profile.metadata.nickname ??
 			controller.authSession?.claims.authId ??
-			'Unauthenticated',
+			'No root key bound',
 	);
 
 	const profileIconUrl = $derived(
@@ -82,38 +72,29 @@
 			: null,
 	);
 	const profileSecondaryLabel = $derived(
-		controller.authSession?.claims.authId
-			? controller.authSession.claims.authId === profileLabel
-				? 'Authenticated superadmin'
-				: controller.authSession.claims.authId
-			: 'Bind root key',
+		'Open /admin',
 	);
 
 	$effect(() => {
-		openAvatarTabs = reconcileOpenAvatarTabs(openAvatarTabs);
 		if (typeof window === 'undefined') {
 			return;
 		}
-		const syncOpenAvatarTabs = (): void => {
-			openAvatarTabs = readOpenAvatarTabs();
+		const syncAvatarSessionTabs = (): void => {
+			openedAvatarSessionIds = readAvatarSessionTabIds();
 		};
-		window.addEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
-		window.addEventListener('storage', syncOpenAvatarTabs);
+		window.addEventListener(AVATAR_SESSION_TABS_CHANGE_EVENT, syncAvatarSessionTabs);
+		window.addEventListener('storage', syncAvatarSessionTabs);
 		return () => {
-			window.removeEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
-			window.removeEventListener('storage', syncOpenAvatarTabs);
+			window.removeEventListener(AVATAR_SESSION_TABS_CHANGE_EVENT, syncAvatarSessionTabs);
+			window.removeEventListener('storage', syncAvatarSessionTabs);
 		};
 	});
 
 	$effect(() => {
-		const currentOpenAvatarTab = resolveOpenAvatarTabFromUrl(page.url);
-		if (!currentOpenAvatarTab) {
+		if (!activeAvatarSessionId) {
 			return;
 		}
-		const next = upsertOpenAvatarTab(openAvatarTabs, currentOpenAvatarTab);
-		if (next.entries !== openAvatarTabs) {
-			openAvatarTabs = next.entries;
-		}
+		openedAvatarSessionIds = upsertAvatarSessionTabId(openedAvatarSessionIds, activeAvatarSessionId);
 	});
 
 	$effect(() => {
@@ -199,6 +180,8 @@
 				<div class="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
 					<div class="truncate text-sm font-medium">{profileLabel}</div>
 					<div class="truncate text-xs text-sidebar-foreground/70">
+						{profileDetailLabel} ·
+						{' '}
 						{profileSecondaryLabel}
 					</div>
 				</div>
