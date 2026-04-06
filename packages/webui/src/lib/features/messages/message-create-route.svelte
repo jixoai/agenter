@@ -148,7 +148,8 @@
 		<section class="grid gap-4 rounded-[1rem] border border-border/60 bg-background/45 p-4 md:p-5">
 			<label class="grid gap-2 text-sm font-medium">
 				<span>Room title</span>
-				<Input bind:value={title} placeholder="Incident bridge" />
+				<Input bind:value={title} placeholder="Room" />
+				<span class="text-xs font-normal text-muted-foreground">Optional. Leave blank to use "Room".</span>
 			</label>
 
 			<div class="grid gap-3">

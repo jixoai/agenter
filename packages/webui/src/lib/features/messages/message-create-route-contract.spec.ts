@@ -12,4 +12,10 @@ describe('Feature: New room route navigation contract', () => {
 		expect(messageCreateRouteSource).not.toContain('title.trim().toLowerCase()');
 		expect(messageCreateRouteSource).not.toContain('room-${');
 	});
+
+	test('Scenario: Given the create route leaves room titles optional When reading the route source Then the title affordance matches the Room fallback law', () => {
+		expect(messageCreateRouteSource).toContain('placeholder="Room"');
+		expect(messageCreateRouteSource).toContain('Optional. Leave blank to use "Room".');
+		expect(messageCreateRouteSource).not.toContain('placeholder="Incident bridge"');
+	});
 });
