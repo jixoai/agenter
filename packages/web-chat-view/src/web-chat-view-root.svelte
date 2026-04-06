@@ -4,11 +4,14 @@
     MessageTransportServerMessage,
     ReverseTimeCursor,
   } from "@agenter/message-system/types";
-  import { ScrollView } from "@agenter/svelte-primitives";
+  import { Scaffold, ScrollView } from "@agenter/svelte-components";
   import { onMount, untrack } from "svelte";
 
+  import ChatAvatar from "./chat-avatar.svelte";
   import DefaultWebChatComposer from "./default-composer.svelte";
   import MessageRow from "./message-row.svelte";
+  import { Badge } from "./ui/badge";
+  import * as Card from "./ui/card";
   import {
     compareMessages,
     isAssistantMessage,
@@ -45,6 +48,11 @@
     emptyTranscriptTitle = emptyTitle,
     emptyTranscriptMessage = emptyMessage,
     routeNotice = null,
+    channelPresentation = null,
+    resolveActorPresentation,
+    resolveMessageActions,
+    resolveMessageReadProgress,
+    composerCapabilities,
     submitMessage,
     latestVisibleAssistantMessageIdHandler,
     latestVisibleMessageIdHandler,
@@ -77,6 +85,19 @@
   const transcriptMessages = $derived([...messages].sort(compareMessages));
   const effectiveSocketFactory = $derived(socketFactory ?? defaultSocketFactory);
   const effectiveViewerActorId = $derived(resolveViewerActorId(channel, viewerActorId));
+  const effectiveChannelPresentation = $derived.by(() => {
+    if (!channel) {
+      return null;
+    }
+    return (
+      channelPresentation ?? {
+        label: channel.title,
+        subtitle: `${channel.participants.length} participants · ${channel.kind}`,
+        iconUrl: null,
+        kind: "room" as const,
+      }
+    );
+  });
   const composerHint = $derived(
     submitMessage
       ? "Enter to send, Shift+Enter for newline"
@@ -84,17 +105,40 @@
         ? "Enter to send, Shift+Enter for newline"
         : "Waiting for channel transport",
   );
+  const transcriptNotice = $derived.by(() => {
+    if (errorMessage) {
+      return {
+        tone: "destructive" as const,
+        message: errorMessage,
+      };
+    }
+    return routeNotice;
+  });
+  const surfaceNotice = $derived(showHeader ? transcriptNotice : null);
+  const transcriptPreambleNotice = $derived(!showHeader ? transcriptNotice : null);
+  const transcriptContentClass = $derived(
+    transcriptMessages.length === 0 && !transcriptPreambleNotice
+      ? "chat-scroll-content chat-scroll-content-empty"
+      : "chat-scroll-content",
+  );
 
   const composerProps = $derived.by(() => {
     if (!channel) {
       return null;
     }
+    const attachmentsEnabled = submitMessage ? composerCapabilities?.attachmentEnabled ?? true : false;
     return {
       channel,
       disabled: disabled || sending || (!submitMessage && connectionState !== "connected"),
       sending,
       connectionState,
       hintText: composerHint,
+      capabilities: {
+        ...composerCapabilities,
+        attachmentEnabled: attachmentsEnabled,
+        imageEnabled: attachmentsEnabled && (composerCapabilities?.imageEnabled ?? true),
+        screenshotEnabled: attachmentsEnabled && (composerCapabilities?.screenshotEnabled ?? true),
+      },
       onSubmit: handleSubmit,
     } satisfies WebChatComposerRenderProps;
   });
@@ -505,80 +549,117 @@
 
 <div
   class={`web-chat-view ${className}`}
+  class:embedded={!showHeader}
   part="surface"
   data-connected={connectionState}
   data-focused={focused ? "true" : "false"}
 >
-  {#if showHeader && channel}
-    <header class="header" part="header">
-      <div class="header-copy" part="header-copy">
-        <div class="eyebrow" part="eyebrow">Room transcript</div>
-        <h2>{channel.title}</h2>
-      </div>
-      <div class="status-block" part="status-block">
-        <span class="status-chip" part="status-chip" data-state={connectionState}>{connectionState}</span>
-        {#if focused}
-          <span class="focus-chip" part="focus-chip">Focused</span>
-        {/if}
-      </div>
-    </header>
-  {/if}
-
-  {#if routeNotice || errorMessage}
-    <div class="notice" part="notice" data-tone={errorMessage ? "destructive" : routeNotice?.tone ?? "info"}>
-      {errorMessage ?? routeNotice?.message}
-    </div>
-  {/if}
-
-  <div class="body" part="body">
-    {#if !channel}
-      <div class="empty-state" part="empty-state">
-        <h3>{emptyTitle}</h3>
-        <p>{emptyMessage}</p>
-      </div>
-    {:else}
-      <div class="transcript-shell" part="transcript-shell">
-        <ScrollView
-          bind:viewportRef
-          bind:contentRef
-          class="transcript-scroll"
-          viewportClass="transcript-viewport"
-          contentClass="transcript-content"
-          viewportTestId="web-chat-scroll-viewport"
-          onViewportScroll={handleScroll}
-        >
-          {#if loadingInitial && transcriptMessages.length === 0}
-            <div class="empty-state" part="empty-state loading-state">
-              <h3>Loading channel history...</h3>
-              <p>Connecting to the room transport.</p>
+  <div class="chat-card" part="shell" data-embedded={showHeader ? "false" : "true"}>
+    {#if showHeader && channel && effectiveChannelPresentation}
+      <Card.Header class="chat-header border-b" part="header">
+        <div class="chat-header-copy" part="header-copy">
+          <div class="chat-header-main">
+            <ChatAvatar
+              label={effectiveChannelPresentation.label}
+              subtitle={effectiveChannelPresentation.subtitle}
+              src={effectiveChannelPresentation.iconUrl}
+              class="size-11 rounded-[1.2rem]"
+            />
+            <div class="min-w-0">
+              <div class="chat-eyebrow" part="eyebrow">Room transcript</div>
+              <Card.Title>{effectiveChannelPresentation.label}</Card.Title>
+              <Card.Description class="chat-header-description">
+                {effectiveChannelPresentation.subtitle ?? `${channel.participants.length} participants · ${channel.kind}`}
+              </Card.Description>
             </div>
-          {:else if transcriptMessages.length === 0}
-            <div class="empty-state" part="empty-state transcript-empty-state">
-              <h3>{emptyTranscriptTitle}</h3>
-              <p>{emptyTranscriptMessage}</p>
-            </div>
-          {:else}
-            {#each transcriptMessages as message (message.messageId)}
-              <section
-                data-message-id={message.messageId}
-                data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
-              >
-                <MessageRow
-                  {channel}
-                  viewerActorId={effectiveViewerActorId}
-                  {message}
-                  onSubmitInteractive={async (text) => {
-                    await handleSubmit({ text, assets: [] });
-                  }}
-                />
-              </section>
-            {/each}
+          </div>
+        </div>
+        <Card.Action class="chat-status-block" part="status-block">
+          <Badge class="chat-status-chip" variant="outline" part="status-chip" data-state={connectionState}>
+            {connectionState}
+          </Badge>
+          {#if focused}
+            <Badge variant="secondary" part="focus-chip">Focused</Badge>
           {/if}
-        </ScrollView>
-        {#if composerProps}
-          <DefaultWebChatComposer {...composerProps} />
-        {/if}
+        </Card.Action>
+      </Card.Header>
+    {/if}
+
+    {#if surfaceNotice}
+      <div
+        class="chat-notice"
+        part="notice"
+        data-tone={surfaceNotice.tone ?? "info"}
+      >
+        {surfaceNotice.message}
       </div>
+    {/if}
+
+    {#if !channel}
+      <Card.Content class="chat-empty-shell">
+        <div class="empty-state" part="empty-state">
+          <h3>{emptyTitle}</h3>
+          <p>{emptyMessage}</p>
+        </div>
+      </Card.Content>
+    {:else}
+      <Scaffold.Root class="chat-scaffold">
+        <Scaffold.Body class="chat-body" part="body">
+          <div class="chat-transcript-shell" part="transcript-shell">
+            <ScrollView
+              bind:viewportRef
+              bind:contentRef
+              class="chat-scroll"
+              viewportClass={`chat-scroll-viewport ${showHeader ? "" : "chat-scroll-viewport-embedded"}`}
+              contentClass={transcriptContentClass}
+              viewportTestId="web-chat-scroll-viewport"
+              onViewportScroll={handleScroll}
+            >
+              {#if transcriptPreambleNotice}
+                <div class="chat-transcript-notice" part="transcript-notice" data-tone={transcriptPreambleNotice.tone ?? "info"}>
+                  {transcriptPreambleNotice.message}
+                </div>
+              {/if}
+              {#if loadingInitial && transcriptMessages.length === 0}
+                <div class="empty-state" part="empty-state loading-state">
+                  <h3>Loading channel history...</h3>
+                  <p>Connecting to the room transport.</p>
+                </div>
+              {:else if transcriptMessages.length === 0}
+                <div class="empty-state" part="empty-state transcript-empty-state">
+                  <h3>{emptyTranscriptTitle}</h3>
+                  <p>{emptyTranscriptMessage}</p>
+                </div>
+              {:else}
+                {#each transcriptMessages as message (message.messageId)}
+                  <section
+                    data-message-id={message.messageId}
+                    data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
+                  >
+                    <MessageRow
+                      {channel}
+                      viewerActorId={effectiveViewerActorId}
+                      {message}
+                      {resolveActorPresentation}
+                      {resolveMessageActions}
+                      {resolveMessageReadProgress}
+                      onSubmitInteractive={async (text) => {
+                        await handleSubmit({ text, assets: [] });
+                      }}
+                    />
+                  </section>
+                {/each}
+              {/if}
+            </ScrollView>
+          </div>
+        </Scaffold.Body>
+
+        {#if composerProps}
+          <Scaffold.Footer class={`chat-footer border-t ${showHeader ? "" : "chat-footer-embedded"}`}>
+            <DefaultWebChatComposer {...composerProps} />
+          </Scaffold.Footer>
+        {/if}
+      </Scaffold.Root>
     {/if}
   </div>
 </div>
@@ -589,147 +670,201 @@
   }
 
   .web-chat-view {
-    --web-chat-border: #dbe1ea;
-    --web-chat-surface: rgba(255, 255, 255, 0.96);
+    --web-chat-border: rgba(219, 225, 234, 0.9);
+    --web-chat-surface: rgba(255, 255, 255, 0.98);
     --web-chat-foreground: #0f172a;
+    --web-chat-muted: #64748b;
     container-type: inline-size;
-    display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    height: 100%;
-    min-height: 0;
-    border-radius: 1.5rem;
-    border: 1px solid rgba(219, 225, 234, 0.85);
-    background:
-      radial-gradient(circle at top left, rgba(148, 163, 184, 0.12), transparent 40%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+    block-size: 100%;
+    min-block-size: 0;
     color: var(--web-chat-foreground);
-    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.08);
   }
 
-  .header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+  .chat-card,
+  .chat-scaffold,
+  .chat-body,
+  .chat-transcript-shell,
+  .chat-scroll,
+  .chat-scroll-viewport {
+    block-size: 100%;
+    min-block-size: 0;
+  }
+
+  .chat-card {
+    display: flex;
+    flex-direction: column;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.06), transparent 58%);
+    border-color: var(--web-chat-border);
+    border-radius: 1.15rem;
+    border-style: solid;
+    border-width: 1px;
+    box-shadow: 0 28px 54px -44px rgba(15, 23, 42, 0.3);
+    overflow: clip;
+  }
+
+  .chat-card[data-embedded="true"] {
+    border: 0;
+    border-radius: 0;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--background), white 18%) 0%,
+        color-mix(in srgb, var(--card), white 12%) 48%,
+        color-mix(in srgb, var(--background), var(--card) 74%) 100%
+      );
+    box-shadow: none;
+  }
+
+  .chat-header {
+    gap: 0.75rem;
+    padding-block: 1rem 0.875rem;
+  }
+
+  .chat-header-copy {
+    min-inline-size: 0;
+  }
+
+  .chat-header-main {
+    display: flex;
     align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem 1.25rem 0.75rem;
+    gap: 0.9rem;
+    min-inline-size: 0;
   }
 
-  .header-copy h2,
-  .empty-state h3 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
-    line-height: 1.35;
+  .chat-header-description {
+    line-height: 1.45;
   }
 
-  .eyebrow {
-    margin-bottom: 0.35rem;
+  .chat-eyebrow {
     font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--web-chat-muted);
   }
 
-  .status-block {
+  .chat-status-block {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    justify-content: flex-end;
+    justify-self: end;
   }
 
-  .status-chip,
-  .focus-chip {
-    border-radius: 999px;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: capitalize;
-  }
-
-  .status-chip {
-    border: 1px solid rgba(203, 213, 225, 0.95);
-    background: rgba(248, 250, 252, 0.92);
-    color: #475569;
-  }
-
-  .status-chip[data-state="connected"] {
-    border-color: rgba(45, 212, 191, 0.45);
+  :global(.chat-status-chip[data-state="connected"]) {
     background: rgba(240, 253, 250, 0.95);
+    border-color: rgba(45, 212, 191, 0.35);
     color: #0f766e;
   }
 
-  .status-chip[data-state="connecting"] {
-    border-color: rgba(251, 191, 36, 0.45);
+  :global(.chat-status-chip[data-state="connecting"]) {
     background: rgba(255, 251, 235, 0.95);
+    border-color: rgba(251, 191, 36, 0.35);
     color: #b45309;
   }
 
-  .status-chip[data-state="error"] {
-    border-color: rgba(244, 63, 94, 0.45);
+  :global(.chat-status-chip[data-state="error"]) {
     background: rgba(255, 241, 242, 0.95);
+    border-color: rgba(244, 63, 94, 0.35);
     color: #be123c;
   }
 
-  .focus-chip {
-    border: 1px solid rgba(148, 163, 184, 0.26);
-    background: rgba(15, 23, 42, 0.05);
-    color: #334155;
-  }
-
-  .notice {
-    margin: 0 1.25rem 0.75rem;
+  .chat-notice {
+    margin: 0.875rem 1rem 0;
+    border: 1px solid rgba(148, 163, 184, 0.24);
     border-radius: 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    padding: 0.75rem 0.9rem;
-    font-size: 0.84rem;
-    line-height: 1.5;
+    padding: 0.8rem 0.9rem;
+    background: rgba(248, 250, 252, 0.9);
     color: #334155;
-    background: rgba(248, 250, 252, 0.86);
+    font-size: 0.84rem;
+    line-height: 1.55;
   }
 
-  .notice[data-tone="warning"] {
+  .chat-notice[data-tone="warning"] {
+    background: rgba(255, 251, 235, 0.95);
     border-color: rgba(251, 191, 36, 0.4);
-    background: rgba(255, 251, 235, 0.92);
     color: #b45309;
   }
 
-  .notice[data-tone="destructive"] {
-    border-color: rgba(244, 63, 94, 0.32);
-    background: rgba(255, 241, 242, 0.92);
+  .chat-notice[data-tone="destructive"] {
+    background: rgba(255, 241, 242, 0.95);
+    border-color: rgba(244, 63, 94, 0.35);
     color: #be123c;
   }
 
-  .body,
-  .transcript-shell {
-    min-height: 0;
-  }
-
-  .body {
-    display: grid;
-  }
-
-  .transcript-shell {
-    display: grid;
+  .chat-scaffold {
+    flex: 1 1 auto;
     grid-template-rows: minmax(0, 1fr) auto;
-    height: 100%;
   }
 
-  .transcript-scroll,
-  .transcript-viewport {
-    min-height: 0;
-  }
-
-  .transcript-viewport {
-    padding: 0 1rem 0.5rem;
-  }
-
-  .transcript-content {
-    min-height: 100%;
+  .chat-body,
+  .chat-transcript-shell {
     display: grid;
-    align-content: end;
-    gap: 0;
-    padding-bottom: 1rem;
+  }
+
+  .chat-body {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)),
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.05), transparent 52%);
+  }
+
+  .chat-scroll-viewport {
+    padding: 1rem 1rem 0.75rem;
+  }
+
+  .chat-scroll-content {
+    display: grid;
+    gap: 0.15rem;
+    min-block-size: 100%;
+    padding-block-end: 1rem;
+  }
+
+  .chat-transcript-notice {
+    margin: 0 0 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 1rem;
+    padding: 0.8rem 0.9rem;
+    background: rgba(248, 250, 252, 0.9);
+    color: #334155;
+    font-size: 0.84rem;
+    line-height: 1.55;
+  }
+
+  .chat-transcript-notice[data-tone="warning"] {
+    background: rgba(255, 251, 235, 0.95);
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #b45309;
+  }
+
+  .chat-transcript-notice[data-tone="destructive"] {
+    background: rgba(255, 241, 242, 0.95);
+    border-color: rgba(244, 63, 94, 0.35);
+    color: #be123c;
+  }
+
+  .chat-scroll-content-empty {
+    align-content: center;
+  }
+
+  .chat-footer {
+    padding: 0;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.16), rgba(248, 250, 252, 0.98));
+  }
+
+  .chat-scroll-viewport-embedded {
+    padding: 0.9rem 0 0.8rem;
+  }
+
+  .chat-footer-embedded {
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.96) 26%, rgba(248, 250, 252, 0.99) 100%);
+  }
+
+  .chat-empty-shell {
+    block-size: 100%;
+    display: grid;
+    padding-block: 0;
   }
 
   .empty-state {
@@ -737,34 +872,45 @@
     place-items: center;
     align-content: center;
     gap: 0.5rem;
-    min-height: 14rem;
+    min-block-size: 10rem;
     padding: 2rem 1.5rem;
     text-align: center;
-    color: #64748b;
+    color: var(--web-chat-muted);
+  }
+
+  .empty-state h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.35;
   }
 
   .empty-state p {
     margin: 0;
-    max-width: 24rem;
+    max-inline-size: 24rem;
     font-size: 0.9rem;
     line-height: 1.6;
   }
 
   @container (max-width: 38rem) {
-    .header {
-      grid-template-columns: minmax(0, 1fr);
+    .chat-header {
+      gap: 0.875rem;
     }
 
-    .status-block {
-      justify-content: flex-start;
+    .chat-status-block {
+      justify-self: start;
     }
 
-    .notice {
-      margin-inline: 1rem;
+    .chat-notice {
+      margin-inline: 0.75rem;
     }
 
-    .transcript-viewport {
+    .chat-scroll-viewport {
       padding-inline: 0.75rem;
+    }
+
+    .chat-scroll-viewport-embedded {
+      padding-inline: 0;
     }
   }
 </style>

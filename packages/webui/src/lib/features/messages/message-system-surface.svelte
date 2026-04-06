@@ -1,18 +1,22 @@
 <script lang="ts">
-	import MailPlusIcon from '@lucide/svelte/icons/mail-plus';
-	import { WebChatViewHost } from '@agenter/web-chat-view';
+	import UserRoundIcon from '@lucide/svelte/icons/user-round';
+	import UsersIcon from '@lucide/svelte/icons/users';
+	import {
+		WebChatViewHost,
+		type WebChatActorPresentation,
+		type WebChatComposerCapabilities,
+		type WebChatMessageAction,
+		type WebChatMessageReadProgress,
+		type WebChatMessageRenderInput,
+	} from '@agenter/web-chat-view';
 	import { untrack } from 'svelte';
 
 	import MessageRoomManageDialog from '$lib/features/messages/message-room-manage-dialog.svelte';
-	import PanelShell from '$lib/components/panel-shell.svelte';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import ScrollView from '$lib/components/scroll-view.svelte';
-	import StatusRing from '$lib/components/status-ring.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 
 	import type {
 		MessageSystemManageSection,
@@ -20,9 +24,10 @@
 	} from './message-system-surface.types';
 
 	let {
-		roomsState,
-		selectedRoomId,
 		selectedRoom,
+		selectedRoomIconUrl = null,
+		resolveProfileIconUrl,
+		resolveSessionIconUrl,
 		disableManageDialogPortal = false,
 		initialManageDialogSection = null,
 		initialMessages,
@@ -30,18 +35,14 @@
 		routeNotice,
 		readSeatCount,
 		readSeatTotal,
-		sendAsOptions,
 		selectedCallerToken,
 		selectedViewerActorId,
 		selectableActors,
 		roomSeatStates,
-		onSelectRoom,
-		onChangeCallerToken,
 		onChangeViewerActorId,
 		onSaveRoomTitle,
 		onArchiveRoom,
 		onDeleteRoom,
-		onCreateRoom,
 		onGrantSeat,
 		onToggleSeatFocus,
 		onRevokeSeat,
@@ -50,15 +51,10 @@
 	}: MessageSystemSurfaceProps = $props();
 
 	let editableTitlesByRoomId: Record<string, string> = $state({});
-	let createDialogOpen = $state(false);
 	let manageDialogOpen = $state(untrack(() => initialManageDialogSection !== null));
 	let manageSection = $state<MessageSystemManageSection>(
 		untrack(() => initialManageDialogSection ?? 'overview'),
 	);
-	let createTitle = $state('');
-	let createSelection: Record<string, boolean> = $state({});
-	let createBusy = $state(false);
-	let createError: string | null = $state(null);
 	let grantParticipantIdsByRoomId: Record<string, string> = $state({});
 	let grantRole: 'admin' | 'member' | 'readonly' = $state('member');
 	let grantBusy = $state(false);
@@ -68,7 +64,8 @@
 	let deleteBusy = $state(false);
 
 	const selectedRoomChatId = $derived(selectedRoom?.chatId ?? '');
-	const roomCount = $derived(roomsState.data.length);
+	const visibleParticipantCount = (room: MessageSystemSurfaceProps['selectedRoom']): number =>
+		room?.participants.filter((participant) => !participant.id.startsWith('system:')).length ?? 0;
 	const editableTitle = $derived(
 		selectedRoomChatId ? (editableTitlesByRoomId[selectedRoomChatId] ?? selectedRoom?.title ?? '') : '',
 	);
@@ -76,9 +73,14 @@
 		selectedRoomChatId ? (grantParticipantIdsByRoomId[selectedRoomChatId] ?? '') : '',
 	);
 	const grantError = $derived(selectedRoomChatId ? (grantErrorsByRoomId[selectedRoomChatId] ?? null) : null);
+	const roomUserCount = $derived(
+		selectedRoom ? Math.max(visibleParticipantCount(selectedRoom), roomSeatStates.length) : 0,
+	);
 	const selectedViewerLabel = $derived(
 		roomSeatStates.find((seat) => seat.actorId === selectedViewerActorId)?.label ?? 'Unset viewer',
 	);
+	const canSelectViewer = $derived(roomSeatStates.length > 0);
+	const canSendForViewer = $derived(Boolean(selectedCallerToken));
 	const duplicateSeatLabels = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const state of roomSeatStates) {
@@ -86,23 +88,119 @@
 		}
 		return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([label]) => label));
 	});
-	const duplicateSendAsLabels = $derived.by(() => {
-		const counts = new Map<string, number>();
-		for (const option of sendAsOptions) {
-			counts.set(option.label, (counts.get(option.label) ?? 0) + 1);
-		}
-		return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([label]) => label));
-	});
+	const viewerItems = $derived(
+		roomSeatStates.map((state) => ({
+			value: state.actorId,
+			label: describeSeatOption(state),
+		})),
+	);
+	const selectedViewerOptionLabel = $derived(
+		viewerItems.find((item) => item.value === selectedViewerActorId)?.label ??
+			(canSelectViewer ? selectedViewerLabel : 'No granted room user yet'),
+	);
+	const roomSeatMap = $derived(new Map(roomSeatStates.map((state) => [state.actorId, state])));
+	const channelPresentation = $derived(
+		selectedRoom
+			? ({
+					label: selectedRoom.title ?? 'Room transcript',
+					subtitle: selectedRoom.chatId,
+					iconUrl: selectedRoomIconUrl,
+					kind: 'room',
+				} satisfies WebChatActorPresentation)
+			: null,
+	);
+	const composerCapabilities = $derived(
+		({
+			attachmentEnabled: true,
+			imageEnabled: true,
+			screenshotEnabled: true,
+			mentionSuggestions: roomSeatStates.map((state) => ({
+				id: state.actorId,
+				label: state.label,
+				detail: `${state.role}${state.currentAdmin ? ' · current admin' : ''}`,
+				apply: `@${state.label.replace(/\s+/gu, '-')}`,
+				iconUrl: state.iconUrl,
+			})),
+		} satisfies WebChatComposerCapabilities),
+	);
 
-	const resetCreateDialog = (): void => {
-		createTitle = '';
-		createSelection = {};
-		createError = null;
+	const resolveActorPresentation = (input: {
+		channel: NonNullable<MessageSystemSurfaceProps['selectedRoom']>;
+		message?: MessageSystemSurfaceProps['initialMessages'][number];
+		viewerActorId: string | null;
+		role: 'assistant' | 'channel' | 'participant' | 'viewer';
+		actorId?: string | null;
+		fallbackLabel: string;
+	}): WebChatActorPresentation | null => {
+		const fallbackIconUrl = (() => {
+			if (input.actorId?.startsWith('session:')) {
+				return resolveSessionIconUrl?.(input.actorId.slice('session:'.length)) ?? null;
+			}
+			const iconReference = input.actorId ?? input.fallbackLabel;
+			return iconReference ? (resolveProfileIconUrl?.(iconReference) ?? null) : null;
+		})();
+
+		if (input.role === 'assistant') {
+			return {
+				actorId: input.actorId ?? null,
+				label: input.fallbackLabel,
+				subtitle: selectedRoom?.chatId,
+				iconUrl: selectedRoomIconUrl,
+				kind: 'assistant',
+			};
+		}
+		if (input.actorId && roomSeatMap.has(input.actorId)) {
+			const seat = roomSeatMap.get(input.actorId)!;
+			return {
+				actorId: seat.actorId,
+				label: seat.label,
+				subtitle: seat.subtitle ?? `${seat.role}${seat.currentAdmin ? ' · current admin' : ''}`,
+				iconUrl: seat.iconUrl ?? fallbackIconUrl,
+				kind: seat.actorKind === 'auth' ? 'auth' : seat.actorKind === 'session' ? 'session' : 'system',
+			};
+		}
+		return {
+			actorId: input.actorId ?? null,
+			label: input.fallbackLabel,
+			subtitle: input.actorId ?? undefined,
+			iconUrl: fallbackIconUrl,
+			kind: input.role === 'channel' ? 'room' : input.role,
+		};
 	};
 
-	const openCreateDialog = (): void => {
-		resetCreateDialog();
-		createDialogOpen = true;
+	const resolveMessageActions = (input: WebChatMessageRenderInput): readonly WebChatMessageAction[] => {
+		if (!input.message.senderActorId) {
+			return [];
+		}
+		return [
+			{
+				id: 'copy-actor-id',
+				label: 'Copy actor id',
+				detail: 'actor',
+				onSelect: async () => {
+					if (navigator.clipboard?.writeText) {
+						await navigator.clipboard.writeText(input.message.senderActorId ?? '');
+					}
+				},
+			},
+		];
+	};
+
+	const resolveMessageReadProgress = (input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
+		const relevantSeats = roomSeatStates.filter((seat) => seat.actorKind !== 'system');
+		if (relevantSeats.length === 0) {
+			return null;
+		}
+		const readCount = relevantSeats.filter((seat) => (seat.readMessageRowId ?? -1) >= input.message.rowId).length;
+		const totalCount = relevantSeats.length;
+		return {
+			readCount,
+			totalCount,
+			title:
+				readCount >= totalCount
+					? `All ${totalCount} users read`
+					: `${readCount}/${totalCount} read`,
+		};
 	};
 
 	const openManageDialog = (section: MessageSystemManageSection = 'overview'): void => {
@@ -122,13 +220,6 @@
 			return `${state.label} · ${state.role}`;
 		}
 		return `${state.label} · ${state.subtitle ?? state.actorId} · ${state.role}`;
-	};
-
-	const describeSendAsOption = (option: MessageSystemSurfaceProps['sendAsOptions'][number]): string => {
-		if (!duplicateSendAsLabels.has(option.label)) {
-			return `${option.label} · ${option.role}`;
-		}
-		return `${option.label} · ${option.participantId ?? option.accessToken} · ${option.role}`;
 	};
 
 	const setEditableTitle = (value: string): void => {
@@ -159,30 +250,6 @@
 			...grantErrorsByRoomId,
 			[selectedRoomChatId]: value,
 		};
-	};
-
-	const handleCreateRoomSubmit = async (event: SubmitEvent): Promise<void> => {
-		event.preventDefault();
-		if (createBusy) {
-			return;
-		}
-		createBusy = true;
-		createError = null;
-		try {
-			const participantIds = Object.entries(createSelection)
-				.filter(([, checked]) => checked)
-				.map(([actorId]) => actorId);
-			await onCreateRoom({
-				title: createTitle.trim() || undefined,
-				participantIds,
-			});
-			createDialogOpen = false;
-			resetCreateDialog();
-		} catch (error) {
-			createError = error instanceof Error ? error.message : String(error);
-		} finally {
-			createBusy = false;
-		}
 	};
 
 	const handleSaveTitle = async (): Promise<void> => {
@@ -266,139 +333,116 @@
 	};
 </script>
 
-<div class="grid h-full gap-4 p-4 md:grid-cols-[18rem_minmax(0,1fr)] md:p-6">
-	<PanelShell>
-		{#snippet header()}
-			<div class="flex items-center justify-between gap-3">
-				<div class="min-w-0">
-					<h1 class="text-base font-semibold">Rooms</h1>
-					<p class="text-sm text-muted-foreground">
-						message-system lists standalone rooms, not workspace-owned session chats.
-					</p>
-				</div>
-				<Button
-					size="icon-sm"
-					variant="outline"
-					class="shrink-0"
-					onclick={openCreateDialog}
-					aria-label="Open create room dialog"
-				>
-					<MailPlusIcon class="size-4" />
-				</Button>
-			</div>
-		{/snippet}
-
-		<ScrollView class="h-full" contentClass="divide-y">
-			{#if roomsState.loading && !roomsState.loaded}
-				<div class="p-4 text-sm text-muted-foreground">Loading rooms…</div>
-			{:else if roomsState.error && roomCount === 0}
-				<div class="p-4 text-sm text-destructive">{roomsState.error}</div>
-			{:else if roomCount === 0}
-				<div class="p-4 text-sm text-muted-foreground">No rooms yet. Create the first standalone room.</div>
-			{:else}
-				{#each roomsState.data as room (room.chatId)}
-					<button
-						class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
-							selectedRoomId === room.chatId ? 'bg-primary/5' : ''
-						}`}
-						onclick={() => onSelectRoom(room.chatId)}
-					>
-						<div class="flex items-center justify-between gap-3">
-							<div class="min-w-0">
-								<div class="truncate text-sm font-semibold">{room.title || room.chatId}</div>
-								<div class="truncate text-[11px] text-muted-foreground">{room.chatId}</div>
-							</div>
-							{#if room.readProgress}
-								<StatusRing
-									value={room.readProgress.readSeatCount}
-									total={Math.max(room.readProgress.totalSeatCount, 1)}
-									label={`${room.readProgress.readSeatCount}/${room.readProgress.totalSeatCount} seats read`}
-									class="text-primary"
-								/>
-							{/if}
-						</div>
-						<div class="truncate text-[11px] text-muted-foreground">
-							{room.participants.length} participants · updated {formatTimestamp(room.updatedAt)}
-						</div>
-					</button>
-				{/each}
-			{/if}
-		</ScrollView>
-	</PanelShell>
-
-	<PanelShell>
-		{#snippet header()}
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<div class="min-w-0">
-					<h2 class="text-base font-semibold">{selectedRoom?.title ?? 'Room transcript'}</h2>
-					<p class="text-sm text-muted-foreground">
-						{selectedRoom?.chatId ?? 'Select a room to inspect the shared room transcript.'}
-					</p>
-				</div>
-				<div class="flex gap-2">
-					<Button variant="outline" size="sm" disabled={!selectedRoom} onclick={() => openManageDialog('overview')}>
-						Manage room
-					</Button>
-				</div>
-			</div>
-			{#if selectedRoom}
-				<div class="grid gap-2 md:grid-cols-[14rem_14rem]">
-					<label class="grid gap-1 text-xs font-medium text-muted-foreground">
-						<span>View as</span>
-						<NativeSelect.Root
-							aria-label="View as"
-							wrapperClass="w-full"
-							value={selectedViewerActorId ?? ''}
-							onchange={(event) => {
-								onChangeViewerActorId((event.currentTarget as HTMLSelectElement).value);
-							}}
-						>
-							{#each roomSeatStates as state (state.actorId)}
-								<option value={state.actorId}>{describeSeatOption(state)}</option>
-							{/each}
-						</NativeSelect.Root>
-					</label>
-					<label class="grid gap-1 text-xs font-medium text-muted-foreground">
-						<span>Send as</span>
-						<NativeSelect.Root
-							aria-label="Send as"
-							wrapperClass="w-full"
-							value={selectedCallerToken ?? ''}
-							onchange={(event) => {
-								onChangeCallerToken((event.currentTarget as HTMLSelectElement).value);
-							}}
-						>
-							{#each sendAsOptions as option (option.accessToken)}
-								<option value={option.accessToken}>{describeSendAsOption(option)}</option>
-							{/each}
-						</NativeSelect.Root>
-					</label>
-				</div>
-			{/if}
-		{/snippet}
-
-		<div class="h-full">
-			<WebChatViewHost
-				channel={selectedRoom}
-				viewerActorId={selectedViewerActorId}
-				{initialMessages}
-				{initialSnapshotResolved}
-				class="h-full"
-				showHeader={false}
-				emptyTitle="No room selected"
-				emptyMessage="Choose one room from the left rail or create a new room to begin."
-				emptyTranscriptTitle="No room facts yet"
-				emptyTranscriptMessage="Send the first message to begin this room."
-				{routeNotice}
-				onSendMessage={onSendMessage}
-				onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
+<WorkbenchPageToolbar>
+	<WorkbenchToolbar class="room-toolbar">
+		{#snippet navigation()}
+			<ProfileAvatar
+				label={selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room'}
+				src={selectedRoomIconUrl}
+				class="size-10 rounded-2xl border border-border/70 bg-background/80 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_80%)]"
 			/>
-		</div>
-	</PanelShell>
+		{/snippet}
+
+		{#snippet primary()}
+			<div class="grid min-w-0 gap-1">
+				<span class="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Room</span>
+				<h1 class="truncate text-[1.02rem] font-semibold tracking-tight text-foreground">
+					{selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room transcript'}
+				</h1>
+			</div>
+		{/snippet}
+
+		{#snippet actions()}
+			<Button
+				variant="outline"
+				size="sm"
+				class="h-8 w-auto rounded-full border-border/70 bg-background/80 px-3.5 text-[0.82rem] shadow-none"
+				disabled={!selectedRoom}
+				onclick={() => openManageDialog('overview')}
+			>
+				Manage room
+			</Button>
+		{/snippet}
+
+		{#snippet meta()}
+			<div class="room-toolbar__meta">
+				{#if selectedRoom}
+					<span class="room-toolbar__chip room-toolbar__chip-muted">{selectedRoom.chatId}</span>
+					<span class="room-toolbar__chip">
+						<UsersIcon class="size-3.5" />
+						<span>{roomUserCount} {roomUserCount === 1 ? 'user' : 'users'}</span>
+					</span>
+					{#if !selectedCallerToken}
+						<span class="room-toolbar__chip room-toolbar__chip-warning">Read-only</span>
+						<Button
+							variant="link"
+							size="sm"
+							class="h-auto px-0 text-[0.78rem]"
+							onclick={() => openManageDialog('access')}
+						>
+							Grant access
+						</Button>
+					{/if}
+				{/if}
+
+				<div class="room-toolbar__viewer">
+					<div class="room-toolbar__viewer-label">
+						<UserRoundIcon class="size-3.5" />
+						<span>View as</span>
+					</div>
+					<Select.Root
+						type="single"
+						items={viewerItems}
+						value={selectedViewerActorId ?? undefined}
+						disabled={!canSelectViewer}
+						onValueChange={(value) => {
+							onChangeViewerActorId(value);
+						}}
+					>
+						<Select.Trigger
+							aria-label="View room as user"
+							class="h-8 w-full min-w-0 max-w-full rounded-full border-border/70 bg-background/85 px-3 text-[0.82rem] font-medium shadow-none"
+						>
+							<span class="truncate">As · {selectedViewerOptionLabel}</span>
+						</Select.Trigger>
+						<Select.Content>
+							{#each viewerItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+		{/snippet}
+	</WorkbenchToolbar>
+</WorkbenchPageToolbar>
+
+<div class="h-full" data-testid="message-system-route">
+	<WebChatViewHost
+		channel={selectedRoom}
+		viewerActorId={selectedViewerActorId}
+		{initialMessages}
+		{initialSnapshotResolved}
+		class="h-full"
+		disabled={!selectedRoom || !canSendForViewer}
+		showHeader={false}
+		emptyTitle="No room selected"
+		emptyMessage="Open or create a room tab to begin."
+		emptyTranscriptTitle="No room facts yet"
+		emptyTranscriptMessage="Send the first message to begin this room."
+		{routeNotice}
+		{channelPresentation}
+		{resolveActorPresentation}
+		{resolveMessageActions}
+		{resolveMessageReadProgress}
+		{composerCapabilities}
+		onSendMessage={onSendMessage}
+		onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
+	/>
 </div>
 
 <MessageRoomManageDialog
-	bind:open={manageDialogOpen}
+	open={manageDialogOpen}
 	bind:section={manageSection}
 	{selectedRoom}
 	{disableManageDialogPortal}
@@ -408,6 +452,7 @@
 	{deleteBusy}
 	{readSeatCount}
 	{readSeatTotal}
+	visibleParticipantCount={visibleParticipantCount(selectedRoom)}
 	{roomSeatStates}
 	{selectedViewerLabel}
 	{selectableActors}
@@ -417,83 +462,75 @@
 	{grantError}
 	{formatTimestamp}
 	onEditableTitleChange={setEditableTitle}
-	onSaveTitle={() => void handleSaveTitle()}
-	onArchive={() => void handleArchive()}
-	onDelete={() => void handleDelete()}
+	onSaveTitle={handleSaveTitle}
+	onArchive={handleArchive}
+	onDelete={handleDelete}
+	onNavigateToAccess={() => {
+		manageSection = 'access';
+	}}
 	onSeatFocusClick={handleSeatFocusClick}
 	onSeatRevokeClick={handleSeatRevokeClick}
 	onGrantParticipantIdChange={setGrantParticipantId}
 	onGrantRoleChange={(value) => {
 		grantRole = value;
 	}}
-	onGrantSeat={() => void handleGrantSeat()}
+	onGrantSeat={handleGrantSeat}
 />
 
-<Dialog.Root bind:open={createDialogOpen}>
-	<Dialog.Content class="sm:max-w-xl">
-		<form class="grid gap-4" onsubmit={handleCreateRoomSubmit}>
-			<Dialog.Header>
-				<Dialog.Title>Create room</Dialog.Title>
-				<Dialog.Description>
-					room is the chat channel inside message-system. Participants here only declare seat candidates.
-				</Dialog.Description>
-			</Dialog.Header>
+<style>
+	.room-toolbar__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem 0.75rem;
+	}
 
-			<label class="grid gap-2 text-sm font-medium">
-				<span>Room title</span>
-				<Input bind:value={createTitle} name="roomTitle" placeholder="Ops room" />
-			</label>
+	.room-toolbar__chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--border), transparent 26%);
+		background: color-mix(in srgb, var(--background), transparent 12%);
+		padding: 0.34rem 0.7rem;
+		font-size: 0.74rem;
+		font-weight: 500;
+		line-height: 1;
+		color: var(--foreground);
+	}
 
-			<div class="grid gap-2">
-				<div class="text-sm font-medium">Participants</div>
-				<div class="grid h-80 gap-2 rounded-2xl border p-3">
-					<ScrollView class="h-full" contentClass="grid gap-2">
-						{#each selectableActors as actor (actor.actorId)}
-							<label class="flex items-center gap-3 rounded-xl border p-3">
-								<Checkbox
-									checked={Boolean(createSelection[actor.actorId])}
-									onCheckedChange={(checked) => {
-										createSelection = {
-											...createSelection,
-											[actor.actorId]: Boolean(checked),
-										};
-									}}
-								/>
-								<ProfileAvatar label={actor.label} src={actor.iconUrl} class="size-8" />
-								<div class="min-w-0">
-									<div class="truncate text-sm font-medium">{actor.label}</div>
-									<div class="truncate text-xs text-muted-foreground">
-										{actor.subtitle ?? actor.actorId}
-									</div>
-								</div>
-							</label>
-						{/each}
-					</ScrollView>
-				</div>
-			</div>
+	.room-toolbar__chip-muted {
+		color: var(--muted-foreground);
+	}
 
-			{#if createError}
-				<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-					{createError}
-				</div>
-			{/if}
+	.room-toolbar__chip-warning {
+		border-color: color-mix(in srgb, #f59e0b, transparent 24%);
+		background: color-mix(in srgb, #f59e0b, white 88%);
+		color: #b45309;
+	}
 
-			<Dialog.Footer>
-				<Button
-					type="button"
-					variant="ghost"
-					onclick={() => {
-						createDialogOpen = false;
-						resetCreateDialog();
-					}}
-					disabled={createBusy}
-				>
-					Cancel
-				</Button>
-				<Button type="submit" disabled={createBusy} aria-label="Submit create room">
-					{createBusy ? 'Creating…' : 'Create room'}
-				</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+	.room-toolbar__viewer {
+		display: grid;
+		gap: 0.45rem;
+		min-width: min(100%, 16rem);
+		margin-left: auto;
+	}
+
+	.room-toolbar__viewer-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.64rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+
+	@container (max-width: 44rem) {
+		.room-toolbar__viewer {
+			margin-left: 0;
+			inline-size: 100%;
+		}
+	}
+</style>
