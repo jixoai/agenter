@@ -1933,12 +1933,12 @@ export class AppKernel {
     assetIds?: string[];
     clientMessageId?: string;
     accessToken?: string;
+    sendAsActorId?: MessageActorId;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
   }): { ok: boolean; reason?: string } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
-      const usesProjectedRoomToken = !input.accessToken || input.accessToken === access.room.accessToken;
       const attachments = this.resolveGlobalRoomAttachments(input.chatId, input.assetIds ?? []);
       this.messageControlPlane.sendAuthorized({
         chatId: input.chatId,
@@ -1946,8 +1946,7 @@ export class AppKernel {
         kind: "text",
         content: input.text,
         messageId: input.clientMessageId ?? `msg-${randomUUID()}`,
-        senderActorId:
-          input.superadminActorId && usesProjectedRoomToken ? input.superadminActorId : input.actorId,
+        senderActorId: this.resolveGlobalRoomSenderActorId(input, access),
         attachments,
         metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
       });
@@ -2510,6 +2509,62 @@ export class AppKernel {
       accessToken: access.accessToken,
     });
     return grants.find((grant) => grant.accessToken === targetToken)?.participantId ?? access.room.participantId;
+  }
+
+  private resolveGlobalRoomSenderActorId(
+    input: {
+      chatId: string;
+      accessToken?: string;
+      sendAsActorId?: MessageActorId;
+      actorId?: MessageActorId;
+      superadminActorId?: MessageActorId;
+    },
+    access: { room: MessageControlPlaneEntry; accessToken: string },
+  ): MessageActorId | undefined {
+    const targetToken = input.accessToken ?? access.accessToken;
+
+    if (input.sendAsActorId) {
+      if (
+        input.superadminActorId &&
+        input.sendAsActorId === input.superadminActorId &&
+        (!input.accessToken || targetToken === access.room.accessToken)
+      ) {
+        return input.sendAsActorId;
+      }
+      const requestedProjection = this.messageControlPlane.getChannelForActor(input.chatId, input.sendAsActorId, {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      if (!requestedProjection || requestedProjection.accessToken !== targetToken) {
+        throw new Error("message room send-as actor invalid");
+      }
+      return input.sendAsActorId;
+    }
+
+    if (input.actorId && !input.superadminActorId) {
+      const actorProjection = this.messageControlPlane.getChannelForActor(input.chatId, input.actorId, {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      if (!actorProjection || actorProjection.accessToken !== targetToken) {
+        throw new Error("message room credential-invalid");
+      }
+      return input.actorId;
+    }
+
+    if (input.superadminActorId && (!input.accessToken || targetToken === access.room.accessToken)) {
+      return input.superadminActorId;
+    }
+
+    if (targetToken === access.room.accessToken && access.room.participantId) {
+      return access.room.participantId;
+    }
+
+    const grants = this.messageControlPlane.listChannelGrantsAuthorized({
+      chatId: input.chatId,
+      accessToken: access.room.accessToken,
+    });
+    return grants.find((grant) => grant.accessToken === targetToken)?.participantId ?? input.superadminActorId ?? input.actorId;
   }
 
   async uploadGlobalRoomAssets(input: {

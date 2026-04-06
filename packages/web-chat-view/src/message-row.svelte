@@ -1,11 +1,13 @@
 <script lang="ts">
-  import MarkdownDocumentHost from "./components/markdown-document-host.svelte";
   import ChatAvatar from "./chat-avatar.svelte";
+  import MessageMarkdownContent from "./components/message-markdown-content.svelte";
   import MessageAttachmentStrip from "./message-attachment-strip.svelte";
+  import MessageActionsContextMenu from "./message-actions-context-menu.svelte";
   import MessageActionsMenu, {
     type ResolvedMessageAction,
   } from "./message-actions-menu.svelte";
   import MessageReadIndicator from "./message-read-indicator.svelte";
+  import * as ContextMenu from "./ui/context-menu";
   import { Button } from "./ui/button";
   import { Input } from "./ui/input";
   import { Textarea } from "./ui/textarea";
@@ -48,7 +50,6 @@
 
   let interactiveDraft: Record<string, string> = $state({});
   let interactiveSubmitting = $state(false);
-  let menuOpen = $state(false);
 
   const assistant = $derived(isAssistantMessage(channel, message));
   const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message));
@@ -188,97 +189,97 @@
       part={`message-avatar message-avatar-${tone}`}
     />
 
-    <article
-      class="bubble group/bubble"
-      part={`message-bubble message-bubble-${tone}`}
-      oncontextmenu={(event) => {
-        event.preventDefault();
-        menuOpen = true;
-      }}
-    >
-      {#if messageActions.length > 0}
-        <div class="bubble-actions">
-          <MessageActionsMenu bind:open={menuOpen} actions={messageActions} />
-        </div>
-      {/if}
-
-      <div class="meta" part="message-meta">
-        <div class="meta-copy">
-          <span class="author" part="message-author">{actorPresentation.label}</span>
-          {#if actorPresentation.subtitle}
-            <span class="subtitle">{actorPresentation.subtitle}</span>
-          {/if}
-        </div>
-        <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
-      </div>
-
-      {#if message.kind === "error"}
-        <div class="error-block" part="message-error">
-          <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
-          <p>{message.content}</p>
-          {#if message.payload?.error?.detail}
-            <p class="error-detail">{message.payload.error.detail}</p>
-          {/if}
-        </div>
-      {:else if message.kind === "interactive" && interactive}
-        <div class="interactive-block" part="message-interactive">
-          <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
-          {#if interactive.description}
-            <p class="interactive-description">{interactive.description}</p>
-          {/if}
-          <div class="interactive-fields" part="message-interactive-fields">
-            {#each interactive.fields as field (field.id)}
-              <label class="interactive-field" part="message-interactive-field">
-                <span>{field.label}</span>
-                {#if field.multiline}
-                  <Textarea
-                    rows={3}
-                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                    placeholder={field.placeholder}
-                    oninput={(event) => {
-                      const target = event.currentTarget as HTMLTextAreaElement;
-                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                    }}
-                  />
-                {:else}
-                  <Input
-                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                    placeholder={field.placeholder}
-                    oninput={(event) => {
-                      const target = event.currentTarget as HTMLInputElement;
-                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                    }}
-                  />
-                {/if}
-              </label>
-            {/each}
-          </div>
-          <Button
-            type="button"
-            class="interactive-submit"
-            part="message-interactive-submit"
-            disabled={interactiveSubmitting}
-            onclick={() => {
-              void submitInteractive();
-            }}
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        {#snippet child({ props })}
+          <article
+            {...props}
+            class="bubble group/bubble"
+            part={`message-bubble message-bubble-${tone}`}
           >
-            {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
-          </Button>
-        </div>
-      {:else if message.content.trim().length > 0}
-        <div class="content" part="message-content">
-          <MarkdownDocumentHost
-            value={message.content}
-            mode="preview"
-            usage="chat"
-            surface={assistant ? "bubble-assistant" : viewerOwned ? "bubble-user" : "panel"}
-            syntaxTone={assistant ? "accented" : "inherit"}
-          />
-        </div>
-      {/if}
+            {#if messageActions.length > 0}
+              <div class="bubble-actions">
+                <MessageActionsMenu actions={messageActions} />
+              </div>
+            {/if}
 
-      <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
-    </article>
+            <div class="meta" part="message-meta">
+              <div class="meta-copy">
+                <span class="author" part="message-author">{actorPresentation.label}</span>
+                {#if actorPresentation.subtitle}
+                  <span class="subtitle">{actorPresentation.subtitle}</span>
+                {/if}
+              </div>
+              <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
+            </div>
+
+            {#if message.kind === "error"}
+              <div class="error-block" part="message-error">
+                <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
+                <p>{message.content}</p>
+                {#if message.payload?.error?.detail}
+                  <p class="error-detail">{message.payload.error.detail}</p>
+                {/if}
+              </div>
+            {:else if message.kind === "interactive" && interactive}
+              <div class="interactive-block" part="message-interactive">
+                <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
+                {#if interactive.description}
+                  <p class="interactive-description">{interactive.description}</p>
+                {/if}
+                <div class="interactive-fields" part="message-interactive-fields">
+                  {#each interactive.fields as field (field.id)}
+                    <label class="interactive-field" part="message-interactive-field">
+                      <span>{field.label}</span>
+                      {#if field.multiline}
+                        <Textarea
+                          rows={3}
+                          value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                          placeholder={field.placeholder}
+                          oninput={(event) => {
+                            const target = event.currentTarget as HTMLTextAreaElement;
+                            interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                          }}
+                        />
+                      {:else}
+                        <Input
+                          value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                          placeholder={field.placeholder}
+                          oninput={(event) => {
+                            const target = event.currentTarget as HTMLInputElement;
+                            interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                          }}
+                        />
+                      {/if}
+                    </label>
+                  {/each}
+                </div>
+                <Button
+                  type="button"
+                  class="interactive-submit"
+                  part="message-interactive-submit"
+                  disabled={interactiveSubmitting}
+                  onclick={() => {
+                    void submitInteractive();
+                  }}
+                >
+                  {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
+                </Button>
+              </div>
+            {:else if message.content.trim().length > 0}
+              <div class="content" part="message-content">
+                <MessageMarkdownContent value={message.content} />
+              </div>
+            {/if}
+
+            <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
+          </article>
+        {/snippet}
+      </ContextMenu.Trigger>
+      {#if messageActions.length > 0}
+        <MessageActionsContextMenu actions={messageActions} />
+      {/if}
+    </ContextMenu.Root>
 
     {#if messageReadProgress}
       <MessageReadIndicator progress={messageReadProgress} />
@@ -408,6 +409,11 @@
 
   .content {
     display: block;
+  }
+
+  .content :global(.message-markdown-content),
+  .content :global(.message-markdown-fallback) {
+    color: inherit;
   }
 
   @media (pointer: coarse) {

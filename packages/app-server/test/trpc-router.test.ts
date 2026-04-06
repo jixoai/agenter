@@ -599,6 +599,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     const sent = await superadminCaller.message.globalSend({
       chatId: created.channel.chatId,
+      sendAsActorId: `auth:${descriptor.rootAuthId}`,
       text: "superadmin hello",
     });
     expect(sent.ok).toBeTrue();

@@ -1,13 +1,13 @@
 ## 1. Platform Law
 
-- [ ] 1.1 Add OpenSpec deltas for explicit room sender identity, shared transcript row primitives, and per-message read arrays
+- [x] 1.1 Add OpenSpec deltas for explicit room sender identity, shared transcript row primitives, and per-message read arrays
 - [ ] 1.2 Update durable package/project specs after implementation so the breaking read-state law becomes part of repository truth
 
 ## 2. Room Transcript And Send Path
 
-- [ ] 2.1 Carry `sendAsActorId` from the Messages room route through client-sdk and tRPC into `AppKernel.sendGlobalRoomMessage(...)`
-- [ ] 2.2 Validate sender identity against room credential usage and persist stable `senderActorId`
-- [ ] 2.3 Repair `@agenter/web-chat-view` message rows to use one bubble surface, a real `ContextMenu`, and CodeMirror-based message rendering
+- [x] 2.1 Carry `sendAsActorId` from the Messages room route through client-sdk and tRPC into `AppKernel.sendGlobalRoomMessage(...)`
+- [x] 2.2 Validate sender identity against room credential usage and persist stable `senderActorId`
+- [x] 2.3 Repair `@agenter/web-chat-view` message rows to use one bubble surface, a real `ContextMenu`, and CodeMirror-based message rendering
 
 ## 3. Message Read-State Breaking Upgrade
 

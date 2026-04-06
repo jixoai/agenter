@@ -566,6 +566,7 @@ export const appRouter = t.router({
         z.object({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
+          sendAsActorId: messageActorIdSchema.optional(),
           text: z.string().min(1),
           assetIds: z.array(z.string().min(1)).optional(),
           clientMessageId: z.string().min(1).optional(),

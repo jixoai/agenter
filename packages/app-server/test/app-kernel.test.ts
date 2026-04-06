@@ -1076,6 +1076,32 @@ describe("Feature: app kernel event replay", () => {
     expect(page.items.some((item) => item.content === "global hello")).toBeTrue();
     expect(page.items.find((item) => item.content === "pair operator hello")?.senderActorId).toBe("session:avatar-pair");
 
+    const superadminSendAs = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: issued.accessToken,
+      superadminActorId: "auth:root-admin",
+      sendAsActorId: "session:avatar-pair",
+      text: "superadmin as pair",
+    });
+    expect(superadminSendAs.ok).toBeTrue();
+    expect(
+      kernel.snapshotGlobalRoom({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        limit: 20,
+      }).items.find((item) => item.content === "superadmin as pair")?.senderActorId,
+    ).toBe("session:avatar-pair");
+
+    const invalidSendAs = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      superadminActorId: "auth:root-admin",
+      sendAsActorId: "session:avatar-pair",
+      text: "invalid send-as",
+    });
+    expect(invalidSendAs.ok).toBeFalse();
+    expect(invalidSendAs.reason).toContain("send-as actor invalid");
+
     const updated = kernel.updateGlobalRoom({
       chatId: room.chatId,
       accessToken: room.accessToken,

@@ -556,6 +556,8 @@
 		const result = await controller.runtimeStore.sendGlobalRoomMessage({
 			chatId: room.chatId,
 			accessToken,
+			sendAsActorId:
+				(selectedViewerActorId ? asRoomActorId(selectedViewerActorId) : null) ?? undefined,
 			text: payload.text,
 			assetIds: uploadedAssets.map((asset) => asset.assetId),
 		});

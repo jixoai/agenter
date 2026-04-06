@@ -3188,6 +3188,7 @@ export class RuntimeStore {
   async sendGlobalRoomMessage(input: {
     chatId: string;
     accessToken?: string;
+    sendAsActorId?: GlobalRoomActorId;
     text: string;
     assetIds?: string[];
     clientMessageId?: string;
