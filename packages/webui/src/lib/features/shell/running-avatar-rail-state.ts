@@ -42,7 +42,7 @@ export const writePinnedRunningAvatarIds = (ids: readonly string[]): void => {
 };
 
 export const togglePinnedRunningAvatarId = (
-	currentIds: readonly string[],
+	currentIds: string[],
 	sessionId: string,
 	nextPinned?: boolean,
 ): string[] => {
@@ -53,23 +53,29 @@ export const togglePinnedRunningAvatarId = (
 		? normalizeIds([...normalizedCurrent, sessionId])
 		: normalizeIds(normalizedCurrent.filter((currentId) => currentId !== sessionId));
 
+	if (sameIds(currentIds, next)) {
+		return currentIds;
+	}
 	if (sameIds(normalizedCurrent, next)) {
-		return normalizedCurrent;
+		return next;
 	}
 	writePinnedRunningAvatarIds(next);
 	return next;
 };
 
 export const reconcilePinnedRunningAvatarIds = (
-	currentIds: readonly string[],
+	currentIds: string[],
 	availableIds: readonly string[],
 ): string[] => {
 	const available = new Set(normalizeIds(availableIds));
 	const normalizedCurrent = normalizeIds(currentIds);
 	const next = normalizeIds(normalizedCurrent.filter((id) => available.has(id)));
 
+	if (sameIds(currentIds, next)) {
+		return currentIds;
+	}
 	if (sameIds(normalizedCurrent, next)) {
-		return normalizedCurrent;
+		return next;
 	}
 	writePinnedRunningAvatarIds(next);
 	return next;

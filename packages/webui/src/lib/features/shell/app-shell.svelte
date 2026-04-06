@@ -74,10 +74,13 @@
 	);
 
 	$effect(() => {
-		pinnedAvatarSessionIds = reconcilePinnedRunningAvatarIds(
+		const reconciledPinnedIds = reconcilePinnedRunningAvatarIds(
 			pinnedAvatarSessionIds,
 			controller.runtimeState.sessions.map((session) => session.id),
 		);
+		if (reconciledPinnedIds !== pinnedAvatarSessionIds) {
+			pinnedAvatarSessionIds = reconciledPinnedIds;
+		}
 	});
 </script>
 
