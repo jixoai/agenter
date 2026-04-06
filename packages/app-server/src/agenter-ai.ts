@@ -67,6 +67,7 @@ interface AgentDeps {
   modelCallTimeoutMs?: number;
   logger: AppServerLogger;
   promptStore: PromptStore;
+  avatarName?: string;
   locale?: string;
   attentionGateway: AttentionGateway;
   toolProviders?: AgentToolProvider[];
@@ -160,6 +161,7 @@ const MAX_HISTORY_MESSAGES = 80;
 const ENABLE_AGENT_TOOLS = true;
 const DEFAULT_MODEL_CALL_TIMEOUT_MS = 120_000;
 const MAX_EXTERNAL_MODEL_ROUNDS = 8;
+const DEFAULT_AVATAR_PROMPT_NAME = "agenter-ai";
 const CONTEXT_OVERFLOW_MARKERS = [
   "context length",
   "context window",
@@ -711,8 +713,19 @@ export class AgenterAI {
       : [];
     const promptSnapshot = this.deps.promptStore.getSnapshot();
     const promptDocs = promptSnapshot.docs;
-    const agenterSystem = await this.deps.promptStore.buildMd(promptDocs.AGENTER_SYSTEM);
-    const agenter = await this.deps.promptStore.buildMd(promptDocs.AGENTER);
+    const avatarName =
+      typeof this.deps.avatarName === "string" && this.deps.avatarName.trim().length > 0
+        ? this.deps.avatarName.trim()
+        : DEFAULT_AVATAR_PROMPT_NAME;
+    const sharedPromptSlots = {
+      AVATAR_NAME: avatarName,
+    };
+    const agenterSystem = await this.deps.promptStore.buildMd(promptDocs.AGENTER_SYSTEM, {
+      slots: sharedPromptSlots,
+    });
+    const agenter = await this.deps.promptStore.buildMd(promptDocs.AGENTER, {
+      slots: sharedPromptSlots,
+    });
     const contract = await this.deps.promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
     const systemsGuide = await this.buildProviderOwnedSystemGuide();
     const templateHasSystemsGuideSlot = promptDocs.SYSTEM_TEMPLATE.content.includes('name="SYSTEMS_GUIDE"');

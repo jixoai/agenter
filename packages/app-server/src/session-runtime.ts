@@ -4494,6 +4494,7 @@ export class SessionRuntime {
       modelClient,
       promptStore,
       sessionStore,
+      avatarName: this.getAvatarName(),
       resolveImageAttachment: async (attachment) => this.readImageAttachmentSource(attachment.assetId),
       collectInterleavedInputs: async () => await this.collectInterleavedAgentInputs(),
       onAssistantStream: (stream) => {

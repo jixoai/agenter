@@ -26,7 +26,7 @@ import type { AppServerLogger } from "../src/types";
 
 const createPromptDocs = (input: { legacySystemTemplate?: boolean } = {}): PromptDocRecord => ({
   AGENTER: { syntax: "mdx", content: "" },
-  AGENTER_SYSTEM: { syntax: "mdx", content: "You are agenter-ai." },
+  AGENTER_SYSTEM: { syntax: "mdx", content: 'You are <Slot name="AVATAR_NAME" />.' },
   SYSTEM_TEMPLATE: {
     syntax: "mdx",
     content: input.legacySystemTemplate
@@ -918,6 +918,58 @@ describe("Feature: AgenterAI behavior", () => {
     const replayText = [...extractUserReplay(captured), ...extractAssistantReplay(captured)].join("\n");
     expect(replayText).not.toContain("Use terminal before guessing.");
     expect(replayText).not.toContain("Use role-aware communication.");
+  });
+
+  test("Scenario: Given a runtime avatar name When the model call is assembled Then shared prompt docs render that avatar identity", async () => {
+    let capturedPrompt = "";
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      capturedPrompt = input.systemPrompt;
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      avatarName: "jane",
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("who are you")]);
+
+    expect(capturedPrompt).toContain("You are jane,");
+    expect(capturedPrompt).not.toContain("You are agenter-ai,");
+    expect(capturedPrompt).not.toContain("AVATAR_NAME");
+  });
+
+  test("Scenario: Given no runtime avatar override When the model call is assembled Then shared prompt docs fall back to the default identity", async () => {
+    let capturedPrompt = "";
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      capturedPrompt = input.systemPrompt;
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("identify yourself")]);
+
+    expect(capturedPrompt).toContain("You are agenter-ai,");
+    expect(capturedPrompt).not.toContain("AVATAR_NAME");
   });
 
   test("Scenario: Given a legacy system template When providers contribute guides Then fallback injection still reaches the model exactly once", async () => {

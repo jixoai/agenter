@@ -60,11 +60,11 @@ test("prompt store allows empty AGENTER.mdx", async () => {
 
 test("language prompts fallback to en when lang is unknown", async () => {
   const docs = await loadPromptDocsByLang({ lang: "unknown-lang" });
-  expect(docs.AGENTER_SYSTEM.content).toContain("You are agenter-ai");
+  expect(docs.AGENTER_SYSTEM.content).toContain('<Slot name="AVATAR_NAME" />');
 });
 
 test("prompt store uses zh-Hans language pack when configured", async () => {
   const store = new FilePromptStore({ lang: "zh-Hans" });
   const snapshot = await store.reload();
-  expect(snapshot.docs.AGENTER_SYSTEM.content).toContain("你是 agenter-ai");
+  expect(snapshot.docs.AGENTER_SYSTEM.content).toContain('<Slot name="AVATAR_NAME" />');
 });
