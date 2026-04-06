@@ -59,6 +59,24 @@ Room participant lists SHALL model room seat membership only, not `avatar|user|s
 - **THEN** the room is rewritten with the normalized canonical participant list
 - **AND** subsequent room reads stop surfacing those invalid legacy participants
 
+### Requirement: Global room ids SHALL be principal ids
+
+New global rooms SHALL be allocated from managed room principals.
+
+#### Scenario: New room id is a room principal
+- **WHEN** the client creates a new global room without an explicit `chatId`
+- **THEN** the returned room id is a lowercase `0x...` principal id
+- **AND** that room id is backed by persisted managed principal material
+
+### Requirement: Principal ids SHALL be accepted as room actors
+
+Room actor validation SHALL accept raw principal ids for new runtimes and authenticated users.
+
+#### Scenario: Avatar runtime joins a room as a principal
+- **WHEN** a session runtime binds to an avatar principal id
+- **THEN** room focus, grants, and message visibility can use that principal id directly
+- **AND** the control plane does not require `session:<id>` for new runtimes
+
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
 A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.
 
@@ -89,6 +107,19 @@ The message control plane SHALL persist the canonical acting actor identity for 
 - **WHEN** an operator chooses a room token and sends a message as that actor
 - **THEN** the resulting room message persists the selected acting actor identity
 - **THEN** later snapshot or page reads preserve that identity even after refresh or reconnect
+
+### Requirement: Global room messages SHALL persist attachment references from room-owned assets
+The global room message control plane SHALL allow room text messages to reference previously uploaded room-owned asset identifiers. When a room message is sent with authorized room asset ids, the persisted room message record MUST expose the corresponding attachment metadata through snapshot, page, and incremental transport reads.
+
+#### Scenario: Room send stores attachment references
+- **WHEN** an authorized caller sends a global room message with one or more uploaded room asset identifiers
+- **THEN** the stored room message includes those attachment references
+- **THEN** later room snapshot, page, and transport reads expose the same attachment metadata for transcript rendering
+
+#### Scenario: Room attachment history survives reconnect
+- **WHEN** a client reconnects to a room that already contains messages with room-owned attachments
+- **THEN** the control plane still returns those attachment references with the durable room history
+- **THEN** the client does not need a running session runtime to reconstruct the room attachment timeline
 
 ### Requirement: Message-system SHALL define communication semantics for model work
 The message control plane SHALL contribute provider-owned system guidance that describes message-system as an asynchronous multi-channel communication surface. That guidance SHALL teach role-aware dispatch instead of reducing message tools to mechanical quote forwarding.
