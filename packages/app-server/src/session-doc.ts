@@ -10,6 +10,7 @@ export interface PersistedSession {
   cwd: string;
   workspacePath?: string;
   avatar: string;
+  avatarPrincipalId?: string;
   storeTarget: "global" | "workspace";
   status: PersistedSessionStatus;
   createdAt: string;

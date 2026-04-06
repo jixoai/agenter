@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
+import { isPrincipalId } from "@agenter/principal-crypto";
 
 import type {
   MessageAppendInput,
@@ -22,6 +23,7 @@ import type {
 } from "./types";
 
 const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const isStoredActorId = (value: string): value is MessageActorId => MESSAGE_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value);
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -40,9 +42,7 @@ const MESSAGE_DB_SCHEMA_VERSION = 2;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
-  normalizeActorIds(
-    parseJson<string[]>(value, []).filter((actor): actor is MessageActorId => MESSAGE_ACTOR_ID_PATTERN.test(actor)),
-  );
+  normalizeActorIds(parseJson<string[]>(value, []).filter(isStoredActorId));
 
 const normalizeMessageKind = (value: string | null): MessageKind => {
   if (value === "error" || value === "interactive") {

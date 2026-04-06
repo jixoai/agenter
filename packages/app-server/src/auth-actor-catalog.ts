@@ -1,3 +1,4 @@
+import { normalizePrincipalId } from "@agenter/principal-crypto";
 import type { ProfileIdentifier, ProfileProjection } from "@agenter/profile-service";
 
 export interface AuthActorProjection {
@@ -24,7 +25,10 @@ const normalizeIdentifierValue = (identifier: ProfileIdentifier): string => {
   return value.toLowerCase();
 };
 
-const toAuthId = (identifier: ProfileIdentifier): string => `${identifier.kind}:${normalizeIdentifierValue(identifier)}`;
+const toAuthId = (identifier: ProfileIdentifier): string =>
+  identifier.kind === "wallet_evm"
+    ? normalizePrincipalId(normalizeIdentifierValue(identifier))
+    : `${identifier.kind}:${normalizeIdentifierValue(identifier)}`;
 
 const resolveActorLabel = (profile: ProfileProjection, identifier: ProfileIdentifier): string => {
   const displayName = profile.metadata.displayName?.trim();

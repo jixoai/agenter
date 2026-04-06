@@ -1,3 +1,4 @@
+import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
 import type { ProfileIdentifier, ProfileIdentifierKind } from "./types";
 
 const normalizeEmail = (value: string): string => value.trim().toLowerCase();
@@ -31,7 +32,19 @@ export const toIdentifierKey = (input: ProfileIdentifier): string => {
   return `${normalized.kind}:${normalized.value}`;
 };
 
+export const toAuthId = (input: ProfileIdentifier): string => {
+  const normalized = normalizeIdentifier(input);
+  if (normalized.kind === "wallet_evm") {
+    return normalizePrincipalId(normalized.value);
+  }
+  return toIdentifierKey(normalized);
+};
+
 export const parseIdentifierKey = (input: string): ProfileIdentifier => {
+  const trimmed = input.trim();
+  if (isPrincipalId(trimmed.toLowerCase())) {
+    return normalizeIdentifier({ kind: "wallet_evm", value: normalizePrincipalId(trimmed) });
+  }
   const separatorIndex = input.indexOf(":");
   if (separatorIndex <= 0) {
     return normalizeIdentifier({ kind: "temp", value: input });

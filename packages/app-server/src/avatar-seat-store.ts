@@ -2,6 +2,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  generatePrincipalKeyPair,
+  principalIdFromPrivateKey,
+  principalIdFromPublicKey,
+  normalizePrincipalId,
+  normalizePrincipalPrivateKey,
+  normalizePrincipalPublicKey,
+  type PrincipalAlgorithm,
+  type PrincipalId,
+  type PrincipalKeyPair,
+} from "@agenter/principal-crypto";
 import type { MessageChannelAccessRole } from "@agenter/message-system";
 import type { TerminalGrantRole } from "@agenter/terminal-system";
 import { normalizeAvatarNickname } from "@agenter/avatar";
@@ -24,14 +35,20 @@ export interface AvatarTerminalSeatCredential {
   updatedAt: string;
 }
 
+export interface AvatarPrincipalRecord extends Pick<PrincipalKeyPair, "algorithm" | "principalId" | "publicKey" | "privateKey"> {}
+
 export interface AvatarSeatDocument {
-  version: 1;
+  version: 2;
+  principalId?: PrincipalId;
+  algorithm?: PrincipalAlgorithm;
+  publicKey?: PrincipalKeyPair["publicKey"];
+  privateKey?: PrincipalKeyPair["privateKey"];
   messageSeats: Record<string, AvatarMessageSeatCredential>;
   terminalSeats: Record<string, AvatarTerminalSeatCredential>;
 }
 
 const DEFAULT_DOCUMENT: AvatarSeatDocument = {
-  version: 1,
+  version: 2,
   messageSeats: {},
   terminalSeats: {},
 };
@@ -42,17 +59,63 @@ export const resolveAvatarSeatSettingsPath = (workspacePath: string, avatar: str
   return join(toWorkspaceCwd(workspacePath, homeDir), ".agenter", "avatar", normalizeAvatarNickname(avatar), "settings.local.json");
 };
 
+const readAvatarPrincipal = (value: {
+  principalId?: unknown;
+  algorithm?: unknown;
+  publicKey?: unknown;
+  privateKey?: unknown;
+}): AvatarPrincipalRecord | undefined => {
+  if (value.algorithm !== "secp256k1") {
+    return undefined;
+  }
+  if (
+    typeof value.principalId !== "string" ||
+    typeof value.publicKey !== "string" ||
+    typeof value.privateKey !== "string"
+  ) {
+    return undefined;
+  }
+  try {
+    const principalId = normalizePrincipalId(value.principalId);
+    const publicKey = normalizePrincipalPublicKey(value.publicKey);
+    const privateKey = normalizePrincipalPrivateKey(value.privateKey);
+    if (principalIdFromPrivateKey(privateKey) !== principalId) {
+      return undefined;
+    }
+    if (principalIdFromPublicKey(publicKey) !== principalId) {
+      return undefined;
+    }
+    return {
+      principalId,
+      algorithm: "secp256k1",
+      publicKey,
+      privateKey,
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 const normalizeSeatDocument = (value: unknown): AvatarSeatDocument => {
   if (!value || typeof value !== "object") {
     return DEFAULT_DOCUMENT;
   }
   const raw = value as {
     version?: unknown;
+    principalId?: unknown;
+    algorithm?: unknown;
+    publicKey?: unknown;
+    privateKey?: unknown;
     messageSeats?: Record<string, AvatarMessageSeatCredential>;
     terminalSeats?: Record<string, AvatarTerminalSeatCredential>;
   };
+  const principal = readAvatarPrincipal(raw);
   return {
-    version: 1,
+    version: 2,
+    principalId: principal?.principalId,
+    algorithm: principal?.algorithm,
+    publicKey: principal?.publicKey,
+    privateKey: principal?.privateKey,
     messageSeats: raw.messageSeats ?? {},
     terminalSeats: raw.terminalSeats ?? {},
   };
@@ -68,6 +131,35 @@ export const readAvatarSeatDocument = (workspacePath: string, avatar: string, ho
   } catch {
     return DEFAULT_DOCUMENT;
   }
+};
+
+export const ensureAvatarSeatPrincipal = (input: {
+  workspacePath: string;
+  avatar: string;
+  homeDir?: string;
+}): AvatarPrincipalRecord => {
+  const doc = readAvatarSeatDocument(input.workspacePath, input.avatar, input.homeDir);
+  if (doc.principalId && doc.algorithm && doc.publicKey && doc.privateKey) {
+    return {
+      principalId: doc.principalId,
+      algorithm: doc.algorithm,
+      publicKey: doc.publicKey,
+      privateKey: doc.privateKey,
+    };
+  }
+  const principal = generatePrincipalKeyPair();
+  doc.version = 2;
+  doc.principalId = principal.principalId;
+  doc.algorithm = principal.algorithm;
+  doc.publicKey = principal.publicKey;
+  doc.privateKey = principal.privateKey;
+  writeAvatarSeatDocument({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar,
+    doc,
+    homeDir: input.homeDir,
+  });
+  return principal;
 };
 
 export const writeAvatarSeatDocument = (input: {

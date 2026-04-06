@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
+import { isPrincipalId } from "@agenter/principal-crypto";
 import type { MessageActorId } from "@agenter/message-system";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import type { AnyRuntimeEvent } from "../realtime-types";
@@ -26,15 +27,15 @@ const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const TERMINAL_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const messageActorIdSchema = z.custom<MessageActorId>(
-  (value) => typeof value === "string" && MESSAGE_ACTOR_ID_PATTERN.test(value),
+  (value) => typeof value === "string" && (MESSAGE_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value)),
   {
-    message: "message actor id must start with auth:, session:, or system:",
+    message: "message actor id must be a principal id or start with auth:, session:, or system:",
   },
 );
 const terminalActorIdSchema = z.custom<TerminalActorId>(
-  (value) => typeof value === "string" && TERMINAL_ACTOR_ID_PATTERN.test(value),
+  (value) => typeof value === "string" && (TERMINAL_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value)),
   {
-    message: "terminal actor id must start with auth:, session:, or system:",
+    message: "terminal actor id must be a principal id or start with auth:, session:, or system:",
   },
 );
 const terminalProcessProfileSchema = z.object({
@@ -496,8 +497,8 @@ export const appRouter = t.router({
           focus: z.boolean().optional(),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        channel: ctx.kernel.createGlobalRoom({
+      .mutation(async ({ ctx, input }) => ({
+        channel: await ctx.kernel.createGlobalRoom({
           chatId: input.chatId,
           title: input.title,
           participants: input.participants,

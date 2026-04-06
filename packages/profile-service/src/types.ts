@@ -1,3 +1,5 @@
+import type { PrincipalAlgorithm, PrincipalId, PrincipalKeyPair, PrincipalKind } from "@agenter/principal-crypto";
+
 export type ProfileIdentifierKind = "email" | "wallet_evm" | "wallet_solana" | "temp";
 
 export type IconOwnerKind = "profile" | "session" | "room";
@@ -21,6 +23,27 @@ export interface ProfileProjection {
   metadata: ProfileMetadata;
   iconUrl: string;
   isVirtual: boolean;
+}
+
+export interface CreateManagedPrincipalInput {
+  kind: PrincipalKind;
+  ownerKey?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PrincipalProjection
+  extends Pick<PrincipalKeyPair, "algorithm" | "principalId" | "publicKey"> {
+  kind: PrincipalKind;
+  ownerKey?: string;
+  metadata: Record<string, unknown>;
+  hasManagedPrivateKey: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ManagedPrincipalRecord extends PrincipalProjection {
+  privateKey: PrincipalKeyPair["privateKey"];
+  hasManagedPrivateKey: true;
 }
 
 export interface AuthSessionClaims {

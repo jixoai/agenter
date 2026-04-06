@@ -1,10 +1,20 @@
 import { blobValue, type DuckDBConnection } from "@duckdb/node-api";
+import {
+  decryptPrivateKeyAtRest,
+  encryptPrivateKeyAtRest,
+  generatePrincipalKeyPair,
+  normalizePrincipalId,
+  type EncryptedPrivateKeyRecord,
+} from "@agenter/principal-crypto";
 import type {
+  CreateManagedPrincipalInput,
   IconAssetRecord,
   IconOwnerKind,
+  ManagedPrincipalRecord,
   ProfileIdentifier,
   ProfileMetadata,
   ProfileProjection,
+  PrincipalProjection,
   WebAuthnCredentialRecord,
   WebAuthnFlowKind,
   WebAuthnTicketRecord,
@@ -53,6 +63,18 @@ interface SessionSeedRow {
   label: string | null;
 }
 
+interface PrincipalRegistryRow {
+  principal_id: string;
+  kind: string;
+  algorithm: string;
+  public_key: string;
+  owner_key: string | null;
+  metadata_json: string;
+  encrypted_private_key_json: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const nowIso = (): string => new Date().toISOString();
 
 const asRows = (value: unknown): Array<Record<string, unknown>> =>
@@ -70,7 +92,11 @@ const parseMetadata = (row: ProfileRow): ProfileMetadata => {
 };
 
 export class ProfileStore {
-  constructor(private readonly connection: DuckDBConnection, private readonly publicBaseUrl: string) {}
+  constructor(
+    private readonly connection: DuckDBConnection,
+    private readonly publicBaseUrl: string,
+    private readonly managedPrincipalSecret: string,
+  ) {}
 
   async initialize(): Promise<void> {
     await this.connection.run(PROFILE_SERVICE_SCHEMA_SQL);
@@ -574,5 +600,114 @@ export class ProfileStore {
       return null;
     }
     return row.profile_id;
+  }
+
+  private mapPrincipalProjection(row: PrincipalRegistryRow): PrincipalProjection {
+    return {
+      principalId: normalizePrincipalId(row.principal_id),
+      kind: row.kind as PrincipalProjection["kind"],
+      algorithm: row.algorithm as PrincipalProjection["algorithm"],
+      publicKey: row.public_key as PrincipalProjection["publicKey"],
+      ownerKey: row.owner_key ?? undefined,
+      metadata: JSON.parse(row.metadata_json) as Record<string, unknown>,
+      hasManagedPrivateKey: row.encrypted_private_key_json !== null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private mapManagedPrincipal(row: PrincipalRegistryRow): ManagedPrincipalRecord {
+    if (!row.encrypted_private_key_json) {
+      throw new Error(`managed principal private key missing: ${row.principal_id}`);
+    }
+    const projection = this.mapPrincipalProjection(row);
+    return {
+      ...projection,
+      hasManagedPrivateKey: true,
+      privateKey: decryptPrivateKeyAtRest({
+        record: JSON.parse(row.encrypted_private_key_json) as EncryptedPrivateKeyRecord,
+        secret: this.managedPrincipalSecret,
+      }),
+    };
+  }
+
+  private async readPrincipalRow(principalId: string): Promise<PrincipalRegistryRow | null> {
+    const rows = await this.readRows(
+      `select
+         principal_id,
+         kind,
+         algorithm,
+         public_key,
+         owner_key,
+         cast(metadata_json as varchar) as metadata_json,
+         cast(encrypted_private_key_json as varchar) as encrypted_private_key_json,
+         created_at,
+         updated_at
+       from principal_registry
+       where principal_id = $principalId
+       limit 1`,
+      { principalId: normalizePrincipalId(principalId) },
+    );
+    const row = rows[0];
+    return row ? (row as unknown as PrincipalRegistryRow) : null;
+  }
+
+  async createManagedPrincipal(input: CreateManagedPrincipalInput): Promise<ManagedPrincipalRecord> {
+    const principal = generatePrincipalKeyPair();
+    const encryptedPrivateKey = encryptPrivateKeyAtRest({
+      privateKey: principal.privateKey,
+      secret: this.managedPrincipalSecret,
+    });
+    const timestamp = nowIso();
+    await this.connection.run(
+      `insert into principal_registry(
+         principal_id,
+         kind,
+         algorithm,
+         public_key,
+         owner_key,
+         metadata_json,
+         encrypted_private_key_json,
+         created_at,
+         updated_at
+       )
+       values (
+         $principalId,
+         $kind,
+         $algorithm,
+         $publicKey,
+         $ownerKey,
+         json($metadataJson),
+         json($encryptedPrivateKeyJson),
+         $createdAt,
+         $updatedAt
+       )`,
+      {
+        principalId: principal.principalId,
+        kind: input.kind,
+        algorithm: principal.algorithm,
+        publicKey: principal.publicKey,
+        ownerKey: input.ownerKey ?? null,
+        metadataJson: JSON.stringify(input.metadata ?? {}),
+        encryptedPrivateKeyJson: JSON.stringify(encryptedPrivateKey),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    );
+    const created = await this.getManagedPrincipal(principal.principalId);
+    if (!created) {
+      throw new Error(`failed to read managed principal: ${principal.principalId}`);
+    }
+    return created;
+  }
+
+  async getPrincipal(principalId: string): Promise<PrincipalProjection | null> {
+    const row = await this.readPrincipalRow(principalId);
+    return row ? this.mapPrincipalProjection(row) : null;
+  }
+
+  async getManagedPrincipal(principalId: string): Promise<ManagedPrincipalRecord | null> {
+    const row = await this.readPrincipalRow(principalId);
+    return row ? this.mapManagedPrincipal(row) : null;
   }
 }

@@ -72,7 +72,7 @@ describe("Feature: profile-service control plane", () => {
     };
     expect(descriptor).toMatchObject({
       authMode: "wallet_challenge_jwt",
-      rootAuthId: `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`,
+      rootAuthId: privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase(),
       rootIdentifier: {
         kind: "wallet_evm",
         value: privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase(),
@@ -99,7 +99,7 @@ describe("Feature: profile-service control plane", () => {
     };
     expect(revealed).toMatchObject({
       privateKey: ROOT_AUTH_PRIVATE_KEY,
-      authId: `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`,
+      authId: privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase(),
     });
     expect(revealed.rootAuthKeyPath.endsWith("/root-auth.key")).toBeTrue();
   });
@@ -141,7 +141,7 @@ describe("Feature: profile-service control plane", () => {
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const account = privateKeyToAccount(generatePrivateKey());
-    const authId = `wallet_evm:${account.address}`;
+    const authId = account.address.toLowerCase();
     const startResponse = await fetch(`${baseUrl}/auth/challenge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -202,7 +202,7 @@ describe("Feature: profile-service control plane", () => {
 
     const account = privateKeyToAccount(generatePrivateKey());
     const wrongAccount = privateKeyToAccount(generatePrivateKey());
-    const authId = `wallet_evm:${account.address}`;
+    const authId = account.address.toLowerCase();
     const startResponse = await fetch(`${baseUrl}/auth/challenge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -227,6 +227,64 @@ describe("Feature: profile-service control plane", () => {
     await expect(verifyResponse.json()).resolves.toMatchObject({
       error: "invalid wallet signature",
     });
+  });
+
+  test("Scenario: Given a managed room principal When it is created Then the public registry and reveal endpoints stay consistent", async () => {
+    const { handle } = await startServer(4608);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const createResponse = await fetch(`${baseUrl}/principals/managed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "room",
+        ownerKey: "global-room",
+        metadata: { scope: "global" },
+      }),
+    });
+    expect(createResponse.status).toBe(200);
+    const created = (await createResponse.json()) as {
+      principalId: string;
+      kind: string;
+      publicKey: string;
+      privateKey: string;
+      hasManagedPrivateKey: boolean;
+      ownerKey?: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(created.principalId).toMatch(/^0x[0-9a-f]{40}$/);
+    expect(created.privateKey).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(created.publicKey).toMatch(/^0x[0-9a-f]+$/);
+    expect(created.kind).toBe("room");
+    expect(created.hasManagedPrivateKey).toBeTrue();
+    expect(created.ownerKey).toBe("global-room");
+    expect(created.metadata).toEqual({ scope: "global" });
+
+    const readResponse = await fetch(`${baseUrl}/principals/${encodeURIComponent(created.principalId)}`);
+    expect(readResponse.status).toBe(200);
+    const projection = (await readResponse.json()) as Record<string, unknown>;
+    expect(projection).toMatchObject({
+      principalId: created.principalId,
+      kind: "room",
+      publicKey: created.publicKey,
+      ownerKey: "global-room",
+      hasManagedPrivateKey: true,
+      metadata: { scope: "global" },
+    });
+    expect("privateKey" in projection).toBeFalse();
+
+    const revealResponse = await fetch(`${baseUrl}/principals/${encodeURIComponent(created.principalId)}/reveal`, {
+      method: "POST",
+    });
+    expect(revealResponse.status).toBe(200);
+    const revealed = (await revealResponse.json()) as {
+      principalId: string;
+      publicKey: string;
+      privateKey: string;
+    };
+    expect(revealed.principalId).toBe(created.principalId);
+    expect(revealed.publicKey).toBe(created.publicKey);
+    expect(revealed.privateKey).toBe(created.privateKey);
   });
 
   test("Scenario: Given a temporary identifier When profile icon is requested Then the default response is rasterized png", async () => {

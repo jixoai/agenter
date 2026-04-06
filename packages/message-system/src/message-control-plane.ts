@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isPrincipalId } from "@agenter/principal-crypto";
 import { MessageDb } from "./message-db";
 import type {
   CommitWaitHandle,
@@ -114,12 +115,13 @@ const parseVersion = (value?: string | null): number => {
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 const createOpaqueToken = (): string => `msgtok_${randomUUID().replace(/-/g, "")}`;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
-const ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const LEGACY_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
 
 const isCanonicalActorId = (value: string): value is MessageActorId =>
-  ACTOR_ID_PATTERN.test(value) &&
-  (value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:"));
+  isPrincipalId(value) ||
+  (LEGACY_ACTOR_ID_PATTERN.test(value) &&
+    (value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:")));
 
 const normalizeChannelParticipants = (participants?: MessageParticipant[]): MessageParticipant[] | undefined => {
   if (!participants) {
@@ -149,7 +151,7 @@ const normalizeCreateInitialUsers = (
   for (const user of initialUsers) {
     const actorId = user.actorId.trim();
     if (!isCanonicalActorId(actorId)) {
-      throw new Error("room initial user actorId must be an auth:/session:/system: actor id");
+      throw new Error("room initial user actorId must be a principal id or auth:/session:/system: actor id");
     }
     const current = normalized.get(actorId);
     const currentRank = current ? roleRank(current.role) : -1;
@@ -348,8 +350,8 @@ export class MessageControlPlane {
   }
 
   createChannel(input: MessageCreateInput): MessageControlPlaneEntry {
-    if (!input.chatId.startsWith("room-")) {
-      throw new Error(`invalid room id prefix: ${input.chatId}`);
+    if (!input.chatId.startsWith("room-") && !isPrincipalId(input.chatId)) {
+      throw new Error(`invalid room id: ${input.chatId}`);
     }
     const initialUsers = normalizeCreateInitialUsers(input.initialUsers);
     const participants = mergeParticipantsWithInitialUsers(
@@ -473,7 +475,7 @@ export class MessageControlPlane {
   focusAuthorized(op: MessageFocusOp, access: Array<{ chatId: string; accessToken: string }>): string[] {
     const grants = access.map(({ chatId, accessToken }) => this.requireAccess(chatId, accessToken, "readonly"));
     const actorId = grants[0]?.participantId;
-    if (!actorId || !ACTOR_ID_PATTERN.test(actorId)) {
+    if (!actorId || !isCanonicalActorId(actorId)) {
       return this.focus(op, grants.map((grant) => grant.chatId));
     }
     const allowedChatIds = grants.map((grant) => grant.chatId).filter((chatId, index, items) => items.indexOf(chatId) === index);
@@ -717,7 +719,7 @@ export class MessageControlPlane {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
 
-    if (!grant.participantId || !ACTOR_ID_PATTERN.test(grant.participantId) || this.isTrustedBootstrapGrant(grant)) {
+    if (!grant.participantId || !isCanonicalActorId(grant.participantId) || this.isTrustedBootstrapGrant(grant)) {
       return this.withProjection(
         {
           ...channel,
@@ -935,8 +937,8 @@ export class MessageControlPlane {
 
   issueChannelGrantAuthorized(input: MessageAuthorizedReadInput & MessageIssueGrantInput & { superadminActorId?: MessageActorId }): MessageIssuedGrant {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
-    if (!input.participantId || !ACTOR_ID_PATTERN.test(input.participantId)) {
-      throw new Error("room grant participantId must be an auth:/session:/system: actor id");
+    if (!input.participantId || !isCanonicalActorId(input.participantId)) {
+      throw new Error("room grant participantId must be a principal id or auth:/session:/system: actor id");
     }
     const accessToken = this.resolveGrantAccessToken(input.accessTokenHint);
     this.db.revokeActiveGrantsByParticipant(input.chatId, input.participantId);
@@ -1409,7 +1411,7 @@ export class MessageControlPlane {
     if (!grant) {
       throw new Error("message room credential-invalid");
     }
-    if (grant.participantId && ACTOR_ID_PATTERN.test(grant.participantId)) {
+    if (grant.participantId && isCanonicalActorId(grant.participantId)) {
       this.touchActorPresence(grant.participantId as MessageActorId);
     }
     if (roleRank(grant.role) < roleRank(minimumRole)) {
@@ -1496,7 +1498,7 @@ export class MessageControlPlane {
   }
 
   private assertActorId(actorId: string): void {
-    if (!ACTOR_ID_PATTERN.test(actorId)) {
+    if (!isCanonicalActorId(actorId)) {
       throw new Error(`invalid actor id: ${actorId}`);
     }
   }
@@ -1608,7 +1610,7 @@ export class MessageControlPlane {
       return [];
     }
     return candidates
-      .filter((value): value is string => typeof value === "string" && ACTOR_ID_PATTERN.test(value))
+      .filter((value): value is string => typeof value === "string" && isCanonicalActorId(value))
       .map((value) => value as MessageActorId);
   }
 

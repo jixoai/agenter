@@ -5,6 +5,9 @@ import {
   buildProfileIconUrl,
   buildRoomIconUrl,
   buildSessionIconUrl,
+  type CreateManagedPrincipalInput,
+  type ManagedPrincipalRecord,
+  type PrincipalProjection,
   type RootAuthPrivateKeyReveal,
   startProfileServiceServer,
   type ProfileMetadata,
@@ -338,6 +341,43 @@ export class ProfileServiceBridge {
       profileId: payload.profileId,
       iconUrl: payload.iconUrl ?? (await this.buildAbsoluteUrl(buildProfileIconUrl(payload.profileId))),
     };
+  }
+
+  async createManagedPrincipal(input: CreateManagedPrincipalInput): Promise<ManagedPrincipalRecord> {
+    const response = await this.request("/principals/managed", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service managed principal create failed (${response.status})`);
+    }
+    return (await response.json()) as ManagedPrincipalRecord;
+  }
+
+  async getPrincipal(principalId: string): Promise<PrincipalProjection | null> {
+    const response = await this.request(`/principals/${encodeURIComponent(principalId)}`);
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`profile-service principal read failed (${response.status})`);
+    }
+    return (await response.json()) as PrincipalProjection;
+  }
+
+  async revealManagedPrincipal(principalId: string): Promise<ManagedPrincipalRecord | null> {
+    const response = await this.request(`/principals/${encodeURIComponent(principalId)}/reveal`, {
+      method: "POST",
+      headers: jsonHeaders,
+    });
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`profile-service managed principal reveal failed (${response.status})`);
+    }
+    return (await response.json()) as ManagedPrincipalRecord;
   }
 
   async startAuthChallenge(authId: string): Promise<AuthChallengeDescriptor> {

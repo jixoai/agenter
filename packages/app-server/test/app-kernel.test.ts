@@ -94,7 +94,7 @@ describe("Feature: app kernel event replay", () => {
     const kernel = createKernel();
     await kernel.start();
 
-    const room = kernel.createGlobalRoom({
+    const room = await kernel.createGlobalRoom({
       title: "Ops room",
       focus: false,
     });
@@ -103,8 +103,7 @@ describe("Feature: app kernel event replay", () => {
       focus: false,
     });
 
-    expect(room.chatId).toMatch(/^room-[0-9a-f-]{36}$/);
-    expect(room.chatId).not.toContain("ops-room");
+    expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
     expect(room.transportUrl).toContain("ws://127.0.0.1:");
     expect(room.transportUrl).toContain("/room/");
     expect(terminalResult.terminal?.transportUrl).toContain("ws://127.0.0.1:");
@@ -649,7 +648,7 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const room = kernel.createGlobalRoom({
+    const room = await kernel.createGlobalRoom({
       chatId: "room-assets",
       title: "Room assets",
       focus: true,
@@ -1008,7 +1007,7 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const room = kernel.createGlobalRoom({
+    const room = await kernel.createGlobalRoom({
       chatId: "room-ops",
       title: "Ops room",
       focus: true,
@@ -1130,7 +1129,7 @@ describe("Feature: app kernel event replay", () => {
     expect(archived.archivedBy).toBe("ops-admin");
     expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId)).toBeFalse();
 
-    const disposable = kernel.createGlobalRoom({
+    const disposable = await kernel.createGlobalRoom({
       title: "Disposable room",
     });
     const deleted = kernel.deleteGlobalRoom({
@@ -1153,7 +1152,7 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const room = kernel.createGlobalRoom({
+    const room = await kernel.createGlobalRoom({
       chatId: "room-seeded-users",
       title: "Seeded room",
       initialUsers: [
@@ -1225,7 +1224,7 @@ describe("Feature: app kernel event replay", () => {
     });
     await kernel.start();
 
-    const room = kernel.createGlobalRoom({
+    const room = await kernel.createGlobalRoom({
       title: "Invite Jane only",
       initialUsers: [
         {

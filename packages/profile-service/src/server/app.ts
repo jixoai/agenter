@@ -5,7 +5,7 @@ import { readBearerToken } from "../auth/tokens";
 import { buildRoomIconUrl, buildSessionIconUrl } from "../render/fallback-icons";
 import { rasterizeSvg, type RasterImageFormat } from "../render/resvg-ffi";
 import type { ProfileService } from "../service/profile-service";
-import type { ProfileMetadata } from "../types";
+import type { CreateManagedPrincipalInput, ProfileMetadata } from "../types";
 import { renderWebAuthnUiPage, resolveWebAuthnUiAsset } from "./webauthn-ui";
 
 const profileMetadataPatchSchema = z
@@ -111,6 +111,14 @@ const authChallengeVerifySchema = z
   .object({
     challengeId: z.string().uuid(),
     signature: z.string().trim().min(1),
+  })
+  .strict();
+
+const managedPrincipalCreateSchema = z
+  .object({
+    kind: z.enum(["user", "avatar", "room", "terminal", "system", "delegate"]),
+    ownerKey: z.string().trim().min(1).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -301,6 +309,27 @@ export const createProfileServiceApp = ({
     const token = readBearerToken(context.req.header("authorization"));
     const result = await service.verifyAuthChallenge(payload.challengeId, payload.signature, token);
     return context.json(result);
+  });
+
+  app.post("/principals/managed", async (context) => {
+    const payload = await readJson<CreateManagedPrincipalInput>(context.req.raw, managedPrincipalCreateSchema);
+    return context.json(await service.createManagedPrincipal(payload));
+  });
+
+  app.get("/principals/:principalId", async (context) => {
+    const principal = await service.resolvePrincipal(context.req.param("principalId"));
+    if (!principal) {
+      return jsonErrorResponse("principal not found", 404);
+    }
+    return context.json(principal);
+  });
+
+  app.post("/principals/:principalId/reveal", async (context) => {
+    const principal = await service.revealManagedPrincipal(context.req.param("principalId"));
+    if (!principal) {
+      return jsonErrorResponse("principal not found", 404);
+    }
+    return context.json(principal);
   });
 
   app.get("/profiles", async (context) => {

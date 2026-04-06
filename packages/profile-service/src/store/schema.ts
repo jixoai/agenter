@@ -27,6 +27,18 @@ create table if not exists icon_asset (
   primary key (owner_kind, owner_key)
 );
 
+create table if not exists principal_registry (
+  principal_id varchar primary key,
+  kind varchar not null,
+  algorithm varchar not null,
+  public_key varchar not null,
+  owner_key varchar,
+  metadata_json json not null default '{}',
+  encrypted_private_key_json json,
+  created_at varchar not null,
+  updated_at varchar not null
+);
+
 create table if not exists session_seed (
   session_id varchar primary key,
   workspace_path varchar not null,

@@ -27,7 +27,7 @@ export const resolveWalletAuthIdentity = (privateKeyDraft: string): WalletAuthId
 	return {
 		privateKey,
 		address,
-		authId: `wallet_evm:${address}`,
+		authId: address,
 	};
 };
 

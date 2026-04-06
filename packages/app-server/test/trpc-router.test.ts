@@ -63,7 +63,7 @@ describe("Feature: app-server trpc procedures", () => {
 
   test("Scenario: Given app-server owns a managed local profile-service child When auth bootstrap is requested Then descriptor flags and reveal payload stay aligned", async () => {
     const root = makeTempDir();
-    const expectedAuthId = `wallet_evm:${privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase()}`;
+    const expectedAuthId = privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
@@ -104,7 +104,7 @@ describe("Feature: app-server trpc procedures", () => {
     const caller = appRouter.createCaller(await createTrpcContext(kernel));
 
     const account = privateKeyToAccount(generatePrivateKey());
-    const authId = `wallet_evm:${account.address.toLowerCase()}`;
+    const authId = account.address.toLowerCase();
     const challenge = await caller.auth.challengeStart({ authId });
     const signature = await account.signMessage({ message: challenge.challengeText });
     await caller.auth.challengeVerify({

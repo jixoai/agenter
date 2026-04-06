@@ -69,6 +69,7 @@ export interface SessionMeta {
   cwd: string;
   workspacePath: string;
   avatar: string;
+  avatarPrincipalId?: string;
   createdAt: string;
   updatedAt: string;
   status: SessionStatus;
@@ -129,6 +130,7 @@ export class SessionCatalog {
     cwd: string;
     workspacePath?: string;
     avatar: string;
+    avatarPrincipalId?: string;
     storeTarget: "global" | "workspace";
   }): SessionMeta {
     const workspacePath = toWorkspacePath(input.workspacePath ?? input.cwd);
@@ -145,6 +147,7 @@ export class SessionCatalog {
       cwd,
       workspacePath,
       avatar: input.avatar,
+      avatarPrincipalId: input.avatarPrincipalId,
       createdAt,
       updatedAt: createdAt,
       status: "stopped",
@@ -171,6 +174,7 @@ export class SessionCatalog {
       name?: string;
       status?: SessionStatus;
       lastError?: string;
+      avatarPrincipalId?: string;
     },
   ): SessionMeta {
     const current = this.byId.get(sessionId);
@@ -182,6 +186,7 @@ export class SessionCatalog {
       name: patch.name?.trim().length ? patch.name.trim() : current.name,
       status: patch.status ?? current.status,
       lastError: patch.lastError,
+      avatarPrincipalId: patch.avatarPrincipalId ?? current.avatarPrincipalId,
       updatedAt: isoNow(),
     };
     this.persistMeta(next);
@@ -363,6 +368,7 @@ export class SessionCatalog {
       cwd,
       workspacePath,
       avatar: session.avatar ?? "default",
+      avatarPrincipalId: typeof session.avatarPrincipalId === "string" ? session.avatarPrincipalId : undefined,
       createdAt,
       updatedAt: session.updatedAt ?? createdAt,
       status: normalizePersistedStatus(session.status as SessionStatus | undefined),
@@ -411,6 +417,7 @@ export class SessionCatalog {
         cwd: meta.cwd,
         workspacePath: meta.workspacePath,
         avatar: meta.avatar,
+        avatarPrincipalId: meta.avatarPrincipalId,
         storeTarget: meta.storeTarget,
         status: meta.status,
         createdAt: meta.createdAt,

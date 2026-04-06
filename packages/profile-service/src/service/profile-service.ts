@@ -6,7 +6,7 @@ import {
   type RegistrationResponseJson,
   ProfileWebAuthnControlPlane,
 } from "../auth/webauthn-control-plane";
-import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toIdentifierKey } from "../identifiers";
+import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toAuthId, toIdentifierKey } from "../identifiers";
 import { buildRoomIconUrl, buildSessionIconUrl, renderProfileFallbackSvg, renderRoomFallbackSvg, renderSessionFallbackSvg } from "../render/fallback-icons";
 import { fetchGravatar } from "../render/gravatar";
 import type {
@@ -14,12 +14,15 @@ import type {
   AuthDescriptor,
   AuthSessionClaims,
   AuthSessionProjection,
+  CreateManagedPrincipalInput,
   EmailChallengeIssuedEvent,
   IconAssetRecord,
   IconOwnerKind,
+  ManagedPrincipalRecord,
   ProfileIdentifier,
   ProfileMetadata,
   ProfileProjection,
+  PrincipalProjection,
   RoomIconSeed,
   RootAuthPrivateKeyReveal,
   SessionIconSeed,
@@ -188,7 +191,7 @@ export class ProfileService {
       token,
       issuedAt: new Date().toISOString(),
       expiresAt: null,
-      claims: this.buildClaims(profile.profileId, toIdentifierKey(primaryAuthIdentifier)),
+      claims: this.buildClaims(profile.profileId, toAuthId(primaryAuthIdentifier)),
       profile,
     };
   }
@@ -199,6 +202,18 @@ export class ProfileService {
 
   async createOrResolveDurableProfile(identifier: ProfileIdentifier): Promise<ProfileProjection> {
     return await this.store.createOrBindProfile(identifier);
+  }
+
+  async createManagedPrincipal(input: CreateManagedPrincipalInput): Promise<ManagedPrincipalRecord> {
+    return await this.store.createManagedPrincipal(input);
+  }
+
+  async resolvePrincipal(principalId: string): Promise<PrincipalProjection | null> {
+    return await this.store.getPrincipal(principalId);
+  }
+
+  async revealManagedPrincipal(principalId: string): Promise<ManagedPrincipalRecord | null> {
+    return await this.store.getManagedPrincipal(principalId);
   }
 
   async linkIdentifier(profileId: string, identifier: ProfileIdentifier): Promise<ProfileProjection> {
@@ -380,11 +395,11 @@ export class ProfileService {
 
   async createAuthChallenge(identifierInput: string): Promise<AuthChallengeDescriptor> {
     const identifier = parseWalletIdentifier(identifierInput);
-    const authId = toIdentifierKey(identifier);
+    const authId = toAuthId(identifier);
     const challengeText = `agenter auth-service challenge\nauthId=${authId}\nnonce=${crypto.randomUUID()}`;
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
     const challengeId = await this.store.createWalletChallenge(
-      authId,
+      toIdentifierKey(identifier),
       challengeText,
       expiresAt,
     );
@@ -429,7 +444,7 @@ export class ProfileService {
     if (!profile.profileId) {
       throw new Error("failed to resolve durable wallet profile");
     }
-    return this.issueAuthSession(profile, toIdentifierKey(identifier));
+    return this.issueAuthSession(profile, toAuthId(identifier));
   }
 
   async verifyWalletChallenge(

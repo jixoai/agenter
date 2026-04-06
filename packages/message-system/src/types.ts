@@ -1,3 +1,5 @@
+import type { PrincipalId } from "@agenter/principal-crypto";
+
 export interface MessageTransportConfig {
   host?: string;
   port: number | null;
@@ -22,13 +24,13 @@ export interface MessageControlPlaneConfigPatch {
 export type MessageChannelKind = "room";
 export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
-export type MessageActorId = `auth:${string}` | `session:${string}` | `system:${string}`;
+export type MessageActorId = PrincipalId | `auth:${string}` | `session:${string}` | `system:${string}`;
 export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
 
 export interface MessageParticipant {
   /**
    * Room participants only describe seat membership.
-   * Identity provenance stays in the actor id itself (`auth:` / `session:` / `system:`),
+   * Identity provenance stays in the actor id itself (`0x...` / `auth:` / `session:` / `system:`),
    * while room permission stays in grants/admin state.
    */
   id: string;

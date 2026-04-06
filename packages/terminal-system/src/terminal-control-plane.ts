@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { isPrincipalId } from "@agenter/principal-crypto";
 import type { TerminalStatus } from "./types";
 import { ManagedTerminal, type ManagedTerminalConfig, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { TerminalDb } from "./terminal-db";
@@ -81,7 +82,7 @@ interface TerminalChangePayload {
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted terminal bootstrap";
 const TRUSTED_BOOTSTRAP_PARTICIPANT_ID = "system:trusted-terminal-bootstrap" as const satisfies TerminalActorId;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
-const ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const LEGACY_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const DEFAULT_APPROVAL_TIMEOUT_MS = 90_000;
 const TRANSIENT_ACTOR_PRESENCE_TTL_MS = 90_000;
 
@@ -89,6 +90,8 @@ const createId = (): string => `term-${randomUUID()}`;
 const defaultShellCommand = (): string[] => [process.env.SHELL || "/bin/bash"];
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 const createOpaqueToken = (): string => `termtok_${randomUUID().replace(/-/g, "")}`;
+const isCanonicalActorId = (actorId: string): actorId is TerminalActorId =>
+  isPrincipalId(actorId) || LEGACY_ACTOR_ID_PATTERN.test(actorId);
 
 const roleRank = (role: TerminalGrantRole): number => {
   switch (role) {
@@ -528,7 +531,7 @@ export class TerminalControlPlane {
   focusAuthorized(op: TerminalFocusOp, access: Array<{ terminalId: string; accessToken: string }>): string[] {
     const grants = access.map(({ terminalId, accessToken }) => this.requireAccess(terminalId, accessToken, "readonly"));
     const actorId = grants[0]?.participantId;
-    if (!actorId || !ACTOR_ID_PATTERN.test(actorId)) {
+    if (!actorId || !isCanonicalActorId(actorId)) {
       return this.focus(
         op,
         grants.map((grant) => grant.terminalId),
@@ -1319,7 +1322,7 @@ export class TerminalControlPlane {
   }
 
   private assertActorId(actorId: string): void {
-    if (!ACTOR_ID_PATTERN.test(actorId)) {
+    if (!isCanonicalActorId(actorId)) {
       throw new Error(`invalid actor id: ${actorId}`);
     }
   }

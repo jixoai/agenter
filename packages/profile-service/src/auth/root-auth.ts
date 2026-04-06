@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-import { toIdentifierKey } from "../identifiers";
+import { toAuthId } from "../identifiers";
 import type { ProfileIdentifier } from "../types";
 
 export interface RootAuthMaterial {
@@ -44,6 +44,6 @@ export const resolveRootAuthMaterial = (input: { dataDir: string; privateKey?: s
   return {
     privateKey,
     identifier,
-    authId: toIdentifierKey(identifier),
+    authId: toAuthId(identifier),
   };
 };

@@ -35,7 +35,10 @@ export const createProfileServiceRuntime = async (
     privateKey: options.rootAuthPrivateKey,
   });
   const database = await openProfileDatabase(config.dbPath);
-  const store = new ProfileStore(database.connection, config.publicBaseUrl);
+  const managedPrincipalSecret = createHash("sha256")
+    .update(`profile-service-managed-principal:${rootAuth.privateKey}`)
+    .digest("hex");
+  const store = new ProfileStore(database.connection, config.publicBaseUrl, managedPrincipalSecret);
   await store.initialize();
   const service = new ProfileService(
     store,

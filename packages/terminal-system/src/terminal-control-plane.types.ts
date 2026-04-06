@@ -1,3 +1,4 @@
+import type { PrincipalId } from "@agenter/principal-crypto";
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 import type { TerminalDirtySliceResult, TerminalGitLogMode, TerminalLogStyle, TerminalStatus } from "./types";
 
@@ -6,7 +7,7 @@ export type TerminalReadMode = "auto" | "diff" | "snapshot";
 export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export type TerminalRendererEngine = "xterm";
-export type TerminalActorId = `${"auth" | "session" | "system"}:${string}`;
+export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${string}`;
 export type TerminalEventKind = "terminal_read" | "terminal_write";
 
 export interface TerminalReverseCursor {

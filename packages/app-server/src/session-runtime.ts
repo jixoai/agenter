@@ -907,6 +907,7 @@ export interface SessionRuntimeOptions {
   sessionId: string;
   cwd: string;
   avatar?: string;
+  avatarPrincipalId?: string;
   sessionRoot: string;
   sessionName: string;
   storeTarget: "global" | "workspace";
@@ -4453,6 +4454,7 @@ export class SessionRuntime {
         name: this.options.sessionName,
         cwd: this.options.cwd,
         avatar: this.config.avatar.nickname,
+        avatarPrincipalId: this.options.avatarPrincipalId,
         storeTarget: this.options.storeTarget,
       },
     });
