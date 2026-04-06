@@ -112,10 +112,12 @@ describe("Feature: Running avatar navigation order", () => {
 
     const alphaActive = buildRunningAvatarRailItems(state, {
       activeSessionId: "session-alpha",
+      pinnedSessionIds: [],
       resolveSessionIconUrl: () => null,
     });
     const betaActive = buildRunningAvatarRailItems(state, {
       activeSessionId: "session-beta",
+      pinnedSessionIds: [],
       resolveSessionIconUrl: () => null,
     });
 
@@ -123,5 +125,49 @@ describe("Feature: Running avatar navigation order", () => {
     expect(betaActive.map((item) => item.sessionId)).toEqual(["session-zebra", "session-alpha", "session-beta"]);
     expect(alphaActive.map((item) => item.active)).toEqual([false, true, false]);
     expect(betaActive.map((item) => item.active)).toEqual([false, false, true]);
+  });
+
+  test("Scenario: Given a pinned stopped avatar When building sidebar submenu items Then it remains visible without disturbing the stable session order", () => {
+    const state = createRuntimeState(
+      [
+        createSessionEntry({
+          id: "session-zebra",
+          avatar: "zebra",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          status: "running",
+          workspacePath: "/repo/zebra",
+        }),
+        createSessionEntry({
+          id: "session-alpha",
+          avatar: "alpha",
+          createdAt: "2026-04-02T00:00:00.000Z",
+          status: "stopped",
+          workspacePath: "/repo/alpha",
+        }),
+        createSessionEntry({
+          id: "session-beta",
+          avatar: "beta",
+          createdAt: "2026-04-03T00:00:00.000Z",
+          status: "starting",
+          workspacePath: "/repo/beta",
+        }),
+      ],
+      {
+        "session-zebra": 0,
+        "session-alpha": 0,
+        "session-beta": 0,
+      },
+    );
+
+    const items = buildRunningAvatarRailItems(state, {
+      activeSessionId: "session-alpha",
+      pinnedSessionIds: ["session-alpha"],
+      resolveSessionIconUrl: () => null,
+    });
+
+    expect(items.map((item) => item.sessionId)).toEqual(["session-zebra", "session-alpha", "session-beta"]);
+    expect(items.map((item) => item.pinned)).toEqual([false, true, false]);
+    expect(items.map((item) => item.active)).toEqual([false, true, false]);
+    expect(items[1]?.status).toBe("stopped");
   });
 });

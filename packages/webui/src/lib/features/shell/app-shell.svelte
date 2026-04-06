@@ -9,6 +9,11 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
 	import {
+		readPinnedRunningAvatarIds,
+		reconcilePinnedRunningAvatarIds,
+		togglePinnedRunningAvatarId,
+	} from '$lib/features/shell/running-avatar-rail-state';
+	import {
 		buildRunningAvatarRailItems,
 		extractRuntimeSessionId,
 	} from '$lib/features/runtime/runtime-shell-state';
@@ -33,10 +38,12 @@
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
 			null,
 	);
+	let pinnedAvatarSessionIds = $state<string[]>(readPinnedRunningAvatarIds());
 	const activeAvatarSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
 	const runningAvatarItems = $derived(
 		buildRunningAvatarRailItems(controller.runtimeState, {
 			activeSessionId: activeAvatarSessionId,
+			pinnedSessionIds: pinnedAvatarSessionIds,
 			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
 		}),
 	);
@@ -65,6 +72,13 @@
 				: controller.authSession.claims.authId
 			: 'Bind root key',
 	);
+
+	$effect(() => {
+		pinnedAvatarSessionIds = reconcilePinnedRunningAvatarIds(
+			pinnedAvatarSessionIds,
+			controller.runtimeState.sessions.map((session) => session.id),
+		);
+	});
 </script>
 
 <svelte:head>
@@ -107,7 +121,16 @@
 								{/snippet}
 							</Sidebar.MenuButton>
 							{#if item.href === '/avatars' && showRunningAvatarSubmenu}
-								<RunningAvatarRail items={runningAvatarItems} />
+								<RunningAvatarRail
+									items={runningAvatarItems}
+									onTogglePin={(sessionId, nextPinned) => {
+										pinnedAvatarSessionIds = togglePinnedRunningAvatarId(
+											pinnedAvatarSessionIds,
+											sessionId,
+											nextPinned,
+										);
+									}}
+								/>
 							{/if}
 						</Sidebar.MenuItem>
 					{/each}

@@ -13,6 +13,7 @@ export interface RunningAvatarRailItem {
   iconUrl: string | null;
   href: string;
   active: boolean;
+  pinned: boolean;
 }
 
 export interface RuntimeTabItem {
@@ -125,11 +126,16 @@ export const buildRunningAvatarRailItems = (
   state: RuntimeClientState,
   input: {
     activeSessionId: string | null;
+    pinnedSessionIds?: readonly string[];
     resolveSessionIconUrl: (sessionId: string) => string | null;
   },
 ): RunningAvatarRailItem[] => {
+  const pinnedSessionIds = new Set((input.pinnedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
   return state.sessions
-    .filter((session) => session.status === "running" || session.status === "starting")
+    .filter(
+      (session) =>
+        session.status === "running" || session.status === "starting" || pinnedSessionIds.has(session.id),
+    )
     .map((session) => ({
       sessionId: session.id,
       label: session.avatar || session.name,
@@ -140,5 +146,6 @@ export const buildRunningAvatarRailItems = (
       iconUrl: input.resolveSessionIconUrl(session.id),
       href: `/avatars/runtime/${encodeURIComponent(session.id)}/attention`,
       active: input.activeSessionId === session.id,
+      pinned: pinnedSessionIds.has(session.id),
     }));
 };

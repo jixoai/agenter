@@ -25,6 +25,7 @@
 			iconUrl: null,
 			href: '/avatars/runtime/session-alpha/attention',
 			active: true,
+			pinned: true,
 		},
 		{
 			sessionId: 'session-beta',
@@ -36,6 +37,7 @@
 			iconUrl: null,
 			href: '/avatars/runtime/session-beta/attention',
 			active: false,
+			pinned: false,
 		},
 	];
 </script>
