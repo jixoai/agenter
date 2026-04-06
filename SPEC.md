@@ -24,7 +24,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
-- Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并按 actor seat 维护，而不是退化成 session unread badge。
+- Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 `ScrollView` 原语；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。

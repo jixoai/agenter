@@ -2,29 +2,39 @@
 
 ## Purpose
 
-Define actor-scoped room read cursors and read-progress projection for group chat collaboration surfaces.
+Define message-level room read membership and read-progress projection for group chat collaboration surfaces.
 
 ## Requirements
 
-### Requirement: Rooms SHALL track read-state per actor seat
+### Requirement: Room messages SHALL freeze read membership at send time
 
-Message-system SHALL track read-state per actor seat for each room, including the latest read message boundary and read timestamp when available.
+Message-system SHALL persist `readActorIds` and `unreadActorIds` on each durable room message. Those arrays SHALL capture the relevant collaborators at send time and SHALL NOT be rewritten when new users join later.
 
-#### Scenario: One actor reads later than another
-- **WHEN** two room seats read the same room at different times
-- **THEN** each seat keeps its own read boundary and read timestamp
-- **THEN** the room can report that one seat has read farther than the other
+#### Scenario: New room user does not rewrite old messages
+- **WHEN** a room message is sent while the room has users `A` and `B`
+- **AND** user `C` joins later
+- **THEN** the older message keeps only `A` and `B` in its read/unread arrays
+- **THEN** `C` only participates in the arrays for messages sent after `C` joined
 
-#### Scenario: Unread seat remains visible
-- **WHEN** one room seat has not read the latest visible message
-- **THEN** the room projection still includes that seat in the unread portion of the read-state view
-- **THEN** the UI can distinguish unread from missing-seat cases
+### Requirement: Mark-read SHALL move actor ids between frozen message arrays
 
-### Requirement: Room projections SHALL expose aggregate read progress
+Message-system SHALL advance room read-state by moving actor ids from `unreadActorIds` to `readActorIds` on the addressed visible message and earlier visible messages, instead of recomputing history from mutable seat cursors.
 
-Room-facing projections SHALL expose a compact aggregate view suitable for read-progress UI and a detailed per-seat view suitable for disclosure surfaces.
+#### Scenario: Read progress advances without changing frozen membership
+- **WHEN** a room user reads up to message `m3`
+- **THEN** that user's actor id moves from unread to read on `m3` and earlier visible messages
+- **THEN** later room membership changes do not alter the already-frozen arrays on those messages
+
+### Requirement: Room projections SHALL expose latest-visible read progress from frozen arrays
+
+Room-facing projections SHALL derive aggregate progress from the latest visible message's frozen read arrays and SHALL expose a detailed actor breakdown that distinguishes `unread` from `joined later`.
 
 #### Scenario: Read ring shows partial progress
-- **WHEN** some room seats have read the latest visible message and others have not
+- **WHEN** some tracked actors have read the latest visible message and others have not
 - **THEN** the projection exposes aggregate counts or progress that can render as a compact read ring
-- **THEN** the detailed view still exposes the per-seat breakdown behind that compact summary
+- **THEN** the detailed view still exposes the actor breakdown behind that compact summary
+
+#### Scenario: Joined-later actor is not counted retroactively
+- **WHEN** the latest visible message was sent before a newly granted user joined the room
+- **THEN** the aggregate progress excludes that user from the tracked total for that message
+- **THEN** the detailed view marks that user as `joined later` instead of `unread`

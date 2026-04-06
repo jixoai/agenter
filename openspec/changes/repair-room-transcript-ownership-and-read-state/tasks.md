@@ -1,7 +1,7 @@
 ## 1. Platform Law
 
 - [x] 1.1 Add OpenSpec deltas for explicit room sender identity, shared transcript row primitives, and per-message read arrays
-- [ ] 1.2 Update durable package/project specs after implementation so the breaking read-state law becomes part of repository truth
+- [x] 1.2 Update durable package/project specs after implementation so the breaking read-state law becomes part of repository truth
 
 ## 2. Room Transcript And Send Path
 

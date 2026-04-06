@@ -31,7 +31,7 @@ The app-server SHALL clear unread notifications for a session when the client re
 - **THEN** later unread assistant replies remain pending until they become visible
 
 #### Scenario: Session unread badge and room read-state coexist
-- **WHEN** a room already exposes durable per-seat read-state and a hidden assistant reply also creates a session unread notification
+- **WHEN** a room already exposes durable message-level read-state and a hidden assistant reply also creates a session unread notification
 - **THEN** the running-session unread badge is still derived from the ephemeral notification projection
 - **THEN** the room-local read-state remains sourced from message-system instead of being overwritten by the session unread badge
 

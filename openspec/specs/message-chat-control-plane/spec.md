@@ -4,7 +4,7 @@
 Define the global room-first message control plane, its transport contract, and the model-facing semantics for collaboration across auth actors and session actors.
 ## Requirements
 ### Requirement: Message-system SHALL manage multiple chat channels
-The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, and room-local read-state SHALL remain durable per actor seat.
+The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, and room-local read-state SHALL remain durable as per-message frozen read membership rather than mutable actor read cursors.
 
 #### Scenario: One room is shared by human and session actors
 - **WHEN** an auth actor and one or more session actors are granted access to the same room
@@ -32,9 +32,9 @@ The message control plane SHALL manage multiple global room resources independen
 - **AND** it does not enter any queued-only room presentation mode
 
 #### Scenario: Room read-state survives session stop
-- **WHEN** a room has actor-scoped read-state and one contributing session later stops
+- **WHEN** a room has message-level durable read-state and one contributing session later stops
 - **THEN** the room history and room read-state remain available in the global message store
-- **THEN** a later actor reattaching to that room can still observe the current read progression
+- **THEN** a later actor reattaching to that room can still observe the current read progression without recomputing prior message membership
 
 ### Requirement: Room lifecycle SHALL distinguish archive from dissolve
 
