@@ -24,7 +24,7 @@
 				class="text-sidebar-foreground/60 flex h-7 items-center rounded-md px-2 text-xs"
 				data-running-avatar-empty
 			>
-				No running avatars
+				No open avatars
 			</div>
 		</Sidebar.MenuSubItem>
 	{:else}
@@ -38,14 +38,16 @@
 							{...props}
 							class={cn(baseClassName, 'pr-8')}
 							data-running-avatar-link={item.sessionId}
-							title={`${item.workspaceName} · ${resolveRuntimeStatusLabel(item.status)}`}
+							title={item.detail}
 						>
 							<div class="relative shrink-0">
 								<ProfileAvatar label={item.label} src={item.iconUrl} class="size-5 rounded-md" />
-								<span
-									class={`absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-sidebar ${resolveRuntimeStatusTone(item.status)}`}
-									title={resolveRuntimeStatusLabel(item.status)}
-								></span>
+								{#if item.status}
+									<span
+										class={`absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-sidebar ${resolveRuntimeStatusTone(item.status)}`}
+										title={resolveRuntimeStatusLabel(item.status)}
+									></span>
+								{/if}
 							</div>
 							<span class="truncate">{item.label}</span>
 							{#if item.unreadCount > 0}
@@ -58,7 +60,7 @@
 						</a>
 					{/snippet}
 				</Sidebar.MenuSubButton>
-				{#if onTogglePin}
+				{#if onTogglePin && item.pinEnabled}
 					<button
 						type="button"
 						class={cn(

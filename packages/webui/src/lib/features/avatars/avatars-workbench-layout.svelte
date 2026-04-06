@@ -7,6 +7,14 @@
 	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import {
+		extractOpenAvatarTabId,
+		OPEN_AVATAR_TABS_CHANGE_EVENT,
+		readOpenAvatarTabs,
+		removeOpenAvatarTab,
+		resolveOpenAvatarTabFromUrl,
+		type OpenAvatarTabEntry,
+	} from '$lib/features/avatars/avatar-open-tabs-state';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
@@ -28,9 +36,11 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
+	let openAvatarTabs = $state<OpenAvatarTabEntry[]>(readOpenAvatarTabs());
 	let dismissedSessionIds = $state<string[]>(readDismissedWorkbenchTabIds('avatars-runtime'));
 
 	const activeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
+	const activeOpenAvatarTabId = $derived(extractOpenAvatarTabId(page.url));
 	const runningItems = $derived(
 		filterDismissedWorkbenchTabs(
 			buildRunningAvatarRailItems(controller.runtimeState, {
@@ -41,6 +51,27 @@
 			dismissedSessionIds,
 		),
 	);
+
+	$effect(() => {
+		if (typeof window === 'undefined') {
+			return;
+		}
+		const syncOpenAvatarTabs = (): void => {
+			openAvatarTabs = readOpenAvatarTabs();
+		};
+		window.addEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
+		window.addEventListener('storage', syncOpenAvatarTabs);
+		return () => {
+			window.removeEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
+			window.removeEventListener('storage', syncOpenAvatarTabs);
+		};
+	});
+
+	$effect(() => {
+		if (resolveOpenAvatarTabFromUrl(page.url)) {
+			openAvatarTabs = readOpenAvatarTabs();
+		}
+	});
 
 	$effect(() => {
 		if (!activeSessionId) {
@@ -68,6 +99,33 @@
 			keepFocus: true,
 		});
 	};
+
+	const closeOpenAvatarTab = async (tabId: string): Promise<void> => {
+		const nextTab = resolveAdjacentWorkbenchTab(
+			[
+				...openAvatarTabs.map((tab) => ({
+					id: tab.id,
+					href: tab.href,
+				})),
+				...runningItems.map((item) => ({
+					id: item.sessionId,
+					href: item.href,
+				})),
+			],
+			(item) => item.id,
+			tabId,
+		);
+		openAvatarTabs = removeOpenAvatarTab(openAvatarTabs, tabId);
+		if (activeOpenAvatarTabId !== tabId) {
+			return;
+		}
+		await goto(nextTab?.href ?? '/avatars/workspace', {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
+	};
+
 	const tabs = $derived.by(() => {
 		const fixedTabs = [
 			{
@@ -96,6 +154,31 @@
 			},
 		] satisfies WorkbenchTabItem[];
 
+		const openTabs = openAvatarTabs.map((tab) => ({
+			id: tab.id,
+			href: tab.href,
+			label: tab.avatarNickname,
+			avatarLabel: tab.avatarNickname,
+			avatarUrl: null,
+			title: `${tab.avatarNickname} · ${tab.workspaceName}`,
+			description: `${tab.workspacePath} · Open avatar`,
+			closable: true,
+			onClose: () => void closeOpenAvatarTab(tab.id),
+			menuItems: [
+				{
+					id: `copy:${tab.id}`,
+					label: 'Copy open-avatar link',
+					onSelect: () => void copyToClipboard(tab.href),
+				},
+				{
+					id: `close:${tab.id}`,
+					label: 'Close tab',
+					danger: true,
+					onSelect: () => void closeOpenAvatarTab(tab.id),
+				},
+			],
+		})) satisfies WorkbenchTabItem[];
+
 		const runtimeTabs = runningItems.map((item) => ({
 			id: item.sessionId,
 			href: item.href,
@@ -104,7 +187,7 @@
 			avatarUrl: item.iconUrl,
 			badgeLabel: item.unreadCount > 0 ? String(item.unreadCount) : undefined,
 			title: `${item.label} · ${item.workspaceName}`,
-			description: `${item.workspacePath} · ${item.status}`,
+			description: item.detail,
 			closable: true,
 			onClose: () => void closeRuntimeTab(item.sessionId),
 			menuItems: [
@@ -122,12 +205,15 @@
 			],
 		})) satisfies WorkbenchTabItem[];
 
-		return [...fixedTabs, ...runtimeTabs];
+		return [...fixedTabs, ...openTabs, ...runtimeTabs];
 	});
 
 	const activeTabValue = $derived.by(() => {
 		if (activeSessionId) {
 			return activeSessionId;
+		}
+		if (activeOpenAvatarTabId) {
+			return activeOpenAvatarTabId;
 		}
 		if (page.url.pathname === '/avatars/history') {
 			return 'history';

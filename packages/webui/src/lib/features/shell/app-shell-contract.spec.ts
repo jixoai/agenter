@@ -22,19 +22,23 @@ describe("Feature: App shell collapsed sidebar chrome", () => {
     expect(appShellSource).not.toContain(">Super admin<");
   });
 
-  test("Scenario: Given the avatars system entry When reading the app shell source Then running avatars remain wired as sidebar secondary navigation", () => {
+  test("Scenario: Given the avatars system entry When reading the app shell source Then open avatar tabs and runtime sessions remain wired as sidebar secondary navigation", () => {
     expect(appShellSource).toContain("import RunningAvatarRail");
+    expect(appShellSource).toContain("readOpenAvatarTabs");
+    expect(appShellSource).toContain("buildOpenAvatarRailItems");
+    expect(appShellSource).toContain("extractOpenAvatarTabId(page.url)");
+    expect(appShellSource).toContain("OPEN_AVATAR_TABS_CHANGE_EVENT");
     expect(appShellSource).toContain("readPinnedRunningAvatarIds");
     expect(appShellSource).toContain("reconcilePinnedRunningAvatarIds");
     expect(appShellSource).toContain("togglePinnedRunningAvatarId");
     expect(appShellSource).toContain("buildRunningAvatarRailItems(controller.runtimeState");
     expect(appShellSource).toContain("pinnedSessionIds: pinnedAvatarSessionIds");
     expect(appShellSource).toContain("extractRuntimeSessionId(page.url.pathname)");
-    expect(appShellSource).toContain("const showRunningAvatarSubmenu = $derived(");
-    expect(appShellSource).toContain("runningAvatarItems.length > 0 || activeItem?.href === '/avatars'");
-    expect(appShellSource).toContain("item.href === '/avatars' && showRunningAvatarSubmenu");
+    expect(appShellSource).toContain("const avatarSubmenuItems = $derived([...openAvatarItems, ...runningAvatarItems])");
+    expect(appShellSource).toContain("const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars')");
+    expect(appShellSource).toContain("item.href === '/avatars' && showAvatarSubmenu");
     expect(appShellSource).toContain("<RunningAvatarRail");
-    expect(appShellSource).toContain("items={runningAvatarItems}");
+    expect(appShellSource).toContain("items={avatarSubmenuItems}");
     expect(appShellSource).toContain("onTogglePin={(sessionId, nextPinned) => {");
     expect(appShellSource).not.toContain("const avatarsActive = $derived(activeItem?.href === '/avatars');");
   });

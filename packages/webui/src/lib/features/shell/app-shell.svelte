@@ -7,6 +7,16 @@
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import {
+		buildOpenAvatarRailItems,
+		extractOpenAvatarTabId,
+		OPEN_AVATAR_TABS_CHANGE_EVENT,
+		readOpenAvatarTabs,
+		reconcileOpenAvatarTabs,
+		resolveOpenAvatarTabFromUrl,
+		upsertOpenAvatarTab,
+		type OpenAvatarTabEntry,
+	} from '$lib/features/avatars/avatar-open-tabs-state';
 	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
 	import {
 		readPinnedRunningAvatarIds,
@@ -38,8 +48,15 @@
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
 			null,
 	);
+	let openAvatarTabs = $state<OpenAvatarTabEntry[]>(readOpenAvatarTabs());
 	let pinnedAvatarSessionIds = $state<string[]>(readPinnedRunningAvatarIds());
 	const activeAvatarSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
+	const activeOpenAvatarTabId = $derived(extractOpenAvatarTabId(page.url));
+	const openAvatarItems = $derived(
+		buildOpenAvatarRailItems(openAvatarTabs, {
+			activeTabId: activeOpenAvatarTabId,
+		}),
+	);
 	const runningAvatarItems = $derived(
 		buildRunningAvatarRailItems(controller.runtimeState, {
 			activeSessionId: activeAvatarSessionId,
@@ -47,9 +64,8 @@
 			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
 		}),
 	);
-	const showRunningAvatarSubmenu = $derived(
-		runningAvatarItems.length > 0 || activeItem?.href === '/avatars',
-	);
+	const avatarSubmenuItems = $derived([...openAvatarItems, ...runningAvatarItems]);
+	const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars');
 	const adminActive = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const activeTitle = $derived(adminActive ? 'Admin' : activeItem?.label ?? 'Agenter');
 
@@ -72,6 +88,33 @@
 				: controller.authSession.claims.authId
 			: 'Bind root key',
 	);
+
+	$effect(() => {
+		openAvatarTabs = reconcileOpenAvatarTabs(openAvatarTabs);
+		if (typeof window === 'undefined') {
+			return;
+		}
+		const syncOpenAvatarTabs = (): void => {
+			openAvatarTabs = readOpenAvatarTabs();
+		};
+		window.addEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
+		window.addEventListener('storage', syncOpenAvatarTabs);
+		return () => {
+			window.removeEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
+			window.removeEventListener('storage', syncOpenAvatarTabs);
+		};
+	});
+
+	$effect(() => {
+		const currentOpenAvatarTab = resolveOpenAvatarTabFromUrl(page.url);
+		if (!currentOpenAvatarTab) {
+			return;
+		}
+		const next = upsertOpenAvatarTab(openAvatarTabs, currentOpenAvatarTab);
+		if (next.entries !== openAvatarTabs) {
+			openAvatarTabs = next.entries;
+		}
+	});
 
 	$effect(() => {
 		const reconciledPinnedIds = reconcilePinnedRunningAvatarIds(
@@ -123,9 +166,9 @@
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
-							{#if item.href === '/avatars' && showRunningAvatarSubmenu}
+							{#if item.href === '/avatars' && showAvatarSubmenu}
 								<RunningAvatarRail
-									items={runningAvatarItems}
+									items={avatarSubmenuItems}
 									onTogglePin={(sessionId, nextPinned) => {
 										pinnedAvatarSessionIds = togglePinnedRunningAvatarId(
 											pinnedAvatarSessionIds,

@@ -1,25 +1,27 @@
 <script lang="ts">
 	import CopyIcon from '@lucide/svelte/icons/copy';
+	import { SplitView } from '@agenter/svelte-components';
 	import EyeIcon from '@lucide/svelte/icons/eye';
-	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlayIcon from '@lucide/svelte/icons/play';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import { resolveAsyncSurfaceState } from '@agenter/web-components';
 	import type { CachedResourceState, WorkspaceAvatarCatalogEntry } from '@agenter/client-sdk';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getAppControllerContext } from '$lib/app/controller-context';
-	import PanelShell from '$lib/components/panel-shell.svelte';
 	import AdaptiveIconButton from '$lib/components/web-components/adaptive-icon-button.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
-	import ScrollView from '$lib/components/scroll-view.svelte';
+	import { readOpenAvatarTabs, upsertOpenAvatarTab } from '$lib/features/avatars/avatar-open-tabs-state';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { describeWorkspace, sortWorkspacesForCatalog } from './workspace-sorting';
+	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
+	import {
+		describeCompactWorkspace,
+		resolveObjectiveWorkspacePath,
+		sortWorkspacesForCatalog,
+	} from './workspace-sorting';
 
 	const controller = getAppControllerContext();
 	const emptyAvatarCatalogState: CachedResourceState<WorkspaceAvatarCatalogEntry[]> = {
@@ -37,7 +39,6 @@
 	let copyDialogOpen = $state(false);
 	let copyBusy = $state(false);
 	let copyAvatarDraft = $state('');
-	let detailsDialogOpen = $state(false);
 	const copyAvatarInputId = `copy-avatar-${crypto.randomUUID()}`;
 
 	const sortedWorkspaces = $derived(
@@ -49,6 +50,9 @@
 	);
 	const selectedWorkspace = $derived(
 		sortedWorkspaces.find((workspace) => workspace.path === selectedWorkspacePath) ?? preferredWorkspace ?? null,
+	);
+	const selectedWorkspaceObjectivePath = $derived(
+		selectedWorkspace ? resolveObjectiveWorkspacePath(selectedWorkspace, sortedWorkspaces) : null,
 	);
 	const selectedWorkspaceAvatarCatalog = $derived(
 		selectedWorkspace
@@ -70,7 +74,11 @@
 
 	const syncWorkspaceSelection = async (path: string): Promise<void> => {
 		selectedWorkspacePath = path;
-		await goto(`/workspaces?path=${encodeURIComponent(path)}`, { replaceState: true, noScroll: true, keepFocus: true });
+		await goto(`/avatars/workspace?path=${encodeURIComponent(path)}`, {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
 	};
 
 	const startAvatarSession = async (): Promise<void> => {
@@ -84,10 +92,24 @@
 				avatar: selectedAvatar,
 				autoStart: true,
 			});
-			await goto(`/runtime/${encodeURIComponent(session.id)}/attention`);
+			await goto(`/avatars/runtime/${encodeURIComponent(session.id)}/attention`);
 		} finally {
 			createBusy = false;
 		}
+	};
+
+	const openAvatarTab = async (): Promise<void> => {
+		if (!selectedWorkspace || !selectedAvatarEntry) {
+			return;
+		}
+		const next = upsertOpenAvatarTab(readOpenAvatarTabs(), {
+			workspacePath: selectedWorkspace.path,
+			avatarNickname: selectedAvatarEntry.nickname,
+		});
+		await goto(next.entry.href, {
+			noScroll: true,
+			keepFocus: true,
+		});
 	};
 
 	const openCopyDialog = (): void => {
@@ -159,26 +181,23 @@
 	});
 </script>
 
-<div class="grid h-full gap-4 p-4 md:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.15fr)] md:p-6">
-	<PanelShell>
-		{#snippet header()}
-			<h1 class="text-base font-semibold">Workspaces</h1>
-			<p class="text-sm text-muted-foreground">
-				Global workspace first, then favorites, then most recently active workspaces with started sessions.
-			</p>
-		{/snippet}
+<SplitView.Root variant="sidebar-content" data-testid="workspaces-route">
+	<SplitView.Sidebar>
+		<WorkbenchScaffold tone="pane" body="scroll" contentClass="divide-y px-0 py-0">
+			{#snippet header()}
+				<h1 class="text-base font-semibold">Workspaces</h1>
+			{/snippet}
 
-		<ScrollView class="h-full" contentClass="divide-y">
 			{#each sortedWorkspaces as workspace (workspace.path)}
 				<button
-					class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/50 ${
+					class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/35 ${
 						selectedWorkspace?.path === workspace.path ? 'bg-primary/5' : ''
 					}`}
 					onclick={() => void syncWorkspaceSelection(workspace.path)}
 				>
 					<div class="flex items-center justify-between gap-3">
 						<div class="min-w-0">
-							<div class="truncate text-sm font-semibold">{workspace.path === '~/' ? 'Global workspace' : workspace.path}</div>
+							<div class="truncate text-sm font-semibold">{describeCompactWorkspace(workspace.path)}</div>
 							<div class="truncate text-xs text-muted-foreground">
 								{workspace.group} · {workspace.counts.running} running · {workspace.counts.all} total
 							</div>
@@ -192,102 +211,85 @@
 					{/if}
 				</button>
 			{/each}
-		</ScrollView>
-	</PanelShell>
+		</WorkbenchScaffold>
+	</SplitView.Sidebar>
 
-	<div class="grid gap-4 md:grid-rows-[auto_minmax(0,1fr)]">
-		<Card.Root>
-			<Card.Header class="gap-2 border-b">
-				<div class="flex items-center justify-between gap-3">
-					<div>
-						<Card.Title>Quick Start</Card.Title>
-						<Card.Description>Choose one workspace, choose one avatar, then launch the stable avatar session.</Card.Description>
-					</div>
-					<Button variant="outline" size="icon-sm" onclick={() => void controller.refreshBootstrap()} aria-label="Refresh workspaces">
-						<FolderPlusIcon class="size-4" />
-					</Button>
-				</div>
-			</Card.Header>
-			<Card.Content class="grid gap-4">
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected workspace</div>
-					<div class="mt-2 text-sm font-semibold">{selectedWorkspace ? describeWorkspace(selectedWorkspace.path) : 'No workspace'}</div>
-				</div>
-
-				<div class="grid gap-3">
-					<div class="flex items-center justify-between gap-3">
-						<div>
-							<div class="flex items-center gap-2 text-sm font-semibold">
-								<span>Avatar catalog</span>
-								<HelpHint textContext="workspace avatar catalog selects an existing avatar and copy creates a workspace-local duplicate.">
-									<p>Select an existing avatar. Copy creates a full workspace-local duplicate for editing.</p>
-								</HelpHint>
-							</div>
+	<SplitView.Content>
+		<WorkbenchScaffold tone="pane" body="scroll" contentClass="grid gap-4 p-4">
+			{#snippet header()}
+				<div class="flex flex-wrap items-start justify-between gap-3">
+					<div class="grid gap-2">
+						<div class="flex items-center gap-2">
+							<h2 class="text-base font-semibold">Quick Start</h2>
+							<HelpHint textContext="Quick Start lets you pick a workspace avatar, open it in a dedicated tab, copy it, and launch a fresh runtime immediately.">
+								<p>Pick a workspace avatar, open it in a tab, copy it into the workspace, or launch it immediately.</p>
+							</HelpHint>
+						</div>
+						<div class="grid gap-1">
+							<div class="text-sm font-medium text-foreground">Avatar catalog</div>
+							<p class="text-sm text-muted-foreground">
+								{selectedWorkspaceObjectivePath ?? 'Select a workspace to inspect its available avatars.'}
+							</p>
 						</div>
 					</div>
-
-					<AsyncSurface
-						state={avatarSurfaceState}
-						emptyLoadingLabel="Loading avatars…"
-						loadingOverlayLabel="Refreshing avatars…"
-					>
-						{#snippet empty()}
-							{#if selectedWorkspaceAvatarCatalog.error}
-								<div class="rounded-2xl border border-dashed p-4 text-sm text-destructive">
-									{selectedWorkspaceAvatarCatalog.error}
-								</div>
-							{:else}
-								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-									No avatars available for this workspace.
-								</div>
-							{/if}
-						{/snippet}
-
-						<div class="grid gap-2 md:grid-cols-2">
-							{#each avatars as avatar (avatar.nickname)}
-								<button
-									class={`rounded-2xl border p-4 text-left transition-colors hover:bg-muted/40 ${
-										selectedAvatar === avatar.nickname ? 'border-primary bg-primary/5' : 'bg-card'
-									}`}
-									onclick={() => {
-										selectedAvatar = avatar.nickname;
-									}}
-								>
-									<div class="flex items-center justify-between gap-2">
-										<div class="truncate text-sm font-semibold">{avatar.nickname}</div>
-										{#if avatar.defaultAvatar}
-											<div class="rounded-full border px-2 py-1 text-[11px]">Default</div>
-										{/if}
-									</div>
-									<div class="mt-2 text-xs text-muted-foreground">
-										{avatar.sourceScope === 'workspace' ? 'Workspace-local copy' : 'Global source'}
-									</div>
-								</button>
-							{/each}
-						</div>
-					</AsyncSurface>
 				</div>
+			{/snippet}
 
-				<div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-4">
-					<div class="flex items-start gap-3">
-						<SparklesIcon class="mt-0.5 size-5 text-primary" />
-						<div>
-							<div class="flex items-center gap-2 text-sm font-semibold">
-								<span>Stable session</span>
-								<HelpHint textContext="stable avatar sessions keep the same session id for the same workspace avatar pair.">
-									<p>Session id remains stable for the same workspace and avatar pair.</p>
-								</HelpHint>
-							</div>
+			<AsyncSurface
+				state={avatarSurfaceState}
+				emptyLoadingLabel="Loading avatars…"
+				loadingOverlayLabel="Refreshing avatars…"
+			>
+				{#snippet empty()}
+					{#if selectedWorkspaceAvatarCatalog.error}
+						<div class="rounded-2xl border border-dashed p-4 text-sm text-destructive">
+							{selectedWorkspaceAvatarCatalog.error}
 						</div>
+					{:else}
+						<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+							No avatars available for this workspace.
+						</div>
+					{/if}
+				{/snippet}
+
+				<div class="grid gap-2 md:grid-cols-2">
+					{#each avatars as avatar (avatar.nickname)}
+						<button
+							class={`rounded-2xl border p-4 text-left transition-colors hover:bg-muted/40 ${
+								selectedAvatar === avatar.nickname ? 'border-primary bg-primary/5' : 'bg-card/75'
+							}`}
+							onclick={() => {
+								selectedAvatar = avatar.nickname;
+							}}
+						>
+							<div class="flex items-center justify-between gap-2">
+								<div class="truncate text-sm font-semibold">{avatar.nickname}</div>
+								{#if avatar.defaultAvatar}
+									<div class="rounded-full border px-2 py-1 text-[11px]">Default</div>
+								{/if}
+							</div>
+							<div class="mt-2 text-xs text-muted-foreground">
+								{avatar.sourceScope === 'workspace' ? 'Workspace-local copy' : 'Global source'}
+							</div>
+						</button>
+					{/each}
+				</div>
+			</AsyncSurface>
+
+			{#snippet footer()}
+				<div class="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+					<div class="text-sm font-medium text-foreground">
+						{selectedWorkspaceObjectivePath ?? 'No workspace selected'}
+						{#if selectedAvatarEntry}
+							<span class="text-muted-foreground"> · {selectedAvatarEntry.nickname}</span>
+						{/if}
 					</div>
 					<div class="flex flex-wrap items-center gap-2">
 						<AdaptiveIconButton
-							label="Details"
-							tooltip="View avatar source paths"
+							label="Open avatar"
+							tooltip="Open avatar in a dedicated workbench tab"
 							disabled={!selectedAvatarEntry}
-							onclick={() => {
-								detailsDialogOpen = true;
-							}}
+							onclick={() => void openAvatarTab()}
 						>
 							<EyeIcon class="size-4" />
 						</AdaptiveIconButton>
@@ -305,40 +307,10 @@
 						</Button>
 					</div>
 				</div>
-			</Card.Content>
-		</Card.Root>
-
-		<PanelShell bodyClass="h-full">
-			{#snippet header()}
-				<h2 class="text-base font-semibold">Workspace facts</h2>
-				<p class="text-sm text-muted-foreground">Keep the selection visible and factual. No hidden workspace/session coupling.</p>
 			{/snippet}
-
-			<ScrollView class="h-full" contentClass="grid gap-3 p-4">
-					{#if selectedWorkspace}
-						<div class="rounded-2xl border bg-muted/30 p-4">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Path</div>
-							<div class="mt-2 break-all text-sm font-medium">{selectedWorkspace.path}</div>
-						</div>
-						<div class="rounded-2xl border bg-muted/30 p-4">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Counts</div>
-							<div class="mt-2 grid gap-2 text-sm md:grid-cols-3">
-								<div>Running: {selectedWorkspace.counts.running}</div>
-								<div>Stopped: {selectedWorkspace.counts.stopped}</div>
-								<div>Archive: {selectedWorkspace.counts.archive}</div>
-							</div>
-						</div>
-						<div class="rounded-2xl border bg-muted/30 p-4">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Activity</div>
-							<div class="mt-2 text-sm">{selectedWorkspace.lastSessionActivityAt ?? 'No started sessions yet'}</div>
-						</div>
-					{:else}
-						<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">No workspace selected.</div>
-					{/if}
-			</ScrollView>
-		</PanelShell>
-	</div>
-</div>
+		</WorkbenchScaffold>
+	</SplitView.Content>
+</SplitView.Root>
 
 <Dialog.Root bind:open={copyDialogOpen}>
 	<Dialog.Content class="sm:max-w-lg">
@@ -364,45 +336,5 @@
 				</Button>
 			</Dialog.Footer>
 		</form>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root bind:open={detailsDialogOpen}>
-	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Avatar details</Dialog.Title>
-			<Dialog.Description>
-				Objective catalog facts for the currently selected avatar.
-			</Dialog.Description>
-		</Dialog.Header>
-
-		{#if selectedAvatarEntry}
-			<div class="grid gap-3 text-sm">
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Nickname</div>
-					<div class="mt-2 font-semibold">{selectedAvatarEntry.nickname}</div>
-				</div>
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Scope</div>
-					<div class="mt-2">{selectedAvatarEntry.sourceScope}</div>
-				</div>
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Effective path</div>
-					<div class="mt-2 break-all font-medium">{selectedAvatarEntry.effectivePath}</div>
-				</div>
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Workspace path</div>
-					<div class="mt-2 break-all">{selectedAvatarEntry.workspacePath}</div>
-				</div>
-				<div class="rounded-2xl border bg-muted/30 p-4">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Global path</div>
-					<div class="mt-2 break-all">{selectedAvatarEntry.globalPath}</div>
-				</div>
-			</div>
-		{/if}
-
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (detailsDialogOpen = false)}>Close</Button>
-		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

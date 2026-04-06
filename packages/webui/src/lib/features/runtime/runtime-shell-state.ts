@@ -8,12 +8,14 @@ export interface RunningAvatarRailItem {
   label: string;
   workspacePath: string;
   workspaceName: string;
-  status: SessionEntry["status"];
+  detail: string;
+  status: SessionEntry["status"] | null;
   unreadCount: number;
   iconUrl: string | null;
   href: string;
   active: boolean;
   pinned: boolean;
+  pinEnabled: boolean;
 }
 
 export interface RuntimeTabItem {
@@ -141,11 +143,13 @@ export const buildRunningAvatarRailItems = (
       label: session.avatar || session.name,
       workspacePath: session.workspacePath,
       workspaceName: basenameWorkspace(session.workspacePath),
+      detail: `${basenameWorkspace(session.workspacePath)} · ${resolveRuntimeStatusLabel(session.status)}`,
       status: session.status,
       unreadCount: state.unreadBySession[session.id] ?? 0,
       iconUrl: input.resolveSessionIconUrl(session.id),
       href: `/avatars/runtime/${encodeURIComponent(session.id)}/attention`,
       active: input.activeSessionId === session.id,
       pinned: pinnedSessionIds.has(session.id),
+      pinEnabled: true,
     }));
 };
