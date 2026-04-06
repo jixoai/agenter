@@ -324,6 +324,16 @@
 		}
 	};
 
+	const handleUpdateSeatRole = async (input: {
+		participantId: string;
+		role: 'admin' | 'member' | 'readonly';
+	}): Promise<void> => {
+		if (!selectedRoom) {
+			return;
+		}
+		await onGrantSeat(input);
+	};
+
 	const handleSeatFocusClick = (state: MessageSystemSurfaceProps['roomSeatStates'][number]): void => {
 		if (!state.accessToken) {
 			return;
@@ -484,6 +494,7 @@
 	onNavigateToUsers={() => {
 		manageSection = 'users';
 	}}
+	onUpdateSeatRole={handleUpdateSeatRole}
 	onSeatFocusClick={handleSeatFocusClick}
 	onSeatRevokeClick={handleSeatRevokeClick}
 	onGrantParticipantIdChange={setGrantParticipantId}

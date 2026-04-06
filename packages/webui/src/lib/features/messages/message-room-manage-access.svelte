@@ -1,103 +1,187 @@
 <script lang="ts">
-	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Item from '$lib/components/ui/item/index.js';
 
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
-
-	import type { MessageSystemGrantRole } from './message-system-surface.types';
+	import type {
+		MessageSystemGrantRole,
+		MessageSystemGrantSeatInput,
+		MessageSystemRoomSeatState,
+	} from './message-system-surface.types';
 
 	interface Props {
-		selectableActors: ActorDirectoryEntry[];
-		grantParticipantId: string;
-		grantRole: MessageSystemGrantRole;
-		grantBusy: boolean;
-		grantError: string | null;
-		onGrantParticipantIdChange: (value: string) => void;
-		onGrantRoleChange: (value: MessageSystemGrantRole) => void;
+		roomSeatStates: MessageSystemRoomSeatState[];
+		onNavigateToUsers: () => void;
+		onUpdateSeatRole: (input: MessageSystemGrantSeatInput) => Promise<void>;
 	}
 
 	let {
-		selectableActors,
-		grantParticipantId,
-		grantRole,
-		grantBusy,
-		grantError,
-		onGrantParticipantIdChange,
-		onGrantRoleChange,
+		roomSeatStates,
+		onNavigateToUsers,
+		onUpdateSeatRole,
 	}: Props = $props();
 
-	const uid = $props.id();
+	let roleDrafts = $state<Record<string, MessageSystemGrantRole>>({});
+	let busyByActorId = $state<Record<string, boolean>>({});
+	let errorByActorId = $state<Record<string, string | null>>({});
+
+	const roleItems = [
+		{
+			value: 'admin',
+			label: 'Admin',
+		},
+		{
+			value: 'member',
+			label: 'Member',
+		},
+		{
+			value: 'readonly',
+			label: 'Readonly',
+		},
+	] as const satisfies { value: MessageSystemGrantRole; label: string }[];
+
+	const roleFor = (state: MessageSystemRoomSeatState): MessageSystemGrantRole =>
+		roleDrafts[state.actorId] ?? state.role;
+
+	const roleDirty = (state: MessageSystemRoomSeatState): boolean => roleFor(state) !== state.role;
+
+	const roleBusy = (state: MessageSystemRoomSeatState): boolean => busyByActorId[state.actorId] ?? false;
+
+	const roleError = (state: MessageSystemRoomSeatState): string | null => errorByActorId[state.actorId] ?? null;
+
+	const updateRoleDraft = (state: MessageSystemRoomSeatState, role: MessageSystemGrantRole): void => {
+		roleDrafts = {
+			...roleDrafts,
+			[state.actorId]: role,
+		};
+		errorByActorId = {
+			...errorByActorId,
+			[state.actorId]: null,
+		};
+	};
+
+	const applySeatRole = async (state: MessageSystemRoomSeatState): Promise<void> => {
+		if (roleBusy(state) || !roleDirty(state)) {
+			return;
+		}
+		busyByActorId = {
+			...busyByActorId,
+			[state.actorId]: true,
+		};
+		errorByActorId = {
+			...errorByActorId,
+			[state.actorId]: null,
+		};
+		try {
+			await onUpdateSeatRole({
+				participantId: state.actorId,
+				role: roleFor(state),
+			});
+			const { [state.actorId]: _draft, ...nextDrafts } = roleDrafts;
+			roleDrafts = nextDrafts;
+			const { [state.actorId]: _error, ...nextErrors } = errorByActorId;
+			errorByActorId = nextErrors;
+		} catch (error) {
+			errorByActorId = {
+				...errorByActorId,
+				[state.actorId]: error instanceof Error ? error.message : String(error),
+			};
+		} finally {
+			busyByActorId = {
+				...busyByActorId,
+				[state.actorId]: false,
+			};
+		}
+	};
 </script>
 
-<div class="grid auto-rows-max gap-4" data-testid="room-manage-access-section">
-	<Card.Root>
-		<Card.Header class="border-b">
-			<Card.Title>Grant room access</Card.Title>
-			<Card.Description>Choose one actor from the auth or avatar directory, then assign the minimum role required for this room.</Card.Description>
-		</Card.Header>
-		<Card.Content class="grid gap-4 pt-6">
-			<div class="grid gap-2">
-				<Label for={`${uid}-actor`}>Grant actor</Label>
-				<NativeSelect.Root
-					id={`${uid}-actor`}
-					aria-label="Grant actor"
-					wrapperClass="w-full"
-					value={grantParticipantId}
-					onchange={(event) => {
-						onGrantParticipantIdChange((event.currentTarget as HTMLSelectElement).value);
-					}}
+<div class="grid auto-rows-max gap-4" data-testid="room-manage-permissions-section">
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="grid gap-1">
+			<h3 class="text-sm font-semibold">Permissions</h3>
+			<p class="text-xs text-muted-foreground">
+				Change each user's role inline. Add or revoke users from the Users section.
+			</p>
+		</div>
+		<Button variant="outline" size="sm" onclick={onNavigateToUsers}>Open users</Button>
+	</div>
+
+	{#if roomSeatStates.length === 0}
+		<Item.Root size="sm" variant="muted" class="grid gap-2 py-8 text-sm text-muted-foreground">
+			<div>No room users are available yet.</div>
+			<div>Open Users to grant the first seat.</div>
+		</Item.Root>
+	{:else}
+		<div class="grid auto-rows-max gap-2.5">
+			{#each roomSeatStates as state (state.actorId)}
+				<Item.Root
+					size="sm"
+					class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+					data-testid={`room-permission-${state.actorId}`}
 				>
-					<option value="">Select actor</option>
-					{#each selectableActors as actor (actor.actorId)}
-						<option value={actor.actorId}>{actor.label} · {actor.subtitle ?? actor.actorId}</option>
-					{/each}
-				</NativeSelect.Root>
-			</div>
+					<div class="flex min-w-0 items-start gap-3">
+						<ProfileAvatar label={state.label} src={state.iconUrl} class="mt-0.5 size-10 rounded-xl" />
+						<div class="grid min-w-0 gap-1">
+							<div class="flex flex-wrap items-center gap-2">
+								<div class="truncate text-sm font-semibold">{state.label}</div>
+								{#if state.currentAdmin}
+									<Badge
+										variant="outline"
+										class="rounded-full text-[10px] font-semibold tracking-[0.16em] uppercase"
+									>
+										Current admin
+									</Badge>
+								{/if}
+								{#if state.invalidCredential}
+									<Badge class="rounded-full text-[10px]" variant="destructive">Credential invalid</Badge>
+								{/if}
+							</div>
+							<div class="truncate text-xs text-muted-foreground">{state.subtitle?.trim() || state.actorId}</div>
+						</div>
+					</div>
 
-			<div class="grid gap-2">
-				<Label for={`${uid}-role`}>Grant role</Label>
-				<NativeSelect.Root
-					id={`${uid}-role`}
-					aria-label="Grant role"
-					wrapperClass="w-full"
-					value={grantRole}
-					onchange={(event) => {
-						onGrantRoleChange((event.currentTarget as HTMLSelectElement).value as MessageSystemGrantRole);
-					}}
-				>
-					<option value="member">member</option>
-					<option value="readonly">readonly</option>
-					<option value="admin">admin</option>
-				</NativeSelect.Root>
-			</div>
+					<div class="grid gap-2 lg:justify-items-end">
+						<div class="flex flex-wrap gap-1.5">
+							{#each roleItems as role (role.value)}
+								<Button
+									size="sm"
+									variant={roleFor(state) === role.value ? 'secondary' : 'ghost'}
+									class="rounded-full px-3"
+									aria-pressed={roleFor(state) === role.value}
+									disabled={roleBusy(state)}
+									onclick={() => {
+										updateRoleDraft(state, role.value);
+									}}
+								>
+									{role.label}
+								</Button>
+							{/each}
+						</div>
 
-			{#if grantError}
-				<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-					{grantError}
-				</div>
-			{/if}
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header class="border-b">
-			<Card.Title>Role guidance</Card.Title>
-			<Card.Description>Keep the room orthogonal by choosing the role that matches the least amount of authority needed.</Card.Description>
-		</Card.Header>
-		<Card.Content class="grid gap-3 pt-6 text-sm text-muted-foreground">
-			<div class="rounded-xl border px-4 py-3">
-				<div class="font-medium text-foreground">readonly</div>
-				<div class="mt-1">Can read the transcript and participate in read-state progress without changing room ownership.</div>
-			</div>
-			<div class="rounded-xl border px-4 py-3">
-				<div class="font-medium text-foreground">member</div>
-				<div class="mt-1">Can actively work inside the room and use the room token for message operations.</div>
-			</div>
-			<div class="rounded-xl border px-4 py-3">
-				<div class="font-medium text-foreground">admin</div>
-				<div class="mt-1">Can operate the room as a manager and should be used sparingly.</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
+						<div class="flex flex-wrap items-center gap-2">
+							{#if roleError(state)}
+								<div class="text-xs text-destructive">{roleError(state)}</div>
+							{/if}
+							{#if roleDirty(state)}
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={roleBusy(state)}
+									data-testid={`room-permission-apply-${state.actorId}`}
+									onclick={() => {
+										void applySeatRole(state);
+									}}
+								>
+									{roleBusy(state) ? 'Saving…' : 'Apply'}
+								</Button>
+							{:else}
+								<div class="text-xs text-muted-foreground">Current role</div>
+							{/if}
+						</div>
+					</div>
+				</Item.Root>
+			{/each}
+		</div>
+	{/if}
 </div>

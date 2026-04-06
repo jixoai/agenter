@@ -1,10 +1,15 @@
-import type { CachedResourceState, GlobalRoomEntry, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
+import type {
+  CachedResourceState,
+  GlobalRoomAssetEntry,
+  GlobalRoomEntry,
+  GlobalRoomSnapshotOutput,
+} from "@agenter/client-sdk";
 import type { WebChatComposerSubmitPayload, WebChatNotice } from "@agenter/web-chat-view";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 
 export type MessageSystemGrantRole = "admin" | "member" | "readonly";
-export type MessageSystemManageSection = "overview" | "users" | "access";
+export type MessageSystemManageSection = "overview" | "users" | "permissions";
 
 export interface MessageSystemSendAsOption {
   accessToken: string;
@@ -19,10 +24,18 @@ export interface MessageSystemRoomSeatState extends ActorDirectoryEntry {
   online: boolean;
   focused: boolean;
   invalidCredential: boolean;
+  readMessageId?: string;
+  readMessageRowId?: number;
   readAt?: number;
   hasReadLatestVisible: boolean;
   accessToken?: string;
   grantId?: string;
+}
+
+export interface MessageSystemRoomAssetItem extends GlobalRoomAssetEntry {
+  uploaderLabel: string;
+  uploaderSubtitle?: string;
+  uploaderIconUrl?: string | null;
 }
 
 export interface MessageSystemCreateRoomInput {
@@ -47,28 +60,26 @@ export interface MessageSystemSeatRevokeInput {
 }
 
 export interface MessageSystemSurfaceProps {
-  roomsState: CachedResourceState<GlobalRoomEntry[]>;
-  selectedRoomId: string;
   selectedRoom: GlobalRoomEntry | null;
+  selectedRoomIconUrl?: string | null;
+  resolveProfileIconUrl?: (reference: string) => string | null;
+  resolveSessionIconUrl?: (sessionId: string) => string | null;
   disableManageDialogPortal?: boolean;
   initialManageDialogSection?: MessageSystemManageSection | null;
   initialMessages: GlobalRoomSnapshotOutput["items"];
   initialSnapshotResolved: boolean;
+  roomAssetsState: CachedResourceState<MessageSystemRoomAssetItem[]>;
   routeNotice: WebChatNotice | null;
   readSeatCount: number;
   readSeatTotal: number;
-  sendAsOptions: MessageSystemSendAsOption[];
   selectedCallerToken: string | null;
   selectedViewerActorId: string | null;
   selectableActors: ActorDirectoryEntry[];
   roomSeatStates: MessageSystemRoomSeatState[];
-  onSelectRoom: (chatId: string) => void;
-  onChangeCallerToken: (accessToken: string) => void;
   onChangeViewerActorId: (actorId: string) => void;
   onSaveRoomTitle: (title: string) => Promise<void>;
   onArchiveRoom: () => Promise<void>;
   onDeleteRoom: () => Promise<void>;
-  onCreateRoom: (input: MessageSystemCreateRoomInput) => Promise<void>;
   onGrantSeat: (input: MessageSystemGrantSeatInput) => Promise<void>;
   onToggleSeatFocus: (input: MessageSystemSeatFocusInput) => Promise<void>;
   onRevokeSeat: (input: MessageSystemSeatRevokeInput) => Promise<void>;

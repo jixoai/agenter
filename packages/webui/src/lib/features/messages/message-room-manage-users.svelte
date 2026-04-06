@@ -1,117 +1,300 @@
 <script lang="ts">
-	import type { MessageSystemRoomSeatState } from './message-system-surface.types';
+	import CircleEllipsisIcon from '@lucide/svelte/icons/circle-ellipsis';
+
+	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import StatusRing from '$lib/components/status-ring.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Item from '$lib/components/ui/item/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+
+	import type {
+		MessageSystemGrantRole,
+		MessageSystemRoomSeatState,
+	} from './message-system-surface.types';
 
 	interface Props {
 		roomSeatStates: MessageSystemRoomSeatState[];
-		readSeatCount: number;
-		readSeatTotal: number;
+		selectableActors: ActorDirectoryEntry[];
+		grantParticipantId: string;
+		grantRole: MessageSystemGrantRole;
+		grantBusy: boolean;
+		grantError: string | null;
 		formatTimestamp: (value?: number) => string;
 		onSeatFocusClick: (state: MessageSystemRoomSeatState) => void;
 		onSeatRevokeClick: (state: MessageSystemRoomSeatState) => void;
+		onGrantParticipantIdChange: (value: string) => void;
+		onGrantRoleChange: (value: MessageSystemGrantRole) => void;
+		onGrantSeat: () => void;
 	}
 
 	let {
 		roomSeatStates,
-		readSeatCount,
-		readSeatTotal,
+		selectableActors,
+		grantParticipantId,
+		grantRole,
+		grantBusy,
+		grantError,
 		formatTimestamp,
 		onSeatFocusClick,
 		onSeatRevokeClick,
+		onGrantParticipantIdChange,
+		onGrantRoleChange,
+		onGrantSeat,
 	}: Props = $props();
 
-	const focusedSeatCount = $derived(roomSeatStates.filter((seat) => seat.focused).length);
-	const onlineSeatCount = $derived(roomSeatStates.filter((seat) => seat.online).length);
-	const invalidSeatCount = $derived(roomSeatStates.filter((seat) => seat.invalidCredential).length);
+	const uid = $props.id();
+	const roleItems = [
+		{ value: 'member', label: 'member' },
+		{ value: 'readonly', label: 'readonly' },
+		{ value: 'admin', label: 'admin' },
+	] as const satisfies { value: MessageSystemGrantRole; label: string }[];
+	const isGrantRole = (value: string): value is MessageSystemGrantRole =>
+		roleItems.some((item) => item.value === value);
+	type SeatAction = {
+		id: string;
+		label: string;
+		tone?: 'default' | 'destructive';
+		onSelect: () => void;
+	};
+	let activeTab = $state<'list' | 'add'>('list');
+	let previousGrantBusy = false;
+
+	$effect(() => {
+		if (previousGrantBusy && !grantBusy && !grantError) {
+			activeTab = 'list';
+		}
+		previousGrantBusy = grantBusy;
+	});
+
+	const actorItems = $derived.by(() => [
+		{ value: '', label: 'Select actor' },
+		...selectableActors.map((actor) => ({
+			value: actor.actorId,
+			label: `${actor.label} · ${actor.subtitle ?? actor.actorId}`,
+		})),
+	]);
+	const selectedActorLabel = $derived(
+		actorItems.find((item) => item.value === grantParticipantId)?.label ?? 'Select actor',
+	);
+	const selectedRoleLabel = $derived(
+		roleItems.find((item) => item.value === grantRole)?.label ?? 'member',
+	);
+
+	const describeSeatIdentity = (state: MessageSystemRoomSeatState): string =>
+		state.subtitle?.trim() || state.actorId;
+
+	const describeSeatActionTarget = (state: MessageSystemRoomSeatState): string =>
+		state.subtitle ? `${state.label} (${state.subtitle})` : state.label;
+
+	const resolveSeatActions = (state: MessageSystemRoomSeatState): SeatAction[] => {
+		const actions: SeatAction[] = [];
+
+		if (state.accessToken) {
+			actions.push({
+				id: `${state.actorId}:focus`,
+				label: state.focused ? 'Unfocus seat' : 'Focus seat',
+				onSelect: () => onSeatFocusClick(state),
+			});
+		}
+
+		if (state.grantId) {
+			actions.push({
+				id: `${state.actorId}:revoke`,
+				label: 'Revoke user',
+				tone: 'destructive',
+				onSelect: () => onSeatRevokeClick(state),
+			});
+		}
+
+		return actions;
+	};
 </script>
 
 <div class="grid auto-rows-max gap-4" data-testid="room-manage-users-section">
-	<Card.Root>
-		<Card.Header class="border-b">
-			<Card.Title>Room readers and operators</Card.Title>
-			<Card.Description>Use this view to inspect read progress, focus posture, and current runtime availability for every visible seat.</Card.Description>
-		</Card.Header>
-		<Card.Content class="grid gap-4 pt-6">
-			<div class="grid gap-3 md:grid-cols-[auto_repeat(3,minmax(0,1fr))]">
-				<div class="flex items-center">
-					<StatusRing
-						value={readSeatCount}
-						total={Math.max(readSeatTotal, 1)}
-						label={`${readSeatCount}/${readSeatTotal} seats read`}
-						class="text-primary"
-					/>
-				</div>
-				<div class="rounded-xl border bg-muted/20 px-4 py-3">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Focused seats</div>
-					<div class="mt-2 text-sm font-semibold">{focusedSeatCount}</div>
-				</div>
-				<div class="rounded-xl border bg-muted/20 px-4 py-3">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Online seats</div>
-					<div class="mt-2 text-sm font-semibold">{onlineSeatCount}</div>
-				</div>
-				<div class="rounded-xl border bg-muted/20 px-4 py-3">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Credential warnings</div>
-					<div class="mt-2 text-sm font-semibold">{invalidSeatCount}</div>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
+	<div class="grid gap-1">
+		<h3 class="text-sm font-semibold">Room users</h3>
+		<p class="text-xs text-muted-foreground">List the current seat grants or add another actor to this room.</p>
+	</div>
 
-	{#if roomSeatStates.length === 0}
-		<Card.Root>
-			<Card.Content class="py-8 text-sm text-muted-foreground">No room seats are visible yet.</Card.Content>
-		</Card.Root>
-	{:else}
-		<div class="grid gap-3 lg:grid-cols-2">
-			{#each roomSeatStates as state (state.actorId)}
-				<Card.Root data-testid={`room-seat-${state.actorId}`}>
-					<Card.Header class="border-b">
-						<Card.Action>
-							<Badge variant="outline" data-testid={`room-seat-role-${state.actorId}`}>{state.role}</Badge>
-						</Card.Action>
-						<div class="flex items-start gap-3">
-							<ProfileAvatar label={state.label} src={state.iconUrl} class="size-10" />
-							<div class="grid gap-1">
-								<Card.Title>{state.label}</Card.Title>
-								<Card.Description>{state.subtitle ?? state.actorId}</Card.Description>
+	<Tabs.Root bind:value={activeTab} class="gap-4">
+		<Tabs.List class="grid w-full max-w-sm grid-cols-2">
+			<Tabs.Trigger value="list">List</Tabs.Trigger>
+			<Tabs.Trigger value="add">Add</Tabs.Trigger>
+		</Tabs.List>
+
+		<Tabs.Content value="list" class="grid gap-3">
+			<div class="flex justify-end">
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={() => {
+						activeTab = 'add';
+					}}
+				>
+					Add user
+				</Button>
+			</div>
+
+			{#if roomSeatStates.length === 0}
+				<Item.Root variant="muted" class="grid gap-2 py-8 text-sm text-muted-foreground">
+					<div>No room users are visible yet.</div>
+					<div>Use the add tab to grant the first seat.</div>
+				</Item.Root>
+			{:else}
+				<div class="grid auto-rows-max gap-2.5">
+					{#each roomSeatStates as state (state.actorId)}
+						{@const seatActions = resolveSeatActions(state)}
+						<Item.Root data-testid={`room-seat-${state.actorId}`}>
+							<ProfileAvatar label={state.label} src={state.iconUrl} class="mt-0.5 size-10 rounded-xl" />
+							<div class="min-w-0 flex-1">
+								<div class="flex items-start gap-3">
+									<div class="min-w-0 flex-1">
+										<div class="flex flex-wrap items-center gap-2">
+											<div class="truncate text-sm font-semibold">{state.label}</div>
+											<Badge
+												variant="outline"
+												class="rounded-full text-[10px] font-semibold tracking-[0.16em] uppercase"
+												data-testid={`room-seat-role-${state.actorId}`}
+											>
+												{state.role}
+											</Badge>
+										</div>
+										<div class="mt-1 truncate text-xs text-muted-foreground">
+											{describeSeatIdentity(state)}
+										</div>
+									</div>
+									{#if seatActions.length > 0}
+										<DropdownMenu.Root>
+											<DropdownMenu.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														type="button"
+														size="icon-sm"
+														variant="ghost"
+														class="rounded-full text-muted-foreground hover:text-foreground data-[state=open]:bg-accent"
+														aria-label={`Seat actions for ${describeSeatActionTarget(state)}`}
+														title={`Seat actions for ${describeSeatActionTarget(state)}`}
+													>
+														<CircleEllipsisIcon class="size-4" />
+													</Button>
+												{/snippet}
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content align="end" sideOffset={6}>
+												{#each seatActions as action (action.id)}
+													<DropdownMenu.Item
+														variant={action.tone === 'destructive' ? 'destructive' : 'default'}
+														onclick={() => action.onSelect()}
+													>
+														{action.label}
+													</DropdownMenu.Item>
+												{/each}
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
+									{/if}
+								</div>
+								<div class="mt-3 flex flex-wrap gap-1.5">
+									<Badge
+										class="rounded-full text-[11px]"
+										variant={state.hasReadLatestVisible ? 'secondary' : 'outline'}
+									>
+										{state.hasReadLatestVisible ? `Read @ ${formatTimestamp(state.readAt)}` : 'Unread'}
+									</Badge>
+									<Badge
+										class="rounded-full text-[11px]"
+										variant={state.focused ? 'default' : 'outline'}
+									>
+										{state.focused ? 'Focused' : 'Unfocused'}
+									</Badge>
+									<Badge
+										class="rounded-full text-[11px]"
+										variant={state.online ? 'secondary' : 'outline'}
+									>
+										{state.online ? 'Online' : 'Offline'}
+									</Badge>
+									{#if state.invalidCredential}
+										<Badge class="rounded-full text-[11px]" variant="destructive">
+											Credential invalid
+										</Badge>
+									{/if}
+								</div>
 							</div>
+						</Item.Root>
+					{/each}
+				</div>
+			{/if}
+		</Tabs.Content>
+
+		<Tabs.Content value="add" class="grid gap-3">
+			<div class="grid gap-1">
+				<div class="text-sm font-semibold">Add user</div>
+				<p class="text-xs text-muted-foreground">
+					Grant one actor a room seat and the smallest role they need.
+				</p>
+			</div>
+
+			<Card.Root>
+				<Card.Content class="grid gap-4 pt-6">
+					<div class="grid gap-2">
+						<Label for={`${uid}-actor`}>Grant actor</Label>
+						<Select.Root
+							type="single"
+							items={actorItems}
+							value={grantParticipantId}
+							onValueChange={(value) => {
+								onGrantParticipantIdChange(value);
+							}}
+						>
+							<Select.Trigger id={`${uid}-actor`} aria-label="Grant actor" class="w-full">
+								{selectedActorLabel}
+							</Select.Trigger>
+							<Select.Content>
+								{#each actorItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					<div class="grid gap-2">
+						<Label for={`${uid}-role`}>Grant role</Label>
+						<Select.Root
+							type="single"
+							items={roleItems}
+							value={grantRole}
+							onValueChange={(value) => {
+								if (isGrantRole(value)) {
+									onGrantRoleChange(value);
+								}
+							}}
+						>
+							<Select.Trigger id={`${uid}-role`} aria-label="Grant role" class="w-full">
+								{selectedRoleLabel}
+							</Select.Trigger>
+							<Select.Content>
+								{#each roleItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					{#if grantError}
+						<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+							{grantError}
 						</div>
-					</Card.Header>
-					<Card.Content class="grid gap-3 pt-6">
-						<div class="flex flex-wrap gap-2">
-							<Badge variant={state.hasReadLatestVisible ? 'secondary' : 'outline'}>
-								{state.hasReadLatestVisible ? `Read @ ${formatTimestamp(state.readAt)}` : 'Unread'}
-							</Badge>
-							<Badge variant={state.focused ? 'default' : 'outline'}>
-								{state.focused ? 'Focused' : 'Unfocused'}
-							</Badge>
-							<Badge variant={state.online ? 'secondary' : 'outline'}>
-								{state.online ? 'Online' : 'Offline'}
-							</Badge>
-							{#if state.invalidCredential}
-								<Badge variant="destructive">Credential invalid</Badge>
-							{/if}
-						</div>
-					</Card.Content>
-					<Card.Footer class="flex flex-wrap justify-end gap-2 border-t pt-6">
-						{#if state.accessToken}
-							<Button size="sm" variant="outline" onclick={() => onSeatFocusClick(state)}>
-								{state.focused ? 'Unfocus seat' : 'Focus seat'}
-							</Button>
-						{/if}
-						{#if state.grantId}
-							<Button size="sm" variant="outline" onclick={() => onSeatRevokeClick(state)}>
-								Revoke
-							</Button>
-						{/if}
-					</Card.Footer>
-				</Card.Root>
-			{/each}
-		</div>
-	{/if}
+					{/if}
+				</Card.Content>
+				<Card.Footer class="justify-end border-t pt-6">
+					<Button disabled={!grantParticipantId || grantBusy} onclick={onGrantSeat}>Grant seat</Button>
+				</Card.Footer>
+			</Card.Root>
+		</Tabs.Content>
+	</Tabs.Root>
 </div>

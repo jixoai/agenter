@@ -5,14 +5,17 @@
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
 
-	import type { MessageSystemRoomSeatState, MessageSystemSendAsOption } from './message-system-surface.types';
+	import type {
+		MessageSystemRoomSeatState,
+		MessageSystemSendAsOption,
+	} from './message-system-surface.types';
 
 	let {
 		disableManageDialogPortal = false,
 		initialManageDialogSection = null,
 	}: {
 		disableManageDialogPortal?: boolean;
-		initialManageDialogSection?: 'overview' | 'users' | 'access' | null;
+		initialManageDialogSection?: 'overview' | 'users' | 'permissions' | null;
 	} = $props();
 
 	const createRoomEntry = (input: {
@@ -96,47 +99,31 @@
 	const initialSeats = {
 		[initialRoomId]: [
 			{
-				actorId: 'system:trusted-bootstrap',
-				actorKind: 'system',
-				label: 'Bootstrap admin',
-				subtitle: 'System seat',
+				actorId: 'auth:analyst',
+				actorKind: 'auth',
+				label: 'Analyst',
+				subtitle: 'auth:analyst',
 				iconUrl: null,
 				role: 'admin',
 				currentAdmin: true,
 				online: true,
 				focused: true,
 				invalidCredential: false,
+				readMessageId: 'msg-1',
+				readMessageRowId: 1,
 				readAt: 1_710_000_000_500,
 				hasReadLatestVisible: true,
-				accessToken: `token:${initialRoomId}:admin`,
-			},
-			{
-				actorId: 'auth:analyst',
-				actorKind: 'auth',
-				label: 'Analyst',
-				subtitle: 'auth:analyst',
-				iconUrl: null,
-				role: 'member',
-				currentAdmin: false,
-				online: true,
-				focused: false,
-				invalidCredential: false,
-				hasReadLatestVisible: false,
 				accessToken: `token:${initialRoomId}:analyst`,
 				grantId: `${initialRoomId}:grant:analyst`,
 			},
 		],
 	} satisfies Record<string, MessageSystemRoomSeatState[]>;
 
-	let roomCounter = $state(1);
 	let messageCounter = $state(2);
 	let selectedRoomId = $state(initialRoomId);
 	let routeNotice: WebChatNotice | null = $state(null);
-	let selectedCallerTokenByRoomId: Record<string, string> = $state({
-		[initialRoomId]: `token:${initialRoomId}:admin`,
-	});
 	let selectedViewerActorIdByRoomId: Record<string, string> = $state({
-		[initialRoomId]: 'system:trusted-bootstrap',
+		[initialRoomId]: 'auth:analyst',
 	});
 	let roomMessagesById: Record<string, GlobalRoomSnapshotOutput['items']> = $state(initialMessages);
 	let roomSeatsById: Record<string, MessageSystemRoomSeatState[]> = $state(initialSeats);
@@ -151,7 +138,7 @@
 				],
 				updatedAt: 1_710_000_000_000,
 				readSeatCount: 1,
-				totalSeatCount: 2,
+				totalSeatCount: 1,
 			}),
 		],
 		loaded: true,
@@ -171,14 +158,7 @@
 		if (!room) {
 			return [] as MessageSystemSendAsOption[];
 		}
-		const options: MessageSystemSendAsOption[] = [
-			{
-				accessToken: room.accessToken,
-				participantId: room.participantId,
-				role: room.accessRole,
-				label: 'Bootstrap admin',
-			},
-		];
+		const options: MessageSystemSendAsOption[] = [];
 		for (const seat of roomSeatStates) {
 			if (!seat.accessToken || seat.actorId === room.participantId) {
 				continue;
@@ -192,12 +172,24 @@
 		}
 		return options;
 	});
-	const selectedCallerToken = $derived(
-		selectedCallerTokenByRoomId[selectedRoomId] ?? sendAsOptions[0]?.accessToken ?? null,
-	);
-	const selectedViewerActorId = $derived(
-		selectedViewerActorIdByRoomId[selectedRoomId] ?? roomSeatStates[0]?.actorId ?? null,
-	);
+	const selectedViewerActorId = $derived.by(() => {
+		const selected = selectedViewerActorIdByRoomId[selectedRoomId];
+		if (selected && roomSeatStates.some((seat) => seat.actorId === selected)) {
+			return selected;
+		}
+		return roomSeatStates[0]?.actorId ?? null;
+	});
+	const selectedCallerToken = $derived.by(() => {
+		const room = selectedRoom;
+		const viewerActorId = selectedViewerActorId;
+		if (!room || !viewerActorId) {
+			return null;
+		}
+		if (room.participantId === viewerActorId) {
+			return room.accessToken ?? null;
+		}
+		return sendAsOptions.find((option) => option.participantId === viewerActorId)?.accessToken ?? null;
+	});
 
 	const updateRoomEntry = (chatId: string, updater: (room: GlobalRoomEntry) => GlobalRoomEntry): void => {
 		roomsState = {
@@ -236,71 +228,6 @@
 				iconUrl: null,
 			}
 		);
-	};
-
-	const setSelectedRoom = (chatId: string): void => {
-		selectedRoomId = chatId;
-		routeNotice = null;
-	};
-
-	const handleCreateRoom = async (input: { title?: string; participantIds: string[] }): Promise<void> => {
-		roomCounter += 1;
-		const chatId = `room-story-${roomCounter}`;
-		const createdAt = 1_710_000_000_000 + roomCounter * 10_000;
-		const participants = [
-			{ id: 'system:trusted-bootstrap', label: 'Bootstrap admin' },
-			...input.participantIds.map((participantId) => ({
-				id: participantId,
-				label: findActor(participantId).label,
-			})),
-		];
-		roomMessagesById = {
-			...roomMessagesById,
-			[chatId]: [],
-		};
-		roomSeatsById = {
-			...roomSeatsById,
-			[chatId]: [
-				{
-					actorId: 'system:trusted-bootstrap',
-					actorKind: 'system',
-					label: 'Bootstrap admin',
-					subtitle: 'System seat',
-					iconUrl: null,
-					role: 'admin',
-					currentAdmin: true,
-					online: true,
-					focused: true,
-					invalidCredential: false,
-					hasReadLatestVisible: false,
-					accessToken: `token:${chatId}:admin`,
-				},
-			],
-		};
-		roomsState = {
-			...roomsState,
-			data: [
-				createRoomEntry({
-					chatId,
-					title: input.title ?? `Story room ${roomCounter}`,
-					participants,
-					updatedAt: createdAt,
-					readSeatCount: 0,
-					totalSeatCount: 1,
-				}),
-				...roomsState.data,
-			],
-			refreshedAt: createdAt,
-		};
-		selectedCallerTokenByRoomId = {
-			...selectedCallerTokenByRoomId,
-			[chatId]: `token:${chatId}:admin`,
-		};
-		selectedViewerActorIdByRoomId = {
-			...selectedViewerActorIdByRoomId,
-			[chatId]: 'system:trusted-bootstrap',
-		};
-		setSelectedRoom(chatId);
 	};
 
 	const handleSaveRoomTitle = async (title: string): Promise<void> => {
@@ -348,6 +275,8 @@
 					online: false,
 					focused: false,
 					invalidCredential: false,
+					readMessageId: undefined,
+					readMessageRowId: undefined,
 					hasReadLatestVisible: false,
 					accessToken: `token:${room.chatId}:${input.participantId}`,
 					grantId,
@@ -399,12 +328,12 @@
 
 	const handleSendMessage = async (input: { text: string; assets: File[] }): Promise<void> => {
 		const room = selectedRoom;
-		if (!room) {
+		const selectedToken = selectedCallerToken;
+		if (!room || !selectedToken) {
 			return;
 		}
 		messageCounter += 1;
 		const messageId = `msg-${messageCounter}`;
-		const selectedToken = selectedCallerToken;
 		const senderOption = sendAsOptions.find((option) => option.accessToken === selectedToken);
 		const sender = senderOption?.label ?? 'Bootstrap admin';
 		const senderActorId = (senderOption?.participantId ??
@@ -437,8 +366,10 @@
 			...roomSeatsById,
 			[room.chatId]: (roomSeatsById[room.chatId] ?? []).map((seat) => ({
 				...seat,
+				readMessageId: seat.actorId === senderActorId ? messageId : seat.readMessageId,
+				readMessageRowId: seat.actorId === senderActorId ? messageCounter : seat.readMessageRowId,
 				hasReadLatestVisible: seat.actorId === senderActorId,
-				readAt: seat.actorId === senderActorId ? Date.now() : undefined,
+				readAt: seat.actorId === senderActorId ? Date.now() : seat.readAt,
 			})),
 		};
 		syncRoomProgress(room.chatId);
@@ -449,13 +380,19 @@
 		if (!room || !messageId) {
 			return;
 		}
-		const actorId = selectedViewerActorId ?? 'system:trusted-bootstrap';
+		const actorId = selectedViewerActorId;
+		if (!actorId) {
+			return;
+		}
+		const targetMessage = (roomMessagesById[room.chatId] ?? []).find((message) => message.messageId === messageId);
 		roomSeatsById = {
 			...roomSeatsById,
 			[room.chatId]: (roomSeatsById[room.chatId] ?? []).map((seat) =>
 				seat.actorId === actorId
 					? {
 							...seat,
+							readMessageId: messageId,
+							readMessageRowId: targetMessage?.rowId,
 							hasReadLatestVisible: true,
 							readAt: Date.now(),
 						}
@@ -463,13 +400,6 @@
 			),
 		};
 		syncRoomProgress(room.chatId);
-	};
-
-	const handleCallerTokenChange = (accessToken: string): void => {
-		selectedCallerTokenByRoomId = {
-			...selectedCallerTokenByRoomId,
-			[selectedRoomId]: accessToken,
-		};
 	};
 
 	const handleViewerActorIdChange = (actorId: string): void => {
@@ -482,8 +412,6 @@
 
 <div class="h-[52rem] w-full min-w-[72rem] bg-background">
 	<MessageSystemSurface
-		{roomsState}
-		{selectedRoomId}
 		{selectedRoom}
 		{disableManageDialogPortal}
 		{initialManageDialogSection}
@@ -492,18 +420,14 @@
 		{routeNotice}
 		{readSeatCount}
 		{readSeatTotal}
-		{sendAsOptions}
 		{selectedCallerToken}
 		{selectedViewerActorId}
 		selectableActors={actorCatalog}
 		{roomSeatStates}
-		onSelectRoom={setSelectedRoom}
-		onChangeCallerToken={handleCallerTokenChange}
 		onChangeViewerActorId={handleViewerActorIdChange}
 		onSaveRoomTitle={handleSaveRoomTitle}
 		onArchiveRoom={handleArchiveRoom}
 		onDeleteRoom={handleDeleteRoom}
-		onCreateRoom={handleCreateRoom}
 		onGrantSeat={handleGrantSeat}
 		onToggleSeatFocus={handleToggleSeatFocus}
 		onRevokeSeat={handleRevokeSeat}
