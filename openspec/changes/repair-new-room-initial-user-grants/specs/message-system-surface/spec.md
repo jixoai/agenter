@@ -13,3 +13,8 @@ The `New room` route SHALL present initial users as canonical actor-backed item 
 - **WHEN** the operator submits `New room`
 - **THEN** the UI navigates to the newly created room route
 - **AND** the newly created room tab becomes the active workbench tab instead of leaving the operator on the create form
+
+#### Scenario: New room navigates by the returned opaque id
+- **WHEN** the create mutation resolves with a room id such as `room-7f3a0c2e4ab1`
+- **THEN** the route navigates to `/messages/room/room-7f3a0c2e4ab1`
+- **AND** the UI does not reconstruct the path from the title field
