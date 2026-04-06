@@ -15,6 +15,11 @@
     emptyTranscriptTitle = emptyTitle,
     emptyTranscriptMessage = emptyMessage,
     routeNotice = null,
+    channelPresentation = null,
+    resolveActorPresentation,
+    resolveMessageActions,
+    resolveMessageReadProgress,
+    composerCapabilities,
     onSendMessage,
     onLatestVisibleAssistantMessageIdChange,
     onLatestVisibleMessageIdChange,
@@ -35,6 +40,11 @@
   {emptyTranscriptTitle}
   {emptyTranscriptMessage}
   {routeNotice}
+  {channelPresentation}
+  {resolveActorPresentation}
+  {resolveMessageActions}
+  {resolveMessageReadProgress}
+  {composerCapabilities}
   submitMessage={onSendMessage}
   latestVisibleAssistantMessageIdHandler={onLatestVisibleAssistantMessageIdChange}
   latestVisibleMessageIdHandler={onLatestVisibleMessageIdChange}

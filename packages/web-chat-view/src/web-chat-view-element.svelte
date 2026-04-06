@@ -17,6 +17,10 @@
     emptyTranscriptTitle = emptyTitle,
     emptyTranscriptMessage = emptyMessage,
     routeNotice = null,
+    channelPresentation = null,
+    resolveActorPresentation,
+    resolveMessageActions,
+    composerCapabilities,
     submitMessage,
     latestVisibleAssistantMessageIdHandler,
     latestVisibleMessageIdHandler,
@@ -37,6 +41,10 @@
   {emptyTranscriptTitle}
   {emptyTranscriptMessage}
   {routeNotice}
+  {channelPresentation}
+  {resolveActorPresentation}
+  {resolveMessageActions}
+  {composerCapabilities}
   {submitMessage}
   {latestVisibleAssistantMessageIdHandler}
   {latestVisibleMessageIdHandler}

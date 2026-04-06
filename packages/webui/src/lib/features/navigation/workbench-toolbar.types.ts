@@ -1,10 +1,10 @@
 export type WorkbenchToolbarBreakpoint = 'narrow' | 'compact' | 'wide';
+export type WorkbenchToolbarDensity = 'dense' | 'regular' | 'relaxed';
 
 export interface WorkbenchToolbarRenderState {
 	width: number;
 	breakpoint: WorkbenchToolbarBreakpoint;
-	rows: 1 | 2;
-	fixed: boolean;
+	density: WorkbenchToolbarDensity;
 	isNarrow: boolean;
 	isCompact: boolean;
 	isWide: boolean;

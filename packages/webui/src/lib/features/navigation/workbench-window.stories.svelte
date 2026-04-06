@@ -33,6 +33,8 @@
 
 		const toolbarBottom = toolbar?.getBoundingClientRect().bottom ?? 0;
 		const bodyTop = body?.getBoundingClientRect().top ?? 0;
+		const toolbarHeight = toolbar?.getBoundingClientRect().height ?? 0;
+		expect(Math.round(toolbarHeight)).toBe(48);
 		expect(Math.abs(bodyTop - toolbarBottom)).toBeLessThanOrEqual(1);
 	}}
 >

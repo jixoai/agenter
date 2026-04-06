@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { readBearerToken } from "../auth/tokens";
+import { buildRoomIconUrl, buildSessionIconUrl } from "../render/fallback-icons";
 import { rasterizeSvg, type RasterImageFormat } from "../render/resvg-ffi";
-import { buildSessionIconUrl } from "../render/fallback-icons";
 import type { ProfileService } from "../service/profile-service";
 import type { ProfileMetadata } from "../types";
 import { renderWebAuthnUiPage, resolveWebAuthnUiAsset } from "./webauthn-ui";
@@ -369,6 +369,27 @@ export const createProfileServiceApp = ({
   app.get("/media/sessions/:sessionId/icon", async (context) => {
     const sessionId = context.req.param("sessionId");
     const icon = await resolveIconVariant(await service.resolveSessionIcon(sessionId), {
+      format: parseRequestedFormat(context.req.query("format")),
+      size: parseRequestedSize(context.req.query("size")),
+      resvgLibraryPath,
+    });
+    return writeIconResponse(icon);
+  });
+
+  app.post("/rooms/:roomId/icon", async (context) => {
+    const roomId = context.req.param("roomId");
+    const { mimeType, bytes } = await readIconUpload(context.req.raw);
+    await service.putRoomIcon(roomId, mimeType, bytes);
+    return context.json({
+      ok: true,
+      roomId,
+      iconUrl: `${publicBaseUrl}${buildRoomIconUrl(roomId)}`,
+    });
+  });
+
+  app.get("/media/rooms/:roomId/icon", async (context) => {
+    const roomId = context.req.param("roomId");
+    const icon = await resolveIconVariant(await service.resolveRoomIcon(roomId), {
       format: parseRequestedFormat(context.req.query("format")),
       size: parseRequestedSize(context.req.query("size")),
       resvgLibraryPath,

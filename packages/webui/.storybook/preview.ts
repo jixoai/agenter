@@ -2,6 +2,14 @@ import type { Preview } from '@storybook/sveltekit';
 
 import '../src/routes/layout.css';
 
+if (typeof window !== 'undefined') {
+	window.addEventListener('error', (event) => {
+		if (event.message === 'ResizeObserver loop completed with undelivered notifications.') {
+			event.preventDefault();
+		}
+	});
+}
+
 const preview: Preview = {
   parameters: {
     controls: {

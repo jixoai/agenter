@@ -10,6 +10,9 @@
 	const registry = getWorkbenchPageToolbarRegistry();
 
 	$effect(() => {
+		if (!registry) {
+			return;
+		}
 		const content = children ?? null;
 		registry.set(content);
 		return () => {

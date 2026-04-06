@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type {
 		CachedResourceState,
+		GlobalRoomAssetEntry,
 		GlobalRoomEntry,
 		GlobalRoomGrantEntry,
 		GlobalRoomSnapshotOutput,
 	} from '@agenter/client-sdk';
 	import type { WebChatNotice } from '@agenter/web-chat-view';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import {
@@ -16,24 +16,23 @@
 		fallbackActorLabel,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
-
 	import MessageSystemSurface from './message-system-surface.svelte';
+
 	import type {
 		MessageSystemGrantRole,
+		MessageSystemRoomAssetItem,
 		MessageSystemRoomSeatState,
 		MessageSystemSendAsOption,
 	} from './message-system-surface.types';
 
+	let {
+		roomId,
+	}: {
+		roomId: string;
+	} = $props();
+
 	const controller = getAppControllerContext();
 
-	const emptyRoomCatalogState: CachedResourceState<GlobalRoomEntry[]> = {
-		data: [],
-		loaded: false,
-		loading: false,
-		refreshing: false,
-		error: null,
-		refreshedAt: null,
-	};
 	const emptyRoomSnapshotState: CachedResourceState<GlobalRoomSnapshotOutput | null> = {
 		data: null,
 		loaded: false,
@@ -50,6 +49,14 @@
 		error: null,
 		refreshedAt: null,
 	};
+	const emptyRoomAssetState: CachedResourceState<GlobalRoomAssetEntry[]> = {
+		data: [],
+		loaded: false,
+		loading: false,
+		refreshing: false,
+		error: null,
+		refreshedAt: null,
+	};
 
 	type RoomSeatState = {
 		actorId: string;
@@ -59,14 +66,14 @@
 		online: boolean;
 		focused: boolean;
 		invalidCredential: boolean;
+		readMessageId?: string;
+		readMessageRowId?: number;
 		readAt?: number;
 		hasReadLatestVisible: boolean;
 		accessToken?: string;
 		grantId?: string;
 	};
 
-	let selectedRoomId = $state(page.url.searchParams.get('roomId') ?? '');
-	let selectedCallerTokenByRoomId = $state<Record<string, string>>({});
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
 	let latestMarkedReadBySeat = $state<Record<string, string | null>>({});
 	let routeNotice = $state<WebChatNotice | null>(null);
@@ -81,32 +88,52 @@
 	);
 	const actorDirectoryMap = $derived(buildActorDirectoryMap(actorDirectory));
 	const selectableActors = $derived(actorDirectory.filter((actor) => actor.actorKind !== 'system'));
-	const roomsState = $derived(controller.runtimeState.globalRooms ?? emptyRoomCatalogState);
-	const rooms = $derived(roomsState.data);
-	const selectedRoom = $derived(rooms.find((room) => room.chatId === selectedRoomId) ?? null);
+	const rooms = $derived(controller.runtimeState.globalRooms.data);
+	const selectedRoom = $derived(rooms.find((room) => room.chatId === roomId) ?? null);
 	const selectedRoomSnapshotState = $derived(
-		selectedRoomId
-			? (controller.runtimeState.globalRoomSnapshotsById[selectedRoomId] ?? emptyRoomSnapshotState)
-			: emptyRoomSnapshotState,
+		roomId ? (controller.runtimeState.globalRoomSnapshotsById[roomId] ?? emptyRoomSnapshotState) : emptyRoomSnapshotState,
 	);
 	const selectedRoomSnapshot = $derived(selectedRoomSnapshotState.data);
 	const selectedRoomProjection = $derived(selectedRoomSnapshot?.channel ?? selectedRoom ?? null);
+	const selectedRoomIconUrl = $derived(
+		selectedRoomProjection ? controller.runtimeStore.roomIconUrl(selectedRoomProjection.chatId) : null,
+	);
 	const selectedRoomGrantsState = $derived(
-		selectedRoomId
-			? (controller.runtimeState.globalRoomGrantsById[selectedRoomId] ?? emptyRoomGrantState)
-			: emptyRoomGrantState,
+		roomId ? (controller.runtimeState.globalRoomGrantsById[roomId] ?? emptyRoomGrantState) : emptyRoomGrantState,
+	);
+	const selectedRoomAssetsState = $derived(
+		roomId ? (controller.runtimeState.globalRoomAssetsById[roomId] ?? emptyRoomAssetState) : emptyRoomAssetState,
 	);
 	const roomGrants = $derived(selectedRoomGrantsState.data);
+	const currentAuthActorId = $derived.by(() => {
+		const authId = controller.authSession?.claims.authId;
+		return authId ? (`auth:${authId}` as const) : null;
+	});
 
 	const asRoomActorId = (value: string): `auth:${string}` | `session:${string}` | `system:${string}` | null => {
 		return /^((auth|session|system):.+)$/u.test(value)
 			? (value as `auth:${string}` | `session:${string}` | `system:${string}`)
 			: null;
 	};
+	const isSystemActorId = (value: string | null | undefined): value is `system:${string}` =>
+		Boolean(value?.startsWith('system:'));
+	const isUserFacingRoomActorId = (
+		value: string | null | undefined,
+	): value is `auth:${string}` | `session:${string}` => {
+		return Boolean(value) && !isSystemActorId(value);
+	};
 
 	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
 		if (actorId && actorDirectoryMap.has(actorId)) {
-			return actorDirectoryMap.get(actorId)!;
+			const actor = actorDirectoryMap.get(actorId)!;
+			return {
+				...actor,
+				iconUrl:
+					actor.iconUrl ??
+					(actor.actorKind === 'session'
+						? controller.runtimeStore.sessionIconUrl(actor.actorId.slice('session:'.length))
+						: controller.runtimeStore.profileIconUrl(actor.actorId)),
+			};
 		}
 		return {
 			actorId: actorId ?? fallback,
@@ -117,7 +144,12 @@
 					: 'auth',
 			label: fallbackActorLabel(actorId ?? fallback),
 			subtitle: actorId,
-			iconUrl: null,
+			iconUrl:
+				actorId?.startsWith('session:')
+					? controller.runtimeStore.sessionIconUrl(actorId.slice('session:'.length))
+					: actorId
+						? controller.runtimeStore.profileIconUrl(actorId)
+						: null,
 		};
 	};
 
@@ -127,41 +159,45 @@
 			return [] as MessageSystemSendAsOption[];
 		}
 
-		const options = [
-			{
-				accessToken: room.accessToken,
-				participantId: room.participantId,
-				role: room.accessRole,
+		const grantOptions = roomGrants
+			.filter((grant) => Boolean(grant.accessToken) && isUserFacingRoomActorId(grant.participantId))
+			.map((grant) => ({
+				accessToken: grant.accessToken ?? '',
+				participantId: grant.participantId,
+				role: grant.role,
 				label:
-					(room.participantId
-						? actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId)
-						: undefined) ?? 'Admin seat',
-			},
-			...roomGrants
-				.filter((grant) => Boolean(grant.accessToken))
-				.map((grant) => ({
-					accessToken: grant.accessToken ?? '',
-					participantId: grant.participantId,
-					role: grant.role,
-					label:
-						(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
-						grant.label ??
-						fallbackActorLabel(grant.participantId ?? grant.grantId),
-				})),
-		];
-		return options.filter((option) => option.accessToken);
-	});
+					(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
+					grant.label ??
+					fallbackActorLabel(grant.participantId ?? grant.grantId),
+			}));
 
-	const selectedCallerToken = $derived.by(() => {
-		const room = selectedRoomProjection;
-		if (!room) {
+		const roomOption = (() => {
+			if (!room.accessToken) {
+				return null;
+			}
+			if (isUserFacingRoomActorId(room.participantId)) {
+				return {
+					accessToken: room.accessToken,
+					participantId: room.participantId,
+					role: room.accessRole,
+					label: actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId),
+				} satisfies MessageSystemSendAsOption;
+			}
+			if (
+				currentAuthActorId &&
+				!grantOptions.some((option) => option.participantId === currentAuthActorId)
+			) {
+				return {
+					accessToken: room.accessToken,
+					participantId: currentAuthActorId,
+					role: room.accessRole,
+					label: actorDirectoryMap.get(currentAuthActorId)?.label ?? fallbackActorLabel(currentAuthActorId),
+				} satisfies MessageSystemSendAsOption;
+			}
 			return null;
-		}
-		const selected = selectedCallerTokenByRoomId[room.chatId];
-		if (selected && sendAsOptions.some((option) => option.accessToken === selected)) {
-			return selected;
-		}
-		return sendAsOptions[0]?.accessToken ?? room.accessToken;
+		})();
+
+		return (roomOption ? [roomOption, ...grantOptions] : grantOptions).filter((option) => option.accessToken);
 	});
 
 	const roomSeatStates = $derived.by(() => {
@@ -181,7 +217,7 @@
 			});
 		};
 
-		if (room.participantId) {
+		if (isUserFacingRoomActorId(room.participantId)) {
 			mergeSeat({
 				actorId: room.participantId,
 				role: room.accessRole,
@@ -194,9 +230,27 @@
 				accessToken: room.accessToken,
 			});
 		}
+		if (
+			currentAuthActorId &&
+			room.accessToken &&
+			!seats.has(currentAuthActorId) &&
+			!isUserFacingRoomActorId(room.participantId)
+		) {
+			mergeSeat({
+				actorId: currentAuthActorId,
+				role: room.accessRole,
+				label: actorDirectoryMap.get(currentAuthActorId)?.label ?? fallbackActorLabel(currentAuthActorId),
+				currentAdmin: room.currentAdmin ?? room.accessRole === 'admin',
+				online: false,
+				focused: room.focused,
+				invalidCredential: false,
+				hasReadLatestVisible: false,
+				accessToken: room.accessToken,
+			});
+		}
 
 		for (const grant of roomGrants) {
-			if (!grant.participantId) {
+			if (!isUserFacingRoomActorId(grant.participantId)) {
 				continue;
 			}
 			mergeSeat({
@@ -214,6 +268,9 @@
 		}
 
 		for (const state of room.readStates ?? []) {
+			if (isSystemActorId(state.actorId)) {
+				continue;
+			}
 			mergeSeat({
 				actorId: state.actorId,
 				role: state.role,
@@ -222,6 +279,8 @@
 				online: state.online,
 				focused: state.focused,
 				invalidCredential: state.invalidCredential,
+				readMessageId: state.readMessageId,
+				readMessageRowId: state.readMessageRowId,
 				readAt: state.readAt,
 				hasReadLatestVisible: state.hasReadLatestVisible,
 			});
@@ -248,7 +307,19 @@
 		if (selected && roomSeatStates.some((state) => state.actorId === selected)) {
 			return selected;
 		}
-		return room.participantId ?? roomSeatStates[0]?.actorId ?? null;
+		return roomSeatStates[0]?.actorId ?? null;
+	});
+
+	const selectedCallerToken = $derived.by(() => {
+		const room = selectedRoomProjection;
+		const viewerActorId = selectedViewerActorId;
+		if (!room || !viewerActorId) {
+			return null;
+		}
+		if (room.participantId === viewerActorId) {
+			return room.accessToken ?? null;
+		}
+		return sendAsOptions.find((option) => option.participantId === viewerActorId)?.accessToken ?? null;
 	});
 
 	const resolvedRoomSeatStates = $derived.by(() => {
@@ -263,6 +334,23 @@
 			} satisfies MessageSystemRoomSeatState;
 		});
 	});
+	const resolvedRoomAssetsState = $derived.by(() => {
+		const data = selectedRoomAssetsState.data.map((asset) => {
+			const uploader = asset.uploadedByActorId
+				? describeActor(asset.uploadedByActorId, fallbackActorLabel(asset.uploadedByActorId))
+				: null;
+			return {
+				...asset,
+				uploaderLabel: uploader?.label ?? 'Unknown uploader',
+				uploaderSubtitle: uploader?.subtitle ?? (asset.uploadedByActorId ?? 'Historical asset'),
+				uploaderIconUrl: uploader?.iconUrl ?? null,
+			} satisfies MessageSystemRoomAssetItem;
+		});
+		return {
+			...selectedRoomAssetsState,
+			data,
+		} satisfies CachedResourceState<MessageSystemRoomAssetItem[]>;
+	});
 
 	const roomReadSeatCount = $derived(
 		selectedRoomProjection?.readProgress?.readSeatCount ??
@@ -275,7 +363,7 @@
 		if (routeNotice) {
 			return routeNotice;
 		}
-		const error = selectedRoomSnapshotState.error ?? selectedRoomGrantsState.error ?? roomsState.error;
+		const error = selectedRoomSnapshotState.error ?? selectedRoomGrantsState.error ?? controller.runtimeState.globalRooms.error;
 		if (!error) {
 			return null;
 		}
@@ -285,39 +373,25 @@
 		} satisfies WebChatNotice;
 	});
 
-	const syncRoomQuery = async (chatId: string): Promise<void> => {
-		const queryRoomId = page.url.searchParams.get('roomId') ?? '';
-		if (queryRoomId === chatId) {
-			return;
-		}
-		const url = new URL(page.url);
-		if (chatId) {
-			url.searchParams.set('roomId', chatId);
-		} else {
-			url.searchParams.delete('roomId');
-		}
-		await goto(`${url.pathname}${url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : ''}`, {
+	const navigateToRoom = async (chatId: string): Promise<void> => {
+		await goto(`/messages/room/${encodeURIComponent(chatId)}`, {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
 		});
 	};
 
-	const selectRoom = (chatId: string): void => {
-		selectedRoomId = chatId;
-		routeNotice = null;
-		void syncRoomQuery(chatId);
-	};
-
-	const handleChangeCallerToken = (accessToken: string): void => {
-		const room = selectedRoomProjection;
-		if (!room) {
+	const navigateToFallbackRoom = async (removedRoomId?: string): Promise<void> => {
+		const nextRoom = rooms.find((room) => room.chatId !== removedRoomId) ?? null;
+		if (nextRoom) {
+			await navigateToRoom(nextRoom.chatId);
 			return;
 		}
-		selectedCallerTokenByRoomId = {
-			...selectedCallerTokenByRoomId,
-			[room.chatId]: accessToken,
-		};
+		await goto('/messages/new', {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
 	};
 
 	const handleChangeViewerActorId = (actorId: string): void => {
@@ -329,19 +403,6 @@
 			...selectedViewerActorIdByRoomId,
 			[room.chatId]: actorId,
 		};
-	};
-
-	const handleCreateRoom = async (input: { title?: string; participantIds: string[] }): Promise<void> => {
-		const participants = input.participantIds.map((actorId) => ({
-			id: actorId,
-			label: actorDirectoryMap.get(actorId)?.label,
-		}));
-		const created = await controller.runtimeStore.createGlobalRoom({
-			title: input.title,
-			participants,
-		});
-		routeNotice = null;
-		selectRoom(created.chatId);
 	};
 
 	const handleSaveRoomTitle = async (title: string): Promise<void> => {
@@ -368,9 +429,7 @@
 			archivedBy: controller.authSession?.claims.authId ?? 'operator',
 		});
 		routeNotice = null;
-		if (selectedRoomId === room.chatId) {
-			selectRoom('');
-		}
+		await navigateToFallbackRoom(room.chatId);
 	};
 
 	const handleDeleteRoom = async (): Promise<void> => {
@@ -383,9 +442,7 @@
 			accessToken: room.accessToken,
 		});
 		routeNotice = null;
-		if (selectedRoomId === room.chatId) {
-			selectRoom('');
-		}
+		await navigateToFallbackRoom(room.chatId);
 	};
 
 	const handleGrantSeat = async (input: {
@@ -492,13 +549,15 @@
 		if (!room || !accessToken) {
 			throw new Error('message-system seat token is unavailable');
 		}
-		if (payload.assets.length > 0) {
-			throw new Error('message-system attachments are not connected yet');
-		}
+		const uploadedAssets =
+			payload.assets.length > 0
+				? await controller.runtimeStore.uploadRoomAssets(room.chatId, accessToken, payload.assets)
+				: [];
 		const result = await controller.runtimeStore.sendGlobalRoomMessage({
 			chatId: room.chatId,
 			accessToken,
 			text: payload.text,
+			assetIds: uploadedAssets.map((asset) => asset.assetId),
 		});
 		if (!result.ok) {
 			const message = result.reason ?? 'message-system send failed';
@@ -512,34 +571,13 @@
 	};
 
 	$effect(() => {
-		const release = controller.runtimeStore.retainGlobalRooms();
-		void controller.runtimeStore.hydrateGlobalRooms();
-		return () => {
-			release();
-		};
-	});
-
-	$effect(() => {
-		const requestedRoomId = page.url.searchParams.get('roomId') ?? '';
-		if (requestedRoomId && requestedRoomId !== selectedRoomId) {
-			selectedRoomId = requestedRoomId;
-		}
-	});
-
-	$effect(() => {
-		const requestedRoomId = page.url.searchParams.get('roomId') ?? '';
-		if (selectedRoomId && rooms.some((room) => room.chatId === selectedRoomId)) {
+		if (!controller.runtimeState.globalRooms.loaded) {
 			return;
 		}
-		if (requestedRoomId) {
+		if (selectedRoom || controller.runtimeState.globalRooms.loading) {
 			return;
 		}
-		const nextRoomId = rooms[0]?.chatId ?? '';
-		if (!nextRoomId || nextRoomId === selectedRoomId) {
-			return;
-		}
-		selectedRoomId = nextRoomId;
-		void syncRoomQuery(nextRoomId);
+		void navigateToFallbackRoom(roomId);
 	});
 
 	$effect(() => {
@@ -550,6 +588,7 @@
 		}
 		const releaseSnapshot = controller.runtimeStore.retainGlobalRoomSnapshot(chatId);
 		const releaseGrants = controller.runtimeStore.retainGlobalRoomGrants(chatId);
+		const releaseAssets = controller.runtimeStore.retainGlobalRoomAssets(chatId);
 		void controller.runtimeStore.hydrateGlobalRoomSnapshot({
 			chatId,
 			accessToken: room.accessToken,
@@ -559,24 +598,14 @@
 			chatId,
 			accessToken: room.accessToken,
 		});
+		void controller.runtimeStore.hydrateGlobalRoomAssets({
+			chatId,
+			accessToken: room.accessToken,
+		});
 		return () => {
 			releaseSnapshot();
 			releaseGrants();
-		};
-	});
-
-	$effect(() => {
-		const room = selectedRoomProjection;
-		const accessToken = selectedCallerToken;
-		if (!room || !accessToken) {
-			return;
-		}
-		if (selectedCallerTokenByRoomId[room.chatId] === accessToken) {
-			return;
-		}
-		selectedCallerTokenByRoomId = {
-			...selectedCallerTokenByRoomId,
-			[room.chatId]: accessToken,
+			releaseAssets();
 		};
 	});
 
@@ -597,26 +626,24 @@
 </script>
 
 <MessageSystemSurface
-	{roomsState}
-	{selectedRoomId}
 	selectedRoom={selectedRoomProjection}
+	{selectedRoomIconUrl}
+	resolveProfileIconUrl={(reference) => controller.runtimeStore.profileIconUrl(reference)}
+	resolveSessionIconUrl={(sessionId) => controller.runtimeStore.sessionIconUrl(sessionId)}
 	initialMessages={selectedRoomSnapshot?.items ?? []}
 	initialSnapshotResolved={selectedRoomSnapshotState.loaded}
+	roomAssetsState={resolvedRoomAssetsState}
 	routeNotice={chatNotice}
 	readSeatCount={roomReadSeatCount}
 	readSeatTotal={roomReadTotalSeatCount}
-	{sendAsOptions}
 	{selectedCallerToken}
 	{selectedViewerActorId}
 	{selectableActors}
 	roomSeatStates={resolvedRoomSeatStates}
-	onSelectRoom={selectRoom}
-	onChangeCallerToken={handleChangeCallerToken}
 	onChangeViewerActorId={handleChangeViewerActorId}
 	onSaveRoomTitle={handleSaveRoomTitle}
 	onArchiveRoom={handleArchiveRoom}
 	onDeleteRoom={handleDeleteRoom}
-	onCreateRoom={handleCreateRoom}
 	onGrantSeat={handleGrantSeat}
 	onToggleSeatFocus={handleToggleSeatFocus}
 	onRevokeSeat={handleRevokeSeat}

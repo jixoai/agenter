@@ -1,26 +1,88 @@
 <script lang="ts">
   import MarkdownDocumentHost from "./components/markdown-document-host.svelte";
-  import type { WebChatChannel, WebChatMessage } from "./types";
+  import ChatAvatar from "./chat-avatar.svelte";
+  import MessageAttachmentStrip from "./message-attachment-strip.svelte";
+  import MessageActionsMenu, {
+    type ResolvedMessageAction,
+  } from "./message-actions-menu.svelte";
+  import MessageReadIndicator from "./message-read-indicator.svelte";
+  import { Button } from "./ui/button";
+  import { Input } from "./ui/input";
+  import { Textarea } from "./ui/textarea";
+  import type {
+    WebChatActorPresentation,
+    WebChatChannel,
+    WebChatMessage,
+    WebChatMessageAction,
+    WebChatMessageReadProgress,
+    WebChatMessageRenderInput,
+  } from "./types";
   import { isAssistantMessage, isViewerOwnedMessage } from "./message-utils";
 
   let {
     channel,
     viewerActorId,
     message,
+    resolveActorPresentation,
+    resolveMessageActions,
+    resolveMessageReadProgress,
     onSubmitInteractive,
   }: {
     channel: WebChatChannel;
     viewerActorId: string | null;
     message: WebChatMessage;
+    resolveActorPresentation?: (
+      input: {
+        channel: WebChatChannel;
+        message?: WebChatMessage;
+        viewerActorId: string | null;
+        role: "assistant" | "channel" | "participant" | "viewer";
+        actorId?: string | null;
+        fallbackLabel: string;
+      },
+    ) => WebChatActorPresentation | null;
+    resolveMessageActions?: (input: WebChatMessageRenderInput) => readonly WebChatMessageAction[];
+    resolveMessageReadProgress?: (input: WebChatMessageRenderInput) => WebChatMessageReadProgress | null;
     onSubmitInteractive: (text: string) => Promise<void>;
   } = $props();
+
+  let interactiveDraft: Record<string, string> = $state({});
+  let interactiveSubmitting = $state(false);
+  let menuOpen = $state(false);
 
   const assistant = $derived(isAssistantMessage(channel, message));
   const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message));
   const interactive = $derived(message.kind === "interactive" ? message.payload?.interactive : undefined);
-  let interactiveDraft: Record<string, string> = $state({});
-  let interactiveSubmitting = $state(false);
+  const renderInput = $derived({
+    channel,
+    message,
+    viewerActorId,
+    isAssistant: assistant,
+    onSubmitInteractive,
+  } satisfies WebChatMessageRenderInput);
 
+  const actorPresentation = $derived.by(() => {
+    const role = assistant ? "assistant" : viewerOwned ? "viewer" : "participant";
+    const fallbackLabel = message.from || (assistant ? channel.owner : viewerOwned ? "You" : "Participant");
+    return (
+      resolveActorPresentation?.({
+        channel,
+        message,
+        viewerActorId,
+        role,
+        actorId: message.senderActorId ?? null,
+        fallbackLabel,
+      }) ?? {
+        actorId: message.senderActorId ?? null,
+        label: fallbackLabel,
+        subtitle: undefined,
+        iconUrl: null,
+        kind: role,
+      }
+    );
+  });
+
+  const tone = $derived(assistant ? "assistant" : viewerOwned ? "viewer" : "participant");
   const formatTimestamp = (timestamp: number): string =>
     new Intl.DateTimeFormat(undefined, {
       hour: "numeric",
@@ -58,6 +120,55 @@
       interactiveSubmitting = false;
     }
   };
+
+  const writeClipboardText = async (value: string): Promise<void> => {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const element = document.createElement("textarea");
+    element.value = value;
+    document.body.append(element);
+    element.select();
+    document.execCommand("copy");
+    element.remove();
+  };
+
+  const builtInActions = $derived.by(() => {
+    const actions: ResolvedMessageAction[] = [];
+    if (message.content.trim().length > 0) {
+      actions.push({
+        id: "copy-content",
+        label: "Copy message",
+        detail: "text",
+        onSelect: async () => {
+          await writeClipboardText(message.content);
+        },
+      });
+    }
+    actions.push({
+      id: "copy-id",
+      label: "Copy message id",
+      detail: "meta",
+      onSelect: async () => {
+        await writeClipboardText(message.messageId);
+      },
+    });
+    return actions;
+  });
+
+  const messageActions = $derived([
+    ...builtInActions,
+    ...(resolveMessageActions?.(renderInput) ?? []).map<ResolvedMessageAction>((action) => ({
+      id: action.id,
+      label: action.label,
+      detail: action.detail,
+      tone: action.tone,
+      disabled: action.disabled,
+      onSelect: action.onSelect ? () => action.onSelect?.(renderInput) : undefined,
+    })),
+  ]);
+  const messageReadProgress = $derived(resolveMessageReadProgress?.(renderInput) ?? null);
 </script>
 
 <div
@@ -68,86 +179,111 @@
   data-kind={message.kind}
   data-message-author={viewerOwned ? "viewer" : assistant ? "assistant" : "participant"}
 >
-  <article
-    class="bubble"
-    part={`message-bubble ${assistant ? "message-bubble-assistant" : viewerOwned ? "message-bubble-viewer" : "message-bubble-participant"}`}
-  >
-    <div class="meta" part="message-meta">
-      <span class="author" part="message-author">{message.from}</span>
-      <span>{formatTimestamp(message.createdAt)}</span>
-    </div>
+  <div class="row-body" part="message-row-body">
+    <ChatAvatar
+      label={actorPresentation.label}
+      subtitle={actorPresentation.subtitle}
+      src={actorPresentation.iconUrl}
+      class={`avatar avatar-${tone}`}
+      part={`message-avatar message-avatar-${tone}`}
+    />
 
-    {#if message.kind === "error"}
-      <div class="error-block" part="message-error">
-        <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
-        <p>{message.content}</p>
-        {#if message.payload?.error?.detail}
-          <p class="error-detail">{message.payload.error.detail}</p>
-        {/if}
-      </div>
-    {:else if message.kind === "interactive" && interactive}
-      <div class="interactive-block" part="message-interactive">
-        <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
-        {#if interactive.description}
-          <p class="interactive-description">{interactive.description}</p>
-        {/if}
-        <div class="interactive-fields" part="message-interactive-fields">
-          {#each interactive.fields as field (field.id)}
-            <label class="interactive-field" part="message-interactive-field">
-              <span>{field.label}</span>
-              {#if field.multiline}
-                <textarea
-                  rows="3"
-                  value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                  placeholder={field.placeholder}
-                  oninput={(event) => {
-                    const target = event.currentTarget as HTMLTextAreaElement;
-                    interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                  }}
-                ></textarea>
-              {:else}
-                <input
-                  value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                  placeholder={field.placeholder}
-                  oninput={(event) => {
-                    const target = event.currentTarget as HTMLInputElement;
-                    interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                  }}
-                />
-              {/if}
-            </label>
-          {/each}
+    <article
+      class="bubble group/bubble"
+      part={`message-bubble message-bubble-${tone}`}
+      oncontextmenu={(event) => {
+        event.preventDefault();
+        menuOpen = true;
+      }}
+    >
+      {#if messageActions.length > 0}
+        <div class="bubble-actions">
+          <MessageActionsMenu bind:open={menuOpen} actions={messageActions} />
         </div>
-        <button
-          type="button"
-          class="interactive-submit"
-          part="message-interactive-submit"
-          disabled={interactiveSubmitting}
-          onclick={() => void submitInteractive()}
-        >
-          {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
-        </button>
-      </div>
-    {:else if message.content.trim().length > 0}
-      <div class="content" part="message-content">
-        <MarkdownDocumentHost
-          value={message.content}
-          mode="preview"
-          usage="chat"
-          surface={assistant ? "bubble-assistant" : viewerOwned ? "bubble-user" : "panel"}
-          syntaxTone={assistant ? "accented" : "inherit"}
-        />
-      </div>
-    {/if}
+      {/if}
 
-    {#if (message.attachments?.length ?? 0) > 0}
-      <ul class="attachments" part="message-attachments">
-        {#each message.attachments ?? [] as attachment (attachment.assetId)}
-          <li>{attachment.name}</li>
-        {/each}
-      </ul>
+      <div class="meta" part="message-meta">
+        <div class="meta-copy">
+          <span class="author" part="message-author">{actorPresentation.label}</span>
+          {#if actorPresentation.subtitle}
+            <span class="subtitle">{actorPresentation.subtitle}</span>
+          {/if}
+        </div>
+        <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
+      </div>
+
+      {#if message.kind === "error"}
+        <div class="error-block" part="message-error">
+          <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
+          <p>{message.content}</p>
+          {#if message.payload?.error?.detail}
+            <p class="error-detail">{message.payload.error.detail}</p>
+          {/if}
+        </div>
+      {:else if message.kind === "interactive" && interactive}
+        <div class="interactive-block" part="message-interactive">
+          <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
+          {#if interactive.description}
+            <p class="interactive-description">{interactive.description}</p>
+          {/if}
+          <div class="interactive-fields" part="message-interactive-fields">
+            {#each interactive.fields as field (field.id)}
+              <label class="interactive-field" part="message-interactive-field">
+                <span>{field.label}</span>
+                {#if field.multiline}
+                  <Textarea
+                    rows={3}
+                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                    placeholder={field.placeholder}
+                    oninput={(event) => {
+                      const target = event.currentTarget as HTMLTextAreaElement;
+                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                    }}
+                  />
+                {:else}
+                  <Input
+                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                    placeholder={field.placeholder}
+                    oninput={(event) => {
+                      const target = event.currentTarget as HTMLInputElement;
+                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                    }}
+                  />
+                {/if}
+              </label>
+            {/each}
+          </div>
+          <Button
+            type="button"
+            class="interactive-submit"
+            part="message-interactive-submit"
+            disabled={interactiveSubmitting}
+            onclick={() => {
+              void submitInteractive();
+            }}
+          >
+            {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
+          </Button>
+        </div>
+      {:else if message.content.trim().length > 0}
+        <div class="content" part="message-content">
+          <MarkdownDocumentHost
+            value={message.content}
+            mode="preview"
+            usage="chat"
+            surface={assistant ? "bubble-assistant" : viewerOwned ? "bubble-user" : "panel"}
+            syntaxTone={assistant ? "accented" : "inherit"}
+          />
+        </div>
+      {/if}
+
+      <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
+    </article>
+
+    {#if messageReadProgress}
+      <MessageReadIndicator progress={messageReadProgress} />
     {/if}
-  </article>
+  </div>
 </div>
 
 <style>
@@ -155,47 +291,136 @@
     display: flex;
     justify-content: flex-start;
     width: 100%;
-    padding: 0.35rem 0;
+    padding: 0.42rem 0;
   }
 
   .row.viewer-owned {
     justify-content: flex-end;
   }
 
+  .row-body {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.7rem;
+    max-width: min(52rem, 100%);
+  }
+
+  .row.viewer-owned .row-body {
+    flex-direction: row-reverse;
+  }
+
+  :global(.avatar-viewer) {
+    border-color: rgba(15, 23, 42, 0.18);
+    background: linear-gradient(180deg, #0f172a, #1e293b);
+    color: white;
+  }
+
+  :global(.avatar-assistant) {
+    border-color: rgba(45, 212, 191, 0.26);
+    background: linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(204, 251, 241, 0.92));
+    color: #0f766e;
+  }
+
   .bubble {
-    max-width: min(44rem, 92%);
-    border-radius: 1.25rem;
-    padding: 0.9rem 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: rgba(255, 255, 255, 0.94);
+    position: relative;
+    min-width: 0;
+    max-width: min(42rem, calc(100% - 3rem));
+    border-radius: 1.3rem;
+    padding: 0.85rem 1rem 0.9rem;
+    border: 1px solid rgba(203, 213, 225, 0.72);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.96)),
+      radial-gradient(circle at top, rgba(15, 23, 42, 0.02), transparent 60%);
     color: #0f172a;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.34);
   }
 
   .row.viewer-owned .bubble {
-    background: #0f172a;
-    color: #fff;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    border-color: rgba(15, 23, 42, 0.18);
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96)),
+      radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 62%);
+    color: white;
+    box-shadow: 0 22px 46px -34px rgba(15, 23, 42, 0.52);
+  }
+
+  .row.assistant .bubble {
+    border-color: rgba(45, 212, 191, 0.22);
+    background:
+      linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(236, 253, 245, 0.95)),
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.1), transparent 56%);
   }
 
   .row[data-kind="error"] .bubble {
-    border: 1px solid rgba(244, 63, 94, 0.28);
-    background: #fff1f2;
+    border-color: rgba(251, 113, 133, 0.28);
+    background: linear-gradient(180deg, rgba(255, 241, 242, 0.98), rgba(255, 228, 230, 0.96));
     color: #881337;
+  }
+
+  .bubble-actions {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+
+  .bubble:hover .bubble-actions,
+  .bubble:focus-within .bubble-actions {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   .meta {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: space-between;
+    gap: 0.75rem;
     margin-bottom: 0.45rem;
-    font-size: 0.72rem;
-    opacity: 0.72;
+    padding-right: 2rem;
+  }
+
+  .meta-copy {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
   }
 
   .author {
-    font-weight: 600;
+    min-width: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.015em;
+  }
+
+  .subtitle,
+  .timestamp {
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: rgba(100, 116, 139, 0.92);
+  }
+
+  .row.viewer-owned .subtitle,
+  .row.viewer-owned .timestamp {
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  .content {
+    display: block;
+  }
+
+  @media (pointer: coarse) {
+    .bubble-actions {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .error-block,
+  .interactive-block {
+    display: grid;
+    gap: 0.65rem;
   }
 
   .error-block p,
@@ -206,19 +431,9 @@
     line-height: 1.6;
   }
 
-  .content {
-    display: block;
-  }
-
-  .error-block,
-  .interactive-block {
-    display: grid;
-    gap: 0.65rem;
-  }
-
   .error-title,
   .interactive-title {
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     font-weight: 700;
   }
 
@@ -243,45 +458,27 @@
     font-weight: 600;
   }
 
-  .interactive-field input,
-  .interactive-field textarea {
+  .interactive-field :global([data-slot="input"]),
+  .interactive-field :global([data-slot="textarea"]) {
     width: 100%;
-    border: 1px solid #cbd5e1;
-    border-radius: 0.75rem;
-    padding: 0.55rem 0.7rem;
-    font: inherit;
-    color: #0f172a;
-    background: #fff;
-    outline: none;
+    border-color: rgba(203, 213, 225, 0.9);
+    background: rgba(255, 255, 255, 0.9);
   }
 
-  .interactive-field input:focus,
-  .interactive-field textarea:focus {
-    border-color: #475569;
-  }
-
-  .interactive-submit {
+  :global(.interactive-submit) {
     width: fit-content;
-    border: 0;
     border-radius: 999px;
-    background: #0f172a;
-    padding: 0.45rem 0.85rem;
-    color: #fff;
-    font: inherit;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
   }
 
-  .interactive-submit:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
+  @container (max-width: 34rem) {
+    .row-body {
+      max-width: 100%;
+      gap: 0.6rem;
+    }
 
-  .attachments {
-    margin: 0.75rem 0 0;
-    padding-left: 1rem;
-    font-size: 0.78rem;
-    opacity: 0.78;
+    .bubble {
+      max-width: calc(100% - 2.5rem);
+      padding-inline: 0.9rem;
+    }
   }
 </style>

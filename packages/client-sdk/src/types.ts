@@ -40,6 +40,8 @@ export type GlobalRoomMessage = GlobalRoomSnapshotOutput["items"][number];
 export type GlobalRoomPageOutput = RouterOutputs["message"]["globalPage"];
 export type GlobalRoomGrantsOutput = RouterOutputs["message"]["globalListGrants"];
 export type GlobalRoomGrantEntry = GlobalRoomGrantsOutput["items"][number];
+export type GlobalRoomAssetsOutput = RouterOutputs["message"]["globalListAssets"];
+export type GlobalRoomAssetEntry = GlobalRoomAssetsOutput["items"][number];
 export type GlobalRoomActorId = RouterInputs["message"]["globalIssueGrant"]["participantId"];
 export type GlobalRoomGrantIssueOutput = RouterOutputs["message"]["globalIssueGrant"];
 export type ProfileListOutput = RouterOutputs["profile"]["list"];
@@ -157,6 +159,7 @@ export interface RuntimeClientState {
   globalRooms: CachedResourceState<GlobalRoomEntry[]>;
   globalRoomSnapshotsById: Record<string, CachedResourceState<GlobalRoomSnapshotOutput | null>>;
   globalRoomGrantsById: Record<string, CachedResourceState<GlobalRoomGrantEntry[]>>;
+  globalRoomAssetsById: Record<string, CachedResourceState<GlobalRoomAssetEntry[]>>;
   globalTerminals: CachedResourceState<GlobalTerminalEntry[]>;
   globalTerminalGrantsById: Record<string, CachedResourceState<GlobalTerminalGrantEntry[]>>;
   globalTerminalApprovalsById: Record<string, CachedResourceState<GlobalTerminalApprovalRequest[]>>;

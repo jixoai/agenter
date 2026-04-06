@@ -1,6 +1,6 @@
 export type ProfileIdentifierKind = "email" | "wallet_evm" | "wallet_solana" | "temp";
 
-export type IconOwnerKind = "profile" | "session";
+export type IconOwnerKind = "profile" | "session" | "room";
 
 export interface ProfileIdentifier {
   kind: ProfileIdentifierKind;
@@ -73,6 +73,11 @@ export interface IconAssetRecord {
 export interface SessionIconSeed {
   sessionId: string;
   workspacePath: string;
+  label?: string;
+}
+
+export interface RoomIconSeed {
+  roomId: string;
   label?: string;
 }
 

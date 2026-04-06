@@ -124,25 +124,18 @@
 
 {#snippet toolbar()}
 	<WorkbenchToolbar>
-		{#snippet primary()}
-			<div class="grid gap-1">
-				<h1 class="text-sm font-semibold tracking-tight text-foreground">Avatar workbench</h1>
-				<p class="max-w-2xl text-xs leading-5 text-muted-foreground">
-					Story harness for the shared tabs plus toolbar chrome law.
-				</p>
+		{#snippet content()}
+			<div class="flex h-full items-center justify-between gap-3 px-3">
+				<div class="min-w-0">
+					<h1 class="truncate text-sm font-semibold tracking-tight text-foreground">Avatar workbench</h1>
+				</div>
+				<div class="flex min-w-0 items-center gap-2">
+					<Badge variant="outline" class="bg-background/70">{tabSeeds.length} tabs</Badge>
+					<Button size="sm" variant="outline" onclick={() => (eventLog = 'toolbar:inspect-state')}>
+						Inspect state
+					</Button>
+				</div>
 			</div>
-		{/snippet}
-		{#snippet actions()}
-			<Button size="sm" variant="outline" onclick={() => (eventLog = 'toolbar:inspect-state')}>
-				Inspect state
-			</Button>
-			<Button size="sm" variant="ghost" onclick={() => (eventLog = 'toolbar:reopen-last')}>
-				Reopen last
-			</Button>
-		{/snippet}
-		{#snippet meta()}
-			<Badge variant="outline" class="bg-background/70">{tabSeeds.length} tabs visible</Badge>
-			<Badge variant="outline" class="bg-background/70">2 unread tool results</Badge>
 		{/snippet}
 	</WorkbenchToolbar>
 {/snippet}
@@ -161,7 +154,7 @@
 		/>
 
 		<div
-			class="rounded-b-[1.35rem] border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] px-4 py-3 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
+			class="h-12 rounded-b-[1.35rem] border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
 			data-workbench-page-toolbar
 		>
 			{@render toolbar()}

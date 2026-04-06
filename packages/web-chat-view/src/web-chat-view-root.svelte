@@ -536,14 +536,29 @@
     if (!contentRef || typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(() => {
-      if (!stickToBottom || !viewportRef) {
-        return;
+    let frame = 0;
+    const scheduleStickToBottom = (): void => {
+      if (frame !== 0) {
+        cancelAnimationFrame(frame);
       }
-      viewportRef.scrollTop = viewportRef.scrollHeight;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!stickToBottom || !viewportRef) {
+          return;
+        }
+        viewportRef.scrollTop = viewportRef.scrollHeight;
+      });
+    };
+    const observer = new ResizeObserver(() => {
+      scheduleStickToBottom();
     });
     observer.observe(contentRef);
-    return () => observer.disconnect();
+    return () => {
+      if (frame !== 0) {
+        cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+    };
   });
 </script>
 

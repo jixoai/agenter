@@ -483,6 +483,10 @@ const createMockClient = (input: {
     chatId: string;
     accessToken?: string;
   }) => Promise<{ items: unknown[] }>;
+  messageGlobalListAssetsQuery?: (input: {
+    chatId: string;
+    accessToken?: string;
+  }) => Promise<{ items: unknown[] }>;
   messageGlobalIssueGrantMutate?: (input: {
     chatId: string;
     accessToken?: string;
@@ -941,6 +945,10 @@ const createMockClient = (input: {
         globalListGrants: {
           query: async (payload: { chatId: string; accessToken?: string }) =>
             input.messageGlobalListGrantsQuery ? await input.messageGlobalListGrantsQuery(payload) : { items: [] },
+        },
+        globalListAssets: {
+          query: async (payload: { chatId: string; accessToken?: string }) =>
+            input.messageGlobalListAssetsQuery ? await input.messageGlobalListAssetsQuery(payload) : { items: [] },
         },
         globalIssueGrant: {
           mutate: async (payload: {
@@ -3984,6 +3992,10 @@ describe("Feature: runtime store synchronization", () => {
       [roomA.chatId]: 0,
       [roomB.chatId]: 0,
     };
+    const assetCounts: Record<string, number> = {
+      [roomA.chatId]: 0,
+      [roomB.chatId]: 0,
+    };
     let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
     const store = new RuntimeStore(
       createMockClient({
@@ -4019,6 +4031,24 @@ describe("Feature: runtime store synchronization", () => {
             ],
           };
         },
+        messageGlobalListAssetsQuery: async (input) => {
+          assetCounts[input.chatId] += 1;
+          return {
+            items: [
+              {
+                assetId: `asset-${input.chatId}-${assetCounts[input.chatId]}`,
+                kind: "file" as const,
+                name: `brief-${assetCounts[input.chatId]}.txt`,
+                mimeType: "text/plain",
+                sizeBytes: 16,
+                url: `/media/rooms/${encodeURIComponent(input.chatId)}/assets/${assetCounts[input.chatId]}`,
+                createdAt: assetCounts[input.chatId],
+                updatedAt: assetCounts[input.chatId],
+                uploadedByActorId: "auth:observer",
+              },
+            ],
+          };
+        },
       }),
     );
 
@@ -4026,6 +4056,7 @@ describe("Feature: runtime store synchronization", () => {
     await store.hydrateGlobalRooms();
     const releaseSnapshot = store.retainGlobalRoomSnapshot(roomA.chatId);
     const releaseGrants = store.retainGlobalRoomGrants(roomA.chatId);
+    const releaseAssets = store.retainGlobalRoomAssets(roomA.chatId);
     await store.hydrateGlobalRoomSnapshot({
       chatId: roomA.chatId,
       accessToken: roomA.accessToken,
@@ -4035,11 +4066,17 @@ describe("Feature: runtime store synchronization", () => {
       chatId: roomA.chatId,
       accessToken: roomA.accessToken,
     });
+    await store.hydrateGlobalRoomAssets({
+      chatId: roomA.chatId,
+      accessToken: roomA.accessToken,
+    });
 
     expect(snapshotCounts[roomA.chatId]).toBe(1);
     expect(snapshotCounts[roomB.chatId]).toBe(0);
     expect(grantCounts[roomA.chatId]).toBe(1);
     expect(grantCounts[roomB.chatId]).toBe(0);
+    expect(assetCounts[roomA.chatId]).toBe(1);
+    expect(assetCounts[roomB.chatId]).toBe(0);
 
     eventHandlers?.onData?.({
       version: 1,
@@ -4049,15 +4086,21 @@ describe("Feature: runtime store synchronization", () => {
       payload: {
         snapshotRoomIds: [roomA.chatId, roomB.chatId],
         grantRoomIds: [roomA.chatId, roomB.chatId],
+        assetRoomIds: [roomA.chatId, roomB.chatId],
       },
     });
 
-    await waitFor(() => snapshotCounts[roomA.chatId] === 2 && grantCounts[roomA.chatId] === 2);
+    await waitFor(
+      () =>
+        snapshotCounts[roomA.chatId] === 2 && grantCounts[roomA.chatId] === 2 && assetCounts[roomA.chatId] === 2,
+    );
     expect(snapshotCounts[roomB.chatId]).toBe(0);
     expect(grantCounts[roomB.chatId]).toBe(0);
+    expect(assetCounts[roomB.chatId]).toBe(0);
 
     releaseSnapshot();
     releaseGrants();
+    releaseAssets();
     store.disconnect();
   });
 

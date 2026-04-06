@@ -4,7 +4,7 @@ import type {
   SessionBlockToolPayload,
   ToolInvocationStatus,
 } from "@agenter/session-system";
-import type { MessageAttentionState, MessageKind, MessagePayload } from "@agenter/message-system";
+import type { MessageActorId, MessageAttentionState, MessageKind, MessagePayload } from "@agenter/message-system";
 
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
@@ -22,6 +22,12 @@ export interface ChatSessionAsset {
   mimeType: string;
   sizeBytes: number;
   url: string;
+}
+
+export interface RoomMediaAsset extends ChatSessionAsset {
+  createdAt: number;
+  updatedAt: number;
+  uploadedByActorId?: MessageActorId;
 }
 
 export interface ModelCapabilities {

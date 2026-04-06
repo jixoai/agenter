@@ -21,16 +21,26 @@
   "svelte": "./src/index.ts",
   "dependencies": {
     "@agenter/message-system": "workspace:*",
-    "@agenter/svelte-primitives": "workspace:*",
-    "@agenter/web-components": "workspace:*"
+    "@agenter/svelte-components": "workspace:*",
+    "@agenter/web-components": "workspace:*",
+    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language-data": "^6.5.1",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.8",
+    "@lucide/svelte": "^1.7.0",
+    "bits-ui": "^2.16.3",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwind-variants": "^3.2.2"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
     "jsdom": "^26.1.0",
     "svelte": "^5.54.0",
     "svelte-check": "^4.4.2",
     "typescript": "latest",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.2"
   }
 }

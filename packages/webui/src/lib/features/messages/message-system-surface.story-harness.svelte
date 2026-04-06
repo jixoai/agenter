@@ -2,10 +2,14 @@
 	import type { CachedResourceState, GlobalRoomEntry, GlobalRoomSnapshotOutput } from '@agenter/client-sdk';
 	import type { WebChatNotice } from '@agenter/web-chat-view';
 
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
+	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
+	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import MessageSystemSurface from './message-system-surface.svelte';
 
 	import type {
+		MessageSystemRoomAssetItem,
 		MessageSystemRoomSeatState,
 		MessageSystemSendAsOption,
 	} from './message-system-surface.types';
@@ -95,6 +99,23 @@
 			},
 		],
 	} satisfies Record<string, GlobalRoomSnapshotOutput['items']>;
+	const initialRoomAssets: Record<string, MessageSystemRoomAssetItem[]> = {
+		[initialRoomId]: [
+			{
+				assetId: 'asset-room-brief',
+				kind: 'file',
+				name: 'ops-brief.txt',
+				mimeType: 'text/plain',
+				sizeBytes: 128,
+				url: '/media/rooms/room-ops/assets/asset-room-brief',
+				createdAt: 1_710_000_000_000,
+				updatedAt: 1_710_000_000_000,
+				uploaderLabel: 'Analyst',
+				uploaderSubtitle: 'auth:analyst',
+				uploaderIconUrl: null,
+			},
+		],
+	};
 
 	const initialSeats = {
 		[initialRoomId]: [
@@ -126,6 +147,7 @@
 		[initialRoomId]: 'auth:analyst',
 	});
 	let roomMessagesById: Record<string, GlobalRoomSnapshotOutput['items']> = $state(initialMessages);
+	let roomAssetsById: Record<string, MessageSystemRoomAssetItem[]> = $state(initialRoomAssets);
 	let roomSeatsById: Record<string, MessageSystemRoomSeatState[]> = $state(initialSeats);
 	let roomsState: CachedResourceState<GlobalRoomEntry[]> = $state({
 		data: [
@@ -149,8 +171,31 @@
 	});
 
 	const selectedRoom = $derived(roomsState.data.find((room) => room.chatId === selectedRoomId) ?? null);
+	const workbenchTabs = $derived.by(
+		() =>
+			roomsState.data.map(
+				(room): WorkbenchTabItem => ({
+					id: room.chatId,
+					label: room.title || room.chatId,
+					title: room.title || room.chatId,
+					description: room.chatId,
+					avatarLabel: room.title || room.chatId,
+					avatarUrl: null,
+				}),
+			),
+	);
 	const selectedMessages = $derived(roomMessagesById[selectedRoomId] ?? []);
 	const roomSeatStates = $derived(roomSeatsById[selectedRoomId] ?? []);
+	const roomAssetsState = $derived(
+		({
+			data: roomAssetsById[selectedRoomId] ?? [],
+			loaded: true,
+			loading: false,
+			refreshing: false,
+			error: null,
+			refreshedAt: Date.now(),
+		}) satisfies CachedResourceState<(typeof initialRoomAssets)[typeof initialRoomId]>,
+	);
 	const readSeatCount = $derived(roomSeatStates.filter((seat) => seat.hasReadLatestVisible).length);
 	const readSeatTotal = $derived(Math.max(roomSeatStates.length, 1));
 	const sendAsOptions = $derived.by(() => {
@@ -410,28 +455,42 @@
 	};
 </script>
 
-<div class="h-[52rem] w-full min-w-[72rem] bg-background">
-	<MessageSystemSurface
-		{selectedRoom}
-		{disableManageDialogPortal}
-		{initialManageDialogSection}
-		initialMessages={selectedMessages}
-		initialSnapshotResolved={true}
-		{routeNotice}
-		{readSeatCount}
-		{readSeatTotal}
-		{selectedCallerToken}
-		{selectedViewerActorId}
-		selectableActors={actorCatalog}
-		{roomSeatStates}
-		onChangeViewerActorId={handleViewerActorIdChange}
-		onSaveRoomTitle={handleSaveRoomTitle}
-		onArchiveRoom={handleArchiveRoom}
-		onDeleteRoom={handleDeleteRoom}
-		onGrantSeat={handleGrantSeat}
-		onToggleSeatFocus={handleToggleSeatFocus}
-		onRevokeSeat={handleRevokeSeat}
-		onSendMessage={handleSendMessage}
-		onLatestVisibleMessageIdChange={handleLatestVisibleMessageIdChange}
-	/>
-</div>
+<Tooltip.Provider delayDuration={0}>
+	<div class="h-[52rem] w-full min-w-0 bg-background">
+		<WorkbenchWindow
+			ariaLabel="Message room story window"
+			value={selectedRoomId}
+			tabs={workbenchTabs}
+			bodyClass="h-full"
+			class="h-full"
+			onValueChange={(nextRoomId) => {
+				selectedRoomId = nextRoomId;
+			}}
+		>
+			<MessageSystemSurface
+				{selectedRoom}
+				{disableManageDialogPortal}
+				{initialManageDialogSection}
+				initialMessages={selectedMessages}
+				initialSnapshotResolved={true}
+				{roomAssetsState}
+				{routeNotice}
+				{readSeatCount}
+				{readSeatTotal}
+				{selectedCallerToken}
+				{selectedViewerActorId}
+				selectableActors={actorCatalog}
+				{roomSeatStates}
+				onChangeViewerActorId={handleViewerActorIdChange}
+				onSaveRoomTitle={handleSaveRoomTitle}
+				onArchiveRoom={handleArchiveRoom}
+				onDeleteRoom={handleDeleteRoom}
+				onGrantSeat={handleGrantSeat}
+				onToggleSeatFocus={handleToggleSeatFocus}
+				onRevokeSeat={handleRevokeSeat}
+				onSendMessage={handleSendMessage}
+				onLatestVisibleMessageIdChange={handleLatestVisibleMessageIdChange}
+			/>
+		</WorkbenchWindow>
+	</div>
+</Tooltip.Provider>

@@ -311,6 +311,28 @@ describe("Feature: app-server trpc procedures", () => {
     expect(listed.items.some((item) => item.chatId === room.chatId)).toBeTrue();
     expect(listed.items.find((item) => item.chatId === room.chatId)?.focused).toBeFalse();
 
+    await kernel.uploadGlobalRoomAssets({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      files: [
+        {
+          name: "ops-brief.txt",
+          mimeType: "text/plain",
+          bytes: new Uint8Array([111, 112, 115]),
+        },
+      ],
+    });
+    const assets = await caller.message.globalListAssets({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(assets.items).toHaveLength(1);
+    expect(assets.items[0]).toMatchObject({
+      name: "ops-brief.txt",
+      mimeType: "text/plain",
+      uploadedByActorId: room.participantId,
+    });
+
     const sent = await caller.message.globalSend({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -533,6 +555,60 @@ describe("Feature: app-server trpc procedures", () => {
       hasReadLatestVisible: true,
       readAt: 4_000,
     });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a superadmin room send When the projected room still uses the bootstrap control seat Then the durable sender is the authenticated superadmin actor", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const descriptor = await caller.auth.service();
+    const challenge = await caller.auth.challengeStart({
+      authId: descriptor.rootAuthId,
+    });
+    const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
+      message: challenge.challengeText,
+    });
+    const session = await caller.auth.challengeVerify({
+      challengeId: challenge.challengeId,
+      signature,
+    });
+    const superadminCaller = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${session.token}`,
+      }),
+    );
+
+    const created = await superadminCaller.message.globalCreate({
+      chatId: "room-superadmin-send",
+      kind: "room",
+      title: "Superadmin send room",
+      focus: false,
+    });
+
+    const sent = await superadminCaller.message.globalSend({
+      chatId: created.channel.chatId,
+      text: "superadmin hello",
+    });
+    expect(sent.ok).toBeTrue();
+
+    const snapshot = await superadminCaller.message.globalSnapshot({
+      chatId: created.channel.chatId,
+      limit: 20,
+    });
+    const message = snapshot.items.find((item) => item.content === "superadmin hello");
+    expect(message?.senderActorId).toBe(`auth:${descriptor.rootAuthId}`);
 
     await kernel.stop();
   });

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import UserRoundIcon from '@lucide/svelte/icons/user-round';
-	import UsersIcon from '@lucide/svelte/icons/users';
 	import {
 		WebChatViewHost,
 		type WebChatActorPresentation,
@@ -9,12 +7,12 @@
 		type WebChatMessageReadProgress,
 		type WebChatMessageRenderInput,
 	} from '@agenter/web-chat-view';
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 
 	import MessageRoomManageDialog from '$lib/features/messages/message-room-manage-dialog.svelte';
-	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
+	import RoomAssetsPane from '$lib/features/messages/room-assets-pane.svelte';
+	import RoomMessageSearchDialog from '$lib/features/messages/room-message-search-dialog.svelte';
+	import RoomPageToolbarContent from '$lib/features/messages/room-page-toolbar-content.svelte';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
@@ -25,6 +23,8 @@
 		MessageSystemSurfaceProps,
 	} from './message-system-surface.types';
 
+	type RoomBodyMode = 'chat' | 'assets';
+
 	let {
 		selectedRoom,
 		selectedRoomIconUrl = null,
@@ -34,9 +34,8 @@
 		initialManageDialogSection = null,
 		initialMessages,
 		initialSnapshotResolved,
+		roomAssetsState,
 		routeNotice,
-		readSeatCount,
-		readSeatTotal,
 		selectedCallerToken,
 		selectedViewerActorId,
 		selectableActors,
@@ -52,6 +51,7 @@
 		onLatestVisibleMessageIdChange,
 	}: MessageSystemSurfaceProps = $props();
 
+	let surfaceRef = $state<HTMLElement | null>(null);
 	let editableTitlesByRoomId: Record<string, string> = $state({});
 	let manageDialogOpen = $state(untrack(() => initialManageDialogSection !== null));
 	let manageSection = $state<MessageSystemManageSection>(
@@ -64,10 +64,13 @@
 	let titleBusy = $state(false);
 	let archiveBusy = $state(false);
 	let deleteBusy = $state(false);
+	let bodyMode = $state<RoomBodyMode>('chat');
+	let searchDialogOpen = $state(false);
+	let searchQuery = $state('');
+	let searchMatches = $state<string[]>([]);
+	let searchMatchIndex = $state(0);
 
 	const selectedRoomChatId = $derived(selectedRoom?.chatId ?? '');
-	const visibleParticipantCount = (room: MessageSystemSurfaceProps['selectedRoom']): number =>
-		room?.participants.filter((participant) => !participant.id.startsWith('system:')).length ?? 0;
 	const editableTitle = $derived(
 		selectedRoomChatId ? (editableTitlesByRoomId[selectedRoomChatId] ?? selectedRoom?.title ?? '') : '',
 	);
@@ -75,11 +78,8 @@
 		selectedRoomChatId ? (grantParticipantIdsByRoomId[selectedRoomChatId] ?? '') : '',
 	);
 	const grantError = $derived(selectedRoomChatId ? (grantErrorsByRoomId[selectedRoomChatId] ?? null) : null);
-	const roomUserCount = $derived(
-		selectedRoom ? Math.max(visibleParticipantCount(selectedRoom), roomSeatStates.length) : 0,
-	);
-	const selectedViewerLabel = $derived(
-		roomSeatStates.find((seat) => seat.actorId === selectedViewerActorId)?.label ?? 'Unset viewer',
+	const selectedViewerSeat = $derived(
+		roomSeatStates.find((seat) => seat.actorId === selectedViewerActorId) ?? null,
 	);
 	const canSelectViewer = $derived(roomSeatStates.length > 0);
 	const canSendForViewer = $derived(Boolean(selectedCallerToken));
@@ -98,8 +98,18 @@
 	);
 	const selectedViewerOptionLabel = $derived(
 		viewerItems.find((item) => item.value === selectedViewerActorId)?.label ??
-			(canSelectViewer ? selectedViewerLabel : 'No granted room user yet'),
+			(canSelectViewer ? selectedViewerSeat?.label ?? 'Unset viewer' : 'No granted room user yet'),
 	);
+	const selectedViewerToolbarLabel = $derived.by(() => {
+		const seat = selectedViewerSeat;
+		if (!seat) {
+			return canSelectViewer ? selectedViewerOptionLabel : 'No granted room user yet';
+		}
+		if (duplicateSeatLabels.has(seat.label)) {
+			return selectedViewerOptionLabel;
+		}
+		return seat.label;
+	});
 	const roomSeatMap = $derived(new Map(roomSeatStates.map((state) => [state.actorId, state])));
 	const channelPresentation = $derived(
 		selectedRoom
@@ -124,6 +134,10 @@
 				iconUrl: state.iconUrl,
 			})),
 		} satisfies WebChatComposerCapabilities),
+	);
+	const searchMatchCount = $derived(searchMatches.length);
+	const messageSearchSignature = $derived(
+		initialMessages.map((message) => `${message.messageId}:${message.updatedAt ?? message.createdAt}`).join('|'),
 	);
 
 	const resolveActorPresentation = (input: {
@@ -215,17 +229,6 @@
 			return 'unknown';
 		}
 		return new Date(value).toLocaleString();
-	};
-
-	const compactRoomReference = (value: string): string => {
-		const segments = value.split('-').filter(Boolean);
-		if (segments.length >= 2) {
-			return segments.slice(-2).join('-');
-		}
-		if (value.length <= 18) {
-			return value;
-		}
-		return `${value.slice(0, 6)}…${value.slice(-8)}`;
 	};
 
 	const describeSeatOption = (state: MessageSystemSurfaceProps['roomSeatStates'][number]): string => {
@@ -354,122 +357,169 @@
 			grantId: state.grantId,
 		});
 	};
+
+	const clearSearchMarkers = (): void => {
+		for (const row of surfaceRef?.querySelectorAll<HTMLElement>('[data-message-id][data-room-search-match]') ?? []) {
+			row.removeAttribute('data-room-search-match');
+		}
+	};
+
+	const findMessageRows = (): HTMLElement[] =>
+		Array.from(surfaceRef?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []);
+
+	const revealSearchMatch = async (): Promise<void> => {
+		await tick();
+		clearSearchMarkers();
+		if (bodyMode !== 'chat' || searchMatches.length === 0) {
+			return;
+		}
+		const activeMessageId = searchMatches[searchMatchIndex];
+		if (!activeMessageId) {
+			return;
+		}
+		const escapedMessageId =
+			typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+				? CSS.escape(activeMessageId)
+				: activeMessageId.replace(/["\\]/gu, '\\$&');
+		const row = surfaceRef?.querySelector<HTMLElement>(`[data-message-id="${escapedMessageId}"]`);
+		if (!row) {
+			return;
+		}
+		row.dataset.roomSearchMatch = 'true';
+		row.scrollIntoView({
+			block: 'center',
+			inline: 'nearest',
+			behavior: 'smooth',
+		});
+	};
+
+	const recomputeSearchMatches = async (): Promise<void> => {
+		await tick();
+		if (!searchDialogOpen || bodyMode !== 'chat') {
+			searchMatches = [];
+			searchMatchIndex = 0;
+			clearSearchMarkers();
+			return;
+		}
+		const needle = searchQuery.trim().toLocaleLowerCase();
+		if (needle.length === 0) {
+			searchMatches = [];
+			searchMatchIndex = 0;
+			clearSearchMarkers();
+			return;
+		}
+		const matches = findMessageRows()
+			.filter((row) => (row.textContent ?? '').toLocaleLowerCase().includes(needle))
+			.map((row) => row.dataset.messageId ?? '')
+			.filter(Boolean);
+		searchMatches = matches;
+		if (matches.length === 0) {
+			searchMatchIndex = 0;
+			clearSearchMarkers();
+			return;
+		}
+		if (searchMatchIndex >= matches.length) {
+			searchMatchIndex = 0;
+		}
+	};
+
+	const navigateSearch = (direction: 1 | -1): void => {
+		if (searchMatches.length === 0) {
+			return;
+		}
+		searchMatchIndex = (searchMatchIndex + direction + searchMatches.length) % searchMatches.length;
+	};
+
+	$effect(() => {
+		messageSearchSignature;
+		searchDialogOpen;
+		searchQuery;
+		bodyMode;
+		selectedRoomChatId;
+		void recomputeSearchMatches();
+	});
+
+	$effect(() => {
+		searchMatches.join('|');
+		searchMatchIndex;
+		bodyMode;
+		void revealSearchMatch();
+	});
+
 </script>
 
-<WorkbenchPageToolbar>
-	<WorkbenchToolbar class="room-toolbar" rows={2}>
-		{#snippet navigation(_toolbarState: WorkbenchToolbarRenderState)}
-			<ProfileAvatar
-				label={selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room'}
-				src={selectedRoomIconUrl}
-				class="size-10 rounded-2xl border border-border/70 bg-background/80 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_80%)]"
+<div bind:this={surfaceRef} class="message-system-surface">
+	<WorkbenchPageToolbar>
+		<WorkbenchToolbar class="room-toolbar">
+			{#snippet content(toolbarState: WorkbenchToolbarRenderState)}
+				<RoomPageToolbarContent
+					{toolbarState}
+					selectedViewer={selectedViewerSeat}
+					{selectedViewerActorId}
+					{viewerItems}
+					selectedViewerLabel={selectedViewerToolbarLabel}
+					{canSelectViewer}
+					activeMode={bodyMode}
+					canSearch={Boolean(selectedRoom)}
+					onSelectViewer={onChangeViewerActorId}
+					onSelectMode={(mode) => {
+						bodyMode = mode;
+						if (mode !== 'chat') {
+							searchDialogOpen = false;
+						}
+					}}
+					onSearchClick={() => {
+						bodyMode = 'chat';
+						searchDialogOpen = true;
+					}}
+					onAddUserClick={() => openManageDialog('users')}
+					onManageClick={() => openManageDialog('overview')}
+				/>
+			{/snippet}
+		</WorkbenchToolbar>
+	</WorkbenchPageToolbar>
+
+	<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="message-system-route">
+		{#if bodyMode === 'assets'}
+			<RoomAssetsPane state={roomAssetsState} />
+		{:else}
+			<WebChatViewHost
+				channel={selectedRoom}
+				viewerActorId={selectedViewerActorId}
+				{initialMessages}
+				{initialSnapshotResolved}
+				class="h-full"
+				disabled={!selectedRoom || !canSendForViewer}
+				showHeader={false}
+				emptyTitle="No room selected"
+				emptyMessage="Open or create a room tab to begin."
+				emptyTranscriptTitle="No room facts yet"
+				emptyTranscriptMessage="Send the first message to begin this room."
+				{routeNotice}
+				{channelPresentation}
+				{resolveActorPresentation}
+				{resolveMessageActions}
+				{resolveMessageReadProgress}
+				{composerCapabilities}
+				onSendMessage={onSendMessage}
+				onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
 			/>
-		{/snippet}
+		{/if}
+	</WorkbenchScaffold>
+</div>
 
-		{#snippet primary(toolbarState: WorkbenchToolbarRenderState)}
-			<div class="grid min-w-0 gap-1" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
-				<span
-					class="room-toolbar__eyebrow text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
-				>
-					Room
-				</span>
-				<h1 class="truncate text-[1.02rem] font-semibold tracking-tight text-foreground">
-					{selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room transcript'}
-				</h1>
-			</div>
-		{/snippet}
-
-		{#snippet actions(toolbarState: WorkbenchToolbarRenderState)}
-			<Button
-				variant="outline"
-				size="sm"
-				class="h-8 w-auto rounded-full border-border/70 bg-background/80 px-3.5 text-[0.82rem] shadow-none"
-				disabled={!selectedRoom}
-				onclick={() => openManageDialog('overview')}
-			>
-				{toolbarState.isNarrow ? 'Manage' : 'Manage room'}
-			</Button>
-		{/snippet}
-
-		{#snippet meta(toolbarState: WorkbenchToolbarRenderState)}
-			<div class="room-toolbar__meta" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
-				<div class="room-toolbar__chips">
-					{#if selectedRoom}
-						<span class="room-toolbar__chip room-toolbar__chip-muted" title={selectedRoom.chatId}>
-							{compactRoomReference(selectedRoom.chatId)}
-						</span>
-						<span class="room-toolbar__chip">
-							<UsersIcon class="size-3.5" />
-							<span>{roomUserCount} {roomUserCount === 1 ? 'user' : 'users'}</span>
-						</span>
-						{#if !selectedCallerToken}
-							<span class="room-toolbar__chip room-toolbar__chip-warning">Read-only</span>
-						{/if}
-					{/if}
-				</div>
-
-				<div class="room-toolbar__viewer" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
-					<div class="room-toolbar__viewer-label">
-						<UserRoundIcon class="size-3.5" />
-						<span>{toolbarState.isNarrow ? 'As' : 'View as'}</span>
-					</div>
-					{#if canSelectViewer}
-						<Select.Root
-							type="single"
-							items={viewerItems}
-							value={selectedViewerActorId ?? undefined}
-							onValueChange={(value) => {
-								onChangeViewerActorId(value);
-							}}
-						>
-							<Select.Trigger
-								aria-label="View room as user"
-								class="h-8 w-full min-w-0 max-w-full rounded-full border-border/70 bg-background/85 px-3 text-[0.82rem] font-medium shadow-none"
-							>
-								<span class="truncate">
-									{toolbarState.isNarrow ? selectedViewerLabel : `As · ${selectedViewerOptionLabel}`}
-								</span>
-							</Select.Trigger>
-							<Select.Content>
-								{#each viewerItems as item (item.value)}
-									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{:else if toolbarState.isNarrow}
-						<div class="room-toolbar__viewer-empty">No user seat</div>
-					{:else}
-						<div class="room-toolbar__viewer-empty">No granted room user yet</div>
-					{/if}
-				</div>
-			</div>
-		{/snippet}
-	</WorkbenchToolbar>
-</WorkbenchPageToolbar>
-
-<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="message-system-route">
-	<WebChatViewHost
-		channel={selectedRoom}
-		viewerActorId={selectedViewerActorId}
-		{initialMessages}
-		{initialSnapshotResolved}
-		class="h-full"
-		disabled={!selectedRoom || !canSendForViewer}
-		showHeader={false}
-		emptyTitle="No room selected"
-		emptyMessage="Open or create a room tab to begin."
-		emptyTranscriptTitle="No room facts yet"
-		emptyTranscriptMessage="Send the first message to begin this room."
-		{routeNotice}
-		{channelPresentation}
-		{resolveActorPresentation}
-		{resolveMessageActions}
-		{resolveMessageReadProgress}
-		{composerCapabilities}
-		onSendMessage={onSendMessage}
-		onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
-	/>
-</WorkbenchScaffold>
+<RoomMessageSearchDialog
+	bind:open={searchDialogOpen}
+	query={searchQuery}
+	matchCount={searchMatchCount}
+	activeIndex={searchMatchIndex}
+	onQueryChange={(value) => {
+		searchQuery = value;
+		searchMatchIndex = 0;
+	}}
+	onPrevious={() => navigateSearch(-1)}
+	onNext={() => navigateSearch(1)}
+/>
 
 <MessageRoomManageDialog
 	open={manageDialogOpen}
@@ -505,103 +555,15 @@
 />
 
 <style>
-	.room-toolbar__meta {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.75rem;
+	.message-system-surface {
+		block-size: 100%;
+		min-block-size: 0;
 	}
 
-	.room-toolbar__chips {
-		display: flex;
-		min-width: 0;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.55rem;
-	}
-
-	.room-toolbar__chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		border-radius: 999px;
-		border: 1px solid color-mix(in srgb, var(--border), transparent 26%);
-		background: color-mix(in srgb, var(--background), transparent 12%);
-		padding: 0.34rem 0.7rem;
-		font-size: 0.74rem;
-		font-weight: 500;
-		line-height: 1;
-		color: var(--foreground);
-	}
-
-	.room-toolbar__chip-muted {
-		color: var(--muted-foreground);
-	}
-
-	.room-toolbar__chip-warning {
-		border-color: color-mix(in srgb, #f59e0b, transparent 24%);
-		background: color-mix(in srgb, #f59e0b, white 88%);
-		color: #b45309;
-	}
-
-	.room-toolbar__viewer {
-		display: inline-grid;
-		grid-template-columns: auto minmax(0, min(100%, 15rem));
-		align-items: center;
-		gap: 0.55rem;
-		min-width: 0;
-	}
-
-	.room-toolbar__viewer-label {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		font-size: 0.64rem;
-		font-weight: 700;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-		white-space: nowrap;
-	}
-
-	.room-toolbar__viewer-empty {
-		display: inline-flex;
-		min-height: 2rem;
-		align-items: center;
-		border-radius: 999px;
-		border: 1px solid color-mix(in srgb, var(--border), transparent 22%);
-		background: color-mix(in srgb, var(--background), transparent 10%);
-		padding: 0.35rem 0.75rem;
-		font-size: 0.78rem;
-		line-height: 1.35;
-		color: var(--muted-foreground);
-	}
-
-	@container (max-width: 44rem) {
-		.room-toolbar__chip {
-			padding: 0.3rem 0.58rem;
-			font-size: 0.68rem;
-		}
-
-		.room-toolbar__meta[data-room-toolbar-breakpoint='narrow'] {
-			grid-template-columns: 1fr;
-			align-items: start;
-			gap: 0.55rem;
-		}
-
-		.room-toolbar__viewer {
-			inline-size: 100%;
-			grid-template-columns: auto minmax(0, 1fr);
-		}
-
-		.room-toolbar__viewer[data-room-toolbar-breakpoint='narrow'] {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 0.35rem;
-		}
-
-		.room-toolbar__viewer[data-room-toolbar-breakpoint='narrow'] .room-toolbar__viewer-label {
-			font-size: 0.58rem;
-			letter-spacing: 0.14em;
-		}
+	:global([data-message-id][data-room-search-match='true']) {
+		border-radius: 1.1rem;
+		outline: 2px solid color-mix(in srgb, var(--foreground), transparent 78%);
+		outline-offset: 0.2rem;
+		background: color-mix(in srgb, var(--foreground), transparent 96%);
 	}
 </style>

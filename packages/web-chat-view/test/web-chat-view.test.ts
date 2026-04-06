@@ -1,7 +1,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { type WebChatSocketFactory, type WebChatSocketLike } from "../src";
+import { type WebChatMessage, type WebChatSocketFactory, type WebChatSocketLike } from "../src";
 import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
 import WebChatViewHost from "../src/web-chat-view-host.svelte";
 import WebChatHostHarness from "./web-chat-host-harness.svelte";
@@ -115,6 +115,9 @@ class ResizeObserverMock {
   unobserve(): void {}
 }
 
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
+
 const mountHost = (props: Record<string, unknown>) => {
   const target = document.createElement("div");
   target.style.height = "520px";
@@ -125,6 +128,31 @@ const mountHost = (props: Record<string, unknown>) => {
   });
   flushSync();
   return { target, component };
+};
+
+const assignFiles = (input: HTMLInputElement, files: File[]): void => {
+  const fileList = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null,
+    [Symbol.iterator]: function* () {
+      for (const file of files) {
+        yield file;
+      }
+    },
+  } as FileList & { [index: number]: File };
+
+  for (const [index, file] of files.entries()) {
+    Object.defineProperty(fileList, index, {
+      configurable: true,
+      enumerable: true,
+      value: file,
+    });
+  }
+
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: fileList,
+  });
 };
 
 const readRenderedText = (root: Node | ShadowRoot | null): string => {
@@ -204,11 +232,35 @@ describe("Feature: web-chat-view package", () => {
     vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
     vi.stubGlobal("WebSocket", WebSocketMock);
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => `blob:pending-${Math.random().toString(36).slice(2, 8)}`),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
+    if (originalCreateObjectURL) {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+    } else {
+      Reflect.deleteProperty(URL, "createObjectURL");
+    }
+    if (originalRevokeObjectURL) {
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: originalRevokeObjectURL,
+      });
+    } else {
+      Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
   });
 
   test("Scenario: Given a transport snapshot and older page When the host hydrates Then it preserves newer messages and prepends older history", async () => {
@@ -366,12 +418,16 @@ describe("Feature: web-chat-view package", () => {
 
     const textarea = document.body.querySelector("textarea") as HTMLTextAreaElement;
     textarea.value = "hello channel";
-    textarea.dispatchEvent(new Event("input"));
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
+    await Promise.resolve();
 
     const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),
     );
+    await vi.waitFor(() => {
+      expect(sendButton?.hasAttribute("disabled")).toBe(false);
+    });
     sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
 
@@ -379,6 +435,259 @@ describe("Feature: web-chat-view package", () => {
       expect(submitMessage).toHaveBeenCalledWith({ text: "hello channel", assets: [] });
     });
     expect(WebSocketMock.instances).toHaveLength(0);
+  });
+
+  test("Scenario: Given pending files in the shared composer When send is pressed Then the host receives attachment payloads", async () => {
+    const submitMessage = vi.fn(async () => undefined);
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      onSendMessage: submitMessage,
+    });
+
+    const pendingFile = new File(["spec"], "notes.txt", { type: "text/plain" });
+    const fileInput = document.body.querySelector("input[type='file']") as HTMLInputElement;
+    assignFiles(fileInput, [pendingFile]);
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector("[part='composer-asset']")).toBeTruthy();
+    });
+    expect(readRenderedText(document.body.querySelector("[part='composer-asset']"))).toContain("notes.txt");
+
+    const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Send"),
+    );
+    await vi.waitFor(() => {
+      expect(sendButton?.hasAttribute("disabled")).toBe(false);
+    });
+    sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    flushSync();
+
+    await vi.waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledWith({ text: "", assets: [pendingFile] });
+    });
+  });
+
+  test("Scenario: Given pending screenshots in the shared composer When previews render Then media assets use the constrained media rail layout", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      onSendMessage: vi.fn(async () => undefined),
+    });
+
+    const screenshotFile = new File(["image"], "screenshot.png", { type: "image/png" });
+    const fileInput = document.body.querySelector("input[type='file']") as HTMLInputElement;
+    assignFiles(fileInput, [screenshotFile]);
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector("[part='composer-media-assets']")).toBeTruthy();
+    });
+    expect(document.body.querySelector("[part='composer-file-assets']")).toBeNull();
+    expect(document.body.querySelector("[data-layout='media']")).toBeTruthy();
+    expect(readRenderedText(document.body.querySelector("[data-layout='media']"))).toContain("screenshot.png");
+  });
+
+  test("Scenario: Given host actor presentation and attachment metadata When the transcript renders Then canonical avatars and attachment tiles follow host facts", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          messageId: "msg-user",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "see attachment",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [
+            {
+              assetId: "asset-1",
+              kind: "image",
+              name: "spec.png",
+              mimeType: "image/png",
+              sizeBytes: 1024,
+              url: "https://example.com/spec.png",
+            },
+          ],
+        },
+      ],
+      resolveActorPresentation: () => ({
+        actorId: "auth:user",
+        label: "Analyst",
+        subtitle: "auth:user",
+        iconUrl: "https://example.com/avatar.png",
+        kind: "auth",
+      }),
+    });
+
+    await settleLitUpdates();
+
+    expect(document.body.querySelector("img[alt='Analyst']")).toBeTruthy();
+    expect(document.body.querySelector("a[href='https://example.com/spec.png']")).toBeTruthy();
+    expect(readRenderedText(document.body)).toContain("spec.png");
+    expect(readRenderedText(document.body)).toContain("auth:user");
+  });
+
+  test("Scenario: Given room read-state projections When the transcript renders Then each message can expose an inline-end read indicator", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 3,
+          messageId: "msg-progress",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "read me",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageReadProgress: ({ message }: { message: WebChatMessage }) =>
+        message.messageId === "msg-progress"
+          ? {
+              readCount: 1,
+              totalCount: 2,
+              title: "1/2 read",
+            }
+          : null,
+    });
+
+    await settleLitUpdates();
+
+    const indicator = document.body.querySelector("[data-testid='message-read-indicator']");
+    expect(indicator).toBeTruthy();
+    expect(indicator?.getAttribute("aria-label")).toBe("1/2 read");
+    expect(indicator?.getAttribute("data-complete")).toBe("false");
+  });
+
+  test("Scenario: Given host message actions When the menu opens Then the shared row exposes those actions", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          messageId: "msg-user",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "menu me",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageActions: () => [
+        {
+          id: "inspect",
+          label: "Inspect",
+          detail: "host",
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const trigger = document.body.querySelector("button[aria-label='Message actions']") as HTMLButtonElement;
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    expect(readRenderedText(document.body)).toContain("Inspect");
   });
 
   test("Scenario: Given the shared chat surface When it mounts Then transcript and composer regions expose durable styling parts", async () => {
@@ -410,6 +719,39 @@ describe("Feature: web-chat-view package", () => {
     expect(transcriptShell).toBeTruthy();
     expect(composer).toBeTruthy();
     expect(composerSend).toBeTruthy();
+  });
+
+  test("Scenario: Given an embedded shared room surface When it mounts without the internal header Then the transcript stays primary and composer shortcuts remain visible", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-embedded",
+        kind: "room",
+        title: "Embedded room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      showHeader: false,
+      onSendMessage: async () => undefined,
+    });
+
+    const shell = document.body.querySelector('[part~="shell"]');
+    const transcriptShell = document.body.querySelector('[part~="transcript-shell"]');
+    const composer = document.body.querySelector('[part~="composer"]');
+    const rendered = readRenderedText(document.body);
+
+    expect(shell?.getAttribute("data-embedded")).toBe("true");
+    expect(transcriptShell).toBeTruthy();
+    expect(composer).toBeTruthy();
+    expect(rendered).toContain("@ mention");
+    expect(rendered).toContain("/ command");
   });
 
   test("Scenario: Given an empty room snapshot already resolved When the host mounts before any websocket snapshot arrives Then the transcript shows the empty state instead of infinite loading", async () => {
@@ -863,12 +1205,16 @@ describe("Feature: web-chat-view package", () => {
       throw new Error("composer textarea missing");
     }
     textarea.value = "element send";
-    textarea.dispatchEvent(new Event("input"));
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
+    await Promise.resolve();
 
     const sendButton = [...shadowRoot.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),
     );
+    await vi.waitFor(() => {
+      expect(sendButton?.hasAttribute("disabled")).toBe(false);
+    });
     sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
 

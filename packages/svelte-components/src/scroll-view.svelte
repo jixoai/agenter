@@ -65,24 +65,37 @@
     return "vertical";
   };
 
-  $effect(() => {
-    if (!viewportRef) {
-      return;
-    }
-    syncViewportMetrics();
-    const handleScroll = (): void => {
-      syncViewportMetrics();
-    };
-    const resizeObserver = new ResizeObserver(() => {
-      syncViewportMetrics();
-    });
-    viewportRef.addEventListener("scroll", handleScroll, { passive: true });
-    resizeObserver.observe(viewportRef);
-    return () => {
-      viewportRef?.removeEventListener("scroll", handleScroll);
-      resizeObserver.disconnect();
-    };
-  });
+	$effect(() => {
+		if (!viewportRef) {
+			return;
+		}
+		syncViewportMetrics();
+		let frame = 0;
+		const scheduleViewportSync = (): void => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				syncViewportMetrics();
+			});
+		};
+		const handleScroll = (): void => {
+			scheduleViewportSync();
+		};
+		const resizeObserver = new ResizeObserver(() => {
+			scheduleViewportSync();
+		});
+		viewportRef.addEventListener("scroll", handleScroll, { passive: true });
+		resizeObserver.observe(viewportRef);
+		return () => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			viewportRef?.removeEventListener("scroll", handleScroll);
+			resizeObserver.disconnect();
+		};
+	});
 </script>
 
 <div class={joinClassNames("scroll-view-root", className)} data-scroll-view-root="true">

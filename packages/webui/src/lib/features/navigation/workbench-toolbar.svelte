@@ -2,7 +2,11 @@
 	import { onMount } from 'svelte';
 
 	import { cn } from '$lib/utils.js';
-	import type { WorkbenchToolbarBreakpoint, WorkbenchToolbarRenderState } from './workbench-toolbar.types';
+	import type {
+		WorkbenchToolbarBreakpoint,
+		WorkbenchToolbarDensity,
+		WorkbenchToolbarRenderState,
+	} from './workbench-toolbar.types';
 
 	const resolveBreakpoint = (width: number): WorkbenchToolbarBreakpoint => {
 		if (width < 720) {
@@ -14,18 +18,26 @@
 		return 'wide';
 	};
 
+	const resolveDensity = (breakpoint: WorkbenchToolbarBreakpoint): WorkbenchToolbarDensity => {
+		if (breakpoint === 'narrow') {
+			return 'dense';
+		}
+		if (breakpoint === 'compact') {
+			return 'regular';
+		}
+		return 'relaxed';
+	};
+
 	let {
 		class: className,
-		fixed = true,
-		rows = 'auto',
+		content,
 		navigation,
 		primary,
 		meta,
 		actions,
 	}: {
 		class?: string;
-		fixed?: boolean;
-		rows?: 'auto' | 1 | 2;
+		content?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
 		navigation?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
 		primary?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
 		meta?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
@@ -35,26 +47,20 @@
 	let rootRef = $state<HTMLElement | null>(null);
 	let width = $state(0);
 
-	const hasHeader = $derived(Boolean(navigation || primary || actions));
-	const effectiveRows = $derived.by(() => {
-		if (rows !== 'auto') {
-			return rows;
-		}
-		return hasHeader && meta ? 2 : 1;
-	});
 	const breakpoint = $derived(resolveBreakpoint(width));
+	const density = $derived(resolveDensity(breakpoint));
 	const toolbarState = $derived.by(
 		() =>
 			({
 				width,
 				breakpoint,
-				rows: effectiveRows,
-				fixed,
+				density,
 				isNarrow: breakpoint === 'narrow',
 				isCompact: breakpoint !== 'wide',
 				isWide: breakpoint === 'wide',
 			}) satisfies WorkbenchToolbarRenderState,
 	);
+	const usesCompatibilityLayout = $derived(Boolean(!content && (navigation || primary || meta || actions)));
 
 	onMount(() => {
 		if (!rootRef || typeof ResizeObserver === 'undefined') {
@@ -62,137 +68,142 @@
 			return;
 		}
 
+		let frame = 0;
+		const scheduleWidthCommit = (nextWidth: number): void => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				if (nextWidth !== width) {
+					width = nextWidth;
+				}
+			});
+		};
+
 		const observer = new ResizeObserver((entries) => {
 			const nextWidth = Math.round(entries[0]?.contentRect.width ?? rootRef?.clientWidth ?? 0);
-			if (nextWidth !== width) {
-				width = nextWidth;
-			}
+			scheduleWidthCommit(nextWidth);
 		});
 		observer.observe(rootRef);
-		width = rootRef.clientWidth;
-		return () => observer.disconnect();
+		scheduleWidthCommit(rootRef.clientWidth);
+		return () => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			observer.disconnect();
+		};
 	});
 </script>
 
 <section
 	bind:this={rootRef}
-	class={cn('workbench-toolbar grid', className)}
+	class={cn('workbench-toolbar', className)}
 	data-workbench-toolbar
 	data-workbench-toolbar-breakpoint={breakpoint}
-	data-workbench-toolbar-rows={String(effectiveRows)}
-	data-workbench-toolbar-fixed={fixed ? 'true' : 'false'}
+	data-workbench-toolbar-density={density}
 >
-	{#if navigation || primary || actions}
-		<div
-			class="workbench-toolbar__header grid gap-3"
-			data-has-navigation={navigation ? 'true' : 'false'}
-			data-has-actions={actions ? 'true' : 'false'}
-			data-has-primary={primary ? 'true' : 'false'}
-		>
-			{#if navigation}
-				<div class="workbench-toolbar__navigation" data-workbench-toolbar-region="navigation">
-					{@render navigation(toolbarState)}
-				</div>
-			{/if}
-			{#if primary}
-				<div class="workbench-toolbar__primary min-w-0" data-workbench-toolbar-region="primary">
-					{@render primary(toolbarState)}
-				</div>
-			{/if}
-			{#if actions}
-				<div
-					class="workbench-toolbar__actions flex flex-wrap items-center gap-2"
-					data-workbench-toolbar-region="actions"
-				>
-					{@render actions(toolbarState)}
-				</div>
-			{/if}
+	{#if content}
+		<div class="workbench-toolbar__content" data-workbench-toolbar-region="content">
+			{@render content(toolbarState)}
 		</div>
-	{/if}
+	{:else if usesCompatibilityLayout}
+		<div class="workbench-toolbar__compat" data-workbench-toolbar-region="compat">
+			{#if navigation || primary || actions}
+				<div
+					class="workbench-toolbar__header"
+					data-has-navigation={navigation ? 'true' : 'false'}
+					data-has-actions={actions ? 'true' : 'false'}
+					data-has-primary={primary ? 'true' : 'false'}
+				>
+					{#if navigation}
+						<div class="workbench-toolbar__navigation" data-workbench-toolbar-region="navigation">
+							{@render navigation(toolbarState)}
+						</div>
+					{/if}
+					{#if primary}
+						<div class="workbench-toolbar__primary" data-workbench-toolbar-region="primary">
+							{@render primary(toolbarState)}
+						</div>
+					{/if}
+					{#if actions}
+						<div class="workbench-toolbar__actions" data-workbench-toolbar-region="actions">
+							{@render actions(toolbarState)}
+						</div>
+					{/if}
+				</div>
+			{/if}
 
-	{#if meta}
-		<div class="workbench-toolbar__meta flex flex-wrap items-center gap-2" data-workbench-toolbar-region="meta">
-			{@render meta(toolbarState)}
+			{#if meta}
+				<div class="workbench-toolbar__meta" data-workbench-toolbar-region="meta">
+					{@render meta(toolbarState)}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </section>
 
 <style>
+	.workbench-toolbar,
+	.workbench-toolbar__content,
+	.workbench-toolbar__compat {
+		block-size: 100%;
+		min-block-size: 0;
+		min-inline-size: 0;
+	}
+
 	.workbench-toolbar {
 		container-type: inline-size;
 		inline-size: 100%;
-		min-inline-size: 0;
-		padding: 0.9rem 1rem;
-		gap: 0.75rem;
-		overflow: clip;
+		overflow: hidden;
 	}
 
-	.workbench-toolbar[data-workbench-toolbar-fixed='true'][data-workbench-toolbar-rows='1'] {
-		block-size: 4.25rem;
+	.workbench-toolbar__content {
+		display: block;
+	}
+
+	.workbench-toolbar__compat {
+		display: grid;
 		align-content: center;
-	}
-
-	.workbench-toolbar[data-workbench-toolbar-fixed='true'][data-workbench-toolbar-rows='2'] {
-		grid-template-rows: minmax(0, 1fr) auto;
-		block-size: 7.5rem;
-	}
-
-	.workbench-toolbar[data-workbench-toolbar-fixed='true'][data-workbench-toolbar-breakpoint='compact'][data-workbench-toolbar-rows='2'] {
-		block-size: 8rem;
-	}
-
-	.workbench-toolbar[data-workbench-toolbar-fixed='true'][data-workbench-toolbar-breakpoint='narrow'][data-workbench-toolbar-rows='2'] {
-		block-size: 8.75rem;
-		padding-block: 0.75rem;
+		gap: 0.35rem;
+		padding-inline: 0.75rem;
 	}
 
 	.workbench-toolbar__header {
-		min-block-size: 0;
+		display: grid;
 		align-items: center;
-		gap: 0.875rem;
+		gap: 0.75rem;
+		min-inline-size: 0;
 	}
 
-	.workbench-toolbar__navigation {
+	.workbench-toolbar__navigation,
+	.workbench-toolbar__actions {
 		display: flex;
 		align-items: center;
 	}
 
-	.workbench-toolbar__primary {
-		display: grid;
-		align-content: center;
-		gap: 0.25rem;
-	}
-
-	.workbench-toolbar__actions {
-		align-items: center;
+	.workbench-toolbar__primary,
+	.workbench-toolbar__meta {
+		min-inline-size: 0;
 	}
 
 	.workbench-toolbar__meta {
-		min-block-size: 0;
+		display: flex;
 		align-items: center;
-		border-top: 1px solid color-mix(in srgb, var(--border), transparent 38%);
-		padding-top: 0.7rem;
-		min-height: 0;
-	}
-
-	.workbench-toolbar[data-workbench-toolbar-rows='1'] .workbench-toolbar__meta {
-		border-top: 0;
-		padding-top: 0;
+		flex-wrap: wrap;
+		gap: 0.45rem;
 	}
 
 	@container (min-width: 42rem) {
 		.workbench-toolbar__header[data-has-navigation='true'][data-has-actions='true'][data-has-primary='true'] {
-			align-items: start;
 			grid-template-columns: auto minmax(0, 1fr) auto;
 		}
 
 		.workbench-toolbar__header[data-has-navigation='true'][data-has-actions='false'][data-has-primary='true'] {
-			align-items: start;
 			grid-template-columns: auto minmax(0, 1fr);
 		}
 
 		.workbench-toolbar__header[data-has-navigation='false'][data-has-actions='true'][data-has-primary='true'] {
-			align-items: start;
 			grid-template-columns: minmax(0, 1fr) auto;
 		}
 
@@ -201,23 +212,18 @@
 		}
 	}
 
-	@container (min-width: 58rem) {
-		.workbench-toolbar__meta {
-			padding-top: 0.85rem;
-		}
-	}
-
-	@container (max-width: 44.999rem) {
-		.workbench-toolbar {
-			padding-inline: 0.85rem;
+	@container (max-width: 41.999rem) {
+		.workbench-toolbar__compat {
+			padding-inline: 0.55rem;
 		}
 
 		.workbench-toolbar__header {
-			gap: 0.7rem;
+			gap: 0.45rem;
 		}
 
 		.workbench-toolbar__actions {
-			justify-content: flex-start;
+			flex-wrap: wrap;
+			gap: 0.35rem;
 		}
 	}
 </style>

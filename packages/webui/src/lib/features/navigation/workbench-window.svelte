@@ -85,6 +85,10 @@
 		min-inline-size: 0;
 	}
 
+	.workbench-page-toolbar {
+		block-size: 3rem;
+	}
+
 	.workbench-window-body,
 	.workbench-window-content {
 		block-size: 100%;

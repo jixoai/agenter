@@ -22,21 +22,21 @@ The WebUI SHALL expose running-avatar detail through a secondary runtime shell t
 - **THEN** the application opens the same running-avatar detail shell model used by the nested secondary navigation
 - **THEN** the detail behavior does not depend on which launcher initiated it
 
-### Requirement: Running-avatar detail SHALL use a primary runtime stage plus a secondary facts rail
+### Requirement: Running-avatar detail SHALL keep one primary runtime stage without a parallel facts rail
 
-The runtime shell SHALL present the active tab content as the primary stage and SHALL keep linked systems, runtime facts, and auxiliary navigation in a visually quieter secondary rail.
+The runtime shell SHALL present the active tab content as the single primary stage. Linked systems, runtime facts, and room or terminal jump actions SHALL be integrated into stage-local surfaces instead of being repeated in a separate right-side facts rail.
 
-#### Scenario: Attention opens with a strong primary stage
+#### Scenario: Attention opens with compact runtime signals and actionable contexts
 
 - **WHEN** the user opens the runtime shell on `Attention`
-- **THEN** the page shows a summary band plus a primary attention stage that explains the current runtime state
-- **THEN** linked systems and runtime facts remain available in a smaller secondary rail instead of competing as peer empty canvases
+- **THEN** the page shows compact scheduler signals plus an `Active contexts` list rendered as compact items inside the primary stage
+- **THEN** room and terminal jump actions live inside those context items instead of a separate `Session context` rail
 
-#### Scenario: Peer runtime tabs reuse the same shell hierarchy
+#### Scenario: Peer runtime tabs reuse the same single-stage shell hierarchy
 
 - **WHEN** the user switches to `Cycles`, `Systems`, `Observability`, or `Settings`
 - **THEN** the selected tab renders through the same primary-stage shell model
-- **THEN** the right rail remains secondary and does not become the dominant surface
+- **THEN** the runtime shell does not allocate a competing right-side facts rail for those peer pages
 
 ### Requirement: Cycles tab SHALL surface the current running round as an active badge
 

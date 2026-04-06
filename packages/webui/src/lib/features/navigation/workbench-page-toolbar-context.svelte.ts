@@ -22,6 +22,6 @@ export const setWorkbenchPageToolbarRegistry = (): WorkbenchPageToolbarRegistry 
 	return setContext(WORKBENCH_PAGE_TOOLBAR_CONTEXT_KEY, new WorkbenchPageToolbarRegistry());
 };
 
-export const getWorkbenchPageToolbarRegistry = (): WorkbenchPageToolbarRegistry => {
+export const getWorkbenchPageToolbarRegistry = (): WorkbenchPageToolbarRegistry | undefined => {
 	return getContext(WORKBENCH_PAGE_TOOLBAR_CONTEXT_KEY);
 };

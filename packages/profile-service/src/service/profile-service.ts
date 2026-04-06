@@ -7,7 +7,7 @@ import {
   ProfileWebAuthnControlPlane,
 } from "../auth/webauthn-control-plane";
 import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toIdentifierKey } from "../identifiers";
-import { buildSessionIconUrl, renderProfileFallbackSvg, renderSessionFallbackSvg } from "../render/fallback-icons";
+import { buildRoomIconUrl, buildSessionIconUrl, renderProfileFallbackSvg, renderRoomFallbackSvg, renderSessionFallbackSvg } from "../render/fallback-icons";
 import { fetchGravatar } from "../render/gravatar";
 import type {
   AuthChallengeDescriptor,
@@ -20,6 +20,7 @@ import type {
   ProfileIdentifier,
   ProfileMetadata,
   ProfileProjection,
+  RoomIconSeed,
   RootAuthPrivateKeyReveal,
   SessionIconSeed,
 } from "../types";
@@ -246,6 +247,10 @@ export class ProfileService {
     await this.putIconAsset("session", sessionId, mimeType, bytes);
   }
 
+  async putRoomIcon(roomId: string, mimeType: string, bytes: Uint8Array): Promise<void> {
+    await this.putIconAsset("room", roomId, mimeType, bytes);
+  }
+
   async upsertSessionSeed(seed: SessionIconSeed): Promise<void> {
     await this.store.putSessionSeed(seed);
   }
@@ -293,6 +298,25 @@ export class ProfileService {
       mimeType: "image/svg+xml",
       svg: renderSessionFallbackSvg(seed),
       iconUrl: buildSessionIconUrl(sessionId),
+    };
+  }
+
+  async resolveRoomIcon(roomId: string): Promise<{ mimeType: string; bytes?: Uint8Array; svg?: string; iconUrl: string }> {
+    const uploaded = await this.store.getIconAsset("room", roomId);
+    if (uploaded) {
+      return {
+        mimeType: uploaded.mimeType,
+        bytes: uploaded.bytes,
+        iconUrl: buildRoomIconUrl(roomId),
+      };
+    }
+    const seed: RoomIconSeed = {
+      roomId,
+    };
+    return {
+      mimeType: "image/svg+xml",
+      svg: renderRoomFallbackSvg(seed),
+      iconUrl: buildRoomIconUrl(roomId),
     };
   }
 

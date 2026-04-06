@@ -190,6 +190,7 @@ export type {
   ChatSessionAsset,
   ChatMessage,
   ModelCapabilities,
+  RoomMediaAsset,
   TaskStage,
 } from "./types";
 export { WorkspacesStore } from "./workspaces-store";

@@ -3,6 +3,7 @@ import {
   type AuthDescriptor,
   type AuthSessionProjection,
   buildProfileIconUrl,
+  buildRoomIconUrl,
   buildSessionIconUrl,
   type RootAuthPrivateKeyReveal,
   startProfileServiceServer,
@@ -263,6 +264,23 @@ export class ProfileServiceBridge {
     return response.ok ? await this.readMediaResponse(response) : null;
   }
 
+  async readRoomIcon(input: {
+    roomId: string;
+    format?: "svg" | "png" | "jpeg";
+    size?: number;
+  }): Promise<ProfileServiceMedia | null> {
+    const params = new URLSearchParams();
+    if (input.format) {
+      params.set("format", input.format);
+    }
+    if (input.size) {
+      params.set("size", String(input.size));
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    const response = await this.request(`/media/rooms/${encodeURIComponent(input.roomId)}/icon${suffix}`);
+    return response.ok ? await this.readMediaResponse(response) : null;
+  }
+
   async uploadSessionIcon(
     sessionId: string,
     file: { bytes: Uint8Array; mimeType: string },
@@ -279,6 +297,25 @@ export class ProfileServiceBridge {
     return {
       ok: true,
       iconUrl: payload.iconUrl ?? (await this.buildAbsoluteUrl(buildSessionIconUrl(sessionId))),
+    };
+  }
+
+  async uploadRoomIcon(
+    roomId: string,
+    file: { bytes: Uint8Array; mimeType: string },
+  ): Promise<{ ok: true; iconUrl: string }> {
+    const response = await this.request(`/rooms/${encodeURIComponent(roomId)}/icon`, {
+      method: "POST",
+      headers: { "content-type": file.mimeType },
+      body: new Blob([toOwnedArrayBuffer(file.bytes)], { type: file.mimeType }),
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service room icon upload failed (${response.status})`);
+    }
+    const payload = (await response.json()) as { ok: true; iconUrl?: string };
+    return {
+      ok: true,
+      iconUrl: payload.iconUrl ?? (await this.buildAbsoluteUrl(buildRoomIconUrl(roomId))),
     };
   }
 

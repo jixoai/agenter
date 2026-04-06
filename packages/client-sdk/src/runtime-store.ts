@@ -8,6 +8,7 @@ import type {
   ChatListItem,
   DraftResolutionOutput,
   GlobalRoomActorId,
+  GlobalRoomAssetEntry,
   GlobalRoomEntry,
   GlobalRoomGrantEntry,
   GlobalRoomGrantIssueOutput,
@@ -68,6 +69,7 @@ const createInitialState = (): RuntimeClientState => ({
   },
   globalRoomSnapshotsById: {},
   globalRoomGrantsById: {},
+  globalRoomAssetsById: {},
   globalTerminals: {
     data: [],
     loaded: false,
@@ -100,6 +102,10 @@ type SessionResourceHandle = { sessionId: string };
 type GlobalRoomSnapshotRefreshTask = {
   promise: Promise<GlobalRoomSnapshotOutput | null>;
   query: { accessToken?: string; limit?: number };
+};
+type GlobalRoomAssetsRefreshTask = {
+  promise: Promise<GlobalRoomAssetEntry[]>;
+  query: { accessToken?: string };
 };
 type GlobalTerminalActivityRefreshTask = {
   promise: Promise<TerminalActivityItem[]>;
@@ -213,6 +219,19 @@ const compareGlobalRoomEntry = (left: GlobalRoomEntry, right: GlobalRoomEntry): 
 };
 
 const sortGlobalRooms = (items: GlobalRoomEntry[]): GlobalRoomEntry[] => [...items].sort(compareGlobalRoomEntry);
+
+const compareGlobalRoomAssetEntry = (left: GlobalRoomAssetEntry, right: GlobalRoomAssetEntry): number => {
+  if (left.createdAt !== right.createdAt) {
+    return right.createdAt - left.createdAt;
+  }
+  if (left.updatedAt !== right.updatedAt) {
+    return right.updatedAt - left.updatedAt;
+  }
+  return right.assetId.localeCompare(left.assetId);
+};
+
+const sortGlobalRoomAssets = (items: GlobalRoomAssetEntry[]): GlobalRoomAssetEntry[] =>
+  [...items].sort(compareGlobalRoomAssetEntry);
 
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
 
@@ -431,6 +450,9 @@ export class RuntimeStore {
   private readonly globalRoomGrantRefreshTasks = new Map<string, Promise<GlobalRoomGrantEntry[]>>();
   private readonly globalRoomGrantWatchCountById = new Map<string, number>();
   private readonly globalRoomGrantQueryById = new Map<string, { accessToken?: string }>();
+  private readonly globalRoomAssetRefreshTasks = new Map<string, GlobalRoomAssetsRefreshTask>();
+  private readonly globalRoomAssetWatchCountById = new Map<string, number>();
+  private readonly globalRoomAssetQueryById = new Map<string, { accessToken?: string }>();
   private globalTerminalsRefreshTask: Promise<GlobalTerminalEntry[]> | null = null;
   private globalTerminalsWatchCount = 0;
   private readonly globalTerminalGrantRefreshTasks = new Map<string, Promise<GlobalTerminalGrantEntry[]>>();
@@ -575,6 +597,13 @@ export class RuntimeStore {
       })),
       outputs: cycle.outputs.map((message) => this.normalizeRuntimeChatMessage(message)),
       liveMessages: cycle.liveMessages.map((message) => this.normalizeRuntimeChatMessage(message)),
+    };
+  }
+
+  private normalizeGlobalRoomAssetEntry(asset: GlobalRoomAssetEntry): GlobalRoomAssetEntry {
+    return {
+      ...asset,
+      url: this.resolveMediaUrl(asset.url),
     };
   }
 
@@ -902,6 +931,19 @@ export class RuntimeStore {
     return next;
   }
 
+  private ensureGlobalRoomAssetsState(chatId: string): CachedResourceState<GlobalRoomAssetEntry[]> {
+    return this.state.globalRoomAssetsById[chatId] ?? createCachedResourceState<GlobalRoomAssetEntry[]>([]);
+  }
+
+  private setGlobalRoomAssetsState(
+    chatId: string,
+    updater: (current: CachedResourceState<GlobalRoomAssetEntry[]>) => CachedResourceState<GlobalRoomAssetEntry[]>,
+  ): CachedResourceState<GlobalRoomAssetEntry[]> {
+    const next = updater(this.ensureGlobalRoomAssetsState(chatId));
+    this.state.globalRoomAssetsById[chatId] = next;
+    return next;
+  }
+
   private resolveGlobalRoomEntry(chatId: string): GlobalRoomEntry | null {
     return this.state.globalRooms.data.find((room) => room.chatId === chatId) ?? null;
   }
@@ -972,6 +1014,11 @@ export class RuntimeStore {
     return Boolean(resource?.loaded || this.globalRoomGrantWatchCountById.has(chatId));
   }
 
+  private shouldRefreshGlobalRoomAssets(chatId: string): boolean {
+    const resource = this.state.globalRoomAssetsById[chatId];
+    return Boolean(resource?.loaded || this.globalRoomAssetWatchCountById.has(chatId));
+  }
+
   private sameGlobalRoomSnapshotQuery(
     left: { accessToken?: string; limit?: number },
     right: { accessToken?: string; limit?: number },
@@ -989,6 +1036,19 @@ export class RuntimeStore {
       accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
     };
     this.globalRoomGrantQueryById.set(chatId, next);
+    return next;
+  }
+
+  private resolveGlobalRoomAssetQuery(
+    chatId: string,
+    input: { accessToken?: string } = {},
+  ): { accessToken?: string } {
+    const previous = this.globalRoomAssetQueryById.get(chatId) ?? {};
+    const fromCatalog = this.resolveGlobalRoomEntry(chatId);
+    const next = {
+      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+    };
+    this.globalRoomAssetQueryById.set(chatId, next);
     return next;
   }
 
@@ -1163,6 +1223,69 @@ export class RuntimeStore {
       });
 
     this.globalRoomGrantRefreshTasks.set(chatId, task);
+    return await task;
+  }
+
+  private async refreshGlobalRoomAssetsInternal(
+    chatId: string,
+    input: { accessToken?: string; force?: boolean } = {},
+  ): Promise<GlobalRoomAssetEntry[]> {
+    const current = this.ensureGlobalRoomAssetsState(chatId);
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    const query = this.resolveGlobalRoomAssetQuery(chatId, input);
+    const inflight = this.globalRoomAssetRefreshTasks.get(chatId);
+    if (inflight && inflight.query.accessToken === query.accessToken) {
+      return await inflight.promise;
+    }
+
+    this.setGlobalRoomAssetsState(chatId, (resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.message.globalListAssets
+      .query({
+        chatId,
+        accessToken: query.accessToken,
+      })
+      .then((output) => {
+        const data = sortGlobalRoomAssets(output.items.map((item) => this.normalizeGlobalRoomAssetEntry(item)));
+        this.setGlobalRoomAssetsState(chatId, (resource) => ({
+          ...resource,
+          data,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return data;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalRoomAssetsState(chatId, (resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        const latest = this.globalRoomAssetRefreshTasks.get(chatId);
+        if (latest?.promise === task) {
+          this.globalRoomAssetRefreshTasks.delete(chatId);
+        }
+      });
+
+    this.globalRoomAssetRefreshTasks.set(chatId, { promise: task, query });
     return await task;
   }
 
@@ -1976,6 +2099,9 @@ export class RuntimeStore {
     this.globalRoomGrantRefreshTasks.clear();
     this.globalRoomGrantWatchCountById.clear();
     this.globalRoomGrantQueryById.clear();
+    this.globalRoomAssetRefreshTasks.clear();
+    this.globalRoomAssetWatchCountById.clear();
+    this.globalRoomAssetQueryById.clear();
     this.globalTerminalsRefreshTask = null;
     this.globalTerminalsWatchCount = 0;
     this.globalTerminalGrantRefreshTasks.clear();
@@ -2496,8 +2622,58 @@ export class RuntimeStore {
     }));
   }
 
+  async uploadRoomAssets(
+    chatId: string,
+    accessToken: string,
+    files: File[],
+  ): Promise<GlobalRoomAssetEntry[]> {
+    const form = new FormData();
+    for (const file of files) {
+      form.append("files", file, file.name);
+    }
+    const response = await fetch(this.resolveHttpUrl(`/api/rooms/${encodeURIComponent(chatId)}/assets`), {
+      method: "POST",
+      headers: {
+        "x-agenter-room-access-token": accessToken,
+      },
+      body: form,
+    });
+    const payload = (await response.json()) as {
+      ok: boolean;
+      items?: GlobalRoomAssetEntry[];
+      error?: string;
+    };
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error ?? `room asset upload failed (${response.status})`);
+    }
+    const items = sortGlobalRoomAssets((payload.items ?? []).map((item) => this.normalizeGlobalRoomAssetEntry(item)));
+    if (items.length > 0) {
+      this.setGlobalRoomAssetsState(chatId, (resource) => {
+        const mergedById = new Map(resource.data.map((asset) => [asset.assetId, asset]));
+        for (const item of items) {
+          mergedById.set(item.assetId, item);
+        }
+        return {
+          ...resource,
+          data: sortGlobalRoomAssets([...mergedById.values()]),
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        };
+      });
+      this.emit();
+    }
+    return items;
+  }
+
   sessionIconUrl(sessionId: string): string | null {
     return this.buildProfileServiceUrl(`/media/sessions/${encodeURIComponent(sessionId)}/icon`);
+  }
+
+  roomIconUrl(roomId: string): string | null {
+    return this.buildProfileServiceUrl(`/media/rooms/${encodeURIComponent(roomId)}/icon`);
   }
 
   async uploadSessionIcon(sessionId: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
@@ -2511,6 +2687,24 @@ export class RuntimeStore {
     const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error ?? `session icon upload failed (${response.status})`);
+    }
+    return {
+      ok: true,
+      url: payload.url ?? payload.iconUrl,
+    };
+  }
+
+  async uploadRoomIcon(roomId: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const response = await fetch(await this.resolveProfileServiceUrl(`/rooms/${encodeURIComponent(roomId)}/icon`), {
+      method: "POST",
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+      },
+      body: file,
+    });
+    const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error ?? `room icon upload failed (${response.status})`);
     }
     return {
       ok: true,
@@ -2856,6 +3050,42 @@ export class RuntimeStore {
     return await this.refreshGlobalRoomSnapshotInternal(input.chatId, input);
   }
 
+  getGlobalRoomAssetsState(chatId: string): CachedResourceState<GlobalRoomAssetEntry[]> {
+    return this.ensureGlobalRoomAssetsState(chatId);
+  }
+
+  retainGlobalRoomAssets(chatId: string): () => void {
+    this.globalRoomAssetWatchCountById.set(chatId, (this.globalRoomAssetWatchCountById.get(chatId) ?? 0) + 1);
+    this.state.globalRoomAssetsById[chatId] =
+      this.state.globalRoomAssetsById[chatId] ?? createCachedResourceState<GlobalRoomAssetEntry[]>([]);
+    return () => {
+      const current = this.globalRoomAssetWatchCountById.get(chatId) ?? 0;
+      if (current <= 1) {
+        this.globalRoomAssetWatchCountById.delete(chatId);
+        return;
+      }
+      this.globalRoomAssetWatchCountById.set(chatId, current - 1);
+    };
+  }
+
+  async hydrateGlobalRoomAssets(input: {
+    chatId: string;
+    accessToken?: string;
+    force?: boolean;
+  }): Promise<GlobalRoomAssetEntry[]> {
+    return await this.refreshGlobalRoomAssetsInternal(input.chatId, input);
+  }
+
+  async listGlobalRoomAssets(input: {
+    chatId: string;
+    accessToken?: string;
+  }): Promise<GlobalRoomAssetEntry[]> {
+    return await this.refreshGlobalRoomAssetsInternal(input.chatId, {
+      accessToken: input.accessToken,
+      force: true,
+    });
+  }
+
   async createGlobalRoom(input: {
     chatId?: string;
     title?: string;
@@ -3030,6 +3260,17 @@ export class RuntimeStore {
       error: null,
       refreshedAt: Date.now(),
     }));
+    this.setGlobalRoomAssetsState(output.channel.chatId, (resource) => ({
+      ...resource,
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+    this.globalRoomAssetQueryById.delete(output.channel.chatId);
+    this.globalRoomAssetRefreshTasks.delete(output.channel.chatId);
     this.emit();
     return output.channel;
   }
@@ -3457,11 +3698,26 @@ export class RuntimeStore {
       loading: false,
       refreshing: false,
       error: null,
-      refreshedAt: Date.now(),
+        refreshedAt: Date.now(),
     }));
     this.emit();
+    const refreshes: Array<Promise<unknown>> = [];
+    if (
+      this.ensureGlobalTerminalGrantsState(input.terminalId).loaded ||
+      this.globalTerminalGrantWatchCountById.has(input.terminalId)
+    ) {
+      refreshes.push(
+        this.hydrateGlobalTerminalGrants({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
     if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
+      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
     }
     return output.grant;
   }
@@ -3478,11 +3734,26 @@ export class RuntimeStore {
       loading: false,
       refreshing: false,
       error: null,
-      refreshedAt: Date.now(),
+        refreshedAt: Date.now(),
     }));
     this.emit();
+    const refreshes: Array<Promise<unknown>> = [];
+    if (
+      this.ensureGlobalTerminalGrantsState(input.terminalId).loaded ||
+      this.globalTerminalGrantWatchCountById.has(input.terminalId)
+    ) {
+      refreshes.push(
+        this.hydrateGlobalTerminalGrants({
+          terminalId: input.terminalId,
+          force: true,
+        }),
+      );
+    }
     if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
+      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
+    }
+    if (refreshes.length > 0) {
+      await Promise.allSettled(refreshes);
     }
     return output;
   }
@@ -4319,6 +4590,7 @@ export class RuntimeStore {
         catalogChanged?: boolean;
         snapshotRoomIds?: string[];
         grantRoomIds?: string[];
+        assetRoomIds?: string[];
       };
       if (payload.catalogChanged && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
         void this.hydrateGlobalRooms({ force: true });
@@ -4334,6 +4606,12 @@ export class RuntimeStore {
           continue;
         }
         void this.hydrateGlobalRoomGrants({ chatId, force: true }).catch(() => undefined);
+      }
+      for (const chatId of payload.assetRoomIds ?? []) {
+        if (!this.shouldRefreshGlobalRoomAssets(chatId)) {
+          continue;
+        }
+        void this.hydrateGlobalRoomAssets({ chatId, force: true }).catch(() => undefined);
       }
       return;
     }

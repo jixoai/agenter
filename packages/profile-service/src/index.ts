@@ -1,7 +1,9 @@
 export {
   buildProfileIconUrl,
+  buildRoomIconUrl,
   buildSessionIconUrl,
   renderProfileFallbackSvg,
+  renderRoomFallbackSvg,
   renderSessionFallbackSvg,
 } from "./render/fallback-icons";
 export { createProfileServiceApp } from "./server/app";
@@ -20,6 +22,7 @@ export type {
   ProfileIdentifierKind,
   ProfileMetadata,
   ProfileProjection,
+  RoomIconSeed,
   RootAuthPrivateKeyReveal,
   ProfileServiceHandle,
   ProfileServiceOptions,

@@ -98,6 +98,7 @@ import {
 } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { projectPersistedBlockToChatMessage, readPersistedBlockChatId } from "./session-room-read-model";
+import { RoomAssetStore, type RoomAssetRecord, toChatRoomAsset } from "./room-assets";
 import { buildSessionAssetUrl } from "./session-assets";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import {
@@ -106,7 +107,7 @@ import {
   saveScopedSettingsLayer,
   type SettingsScope,
 } from "./settings-scope";
-import type { ChatMessage, ChatSessionAsset, ModelCapabilities } from "./types";
+import type { ChatMessage, ChatSessionAsset, ModelCapabilities, RoomMediaAsset } from "./types";
 import { WorkspacePathSearchIndex } from "./workspace-path-search";
 import {
   listWorkspaceSettingsLayers,
@@ -462,6 +463,7 @@ export interface WorkspaceSessionPage {
 }
 
 export interface WorkspaceListItem extends WorkspaceEntry {
+  objectivePath: string;
   group: string;
   missing: boolean;
   counts: WorkspaceSessionCounts;
@@ -535,6 +537,7 @@ export class AppKernel {
   private readonly workspaces: WorkspacesStore;
   private readonly messageControlPlane: MessageControlPlane;
   private readonly terminalControlPlane: TerminalControlPlane;
+  private readonly roomAssets: RoomAssetStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -550,6 +553,7 @@ export class AppKernel {
   private readonly terminalControlPlaneSubscriptions: Array<() => void> = [];
   private readonly pendingMessageRoomSnapshotInvalidations = new Set<string>();
   private readonly pendingMessageRoomGrantInvalidations = new Set<string>();
+  private readonly pendingMessageRoomAssetInvalidations = new Set<string>();
   private readonly pendingTerminalGrantInvalidations = new Set<string>();
   private readonly pendingTerminalApprovalInvalidations = new Set<string>();
   private readonly pendingTerminalActivityInvalidations = new Set<string>();
@@ -571,6 +575,7 @@ export class AppKernel {
     this.messageControlPlane = new MessageControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".message", "message.db"),
     });
+    this.roomAssets = new RoomAssetStore(join(this.sessions.getGlobalRoot(), "..", ".message"));
     this.terminalControlPlane = new TerminalControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
       outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
@@ -690,6 +695,7 @@ export class AppKernel {
     catalogChanged?: boolean;
     snapshotRoomIds?: string[];
     grantRoomIds?: string[];
+    assetRoomIds?: string[];
   }): void {
     if (input.catalogChanged) {
       this.pendingMessageRoomCatalogInvalidation = true;
@@ -700,6 +706,9 @@ export class AppKernel {
     for (const chatId of input.grantRoomIds ?? []) {
       this.pendingMessageRoomGrantInvalidations.add(chatId);
     }
+    for (const chatId of input.assetRoomIds ?? []) {
+      this.pendingMessageRoomAssetInvalidations.add(chatId);
+    }
     if (this.messageRoomInvalidationTimer) {
       clearTimeout(this.messageRoomInvalidationTimer);
     }
@@ -707,17 +716,20 @@ export class AppKernel {
       const catalogChanged = this.pendingMessageRoomCatalogInvalidation;
       const snapshotRoomIds = [...this.pendingMessageRoomSnapshotInvalidations];
       const grantRoomIds = [...this.pendingMessageRoomGrantInvalidations];
+      const assetRoomIds = [...this.pendingMessageRoomAssetInvalidations];
       this.pendingMessageRoomCatalogInvalidation = false;
       this.pendingMessageRoomSnapshotInvalidations.clear();
       this.pendingMessageRoomGrantInvalidations.clear();
+      this.pendingMessageRoomAssetInvalidations.clear();
       this.messageRoomInvalidationTimer = null;
-      if (!catalogChanged && snapshotRoomIds.length === 0 && grantRoomIds.length === 0) {
+      if (!catalogChanged && snapshotRoomIds.length === 0 && grantRoomIds.length === 0 && assetRoomIds.length === 0) {
         return;
       }
       this.emit("message.room.updated", {
         catalogChanged,
         snapshotRoomIds,
         grantRoomIds,
+        assetRoomIds,
       });
     }, MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS);
   }
@@ -895,6 +907,7 @@ export class AppKernel {
     this.pendingMessageRoomCatalogInvalidation = false;
     this.pendingMessageRoomSnapshotInvalidations.clear();
     this.pendingMessageRoomGrantInvalidations.clear();
+    this.pendingMessageRoomAssetInvalidations.clear();
     this.pendingTerminalCatalogInvalidation = false;
     this.pendingTerminalGrantInvalidations.clear();
     this.pendingTerminalApprovalInvalidations.clear();
@@ -1116,6 +1129,7 @@ export class AppKernel {
         .sort((left, right) => right.localeCompare(left))[0];
       return {
         ...entry,
+        objectivePath: entry.path === GLOBAL_WORKSPACE_PATH ? join(homedir(), ".agenter") : entry.path,
         group: entry.path === GLOBAL_WORKSPACE_PATH ? "Global" : resolveWorkspaceGroup(entry.path),
         missing: entry.path === GLOBAL_WORKSPACE_PATH ? false : !this.validateDirectory(entry.path).ok,
         counts,
@@ -1924,14 +1938,19 @@ export class AppKernel {
   }): { ok: boolean; reason?: string } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
+      const usesProjectedRoomToken = !input.accessToken || input.accessToken === access.room.accessToken;
+      const attachments = this.resolveGlobalRoomAttachments(input.chatId, input.assetIds ?? []);
       this.messageControlPlane.sendAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
         kind: "text",
         content: input.text,
         messageId: input.clientMessageId ?? `msg-${randomUUID()}`,
+        senderActorId:
+          input.superadminActorId && usesProjectedRoomToken ? input.superadminActorId : input.actorId,
+        attachments,
+        metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
       });
-      void input.assetIds;
       return { ok: true };
     } catch (error) {
       return {
@@ -2447,6 +2466,80 @@ export class AppKernel {
     return await runtime.uploadAssets(files);
   }
 
+  private resolveGlobalRoomAttachments(chatId: string, assetIds: string[]): ChatSessionAsset[] {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const assets = this.roomAssets.listAssetsByIds(chatId, assetIds);
+    if (assets.length !== assetIds.length) {
+      throw new Error("room asset not found");
+    }
+    return assets.map((asset) => toChatRoomAsset(chatId, asset));
+  }
+
+  private projectGlobalRoomAsset(chatId: string, asset: RoomAssetRecord): RoomMediaAsset {
+    return {
+      ...toChatRoomAsset(chatId, asset),
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt,
+      uploadedByActorId: asset.uploadedByActorId,
+    };
+  }
+
+  private resolveGlobalRoomUploaderActorId(
+    input: {
+      chatId: string;
+      accessToken?: string;
+      actorId?: MessageActorId;
+      superadminActorId?: MessageActorId;
+    },
+    access: { room: MessageControlPlaneEntry; accessToken: string },
+  ): MessageActorId | undefined {
+    if (input.superadminActorId) {
+      return input.superadminActorId;
+    }
+    if (input.actorId) {
+      return input.actorId;
+    }
+    const targetToken = input.accessToken ?? access.accessToken;
+    if (targetToken === access.room.accessToken) {
+      return access.room.participantId;
+    }
+    const grants = this.messageControlPlane.listChannelGrantsAuthorized({
+      chatId: input.chatId,
+      accessToken: access.accessToken,
+    });
+    return grants.find((grant) => grant.accessToken === targetToken)?.participantId ?? access.room.participantId;
+  }
+
+  async uploadGlobalRoomAssets(input: {
+    chatId: string;
+    files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): Promise<RoomMediaAsset[]> {
+    const access = this.resolveGlobalRoomAccess(input);
+    const uploadedByActorId = this.resolveGlobalRoomUploaderActorId(input, access);
+    const items = this.roomAssets
+      .uploadAssets(input.chatId, input.files, { uploadedByActorId })
+      .map((asset) => this.projectGlobalRoomAsset(input.chatId, asset));
+    if (items.length > 0) {
+      this.queueMessageRoomInvalidation({ assetRoomIds: [input.chatId] });
+    }
+    return items;
+  }
+
+  listGlobalRoomAssets(input: {
+    chatId: string;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): RoomMediaAsset[] {
+    this.resolveGlobalRoomAccess(input);
+    return this.roomAssets.listAssets(input.chatId).map((asset) => this.projectGlobalRoomAsset(input.chatId, asset));
+  }
+
   getSessionAsset(
     sessionId: string,
     assetId: string,
@@ -2489,6 +2582,22 @@ export class AppKernel {
     } finally {
       db.close();
     }
+  }
+
+  getGlobalRoomAsset(
+    chatId: string,
+    assetId: string,
+  ): { filePath: string; mimeType: string; name: string; sizeBytes: number } | null {
+    const asset = this.roomAssets.getAssetById(chatId, assetId);
+    if (!asset) {
+      return null;
+    }
+    return {
+      filePath: this.roomAssets.resolveAbsolutePath(asset.relativePath),
+      mimeType: asset.mimeType,
+      name: asset.name,
+      sizeBytes: asset.sizeBytes,
+    };
   }
 
   async uploadSessionIcon(sessionId: string, file: { bytes: Uint8Array; name: string; mimeType: string }): Promise<{ ok: true; url: string }> {

@@ -637,6 +637,100 @@ describe("Feature: app kernel event replay", () => {
     expect(existsSync(sessionRoot)).toBe(false);
   });
 
+  test("Scenario: Given uploaded room assets When sending a global room message Then attachments persist across reload and media reads stay durable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-room-assets-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = kernel.createGlobalRoom({
+      chatId: "room-assets",
+      title: "Room assets",
+      focus: true,
+    });
+    const uploads = await kernel.uploadGlobalRoomAssets({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      files: [
+        {
+          name: "diagram.png",
+          mimeType: "image/png",
+          bytes: new Uint8Array([137, 80, 78, 71]),
+        },
+      ],
+    });
+    const attachment = uploads[0];
+    if (!attachment) {
+      throw new Error("expected uploaded room asset metadata");
+    }
+    expect(attachment.uploadedByActorId).toBe(room.participantId);
+
+    const listedAssets = kernel.listGlobalRoomAssets({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(listedAssets).toHaveLength(1);
+    expect(listedAssets[0]).toMatchObject({
+      assetId: attachment.assetId,
+      name: "diagram.png",
+      mimeType: "image/png",
+      uploadedByActorId: room.participantId,
+    });
+
+    const media = kernel.getGlobalRoomAsset(room.chatId, attachment.assetId);
+    expect(media?.mimeType).toBe("image/png");
+    expect(media?.name).toBe("diagram.png");
+
+    const sent = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      text: "please inspect the room image",
+      assetIds: [attachment.assetId],
+    });
+    expect(sent).toEqual({ ok: true });
+
+    const snapshot = kernel.snapshotGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    const message = snapshot.items.find((item) => item.content === "please inspect the room image");
+    expect(message?.attachments).toHaveLength(1);
+    expect(message?.attachments?.[0]?.assetId).toBe(attachment.assetId);
+    expect(message?.attachments?.[0]?.url).toBe(
+      `/media/rooms/${encodeURIComponent(room.chatId)}/assets/${encodeURIComponent(attachment.assetId)}`,
+    );
+    expect(media ? readFileSync(media.filePath).byteLength : 0).toBe(4);
+
+    await kernel.stop();
+
+    const restarted = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await restarted.start();
+    const restartedRoom = restarted.listGlobalRooms({ includeArchived: true }).find((item) => item.chatId === room.chatId);
+    if (!restartedRoom?.accessToken) {
+      throw new Error("expected restarted room projection");
+    }
+
+    const restartedSnapshot = restarted.snapshotGlobalRoom({
+      chatId: room.chatId,
+      accessToken: restartedRoom.accessToken,
+      limit: 20,
+    });
+    const restartedMessage = restartedSnapshot.items.find((item) => item.content === "please inspect the room image");
+    expect(restartedMessage?.attachments?.[0]?.assetId).toBe(attachment.assetId);
+    expect(restarted.getGlobalRoomAsset(room.chatId, attachment.assetId)?.sizeBytes).toBe(4);
+
+    await restarted.stop();
+  });
+
   test("Scenario: Given projected session cycles When listing chat cycles Then collected inputs client ids and compact kind are preserved", async () => {
     const kernel = createKernel();
     await kernel.start();

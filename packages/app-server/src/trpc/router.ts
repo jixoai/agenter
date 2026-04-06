@@ -643,6 +643,19 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
+    globalListAssets: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listGlobalRoomAssets({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      })),
     globalIssueGrant: t.procedure
       .input(
         z.object({

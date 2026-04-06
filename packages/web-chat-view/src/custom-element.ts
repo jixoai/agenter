@@ -20,6 +20,14 @@ export type WebChatViewElement = HTMLElement & {
   emptyTranscriptTitle: string;
   emptyTranscriptMessage: string;
   routeNotice: import("./types").WebChatNotice | null;
+  channelPresentation?: import("./types").WebChatActorPresentation | null;
+  resolveActorPresentation?: (
+    input: import("./types").WebChatActorResolveInput,
+  ) => import("./types").WebChatActorPresentation | null;
+  resolveMessageActions?: (
+    input: import("./types").WebChatMessageRenderInput,
+  ) => readonly import("./types").WebChatMessageAction[];
+  composerCapabilities?: import("./types").WebChatComposerCapabilities;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
   latestVisibleMessageIdHandler?: (messageId: string | null) => void;

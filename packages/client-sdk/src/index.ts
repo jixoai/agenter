@@ -15,6 +15,8 @@ export type {
   ChatListItem,
   DraftResolutionOutput,
   GlobalRoomActorId,
+  GlobalRoomAssetEntry,
+  GlobalRoomAssetsOutput,
   GlobalRoomEntry,
   GlobalRoomGrantEntry,
   GlobalRoomGrantIssueOutput,

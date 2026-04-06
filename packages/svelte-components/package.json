@@ -1,10 +1,10 @@
 {
-  "name": "@agenter/svelte-primitives",
+  "name": "@agenter/svelte-components",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "echo 'No tests for @agenter/svelte-primitives'",
+    "test": "vitest run --config vitest.config.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },
   "exports": {
@@ -15,10 +15,15 @@
     }
   },
   "svelte": "./src/index.ts",
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "svelte": "^5.54.0",
     "svelte-check": "^4.4.2",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^4.1.0"
   }
 }

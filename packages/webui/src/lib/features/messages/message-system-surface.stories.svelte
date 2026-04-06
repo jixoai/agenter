@@ -14,6 +14,32 @@
 
 	import { containsVisibleTextDeep } from '$lib/testing/shadow-dom';
 
+	const getRoomToolbar = (canvasElement: HTMLElement) => {
+		const toolbar = canvasElement.querySelector<HTMLElement>('[data-workbench-page-toolbar]');
+		expect(toolbar).not.toBeNull();
+		return within(toolbar!);
+	};
+
+	const openAddUserForm = async (canvas: ReturnType<typeof within>): Promise<void> => {
+		const usersSection = await canvas.findByTestId('room-manage-users-section');
+		await userEvent.click(within(usersSection).getByRole('button', { name: 'Add user' }));
+		await waitFor(async () => {
+			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
+		});
+	};
+
+	const getComposerEditor = async (canvas: ReturnType<typeof within>): Promise<HTMLElement> => {
+		return waitFor(() => {
+			const host = canvas.getByTestId('web-chat-draft-editor') as HTMLElement;
+			const contentEditable = host.querySelector('[contenteditable="true"]') as HTMLElement | null;
+			const textarea = host.querySelector('textarea') as HTMLTextAreaElement | null;
+			const editor = contentEditable ?? textarea;
+			expect(editor).not.toBeNull();
+			expect(getComputedStyle(editor!).pointerEvents).not.toBe('none');
+			return editor!;
+		});
+	};
+
 	const chooseSelectOption = async (
 		canvas: ReturnType<typeof within>,
 		label: string,
@@ -42,17 +68,18 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
 		await waitFor(() => {
 			expect(containsVisibleTextDeep(canvasElement, 'Ops bridge')).toBe(true);
 		});
-		await expect(canvas.getByRole('button', { name: 'Manage room' })).toBeInTheDocument();
+		await expect(toolbar.getByRole('button', { name: 'Manage room' })).toBeInTheDocument();
+		await expect(toolbar.getByRole('button', { name: 'Search messages' })).toBeInTheDocument();
+		await expect(toolbar.getByRole('tab', { name: 'chat' })).toHaveAttribute('aria-selected', 'true');
+		await expect(toolbar.getByRole('tab', { name: 'assets' })).toBeInTheDocument();
 		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 		await expect(canvas.getByTestId('room-manage-rail')).toBeInTheDocument();
 		await expect(canvas.getByTestId('room-manage-stage')).toBeInTheDocument();
-		(canvas.getByRole('button', { name: 'Add user' }) as HTMLButtonElement).click();
-		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
-		});
+		await openAddUserForm(canvas);
 		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
 		await chooseSelectOption(canvas, 'Grant role', 'readonly');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
@@ -61,19 +88,19 @@
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
 		});
 		expect(canvas.queryByTestId('room-seat-system:trusted-bootstrap')).toBeNull();
-		await expect(canvas.getByRole('button', { name: 'Add user' })).toBeInTheDocument();
-		(canvas.getByRole('button', { name: 'Add user' }) as HTMLButtonElement).click();
-		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
-		});
+		await expect(toolbar.getByRole('button', { name: 'Add user' })).toBeInTheDocument();
+		await openAddUserForm(canvas);
 		await userEvent.click(canvas.getByRole('button', { name: 'Close' }));
 		await waitFor(() => {
 			expect(canvas.queryByTestId('room-manage-shell')).toBeNull();
 		});
+		await waitFor(() => {
+			expect(document.body.style.pointerEvents).not.toBe('none');
+		});
 
-		const composer = canvas.getByPlaceholderText('Message Ops bridge...') as HTMLTextAreaElement;
-		composer.value = 'Story transcript append';
-		composer.dispatchEvent(new Event('input', { bubbles: true }));
+		const composer = await getComposerEditor(canvas);
+		composer.focus();
+		await userEvent.keyboard('Story transcript append');
 		await waitFor(() => {
 			expect(canvas.getByRole('button', { name: 'Send' })).toBeEnabled();
 		});
@@ -82,9 +109,8 @@
 		await waitFor(() => {
 			expect(containsVisibleTextDeep(canvasElement, 'Story transcript append')).toBe(true);
 		});
-		await expect(canvas.getByText('2 users')).toBeInTheDocument();
 		await expect(canvas.queryByText(/^1\/2 read$/u)).toBeNull();
-		await expect(canvas.getByLabelText('1/2 read')).toBeInTheDocument();
+		await expect(canvas.getAllByLabelText('1/2 read').length).toBeGreaterThan(0);
 	}}
 >
 	<Harness disableManageDialogPortal initialManageDialogSection="users" />
@@ -95,11 +121,9 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
 		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
-		(canvas.getByRole('button', { name: 'Add user' }) as HTMLButtonElement).click();
-		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
-		});
+		await openAddUserForm(canvas);
 		await chooseSelectOption(canvas, 'Grant actor', /Analyst .*\/repo\/reviewer/u);
 		await chooseSelectOption(canvas, 'Grant role', 'member');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
@@ -108,15 +132,15 @@
 			expect(canvas.queryByTestId('room-manage-shell')).toBeNull();
 		});
 
-		const viewerSelect = canvas.getByLabelText('View room as user');
+		const viewerSelect = toolbar.getByLabelText('View room as user');
 
 		await waitFor(() => {
 			expect(viewerSelect.textContent ?? '').not.toContain('No granted room user yet');
 		});
 		await waitFor(() => {
-			expect(viewerSelect.textContent ?? '').toContain('auth:analyst');
+			expect(viewerSelect.textContent ?? '').toContain('Analyst');
 		});
-		await chooseSelectOption(canvas, 'View room as user', /Analyst .*\/repo\/reviewer/u);
+		await chooseSelectOption(toolbar, 'View room as user', /Analyst .*\/repo\/reviewer/u);
 		await waitFor(() => {
 			expect(viewerSelect.textContent ?? '').toContain('/repo/reviewer');
 		});
@@ -126,14 +150,32 @@
 </Story>
 
 <Story
+	name="Scenario: Given durable room assets When switching toolbar chips Then assets fill page_content without transcript chrome pollution"
+	asChild
+		play={async ({ canvasElement, userEvent }) => {
+		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
+		(toolbar.getByRole('tab', { name: 'assets' }) as HTMLButtonElement).click();
+		await waitFor(() => {
+			expect(canvas.getByTestId('room-asset-row-asset-room-brief')).toBeInTheDocument();
+		});
+		expect(canvas.queryByTestId('web-chat-draft-editor')).toBeNull();
+		(toolbar.getByRole('tab', { name: 'chat' }) as HTMLButtonElement).click();
+		await waitFor(() => {
+			expect(canvas.getByTestId('web-chat-draft-editor')).toBeInTheDocument();
+		});
+	}}
+>
+	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
 	name="Scenario: Given compact room users When seat actions open Then focus and revoke stay reachable through the dropdown menu"
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		(canvas.getByRole('button', { name: 'Add user' }) as HTMLButtonElement).click();
-		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
-		});
+		const toolbar = getRoomToolbar(canvasElement);
+		await openAddUserForm(canvas);
 		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
 		await chooseSelectOption(canvas, 'Grant role', 'member');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
@@ -171,10 +213,8 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		(canvas.getByRole('button', { name: 'Add user' }) as HTMLButtonElement).click();
-		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
-		});
+		const toolbar = getRoomToolbar(canvasElement);
+		await openAddUserForm(canvas);
 		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
 		await chooseSelectOption(canvas, 'Grant role', 'readonly');
 		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
