@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 
 	import { page } from '$app/state';
-	import { Scaffold } from '@agenter/svelte-components';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
@@ -132,15 +131,13 @@
 	<WorkbenchToolbar meta={terminalsToolbarMeta} />
 {/snippet}
 
-<Scaffold.Root class="h-full p-4 md:p-6" data-testid="terminals-workbench">
-	<Scaffold.Body class="h-full">
-		<WorkbenchWindow
-			ariaLabel="Terminal tabs"
-			value={activeTerminalId ?? 'new-terminal'}
-			{tabs}
-			toolbar={terminalsToolbar}
-		>
-			<div class="h-full">{@render children?.()}</div>
-		</WorkbenchWindow>
-	</Scaffold.Body>
-</Scaffold.Root>
+<div class="h-full" data-testid="terminals-workbench">
+	<WorkbenchWindow
+		ariaLabel="Terminal tabs"
+		value={activeTerminalId ?? 'new-terminal'}
+		{tabs}
+		toolbar={terminalsToolbar}
+	>
+		<div class="h-full">{@render children?.()}</div>
+	</WorkbenchWindow>
+</div>

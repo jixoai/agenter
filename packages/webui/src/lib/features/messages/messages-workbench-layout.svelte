@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 
 	import { page } from '$app/state';
-	import { Scaffold } from '@agenter/svelte-components';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
@@ -113,14 +112,12 @@
 	});
 </script>
 
-<Scaffold.Root class="h-full p-4 md:p-6" data-testid="messages-workbench">
-	<Scaffold.Body class="h-full">
-		<WorkbenchWindow
-			ariaLabel="Message room tabs"
-			value={activeRoomId ?? 'new-room'}
-			{tabs}
-		>
-			<div class="h-full">{@render children?.()}</div>
-		</WorkbenchWindow>
-	</Scaffold.Body>
-</Scaffold.Root>
+<div class="h-full" data-testid="messages-workbench">
+	<WorkbenchWindow
+		ariaLabel="Message room tabs"
+		value={activeRoomId ?? 'new-room'}
+		{tabs}
+	>
+		<div class="h-full">{@render children?.()}</div>
+	</WorkbenchWindow>
+</div>

@@ -120,7 +120,9 @@
 		<Sidebar.Rail />
 	</Sidebar.Sidebar>
 
-	<Sidebar.Inset class="h-svh bg-background">
+	<Sidebar.Inset
+		class="h-svh bg-background md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none"
+	>
 		<div class="flex h-full flex-1 flex-col">
 			{@render children?.()}
 		</div>
