@@ -1,20 +1,19 @@
 <script lang="ts">
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import PlayIcon from '@lucide/svelte/icons/play';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
 
 	import { goto } from '$app/navigation';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
-	import PanelShell from '$lib/components/panel-shell.svelte';
+	import { Scaffold } from '@agenter/svelte-components';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import { describeWorkspace } from '$lib/features/workspaces/workspace-sorting';
 	import { cn } from '$lib/utils.js';
 	import RuntimePrimaryStage from './runtime-primary-stage.svelte';
-	import RuntimeSecondaryRail from './runtime-secondary-rail.svelte';
 	import RuntimeTabBar from './runtime-tab-bar.svelte';
 	import {
 		basenameWorkspace,
@@ -33,6 +32,7 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
+	let hydratedCycleSessionId = $state<string | null>(null);
 
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
@@ -49,11 +49,11 @@
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
 	const openRoom = async (chatId: string): Promise<void> => {
-		await goto(`/messages?roomId=${encodeURIComponent(chatId)}`);
+		await goto(`/messages/room/${encodeURIComponent(chatId)}`);
 	};
 
 	const openTerminal = async (terminalId: string): Promise<void> => {
-		await goto(`/terminals?terminalId=${encodeURIComponent(terminalId)}`);
+		await goto(`/terminals/${encodeURIComponent(terminalId)}`);
 	};
 
 	const toggleRuntime = async (): Promise<void> => {
@@ -66,6 +66,23 @@
 		}
 		await controller.runtimeStore.startSession(session.id);
 	};
+
+	$effect(() => {
+		if (!session) {
+			hydratedCycleSessionId = null;
+			return;
+		}
+		if (hydratedCycleSessionId === session.id) {
+			return;
+		}
+
+		hydratedCycleSessionId = session.id;
+		void controller.runtimeStore.loadChatCycles(session.id).catch(() => {
+			if (hydratedCycleSessionId === session.id) {
+				hydratedCycleSessionId = null;
+			}
+		});
+	});
 </script>
 
 {#if !session}
@@ -78,55 +95,53 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="grid h-full gap-4 p-4 md:grid-rows-[auto_minmax(0,1fr)] md:p-6">
-		<PanelShell headerClass="gap-4">
-			{#snippet header()}
-				<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-					<div class="flex min-w-0 items-start gap-4">
-						<div class="relative shrink-0">
-							<ProfileAvatar label={session.avatar || session.name} src={sessionIconUrl} class="size-14 rounded-2xl" />
-							<div class={cn('absolute -bottom-1 -right-1 size-3 rounded-full ring-4 ring-background', resolveRuntimeStatusTone(session.status))}></div>
-						</div>
-						<div class="min-w-0">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Running Avatar</div>
-							<div class="mt-2 flex flex-wrap items-center gap-2">
-								<h1 class="truncate text-2xl font-semibold">{session.avatar || session.name}</h1>
-								<Badge variant="outline">{resolveRuntimeStatusLabel(session.status)}</Badge>
-								{#if unreadCount > 0}
-									<Badge variant="secondary">{unreadCount} unread</Badge>
-								{/if}
-							</div>
-							<div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-								<FolderTreeIcon class="size-4" />
-								<span>{workspaceLabel}</span>
-								<span>·</span>
-								<span class="break-all">{session.workspacePath}</span>
-							</div>
-						</div>
+	<Scaffold.Root class="gap-4 p-4 md:p-6">
+		<Scaffold.Header class="grid gap-4 rounded-xl border bg-card px-5 py-4 shadow-sm">
+			<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+				<div class="flex min-w-0 items-start gap-4">
+					<div class="relative shrink-0">
+						<ProfileAvatar label={session.avatar || session.name} src={sessionIconUrl} class="size-14 rounded-2xl" />
+						<div
+							class={cn(
+								'absolute -bottom-1 -right-1 size-3 rounded-full ring-4 ring-background',
+								resolveRuntimeStatusTone(session.status),
+							)}
+						></div>
 					</div>
-
-					<div class="flex flex-wrap items-center gap-2">
-						<Button variant="outline" onclick={() => void controller.refreshBootstrap()} aria-label="Refresh runtime">
-							<RefreshCwIcon class={cn('size-4', controller.refreshing && 'animate-spin')} />
-							Refresh
-						</Button>
-						<Button variant={isRunning ? 'destructive' : 'default'} onclick={() => void toggleRuntime()}>
-							{#if isRunning}
-								<StopCircleIcon class="size-4" />
-								Stop
-							{:else}
-								<PlayIcon class="size-4" />
-								Start
+					<div class="grid min-w-0 gap-2">
+						<div class="flex flex-wrap items-center gap-2">
+							<h1 class="truncate text-xl font-semibold md:text-2xl">{session.avatar || session.name}</h1>
+							<Badge variant="outline">{resolveRuntimeStatusLabel(session.status)}</Badge>
+							{#if unreadCount > 0}
+								<Badge variant="secondary">{unreadCount} unread</Badge>
 							{/if}
-						</Button>
+						</div>
+						<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+							<FolderTreeIcon class="size-4" />
+							<span>{workspaceLabel}</span>
+							<span>·</span>
+							<span class="break-all">{describeWorkspace(session.workspacePath)}</span>
+						</div>
 					</div>
 				</div>
 
-				<RuntimeTabBar {sessionId} {tabs} activeTab={activeTab} />
-			{/snippet}
-		</PanelShell>
+				<div class="flex flex-wrap items-center gap-2 lg:justify-end">
+					<Button variant={isRunning ? 'destructive' : 'default'} onclick={() => void toggleRuntime()}>
+						{#if isRunning}
+							<StopCircleIcon class="size-4" />
+							Stop
+						{:else}
+							<PlayIcon class="size-4" />
+							Start
+						{/if}
+					</Button>
+				</div>
+			</div>
 
-		<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+			<RuntimeTabBar {sessionId} {tabs} activeTab={activeTab} />
+		</Scaffold.Header>
+
+		<Scaffold.Body>
 			<RuntimePrimaryStage
 				tab={activeTab}
 				{session}
@@ -135,17 +150,9 @@
 				{cycles}
 				{activeCycle}
 				{latestCycle}
-			/>
-
-			<RuntimeSecondaryRail
-				{session}
-				{runtime}
-				{channels}
-				{workspaceLabel}
-				{unreadCount}
 				onOpenRoom={(chatId) => void openRoom(chatId)}
 				onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
 			/>
-		</div>
-	</div>
+		</Scaffold.Body>
+	</Scaffold.Root>
 {/if}
