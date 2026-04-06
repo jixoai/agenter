@@ -57,6 +57,7 @@
 	let manageSection = $state<MessageSystemManageSection>(
 		untrack(() => initialManageDialogSection ?? 'overview'),
 	);
+	let manageUsersView = $state<'list' | 'add'>('list');
 	let grantParticipantIdsByRoomId: Record<string, string> = $state({});
 	let grantRole: 'admin' | 'member' | 'readonly' = $state('member');
 	let grantBusy = $state(false);
@@ -221,6 +222,15 @@
 
 	const openManageDialog = (section: MessageSystemManageSection = 'overview'): void => {
 		manageSection = section;
+		if (section === 'users') {
+			manageUsersView = 'list';
+		}
+		manageDialogOpen = true;
+	};
+
+	const openManageAddUser = (): void => {
+		manageSection = 'users';
+		manageUsersView = 'add';
 		manageDialogOpen = true;
 	};
 
@@ -472,7 +482,7 @@
 						bodyMode = 'chat';
 						searchDialogOpen = true;
 					}}
-					onAddUserClick={() => openManageDialog('users')}
+					onAddUserClick={openManageAddUser}
 					onManageClick={() => openManageDialog('overview')}
 				/>
 			{/snippet}
@@ -524,6 +534,7 @@
 <MessageRoomManageDialog
 	open={manageDialogOpen}
 	bind:section={manageSection}
+	bind:usersView={manageUsersView}
 	{selectedRoom}
 	{disableManageDialogPortal}
 	{editableTitle}
@@ -543,6 +554,7 @@
 	onDelete={handleDelete}
 	onNavigateToUsers={() => {
 		manageSection = 'users';
+		manageUsersView = 'list';
 	}}
 	onUpdateSeatRole={handleUpdateSeatRole}
 	onSeatFocusClick={handleSeatFocusClick}

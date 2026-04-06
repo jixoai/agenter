@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import SearchIcon from "@lucide/svelte/icons/search";
   import Settings2Icon from "@lucide/svelte/icons/settings-2";
   import UserPlusIcon from "@lucide/svelte/icons/user-plus";
@@ -79,7 +78,6 @@
           title={selectedViewerLabel}
         >
           <span class="truncate">{selectedViewerLabel}</span>
-          <ChevronDownIcon class="size-3.5 shrink-0 text-muted-foreground" />
         </Select.Trigger>
         <Select.Content>
           {#each viewerItems as item (item.value)}

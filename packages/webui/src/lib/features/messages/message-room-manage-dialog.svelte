@@ -21,6 +21,7 @@
 	interface Props {
 		open?: boolean;
 		section?: MessageSystemManageSection;
+		usersView?: 'list' | 'add';
 		selectedRoom: GlobalRoomEntry | null;
 		disableManageDialogPortal?: boolean;
 		editableTitle: string;
@@ -50,6 +51,7 @@
 	let {
 		open = $bindable(false),
 		section = $bindable<MessageSystemManageSection>('overview'),
+		usersView = $bindable<'list' | 'add'>('list'),
 		selectedRoom,
 		disableManageDialogPortal = false,
 		editableTitle,
@@ -94,6 +96,13 @@
 		},
 	];
 	let compactViewport = $state(false);
+
+	const openSection = (nextSection: MessageSystemManageSection): void => {
+		section = nextSection;
+		if (nextSection === 'users') {
+			usersView = 'list';
+		}
+	};
 
 	onMount(() => {
 		const mediaQuery = window.matchMedia('(max-width: 767.98px)');
@@ -151,7 +160,7 @@
 										aria-label={`Open ${item.label} section`}
 										aria-pressed={section === item.id}
 										onclick={() => {
-											section = item.id;
+											openSection(item.id);
 										}}
 									>
 										{item.label}
@@ -176,7 +185,7 @@
 										aria-label={`Open ${item.label} section`}
 										aria-pressed={section === item.id}
 										onclick={() => {
-											section = item.id;
+											openSection(item.id);
 										}}
 									>
 										<span class="grid min-w-0 justify-items-start gap-1">
@@ -216,6 +225,7 @@
 							/>
 						{:else if section === 'users'}
 							<MessageRoomManageUsers
+								bind:view={usersView}
 								{roomSeatStates}
 								{selectableActors}
 								{grantParticipantId}

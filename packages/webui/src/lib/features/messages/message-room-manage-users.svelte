@@ -31,6 +31,7 @@
 		onGrantParticipantIdChange: (value: string) => void;
 		onGrantRoleChange: (value: MessageSystemGrantRole) => void;
 		onGrantSeat: () => void;
+		view?: 'list' | 'add';
 	}
 
 	let {
@@ -46,6 +47,7 @@
 		onGrantParticipantIdChange,
 		onGrantRoleChange,
 		onGrantSeat,
+		view = $bindable<'list' | 'add'>('list'),
 	}: Props = $props();
 
 	const uid = $props.id();
@@ -62,12 +64,11 @@
 		tone?: 'default' | 'destructive';
 		onSelect: () => void;
 	};
-	let activeTab = $state<'list' | 'add'>('list');
 	let previousGrantBusy = false;
 
 	$effect(() => {
 		if (previousGrantBusy && !grantBusy && !grantError) {
-			activeTab = 'list';
+			view = 'list';
 		}
 		previousGrantBusy = grantBusy;
 	});
@@ -122,7 +123,7 @@
 		<p class="text-xs text-muted-foreground">List the current seat grants or add another actor to this room.</p>
 	</div>
 
-	<Tabs.Root bind:value={activeTab} class="gap-4">
+	<Tabs.Root bind:value={view} class="gap-4">
 		<Tabs.List class="grid w-full max-w-sm grid-cols-2">
 			<Tabs.Trigger value="list">List</Tabs.Trigger>
 			<Tabs.Trigger value="add">Add</Tabs.Trigger>
@@ -134,7 +135,7 @@
 					variant="outline"
 					size="sm"
 					onclick={() => {
-						activeTab = 'add';
+						view = 'add';
 					}}
 				>
 					Add user

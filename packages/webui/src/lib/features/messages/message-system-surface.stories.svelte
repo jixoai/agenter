@@ -117,6 +117,23 @@
 </Story>
 
 <Story
+	name="Scenario: Given the room toolbar add-user action When it is pressed Then room management lands on Users Add"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
+		await userEvent.click(toolbar.getByRole('button', { name: 'Add user' }));
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
+		});
+		await expect(canvas.getByTestId('room-manage-nav-users')).toHaveAttribute('aria-pressed', 'true');
+	}}
+>
+	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
 	name="Scenario: Given duplicate-label room users When viewer changes Then the viewer chooser keeps actors distinguishable"
 	asChild
 	play={async ({ canvasElement }) => {
