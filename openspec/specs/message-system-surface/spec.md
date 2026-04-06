@@ -10,6 +10,11 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **WHEN** the operator opens the message-system route
 - **THEN** they can browse the global room catalog and select a room without first selecting a workspace or session
 
+#### Scenario: New room title affordance matches fallback title
+- **WHEN** the operator opens the `New room` route and leaves the title field blank
+- **THEN** the route copy reflects that blank submission falls back to `Room`
+- **THEN** the title input does not imply that some other example string will become the real room title
+
 #### Scenario: Chat-first room transcript layout
 - **WHEN** a room is selected
 - **THEN** the route shows the transcript pane and composer as the primary surface for that room
