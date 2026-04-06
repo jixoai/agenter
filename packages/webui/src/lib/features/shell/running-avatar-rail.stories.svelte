@@ -4,7 +4,7 @@
 	import RunningAvatarRail from './running-avatar-rail.svelte';
 
 	const { Story } = defineMeta({
-		title: 'Features/Shell/RunningAvatarRail',
+		title: 'Features/Shell/AvatarSubmenuRail',
 		component: RunningAvatarRail,
 	});
 </script>

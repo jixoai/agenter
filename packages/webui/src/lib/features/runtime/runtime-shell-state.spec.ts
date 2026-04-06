@@ -77,7 +77,7 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   unreadByTerminal: {},
 });
 
-describe("Feature: Running avatar navigation order", () => {
+describe("Feature: Avatar submenu navigation order", () => {
   test("Scenario: Given the active avatar changes When building sidebar submenu items Then the session order stays stable and only the active flag moves", () => {
     const state = createRuntimeState(
       [
@@ -127,7 +127,7 @@ describe("Feature: Running avatar navigation order", () => {
     expect(betaActive.map((item) => item.active)).toEqual([false, false, true]);
   });
 
-  test("Scenario: Given a pinned stopped avatar When building sidebar submenu items Then it remains visible without disturbing the stable session order", () => {
+  test("Scenario: Given a pinned stopped avatar When building sidebar submenu items Then it remains visible without disturbing the stable avatar-tab order", () => {
     const state = createRuntimeState(
       [
         createSessionEntry({

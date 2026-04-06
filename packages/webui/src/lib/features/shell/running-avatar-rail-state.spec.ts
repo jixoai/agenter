@@ -5,7 +5,7 @@ import {
 	togglePinnedRunningAvatarId,
 } from './running-avatar-rail-state';
 
-describe('Feature: Running avatar pin state', () => {
+describe('Feature: Avatar submenu pin state', () => {
 	test('Scenario: Given the pinned ids already match the available sessions When reconciling Then the helper preserves the same array reference', () => {
 		const currentIds = ['session-alpha', 'session-beta'];
 
