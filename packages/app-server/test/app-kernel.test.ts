@@ -103,6 +103,8 @@ describe("Feature: app kernel event replay", () => {
       focus: false,
     });
 
+    expect(room.chatId).toMatch(/^room-[0-9a-f-]{36}$/);
+    expect(room.chatId).not.toContain("ops-room");
     expect(room.transportUrl).toContain("ws://127.0.0.1:");
     expect(room.transportUrl).toContain("/room/");
     expect(terminalResult.terminal?.transportUrl).toContain("ws://127.0.0.1:");
@@ -1209,6 +1211,48 @@ describe("Feature: app kernel event replay", () => {
       focused: false,
       accessRole: "member",
     });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given one selected initial user When the kernel creates a room Then omitted avatars do not receive room grants or focus", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = kernel.createGlobalRoom({
+      title: "Invite Jane only",
+      initialUsers: [
+        {
+          actorId: "auth:jane",
+          label: "Jane",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    const grants = kernel.listGlobalRoomGrants({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(grants.some((grant) => grant.participantId === "auth:jane")).toBeTrue();
+    expect(grants.some((grant) => grant.participantId === "session:jj")).toBeFalse();
+    expect(
+      kernel.listGlobalRooms({
+        actorId: "auth:jane",
+      }).some((entry) => entry.chatId === room.chatId && entry.focused),
+    ).toBeTrue();
+    expect(
+      kernel.listGlobalRooms({
+        actorId: "session:jj",
+      }).some((entry) => entry.chatId === room.chatId),
+    ).toBeFalse();
 
     await kernel.stop();
   });

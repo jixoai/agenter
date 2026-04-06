@@ -10,6 +10,7 @@ import {
   type AttentionCommit,
   type AttentionCommitChange,
 } from "@agenter/attention-system";
+import { MessageControlPlane } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
 import type { LoopBusInput } from "../src/loop-bus";
@@ -290,6 +291,23 @@ const createRuntime = (): SessionRuntime => {
   });
 };
 
+const createSharedRoomRuntime = (input: {
+  root: string;
+  sessionId: string;
+  sessionName: string;
+  messageSystem: MessageControlPlane;
+}): SessionRuntime =>
+  new SessionRuntime({
+    sessionId: input.sessionId,
+    cwd: input.root,
+    sessionRoot: join(input.root, input.sessionId),
+    sessionName: input.sessionName,
+    storeTarget: "workspace",
+    primaryRoomId: PRIMARY_ROOM_ID,
+    terminalSystem: createTerminalSystem(join(input.root, input.sessionId)),
+    messageSystem: input.messageSystem,
+  });
+
 describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given plugin-backed user chat When collectLoopInputs runs Then the batch is attention-native without raw chat duplication", async () => {
     const runtime = createRuntime();
@@ -428,6 +446,69 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(
       internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`),
     ).toBeTrue();
+  });
+
+  test("Scenario: Given a shared room bus When another actor is not granted or focused for a room Then queued room messages do not enter that runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-shared-room-runtime-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: join(root, "message.db"),
+    });
+    const janeRuntime = createSharedRoomRuntime({
+      root,
+      sessionId: "jane",
+      sessionName: "jane",
+      messageSystem,
+    });
+    const jjRuntime = createSharedRoomRuntime({
+      root,
+      sessionId: "jj",
+      sessionName: "jj",
+      messageSystem,
+    });
+    const janeInternal = janeRuntime as unknown as RuntimeInternal;
+    const jjInternal = jjRuntime as unknown as RuntimeInternal;
+
+    try {
+      const room = messageSystem.createChannel({
+        chatId: "room-selected-user-only",
+        kind: "room",
+        owner: "ops",
+        initialUsers: [
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+      const janeRoom = messageSystem.getChannelForActor(room.chatId, "session:jane", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      expect(janeRoom?.focused).toBeTrue();
+      expect(
+        messageSystem.getChannelForActor(room.chatId, "session:jj", {
+          includeArchived: true,
+          touchPresence: false,
+        }),
+      ).toBeUndefined();
+
+      messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: janeRoom?.accessToken ?? "",
+        kind: "text",
+        content: "hello from room",
+        senderActorId: "session:jane",
+      });
+
+      const janeInputs = await janeInternal.collectLoopInputs();
+      const jjInputs = await jjInternal.collectLoopInputs();
+      expect(janeInputs?.some((input) => input.meta?.chatId === room.chatId)).toBeTrue();
+      expect(jjInputs).toBeUndefined();
+    } finally {
+      messageSystem.close();
+    }
   });
 
   test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus and unfocus facts are recorded without becoming active debt", async () => {

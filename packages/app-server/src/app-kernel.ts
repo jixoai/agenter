@@ -246,14 +246,6 @@ const resolveWorkspaceGroup = (workspacePath: string): string => {
 
 const isRunningSession = (status: SessionMeta["status"]): boolean => status === "running" || status === "starting";
 
-const slugifyGlobalRoomTitle = (value: string): string =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-
 const CHAT_CYCLE_COMPACT_TRIGGERS = new Set<ChatCycleCompactTrigger>(["manual", "threshold", "error", "attention_retry"]);
 
 const readChatCycleCompactTrigger = (result: Record<string, unknown>): ChatCycleCompactTrigger | null => {
@@ -951,13 +943,9 @@ export class AppKernel {
   }
 
   private allocateGlobalRoomId(title?: string): string {
-    const slug = slugifyGlobalRoomTitle(title ?? "");
-    const base = `room-${slug.length > 0 ? slug : "room"}`;
-    let candidate = base;
-    let suffix = 2;
+    let candidate = `room-${randomUUID()}`;
     while (this.messageControlPlane.getChannel(candidate, { includeArchived: true })) {
-      candidate = `${base}-${suffix}`;
-      suffix += 1;
+      candidate = `room-${randomUUID()}`;
     }
     return candidate;
   }

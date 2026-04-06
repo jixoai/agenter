@@ -1958,6 +1958,13 @@ export class SessionRuntime {
   private bindMessageSystem(): void {
     this.messageSystemCleanup.push(
       this.messageSystem.onMessage(({ chatId, message }) => {
+        const actorRoom = this.getActorRoom(chatId, {
+          includeArchived: true,
+          touchPresence: false,
+        });
+        if (!actorRoom?.focused) {
+          return;
+        }
         const channel = this.messageSystem.getChannel(chatId);
         if (!channel) {
           return;
@@ -1986,7 +1993,10 @@ export class SessionRuntime {
       }),
     );
     this.messageSystemCleanup.push(
-      this.messageSystem.onFocus(() => {
+      this.messageSystem.onFocus(({ actorId }) => {
+        if (actorId !== this.messageActorId) {
+          return;
+        }
         this.notifyInput("attention");
       }),
     );
