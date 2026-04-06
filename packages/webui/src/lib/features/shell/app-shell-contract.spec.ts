@@ -26,8 +26,10 @@ describe("Feature: App shell collapsed sidebar chrome", () => {
     expect(appShellSource).toContain("import RunningAvatarRail");
     expect(appShellSource).toContain("buildRunningAvatarRailItems(controller.runtimeState");
     expect(appShellSource).toContain("extractRuntimeSessionId(page.url.pathname)");
-    expect(appShellSource).toContain("const avatarsActive = $derived(activeItem?.href === '/avatars');");
-    expect(appShellSource).toContain("item.href === '/avatars' && avatarsActive");
+    expect(appShellSource).toContain("const showRunningAvatarSubmenu = $derived(");
+    expect(appShellSource).toContain("runningAvatarItems.length > 0 || activeItem?.href === '/avatars'");
+    expect(appShellSource).toContain("item.href === '/avatars' && showRunningAvatarSubmenu");
     expect(appShellSource).toContain("<RunningAvatarRail items={runningAvatarItems} />");
+    expect(appShellSource).not.toContain("const avatarsActive = $derived(activeItem?.href === '/avatars');");
   });
 });

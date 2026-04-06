@@ -40,7 +40,9 @@
 			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
 		}),
 	);
-	const avatarsActive = $derived(activeItem?.href === '/avatars');
+	const showRunningAvatarSubmenu = $derived(
+		runningAvatarItems.length > 0 || activeItem?.href === '/avatars',
+	);
 	const adminActive = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const activeTitle = $derived(adminActive ? 'Admin' : activeItem?.label ?? 'Agenter');
 
@@ -104,7 +106,7 @@
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
-							{#if item.href === '/avatars' && avatarsActive}
+							{#if item.href === '/avatars' && showRunningAvatarSubmenu}
 								<RunningAvatarRail items={runningAvatarItems} />
 							{/if}
 						</Sidebar.MenuItem>
