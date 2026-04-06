@@ -15,8 +15,10 @@
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 
 	import type {
 		MessageSystemManageSection,
@@ -345,8 +347,8 @@
 </script>
 
 <WorkbenchPageToolbar>
-	<WorkbenchToolbar class="room-toolbar">
-		{#snippet navigation()}
+	<WorkbenchToolbar class="room-toolbar" rows={2}>
+		{#snippet navigation(_toolbarState: WorkbenchToolbarRenderState)}
 			<ProfileAvatar
 				label={selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room'}
 				src={selectedRoomIconUrl}
@@ -354,16 +356,20 @@
 			/>
 		{/snippet}
 
-		{#snippet primary()}
-			<div class="grid min-w-0 gap-1">
-				<span class="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Room</span>
+		{#snippet primary(toolbarState: WorkbenchToolbarRenderState)}
+			<div class="grid min-w-0 gap-1" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
+				<span
+					class="room-toolbar__eyebrow text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+				>
+					Room
+				</span>
 				<h1 class="truncate text-[1.02rem] font-semibold tracking-tight text-foreground">
 					{selectedRoom?.title ?? selectedRoom?.chatId ?? 'Room transcript'}
 				</h1>
 			</div>
 		{/snippet}
 
-		{#snippet actions()}
+		{#snippet actions(toolbarState: WorkbenchToolbarRenderState)}
 			<Button
 				variant="outline"
 				size="sm"
@@ -371,37 +377,31 @@
 				disabled={!selectedRoom}
 				onclick={() => openManageDialog('overview')}
 			>
-				Manage room
+				{toolbarState.isNarrow ? 'Manage' : 'Manage room'}
 			</Button>
 		{/snippet}
 
-		{#snippet meta()}
-			<div class="room-toolbar__meta">
-				{#if selectedRoom}
-					<span class="room-toolbar__chip room-toolbar__chip-muted" title={selectedRoom.chatId}>
-						{compactRoomReference(selectedRoom.chatId)}
-					</span>
-					<span class="room-toolbar__chip">
-						<UsersIcon class="size-3.5" />
-						<span>{roomUserCount} {roomUserCount === 1 ? 'user' : 'users'}</span>
-					</span>
-					{#if !selectedCallerToken}
-						<span class="room-toolbar__chip room-toolbar__chip-warning">Read-only</span>
-						<Button
-							variant="link"
-							size="sm"
-							class="h-auto px-0 text-[0.78rem]"
-							onclick={() => openManageDialog('access')}
-						>
-							Grant access
-						</Button>
+		{#snippet meta(toolbarState: WorkbenchToolbarRenderState)}
+			<div class="room-toolbar__meta" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
+				<div class="room-toolbar__chips">
+					{#if selectedRoom}
+						<span class="room-toolbar__chip room-toolbar__chip-muted" title={selectedRoom.chatId}>
+							{compactRoomReference(selectedRoom.chatId)}
+						</span>
+						<span class="room-toolbar__chip">
+							<UsersIcon class="size-3.5" />
+							<span>{roomUserCount} {roomUserCount === 1 ? 'user' : 'users'}</span>
+						</span>
+						{#if !selectedCallerToken}
+							<span class="room-toolbar__chip room-toolbar__chip-warning">Read-only</span>
+						{/if}
 					{/if}
-				{/if}
+				</div>
 
-				<div class="room-toolbar__viewer">
+				<div class="room-toolbar__viewer" data-room-toolbar-breakpoint={toolbarState.breakpoint}>
 					<div class="room-toolbar__viewer-label">
 						<UserRoundIcon class="size-3.5" />
-						<span>View as</span>
+						<span>{toolbarState.isNarrow ? 'As' : 'View as'}</span>
 					</div>
 					{#if canSelectViewer}
 						<Select.Root
@@ -416,7 +416,9 @@
 								aria-label="View room as user"
 								class="h-8 w-full min-w-0 max-w-full rounded-full border-border/70 bg-background/85 px-3 text-[0.82rem] font-medium shadow-none"
 							>
-								<span class="truncate">As · {selectedViewerOptionLabel}</span>
+								<span class="truncate">
+									{toolbarState.isNarrow ? selectedViewerLabel : `As · ${selectedViewerOptionLabel}`}
+								</span>
 							</Select.Trigger>
 							<Select.Content>
 								{#each viewerItems as item (item.value)}
@@ -424,6 +426,8 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
+					{:else if toolbarState.isNarrow}
+						<div class="room-toolbar__viewer-empty">No user seat</div>
 					{:else}
 						<div class="room-toolbar__viewer-empty">No granted room user yet</div>
 					{/if}
@@ -433,7 +437,7 @@
 	</WorkbenchToolbar>
 </WorkbenchPageToolbar>
 
-<div class="h-full" data-testid="message-system-route">
+<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="message-system-route">
 	<WebChatViewHost
 		channel={selectedRoom}
 		viewerActorId={selectedViewerActorId}
@@ -455,7 +459,7 @@
 		onSendMessage={onSendMessage}
 		onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
 	/>
-</div>
+</WorkbenchScaffold>
 
 <MessageRoomManageDialog
 	open={manageDialogOpen}
@@ -466,11 +470,7 @@
 	{titleBusy}
 	{archiveBusy}
 	{deleteBusy}
-	{readSeatCount}
-	{readSeatTotal}
-	visibleParticipantCount={visibleParticipantCount(selectedRoom)}
 	{roomSeatStates}
-	{selectedViewerLabel}
 	{selectableActors}
 	{grantParticipantId}
 	{grantRole}
@@ -481,8 +481,8 @@
 	onSaveTitle={handleSaveTitle}
 	onArchive={handleArchive}
 	onDelete={handleDelete}
-	onNavigateToAccess={() => {
-		manageSection = 'access';
+	onNavigateToUsers={() => {
+		manageSection = 'users';
 	}}
 	onSeatFocusClick={handleSeatFocusClick}
 	onSeatRevokeClick={handleSeatRevokeClick}
@@ -495,10 +495,18 @@
 
 <style>
 	.room-toolbar__meta {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.room-toolbar__chips {
 		display: flex;
+		min-width: 0;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.6rem 0.75rem;
+		gap: 0.55rem;
 	}
 
 	.room-toolbar__chip {
@@ -526,10 +534,11 @@
 	}
 
 	.room-toolbar__viewer {
-		display: grid;
-		gap: 0.45rem;
-		min-width: min(100%, 12rem);
-		margin-left: auto;
+		display: inline-grid;
+		grid-template-columns: auto minmax(0, min(100%, 15rem));
+		align-items: center;
+		gap: 0.55rem;
+		min-width: 0;
 	}
 
 	.room-toolbar__viewer-label {
@@ -541,6 +550,7 @@
 		letter-spacing: 0.18em;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
+		white-space: nowrap;
 	}
 
 	.room-toolbar__viewer-empty {
@@ -557,22 +567,30 @@
 	}
 
 	@container (max-width: 44rem) {
-		.room-toolbar__meta {
-			gap: 0.45rem 0.55rem;
-		}
-
 		.room-toolbar__chip {
 			padding: 0.3rem 0.58rem;
 			font-size: 0.68rem;
 		}
 
-		.room-toolbar__viewer {
-			margin-left: 0;
-			inline-size: 100%;
+		.room-toolbar__meta[data-room-toolbar-breakpoint='narrow'] {
+			grid-template-columns: 1fr;
+			align-items: start;
+			gap: 0.55rem;
 		}
 
-		.room-toolbar__viewer-label {
-			display: none;
+		.room-toolbar__viewer {
+			inline-size: 100%;
+			grid-template-columns: auto minmax(0, 1fr);
+		}
+
+		.room-toolbar__viewer[data-room-toolbar-breakpoint='narrow'] {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.35rem;
+		}
+
+		.room-toolbar__viewer[data-room-toolbar-breakpoint='narrow'] .room-toolbar__viewer-label {
+			font-size: 0.58rem;
+			letter-spacing: 0.14em;
 		}
 	}
 </style>
