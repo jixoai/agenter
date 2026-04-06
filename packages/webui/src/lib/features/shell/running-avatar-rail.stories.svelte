@@ -23,7 +23,7 @@
 			status: 'running' as const,
 			unreadCount: 3,
 			iconUrl: null,
-			href: '/runtime/session-alpha/attention',
+			href: '/avatars/runtime/session-alpha/attention',
 			active: true,
 		},
 		{
@@ -34,7 +34,7 @@
 			status: 'starting' as const,
 			unreadCount: 0,
 			iconUrl: null,
-			href: '/runtime/session-beta/attention',
+			href: '/avatars/runtime/session-beta/attention',
 			active: false,
 		},
 	];
@@ -45,20 +45,32 @@
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await expect(canvas.getByText('Running Avatars')).toBeInTheDocument();
 		await expect(canvas.getByRole('link', { name: /architect/i })).toHaveAttribute(
 			'href',
-			'/runtime/session-alpha/attention',
+			'/avatars/runtime/session-alpha/attention',
 		);
 		await expect(canvas.getByText('3')).toBeInTheDocument();
-		await expect(canvas.getByText('alpha')).toBeInTheDocument();
+		await expect(canvas.queryByText('Running Avatars')).toBeNull();
 	}}
 >
 	<div class="h-96 w-72">
 		<Sidebar.Provider>
 			<Sidebar.Sidebar collapsible="icon" variant="inset">
 				<Sidebar.Content>
-					<RunningAvatarRail {items} />
+					<Sidebar.Group>
+						<Sidebar.Menu>
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton isActive>
+									{#snippet child({ props })}
+										<a href="/avatars" {...props}>
+											<span>Avatars</span>
+										</a>
+									{/snippet}
+								</Sidebar.MenuButton>
+								<RunningAvatarRail {items} />
+							</Sidebar.MenuItem>
+						</Sidebar.Menu>
+					</Sidebar.Group>
 				</Sidebar.Content>
 			</Sidebar.Sidebar>
 		</Sidebar.Provider>

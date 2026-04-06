@@ -7,6 +7,11 @@
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
+	import {
+		buildRunningAvatarRailItems,
+		extractRuntimeSessionId,
+	} from '$lib/features/runtime/runtime-shell-state';
 	import { cn } from '$lib/utils.js';
 	import type { AppController } from '$lib/app/types';
 
@@ -28,6 +33,14 @@
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
 			null,
 	);
+	const activeAvatarSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
+	const runningAvatarItems = $derived(
+		buildRunningAvatarRailItems(controller.runtimeState, {
+			activeSessionId: activeAvatarSessionId,
+			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
+		}),
+	);
+	const avatarsActive = $derived(activeItem?.href === '/avatars');
 	const adminActive = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const activeTitle = $derived(adminActive ? 'Admin' : activeItem?.label ?? 'Agenter');
 
@@ -91,6 +104,9 @@
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
+							{#if item.href === '/avatars' && avatarsActive}
+								<RunningAvatarRail items={runningAvatarItems} />
+							{/if}
 						</Sidebar.MenuItem>
 					{/each}
 				</Sidebar.Menu>
