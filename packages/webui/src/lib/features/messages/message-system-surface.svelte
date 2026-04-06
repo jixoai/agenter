@@ -215,6 +215,17 @@
 		return new Date(value).toLocaleString();
 	};
 
+	const compactRoomReference = (value: string): string => {
+		const segments = value.split('-').filter(Boolean);
+		if (segments.length >= 2) {
+			return segments.slice(-2).join('-');
+		}
+		if (value.length <= 18) {
+			return value;
+		}
+		return `${value.slice(0, 6)}…${value.slice(-8)}`;
+	};
+
 	const describeSeatOption = (state: MessageSystemSurfaceProps['roomSeatStates'][number]): string => {
 		if (!duplicateSeatLabels.has(state.label)) {
 			return `${state.label} · ${state.role}`;
@@ -367,7 +378,9 @@
 		{#snippet meta()}
 			<div class="room-toolbar__meta">
 				{#if selectedRoom}
-					<span class="room-toolbar__chip room-toolbar__chip-muted">{selectedRoom.chatId}</span>
+					<span class="room-toolbar__chip room-toolbar__chip-muted" title={selectedRoom.chatId}>
+						{compactRoomReference(selectedRoom.chatId)}
+					</span>
 					<span class="room-toolbar__chip">
 						<UsersIcon class="size-3.5" />
 						<span>{roomUserCount} {roomUserCount === 1 ? 'user' : 'users'}</span>
@@ -390,27 +403,30 @@
 						<UserRoundIcon class="size-3.5" />
 						<span>View as</span>
 					</div>
-					<Select.Root
-						type="single"
-						items={viewerItems}
-						value={selectedViewerActorId ?? undefined}
-						disabled={!canSelectViewer}
-						onValueChange={(value) => {
-							onChangeViewerActorId(value);
-						}}
-					>
-						<Select.Trigger
-							aria-label="View room as user"
-							class="h-8 w-full min-w-0 max-w-full rounded-full border-border/70 bg-background/85 px-3 text-[0.82rem] font-medium shadow-none"
+					{#if canSelectViewer}
+						<Select.Root
+							type="single"
+							items={viewerItems}
+							value={selectedViewerActorId ?? undefined}
+							onValueChange={(value) => {
+								onChangeViewerActorId(value);
+							}}
 						>
-							<span class="truncate">As · {selectedViewerOptionLabel}</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each viewerItems as item (item.value)}
-								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+							<Select.Trigger
+								aria-label="View room as user"
+								class="h-8 w-full min-w-0 max-w-full rounded-full border-border/70 bg-background/85 px-3 text-[0.82rem] font-medium shadow-none"
+							>
+								<span class="truncate">As · {selectedViewerOptionLabel}</span>
+							</Select.Trigger>
+							<Select.Content>
+								{#each viewerItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{:else}
+						<div class="room-toolbar__viewer-empty">No granted room user yet</div>
+					{/if}
 				</div>
 			</div>
 		{/snippet}
@@ -512,7 +528,7 @@
 	.room-toolbar__viewer {
 		display: grid;
 		gap: 0.45rem;
-		min-width: min(100%, 16rem);
+		min-width: min(100%, 12rem);
 		margin-left: auto;
 	}
 
@@ -527,10 +543,36 @@
 		color: var(--muted-foreground);
 	}
 
+	.room-toolbar__viewer-empty {
+		display: inline-flex;
+		min-height: 2rem;
+		align-items: center;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--border), transparent 22%);
+		background: color-mix(in srgb, var(--background), transparent 10%);
+		padding: 0.35rem 0.75rem;
+		font-size: 0.78rem;
+		line-height: 1.35;
+		color: var(--muted-foreground);
+	}
+
 	@container (max-width: 44rem) {
+		.room-toolbar__meta {
+			gap: 0.45rem 0.55rem;
+		}
+
+		.room-toolbar__chip {
+			padding: 0.3rem 0.58rem;
+			font-size: 0.68rem;
+		}
+
 		.room-toolbar__viewer {
 			margin-left: 0;
 			inline-size: 100%;
+		}
+
+		.room-toolbar__viewer-label {
+			display: none;
 		}
 	}
 </style>
