@@ -1,5 +1,6 @@
 import type {
   CachedResourceState,
+  GlobalRoomActorId,
   GlobalRoomAssetEntry,
   GlobalRoomEntry,
   GlobalRoomSnapshotOutput,
@@ -38,7 +39,11 @@ export interface MessageSystemRoomAssetItem extends GlobalRoomAssetEntry {
 
 export interface MessageSystemCreateRoomInput {
   title?: string;
-  participantIds: string[];
+  initialUsers: Array<{
+    actorId: GlobalRoomActorId;
+    role: MessageSystemGrantRole;
+    focused?: boolean;
+  }>;
 }
 
 export interface MessageSystemGrantSeatInput {

@@ -3825,7 +3825,19 @@ describe("Feature: runtime store synchronization", () => {
     );
 
     expect(await store.listGlobalRooms()).toEqual([room]);
-    expect(await store.createGlobalRoom({ title: "Ops room" })).toEqual(room);
+    expect(
+      await store.createGlobalRoom({
+        title: "Ops room",
+        initialUsers: [
+          {
+            actorId: "auth:observer",
+            label: "Observer",
+            role: "member",
+            focused: true,
+          },
+        ],
+      }),
+    ).toEqual(room);
     expect(
       await store.focusGlobalRooms({
         op: "replace",
@@ -3921,7 +3933,17 @@ describe("Feature: runtime store synchronization", () => {
     });
 
     expect(requests.list).toEqual({});
-    expect(requests.create?.title).toBe("Ops room");
+    expect(requests.create).toMatchObject({
+      title: "Ops room",
+      initialUsers: [
+        {
+          actorId: "auth:observer",
+          label: "Observer",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
     expect(requests.focus).toEqual({
       op: "replace",
       channels: [{ chatId: room.chatId, accessToken: room.accessToken }],

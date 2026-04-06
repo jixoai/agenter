@@ -3090,6 +3090,12 @@ export class RuntimeStore {
     chatId?: string;
     title?: string;
     participants?: Array<{ id: string; label?: string }>;
+    initialUsers?: Array<{
+      actorId: GlobalRoomActorId;
+      label?: string;
+      role: "admin" | "member" | "readonly";
+      focused?: boolean;
+    }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;

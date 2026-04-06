@@ -21,6 +21,7 @@ import type {
   MessageControlPlaneConfigPatch,
   MessageControlPlaneEntry,
   MessageCreateInput,
+  MessageCreateInitialUserInput,
   MessageParticipant,
   MessageFocusOp,
   MessageIssueGrantInput,
@@ -136,6 +137,49 @@ const normalizeChannelParticipants = (participants?: MessageParticipant[]): Mess
     normalized.push(label ? { id, label } : { id });
   }
   return normalized;
+};
+
+const normalizeCreateInitialUsers = (
+  initialUsers?: MessageCreateInitialUserInput[],
+): MessageCreateInitialUserInput[] | undefined => {
+  if (!initialUsers) {
+    return undefined;
+  }
+  const normalized = new Map<MessageActorId, MessageCreateInitialUserInput>();
+  for (const user of initialUsers) {
+    const actorId = user.actorId.trim();
+    if (!isCanonicalActorId(actorId)) {
+      throw new Error("room initial user actorId must be an auth:/session:/system: actor id");
+    }
+    const current = normalized.get(actorId);
+    const currentRank = current ? roleRank(current.role) : -1;
+    const nextRank = roleRank(user.role);
+    const label = user.label?.trim() || current?.label;
+    normalized.set(actorId, {
+      actorId,
+      label,
+      role: nextRank >= currentRank ? user.role : current!.role,
+      focused: Boolean(current?.focused || user.focused),
+    });
+  }
+  return [...normalized.values()];
+};
+
+const mergeParticipantsWithInitialUsers = (
+  participants: MessageParticipant[] | undefined,
+  initialUsers: MessageCreateInitialUserInput[] | undefined,
+): MessageParticipant[] | undefined => {
+  if (!participants && !initialUsers?.length) {
+    return undefined;
+  }
+  const merged = new Map<string, MessageParticipant>();
+  for (const participant of participants ?? []) {
+    merged.set(participant.id, participant);
+  }
+  for (const user of initialUsers ?? []) {
+    merged.set(user.actorId, user.label ? { id: user.actorId, label: user.label } : { id: user.actorId });
+  }
+  return [...merged.values()];
 };
 
 const roleRank = (role: MessageChannelAccessRole): number => {
@@ -307,7 +351,11 @@ export class MessageControlPlane {
     if (!input.chatId.startsWith("room-")) {
       throw new Error(`invalid room id prefix: ${input.chatId}`);
     }
-    const participants = normalizeChannelParticipants(input.participants);
+    const initialUsers = normalizeCreateInitialUsers(input.initialUsers);
+    const participants = mergeParticipantsWithInitialUsers(
+      normalizeChannelParticipants(input.participants),
+      initialUsers,
+    );
     const channel = this.db.createChannel(
       {
         ...input,
@@ -324,16 +372,40 @@ export class MessageControlPlane {
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       actorId: input.bootstrapActorId,
     });
+    const adminProjection = input.bootstrapActorId
+      ? this.ensureActorAccess(input.chatId, input.bootstrapActorId, "admin", input.adminToken)
+      : this.issueTrustedBootstrapAccess(input.chatId, input.adminToken);
     if (input.bootstrapActorId) {
-      const projection = this.ensureActorAccess(input.chatId, input.bootstrapActorId, "admin", input.adminToken);
       this.focusForActor(input.bootstrapActorId, "add", [input.chatId]);
+    }
+
+    for (const user of initialUsers ?? []) {
+      if (input.bootstrapActorId && user.actorId === input.bootstrapActorId) {
+        if (user.focused) {
+          this.focusForActor(user.actorId, "add", [input.chatId]);
+        }
+        continue;
+      }
+      const issued = this.issueChannelGrantAuthorized({
+        chatId: input.chatId,
+        accessToken: adminProjection.accessToken,
+        role: user.role,
+        label: user.label,
+        participantId: user.actorId,
+      });
+      if (user.focused) {
+        this.focusAuthorized("add", [{ chatId: input.chatId, accessToken: issued.accessToken }]);
+      }
+    }
+
+    if (input.bootstrapActorId) {
       return this.withProjection(
         {
           ...channel,
           focused: true,
           metadata: this.withAdminState(channel.chatId, channel.metadata),
         },
-        projection,
+        adminProjection,
       );
     }
     return this.withProjection(
@@ -341,7 +413,7 @@ export class MessageControlPlane {
         ...channel,
         metadata: this.withAdminState(channel.chatId, channel.metadata),
       },
-      this.issueTrustedBootstrapAccess(input.chatId, input.adminToken),
+      adminProjection,
     );
   }
 
@@ -399,7 +471,7 @@ export class MessageControlPlane {
   }
 
   focusAuthorized(op: MessageFocusOp, access: Array<{ chatId: string; accessToken: string }>): string[] {
-    const grants = access.map(({ chatId, accessToken }) => this.requireAccess(chatId, accessToken, "member"));
+    const grants = access.map(({ chatId, accessToken }) => this.requireAccess(chatId, accessToken, "readonly"));
     const actorId = grants[0]?.participantId;
     if (!actorId || !ACTOR_ID_PATTERN.test(actorId)) {
       return this.focus(op, grants.map((grant) => grant.chatId));

@@ -215,9 +215,17 @@ export interface MessageCreateInput {
   owner?: string;
   contextId?: string;
   participants?: MessageParticipant[];
+  initialUsers?: MessageCreateInitialUserInput[];
   metadata?: Record<string, unknown>;
   adminToken?: string;
   bootstrapActorId?: MessageActorId;
+}
+
+export interface MessageCreateInitialUserInput {
+  actorId: MessageActorId;
+  label?: string;
+  role: MessageChannelAccessRole;
+  focused?: boolean;
 }
 
 export interface MessageAppendInput {

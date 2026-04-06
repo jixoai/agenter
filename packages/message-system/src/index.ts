@@ -24,6 +24,7 @@ export type {
   MessageControlPlaneConfigPatch,
   MessageControlPlaneEntry,
   MessageCreateInput,
+  MessageCreateInitialUserInput,
   MessageEditInput,
   MessageFocusOp,
   MessageIssueGrantInput,

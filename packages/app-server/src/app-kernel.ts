@@ -1813,6 +1813,12 @@ export class AppKernel {
       id: string;
       label?: string;
     }>;
+    initialUsers?: Array<{
+      actorId: MessageActorId;
+      label?: string;
+      role: MessageChannelAccessRole;
+      focused?: boolean;
+    }>;
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
@@ -1824,6 +1830,7 @@ export class AppKernel {
       kind: "room",
       title: input.title ?? DEFAULT_MESSAGE_CHAT_TITLE,
       participants: input.participants,
+      initialUsers: input.initialUsers,
       metadata: sanitizeGlobalRoomMetadata(input.metadata),
       adminToken: input.adminToken,
       bootstrapActorId: input.actorId && !input.superadminActorId ? input.actorId : undefined,

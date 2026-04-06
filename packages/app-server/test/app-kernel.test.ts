@@ -1141,6 +1141,78 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given global room initial users When the kernel creates the room Then grants and focus are available without follow-up mutations", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = kernel.createGlobalRoom({
+      chatId: "room-seeded-users",
+      title: "Seeded room",
+      initialUsers: [
+        {
+          actorId: "auth:viewer",
+          label: "Viewer",
+          role: "readonly",
+          focused: true,
+        },
+        {
+          actorId: "session:jj",
+          label: "JJ",
+          role: "member",
+          focused: false,
+        },
+      ],
+    });
+
+    expect(room.participants).toEqual([
+      { id: "auth:viewer", label: "Viewer" },
+      { id: "session:jj", label: "JJ" },
+    ]);
+    expect(
+      kernel.listGlobalRoomGrants({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: "auth:viewer",
+          role: "readonly",
+        }),
+        expect.objectContaining({
+          participantId: "session:jj",
+          role: "member",
+        }),
+      ]),
+    );
+    expect(
+      kernel.listGlobalRooms({
+        actorId: "auth:viewer",
+      })[0],
+    ).toMatchObject({
+      chatId: room.chatId,
+      focused: true,
+      accessRole: "readonly",
+    });
+    expect(
+      kernel.listGlobalRooms({
+        actorId: "session:jj",
+      })[0],
+    ).toMatchObject({
+      chatId: room.chatId,
+      focused: false,
+      accessRole: "member",
+    });
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given a legacy primary room participant list When the kernel reattaches to that room Then the stored room truth is repaired", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);

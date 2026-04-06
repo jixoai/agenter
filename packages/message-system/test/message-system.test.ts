@@ -123,6 +123,63 @@ describe("Feature: message-chat-control-plane", () => {
     expect(updated.participants).toEqual([{ id: "auth:owner", label: "Owner" }]);
   });
 
+  test("Scenario: Given initial users on room create When the channel is created Then grants and focus materialize immediately without downgrading the bootstrap admin", () => {
+    const plane = createPlane();
+    const room = plane.createChannel({
+      chatId: "room-initial-users",
+      kind: "room",
+      owner: "ops",
+      bootstrapActorId: "auth:owner",
+      initialUsers: [
+        {
+          actorId: "auth:owner",
+          label: "Owner",
+          role: "member",
+          focused: true,
+        },
+        {
+          actorId: "auth:viewer",
+          label: "Viewer",
+          role: "readonly",
+          focused: true,
+        },
+        {
+          actorId: "session:jj",
+          label: "JJ",
+          role: "member",
+          focused: false,
+        },
+      ],
+    });
+
+    expect(room.participants).toEqual([
+      { id: "auth:owner", label: "Owner" },
+      { id: "auth:viewer", label: "Viewer" },
+      { id: "session:jj", label: "JJ" },
+    ]);
+    expect(plane.getChannelForActor(room.chatId, "auth:owner")?.accessRole).toBe("admin");
+    expect(plane.listChannelsForActor("auth:viewer")[0]).toMatchObject({
+      chatId: room.chatId,
+      accessRole: "readonly",
+      focused: true,
+    });
+    expect(plane.listChannelsForActor("session:jj")[0]).toMatchObject({
+      chatId: room.chatId,
+      accessRole: "member",
+      focused: false,
+    });
+
+    const grants = plane.listChannelGrantsAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(grants.map((grant) => `${grant.participantId}:${grant.role}`).sort()).toEqual([
+      "auth:owner:admin",
+      "auth:viewer:readonly",
+      "session:jj:member",
+    ]);
+  });
+
   test("Scenario: Given long room history When reverse paging runs Then the oldest cursor advances correctly", () => {
     const plane = createPlane();
     createRoom(plane, { chatId: "room-history" });

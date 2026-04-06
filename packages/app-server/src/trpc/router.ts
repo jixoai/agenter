@@ -471,12 +471,22 @@ export const appRouter = t.router({
           title: z.string().trim().min(1).optional(),
           participants: z
             .array(
-                z.object({
-                  id: z.string().trim().min(1),
-                  label: z.string().trim().min(1).optional(),
-                }),
-              )
-              .optional(),
+              z.object({
+                id: z.string().trim().min(1),
+                label: z.string().trim().min(1).optional(),
+              }),
+            )
+            .optional(),
+          initialUsers: z
+            .array(
+              z.object({
+                actorId: messageActorIdSchema,
+                label: z.string().trim().min(1).optional(),
+                role: z.enum(["admin", "member", "readonly"]),
+                focused: z.boolean().optional(),
+              }),
+            )
+            .optional(),
           metadata: z.record(z.string(), z.unknown()).optional(),
           adminToken: z
             .string()
@@ -491,6 +501,7 @@ export const appRouter = t.router({
           chatId: input.chatId,
           title: input.title,
           participants: input.participants,
+          initialUsers: input.initialUsers,
           metadata: input.metadata,
           adminToken: input.adminToken,
           focus: input.focus,
