@@ -6,6 +6,16 @@ Define message-level room read membership and read-progress projection for group
 
 ## Requirements
 
+### Requirement: Room creation SHALL materialize the creator as a durable tracked seat
+
+Room creation flows SHALL persist the creator as a durable room user seat before any room message, read projection, or `View as` projection is derived. Privileged bootstrap flows MAY add authority, but they SHALL NOT replace the creator with a synthetic viewer-only identity because frozen read arrays derive from durable seats.
+
+#### Scenario: Privileged room creation still freezes the creator into message membership
+- **WHEN** a privileged actor creates a room whose creator is user `A`
+- **THEN** the room persists `A` as a durable admin seat before the room accepts messages
+- **THEN** the first durable message tracks `A` inside `readActorIds` or `unreadActorIds` according to send-time state
+- **THEN** the UI does not invent a second synthetic `View as` identity for that same creator
+
 ### Requirement: Room messages SHALL freeze read membership at send time
 
 Message-system SHALL persist `readActorIds` and `unreadActorIds` on each durable room message. Those arrays SHALL capture the relevant collaborators at send time and SHALL NOT be rewritten when new users join later.

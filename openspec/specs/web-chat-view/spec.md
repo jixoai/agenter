@@ -26,6 +26,15 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **THEN** the component aligns "mine vs others" from that actor identity
 - **THEN** it does not guess viewer ownership from duplicate labels or unrelated room metadata
 
+### Requirement: Viewer changes SHALL replay the current visibility fact once
+When the host changes `viewerActorId`, the shared chat view SHALL treat that change as a new reader identity for read-ack projection. If the component already knows the current latest visible durable message, it SHALL re-emit that same visibility fact exactly once for the new viewer and SHALL stay idle afterwards until visibility advances again.
+
+#### Scenario: Viewer switch replays the current latest visible message once
+- **WHEN** the host changes `viewerActorId`
+- **AND** the transcript still shows the same latest visible durable message
+- **THEN** the component emits one visibility callback for that message under the new viewer identity
+- **THEN** it does not keep replaying the same message again while the viewport stays unchanged
+
 ### Requirement: Web chat view SHALL present a conversation-first shared surface
 The shared room component SHALL render one durable conversation surface with transcript, notices, and composer organized as explicit primary regions. The transcript SHALL remain the dominant viewport, while metadata or helper details SHALL collapse into secondary regions without forcing hosts to duplicate the same controls around the component. The transcript/composer shell SHALL compose shared Svelte structural primitives from `@agenter/svelte-components` instead of maintaining a private layout law inside the package.
 
