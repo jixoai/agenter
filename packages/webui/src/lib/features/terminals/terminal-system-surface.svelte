@@ -1,31 +1,27 @@
 <script lang="ts">
 	import FileClockIcon from '@lucide/svelte/icons/file-clock';
-	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
 	import ShieldUserIcon from '@lucide/svelte/icons/shield-user';
-	import TerminalSquareIcon from '@lucide/svelte/icons/terminal-square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
+	import { tick } from 'svelte';
 
-	import PanelShell from '$lib/components/panel-shell.svelte';
+	import { ClipSurface, Scaffold, SplitView } from '@agenter/svelte-components';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import ScrollView from '$lib/components/scroll-view.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import ToolInvocationCard from '$lib/components/web-components/tool-invocation-card.svelte';
+	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 
 	import type { TerminalSystemSurfaceProps } from './terminal-system-surface.types';
+	import { resolveTerminalUsersPaneLayout } from './terminal-system-surface-layout';
 
 	let {
-		terminalsState,
-		selectedTerminalId,
 		selectedTerminal,
 		terminalViewportComponent,
 		terminalGrantsState,
@@ -36,9 +32,7 @@
 		callAsOptions,
 		selectedCallerToken,
 		seatStates,
-		onSelectTerminal,
 		onChangeCallerToken,
-		onCreateTerminal,
 		onDeleteTerminal,
 		onGrantSeat,
 		onToggleSeatFocus,
@@ -49,12 +43,6 @@
 		onReadToolCall,
 	}: TerminalSystemSurfaceProps = $props();
 
-	let createDialogOpen = $state(false);
-	let createTerminalId = $state('');
-	let createProcessKind = $state('shell');
-	let createCwd = $state('');
-	let createBusy = $state(false);
-	let createError: string | null = $state(null);
 	let deleteBusy = $state(false);
 	let actionToolTab: 'write' | 'read' = $state('write');
 	let sidePanelTab: 'actions' | 'users' = $state('actions');
@@ -66,8 +54,18 @@
 	let writeBusy = $state(false);
 	let readMode: 'auto' | 'diff' | 'snapshot' = $state('snapshot');
 	let readBusy = $state(false);
+	let actionsPanelRef: HTMLElement | null = $state(null);
+	let usersPanelRef = $state<HTMLElement | null>(null);
+	let usersPanelWidth = $state(0);
 
-	const actionEvents = $derived.by(() => [...terminalActivityState.data].reverse());
+	const actionEvents = $derived.by(() =>
+		[...terminalActivityState.data].sort((left, right) => {
+			if (left.createdAt !== right.createdAt) {
+				return right.createdAt - left.createdAt;
+			}
+			return right.id - left.id;
+		}),
+	);
 	const actionsSurfaceState = $derived(
 		resolveAsyncSurfaceState({
 			loading: terminalActivityState.loading && !terminalActivityState.loaded,
@@ -76,6 +74,45 @@
 	);
 	const effectiveCallerToken = $derived(selectedCallerToken ?? callAsOptions[0]?.accessToken ?? null);
 	const TerminalViewport = $derived(terminalViewportComponent);
+	const callAsItems = $derived(
+		callAsOptions.map((option) => ({
+			value: option.accessToken,
+			label: `${option.label} · ${option.role}`,
+		})),
+	);
+	const selectedCallAsLabel = $derived(
+		callAsItems.find((item) => item.value === effectiveCallerToken)?.label ??
+			(callAsItems[0]?.label ?? 'No seat token'),
+	);
+	const readModeItems: { value: 'auto' | 'diff' | 'snapshot'; label: string }[] = [
+		{ value: 'auto', label: 'auto' },
+		{ value: 'diff', label: 'diff' },
+		{ value: 'snapshot', label: 'snapshot' },
+	];
+	const selectedReadModeLabel = $derived(
+		readModeItems.find((item) => item.value === readMode)?.label ?? 'snapshot',
+	);
+	const grantActorItems = $derived([
+		{ value: '', label: 'Select actor' },
+		...selectableActors.map((actor) => ({
+			value: actor.actorId,
+			label: `${actor.label} · ${actor.subtitle ?? actor.actorId}`,
+		})),
+	]);
+	const selectedGrantActorLabel = $derived(
+		grantActorItems.find((item) => item.value === grantParticipantId)?.label ?? 'Select actor',
+	);
+	const grantRoleItems: { value: 'admin' | 'writer' | 'requester' | 'readonly'; label: string }[] = [
+		{ value: 'writer', label: 'writer' },
+		{ value: 'requester', label: 'requester' },
+		{ value: 'readonly', label: 'readonly' },
+		{ value: 'admin', label: 'admin' },
+	];
+	const selectedGrantRoleLabel = $derived(
+		grantRoleItems.find((item) => item.value === grantRole)?.label ?? 'writer',
+	);
+	const latestActionEventId = $derived(actionEvents[0]?.id ?? null);
+	const usersPaneCompact = $derived(resolveTerminalUsersPaneLayout(usersPanelWidth) === 'compact');
 
 	const formatTimestamp = (value?: number): string => {
 		if (!value) {
@@ -95,40 +132,6 @@
 			return JSON.stringify(value, null, 2);
 		} catch {
 			return String(value);
-		}
-	};
-
-	const resetCreateDialog = (): void => {
-		createTerminalId = '';
-		createProcessKind = 'shell';
-		createCwd = '';
-		createError = null;
-	};
-
-	const openCreateDialog = (): void => {
-		resetCreateDialog();
-		createDialogOpen = true;
-	};
-
-	const handleCreateTerminal = async (event: SubmitEvent): Promise<void> => {
-		event.preventDefault();
-		if (createBusy) {
-			return;
-		}
-		createBusy = true;
-		createError = null;
-		try {
-			await onCreateTerminal({
-				terminalId: createTerminalId.trim() || undefined,
-				processKind: createProcessKind.trim() || undefined,
-				cwd: createCwd.trim() || undefined,
-			});
-			createDialogOpen = false;
-			resetCreateDialog();
-		} catch (error) {
-			createError = error instanceof Error ? error.message : String(error);
-		} finally {
-			createBusy = false;
 		}
 	};
 
@@ -247,75 +250,70 @@
 			finishedAt: event.createdAt,
 		};
 	};
+
+	$effect(() => {
+		const actionEventId = latestActionEventId;
+		if (sidePanelTab !== 'actions' || !actionsPanelRef || actionEventId === null) {
+			return;
+		}
+
+		void tick().then(() => {
+			const viewport = actionsPanelRef?.querySelector<HTMLElement>('[data-scroll-view-viewport]');
+			viewport?.scrollTo({ top: 0, behavior: 'auto' });
+		});
+	});
+
+	$effect(() => {
+		const element = usersPanelRef;
+		if (!element) {
+			return;
+		}
+
+		let frame = 0;
+		const scheduleWidthCommit = (nextWidth: number): void => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				if (nextWidth !== usersPanelWidth) {
+					usersPanelWidth = nextWidth;
+				}
+			});
+		};
+
+		if (typeof ResizeObserver === 'undefined') {
+			scheduleWidthCommit(Math.round(element.clientWidth));
+			return () => {
+				if (frame !== 0) {
+					cancelAnimationFrame(frame);
+				}
+			};
+		}
+
+		const observer = new ResizeObserver((entries) => {
+			const nextWidth = Math.round(entries[0]?.contentRect.width ?? element.clientWidth ?? 0);
+			scheduleWidthCommit(nextWidth);
+		});
+		observer.observe(element);
+		scheduleWidthCommit(Math.round(element.clientWidth));
+		return () => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+			}
+			observer.disconnect();
+		};
+	});
 </script>
 
-<div class="grid h-full gap-4 p-4 xl:grid-cols-[18rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)_24rem] md:p-6">
-	<PanelShell>
-		{#snippet header()}
-			<div class="flex items-center justify-between gap-3">
-				<div class="min-w-0">
-					<h1 class="text-base font-semibold">Terminals</h1>
-					<div class="flex items-center gap-2 text-sm text-muted-foreground">
-						<span>terminal-system is global and orthogonal.</span>
-						<HelpHint textContext="terminal-system focus belongs to terminal seats, not the terminal object.">
-							<p>Focus is a seat-level fact. Multiple AvatarSessions can watch or operate the same terminal.</p>
-						</HelpHint>
-					</div>
-				</div>
-				<Button
-					size="icon-sm"
-					variant="outline"
-					class="shrink-0"
-					onclick={openCreateDialog}
-					aria-label="Create terminal"
-				>
-					<PlusIcon class="size-4" />
-				</Button>
-			</div>
-		{/snippet}
-
-		<ScrollView class="h-full" contentClass="divide-y">
-			{#if terminalsState.loading && !terminalsState.loaded}
-				<div class="p-4 text-sm text-muted-foreground">Loading terminals…</div>
-			{:else if terminalsState.error && terminalsState.data.length === 0}
-				<div class="p-4 text-sm text-destructive">{terminalsState.error}</div>
-			{:else if terminalsState.data.length === 0}
-				<div class="p-4 text-sm text-muted-foreground">No terminals yet. Create the first standalone terminal.</div>
-			{:else}
-				{#each terminalsState.data as terminal (terminal.terminalId)}
-					<button
-						class={`grid w-full gap-2 px-4 py-4 text-left transition-colors hover:bg-muted/40 ${
-							selectedTerminalId === terminal.terminalId ? 'bg-primary/5' : ''
-						}`}
-						onclick={() => onSelectTerminal(terminal.terminalId)}
-						aria-label={`Select terminal ${terminal.terminalId}`}
-					>
-						<div class="flex items-center justify-between gap-3">
-							<div class="min-w-0">
-								<div class="truncate text-sm font-semibold">{terminal.terminalId}</div>
-								{#if terminal.title && terminal.title !== terminal.terminalId}
-									<div class="truncate text-[11px] text-muted-foreground">{terminal.title}</div>
-								{/if}
-								<div class="truncate text-[11px] text-muted-foreground">{terminal.cwd}</div>
-							</div>
-							<div class="rounded-full border px-2 py-1 text-[11px]">{terminal.status}</div>
-						</div>
-						<div class="truncate text-[11px] text-muted-foreground">
-							{(terminal.actors ?? []).length} seats · pending approvals {terminal.pendingRequestCount}
-						</div>
-					</button>
-				{/each}
-			{/if}
-		</ScrollView>
-	</PanelShell>
-
-	<PanelShell>
+{#snippet terminalStagePanel()}
+	<WorkbenchScaffold tone="pane" bodyClass="p-4">
 		{#snippet header()}
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div class="min-w-0">
 					<h2 class="text-base font-semibold">{selectedTerminal?.terminalId ?? 'Terminal view'}</h2>
 					<p class="text-sm text-muted-foreground">
-						{selectedTerminal?.cwd ?? 'Select one terminal to inspect its shared runtime.'}
+						{selectedTerminal?.cwd ?? 'Select one terminal tab to inspect its shared runtime.'}
 					</p>
 					{#if selectedTerminal?.title && selectedTerminal.title !== selectedTerminal.terminalId}
 						<div class="text-xs text-muted-foreground">{selectedTerminal.title}</div>
@@ -337,294 +335,430 @@
 			{/if}
 		{/snippet}
 
-		<div class="grid h-full grid-rows-[minmax(0,1fr)_auto]">
-			<div class="p-4">
-				{#if selectedTerminal}
-					<div class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-3">
-						<div class="rounded-2xl border bg-black p-2 text-white">
-							<TerminalViewport
-								class="block h-full min-h-[18rem] w-full"
-								terminalId={selectedTerminal.terminalId}
-								terminalTitle={selectedTerminal.title}
-								cwd={selectedTerminal.cwd}
-								status={selectedTerminal.status}
-								transportUrl={selectedTerminal.transportUrl}
-								snapshot={selectedTerminal.snapshot ?? null}
-							/>
-						</div>
-						<div class="grid gap-2 text-xs text-muted-foreground">
-							<div>Absolute cwd: {selectedTerminal.cwd}</div>
-							<div>Process kind: {selectedTerminal.processKind}</div>
-							<div>Renderer: {selectedTerminal.rendererEngine ?? 'xterm'}</div>
-						</div>
-					</div>
-				{:else}
-					<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-						Select a terminal from the left rail.
-					</div>
-				{/if}
-			</div>
-
-			<div class="relative z-10 border-t bg-card p-4">
-				<Tabs.Root bind:value={actionToolTab}>
-					<Tabs.List class="grid w-full grid-cols-2">
-						<Tabs.Trigger value="write">Write</Tabs.Trigger>
-						<Tabs.Trigger value="read">Read</Tabs.Trigger>
-					</Tabs.List>
-
-					<Tabs.Content value="write" class="mt-3 grid gap-3">
-						<div class="grid gap-3 xl:grid-cols-[14rem_minmax(0,1fr)_auto]">
-							<NativeSelect.Root
-								aria-label="Call tool as"
-								value={effectiveCallerToken ?? ''}
-								onchange={(event) => {
-									onChangeCallerToken((event.currentTarget as HTMLSelectElement).value);
-								}}
-							>
-								{#if callAsOptions.length === 0}
-									<option value="">No seat token</option>
-								{:else}
-									{#each callAsOptions as option (option.accessToken)}
-										<option value={option.accessToken}>{option.label} · {option.role}</option>
-									{/each}
-								{/if}
-							</NativeSelect.Root>
-							<Textarea bind:value={writeText} class="min-h-24" placeholder="Type terminal input…" />
-							<Button
-								class="shrink-0 self-start xl:justify-self-end"
-								disabled={!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy}
-								onclick={() => void handleWriteToolCall()}
-							>
-								<SendHorizontalIcon class="size-4" />
-								Call tool
-							</Button>
-						</div>
-					</Tabs.Content>
-
-					<Tabs.Content value="read" class="mt-3 grid gap-3">
-						<div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
-							<NativeSelect.Root
-								aria-label="Call tool as"
-								value={effectiveCallerToken ?? ''}
-								onchange={(event) => {
-									onChangeCallerToken((event.currentTarget as HTMLSelectElement).value);
-								}}
-							>
-								{#if callAsOptions.length === 0}
-									<option value="">No seat token</option>
-								{:else}
-									{#each callAsOptions as option (option.accessToken)}
-										<option value={option.accessToken}>{option.label} · {option.role}</option>
-									{/each}
-								{/if}
-							</NativeSelect.Root>
-							<NativeSelect.Root aria-label="Read mode" bind:value={readMode}>
-								<option value="auto">auto</option>
-								<option value="diff">diff</option>
-								<option value="snapshot">snapshot</option>
-							</NativeSelect.Root>
-							<Button
-								class="shrink-0 self-start xl:justify-self-end"
-								disabled={!selectedTerminal || !effectiveCallerToken || readBusy}
-								onclick={() => void handleReadToolCall()}
-							>
-								<FileClockIcon class="size-4" />
-								Call read
-							</Button>
-						</div>
-					</Tabs.Content>
-				</Tabs.Root>
-			</div>
-		</div>
-	</PanelShell>
-
-	<PanelShell class="xl:col-span-2 2xl:col-span-1">
-		{#snippet header()}
-				<h2 class="text-base font-semibold">Actions + Users</h2>
-				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					<span>Actions are tool facts. Users are seats, grants, approvals, and per-seat focus.</span>
-					<HelpHint textContext="terminal actions render as tool facts while users owns seat authorization and per-seat focus.">
-						<p>Actions render through the shared tool invocation surface so reads and writes follow one factual shape.</p>
-					</HelpHint>
+		{#if selectedTerminal}
+			<div class="grid gap-3 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
+				<ClipSurface class="rounded-2xl border bg-slate-950 text-white">
+					<TerminalViewport
+						class="block h-full min-h-[22rem] w-full"
+						terminalId={selectedTerminal.terminalId}
+						terminalTitle={selectedTerminal.title}
+						cwd={selectedTerminal.cwd}
+						status={selectedTerminal.status}
+						viewportMode="fit"
+						transportUrl={selectedTerminal.transportUrl}
+						snapshot={selectedTerminal.snapshot ?? null}
+					/>
+				</ClipSurface>
+				<div class="grid gap-2 text-xs text-muted-foreground">
+					<div>Absolute cwd: {selectedTerminal.cwd}</div>
+					<div>Process kind: {selectedTerminal.processKind}</div>
+					<div>Renderer: {selectedTerminal.rendererEngine ?? 'xterm'}</div>
 				</div>
-		{/snippet}
+			</div>
+		{:else}
+			<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+				Select a terminal tab.
+			</div>
+		{/if}
 
-		<div class="h-full">
-			<Tabs.Root bind:value={sidePanelTab} class="grid h-full grid-rows-[auto_minmax(0,1fr)]">
-				<Tabs.List class="mx-4 mt-4 grid grid-cols-2">
-					<Tabs.Trigger value="actions">Actions</Tabs.Trigger>
-					<Tabs.Trigger value="users">Users</Tabs.Trigger>
+		{#snippet footer()}
+			<Tabs.Root bind:value={actionToolTab}>
+				<Tabs.List class="grid w-full grid-cols-2">
+					<Tabs.Trigger value="write">Write</Tabs.Trigger>
+					<Tabs.Trigger value="read">Read</Tabs.Trigger>
 				</Tabs.List>
 
-				<Tabs.Content value="actions" class="h-full">
-					<AsyncSurface
-						class="h-full"
-						state={actionsSurfaceState}
-						emptyLoadingLabel="Loading terminal actions…"
-						loadingOverlayLabel="Refreshing terminal actions…"
-					>
-						{#snippet empty()}
-							{#if terminalActivityState.error && terminalActivityState.data.length === 0}
-								<div class="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-									{terminalActivityState.error}
-								</div>
-							{:else}
-								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-									No terminal actions yet.
-								</div>
-							{/if}
-						{/snippet}
-
-						<ScrollView class="h-full" contentClass="grid gap-3 p-4">
-							{#each actionEvents as event (event.id)}
-								<div class="grid gap-3 rounded-2xl border p-3">
-									<div class="flex items-center gap-3">
-										<ProfileAvatar
-											label={seatStates.find((seat) => seat.actorId === event.actorId)?.label ?? event.actorId ?? event.terminalId}
-											src={seatStates.find((seat) => seat.actorId === event.actorId)?.iconUrl}
-											class="size-8"
-										/>
-										<div class="min-w-0">
-											<div class="truncate text-sm font-semibold">
-												{seatStates.find((seat) => seat.actorId === event.actorId)?.label ??
-													event.actorId ??
-													event.terminalId}
-											</div>
-											<div class="truncate text-xs text-muted-foreground">
-												{event.title} · {formatTimestamp(event.createdAt)}
-											</div>
-										</div>
-									</div>
-									<ToolInvocationCard invocation={toActionInvocation(event)} />
-								</div>
-							{/each}
-						</ScrollView>
-					</AsyncSurface>
+				<Tabs.Content value="write" class="mt-3 grid gap-3">
+					<div class="grid gap-3 xl:grid-cols-[14rem_minmax(0,1fr)_auto]">
+						<Select.Root
+							type="single"
+							items={callAsItems}
+							value={effectiveCallerToken ?? undefined}
+							disabled={callAsItems.length === 0}
+							onValueChange={(value) => {
+								onChangeCallerToken(value);
+							}}
+						>
+							<Select.Trigger aria-label="Call tool as" class="w-full">
+								{selectedCallAsLabel}
+							</Select.Trigger>
+							<Select.Content>
+								{#each callAsItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<Textarea bind:value={writeText} class="min-h-24" placeholder="Type terminal input…" />
+						<Button
+							class="shrink-0 self-start xl:justify-self-end"
+							disabled={!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy}
+							onclick={() => void handleWriteToolCall()}
+						>
+							<SendHorizontalIcon class="size-4" />
+							Call tool
+						</Button>
+					</div>
 				</Tabs.Content>
 
-				<Tabs.Content value="users" class="h-full">
-					<div class="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-4 p-4">
-						<div class="grid gap-2">
-							<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
-							<NativeSelect.Root
-								aria-label="Grant actor"
-								value={grantParticipantId}
-								onchange={(event) => {
-									grantParticipantId = (event.currentTarget as HTMLSelectElement).value;
-								}}
-							>
-								<option value="">Select actor</option>
-								{#each selectableActors as actor (actor.actorId)}
-									<option value={actor.actorId}>{actor.label} · {actor.subtitle ?? actor.actorId}</option>
+				<Tabs.Content value="read" class="mt-3 grid gap-3">
+					<div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
+						<Select.Root
+							type="single"
+							items={callAsItems}
+							value={effectiveCallerToken ?? undefined}
+							disabled={callAsItems.length === 0}
+							onValueChange={(value) => {
+								onChangeCallerToken(value);
+							}}
+						>
+							<Select.Trigger aria-label="Call tool as" class="w-full">
+								{selectedCallAsLabel}
+							</Select.Trigger>
+							<Select.Content>
+								{#each callAsItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
 								{/each}
-							</NativeSelect.Root>
-							<NativeSelect.Root aria-label="Grant role" bind:value={grantRole}>
-								<option value="writer">writer</option>
-								<option value="requester">requester</option>
-								<option value="readonly">readonly</option>
-								<option value="admin">admin</option>
-							</NativeSelect.Root>
-							<Button
-								disabled={!selectedTerminal || !grantParticipantId || grantBusy}
-								onclick={() => void handleGrantSeat()}
-							>
-								<ShieldUserIcon class="size-4" />
-								Grant seat
-							</Button>
-							{#if grantError}
-								<NoticeBanner tone="destructive" message={grantError} />
-							{/if}
-						</div>
+							</Select.Content>
+						</Select.Root>
+						<Select.Root
+							type="single"
+							items={readModeItems}
+							value={readMode}
+							onValueChange={(value) => {
+								readMode = value as typeof readMode;
+							}}
+						>
+							<Select.Trigger aria-label="Read mode" class="w-full">
+								{selectedReadModeLabel}
+							</Select.Trigger>
+							<Select.Content>
+								{#each readModeItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<Button
+							class="shrink-0 self-start xl:justify-self-end"
+							disabled={!selectedTerminal || !effectiveCallerToken || readBusy}
+							onclick={() => void handleReadToolCall()}
+						>
+							<FileClockIcon class="size-4" />
+							Call read
+						</Button>
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
+		{/snippet}
+	</WorkbenchScaffold>
+{/snippet}
 
-						{#if terminalApprovalsState.data.length}
-							<div class="grid gap-2 rounded-2xl border border-amber-300 bg-amber-50/60 p-3">
-								<div class="text-sm font-semibold">Pending approvals</div>
-								{#each terminalApprovalsState.data as approval (approval.requestId)}
-									<div class="rounded-xl border border-amber-200 bg-white/80 p-3">
-										<div class="text-sm font-semibold">{approval.participantId}</div>
-										<div class="mt-1 text-xs text-muted-foreground">
-											{approval.requestedInput?.text ?? 'write request'} · expires {formatTimestamp(approval.expiresAt)}
+{#snippet terminalActivityPanel()}
+	<WorkbenchScaffold tone="pane">
+		{#snippet header()}
+			<h2 class="text-base font-semibold">Actions + Users</h2>
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				<span>Activity and seat access.</span>
+				<HelpHint textContext="terminal actions render as tool facts while users owns seat authorization and per-seat focus.">
+					<p>Actions render through the shared tool invocation surface so reads and writes follow one factual shape.</p>
+				</HelpHint>
+			</div>
+		{/snippet}
+
+		<Tabs.Root bind:value={sidePanelTab} class="grid h-full grid-rows-[auto_minmax(0,1fr)]">
+			<Tabs.List class="mx-4 mt-4 grid grid-cols-2">
+				<Tabs.Trigger value="actions">Actions</Tabs.Trigger>
+				<Tabs.Trigger value="users">Users</Tabs.Trigger>
+			</Tabs.List>
+
+			<Tabs.Content value="actions" class="h-full" bind:ref={actionsPanelRef}>
+				<AsyncSurface
+					class="h-full"
+					state={actionsSurfaceState}
+					emptyLoadingLabel="Loading terminal actions…"
+					loadingOverlayLabel="Refreshing terminal actions…"
+				>
+					{#snippet empty()}
+						{#if terminalActivityState.error && terminalActivityState.data.length === 0}
+							<div class="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+								{terminalActivityState.error}
+							</div>
+						{:else}
+							<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+								No terminal actions yet.
+							</div>
+						{/if}
+					{/snippet}
+
+					<Scaffold.ScrollBody contentClass="grid gap-3 p-4">
+						{#each actionEvents as event (event.id)}
+							<div class="grid gap-3 rounded-2xl border p-3">
+								<div class="flex items-center gap-3">
+									<ProfileAvatar
+										label={seatStates.find((seat) => seat.actorId === event.actorId)?.label ?? event.actorId ?? event.terminalId}
+										src={seatStates.find((seat) => seat.actorId === event.actorId)?.iconUrl}
+										class="size-8"
+									/>
+									<div class="min-w-0">
+										<div class="truncate text-sm font-semibold">
+											{seatStates.find((seat) => seat.actorId === event.actorId)?.label ??
+												event.actorId ??
+												event.terminalId}
+										</div>
+										<div class="truncate text-xs text-muted-foreground">
+											{event.title} · {formatTimestamp(event.createdAt)}
+										</div>
+									</div>
+								</div>
+								<ToolInvocationCard invocation={toActionInvocation(event)} />
+							</div>
+						{/each}
+					</Scaffold.ScrollBody>
+				</AsyncSurface>
+			</Tabs.Content>
+
+				<Tabs.Content
+					value="users"
+					bind:ref={usersPanelRef}
+					class={usersPaneCompact ? 'grid gap-4 p-4' : 'h-full'}
+				>
+					{#if usersPaneCompact}
+						<div class="grid gap-4">
+							<div class="relative z-10 grid gap-2">
+								<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Grant access</div>
+								<Select.Root
+									type="single"
+									items={grantActorItems}
+									value={grantParticipantId}
+									onValueChange={(value) => {
+										grantParticipantId = value;
+									}}
+								>
+									<Select.Trigger aria-label="Grant actor" class="w-full">
+										{selectedGrantActorLabel}
+									</Select.Trigger>
+									<Select.Content>
+										{#each grantActorItems as item (item.value)}
+											<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<Select.Root
+									type="single"
+									items={grantRoleItems}
+									value={grantRole}
+									onValueChange={(value) => {
+										grantRole = value as typeof grantRole;
+									}}
+								>
+									<Select.Trigger aria-label="Grant role" class="w-full">
+										{selectedGrantRoleLabel}
+									</Select.Trigger>
+									<Select.Content>
+										{#each grantRoleItems as item (item.value)}
+											<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<Button
+									class="relative z-10"
+									disabled={!selectedTerminal || !grantParticipantId || grantBusy}
+									onclick={() => void handleGrantSeat()}
+								>
+									<ShieldUserIcon class="size-4" />
+									Grant seat
+								</Button>
+								{#if grantError}
+									<NoticeBanner tone="destructive" message={grantError} />
+								{/if}
+							</div>
+
+							{#if terminalApprovalsState.data.length}
+								<div class="grid gap-2 rounded-2xl border border-amber-300 bg-amber-50/60 p-3">
+									<div class="text-sm font-semibold">Pending approvals</div>
+									{#each terminalApprovalsState.data as approval (approval.requestId)}
+										<div class="rounded-xl border border-amber-200 bg-white/80 p-3">
+											<div class="text-sm font-semibold">{approval.participantId}</div>
+											<div class="mt-1 text-xs text-muted-foreground">
+												{approval.requestedInput?.text ?? 'write request'} · expires {formatTimestamp(approval.expiresAt)}
+											</div>
+											<div class="mt-3 flex flex-wrap gap-2">
+												<Button
+													size="sm"
+													onclick={() =>
+														void onApproveRequest({ requestId: approval.requestId, durationMs: 30 * 60 * 1000 })}
+												>
+													Approve 30m
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => void onDenyRequest({ requestId: approval.requestId })}
+												>
+													Deny
+												</Button>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							<div class="grid gap-3">
+								{#each seatStates as seat (seat.actorId)}
+									<div class="rounded-2xl border p-3">
+										<div class="flex items-start justify-between gap-3">
+											<div class="flex items-center gap-3">
+												<ProfileAvatar label={seat.label} src={seat.iconUrl} class="size-9" />
+												<div>
+													<div class="text-sm font-semibold">{seat.label}</div>
+													<div class="text-xs text-muted-foreground">{seat.subtitle ?? seat.actorId}</div>
+												</div>
+											</div>
+											<div class="text-xs text-muted-foreground">{seat.role}</div>
 										</div>
 										<div class="mt-3 flex flex-wrap gap-2">
 											<Button
 												size="sm"
-												onclick={() =>
-													void onApproveRequest({ requestId: approval.requestId, durationMs: 30 * 60 * 1000 })}
-											>
-												Approve 30m
-											</Button>
-											<Button
-												size="sm"
 												variant="outline"
-												onclick={() => void onDenyRequest({ requestId: approval.requestId })}
+												disabled={!seat.accessToken}
+												onclick={() =>
+													seat.accessToken
+														? void onToggleSeatFocus({
+																actorId: seat.actorId,
+																accessToken: seat.accessToken,
+																focused: seat.focused,
+															})
+														: undefined}
 											>
-												Deny
+												{seat.focused ? 'Unfocus' : 'Focus'}
 											</Button>
+											{#if seat.grantId}
+												<Button size="sm" variant="outline" onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seat.grantId! })}>
+													Revoke
+												</Button>
+											{/if}
 										</div>
 									</div>
 								{/each}
 							</div>
-						{/if}
+						</div>
+					{:else}
+						<Scaffold.Root class="h-full gap-4 p-4">
+							<Scaffold.Header class="grid gap-4 border-b-0 p-0">
+								<div class="grid gap-2 xl:grid-cols-[minmax(0,1fr)_10rem_auto]">
+									<Select.Root
+										type="single"
+										items={grantActorItems}
+										value={grantParticipantId}
+										onValueChange={(value) => {
+											grantParticipantId = value;
+										}}
+									>
+										<Select.Trigger aria-label="Grant actor" class="w-full">
+											{selectedGrantActorLabel}
+										</Select.Trigger>
+										<Select.Content>
+											{#each grantActorItems as item (item.value)}
+												<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 
-						<ScrollView class="h-full" contentClass="grid gap-3">
-							{#if seatStates.length}
+									<Select.Root
+										type="single"
+										items={grantRoleItems}
+										value={grantRole}
+										onValueChange={(value) => {
+											grantRole = value as typeof grantRole;
+										}}
+									>
+										<Select.Trigger aria-label="Grant role" class="w-full">
+											{selectedGrantRoleLabel}
+										</Select.Trigger>
+										<Select.Content>
+											{#each grantRoleItems as item (item.value)}
+												<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+
+									<Button
+										class="xl:justify-self-end"
+										disabled={!selectedTerminal || !grantParticipantId || grantBusy}
+										onclick={() => void handleGrantSeat()}
+									>
+										<ShieldUserIcon class="size-4" />
+										Grant seat
+									</Button>
+								</div>
+								{#if grantError}
+									<NoticeBanner tone="destructive" message={grantError} />
+								{/if}
+							</Scaffold.Header>
+
+							<Scaffold.ScrollBody contentClass="grid gap-3">
+								{#if terminalApprovalsState.data.length}
+									<div class="grid gap-2 rounded-2xl border border-amber-300 bg-amber-50/60 p-3">
+										<div class="text-sm font-semibold">Pending approvals</div>
+										{#each terminalApprovalsState.data as approval (approval.requestId)}
+											<div class="rounded-xl border border-amber-200 bg-white/80 p-3">
+												<div class="text-sm font-semibold">{approval.participantId}</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													{approval.requestedInput?.text ?? 'write request'} · expires {formatTimestamp(approval.expiresAt)}
+												</div>
+												<div class="mt-3 flex flex-wrap gap-2">
+													<Button
+														size="sm"
+														onclick={() =>
+															void onApproveRequest({ requestId: approval.requestId, durationMs: 30 * 60 * 1000 })}
+													>
+														Approve 30m
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => void onDenyRequest({ requestId: approval.requestId })}
+													>
+														Deny
+													</Button>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+
 								{#each seatStates as seat (seat.actorId)}
-									{@const seatAccessToken = seat.accessToken}
-									{@const seatGrantId = seat.grantId}
-									<div class="rounded-2xl border p-3" data-testid={`terminal-seat-${seat.actorId}`}>
+									<div class="rounded-2xl border p-3">
 										<div class="flex items-center justify-between gap-3">
 											<div class="flex min-w-0 items-center gap-3">
 												<ProfileAvatar label={seat.label} src={seat.iconUrl} class="size-9" />
 												<div class="min-w-0">
 													<div class="truncate text-sm font-semibold">{seat.label}</div>
-													<div class="truncate text-xs text-muted-foreground">
-														{seat.subtitle ?? seat.actorId}
-													</div>
+													<div class="truncate text-xs text-muted-foreground">{seat.subtitle ?? seat.actorId}</div>
 												</div>
 											</div>
-											<div
-												class="rounded-full border px-2 py-1 text-[11px]"
-												data-testid={`terminal-seat-role-${seat.actorId}`}
-											>
-												{seat.role}
-											</div>
-										</div>
-										<div class="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-											<div>{seat.focused ? 'Focused' : 'Unfocused'}</div>
-											<div>{seat.online ? 'Online' : 'Offline'}</div>
-											{#if seat.currentAdmin}
-												<div>Current admin</div>
-											{/if}
-											{#if seat.adminCandidateRank !== undefined}
-												<div>Admin group #{seat.adminCandidateRank}</div>
-											{/if}
-											{#if seat.invalidCredential}
-												<div>Credential invalid</div>
-											{/if}
-											{#if seat.leaseExpiresAt}
-												<div>Lease until {formatTimestamp(seat.leaseExpiresAt)}</div>
-											{/if}
+											<div class="text-xs text-muted-foreground">{seat.role}</div>
 										</div>
 										<div class="mt-3 flex flex-wrap gap-2">
-											{#if seatAccessToken}
+											<Button
+												size="sm"
+												variant="outline"
+												disabled={!seat.accessToken}
+												onclick={() =>
+													seat.accessToken
+														? void onToggleSeatFocus({
+																actorId: seat.actorId,
+																accessToken: seat.accessToken,
+																focused: seat.focused,
+															})
+														: undefined}
+											>
+												{seat.focused ? 'Unfocus' : 'Focus'}
+											</Button>
+											{#if seat.grantId}
 												<Button
 													size="sm"
 													variant="outline"
-													onclick={() =>
-														void onToggleSeatFocus({
-															actorId: seat.actorId,
-															accessToken: seatAccessToken,
-															focused: seat.focused,
-														})}
-												>
-													{seat.focused ? 'Unfocus seat' : 'Focus seat'}
-												</Button>
-											{/if}
-											{#if seatGrantId}
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seatGrantId })}
+													onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seat.grantId! })}
 												>
 													Revoke
 												</Button>
@@ -632,85 +766,26 @@
 										</div>
 									</div>
 								{/each}
-							{:else if selectedTerminal}
-								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-									No terminal seats are visible yet.
-								</div>
-							{:else}
-								<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-									Select a terminal to inspect seats and grant management.
-								</div>
-							{/if}
-						</ScrollView>
-					</div>
+							</Scaffold.ScrollBody>
+						</Scaffold.Root>
+					{/if}
 				</Tabs.Content>
-			</Tabs.Root>
-		</div>
-	</PanelShell>
-</div>
+		</Tabs.Root>
+	</WorkbenchScaffold>
+{/snippet}
 
-<Dialog.Root bind:open={createDialogOpen}>
-	<Dialog.Content class="sm:max-w-lg">
-		<form class="grid gap-4" onsubmit={handleCreateTerminal}>
-			<Dialog.Header>
-				<Dialog.Title>Create terminal</Dialog.Title>
-				<Dialog.Description>
-					Create a global terminal. Its cwd is absolute because terminal-system is no longer workspace-owned.
-				</Dialog.Description>
-			</Dialog.Header>
+<SplitView.Root variant="content-detail" padding="none" data-testid="terminal-system-surface">
+	<SplitView.Content>
+		{#if selectedTerminal}
+			{@render terminalStagePanel()}
+		{:else}
+			<div class="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+				Select a terminal tab.
+			</div>
+		{/if}
+	</SplitView.Content>
 
-			<div class="grid gap-2">
-				<label class="text-sm font-medium" for="create-terminal-id">Terminal id</label>
-				<Input
-					id="create-terminal-id"
-					name="terminalId"
-					aria-label="Terminal id"
-					bind:value={createTerminalId}
-					placeholder="global-ops"
-				/>
-			</div>
-			<div class="grid gap-2">
-				<label class="text-sm font-medium" for="create-terminal-process-kind">Process kind</label>
-				<Input
-					id="create-terminal-process-kind"
-					name="processKind"
-					aria-label="Process kind"
-					bind:value={createProcessKind}
-					placeholder="shell"
-				/>
-			</div>
-			<div class="grid gap-2">
-				<label class="text-sm font-medium" for="create-terminal-cwd">Absolute cwd</label>
-				<Input
-					id="create-terminal-cwd"
-					name="cwd"
-					aria-label="Absolute cwd"
-					bind:value={createCwd}
-					placeholder="/Users/kzf/Dev/GitHub/jixoai-labs/agenter"
-				/>
-			</div>
-			{#if createError}
-				<div class="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-					{createError}
-				</div>
-			{/if}
-
-			<Dialog.Footer>
-				<Button
-					type="button"
-					variant="ghost"
-					onclick={() => {
-						createDialogOpen = false;
-						resetCreateDialog();
-					}}
-				>
-					Cancel
-				</Button>
-				<Button type="submit" disabled={createBusy}>
-					<TerminalSquareIcon class="size-4" />
-					Create terminal
-				</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+	<SplitView.Detail>
+		{@render terminalActivityPanel()}
+	</SplitView.Detail>
+</SplitView.Root>
