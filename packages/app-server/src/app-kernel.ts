@@ -1626,6 +1626,10 @@ export class AppKernel {
 
     this.sessions.update(sessionId, { status: "starting", lastError: undefined });
     this.ensureSessionPrimaryRoom(meta);
+    const primaryRoomId = meta.primaryRoomId;
+    if (!primaryRoomId) {
+      throw new Error(`session primary room id missing: ${meta.id}`);
+    }
     const runtime = new SessionRuntime({
       sessionId: meta.id,
       cwd: meta.cwd,
@@ -1638,7 +1642,7 @@ export class AppKernel {
       messageActorId: this.resolveSessionMessageActorId(meta),
       terminalSystem: this.terminalControlPlane,
       terminalActorId: this.resolveSessionTerminalActorId(meta),
-      primaryRoomId: meta.primaryRoomId,
+      primaryRoomId,
       allocateRoomId: async ({ kind, title }) => this.allocateGlobalRoomId(kind === "room" ? title : undefined),
       logger: this.options.logger,
     });

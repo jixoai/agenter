@@ -1,5 +1,6 @@
-import type { AuthServiceDescriptor, ProfileServiceHandle } from "@agenter/profile-service";
+import type { ProfileServiceHandle } from "@agenter/profile-service";
 import { describe, expect, test } from "bun:test";
+import type { AuthServiceDescriptor } from "../src/profile-service-bridge";
 import { ProfileServiceBridge } from "../src/profile-service-bridge";
 
 class TestProfileServiceBridge extends ProfileServiceBridge {
@@ -77,12 +78,12 @@ describe("Feature: profile-service bridge startup", () => {
       const descriptor = await bridge.describe();
       const revealed = await bridge.revealRootAuthPrivateKey();
 
-      expect(descriptor).toMatchObject<AuthServiceDescriptor>({
+      expect(descriptor).toMatchObject({
         endpoint: "http://127.0.0.1:4591",
         rootAuthBootstrapMode: "managed_local",
         canRevealRootAuthPrivateKey: true,
         hasManagedRootAuthPrivateKey: true,
-      });
+      } satisfies Partial<AuthServiceDescriptor>);
       expect(revealed.privateKey).toBe("0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1");
     } finally {
       globalThis.fetch = originalFetch;
@@ -120,12 +121,12 @@ describe("Feature: profile-service bridge startup", () => {
 
     try {
       const descriptor = await bridge.describe();
-      expect(descriptor).toMatchObject<AuthServiceDescriptor>({
+      expect(descriptor).toMatchObject({
         endpoint: "http://auth.example.test",
         rootAuthBootstrapMode: "external",
         canRevealRootAuthPrivateKey: false,
         hasManagedRootAuthPrivateKey: false,
-      });
+      } satisfies Partial<AuthServiceDescriptor>);
       await expect(bridge.revealRootAuthPrivateKey()).rejects.toThrow(
         "managed root auth key reveal is unavailable for external auth service",
       );

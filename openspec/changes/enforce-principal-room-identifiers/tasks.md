@@ -11,7 +11,5 @@
 ## 3. Verification
 
 - [x] 3.1 Run targeted `packages/message-system` and `packages/app-server` tests for principal room creation and session primary room binding
-- [ ] 3.2 Run targeted typecheck for touched packages
+- [x] 3.2 Run targeted typecheck for touched packages
 - [x] 3.3 Browser-verify that Messages no longer reintroduces new legacy `room-*` room tabs
-
-Blocked note for `3.2`: `bunx tsc --noEmit -p packages/app-server/tsconfig.json` currently fails with `TS2688: Cannot find type definition file for 'bun'` in this environment.

@@ -628,9 +628,10 @@ describe("Feature: app kernel event replay", () => {
 
     const messages = kernel.listChatMessages(session.id, 0, 20);
     const userMessage = messages.find((item) => item.role === "user");
-    expect(userMessage?.attachments).toHaveLength(1);
-    expect(userMessage?.attachments[0]?.assetId).toBe(attachment.assetId);
-    expect(userMessage?.attachments[0]?.url).toBe(
+    const userAttachments = userMessage?.attachments ?? [];
+    expect(userAttachments).toHaveLength(1);
+    expect(userAttachments[0]?.assetId).toBe(attachment.assetId);
+    expect(userAttachments[0]?.url).toBe(
       `/media/sessions/${encodeURIComponent(session.id)}/assets/${encodeURIComponent(attachment.assetId)}`,
     );
 

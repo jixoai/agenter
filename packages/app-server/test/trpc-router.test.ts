@@ -392,7 +392,7 @@ describe("Feature: app-server trpc procedures", () => {
       },
     });
     expect(updated.channel.title).toBe("Ops bridge");
-    expect(updated.channel.metadata.topic).toBe("ops");
+    expect(updated.channel.metadata?.topic).toBe("ops");
 
     const issued = await caller.message.globalIssueGrant({
       chatId: room.chatId,
@@ -520,7 +520,8 @@ describe("Feature: app-server trpc procedures", () => {
       readSeatCount: 1,
       unreadSeatCount: 1,
     });
-    expect(relayRead.channel.readStates.find((state) => state.actorId === "session:relay")).toMatchObject({
+    const relayReadState = relayRead.channel.readStates?.find((state) => state.actorId === "session:relay");
+    expect(relayReadState).toMatchObject({
       actorId: "session:relay",
       trackedByLatestVisible: true,
       hasReadLatestVisible: true,
@@ -531,7 +532,7 @@ describe("Feature: app-server trpc procedures", () => {
       messageId: latestMessageId,
     });
     expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
-    expect(superadminRead.channel.readStates.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`)).toBeFalse();
+    expect(superadminRead.channel.readStates?.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`)).toBeFalse();
 
     const viewerRead = await caller.message.globalMarkRead({
       chatId: room.chatId,
@@ -544,7 +545,8 @@ describe("Feature: app-server trpc procedures", () => {
       readSeatCount: 2,
       unreadSeatCount: 0,
     });
-    expect(viewerRead.channel.readStates.find((state) => state.actorId === "auth:viewer")).toMatchObject({
+    const viewerReadState = viewerRead.channel.readStates?.find((state) => state.actorId === "auth:viewer");
+    expect(viewerReadState).toMatchObject({
       actorId: "auth:viewer",
       trackedByLatestVisible: true,
       hasReadLatestVisible: true,
