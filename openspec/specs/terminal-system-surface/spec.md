@@ -22,6 +22,12 @@ Terminal read/write or other tool-call actions initiated from the UI SHALL let t
 - **WHEN** the operator selects an actor and invokes a terminal tool action
 - **THEN** the request is sent using that actor selection rather than an implicit global identity
 
+#### Scenario: Session-backed terminal actor prefers canonical session identity even after stop
+- **WHEN** a terminal seat or `call as` option resolves to a session-backed actor that still exists in active client session metadata
+- **AND** that session exposes both a human `avatar` label and an opaque runtime `name`
+- **THEN** the terminal Users pane and `call as` selector use the avatar label as the primary visible text
+- **THEN** any raw runtime id remains secondary detail only when needed for disambiguation
+
 #### Scenario: Actor authority missing
 - **WHEN** the chosen actor lacks valid terminal authority
 - **THEN** the UI surfaces the failure as a credential/access problem and does not silently fall back
@@ -84,4 +90,3 @@ The terminal Users pane SHALL derive its grant-access control layout from the pa
 - **WHEN** the operator opens `Terminals > Users` on a compact mobile viewport
 - **THEN** the Users pane continues to show the stacked grant-access layout
 - **THEN** the actor selector and role selector can still be opened before granting a seat
-
