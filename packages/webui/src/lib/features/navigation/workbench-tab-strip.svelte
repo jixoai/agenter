@@ -151,6 +151,7 @@
 													use:trackTabElement={tab.id}
 													type="button"
 													data-workbench-tab={tab.id}
+													data-workbench-tab-has-actions={tab.closable || tab.menuItems?.length ? 'true' : 'false'}
 													class={cn(
 														'relative inline-flex h-10 items-center justify-start gap-2 overflow-visible rounded-t-[0.95rem] rounded-b-none border border-transparent border-b-0 px-3.5 py-0 text-[12.5px] font-medium leading-none text-muted-foreground shadow-none transition-[color,background-color,border-color,box-shadow,transform]',
 														'bg-[linear-gradient(180deg,color-mix(in_srgb,var(--muted),white_18%)_0%,color-mix(in_srgb,var(--muted),transparent_14%)_100%)] hover:text-foreground hover:[background:linear-gradient(180deg,color-mix(in_srgb,var(--muted),white_30%)_0%,color-mix(in_srgb,var(--muted),transparent_6%)_100%)]',
@@ -312,6 +313,14 @@
 			gap: 0.375rem;
 			padding-inline: 0.75rem;
 			font-size: 0.72rem;
+		}
+
+		:global([data-workbench-tab][data-workbench-tab-has-actions='true']) {
+			padding-inline-end: 0.75rem;
+		}
+
+		:global([data-workbench-tab-entry] [data-workbench-tab-action]) {
+			display: none;
 		}
 	}
 

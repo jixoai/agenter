@@ -12,4 +12,12 @@ describe('Feature: Workbench tab strip containment law', () => {
 		expect(source).toContain('inline-size: 100%;');
 		expect(source).toContain('overflow: hidden;');
 	});
+
+	test('Scenario: Given a narrow running-tab strip When reading the shared source Then inline tab actions collapse before they can steal the primary mobile hit target', () => {
+		expect(source).toContain("data-workbench-tab-has-actions={tab.closable || tab.menuItems?.length ? 'true' : 'false'}");
+		expect(source).toContain(":global([data-workbench-tab][data-workbench-tab-has-actions='true']) {");
+		expect(source).toContain('padding-inline-end: 0.75rem;');
+		expect(source).toContain(":global([data-workbench-tab-entry] [data-workbench-tab-action]) {");
+		expect(source).toContain('display: none;');
+	});
 });
