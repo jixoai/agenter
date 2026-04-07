@@ -145,3 +145,15 @@ export const isViewerOwnedMessage = (
   }
   return message.senderActorId === viewerActorId;
 };
+
+export const estimateMessageRowSize = (message: WebChatMessage): number => {
+  const baseHeight = 112;
+  const contentLength = Math.max(message.content.trim().length, 1);
+  const estimatedTextLines = Math.min(10, Math.ceil(contentLength / 56));
+  const textHeight = estimatedTextLines * 20;
+  const attachmentHeight = (message.attachments?.length ?? 0) > 0 ? 116 : 0;
+  const interactiveHeight =
+    message.kind === "interactive" ? 168 + (message.payload?.interactive?.fields.length ?? 0) * 52 : 0;
+  const errorHeight = message.kind === "error" ? 44 : 0;
+  return baseHeight + textHeight + attachmentHeight + interactiveHeight + errorHeight;
+};

@@ -4,7 +4,7 @@
     MessageTransportServerMessage,
     ReverseTimeCursor,
   } from "@agenter/message-system/types";
-  import { Scaffold, ScrollView } from "@agenter/svelte-components";
+  import { Scaffold, ScrollView, type ScrollVirtualConfig } from "@agenter/svelte-components";
   import { onMount, untrack } from "svelte";
 
   import ChatAvatar from "./chat-avatar.svelte";
@@ -14,6 +14,7 @@
   import * as Card from "./ui/card";
   import {
     compareMessages,
+    estimateMessageRowSize,
     isAssistantMessage,
     mergeMessages,
     normalizeMessageRecords,
@@ -117,10 +118,21 @@
   const surfaceNotice = $derived(showHeader ? transcriptNotice : null);
   const transcriptPreambleNotice = $derived(!showHeader ? transcriptNotice : null);
   const transcriptContentClass = $derived(
-    transcriptMessages.length === 0 && !transcriptPreambleNotice
-      ? "chat-scroll-content chat-scroll-content-empty"
-      : "chat-scroll-content",
+    transcriptMessages.length === 0 ? "chat-scroll-content chat-scroll-content-empty" : "chat-scroll-content",
   );
+  const transcriptVirtual = $derived.by(() => {
+    if (transcriptMessages.length === 0) {
+      return undefined;
+    }
+    return {
+      items: transcriptMessages,
+      estimateSize: (_index, message) => estimateMessageRowSize(message),
+      getItemKey: (_index, message) => message.messageId,
+      measureElement: true,
+      overscan: 8,
+      useAnimationFrameWithResizeObserver: true,
+    } satisfies ScrollVirtualConfig<WebChatMessage>;
+  });
 
   const composerProps = $derived.by(() => {
     if (!channel) {
@@ -509,6 +521,38 @@
     if (!viewportRef || typeof IntersectionObserver === "undefined") {
       return;
     }
+    const observedRows = new Map<string, HTMLElement>();
+    const syncObservedRows = (): void => {
+      const nextRows = new Map<string, HTMLElement>();
+      viewportRef?.querySelectorAll<HTMLElement>("[data-message-id]").forEach((row) => {
+        const messageId = row.dataset.messageId;
+        if (!messageId) {
+          return;
+        }
+        nextRows.set(messageId, row);
+        const currentRow = observedRows.get(messageId);
+        if (!currentRow) {
+          observedRows.set(messageId, row);
+          observer.observe(row);
+          return;
+        }
+        if (currentRow !== row) {
+          observer.unobserve(currentRow);
+          observedRows.set(messageId, row);
+          observer.observe(row);
+        }
+      });
+      for (const [messageId, row] of observedRows) {
+        if (nextRows.get(messageId) === row) {
+          continue;
+        }
+        observer.unobserve(row);
+        observedRows.delete(messageId);
+        visibleMessageIds.delete(messageId);
+        visibleAssistantIds.delete(messageId);
+      }
+      syncLatestVisibleIds();
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -527,9 +571,19 @@
       },
       { root: viewportRef, threshold: [0.2, 0.5, 0.8] },
     );
-    const rows = viewportRef.querySelectorAll<HTMLElement>("[data-message-id]");
-    rows.forEach((row) => observer.observe(row));
-    return () => observer.disconnect();
+    syncObservedRows();
+    const mutationObserver =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            syncObservedRows();
+          });
+    mutationObserver?.observe(viewportRef, { childList: true, subtree: true });
+    return () => {
+      mutationObserver?.disconnect();
+      observer.disconnect();
+      observedRows.clear();
+    };
   });
 
   onMount(() => {
@@ -621,6 +675,11 @@
       <Scaffold.Root class="chat-scaffold">
         <Scaffold.Body class="chat-body" part="body">
           <div class="chat-transcript-shell" part="transcript-shell">
+            {#if transcriptPreambleNotice}
+              <div class="chat-transcript-notice" part="transcript-notice" data-tone={transcriptPreambleNotice.tone ?? "info"}>
+                {transcriptPreambleNotice.message}
+              </div>
+            {/if}
             <ScrollView
               bind:viewportRef
               bind:contentRef
@@ -629,12 +688,8 @@
               contentClass={transcriptContentClass}
               viewportTestId="web-chat-scroll-viewport"
               onViewportScroll={handleScroll}
+              virtual={transcriptVirtual}
             >
-              {#if transcriptPreambleNotice}
-                <div class="chat-transcript-notice" part="transcript-notice" data-tone={transcriptPreambleNotice.tone ?? "info"}>
-                  {transcriptPreambleNotice.message}
-                </div>
-              {/if}
               {#if loadingInitial && transcriptMessages.length === 0}
                 <div class="empty-state" part="empty-state loading-state">
                   <h3>Loading channel history...</h3>
@@ -645,26 +700,25 @@
                   <h3>{emptyTranscriptTitle}</h3>
                   <p>{emptyTranscriptMessage}</p>
                 </div>
-              {:else}
-                {#each transcriptMessages as message (message.messageId)}
-                  <section
-                    data-message-id={message.messageId}
-                    data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
-                  >
-                    <MessageRow
-                      {channel}
-                      viewerActorId={effectiveViewerActorId}
-                      {message}
-                      {resolveActorPresentation}
-                      {resolveMessageActions}
-                      {resolveMessageReadProgress}
-                      onSubmitInteractive={async (text) => {
-                        await handleSubmit({ text, assets: [] });
-                      }}
-                    />
-                  </section>
-                {/each}
               {/if}
+              {#snippet item(message)}
+                <section
+                  data-message-id={message.messageId}
+                  data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
+                >
+                  <MessageRow
+                    {channel}
+                    viewerActorId={effectiveViewerActorId}
+                    {message}
+                    {resolveActorPresentation}
+                    {resolveMessageActions}
+                    {resolveMessageReadProgress}
+                    onSubmitInteractive={async (text) => {
+                      await handleSubmit({ text, assets: [] });
+                    }}
+                  />
+                </section>
+              {/snippet}
             </ScrollView>
           </div>
         </Scaffold.Body>

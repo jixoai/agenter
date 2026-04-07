@@ -1,7 +1,7 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 
-	import ScrollView from './scroll-view.svelte';
+	import { ScrollView } from '@agenter/svelte-components';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/ScrollView',
@@ -13,7 +13,11 @@
 	import { expect, within } from 'storybook/test';
 
 	const staticItems = Array.from({ length: 24 }, (_, index) => `Static item ${index + 1}`);
-	const virtualItems = Array.from({ length: 120 }, (_, index) => `Virtual item ${index + 1}`);
+	const virtualItems = Array.from({ length: 120 }, (_, index) => ({
+		id: `virtual-${index + 1}`,
+		label: `Virtual item ${index + 1}`,
+		lines: (index % 4) + 1,
+	}));
 	const sparseItems = ['Overview', 'Users', 'Access'];
 
 	const queryViewport = (canvasElement: HTMLElement): HTMLElement => {
@@ -90,12 +94,19 @@
 			class="h-full"
 			virtual={{
 				items: virtualItems,
-				itemSize: 28,
+				estimateSize: (_, item) => 36 + item.lines * 18,
+				getItemKey: (_, item) => item.id,
+				measureElement: true,
 				overscan: 2,
 			}}
 		>
-			{#snippet item(itemLabel)}
-				<div class="rounded-lg border bg-muted/40 px-3 py-1 text-sm">{itemLabel}</div>
+			{#snippet item(itemData)}
+				<div class="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+					<div class="font-medium">{itemData.label}</div>
+					<div class="text-xs text-muted-foreground">
+						{Array.from({ length: itemData.lines }, () => 'Measured virtual row').join(' ')}
+					</div>
+				</div>
 			{/snippet}
 		</ScrollView>
 	</div>

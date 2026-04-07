@@ -793,6 +793,61 @@ describe("Feature: web-chat-view package", () => {
     expect(rendered).not.toContain("Loading channel history...");
   });
 
+  test("Scenario: Given a long room transcript When the host scrolls deep into history Then offscreen rows stay unmounted until the viewport reaches them", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-virtualized",
+        kind: "room",
+        title: "Virtualized room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: Array.from({ length: 200 }, (_value, index) => ({
+        rowId: index + 1,
+        messageId: `virtual-${index + 1}`,
+        chatId: "chat-virtualized",
+        from: index % 2 === 0 ? "User" : "jane",
+        to: index % 2 === 0 ? "jane" : undefined,
+        kind: "text" as const,
+        content: `virtual transcript row ${index + 1}`,
+        createdAt: (index + 1) * 100,
+        updatedAt: (index + 1) * 100,
+        visibleAt: (index + 1) * 100,
+        attentionState: "loaded" as const,
+        editable: false,
+        metadata: {},
+        attachments: [],
+      })),
+    });
+
+    await settleLitUpdates();
+
+    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+    expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeTruthy();
+    expect(viewport.querySelector("[data-message-id='virtual-120']")).toBeNull();
+    const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
+    expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
+
+    viewport.scrollTop = 40000;
+    viewport.dispatchEvent(new Event("scroll"));
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeTruthy();
+      expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeNull();
+    });
+  });
+
   test("Scenario: Given queued room messages without visibleAt When the transcript renders Then they stay visible in createdAt order without a pending strip", async () => {
     mountHost({
       channel: {

@@ -59,9 +59,18 @@ describe("Feature: svelte-components layout foundation", () => {
 		const source = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8");
 
 		expect(source).toContain('export { default as ScrollView }');
-	expect(source).toContain('export * as Scaffold');
-	expect(source).toContain('export * as DialogScaffold');
-	expect(source).toContain('export * as SplitView');
-	expect(source).toContain('export { default as ClipSurface }');
+		expect(source).toContain('export * as Scaffold');
+		expect(source).toContain('export * as DialogScaffold');
+		expect(source).toContain('export * as SplitView');
+		expect(source).toContain('export { default as ClipSurface }');
+	});
+
+	test("Scenario: Given dynamically measured virtual rows When reviewing ScrollView source Then the wrapper does not clamp the main axis before measurement", () => {
+		const source = readFileSync(resolve(packageRoot, "src/scroll-view.svelte"), "utf8");
+
+		expect(source).toContain("const resolveVirtualItemStyle");
+		expect(source).toContain('dynamicMeasure ? "" : `inline-size:${virtualItem.size}px;`');
+		expect(source).toContain('dynamicMeasure ? "" : `block-size:${virtualItem.size}px;`');
+		expect(source).not.toContain("inline-size: 100%;\n  }");
 	});
 });
