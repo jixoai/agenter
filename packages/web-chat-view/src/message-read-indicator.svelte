@@ -18,9 +18,12 @@
   const title = $derived(progress.title ?? `${readCount}/${totalCount} read`);
   const circumference = 2 * Math.PI * 7;
   const dashOffset = $derived(circumference * (1 - ratio));
+  const readActors = $derived(progress.readActors ?? []);
+  const unreadActors = $derived(progress.unreadActors ?? []);
   const canDisclose = $derived(
-    (progress.readActors?.length ?? 0) > 0 || (progress.unreadActors?.length ?? 0) > 0,
+    readActors.length > 0 || unreadActors.length > 0,
   );
+  const showUnreadColumn = $derived(unreadActors.length > 0);
 </script>
 
 {#if canDisclose}
@@ -53,18 +56,21 @@
         </button>
       {/snippet}
     </Popover.Trigger>
-    <Popover.Content class="message-read-disclosure" data-testid="message-read-disclosure">
-      <div class="message-read-disclosure-grid">
+    <Popover.Content
+      class="message-read-disclosure w-[min(17rem,calc(100vw-1rem))] p-2.5"
+      data-testid="message-read-disclosure"
+    >
+      <div class:single-column={!showUnreadColumn} class="message-read-disclosure-grid">
         <section class="message-read-column" data-state="read">
           <header>
             <span>Read</span>
-            <strong>{progress.readActors?.length ?? 0}</strong>
+            <strong>{readActors.length}</strong>
           </header>
           <div class="message-read-actors">
-            {#if (progress.readActors?.length ?? 0) === 0}
+            {#if readActors.length === 0}
               <p class="message-read-empty">Nobody yet</p>
             {:else}
-              {#each progress.readActors ?? [] as actor (actor.actorId)}
+              {#each readActors as actor (actor.actorId)}
                 <div class="message-read-actor">
                   <ChatAvatar
                     label={actor.label}
@@ -83,18 +89,19 @@
               {/each}
             {/if}
           </div>
+          {#if !showUnreadColumn}
+            <p class="message-read-empty message-read-complete-copy">Everyone read</p>
+          {/if}
         </section>
 
-        <section class="message-read-column" data-state="unread">
-          <header>
-            <span>Unread</span>
-            <strong>{progress.unreadActors?.length ?? 0}</strong>
-          </header>
-          <div class="message-read-actors">
-            {#if (progress.unreadActors?.length ?? 0) === 0}
-              <p class="message-read-empty">Everyone read</p>
-            {:else}
-              {#each progress.unreadActors ?? [] as actor (actor.actorId)}
+        {#if showUnreadColumn}
+          <section class="message-read-column" data-state="unread">
+            <header>
+              <span>Unread</span>
+              <strong>{unreadActors.length}</strong>
+            </header>
+            <div class="message-read-actors">
+              {#each unreadActors as actor (actor.actorId)}
                 <div class="message-read-actor">
                   <ChatAvatar
                     label={actor.label}
@@ -111,9 +118,9 @@
                   </div>
                 </div>
               {/each}
-            {/if}
-          </div>
-        </section>
+            </div>
+          </section>
+        {/if}
       </div>
     </Popover.Content>
   </Popover.Root>
@@ -203,6 +210,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .message-read-disclosure-grid.single-column {
+    grid-template-columns: 1fr;
+  }
+
   .message-read-column {
     display: grid;
     gap: 0.55rem;
@@ -276,6 +287,10 @@
     white-space: nowrap;
     font-size: 0.68rem;
     color: #64748b;
+  }
+
+  .message-read-complete-copy {
+    color: #0f766e;
   }
 
   @container (max-width: 28rem) {
