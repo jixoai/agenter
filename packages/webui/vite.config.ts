@@ -73,7 +73,6 @@ const config = {
       '@codemirror/language-data',
       '@codemirror/state',
       '@codemirror/view',
-      'axe-core',
       'lit/static-html.js'
     ]
   },
