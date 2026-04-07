@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the durable secondary running-avatar navigation contract for desktop and compact application shells.
-
 ## Requirements
-
 ### Requirement: Workspace shell SHALL expose running sessions through nested secondary navigation
 
 The WebUI SHALL expose running avatars as secondary navigation nested under the primary `Avatars` shell entry, and each entry SHALL identify the avatar, its workspace context, unread state, and runtime status without being promoted into the primary navigation set.
@@ -43,3 +41,12 @@ Compact layouts SHALL expose the same running avatars through the shared navigat
 - **WHEN** the user opens compact navigation while already inside `Avatars` or a running-avatar detail shell
 - **THEN** the drawer keeps running avatars attached to the `Avatars` navigation branch instead of promoting them to peer primary entries
 - **THEN** it does not duplicate route-local runtime actions
+
+### Requirement: Compact running-avatar navigation SHALL stay attached to the persistent left rail
+Compact layouts SHALL keep running-avatar secondary navigation attached to the same persistent left rail as the primary `Avatars` entry. The compact shell SHALL NOT move that navigation behind a hidden drawer.
+
+#### Scenario: Compact Avatars shell keeps secondary navigation in the docked rail
+- **WHEN** the operator is inside `Avatars` on a compact viewport and one or more avatars are running
+- **THEN** the left rail remains visible as the shared navigation shell
+- **THEN** expanding the `Avatars` branch reveals the running-avatar secondary navigation without opening a separate drawer
+
