@@ -297,4 +297,51 @@ describe("Feature: web-components foundation", () => {
     expect(toolCard.shadowRoot?.querySelector(".badge")?.getAttribute("part")).toBe(TOOL_INVOCATION_CARD_PARTS.statusBadge);
     expect(toolCard.shadowRoot?.querySelector(".section")?.getAttribute("part")).toContain(TOOL_INVOCATION_CARD_PARTS.section);
   });
+
+  test("Scenario: Given an auto adaptive icon button When measurement collapses it to icon-only Then the element avoids change-in-update warnings", async () => {
+    defineAdaptiveIconButton();
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const adaptive = document.createElement(ADAPTIVE_ICON_BUTTON_TAG) as HTMLElement & {
+        label: string;
+        labelPriority: string;
+        updateComplete?: Promise<unknown>;
+        shadowRoot: ShadowRoot | null;
+      };
+      adaptive.label = "Attach";
+      adaptive.labelPriority = "auto";
+      document.body.append(adaptive);
+
+      await adaptive.updateComplete;
+
+      const root = adaptive.shadowRoot?.querySelector<HTMLElement>(".root");
+      const measure = adaptive.shadowRoot?.querySelector<HTMLElement>(".measure");
+      expect(root).not.toBeNull();
+      expect(measure).not.toBeNull();
+
+      Object.defineProperty(root!, "clientWidth", {
+        configurable: true,
+        get: () => 20,
+      });
+      Object.defineProperty(measure!, "scrollWidth", {
+        configurable: true,
+        get: () => 96,
+      });
+
+      adaptive.label = "Attach files";
+      await adaptive.updateComplete;
+      await Promise.resolve();
+      await vi.waitFor(() => {
+        expect(adaptive.getAttribute("data-icon-only")).toBe("true");
+      });
+    } finally {
+      const warnings = warnSpy.mock.calls.filter(([message]) => {
+        const text = String(message);
+        return text.includes("change-in-update") || text.includes("scheduled an update");
+      });
+      warnSpy.mockRestore();
+      expect(warnings).toHaveLength(0);
+    }
+  });
 });

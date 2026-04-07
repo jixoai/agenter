@@ -205,6 +205,7 @@ export class AdaptiveIconButtonElement extends LitElement {
 
   private resizeObserver: ResizeObserver | null = null;
   private iconOnly = false;
+  private autoSyncQueued = false;
 
   private get rootElement(): HTMLSpanElement | null {
     return this.renderRoot?.querySelector<HTMLSpanElement>(".root") ?? null;
@@ -228,7 +229,7 @@ export class AdaptiveIconButtonElement extends LitElement {
   protected firstUpdated(): void {
     this.setupResizeObserver();
     if (this.labelPriority === "auto") {
-      this.syncAutoIconOnly();
+      this.scheduleAutoIconOnlySync();
     }
   }
 
@@ -249,7 +250,7 @@ export class AdaptiveIconButtonElement extends LitElement {
         changedProperties.has("size") ||
         changedProperties.has("labelPriority"))
     ) {
-      this.syncAutoIconOnly();
+      this.scheduleAutoIconOnlySync();
     }
     this.setAttribute("data-icon-only", this.iconOnly ? "true" : "false");
   }
@@ -260,7 +261,7 @@ export class AdaptiveIconButtonElement extends LitElement {
     }
     this.resizeObserver = new ResizeObserver(() => {
       if (this.labelPriority === "auto") {
-        this.syncAutoIconOnly();
+        this.scheduleAutoIconOnlySync();
       }
     });
     if (this.rootElement) {
@@ -271,10 +272,33 @@ export class AdaptiveIconButtonElement extends LitElement {
     }
   }
 
-  private syncAutoIconOnly(): void {
+  private computeAutoIconOnly(): boolean {
     const width = this.rootElement?.clientWidth ?? 0;
     const labelWidth = this.measureElement?.scrollWidth ?? 0;
-    const nextIconOnly = width > 0 && width < labelWidth + ICON_ONLY_ALLOWANCE_PX;
+    return width > 0 && width < labelWidth + ICON_ONLY_ALLOWANCE_PX;
+  }
+
+  private scheduleAutoIconOnlySync(): void {
+    if (this.autoSyncQueued) {
+      return;
+    }
+    this.autoSyncQueued = true;
+    queueMicrotask(() => {
+      this.autoSyncQueued = false;
+      if (!this.isConnected || this.labelPriority !== "auto") {
+        return;
+      }
+      const nextIconOnly = this.computeAutoIconOnly();
+      if (this.iconOnly === nextIconOnly) {
+        return;
+      }
+      this.iconOnly = nextIconOnly;
+      this.requestUpdate();
+    });
+  }
+
+  private syncAutoIconOnly(): void {
+    const nextIconOnly = this.computeAutoIconOnly();
     if (this.iconOnly !== nextIconOnly) {
       this.iconOnly = nextIconOnly;
       this.requestUpdate();
