@@ -48,6 +48,11 @@ The top-level WebUI shell SHALL expose only `Avatars`, `Messages`, and `Terminal
 - **THEN** the selected workbench renders its own title, metadata, and local actions inside its window chrome
 - **THEN** there is no redundant global top bar or manual refresh button rendered above that workbench
 
+#### Scenario: Compact workbench tabs do not widen the page
+- **WHEN** the operator opens a multi-tab workbench on an iPhone 14-sized viewport
+- **THEN** horizontal tab overflow stays inside the shared tab-strip scroller
+- **THEN** `document.body` width remains constrained to the viewport instead of expanding to the tab content width
+
 ### Requirement: Workbench routes SHALL provide objective workspace path presentation
 Workspace-aware workbench surfaces SHALL present the global workspace as `~/.agenter`, SHALL use compact objective labels for dense navigation surfaces, and SHALL use the full objective path for detail titles. Compact workspace labels in tabs, rails, and summary chrome SHALL use the final two path segments when more than two segments exist.
 
