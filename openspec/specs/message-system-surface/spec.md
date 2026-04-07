@@ -61,6 +61,12 @@ The room viewer selector, room management surface, send-as options, and read-pro
 - **THEN** each option is keyed by canonical actor identity
 - **THEN** duplicate visible labels remain selectable as separate actors
 
+#### Scenario: Default viewer follows the active room credential actor
+- **WHEN** the operator opens a room without a previously stored `View as` selection
+- **AND** the current room credential resolves to actor `A` while another room seat sorts earlier in the viewer list
+- **THEN** the route selects `A` as the default viewer
+- **THEN** transcript alignment, read acknowledgement, and send-token derivation start from that credential actor instead of the sorted fallback seat
+
 #### Scenario: Session-backed viewer title prefers canonical session identity even after stop
 - **WHEN** the selected room viewer resolves to a session-backed actor that still exists in active client session metadata
 - **AND** that session exposes both a human `avatar` label and an opaque runtime `name`
