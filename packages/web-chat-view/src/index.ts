@@ -1,6 +1,4 @@
 export { default as DefaultWebChatComposer } from "./default-composer.svelte";
-export { default as WebChatView } from "./web-chat-view-host.svelte";
-export { default as WebChatViewHost } from "./web-chat-view-host.svelte";
 export type {
   WebChatActorPresentation,
   WebChatActorResolveInput,
@@ -15,6 +13,7 @@ export type {
   WebChatCursor,
   WebChatMessage,
   WebChatMessageAction,
+  WebChatMessageReadActor,
   WebChatMessageReadProgress,
   WebChatMessageRenderInput,
   WebChatNotice,
@@ -24,3 +23,4 @@ export type {
   WebChatTransportMessage,
   WebChatViewHostProps,
 } from "./types";
+export { default as WebChatView, default as WebChatViewHost } from "./web-chat-view-host.svelte";

@@ -69,6 +69,11 @@ The room transcript SHALL present participant read progress and read timestamps 
 - **THEN** the UI shows a per-message inline-end progress indicator for that message
 - **THEN** a fully read message upgrades that indicator into a completed check state instead of a room-level `x/y read` badge
 
+#### Scenario: Message-level read detail uses canonical room actors
+- **WHEN** the operator opens a message's read-progress indicator
+- **THEN** the disclosure shows canonical actor name and avatar rows in `Read` and `Unread` columns for that message
+- **THEN** the route derives those rows from canonical actor truth instead of guessing from raw ids inside `web-chat-view`
+
 #### Scenario: Transcript ordering
 - **WHEN** the room list and transcript render
 - **THEN** message ordering is driven by durable send time rather than a pending-attention heuristic

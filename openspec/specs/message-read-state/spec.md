@@ -25,6 +25,15 @@ Message-system SHALL advance room read-state by moving actor ids from `unreadAct
 - **THEN** that user's actor id moves from unread to read on `m3` and earlier visible messages
 - **THEN** later room membership changes do not alter the already-frozen arrays on those messages
 
+### Requirement: Client mark-read acknowledgement SHALL stay monotonic per room seat
+
+Room clients SHALL treat latest-visible mark-read acknowledgement as monotonic progress for each `room + access token` seat. Transient viewport churn, observer resets, or temporary `null` visibility events SHALL NOT clear previously acknowledged progress or trigger duplicate `globalMarkRead` writes for the same or older durable message row.
+
+#### Scenario: Visibility churn does not resend the same mark-read mutation
+- **WHEN** the transcript briefly reports no visible message and then reports the previously acknowledged message again
+- **THEN** the client keeps the previously acknowledged row floor
+- **THEN** it does not resend `globalMarkRead` for that same or older message
+
 ### Requirement: Room projections SHALL expose latest-visible read progress from frozen arrays
 
 Room-facing projections SHALL derive aggregate progress from the latest visible message's frozen read arrays and SHALL expose a detailed actor breakdown that distinguishes `unread` from `joined later`.

@@ -2,7 +2,12 @@
   import ChatAvatar from "./chat-avatar.svelte";
   import MessageMarkdownContent from "./components/message-markdown-content.svelte";
   import MessageAttachmentStrip from "./message-attachment-strip.svelte";
+  import MessageActionsContextMenu from "./message-actions-context-menu.svelte";
+  import MessageActionsMenu, {
+    type ResolvedMessageAction,
+  } from "./message-actions-menu.svelte";
   import MessageReadIndicator from "./message-read-indicator.svelte";
+  import * as ContextMenu from "./ui/context-menu";
   import { Button } from "./ui/button";
   import { Input } from "./ui/input";
   import { Textarea } from "./ui/textarea";
@@ -130,6 +135,40 @@
     element.remove();
   };
 
+  const builtInActions = $derived.by(() => {
+    const actions: ResolvedMessageAction[] = [];
+    if (message.content.trim().length > 0) {
+      actions.push({
+        id: "copy-content",
+        label: "Copy message",
+        detail: "text",
+        onSelect: async () => {
+          await writeClipboardText(message.content);
+        },
+      });
+    }
+    actions.push({
+      id: "copy-id",
+      label: "Copy message id",
+      detail: "meta",
+      onSelect: async () => {
+        await writeClipboardText(message.messageId);
+      },
+    });
+    return actions;
+  });
+
+  const messageActions = $derived([
+    ...builtInActions,
+    ...(resolveMessageActions?.(renderInput) ?? []).map<ResolvedMessageAction>((action) => ({
+      id: action.id,
+      label: action.label,
+      detail: action.detail,
+      tone: action.tone,
+      disabled: action.disabled,
+      onSelect: action.onSelect ? () => action.onSelect?.(renderInput) : undefined,
+    })),
+  ]);
   const messageReadProgress = $derived(resolveMessageReadProgress?.(renderInput) ?? null);
 </script>
 
@@ -150,78 +189,97 @@
       part={`message-avatar message-avatar-${tone}`}
     />
 
-    <article class="bubble group/bubble" part={`message-bubble message-bubble-${tone}`}>
-      <div class="meta" part="message-meta">
-        <div class="meta-copy">
-          <span class="author" part="message-author">{actorPresentation.label}</span>
-          {#if actorPresentation.subtitle}
-            <span class="subtitle">{actorPresentation.subtitle}</span>
-          {/if}
-        </div>
-        <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
-      </div>
-
-      {#if message.kind === "error"}
-        <div class="error-block" part="message-error">
-          <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
-          <p>{message.content}</p>
-          {#if message.payload?.error?.detail}
-            <p class="error-detail">{message.payload.error.detail}</p>
-          {/if}
-        </div>
-      {:else if message.kind === "interactive" && interactive}
-        <div class="interactive-block" part="message-interactive">
-          <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
-          {#if interactive.description}
-            <p class="interactive-description">{interactive.description}</p>
-          {/if}
-          <div class="interactive-fields" part="message-interactive-fields">
-            {#each interactive.fields as field (field.id)}
-              <label class="interactive-field" part="message-interactive-field">
-                <span>{field.label}</span>
-                {#if field.multiline}
-                  <Textarea
-                    rows={3}
-                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                    placeholder={field.placeholder}
-                    oninput={(event) => {
-                      const target = event.currentTarget as HTMLTextAreaElement;
-                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                    }}
-                  />
-                {:else}
-                  <Input
-                    value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                    placeholder={field.placeholder}
-                    oninput={(event) => {
-                      const target = event.currentTarget as HTMLInputElement;
-                      interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                    }}
-                  />
-                {/if}
-              </label>
-            {/each}
-          </div>
-          <Button
-            type="button"
-            class="interactive-submit"
-            part="message-interactive-submit"
-            disabled={interactiveSubmitting}
-            onclick={() => {
-              void submitInteractive();
-            }}
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        {#snippet child({ props })}
+          <article
+            {...props}
+            class="bubble group/bubble"
+            part={`message-bubble message-bubble-${tone}`}
           >
-            {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
-          </Button>
-        </div>
-      {:else if message.content.trim().length > 0}
-        <div class="content" part="message-content">
-          <MessageMarkdownContent value={message.content} />
-        </div>
-      {/if}
+            {#if messageActions.length > 0}
+              <div class="bubble-actions">
+                <MessageActionsMenu actions={messageActions} />
+              </div>
+            {/if}
 
-      <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
-    </article>
+            <div class="meta" part="message-meta">
+              <div class="meta-copy">
+                <span class="author" part="message-author">{actorPresentation.label}</span>
+                {#if actorPresentation.subtitle}
+                  <span class="subtitle">{actorPresentation.subtitle}</span>
+                {/if}
+              </div>
+              <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
+            </div>
+
+            {#if message.kind === "error"}
+              <div class="error-block" part="message-error">
+                <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
+                <p>{message.content}</p>
+                {#if message.payload?.error?.detail}
+                  <p class="error-detail">{message.payload.error.detail}</p>
+                {/if}
+              </div>
+            {:else if message.kind === "interactive" && interactive}
+              <div class="interactive-block" part="message-interactive">
+                <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
+                {#if interactive.description}
+                  <p class="interactive-description">{interactive.description}</p>
+                {/if}
+                <div class="interactive-fields" part="message-interactive-fields">
+                  {#each interactive.fields as field (field.id)}
+                    <label class="interactive-field" part="message-interactive-field">
+                      <span>{field.label}</span>
+                      {#if field.multiline}
+                        <Textarea
+                          rows={3}
+                          value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                          placeholder={field.placeholder}
+                          oninput={(event) => {
+                            const target = event.currentTarget as HTMLTextAreaElement;
+                            interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                          }}
+                        />
+                      {:else}
+                        <Input
+                          value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                          placeholder={field.placeholder}
+                          oninput={(event) => {
+                            const target = event.currentTarget as HTMLInputElement;
+                            interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                          }}
+                        />
+                      {/if}
+                    </label>
+                  {/each}
+                </div>
+                <Button
+                  type="button"
+                  class="interactive-submit"
+                  part="message-interactive-submit"
+                  disabled={interactiveSubmitting}
+                  onclick={() => {
+                    void submitInteractive();
+                  }}
+                >
+                  {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
+                </Button>
+              </div>
+            {:else if message.content.trim().length > 0}
+              <div class="content" part="message-content">
+                <MessageMarkdownContent value={message.content} />
+              </div>
+            {/if}
+
+            <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
+          </article>
+        {/snippet}
+      </ContextMenu.Trigger>
+      {#if messageActions.length > 0}
+        <MessageActionsContextMenu actions={messageActions} />
+      {/if}
+    </ContextMenu.Root>
 
     {#if messageReadProgress}
       <MessageReadIndicator progress={messageReadProgress} />
@@ -300,6 +358,21 @@
     color: #881337;
   }
 
+  .bubble-actions {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+
+  .bubble:hover .bubble-actions,
+  .bubble:focus-within .bubble-actions {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   .meta {
     display: flex;
     align-items: center;
@@ -342,6 +415,14 @@
   .content :global(.message-markdown-fallback) {
     color: inherit;
   }
+
+  @media (pointer: coarse) {
+    .bubble-actions {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .error-block,
   .interactive-block {
     display: grid;

@@ -4,6 +4,7 @@
 		type WebChatActorPresentation,
 		type WebChatComposerCapabilities,
 		type WebChatMessageAction,
+		type WebChatMessageReadActor,
 		type WebChatMessageReadProgress,
 		type WebChatMessageRenderInput,
 	} from '@agenter/web-chat-view';
@@ -227,18 +228,45 @@
 	};
 
 	const resolveMessageReadProgress = (input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
-		const trackedActorIds = [
-			...(input.message.readActorIds ?? []),
-			...(input.message.unreadActorIds ?? []),
-		].filter((actorId) => !actorId.startsWith('system:'));
-		const totalCount = trackedActorIds.length;
+		const projectReadActors = (actorIds: readonly string[]): WebChatMessageReadActor[] =>
+			actorIds
+				.filter((actorId) => !actorId.startsWith('system:'))
+				.map((actorId) => {
+					const seat = roomSeatMap.get(actorId);
+					if (seat) {
+						return {
+							actorId,
+							label: seat.label,
+							subtitle: seat.subtitle ?? `${seat.role}${seat.currentAdmin ? ' · current admin' : ''}`,
+							iconUrl: seat.iconUrl ?? null,
+						} satisfies WebChatMessageReadActor;
+					}
+					return {
+						actorId,
+						label: actorId.startsWith('session:')
+							? actorId.slice('session:'.length)
+							: actorId.startsWith('auth:')
+								? actorId.slice('auth:'.length)
+								: actorId,
+						subtitle: actorId,
+						iconUrl: actorId.startsWith('session:')
+							? (resolveSessionIconUrl?.(actorId.slice('session:'.length)) ?? null)
+							: (resolveProfileIconUrl?.(actorId) ?? null),
+					} satisfies WebChatMessageReadActor;
+				});
+
+		const readActors = projectReadActors(input.message.readActorIds ?? []);
+		const unreadActors = projectReadActors(input.message.unreadActorIds ?? []);
+		const totalCount = readActors.length + unreadActors.length;
 		if (totalCount === 0) {
 			return null;
 		}
-		const readCount = (input.message.readActorIds ?? []).filter((actorId) => !actorId.startsWith('system:')).length;
+		const readCount = readActors.length;
 		return {
 			readCount,
 			totalCount,
+			readActors,
+			unreadActors,
 			title:
 				readCount >= totalCount
 					? `All ${totalCount} users read`

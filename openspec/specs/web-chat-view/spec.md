@@ -71,6 +71,11 @@ The shared chat package SHALL support host-provided canonical avatar/icon resolu
 - **THEN** the row reveals the shared local message action affordance
 - **THEN** host routes can extend those actions without replacing the shared row renderer
 
+#### Scenario: Inline-end read indicator discloses message-local reader detail
+- **WHEN** a transcript row has frozen `read` and `unread` actor projections
+- **THEN** the inline-end read indicator stays compact by default
+- **THEN** opening that indicator reveals the canonical `Read` and `Unread` actor lists for that specific message without adding room-header aggregate chrome
+
 ### Requirement: Web chat view SHALL own transcript scrolling through ScrollView
 The shared chat component SHALL delegate transcript scrolling to the shared `ScrollView` contract instead of feature-local raw overflow ownership, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only scroll owner and `message_toolbar` pinned to the stage bottom.
 

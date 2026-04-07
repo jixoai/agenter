@@ -46,9 +46,7 @@ export interface WebChatComposerCapabilities {
   mentionSuggestions?: readonly WebChatComposerMentionSuggestion[];
   resolveMentionSuggestions?: (
     query: string,
-  ) =>
-    | readonly WebChatComposerMentionSuggestion[]
-    | Promise<readonly WebChatComposerMentionSuggestion[]>;
+  ) => readonly WebChatComposerMentionSuggestion[] | Promise<readonly WebChatComposerMentionSuggestion[]>;
 }
 
 export interface WebChatComposerRenderProps {
@@ -73,6 +71,15 @@ export interface WebChatMessageReadProgress {
   readCount: number;
   totalCount: number;
   title?: string;
+  readActors?: readonly WebChatMessageReadActor[];
+  unreadActors?: readonly WebChatMessageReadActor[];
+}
+
+export interface WebChatMessageReadActor {
+  actorId: string;
+  label: string;
+  subtitle?: string;
+  iconUrl?: string | null;
 }
 
 export interface WebChatActorPresentation {

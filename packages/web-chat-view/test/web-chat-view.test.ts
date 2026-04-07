@@ -623,6 +623,22 @@ describe("Feature: web-chat-view package", () => {
               readCount: 1,
               totalCount: 2,
               title: "1/2 read",
+              readActors: [
+                {
+                  actorId: "auth:user",
+                  label: "User",
+                  subtitle: "auth:user",
+                  iconUrl: null,
+                },
+              ],
+              unreadActors: [
+                {
+                  actorId: "session:jane",
+                  label: "Jane",
+                  subtitle: "session:jane",
+                  iconUrl: null,
+                },
+              ],
             }
           : null,
     });
@@ -633,6 +649,14 @@ describe("Feature: web-chat-view package", () => {
     expect(indicator).toBeTruthy();
     expect(indicator?.getAttribute("aria-label")).toBe("1/2 read");
     expect(indicator?.getAttribute("data-complete")).toBe("false");
+
+    (indicator as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    expect(readRenderedText(document.body)).toContain("Read");
+    expect(readRenderedText(document.body)).toContain("Unread");
+    expect(readRenderedText(document.body)).toContain("Jane");
   });
 
   test("Scenario: Given host message actions When the menu opens Then the shared row exposes those actions", async () => {
@@ -688,6 +712,62 @@ describe("Feature: web-chat-view package", () => {
     await Promise.resolve();
 
     expect(readRenderedText(document.body)).toContain("Inspect");
+  });
+
+  test("Scenario: Given shared message actions When the row opens its context menu Then the same action list is available from right click", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          messageId: "msg-user",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "context me",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          attentionState: "loaded",
+          editable: false,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageActions: () => [
+        {
+          id: "inspect",
+          label: "Inspect",
+          detail: "host",
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const bubble = document.body.querySelector('[part~="message-bubble"]') as HTMLElement;
+    bubble.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, button: 2 }));
+    flushSync();
+    await Promise.resolve();
+
+    expect(readRenderedText(document.body)).toContain("Inspect");
+    expect(readRenderedText(document.body)).toContain("Copy message");
   });
 
   test("Scenario: Given the shared chat surface When it mounts Then transcript and composer regions expose durable styling parts", async () => {

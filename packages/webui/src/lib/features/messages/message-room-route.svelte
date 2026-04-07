@@ -17,6 +17,12 @@
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
+	import {
+		maybeStartRoomReadAck,
+		settleRoomReadAckFailure,
+		settleRoomReadAckSuccess,
+		type RoomReadAckState,
+	} from './room-read-ack';
 
 	import type {
 		MessageSystemGrantRole,
@@ -73,7 +79,7 @@
 	};
 
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
-	let latestMarkedReadBySeat = $state<Record<string, string | null>>({});
+	let latestMarkedReadBySeat = $state<Record<string, RoomReadAckState>>({});
 	let routeNotice = $state<WebChatNotice | null>(null);
 
 	const actorDirectory = $derived(
@@ -350,6 +356,9 @@
 			data,
 		} satisfies CachedResourceState<MessageSystemRoomAssetItem[]>;
 	});
+	const selectedRoomMessageRowIdById = $derived(
+		new Map((selectedRoomSnapshot?.items ?? []).map((message) => [message.messageId, message.rowId])),
+	);
 
 	const roomReadSeatCount = $derived(
 		selectedRoomProjection?.readProgress?.readSeatCount ??
@@ -504,23 +513,21 @@
 		if (!room || !accessToken) {
 			return;
 		}
-		const markKey = `${room.chatId}:${accessToken}`;
 		if (!messageId) {
-			if ((latestMarkedReadBySeat[markKey] ?? null) === null) {
-				return;
-			}
-			latestMarkedReadBySeat = {
-				...latestMarkedReadBySeat,
-				[markKey]: null,
-			};
 			return;
 		}
-		if (latestMarkedReadBySeat[markKey] === messageId) {
+		const targetRowId = selectedRoomMessageRowIdById.get(messageId) ?? null;
+		if (!targetRowId) {
+			return;
+		}
+		const markKey = `${room.chatId}:${accessToken}`;
+		const nextAckState = maybeStartRoomReadAck(latestMarkedReadBySeat[markKey], targetRowId);
+		if (!nextAckState) {
 			return;
 		}
 		latestMarkedReadBySeat = {
 			...latestMarkedReadBySeat,
-			[markKey]: messageId,
+			[markKey]: nextAckState,
 		};
 		try {
 			await controller.runtimeStore.markGlobalRoomRead({
@@ -528,13 +535,15 @@
 				accessToken,
 				messageId,
 			});
+			latestMarkedReadBySeat = {
+				...latestMarkedReadBySeat,
+				[markKey]: settleRoomReadAckSuccess(latestMarkedReadBySeat[markKey], targetRowId),
+			};
 		} catch (error) {
-			if ((latestMarkedReadBySeat[markKey] ?? null) !== null) {
-				latestMarkedReadBySeat = {
-					...latestMarkedReadBySeat,
-					[markKey]: null,
-				};
-			}
+			latestMarkedReadBySeat = {
+				...latestMarkedReadBySeat,
+				[markKey]: settleRoomReadAckFailure(latestMarkedReadBySeat[markKey], targetRowId),
+			};
 			routeNotice = {
 				tone: 'destructive',
 				message: error instanceof Error ? error.message : String(error),
