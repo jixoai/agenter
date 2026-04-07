@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { asset } from '$app/paths';
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { onMount } from 'svelte';
 
 	import { createAppController } from '$lib/app/app-controller.svelte';
@@ -10,6 +10,11 @@
 	import SuperadminOnboardingDialog from '$lib/features/settings/superadmin-onboarding-dialog.svelte';
 
 	let { children } = $props();
+	const faviconHref = asset('/favicon.ico');
+	const favicon16Href = asset('/icons/favicon-16.png');
+	const favicon32Href = asset('/icons/favicon-32.png');
+	const appleTouchIconHref = asset('/icons/apple-touch-icon.png');
+	const manifestHref = asset('/site.webmanifest');
 
 	const controller = setAppControllerContext(createAppController());
 	let onboardingPrivateKey = $state('');
@@ -35,7 +40,14 @@
 	});
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<link rel="icon" href={faviconHref} sizes="any" />
+	<link rel="icon" type="image/png" sizes="16x16" href={favicon16Href} />
+	<link rel="icon" type="image/png" sizes="32x32" href={favicon32Href} />
+	<link rel="apple-touch-icon" sizes="180x180" href={appleTouchIconHref} />
+	<link rel="manifest" href={manifestHref} />
+	<meta name="theme-color" content="#0a1219" />
+</svelte:head>
 
 <AppShell {controller}>
 	{@render children()}
