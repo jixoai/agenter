@@ -278,7 +278,7 @@
 
       <div class="composer-footnote">
         <span class="composer-hint" part="composer-hint" aria-live="polite">
-          {connectionState === "connected" || connectionState === "idle" ? hintText : "Waiting for channel transport"}
+          {hintText}
         </span>
         <div class="composer-status-placeholder" aria-hidden="true"></div>
       </div>
