@@ -45,10 +45,11 @@ export const buildActorDirectory = (input: {
   }
 
   for (const session of input.sessions) {
-    if (session.storageState !== "active" || session.status !== "running") {
+    if (session.storageState !== "active") {
       continue;
     }
     const actorId = `session:${session.id}`;
+    const preferredSessionLabel = session.avatar?.trim() || session.name?.trim() || session.id;
     if (seen.has(actorId)) {
       continue;
     }
@@ -56,7 +57,7 @@ export const buildActorDirectory = (input: {
     entries.push({
       actorId,
       actorKind: "session",
-      label: session.name,
+      label: preferredSessionLabel,
       subtitle: session.workspacePath,
       iconUrl: input.sessionIconUrl(session.id),
     });

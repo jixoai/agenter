@@ -1,6 +1,28 @@
+import type { SessionEntry } from "@agenter/client-sdk";
 import { describe, expect, test } from 'vitest';
 
 import { buildActorDirectory, buildActorDirectoryMap, fallbackActorLabel } from './actor-directory';
+
+const createSessionEntry = (input: {
+	id: string;
+	name: string;
+	avatar?: string;
+	status?: SessionEntry["status"];
+	storageState?: SessionEntry["storageState"];
+	workspacePath?: string;
+}): SessionEntry => ({
+	id: input.id,
+	name: input.name,
+	cwd: input.workspacePath ?? `/repo/${input.id}`,
+	workspacePath: input.workspacePath ?? `/repo/${input.id}`,
+	avatar: input.avatar ?? "",
+	createdAt: "2026-04-07T00:00:00.000Z",
+	updatedAt: "2026-04-07T00:00:00.000Z",
+	status: input.status ?? "running",
+	storageState: input.storageState ?? "active",
+	sessionRoot: `/tmp/sessions/${input.id}`,
+	storeTarget: "global",
+});
 
 describe('Feature: collaboration actor directory', () => {
 	test('Scenario: Given bootstrap system actors When building the actor directory Then shared UI surfaces resolve the canonical bootstrap label', () => {
@@ -15,5 +37,44 @@ describe('Feature: collaboration actor directory', () => {
 		expect(directoryMap.get('system:trusted-terminal-bootstrap')?.label).toBe('Bootstrap admin');
 		expect(directoryMap.get('system:trusted-bootstrap')?.label).toBe('Bootstrap admin');
 		expect(fallbackActorLabel('system:trusted-terminal-bootstrap')).toBe('Bootstrap admin');
+	});
+
+	test("Scenario: Given an active stopped avatar session with an opaque runtime name When building the actor directory Then shared UI surfaces still resolve the avatar label", () => {
+		const directory = buildActorDirectory({
+			sessions: [
+				createSessionEntry({
+					id: "775921bd-e52b-52d2-9ff3-7b46e742ec45",
+					name: "775921bd-e52b-52d2-9ff3-7b46e742ec45",
+					avatar: "jane",
+					workspacePath: "/repo/jane",
+					status: "stopped",
+				}),
+			],
+			authActors: [],
+			profileIconUrl: () => null,
+			sessionIconUrl: () => null,
+		});
+		const directoryMap = buildActorDirectoryMap(directory);
+
+		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.label).toBe("jane");
+		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.subtitle).toBe("/repo/jane");
+	});
+
+	test("Scenario: Given an active running session without an avatar label When building the actor directory Then the runtime name remains the primary label", () => {
+		const directory = buildActorDirectory({
+			sessions: [
+				createSessionEntry({
+					id: "session-helper",
+					name: "helper-runtime",
+					avatar: "",
+				}),
+			],
+			authActors: [],
+			profileIconUrl: () => null,
+			sessionIconUrl: () => null,
+		});
+		const directoryMap = buildActorDirectoryMap(directory);
+
+		expect(directoryMap.get("session:session-helper")?.label).toBe("helper-runtime");
 	});
 });
