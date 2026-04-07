@@ -58,6 +58,11 @@ The shared chat package SHALL render a responsive CodeMirror-based composer surf
 - **THEN** the composer toolbar adapts its controls without hiding the primary send action
 - **THEN** help/status hints remain available through the same shared surface
 
+#### Scenario: Host-managed send keeps the host hint text
+- **WHEN** the host supplies its own send handler for a room/chat surface
+- **THEN** the shared composer renders the host-provided hint text as-is
+- **THEN** transport-only copy such as `Waiting for channel transport` does not override that host-managed hint
+
 ### Requirement: Web chat view SHALL render canonical avatar and message action affordances
 The shared chat package SHALL support host-provided canonical avatar/icon resolution for room and actor identity, and it SHALL expose local hover/context message action affordances from the shared message row implementation.
 
