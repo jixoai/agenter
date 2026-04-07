@@ -61,7 +61,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Avatars` 是统一的 avatar workbench；固定 tabs 为 `workspace`、`history`、`settings`，运行中的 avatar session 以动态 tabs 追加在同一层。这里的 `settings` 只表达 workspace-scoped settings workbench，不再承载 superadmin/profile 管理。
 - `Quick Start` 是 `Avatars / workspace` 内的启动编排区，不再是独立主路由；workspace 历史索引页则收拢到 `Avatars / history`。
 - `Messages` 是 `message-system` 的全局 workbench；每个 room 对应一个 tab，并固定保留一个 `new room` tab。`room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
-- `Terminals` 是 `terminal-system` 的全局 workbench；每个 terminal 对应一个 tab，并固定保留一个 `new terminal` tab。terminal surface 内右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。
+- `Terminals` 是 `terminal-system` 的全局 workbench；每个 terminal 对应一个 tab，并固定保留一个 `new terminal` tab。创建成功后，workbench 必须自动聚焦到新 terminal 的 canonical route。terminal surface 内右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。
 - `settings` 不再作为一级入口；超级管理员入口、root key 绑定、profile 编辑和全局身份管理统一收拢到辅助路由 `/admin`，并通过 shell footer 的 `super admin` 入口进入。
 - `~/` 是 special global workspace。canonical avatar catalog 与用户级默认配置通过它暴露，但 room / terminal 自身不从属于 workspace。
 - `Quick Start` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar 与未来可扩展的全局系统引用，并在用户 detour 到 `Messages` / `Terminals` 后继续保留当前草稿。

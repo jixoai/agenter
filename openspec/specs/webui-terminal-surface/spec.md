@@ -35,6 +35,11 @@ The top-level `Terminals` page SHALL expose the running global terminal catalog 
 - **THEN** the toolbar keeps terminal-local presentation controls only
 - **THEN** actor focus or unfocus actions live in the terminal Users panel instead of a global toolbar button
 
+#### Scenario: Creating a terminal focuses the created tab
+- **WHEN** the operator submits the fixed `New terminal` tab successfully
+- **THEN** the browser lands on `/terminals/{terminalId}` for the created terminal
+- **AND** the created terminal becomes the active workbench tab instead of leaving the previous terminal selected
+
 ### Requirement: Terminals page SHALL visualize actor state through AvatarGroup semantics
 The `Terminals` page SHALL render attached actors through an AvatarGroup that encodes online/focus state with badge colors and permission state with border colors.
 
