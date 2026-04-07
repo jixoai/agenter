@@ -925,6 +925,77 @@ test.describe("Feature: Svelte system surfaces", () => {
     }
   });
 
+  test("Scenario: Given a selected room When the toolbar add-user action is pressed Then room management lands on Users Add", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Toolbar add user ${testInfo.project.name} ${Date.now()}`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+    const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
+    await activateUntil(roomToolbar.getByRole("button", { name: "Add user", exact: true }), async () => {
+      return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+    }, 4);
+
+    await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+    await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
+    await expect(manageRoomDialog.getByLabel("Grant actor")).toBeVisible({ timeout: 15_000 });
+    await expect(manageRoomDialog.getByLabel("Grant role")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given a room attachment When the toolbar switches to assets Then the durable upload fills page content without transcript chrome pollution", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Assets room ${testInfo.project.name} ${Date.now()}`;
+    const roomMessage = `asset message ${testInfo.project.name}`;
+    const assetName = `brief-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+    const composer = getRoomComposer(page, roomTitle);
+    const composerGroup = page.getByRole("group", { name: "Message composer" });
+    await composer.fill(roomMessage);
+    await composerGroup.locator('input[type="file"]').setInputFiles({
+      name: assetName,
+      mimeType: "text/plain",
+      buffer: Buffer.from(`durable asset ${roomTitle}`, "utf8"),
+    });
+
+    await expect(page.getByText(assetName, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
+    await expect(sendMessageButton).toBeEnabled({ timeout: 15_000 });
+    await activateUntil(sendMessageButton, async () => {
+      return await page.getByText(roomMessage, { exact: true }).first().isVisible().catch(() => false);
+    });
+
+    await activateTab(roomToolbar.getByRole("tab", { name: "assets", exact: true }));
+    const assetsViewport = page.getByTestId("room-assets-pane-viewport");
+    await expect(assetsViewport).toBeVisible({ timeout: 15_000 });
+    const assetRow = assetsViewport.locator('[data-testid^="room-asset-row-"]').filter({
+      hasText: assetName,
+    }).first();
+    await expect(assetRow).toBeVisible({ timeout: 15_000 });
+    await expect(assetRow).toContainText("text/plain");
+    await expect(composerGroup).toHaveCount(0);
+
+    await activateTab(roomToolbar.getByRole("tab", { name: "chat", exact: true }));
+    await expect(composerGroup).toBeVisible({ timeout: 15_000 });
+  });
+
   test.fixme("Scenario: Given an authenticated superadmin When quick start launches and closes a runtime tab Then Avatars keeps the attention shell reachable without a secondary running rail", async ({
     page,
   }) => {

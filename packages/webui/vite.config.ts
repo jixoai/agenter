@@ -24,6 +24,8 @@ const resolveTrpcProxyTarget = (): string => {
   return `http://127.0.0.1:${daemonPort}`;
 };
 
+const proxyTarget = resolveTrpcProxyTarget();
+
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 const config = {
   plugins: [tailwindcss(), sveltekit()],
@@ -40,9 +42,17 @@ const config = {
   server: {
     proxy: {
       '/trpc': {
-        target: resolveTrpcProxyTarget(),
+        target: proxyTarget,
         changeOrigin: true,
         ws: true
+      },
+      '/api': {
+        target: proxyTarget,
+        changeOrigin: true
+      },
+      '/media': {
+        target: proxyTarget,
+        changeOrigin: true
       }
     }
   },
