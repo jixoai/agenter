@@ -7,6 +7,7 @@
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import {
 		AVATAR_SESSION_TABS_CHANGE_EVENT,
 		readAvatarSessionTabIds,
@@ -38,6 +39,7 @@
 		{ href: '/messages', label: 'Messages', icon: MailIcon },
 		{ href: '/terminals', label: 'Terminals', icon: SquareTerminalIcon },
 	] as const;
+	const compactViewport = new IsMobile();
 
 	const activeItem = $derived(
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
@@ -57,6 +59,9 @@
 	const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars');
 	const adminActive = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const activeTitle = $derived(adminActive ? 'Admin' : activeItem?.label ?? 'Agenter');
+	let shellSidebarOpen = $state(true);
+	let desktopSidebarOpen = $state(true);
+	let previousCompactViewport = $state<boolean | null>(null);
 
 	const profileLabel = $derived('Super admin');
 	const profileDetailLabel = $derived(
@@ -106,14 +111,35 @@
 			pinnedAvatarSessionIds = reconciledPinnedIds;
 		}
 	});
+
+	$effect(() => {
+		const nextCompactViewport = compactViewport.current;
+		if (previousCompactViewport === null) {
+			shellSidebarOpen = nextCompactViewport ? false : desktopSidebarOpen;
+			previousCompactViewport = nextCompactViewport;
+			return;
+		}
+		if (nextCompactViewport === previousCompactViewport) {
+			return;
+		}
+		previousCompactViewport = nextCompactViewport;
+		shellSidebarOpen = nextCompactViewport ? false : desktopSidebarOpen;
+	});
+
+	const handleShellSidebarOpenChange = (nextOpen: boolean): void => {
+		shellSidebarOpen = nextOpen;
+		if (!compactViewport.current) {
+			desktopSidebarOpen = nextOpen;
+		}
+	};
 </script>
 
 <svelte:head>
 	<title>{activeTitle} · Agenter</title>
 </svelte:head>
 
-<Sidebar.Provider>
-	<Sidebar.Sidebar collapsible="icon" variant="inset">
+<Sidebar.Provider open={shellSidebarOpen} onOpenChange={handleShellSidebarOpenChange}>
+	<Sidebar.Sidebar mobileMode="docked" collapsible="icon" variant="inset">
 		<Sidebar.Header class="border-b border-sidebar-border px-2 py-3">
 			<div class="flex items-center gap-3 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
 				<div
@@ -137,7 +163,7 @@
 			<Sidebar.Group>
 				<Sidebar.GroupLabel>Systems</Sidebar.GroupLabel>
 				<Sidebar.Menu>
-					{#each navItems as item}
+					{#each navItems as item (item.href)}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton isActive={activeItem?.href === item.href} tooltipContent={item.label}>
 								{#snippet child({ props })}
@@ -180,9 +206,7 @@
 				<div class="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
 					<div class="truncate text-sm font-medium">{profileLabel}</div>
 					<div class="truncate text-xs text-sidebar-foreground/70">
-						{profileDetailLabel} ·
-						{' '}
-						{profileSecondaryLabel}
+						{profileDetailLabel} · {profileSecondaryLabel}
 					</div>
 				</div>
 			</a>

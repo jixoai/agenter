@@ -11,6 +11,7 @@
 		side = "left",
 		variant = "sidebar",
 		collapsible = "offcanvas",
+		mobileMode = "sheet",
 		class: className,
 		children,
 		...restProps
@@ -18,14 +19,19 @@
 		side?: "left" | "right";
 		variant?: "sidebar" | "floating" | "inset";
 		collapsible?: "offcanvas" | "icon" | "none";
+		mobileMode?: "sheet" | "docked";
 	} = $props();
 
 	const sidebar = useSidebar();
 	let lastNavigationHref = $state("");
 
 	$effect(() => {
+		sidebar.setMobileMode(mobileMode);
+	});
+
+	$effect(() => {
 		const href = page.url.href;
-		if (lastNavigationHref && lastNavigationHref !== href && sidebar.isMobile) {
+		if (lastNavigationHref && lastNavigationHref !== href && sidebar.usesMobileSheet) {
 			sidebar.setOpenMobile(false);
 		}
 		lastNavigationHref = href;
@@ -34,16 +40,37 @@
 
 {#if collapsible === "none"}
 	<div
-		class={cn(
-			"bg-sidebar text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col",
-			className
-		)}
+		class="text-sidebar-foreground group peer relative w-(--sidebar-width) shrink-0"
 		bind:this={ref}
+		data-state="expanded"
+		data-collapsible=""
+		data-variant={variant}
+		data-side={side}
+		data-slot="sidebar"
 		{...restProps}
 	>
-		{@render children?.()}
+		<div
+			data-slot="sidebar-container"
+			class={cn(
+				"sticky top-0 flex h-svh w-(--sidebar-width) shrink-0",
+				variant === "floating" || variant === "inset"
+					? "p-2"
+					: side === "left"
+						? "border-e"
+						: "border-s",
+				className
+			)}
+		>
+			<div
+				data-sidebar="sidebar"
+				data-slot="sidebar-inner"
+				class="bg-sidebar flex h-full w-full flex-col"
+			>
+				{@render children?.()}
+			</div>
+		</div>
 	</div>
-{:else if sidebar.isMobile}
+{:else if sidebar.usesMobileSheet}
 	<Sheet.Root
 		bind:open={() => sidebar.openMobile, (v) => sidebar.setOpenMobile(v)}
 		{...restProps}
@@ -78,7 +105,7 @@
 {:else}
 	<div
 		bind:this={ref}
-		class="text-sidebar-foreground group peer hidden md:block"
+		class={cn("text-sidebar-foreground group peer", mobileMode === "docked" ? "block" : "hidden md:block")}
 		data-state={sidebar.state}
 		data-collapsible={sidebar.state === "collapsed" ? collapsible : ""}
 		data-variant={variant}
@@ -100,7 +127,8 @@
 		<div
 			data-slot="sidebar-container"
 			class={cn(
-				"fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+				"fixed inset-y-0 z-10 h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear",
+				mobileMode === "docked" ? "flex" : "hidden md:flex",
 				side === "left"
 					? "start-0 group-data-[collapsible=offcanvas]:start-[calc(var(--sidebar-width)*-1)]"
 					: "end-0 group-data-[collapsible=offcanvas]:end-[calc(var(--sidebar-width)*-1)]",

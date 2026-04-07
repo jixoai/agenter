@@ -20,13 +20,17 @@ export type SidebarStateProps = {
 	setOpen: (open: boolean) => void;
 };
 
+type SidebarMobileMode = "sheet" | "docked";
+
 class SidebarState {
 	readonly props: SidebarStateProps;
 	open = $derived.by(() => this.props.open());
 	openMobile = $state(false);
+	mobileMode = $state<SidebarMobileMode>("sheet");
 	setOpen: SidebarStateProps["setOpen"];
 	#isMobile = new IsMobile();
 	isMobile = $derived.by(() => this.#isMobile.current);
+	usesMobileSheet = $derived.by(() => this.isMobile && this.mobileMode === "sheet");
 	state = $derived.by(() => (this.open ? "expanded" : "collapsed"));
 
 	constructor(props: SidebarStateProps) {
@@ -46,10 +50,12 @@ class SidebarState {
 		this.openMobile = value;
 	};
 
+	setMobileMode = (value: SidebarMobileMode) => {
+		this.mobileMode = value;
+	};
+
 	toggle = () => {
-		return this.isMobile
-			? (this.openMobile = !this.openMobile)
-			: this.setOpen(!this.open);
+		return this.usesMobileSheet ? (this.openMobile = !this.openMobile) : this.setOpen(!this.open);
 	};
 }
 

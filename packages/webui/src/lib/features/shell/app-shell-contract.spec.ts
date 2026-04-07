@@ -22,24 +22,36 @@ describe("Feature: App shell collapsed sidebar chrome", () => {
     expect(appShellSource).not.toContain(">Super admin<");
   });
 
-  test("Scenario: Given the avatars system entry When reading the app shell source Then open avatar tabs and runtime sessions remain wired as sidebar secondary navigation", () => {
+  test("Scenario: Given the avatars system entry When reading the app shell source Then avatar session tabs remain wired as sidebar secondary navigation", () => {
     expect(appShellSource).toContain("import RunningAvatarRail");
-    expect(appShellSource).toContain("readOpenAvatarTabs");
-    expect(appShellSource).toContain("buildOpenAvatarRailItems");
-    expect(appShellSource).toContain("extractOpenAvatarTabId(page.url)");
-    expect(appShellSource).toContain("OPEN_AVATAR_TABS_CHANGE_EVENT");
+    expect(appShellSource).toContain("readAvatarSessionTabIds");
+    expect(appShellSource).toContain("AVATAR_SESSION_TABS_CHANGE_EVENT");
+    expect(appShellSource).toContain("upsertAvatarSessionTabId");
     expect(appShellSource).toContain("readPinnedRunningAvatarIds");
     expect(appShellSource).toContain("reconcilePinnedRunningAvatarIds");
     expect(appShellSource).toContain("togglePinnedRunningAvatarId");
-    expect(appShellSource).toContain("buildRunningAvatarRailItems(controller.runtimeState");
+    expect(appShellSource).toContain("buildAvatarSessionRailItems(controller.runtimeState");
+    expect(appShellSource).toContain("openedSessionIds: openedAvatarSessionIds");
     expect(appShellSource).toContain("pinnedSessionIds: pinnedAvatarSessionIds");
     expect(appShellSource).toContain("extractRuntimeSessionId(page.url.pathname)");
-    expect(appShellSource).toContain("const avatarSubmenuItems = $derived([...openAvatarItems, ...runningAvatarItems])");
+    expect(appShellSource).toContain("let openedAvatarSessionIds = $state<string[]>(readAvatarSessionTabIds())");
     expect(appShellSource).toContain("const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars')");
     expect(appShellSource).toContain("item.href === '/avatars' && showAvatarSubmenu");
     expect(appShellSource).toContain("<RunningAvatarRail");
     expect(appShellSource).toContain("items={avatarSubmenuItems}");
     expect(appShellSource).toContain("onTogglePin={(sessionId, nextPinned) => {");
+    expect(appShellSource).not.toContain("readOpenAvatarTabs");
+    expect(appShellSource).not.toContain("buildOpenAvatarRailItems");
+    expect(appShellSource).not.toContain("extractOpenAvatarTabId(page.url)");
     expect(appShellSource).not.toContain("const avatarsActive = $derived(activeItem?.href === '/avatars');");
+  });
+
+  test("Scenario: Given a compact viewport When reading the app shell source Then the shell opts into a docked mobile rail instead of a hidden drawer", () => {
+    expect(appShellSource).toContain("import { IsMobile } from '$lib/hooks/is-mobile.svelte';");
+    expect(appShellSource).toContain('const compactViewport = new IsMobile();');
+    expect(appShellSource).toContain('shellSidebarOpen = nextCompactViewport ? false : desktopSidebarOpen;');
+    expect(appShellSource).toContain('const handleShellSidebarOpenChange = (nextOpen: boolean): void => {');
+    expect(appShellSource).toContain('<Sidebar.Provider open={shellSidebarOpen} onOpenChange={handleShellSidebarOpenChange}>');
+    expect(appShellSource).toContain('<Sidebar.Sidebar mobileMode="docked" collapsible="icon" variant="inset">');
   });
 });
