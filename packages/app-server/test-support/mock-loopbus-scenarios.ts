@@ -1,7 +1,6 @@
-import type { MessageControlPlaneEntry } from "@agenter/message-system";
+import type { MessageControlPlane, MessageControlPlaneEntry, MessageRecord } from "@agenter/message-system";
 
-import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
-import { resolvePrimaryRoomId } from "../src/session-chat-projection";
+import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState } from "../src";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { MockKernelHarness } from "./mock-kernel-harness";
 import { waitForMockValue } from "./mock-kernel-harness";
@@ -9,19 +8,43 @@ import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "./mock-
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
+const getPrimaryRoomId = (harness: MockKernelHarness): string => {
+  if (!harness.session.primaryRoomId) {
+    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
+  }
+  return harness.session.primaryRoomId;
+};
+const getMessageControlPlane = (harness: MockKernelHarness): MessageControlPlane =>
+  Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
 
-const getRuntimeSnapshot = (harness: MockKernelHarness): SessionRuntimeSnapshot | null =>
-  harness.kernel.getSnapshot().runtimes[harness.session.id] ?? null;
+const toChatMessage = (harness: MockKernelHarness, message: MessageRecord): ChatMessage => ({
+  id: message.messageId,
+  chatId: message.chatId,
+  role: message.from === harness.session.avatar ? "assistant" : "user",
+  content: message.content,
+  timestamp: message.createdAt,
+  updatedAt: message.updatedAt,
+  visibleAt: message.visibleAt,
+  attentionState: message.attentionState,
+  attentionLoadedAt: message.attentionLoadedAt,
+  editable: message.editable,
+});
+
+const listRoomTruthMessages = (harness: MockKernelHarness): ChatMessage[] =>
+  harness.kernel
+    .listMessageChannels(harness.session.id)
+    .flatMap((channel) => getMessageControlPlane(harness).snapshot(channel.chatId, 50).items.map((item) => toChatMessage(harness, item)))
+    .sort((left, right) => left.timestamp - right.timestamp);
 
 const getAssistantMessages = (
-  runtime: SessionRuntimeSnapshot,
+  messages: ChatMessage[],
   predicate: (message: ChatMessage) => boolean,
-): ChatMessage[] => runtime.chatMessages.filter((message) => message.role === "assistant" && predicate(message));
+): ChatMessage[] => messages.filter((message) => message.role === "assistant" && predicate(message));
 
 const getUserMessages = (
-  runtime: SessionRuntimeSnapshot,
+  messages: ChatMessage[],
   predicate: (message: ChatMessage) => boolean,
-): ChatMessage[] => runtime.chatMessages.filter((message) => message.role === "user" && predicate(message));
+): ChatMessage[] => messages.filter((message) => message.role === "user" && predicate(message));
 
 export const waitForAssistantMessage = async (
   harness: MockKernelHarness,
@@ -33,11 +56,7 @@ export const waitForAssistantMessage = async (
 ): Promise<ChatMessage> =>
   await waitForMockValue(
     () => {
-      const runtime = getRuntimeSnapshot(harness);
-      if (!runtime) {
-        return null;
-      }
-      return getAssistantMessages(runtime, input.predicate).at(-1) ?? null;
+      return getAssistantMessages(listRoomTruthMessages(harness), input.predicate).at(-1) ?? null;
     },
     {
       label: input.label,
@@ -55,11 +74,7 @@ export const waitForUserMessage = async (
 ): Promise<ChatMessage> =>
   await waitForMockValue(
     () => {
-      const runtime = getRuntimeSnapshot(harness);
-      if (!runtime) {
-        return null;
-      }
-      return getUserMessages(runtime, input.predicate).at(-1) ?? null;
+      return getUserMessages(listRoomTruthMessages(harness), input.predicate).at(-1) ?? null;
     },
     {
       label: input.label,
@@ -126,14 +141,7 @@ const listRecentModelCalls = async (harness: MockKernelHarness) => {
 };
 
 const countRelayPrompts = (harness: MockKernelHarness, chatId: string): number => {
-  const runtime = getRuntimeSnapshot(harness);
-  if (!runtime) {
-    return 0;
-  }
-  return getAssistantMessages(
-    runtime,
-    (message) => message.chatId === chatId && message.content.trim() === MOCK_RELAY_PROMPT,
-  ).length;
+  return getAssistantMessages(listRoomTruthMessages(harness), (message) => message.chatId === chatId && message.content.trim() === MOCK_RELAY_PROMPT).length;
 };
 
 export interface TwoRoomRelayScenarioResult {
@@ -145,8 +153,8 @@ export interface TwoRoomRelayScenarioResult {
   recentModelCalls: Awaited<ReturnType<typeof listRecentModelCalls>>;
 }
 
-export const createGaubeeRoom = (harness: MockKernelHarness): MessageControlPlaneEntry =>
-  harness.kernel.createMessageChannel({
+export const createGaubeeRoom = async (harness: MockKernelHarness): Promise<MessageControlPlaneEntry> =>
+  await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
     title: "gaubee",
@@ -159,9 +167,10 @@ export const createGaubeeRoom = (harness: MockKernelHarness): MessageControlPlan
 
 export const runTwoRoomRelayScenario = async (
   harness: MockKernelHarness,
-  relayChannel = createGaubeeRoom(harness),
+  relayChannel?: MessageControlPlaneEntry,
 ): Promise<TwoRoomRelayScenarioResult> => {
-  const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+  const primaryRoomId = getPrimaryRoomId(harness);
+  const resolvedRelayChannel = relayChannel ?? (await createGaubeeRoom(harness));
   const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
   if (!sent.ok) {
     throw new Error(`failed to send relay prompt: ${sent.reason ?? "unknown"}`);
@@ -169,13 +178,13 @@ export const runTwoRoomRelayScenario = async (
 
   const relayPromptMessage = await waitForAssistantMessage(harness, {
     label: "relay prompt to gaubee room",
-    predicate: (message) => message.chatId === relayChannel.chatId && message.content.trim() === MOCK_RELAY_PROMPT,
+    predicate: (message) => message.chatId === resolvedRelayChannel.chatId && message.content.trim() === MOCK_RELAY_PROMPT,
   });
 
   const replySent = await harness.kernel.sendMessageChannel({
     sessionId: harness.session.id,
-    chatId: relayChannel.chatId,
-    accessToken: relayChannel.accessToken,
+    chatId: resolvedRelayChannel.chatId,
+    accessToken: resolvedRelayChannel.accessToken,
     text: MOCK_GAUBEE_REPLY,
   });
   if (!replySent.ok) {
@@ -184,7 +193,7 @@ export const runTwoRoomRelayScenario = async (
 
   const relayParticipantReply = await waitForUserMessage(harness, {
     label: "gaubee reply on secondary room",
-    predicate: (message) => message.chatId === relayChannel.chatId && message.content.trim() === MOCK_GAUBEE_REPLY,
+    predicate: (message) => message.chatId === resolvedRelayChannel.chatId && message.content.trim() === MOCK_GAUBEE_REPLY,
   });
 
   const finalReply = await waitForAssistantMessage(harness, {
@@ -196,7 +205,7 @@ export const runTwoRoomRelayScenario = async (
   const recentModelCalls = await listRecentModelCalls(harness);
 
   return {
-    relayChannel,
+    relayChannel: resolvedRelayChannel,
     relayPromptMessage,
     relayParticipantReply,
     finalReply,
@@ -220,7 +229,7 @@ export const runCompactFollowUpScenario = async (
     afterReplyTimestamp: number;
   },
 ): Promise<CompactFollowUpScenarioResult> => {
-  const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+  const primaryRoomId = getPrimaryRoomId(harness);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
   const relayPromptCountBefore = countRelayPrompts(harness, input.relayChannel.chatId);

@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { defaultAvatarNickname, normalizeAvatarNickname } from "@agenter/avatar";
+import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   AttentionStore,
   AttentionSystem,
@@ -93,7 +94,6 @@ import { resolveWorkspaceAvatarSessionId } from "./session-identity";
 import { SessionNotificationRegistry, type SessionNotificationSnapshot } from "./session-notifications";
 import {
   resolveCollectedInputsChatId,
-  resolvePrimaryRoomId,
   resolveSessionBlockChatId,
   resolveSessionRoomActorId,
 } from "./session-chat-projection";
@@ -868,11 +868,14 @@ export class AppKernel {
       this.rememberWorkspace(this.options.initialWorkspace);
     }
     this.ensureSessionCatalogLoaded();
+    const boundSessions = await Promise.all(
+      this.sessions.list().map(async (session) => this.bindSessionPrimaryRoomId(this.bindSessionAvatarPrincipal(session))),
+    );
     this.syncAvatarCatalogWatchers();
     await Promise.all([
       this.messageControlPlane.startTransport({ port: 0 }),
       this.terminalControlPlane.startTransport({ port: 0 }),
-      ...this.sessions.list().map((session) => this.syncSessionIconSeed(session)),
+      ...boundSessions.map((session) => this.syncSessionIconSeed(session)),
     ]);
   }
 
@@ -946,6 +949,23 @@ export class AppKernel {
     return this.sessions.update(session.id, {
       avatarPrincipalId: principal.principalId,
     });
+  }
+
+  private async bindSessionPrimaryRoomId(session: SessionMeta): Promise<SessionMeta> {
+    if (typeof session.primaryRoomId === "string" && isPrincipalId(session.primaryRoomId)) {
+      return session;
+    }
+    return this.sessions.update(session.id, {
+      primaryRoomId: await this.allocateGlobalRoomId(DEFAULT_MESSAGE_CHAT_TITLE),
+    });
+  }
+
+  private resolvePersistedSessionPrimaryRoomId(sessionId: string): string {
+    const primaryRoomId = this.sessions.get(sessionId)?.primaryRoomId;
+    if (typeof primaryRoomId === "string" && isPrincipalId(primaryRoomId)) {
+      return primaryRoomId;
+    }
+    throw new Error(`session primary room id unavailable: ${sessionId}`);
   }
 
   private resolveSessionMessageActorId(session: Pick<SessionMeta, "id" | "avatarPrincipalId">): MessageActorId {
@@ -1041,10 +1061,10 @@ export class AppKernel {
   }
 
   private ensureSessionPrimaryRoom(
-    session: Pick<SessionMeta, "id" | "avatar" | "avatarPrincipalId" | "createdAt" | "updatedAt">,
+    session: Pick<SessionMeta, "id" | "avatar" | "avatarPrincipalId" | "primaryRoomId" | "createdAt" | "updatedAt">,
   ): MessageControlPlaneEntry {
     const actorId = this.resolveSessionMessageActorId(session);
-    const roomId = resolvePrimaryRoomId(session.id);
+    const roomId = this.resolvePersistedSessionPrimaryRoomId(session.id);
     const existing = this.messageControlPlane.getChannelForActor(roomId, actorId, { touchPresence: false });
     if (existing) {
       return repairRoomParticipantsIfNeeded(this.messageControlPlane, existing);
@@ -1504,10 +1524,11 @@ export class AppKernel {
         reusableBase.avatarPrincipalId === avatarPrincipal.principalId
           ? reusableBase
           : this.sessions.update(reusableBase.id, { avatarPrincipalId: avatarPrincipal.principalId });
-      const updated =
+      const renamed =
         input.name?.trim().length && input.name.trim() !== reusable.name
           ? this.sessions.update(reusable.id, { name: input.name.trim() })
           : reusable;
+      const updated = await this.bindSessionPrimaryRoomId(renamed);
       await this.syncSessionIconSeed(updated);
       this.ensureSessionPrimaryRoom(updated);
       this.emit("session.updated", { session: updated }, updated.id);
@@ -1528,15 +1549,16 @@ export class AppKernel {
       avatarPrincipalId: avatarPrincipal.principalId,
       storeTarget: "global",
     });
-    await this.syncSessionIconSeed(session);
-    this.ensureSessionPrimaryRoom(session);
-    this.emit("session.updated", { session }, session.id);
+    const boundSession = await this.bindSessionPrimaryRoomId(session);
+    await this.syncSessionIconSeed(boundSession);
+    this.ensureSessionPrimaryRoom(boundSession);
+    this.emit("session.updated", { session: boundSession }, boundSession.id);
 
     if (input.autoStart === false) {
-      return session;
+      return boundSession;
     }
 
-    return await this.startSession(session.id);
+    return await this.startSession(boundSession.id);
   }
 
   updateSession(sessionId: string, patch: { name?: string }): SessionMeta {
@@ -1588,7 +1610,8 @@ export class AppKernel {
     if (existingMeta.storageState === "archived") {
       throw new Error(`session is archived: ${sessionId}`);
     }
-    const meta = this.bindSessionAvatarPrincipal(existingMeta);
+    const avatarBoundMeta = this.bindSessionAvatarPrincipal(existingMeta);
+    const meta = await this.bindSessionPrimaryRoomId(avatarBoundMeta);
 
     this.rememberWorkspace(meta.workspacePath);
 
@@ -1615,7 +1638,8 @@ export class AppKernel {
       messageActorId: this.resolveSessionMessageActorId(meta),
       terminalSystem: this.terminalControlPlane,
       terminalActorId: this.resolveSessionTerminalActorId(meta),
-      primaryRoomId: resolvePrimaryRoomId(meta.id),
+      primaryRoomId: meta.primaryRoomId,
+      allocateRoomId: async ({ kind, title }) => this.allocateGlobalRoomId(kind === "room" ? title : undefined),
       logger: this.options.logger,
     });
     runtime.setSessionStatus("starting");
@@ -1691,7 +1715,7 @@ export class AppKernel {
     });
   }
 
-  createMessageChannel(input: {
+  async createMessageChannel(input: {
     sessionId: string;
     kind: MessageChannelKind;
     title?: string;
@@ -1702,12 +1726,12 @@ export class AppKernel {
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
-  }): MessageControlPlaneEntry {
+  }): Promise<MessageControlPlaneEntry> {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       throw new Error("session runtime is not active");
     }
-    return runtime.createMessageChannel({
+    return await runtime.createMessageChannel({
       kind: input.kind,
       title: input.title,
       participants: input.participants,
@@ -3226,7 +3250,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      const defaultRoomId = resolvePrimaryRoomId(sessionId);
+      const defaultRoomId = this.resolvePersistedSessionPrimaryRoomId(sessionId);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
         const explicitChatId = readPersistedBlockChatId(item);
@@ -3273,7 +3297,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      const defaultRoomId = resolvePrimaryRoomId(sessionId);
+      const defaultRoomId = this.resolvePersistedSessionPrimaryRoomId(sessionId);
       const page = db.listBlocksPage(input);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
@@ -3458,7 +3482,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      const defaultRoomId = resolvePrimaryRoomId(sessionId);
+      const defaultRoomId = this.resolvePersistedSessionPrimaryRoomId(sessionId);
       const cycleChatIds = new Map<number, string>();
       const resolveBlockChatId = (item: SessionBlockRecord): string => {
         const explicitChatId = readPersistedBlockChatId(item);
@@ -3581,7 +3605,7 @@ export class AppKernel {
     cycleId: number,
     inputs: SessionCollectedInput[],
   ): ChatMessage[] {
-    const fallbackRoomId = resolveCollectedInputsChatId(inputs, resolvePrimaryRoomId(sessionId));
+    const fallbackRoomId = resolveCollectedInputsChatId(inputs, this.resolvePersistedSessionPrimaryRoomId(sessionId));
     return db.listBlocksByCycleId(cycleId).map((block) =>
       this.projectPersistedChatMessage(sessionId, block, readPersistedBlockChatId(block) ?? fallbackRoomId),
     );

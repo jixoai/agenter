@@ -188,7 +188,11 @@ interface RuntimeMessageEgressInternal extends RuntimeInternal {
   }) => Promise<{ ok: boolean; messageId: string }>;
 }
 
-const PRIMARY_ROOM_ID = "room-main";
+const createPrincipalId = (value: number): `0x${string}` => `0x${value.toString(16).padStart(40, "0")}`;
+let nextRoomPrincipalSeed = 2;
+const createRuntimeRoomAllocator = () => async (): Promise<string> => createPrincipalId(nextRoomPrincipalSeed++);
+
+const PRIMARY_ROOM_ID = createPrincipalId(1);
 const PRIMARY_CONTEXT_ID = `ctx-${PRIMARY_ROOM_ID}`;
 
 const getActiveMatches = (internal: RuntimeInternal): AttentionActiveContextMatch[] =>
@@ -287,6 +291,7 @@ const createRuntime = (): SessionRuntime => {
     sessionName: "test",
     storeTarget: "workspace",
     primaryRoomId: PRIMARY_ROOM_ID,
+    allocateRoomId: createRuntimeRoomAllocator(),
     terminalSystem: createTerminalSystem(root),
   });
 };
@@ -304,6 +309,7 @@ const createSharedRoomRuntime = (input: {
     sessionName: input.sessionName,
     storeTarget: "workspace",
     primaryRoomId: PRIMARY_ROOM_ID,
+    allocateRoomId: createRuntimeRoomAllocator(),
     terminalSystem: createTerminalSystem(join(input.root, input.sessionId)),
     messageSystem: input.messageSystem,
   });
@@ -393,7 +399,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
-    const channel = runtime.createMessageChannel({
+    const channel = await runtime.createMessageChannel({
       kind: "room",
       title: "Room 2",
       focus: false,
@@ -418,11 +424,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(internal.resolveCycleReplyChatId([attentionInput])).toBe(channel.chatId);
   });
 
-  test("Scenario: Given room lifecycle mutations When runtime changes the room Then structural room events become active attention debt", () => {
+  test("Scenario: Given room lifecycle mutations When runtime changes the room Then structural room events become active attention debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
-    const room = runtime.createMessageChannel({
+    const room = await runtime.createMessageChannel({
       kind: "room",
       title: "QA",
       focus: false,
@@ -470,7 +476,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     try {
       const room = messageSystem.createChannel({
-        chatId: "room-selected-user-only",
+        chatId: createPrincipalId(900),
         kind: "room",
         owner: "ops",
         initialUsers: [
@@ -713,9 +719,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a runtime snapshot When chat bootstrap data is read Then message-channel descriptors are embedded alongside attention state", () => {
+  test("Scenario: Given a runtime snapshot When chat bootstrap data is read Then message-channel descriptors are embedded alongside attention state", async () => {
     const runtime = createRuntime();
-    const channel = runtime.createMessageChannel({
+    const channel = await runtime.createMessageChannel({
       kind: "room",
       title: "Room 2",
     });
@@ -1061,6 +1067,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionRoot,
       sessionName: "migrate",
       storeTarget: "workspace",
+      primaryRoomId: PRIMARY_ROOM_ID,
       terminalSystem: createTerminalSystem(root),
     });
 
@@ -2050,6 +2057,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       sessionName: "room-restart",
       storeTarget: "workspace" as const,
       primaryRoomId: PRIMARY_ROOM_ID,
+      allocateRoomId: createRuntimeRoomAllocator(),
       terminalSystem: createTerminalSystem(root),
     };
     const runtime = new SessionRuntime(options);
@@ -2101,7 +2109,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a cycle originates from the primary room When message_send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
-    const relayChannel = runtime.createMessageChannel({
+    const relayChannel = await runtime.createMessageChannel({
       kind: "room",
       title: "gaubee",
       focus: false,

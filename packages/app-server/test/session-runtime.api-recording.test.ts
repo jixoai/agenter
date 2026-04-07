@@ -14,6 +14,8 @@ const makeTempDir = (): string => {
   return dir;
 };
 
+const PRIMARY_ROOM_ID = "0x0000000000000000000000000000000000000001";
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -29,6 +31,7 @@ describe("Feature: api call recording reference counting", () => {
       sessionRoot: root,
       sessionName: "test",
       storeTarget: "global",
+      primaryRoomId: PRIMARY_ROOM_ID,
       terminalSystem: new TerminalControlPlane({
         dbPath: join(root, "terminal.db"),
         outputRoot: join(root, "terminals"),

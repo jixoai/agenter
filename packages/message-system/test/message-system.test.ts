@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -30,6 +31,37 @@ const createRoom = (
   });
 
 const toHttpUrl = (url: string): string => url.replace(/^ws:/, "http:");
+
+const requestHttp = async (
+  urlText: string,
+): Promise<{ status: number; body: string }> =>
+  await new Promise((resolve, reject) => {
+    const url = new URL(urlText);
+    const request = httpRequest(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port,
+        path: `${url.pathname}${url.search}`,
+        method: "GET",
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            body,
+          });
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
 
 const waitForSocketOutcome = async (
   socket: WebSocket,
@@ -737,14 +769,14 @@ describe("Feature: message-chat-control-plane", () => {
       }),
     ).toThrow("message room credential-invalid");
 
-    const missingTokenResponse = await fetch(toHttpUrl(endpoint.url.replace(/\?token=.*$/, "")));
+    const missingTokenResponse = await requestHttp(toHttpUrl(endpoint.url.replace(/\?token=.*$/, "")));
     expect(missingTokenResponse.status).toBe(401);
 
     const invalidTokenUrl = new URL(toHttpUrl(endpoint.url));
     invalidTokenUrl.searchParams.set("token", "msgtok_invalidcredential0001");
-    const invalidTokenResponse = await fetch(invalidTokenUrl);
+    const invalidTokenResponse = await requestHttp(invalidTokenUrl.toString());
     expect(invalidTokenResponse.status).toBe(401);
-    expect(await invalidTokenResponse.text()).toBe("credential-invalid");
+    expect(invalidTokenResponse.body).toBe("credential-invalid");
 
     const authorizedSocket = new WebSocket(endpoint.url);
     const snapshotOutcome = await waitForSocketOutcome(authorizedSocket);

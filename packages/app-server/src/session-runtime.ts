@@ -116,7 +116,6 @@ import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from ".
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
 import {
   DEFAULT_MESSAGE_CHAT_ID,
-  resolvePrimaryRoomId,
   resolveSessionBlockChatId,
   resolveSessionRoomActorId,
 } from "./session-chat-projection";
@@ -139,15 +138,6 @@ const DEFAULT_CHAT_OWNER = "agenter";
 
 const toToolRecord = (value: object): Record<string, unknown> => {
   return Object.fromEntries(Object.entries(value));
-};
-
-const slugifyMessageChannelTitle = (value: string, fallback: string): string => {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized.length > 0 ? normalized : fallback;
 };
 const ATTENTION_TITLE_LIMIT = 140;
 const MAX_TERMINAL_ATTENTION_DETAIL_CHARS = 4_000;
@@ -915,7 +905,8 @@ export interface SessionRuntimeOptions {
   messageActorId?: MessageActorId;
   terminalSystem: TerminalControlPlane;
   terminalActorId?: TerminalActorId;
-  primaryRoomId?: string;
+  primaryRoomId: string;
+  allocateRoomId?: (input: { kind: MessageChannelKind; title?: string }) => Promise<string>;
   logger?: {
     log: (line: {
       channel: "agent" | "error";
@@ -1053,7 +1044,7 @@ export class SessionRuntime {
   constructor(private readonly options: SessionRuntimeOptions) {
     this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
     this.terminalActorId = options.terminalActorId ?? (resolveSessionRoomActorId(options.sessionId) as TerminalActorId);
-    this.primaryRoomId = options.primaryRoomId ?? resolvePrimaryRoomId(options.sessionId);
+    this.primaryRoomId = options.primaryRoomId;
     this.terminalControlPlane = options.terminalSystem;
     if (options.messageSystem) {
       this.messageSystem = options.messageSystem;
@@ -1302,16 +1293,12 @@ export class SessionRuntime {
     return created;
   }
 
-  private allocateMessageChannelId(kind: MessageChannelKind, title?: string): string {
-    const base = `room-${slugifyMessageChannelTitle(title ?? "", kind === "room" ? "room" : "chat")}`;
-    if (!this.messageSystem.getChannel(base)) {
-      return base;
+  private async allocateMessageChannelId(kind: MessageChannelKind, title?: string): Promise<string> {
+    const allocated = await this.options.allocateRoomId?.({ kind, title });
+    if (!allocated) {
+      throw new Error("session runtime room allocation is unavailable");
     }
-    let suffix = 2;
-    while (this.messageSystem.getChannel(`${base}-${suffix}`)) {
-      suffix += 1;
-    }
-    return `${base}-${suffix}`;
+    return allocated;
   }
 
   private projectMessageChannelForAttention(channel: MessageControlPlaneEntry): Record<string, unknown> {
@@ -1514,7 +1501,7 @@ export class SessionRuntime {
     return this.listActorRooms({ includeArchived: input.includeArchived });
   }
 
-  createMessageChannel(input: {
+  async createMessageChannel(input: {
     kind: MessageChannelKind;
     title?: string;
     participants?: Array<{
@@ -1524,9 +1511,9 @@ export class SessionRuntime {
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
-  }): MessageControlPlaneEntry {
+  }): Promise<MessageControlPlaneEntry> {
     const avatar = this.getAvatarName();
-    const chatId = this.allocateMessageChannelId(input.kind, input.title);
+    const chatId = await this.allocateMessageChannelId(input.kind, input.title);
     const context = this.ensureAttentionContextForChannel(chatId);
     const channel = this.messageSystem.createChannel({
       chatId,
@@ -1963,14 +1950,16 @@ export class SessionRuntime {
           includeArchived: true,
           touchPresence: false,
         });
-        if (!actorRoom?.focused) {
+        if (!actorRoom) {
           return;
         }
         const channel = this.messageSystem.getChannel(chatId);
         if (!channel) {
           return;
         }
-        this.recordChatMessage(this.toChatMessageFromChannel(message));
+        if (actorRoom.focused) {
+          this.recordChatMessage(this.toChatMessageFromChannel(message));
+        }
         if (!this.isQueuedInboundMessage(message)) {
           return;
         }
@@ -4455,6 +4444,7 @@ export class SessionRuntime {
         cwd: this.options.cwd,
         avatar: this.config.avatar.nickname,
         avatarPrincipalId: this.options.avatarPrincipalId,
+        primaryRoomId: this.options.primaryRoomId,
         storeTarget: this.options.storeTarget,
       },
     });

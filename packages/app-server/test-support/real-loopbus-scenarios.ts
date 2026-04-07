@@ -1,29 +1,51 @@
-import type { MessageControlPlaneEntry } from "@agenter/message-system";
+import type { MessageControlPlane, MessageControlPlaneEntry, MessageRecord } from "@agenter/message-system";
 
-import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState, SessionRuntimeSnapshot } from "../src";
-import { resolvePrimaryRoomId } from "../src/session-chat-projection";
+import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState } from "../src";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import { waitForRealValue } from "./real-kernel-harness";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
-const getPrimaryRoomId = (harness: RealKernelHarness): string => resolvePrimaryRoomId(harness.session.id);
+const getPrimaryRoomId = (harness: RealKernelHarness): string => {
+  if (!harness.session.primaryRoomId) {
+    throw new Error(`missing primaryRoomId for session ${harness.session.id}`);
+  }
+  return harness.session.primaryRoomId;
+};
+const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane =>
+  Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
 
-const getRuntimeSnapshot = (harness: RealKernelHarness): SessionRuntimeSnapshot | null =>
-  harness.kernel.getSnapshot().runtimes[harness.session.id] ?? null;
+const toChatMessage = (harness: RealKernelHarness, message: MessageRecord): ChatMessage => ({
+  id: message.messageId,
+  chatId: message.chatId,
+  role: message.from === harness.session.avatar ? "assistant" : "user",
+  content: message.content,
+  timestamp: message.createdAt,
+  updatedAt: message.updatedAt,
+  visibleAt: message.visibleAt,
+  attentionState: message.attentionState,
+  attentionLoadedAt: message.attentionLoadedAt,
+  editable: message.editable,
+});
+
+const listRoomTruthMessages = (harness: RealKernelHarness): ChatMessage[] =>
+  harness.kernel
+    .listMessageChannels(harness.session.id)
+    .flatMap((channel) => getMessageControlPlane(harness).snapshot(channel.chatId, 50).items.map((item) => toChatMessage(harness, item)))
+    .sort((left, right) => left.timestamp - right.timestamp);
 
 const getAssistantMessages = (
-  runtime: SessionRuntimeSnapshot,
+  messages: ChatMessage[],
   predicate: (message: ChatMessage) => boolean,
 ): ChatMessage[] =>
-  runtime.chatMessages.filter((message) => message.role === "assistant" && predicate(message));
+  messages.filter((message) => message.role === "assistant" && predicate(message));
 
-const getUserMessages = (runtime: SessionRuntimeSnapshot, predicate: (message: ChatMessage) => boolean): ChatMessage[] =>
-  runtime.chatMessages.filter((message) => message.role === "user" && predicate(message));
+const getUserMessages = (messages: ChatMessage[], predicate: (message: ChatMessage) => boolean): ChatMessage[] =>
+  messages.filter((message) => message.role === "user" && predicate(message));
 
-const countAssistantMessages = (runtime: SessionRuntimeSnapshot, chatId: string): number =>
-  runtime.chatMessages.filter((message) => message.role === "assistant" && message.chatId === chatId).length;
+const countAssistantMessages = (messages: ChatMessage[], chatId: string): number =>
+  messages.filter((message) => message.role === "assistant" && message.chatId === chatId).length;
 
 const waitForNextAssistantMessageInChat = async (
   harness: RealKernelHarness,
@@ -36,11 +58,7 @@ const waitForNextAssistantMessageInChat = async (
 ): Promise<ChatMessage> =>
   await waitForRealValue(
     () => {
-      const runtime = getRuntimeSnapshot(harness);
-      if (!runtime) {
-        return null;
-      }
-      const messages = getAssistantMessages(runtime, (message) => message.chatId === input.chatId);
+      const messages = getAssistantMessages(listRoomTruthMessages(harness), (message) => message.chatId === input.chatId);
       return messages.length > input.afterCount ? (messages[input.afterCount] ?? null) : null;
     },
     {
@@ -59,11 +77,7 @@ const waitForAssistantMessage = async (
 ): Promise<ChatMessage> =>
   await waitForRealValue(
     () => {
-      const runtime = getRuntimeSnapshot(harness);
-      if (!runtime) {
-        return null;
-      }
-      return getAssistantMessages(runtime, input.predicate).at(-1) ?? null;
+      return getAssistantMessages(listRoomTruthMessages(harness), input.predicate).at(-1) ?? null;
     },
     {
       label: input.label,
@@ -254,9 +268,9 @@ export const runRealLunchRelayScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealLunchRelayScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
-  const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
-  const relayChannel = harness.kernel.createMessageChannel({
+  const roomMessagesBefore = listRoomTruthMessages(harness);
+  const originAssistantCountBefore = countAssistantMessages(roomMessagesBefore, primaryRoomId);
+  const relayChannel = await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
     title: "gaubee",
@@ -266,7 +280,7 @@ export const runRealLunchRelayScenario = async (
     ],
     focus: false,
   });
-  const relayAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, relayChannel.chatId) : 0;
+  const relayAssistantCountBefore = countAssistantMessages(roomMessagesBefore, relayChannel.chatId);
 
   const sent = await harness.kernel.sendChat(harness.session.id, "gaubee在吗？问他中午吃什么？");
   if (!sent.ok) {
@@ -308,12 +322,8 @@ export const runRealLunchRelayScenario = async (
 
   const relayParticipantReply = await waitForRealValue(
     () => {
-      const runtime = getRuntimeSnapshot(harness);
-      if (!runtime) {
-        return null;
-      }
       return getUserMessages(
-        runtime,
+        listRoomTruthMessages(harness),
         (message) => message.chatId === relayChannel.chatId && message.content.trim() === "中午吃蛋炒饭。",
       ).at(-1) ?? null;
     },
@@ -369,8 +379,7 @@ export const runRealCompactFollowUpScenario = async (
   const primaryRoomId = getPrimaryRoomId(harness);
   const cyclesBefore = harness.kernel.listChatCycles(harness.session.id, 40);
   const lastCycleId = cyclesBefore.at(-1)?.cycleId ?? 0;
-  const runtimeBefore = getRuntimeSnapshot(harness);
-  const relayMessageCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, input.relayChannel.chatId) : 0;
+  const relayMessageCountBefore = countAssistantMessages(listRoomTruthMessages(harness), input.relayChannel.chatId);
 
   const compactSent = await harness.kernel.sendChat(harness.session.id, "/compact");
   if (!compactSent.ok) {
@@ -393,8 +402,7 @@ export const runRealCompactFollowUpScenario = async (
       message.content.includes("蛋炒饭"),
   });
 
-  const runtimeAfter = getRuntimeSnapshot(harness);
-  const relayMessageCountAfter = runtimeAfter ? countAssistantMessages(runtimeAfter, input.relayChannel.chatId) : 0;
+  const relayMessageCountAfter = countAssistantMessages(listRoomTruthMessages(harness), input.relayChannel.chatId);
   const settledAttention = await waitForAttentionSettled(harness);
   const recentModelCalls = await waitForLatestModelCallCompletion(harness);
 
@@ -425,8 +433,7 @@ export const runRealWeatherThroughTerminalScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealWeatherTerminalScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
-  const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
+  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
   const startAt = Date.now();
   const prompt = [
     "用户问：厦门天气如何？天气预报未来 15 天天气。",
@@ -502,8 +509,7 @@ export const runRealInterleavedCanInputScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealInterleavedCanInputScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
-  const runtimeBefore = getRuntimeSnapshot(harness);
-  const originAssistantCountBefore = runtimeBefore ? countAssistantMessages(runtimeBefore, primaryRoomId) : 0;
+  const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
   const startAt = Date.now();
   const initialPrompt = [
     "我们正在验证你是否能在工具阶段接收新的输入。",
@@ -623,7 +629,7 @@ export const runRealJudgeRelayScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealJudgeRelayScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
-  const relayChannel = harness.kernel.createMessageChannel({
+  const relayChannel = await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
     kind: "room",
     title: "kzf",

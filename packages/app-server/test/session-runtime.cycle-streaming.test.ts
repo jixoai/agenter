@@ -42,6 +42,8 @@ interface RuntimeInternals {
   ) => void;
 }
 
+const PRIMARY_ROOM_ID = "0x0000000000000000000000000000000000000001";
+
 const createRuntime = (): SessionRuntime => {
   const root = mkdtempSync(join(tmpdir(), "agenter-cycle-stream-"));
   return new SessionRuntime({
@@ -50,6 +52,7 @@ const createRuntime = (): SessionRuntime => {
     sessionRoot: join(root, "session"),
     sessionName: "cycle-stream",
     storeTarget: "workspace",
+    primaryRoomId: PRIMARY_ROOM_ID,
     terminalSystem: new TerminalControlPlane({
       dbPath: join(root, "terminal.db"),
       outputRoot: join(root, "terminals"),

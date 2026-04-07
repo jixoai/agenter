@@ -11,6 +11,7 @@ export interface PersistedSession {
   workspacePath?: string;
   avatar: string;
   avatarPrincipalId?: string;
+  primaryRoomId?: string;
   storeTarget: "global" | "workspace";
   status: PersistedSessionStatus;
   createdAt: string;

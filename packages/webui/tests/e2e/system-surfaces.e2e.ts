@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const terminalCwd = process.cwd();
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const principalRoomIdPattern = /^0x[0-9a-f]+$/i;
 
 const clickStable = async (locator: Locator): Promise<void> => {
   await locator.scrollIntoViewIfNeeded();
@@ -442,6 +443,9 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByRole("heading", { name: "Loading channel history...", exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
+    const chatId = await readSelectedRoomChatId(page, roomTitle);
+    expect(chatId).toMatch(principalRoomIdPattern);
+    await expect(page.locator('[href*="/messages/room/room-"]')).toHaveCount(0);
 
     const roomComposer = page.getByPlaceholder(new RegExp(`Message ${escapeRegExp(roomTitle)}`));
     const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
@@ -454,6 +458,11 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     await expect(page.getByText(roomMessage)).toBeVisible({ timeout: 15_000 });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectSelectedRoomTitle(page, roomTitle);
+    expect(await readSelectedRoomChatId(page, roomTitle)).toBe(chatId);
+    await expect(page).not.toHaveURL(/\/messages\/room\/room-/);
+    await expect(page.locator('[href*="/messages/room/room-"]')).toHaveCount(0);
   });
 
   test("Scenario: Given first-visit system surfaces When Avatars or Terminals load Then help hints stay collapsed until requested", async ({

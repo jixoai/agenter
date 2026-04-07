@@ -277,8 +277,8 @@ export const appRouter = t.router({
           focus: z.boolean().optional(),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        channel: ctx.kernel.createMessageChannel({
+      .mutation(async ({ ctx, input }) => ({
+        channel: await ctx.kernel.createMessageChannel({
           sessionId: input.sessionId,
           kind: input.kind,
           title: input.title,

@@ -58,6 +58,7 @@ export interface SessionStoreOptions {
     cwd: string;
     avatar: string;
     avatarPrincipalId?: string;
+    primaryRoomId?: string;
     storeTarget: "global" | "workspace";
   };
 }
@@ -81,6 +82,7 @@ export class SessionStore {
         cwd: options.session.cwd,
         avatar: options.session.avatar,
         avatarPrincipalId: options.session.avatarPrincipalId,
+        primaryRoomId: options.session.primaryRoomId,
         storeTarget: options.session.storeTarget,
         status: "stopped",
         createdAt: now,
@@ -97,6 +99,7 @@ export class SessionStore {
       cwd: options.session.cwd,
       avatar: options.session.avatar,
       avatarPrincipalId: options.session.avatarPrincipalId,
+      primaryRoomId: options.session.primaryRoomId,
       storeTarget: options.session.storeTarget,
       status: "starting",
       updatedAt: now,

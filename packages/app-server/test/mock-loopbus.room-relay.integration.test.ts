@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { createMockKernelHarness } from "../test-support/mock-kernel-harness";
 import {
   createGaubeeRoom,
@@ -16,8 +15,11 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-relay" });
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
-        const relayChannel = createGaubeeRoom(harness);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
+        const relayChannel = await createGaubeeRoom(harness);
         const roomList = harness.kernel.listMessageChannels(harness.session.id);
         const gaubeeRoom = roomList.find((channel) => channel.chatId === relayChannel.chatId);
 
@@ -52,8 +54,11 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
       const harness = await createMockKernelHarness({ sessionName: "two-room-compact-follow-up" });
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
-        const relayChannel = createGaubeeRoom(harness);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
+        const relayChannel = await createGaubeeRoom(harness);
         const relay = await runTwoRoomRelayScenario(harness, relayChannel);
         const followUp = await runCompactFollowUpScenario(harness, {
           relayChannel,

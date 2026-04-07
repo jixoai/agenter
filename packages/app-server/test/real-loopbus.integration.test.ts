@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolvePrimaryRoomId } from "../src/session-chat-projection";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
@@ -25,7 +24,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealSimpleReplyScenario(harness);
 
         expect(result.reply.chatId).toBe(primaryRoomId);
@@ -49,7 +51,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealLunchRelayScenario(harness);
 
         expect(result.originAcknowledgement.chatId).toBe(primaryRoomId);
@@ -78,7 +83,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealLunchRelayScenario(harness);
         const followUp = await runRealCompactFollowUpScenario(harness, {
           relayChannel: result.relayChannel,
@@ -120,7 +128,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealWeatherThroughTerminalScenario(harness);
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
@@ -148,7 +159,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealInterleavedCanInputScenario(harness);
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
@@ -177,7 +191,10 @@ describe("Feature: real AI loopbus convergence", () => {
       }
 
       try {
-        const primaryRoomId = resolvePrimaryRoomId(harness.session.id);
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
         const result = await runRealJudgeRelayScenario(harness);
 
         expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);

@@ -365,7 +365,10 @@ describe("Feature: app kernel event replay", () => {
     }
 
     const page = kernel.pageChatMessages(session.id, { limit: 16 });
-    const primaryRoomId = `room-main-${session.id}`;
+    const primaryRoomId = session.primaryRoomId;
+    if (!primaryRoomId) {
+      throw new Error("expected session primaryRoomId");
+    }
 
     expect(page.items.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
       { content: "main prompt", chatId: "chat-main" },
@@ -649,10 +652,10 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const room = await kernel.createGlobalRoom({
-      chatId: "room-assets",
       title: "Room assets",
       focus: true,
     });
+    expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
     const uploads = await kernel.uploadGlobalRoomAssets({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -1008,11 +1011,10 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const room = await kernel.createGlobalRoom({
-      chatId: "room-ops",
       title: "Ops room",
       focus: true,
     });
-    expect(room.chatId).toBe("room-ops");
+    expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
     expect(kernel.listGlobalRooms().some((item) => item.chatId === room.chatId && item.focused)).toBeFalse();
 
     const sent = kernel.sendGlobalRoomMessage({
@@ -1153,7 +1155,6 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const room = await kernel.createGlobalRoom({
-      chatId: "room-seeded-users",
       title: "Seeded room",
       initialUsers: [
         {
@@ -1170,6 +1171,7 @@ describe("Feature: app kernel event replay", () => {
         },
       ],
     });
+    expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
 
     expect(room.participants).toEqual([
       { id: "auth:viewer", label: "Viewer" },

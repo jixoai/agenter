@@ -71,8 +71,8 @@ interface ToolResult {
   data: unknown;
 }
 
-const PRIMARY_ROOM_CONTEXT_PREFIX = "ctx-room-main-";
-const PRIMARY_ROOM_ID_PREFIX = "room-main-";
+const PRINCIPAL_ROOM_ID_PATTERN = /^0x[0-9a-f]{40}$/;
+const PRIMARY_ROOM_CONTEXT_PATTERN = /^ctx-(0x[0-9a-f]{40})$/;
 
 export interface MockModelServerHandle {
   baseUrl: string;
@@ -273,13 +273,13 @@ const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly 
         if (!chatId) {
           continue;
         }
-        if (record.metadata?.primaryRoom === true || chatId.startsWith(PRIMARY_ROOM_ID_PREFIX)) {
+        if (record.metadata?.primaryRoom === true || PRINCIPAL_ROOM_ID_PATTERN.test(chatId)) {
           return chatId;
         }
       }
     }
   }
-  const frame = frames.find((item) => item.contextId.startsWith(PRIMARY_ROOM_CONTEXT_PREFIX));
+  const frame = frames.find((item) => PRIMARY_ROOM_CONTEXT_PATTERN.test(item.contextId));
   return frame ? frame.contextId.slice(4) : null;
 };
 
@@ -505,7 +505,7 @@ const decideChat = (request: ChatCompletionRequest) => {
     }
 
     const gaubeeChatId = findGaubeeChatId(toolResults);
-    if (gaubeeChatId && currentFrames.length > 0) {
+    if (gaubeeChatId) {
       return createResponse(request, {
         toolCalls: [
           {

@@ -299,13 +299,12 @@ describe("Feature: app-server trpc procedures", () => {
 
     const caller = appRouter.createCaller(await createTrpcContext(kernel));
     const created = await caller.message.globalCreate({
-      chatId: "room-ops",
       kind: "room",
       title: "Ops room",
       focus: true,
     });
     const room = created.channel;
-    expect(room.chatId).toBe("room-ops");
+    expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
 
     const listed = await caller.message.globalList({ includeArchived: false });
     expect(listed.items.some((item) => item.chatId === room.chatId)).toBeTrue();
@@ -470,7 +469,6 @@ describe("Feature: app-server trpc procedures", () => {
     );
 
     const created = await caller.message.globalCreate({
-      chatId: "room-read-state",
       kind: "room",
       title: "Read state room",
       focus: false,
@@ -587,7 +585,6 @@ describe("Feature: app-server trpc procedures", () => {
     );
 
     const created = await superadminCaller.message.globalCreate({
-      chatId: "room-superadmin-send",
       kind: "room",
       title: "Superadmin send room",
       focus: false,
