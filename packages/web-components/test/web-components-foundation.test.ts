@@ -163,48 +163,58 @@ describe("Feature: web-components foundation", () => {
   test("Scenario: Given a help hint that opts into passive onboarding When it is dismissed and remounted Then passive auto-open happens only once", async () => {
     defineHelpHint();
 
-    const identity = {
-      helpId: `help-hint-passive-once-${crypto.randomUUID()}`,
-      textContext: "passive first visit behavior",
-    };
-
-    const mountHint = async () => {
-      const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
-        helpId: string;
-        textContext: string;
-        passiveOnFirstVisit: boolean;
-        updateComplete?: Promise<unknown>;
-        shadowRoot: ShadowRoot | null;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const identity = {
+        helpId: `help-hint-passive-once-${crypto.randomUUID()}`,
+        textContext: "passive first visit behavior",
       };
-      element.helpId = identity.helpId;
-      element.textContext = identity.textContext;
-      element.passiveOnFirstVisit = true;
-      document.body.append(element);
-      await element.updateComplete;
+
+      const mountHint = async () => {
+        const element = document.createElement(HELP_HINT_TAG) as HTMLElement & {
+          helpId: string;
+          textContext: string;
+          passiveOnFirstVisit: boolean;
+          updateComplete?: Promise<unknown>;
+          shadowRoot: ShadowRoot | null;
+        };
+        element.helpId = identity.helpId;
+        element.textContext = identity.textContext;
+        element.passiveOnFirstVisit = true;
+        document.body.append(element);
+        await element.updateComplete;
+        await Promise.resolve();
+        return element;
+      };
+
+      const firstMount = await mountHint();
+      await vi.waitFor(() => {
+        expect(firstMount.getAttribute("data-presentation")).toBe("passive-auto");
+        expect(firstMount.hasAttribute("open")).toBe(true);
+      });
+
+      firstMount.shadowRoot?.querySelector<HTMLButtonElement>(".trigger")?.click();
+      await firstMount.updateComplete;
       await Promise.resolve();
-      return element;
-    };
 
-    const firstMount = await mountHint();
-    await vi.waitFor(() => {
-      expect(firstMount.getAttribute("data-presentation")).toBe("passive-auto");
-      expect(firstMount.hasAttribute("open")).toBe(true);
-    });
+      expect(firstMount.getAttribute("data-presentation")).toBe("closed");
+      expect(firstMount.hasAttribute("open")).toBe(false);
 
-    firstMount.shadowRoot?.querySelector<HTMLButtonElement>(".trigger")?.click();
-    await firstMount.updateComplete;
-    await Promise.resolve();
+      firstMount.remove();
 
-    expect(firstMount.getAttribute("data-presentation")).toBe("closed");
-    expect(firstMount.hasAttribute("open")).toBe(false);
-
-    firstMount.remove();
-
-    const secondMount = await mountHint();
-    await vi.waitFor(() => {
-      expect(secondMount.getAttribute("data-presentation")).toBe("closed");
-      expect(secondMount.hasAttribute("open")).toBe(false);
-    });
+      const secondMount = await mountHint();
+      await vi.waitFor(() => {
+        expect(secondMount.getAttribute("data-presentation")).toBe("closed");
+        expect(secondMount.hasAttribute("open")).toBe(false);
+      });
+    } finally {
+      const warnings = warnSpy.mock.calls.filter(([message]) => {
+        const text = String(message);
+        return text.includes("change-in-update") || text.includes("scheduled an update");
+      });
+      warnSpy.mockRestore();
+      expect(warnings).toHaveLength(0);
+    }
   });
 
   test("Scenario: Given shared Lit atoms When they render their primary surfaces Then css-part slots and host factual state stay externally themeable", async () => {

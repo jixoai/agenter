@@ -158,6 +158,7 @@ export class HelpHintElement extends LitElement {
   };
 
   private frameHandle: number | null = null;
+  private popupStyleResetQueued = false;
   private unregisterRuntimeHandle: (() => void) | null = null;
   private readonly popupId = `help-hint-${crypto.randomUUID()}`;
 
@@ -210,12 +211,7 @@ export class HelpHintElement extends LitElement {
       void this.syncPersistence();
     }
     if (this.displayState.kind === "closed") {
-      if (
-        this.popupStyle.left !== HIDDEN_POPUP_STYLE.left ||
-        this.popupStyle.top !== HIDDEN_POPUP_STYLE.top
-      ) {
-        this.popupStyle = { ...HIDDEN_POPUP_STYLE };
-      }
+      this.scheduleHiddenPopupReset();
       return;
     }
     this.schedulePositioning();
@@ -285,6 +281,32 @@ export class HelpHintElement extends LitElement {
     this.frameHandle = window.requestAnimationFrame(() => {
       this.frameHandle = null;
       this.updatePosition();
+    });
+  }
+
+  private scheduleHiddenPopupReset(): void {
+    if (
+      this.popupStyle.left === HIDDEN_POPUP_STYLE.left &&
+      this.popupStyle.top === HIDDEN_POPUP_STYLE.top
+    ) {
+      return;
+    }
+    if (this.popupStyleResetQueued) {
+      return;
+    }
+    this.popupStyleResetQueued = true;
+    queueMicrotask(() => {
+      this.popupStyleResetQueued = false;
+      if (this.displayState.kind !== "closed") {
+        return;
+      }
+      if (
+        this.popupStyle.left === HIDDEN_POPUP_STYLE.left &&
+        this.popupStyle.top === HIDDEN_POPUP_STYLE.top
+      ) {
+        return;
+      }
+      this.popupStyle = { ...HIDDEN_POPUP_STYLE };
     });
   }
 
