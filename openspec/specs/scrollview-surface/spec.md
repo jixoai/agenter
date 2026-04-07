@@ -4,7 +4,7 @@
 TBD - created by archiving change codify-scrollview-law-and-svelte-shell-primitives. Update Purpose after archive.
 ## Requirements
 ### Requirement: Frontend feature surfaces SHALL delegate scroll ownership to ScrollView
-User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any scrolling surface, and feature code or shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities.
+User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any scrolling surface, and feature code or shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities. The durable Svelte `ScrollView` primitive SHALL be published from `@agenter/svelte-components`.
 
 #### Scenario: Vertical system transcript
 - **WHEN** a system transcript needs vertical scrolling
@@ -29,6 +29,11 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 - **THEN** each stretchable column uses one explicit `ScrollView` owner
 - **THEN** outer layout wrappers remain responsible only for sizing and placement
 
+#### Scenario: Shared Svelte package consumes ScrollView
+- **WHEN** a shared Svelte package needs a durable scroll owner
+- **THEN** it imports `ScrollView` from `@agenter/svelte-components`
+- **THEN** host packages do not need a product-local wrapper to recover the shared scroll law
+
 ### Requirement: ScrollView SHALL support static and virtual rendering
 The shared scrolling primitive SHALL support plain content scrolling and item virtualization through one durable component contract.
 
@@ -50,4 +55,17 @@ If raw overflow behavior remains necessary for implementation details, the excep
 #### Scenario: Static analysis review
 - **WHEN** new feature code introduces raw `overflow-*` scroll ownership
 - **THEN** verification flags it as a contract violation
+
+### Requirement: ScrollView virtual contracts SHALL remain aligned with the installed TanStack virtualizer types
+The shared `ScrollView` primitive SHALL derive its virtual-mode type surface from the installed `@tanstack/svelte-virtual` package instead of maintaining stale local type assumptions that can drift from the dependency.
+
+#### Scenario: Shared package typechecks after dependency evolution
+- **WHEN** the installed TanStack virtualizer package changes exported helper types or callback instance shapes
+- **THEN** `@agenter/svelte-components` still typechecks by deriving its public virtual-mode contract from the dependency's durable exported structures
+- **THEN** downstream Svelte consumers such as `@agenter/webui` do not fail typecheck because `ScrollView` shadowed an outdated callback or key type
+
+#### Scenario: Virtual rows render from non-null normalized data
+- **WHEN** `ScrollView` renders virtual items in Svelte templates
+- **THEN** the component normalizes nullable lookup results before template rendering
+- **THEN** the template iterates concrete row records instead of re-proving nullability at render sites
 
