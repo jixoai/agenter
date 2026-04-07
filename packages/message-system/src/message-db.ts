@@ -38,7 +38,7 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
-const MESSAGE_DB_SCHEMA_VERSION = 2;
+const MESSAGE_DB_SCHEMA_VERSION = 3;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>

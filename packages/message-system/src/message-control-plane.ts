@@ -350,7 +350,7 @@ export class MessageControlPlane {
   }
 
   createChannel(input: MessageCreateInput): MessageControlPlaneEntry {
-    if (!input.chatId.startsWith("room-") && !isPrincipalId(input.chatId)) {
+    if (!isPrincipalId(input.chatId)) {
       throw new Error(`invalid room id: ${input.chatId}`);
     }
     const initialUsers = normalizeCreateInitialUsers(input.initialUsers);

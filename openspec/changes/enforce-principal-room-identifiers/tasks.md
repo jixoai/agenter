@@ -1,10 +1,10 @@
 ## 1. Identity Law
 
-- [ ] 1.1 Add OpenSpec deltas for principal-only room identifiers across message control plane and session projection
+- [x] 1.1 Add OpenSpec deltas for principal-only room identifiers across message control plane and session projection
 
 ## 2. Platform Implementation
 
-- [ ] 2.1 Tighten `message-system` room creation to principal ids only and add breaking reset coverage for legacy room durability
+- [x] 2.1 Tighten `message-system` room creation to principal ids only and add breaking reset coverage for legacy room durability
 - [ ] 2.2 Persist `primaryRoomId` in session durability and bind it before session runtime start / session room reconstruction
 - [ ] 2.3 Inject async managed room-id allocation into `SessionRuntime.createMessageChannel()` and remove local `room-*` synthesis
 

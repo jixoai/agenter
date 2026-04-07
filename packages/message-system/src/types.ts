@@ -95,9 +95,9 @@ export interface MessagePayload {
 
 export interface MessageChannelRecord {
   /**
-   * Stable channel id inside message-system. For room channels we currently use
-   * room-flavored ids such as `room-*`, but the generic field stays `chatId`
-   * because it addresses the channel layer, not the room subtype label.
+   * Stable channel id inside message-system. Room channels use principal-backed
+   * `0x...` ids even though the generic field stays `chatId`, because it
+   * addresses the channel layer rather than a room-specific field name.
    */
   chatId: string;
   kind: MessageChannelKind;

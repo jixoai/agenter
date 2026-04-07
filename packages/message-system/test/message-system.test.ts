@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
+import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
 
 import { MessageControlPlane, type MessageTransportServerMessage } from "../src";
 
@@ -10,15 +12,17 @@ const createPlane = (): MessageControlPlane => {
   return new MessageControlPlane({ dbPath: join(root, ".message", "message.db") });
 };
 
+const createRoomId = (): PrincipalId => generatePrincipalKeyPair().principalId;
+
 const createRoom = (
   plane: MessageControlPlane,
   input: {
-    chatId?: string;
+    chatId?: PrincipalId;
     bootstrapActorId?: `auth:${string}` | `session:${string}` | `system:${string}`;
   } = {},
 ) =>
   plane.createChannel({
-    chatId: input.chatId ?? "room-kzf",
+    chatId: input.chatId ?? createRoomId(),
     kind: "room",
     owner: "jane",
     participants: [{ id: "session:jane" }, { id: "auth:kzf" }],
@@ -53,20 +57,21 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given room-only durability When rooms are created and listed for actors Then only room ids survive and same labels still get separate seats", async () => {
     const plane = createPlane();
     await plane.startTransport({ port: 0 });
-    const room = createRoom(plane, { chatId: "room-team" });
+    const roomId = createRoomId();
+    const room = createRoom(plane, { chatId: roomId });
 
-    expect(room.chatId).toBe("room-team");
+    expect(room.chatId).toBe(roomId);
     expect(room.kind).toBe("room");
     expect(room.accessRole).toBe("admin");
     expect(room.accessToken).toStartWith("msgtok_");
-    expect(room.transportUrl).toContain("/room/room-team?token=");
+    expect(room.transportUrl).toContain(`/room/${roomId}?token=`);
     expect(() =>
       plane.createChannel({
         chatId: "chat-legacy",
         kind: "room",
         bootstrapActorId: "auth:owner",
       }),
-    ).toThrow("invalid room id prefix: chat-legacy");
+    ).toThrow("invalid room id: chat-legacy");
 
     const seatA = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
@@ -95,7 +100,7 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given legacy participant ids When a room is created or updated Then only canonical actor-backed seats remain in durable truth", () => {
     const plane = createPlane();
     const created = plane.createChannel({
-      chatId: "room-legacy-participants",
+      chatId: createRoomId(),
       kind: "room",
       owner: "jane",
       participants: [
@@ -126,7 +131,7 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given initial users on room create When the channel is created Then grants and focus materialize immediately without downgrading the bootstrap admin", () => {
     const plane = createPlane();
     const room = plane.createChannel({
-      chatId: "room-initial-users",
+      chatId: createRoomId(),
       kind: "room",
       owner: "ops",
       bootstrapActorId: "auth:owner",
@@ -182,22 +187,23 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given long room history When reverse paging runs Then the oldest cursor advances correctly", () => {
     const plane = createPlane();
-    createRoom(plane, { chatId: "room-history" });
+    const roomId = createRoomId();
+    createRoom(plane, { chatId: roomId });
     for (let index = 0; index < 5; index += 1) {
       plane.send({
-        chatId: "room-history",
+        chatId: roomId,
         from: `user:${index}`,
         content: `message-${index}`,
         createdAt: 1000 + index,
       });
     }
 
-    const firstPage = plane.queryMessages({ chatId: "room-history", limit: 2 });
+    const firstPage = plane.queryMessages({ chatId: roomId, limit: 2 });
     expect(firstPage.items.map((item) => item.content)).toEqual(["message-3", "message-4"]);
     expect(firstPage.hasMoreBefore).toBe(true);
 
     const secondPage = plane.queryMessages({
-      chatId: "room-history",
+      chatId: roomId,
       limit: 2,
       before: firstPage.nextBefore,
     });
@@ -206,7 +212,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given readonly member and admin room grants When authorized APIs run Then actor-bound access follows the room matrix", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-lunch" });
+    const room = createRoom(plane, { chatId: createRoomId() });
 
     const readonly = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
@@ -231,7 +237,7 @@ describe("Feature: message-chat-control-plane", () => {
         label: "bad",
         participantId: "user:legacy-seat",
       }),
-    ).toThrow("room grant participantId must be an auth:/session:/system: actor id");
+    ).toThrow("room grant participantId must be a principal id or auth:/session:/system: actor id");
 
     const readonlySnapshot = plane.snapshotAuthorized({
       chatId: room.chatId,
@@ -350,7 +356,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given same-label room seats When authorized sends persist Then durable senderActorId survives snapshot and paging", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-durable-sender" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const seatA = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -400,7 +406,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given a room with grants transcript and read state When it is dissolved Then the room and its dependent facts disappear together", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-dissolve" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const relay = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -441,7 +447,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given a queued room message When it is edited before attention reads it Then the same messageId stays visible in transcript order until it is marked loaded", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-pending" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const member = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -494,7 +500,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given an ordered admin-group When presence changes Then one current admin owns pending room work and higher priority candidates can preempt", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-admins" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const alice = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -558,7 +564,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given multiple room seats When different actors mark the latest visible message Then aggregate read progress and per-seat timestamps stay actor-scoped", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-read-progress" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -651,7 +657,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given an unread seat with invalid credentials When room collaboration state is projected Then that seat stays visible and flagged instead of disappearing", () => {
     const plane = createPlane();
-    const room = createRoom(plane, { chatId: "room-read-invalid" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -704,7 +710,7 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given revoked or malformed room credentials When room APIs or transport validate them Then callers receive explicit credential-invalid and superadmin can still recover the room", async () => {
     const plane = createPlane();
     await plane.startTransport({ port: 0 });
-    const room = createRoom(plane, { chatId: "room-transport" });
+    const room = createRoom(plane, { chatId: createRoomId() });
     const readonly = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -779,5 +785,41 @@ describe("Feature: message-chat-control-plane", () => {
 
     authorizedSocket.close();
     plane.stopTransport();
+  });
+
+  test("Scenario: Given schema-2 legacy room durability When the control plane reopens Then the breaking reset clears legacy room rows", () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-message-system-legacy-reset-"));
+    const dbPath = join(root, ".message", "message.db");
+    mkdirSync(join(root, ".message"), { recursive: true });
+    const db = new Database(dbPath, { create: true, strict: true });
+    const now = Date.now();
+    db.exec(`
+      create table chat_channel (
+        chat_id text primary key,
+        kind text not null,
+        title text not null,
+        owner text not null,
+        context_id text,
+        participants_json text not null,
+        metadata_json text,
+        created_at integer not null,
+        updated_at integer not null,
+        archived_at integer,
+        archived_by text
+      ) strict;
+      pragma user_version = 2;
+    `);
+    db
+      .query(
+        `insert into chat_channel (
+          chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null)`,
+      )
+      .run("room-legacy", "room", "Legacy", "jane", null, "[]", "{}", now, now);
+    db.close();
+
+    const plane = new MessageControlPlane({ dbPath });
+    expect(plane.listChannels()).toHaveLength(0);
+    plane.close();
   });
 });
