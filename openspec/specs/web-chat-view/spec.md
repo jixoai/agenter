@@ -81,6 +81,11 @@ The shared chat package SHALL support host-provided canonical avatar/icon resolu
 - **THEN** the inline-end read indicator stays compact by default
 - **THEN** opening that indicator reveals the canonical `Read` and `Unread` actor lists for that specific message without adding room-header aggregate chrome
 
+#### Scenario: Message-local read disclosure keeps a readable compact width
+- **WHEN** the operator opens a message-local read disclosure on desktop or compact viewport
+- **THEN** the disclosure renders as a readable card instead of collapsing to content width
+- **THEN** compact layouts may collapse to one column, but they still keep the disclosure fully legible within the viewport
+
 #### Scenario: Viewer-owned layout keeps the read trigger on the bubble edge
 - **WHEN** the transcript renders a viewer-owned room message with read-progress metadata
 - **THEN** the read-progress trigger stays adjacent to that bubble's inline-end edge
