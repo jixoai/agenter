@@ -24,3 +24,13 @@ App-server SHALL rebuild session-facing room histories by joining session facts 
 - **WHEN** a session is no longer running but its cycle facts reference room messages
 - **THEN** app-server can still reconstruct the relevant session-facing timeline by loading those room message refs from the global message store
 - **THEN** the read path does not require the runtime to be resumed
+
+#### Scenario: Session primary room id is persisted instead of derived from session id
+- **WHEN** app-server creates or reuses a session
+- **THEN** it persists a managed principal-backed `primaryRoomId` in session durability
+- **AND** later runtime starts and stopped-session read paths reuse that stored room id instead of deriving `room-main-${sessionId}`
+
+#### Scenario: Runtime-created rooms use managed room principal allocation
+- **WHEN** a running session creates an additional room through runtime tooling
+- **THEN** app-server allocates a managed room principal for that room id
+- **AND** session runtime does not synthesize durable `room-*` ids locally
