@@ -57,7 +57,8 @@
       {/snippet}
     </Popover.Trigger>
     <Popover.Content
-      class="message-read-disclosure w-[min(17rem,calc(100vw-1rem))] p-2.5"
+      class="message-read-disclosure p-2.5"
+      style="--popover-inline-size: 17rem; --popover-max-inline-size: calc(100vw - 1rem);"
       data-testid="message-read-disclosure"
     >
       <div class:single-column={!showUnreadColumn} class="message-read-disclosure-grid">
