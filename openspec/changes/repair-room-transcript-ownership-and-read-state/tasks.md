@@ -8,6 +8,7 @@
 - [x] 2.1 Carry `sendAsActorId` from the Messages room route through client-sdk and tRPC into `AppKernel.sendGlobalRoomMessage(...)`
 - [x] 2.2 Validate sender identity against room credential usage and persist stable `senderActorId`
 - [x] 2.3 Repair `@agenter/web-chat-view` message rows to use one bubble surface, a real `ContextMenu`, and CodeMirror-based message rendering
+- [ ] 2.4 Keep the shared read-progress affordance at the message bubble inline-end for both participant and viewer-owned rows
 
 ## 3. Message Read-State Breaking Upgrade
 
@@ -20,3 +21,4 @@
 - [x] 4.1 Update targeted unit/integration tests for sender identity and read-state durability
 - [x] 4.2 Run focused typecheck/tests for `message-system`, `app-server`, `web-chat-view`, and `webui`
 - [x] 4.3 Verify in the browser that an idle Room view does not repeatedly emit `/trpc/message.globalMarkRead` for an already-read latest visible message
+- [ ] 4.4 Verify in the browser that viewer-owned Room messages keep the read-progress trigger on the bubble inline-end

@@ -13,6 +13,7 @@
 - Message bubble chrome must exist once, at the row level.
 - Markdown rendering for transcript messages returns to a CodeMirror-based preview component so message rendering and composer editing share the same language/runtime family.
 - The transcript renderer remains orthogonal: host code supplies actor presentation and read metadata; row rendering owns only local presentation and actions.
+- Read-progress affordances are part of the row primitive, so their inline placement must follow bubble ownership. A viewer-owned row cannot reverse the entire row body and accidentally move the indicator to the wrong side of the bubble.
 
 ### 3. Read-state belongs to messages, not mutable room membership
 

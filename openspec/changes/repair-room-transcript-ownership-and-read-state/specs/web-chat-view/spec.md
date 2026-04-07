@@ -17,3 +17,8 @@ The shared chat package SHALL render room transcript rows with a single message 
 - **WHEN** the transcript renders markdown-rich room content
 - **THEN** the body uses the shared CodeMirror-based markdown preview renderer
 - **THEN** the message row does not wrap that body in a second nested bubble surface
+
+#### Scenario: Read-progress trigger stays at the message inline-end
+- **WHEN** the transcript renders a room message with read-progress metadata
+- **THEN** the shared row keeps the trigger adjacent to the bubble inline-end for that message
+- **THEN** reversing viewer-owned layout does not move the trigger to the opposite side of the bubble
