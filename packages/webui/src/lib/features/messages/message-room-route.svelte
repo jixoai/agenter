@@ -19,8 +19,11 @@
 	import MessageSystemSurface from './message-system-surface.svelte';
 	import {
 		maybeStartRoomReadAck,
+		resolveRoomReadAckKey,
+		resolveRoomReadAckServerFloor,
 		settleRoomReadAckFailure,
 		settleRoomReadAckSuccess,
+		syncRoomReadAckState,
 		type RoomReadAckState,
 	} from './room-read-ack';
 
@@ -510,7 +513,7 @@
 		const accessToken =
 			viewerSeat?.accessToken ??
 			(viewerActorId && room?.participantId === viewerActorId ? room.accessToken : null);
-		if (!room || !accessToken) {
+		if (!room || !accessToken || !viewerActorId) {
 			return;
 		}
 		if (!messageId) {
@@ -520,8 +523,21 @@
 		if (!targetRowId) {
 			return;
 		}
-		const markKey = `${room.chatId}:${accessToken}`;
-		const nextAckState = maybeStartRoomReadAck(latestMarkedReadBySeat[markKey], targetRowId);
+		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
+		const currentAckState = syncRoomReadAckState(
+			latestMarkedReadBySeat[markKey],
+			resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId),
+		);
+		if (
+			currentAckState.ackedRowId !== (latestMarkedReadBySeat[markKey]?.ackedRowId ?? 0) ||
+			currentAckState.pendingRowId !== (latestMarkedReadBySeat[markKey]?.pendingRowId ?? null)
+		) {
+			latestMarkedReadBySeat = {
+				...latestMarkedReadBySeat,
+				[markKey]: currentAckState,
+			};
+		}
+		const nextAckState = maybeStartRoomReadAck(currentAckState, targetRowId);
 		if (!nextAckState) {
 			return;
 		}

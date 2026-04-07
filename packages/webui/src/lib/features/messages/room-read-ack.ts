@@ -3,9 +3,43 @@ export interface RoomReadAckState {
   pendingRowId: number | null;
 }
 
+export interface RoomReadAckMessageLike {
+  rowId: number;
+  readActorIds?: readonly string[];
+}
+
 export const EMPTY_ROOM_READ_ACK_STATE: RoomReadAckState = {
   ackedRowId: 0,
   pendingRowId: null,
+};
+
+export const resolveRoomReadAckKey = (chatId: string, actorId: string): string => `${chatId}:${actorId}`;
+
+export const resolveRoomReadAckServerFloor = (
+  messages: readonly RoomReadAckMessageLike[],
+  actorId: string,
+): number => {
+  let latestReadRowId = 0;
+  for (const message of messages) {
+    if (!message.readActorIds?.includes(actorId)) {
+      continue;
+    }
+    latestReadRowId = Math.max(latestReadRowId, message.rowId);
+  }
+  return latestReadRowId;
+};
+
+export const syncRoomReadAckState = (
+  state: RoomReadAckState | undefined,
+  serverAckedRowId: number,
+): RoomReadAckState => {
+  const current = state ?? EMPTY_ROOM_READ_ACK_STATE;
+  const ackedRowId = Math.max(current.ackedRowId, serverAckedRowId);
+  return {
+    ackedRowId,
+    pendingRowId:
+      current.pendingRowId !== null && current.pendingRowId > ackedRowId ? current.pendingRowId : null,
+  };
 };
 
 export const maybeStartRoomReadAck = (

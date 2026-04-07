@@ -3,8 +3,11 @@ import { describe, expect, test } from "vitest";
 import {
   EMPTY_ROOM_READ_ACK_STATE,
   maybeStartRoomReadAck,
+  resolveRoomReadAckKey,
+  resolveRoomReadAckServerFloor,
   settleRoomReadAckFailure,
   settleRoomReadAckSuccess,
+  syncRoomReadAckState,
   type RoomReadAckState,
 } from "./room-read-ack";
 
@@ -50,6 +53,38 @@ describe("Feature: room read acknowledgement remains monotonic", () => {
       ),
     ).toEqual({
       ackedRowId: 6,
+      pendingRowId: null,
+    });
+  });
+
+  test("Scenario: Given a room and viewer actor When creating the read-ack key Then acknowledgement remains actor-scoped instead of token-scoped", () => {
+    expect(resolveRoomReadAckKey("room-1", "session:jane")).toBe("room-1:session:jane");
+  });
+
+  test("Scenario: Given durable read arrays When resolving the server floor Then the newest already-read row becomes the acknowledgement floor", () => {
+    expect(
+      resolveRoomReadAckServerFloor(
+        [
+          { rowId: 2, readActorIds: ["session:jane"] },
+          { rowId: 5, readActorIds: ["session:jj"] },
+          { rowId: 7, readActorIds: ["session:jane", "session:jj"] },
+        ],
+        "session:jane",
+      ),
+    ).toBe(7);
+  });
+
+  test("Scenario: Given a pending local ack below the durable server floor When syncing state Then the already-read floor wins and stale pending work clears", () => {
+    expect(
+      syncRoomReadAckState(
+        {
+          ackedRowId: 0,
+          pendingRowId: 4,
+        },
+        7,
+      ),
+    ).toEqual({
+      ackedRowId: 7,
       pendingRowId: null,
     });
   });

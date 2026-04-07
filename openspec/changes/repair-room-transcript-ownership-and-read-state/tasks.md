@@ -13,10 +13,10 @@
 
 - [x] 3.1 Replace `chat_read_state` durability with per-message `readActorIds` / `unreadActorIds` arrays in `message-system`
 - [x] 3.2 Update room projections and webui read indicators to resolve from per-message arrays instead of seat cursors
-- [ ] 3.3 Make latest-visible read acknowledgement actor-scoped and merge it with durable message read floors before emitting `globalMarkRead`
+- [x] 3.3 Make latest-visible read acknowledgement actor-scoped and merge it with durable message read floors before emitting `globalMarkRead`
 
 ## 4. Verification
 
 - [x] 4.1 Update targeted unit/integration tests for sender identity and read-state durability
 - [x] 4.2 Run focused typecheck/tests for `message-system`, `app-server`, `web-chat-view`, and `webui`
-- [ ] 4.3 Verify in the browser that an idle Room view does not repeatedly emit `/trpc/message.globalMarkRead` for an already-read latest visible message
+- [x] 4.3 Verify in the browser that an idle Room view does not repeatedly emit `/trpc/message.globalMarkRead` for an already-read latest visible message
