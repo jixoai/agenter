@@ -23,6 +23,13 @@
 - New room users affect only future messages, because older messages already froze their collaboration set.
 - This replaces cursor-derived historical projection with message-local durable truth.
 
+### 3.1 Latest-visible ack must be actor-scoped and idempotent
+
+- The WebUI still needs a local "already acked / currently pending" floor so scroll and observer churn do not issue duplicate mark-read mutations.
+- That floor belongs to the viewer actor, not to whichever access token source happened to resolve first.
+- The route must merge its transient floor with the durable floor already encoded in message `readActorIds`; if the visible message is already read for the current actor, no mutation should be emitted.
+- This keeps repeated hydration, grant refresh, or token-source swaps from re-sending `/trpc/message.globalMarkRead` for the same actor and row.
+
 ### 4. Breaking migration is the correct path
 
 - The current `chat_read_state` table encodes a different model.
@@ -34,3 +41,4 @@
 - message-system and app-server integration coverage for validated `sendAsActorId` and per-message read arrays
 - web-chat-view rendering tests for single-surface rows, standard context menu behavior, and CodeMirror transcript rendering
 - targeted webui typecheck for Room route assembly
+- browser verification that idle Room view no longer repeats `message.globalMarkRead` for an already-read latest visible message

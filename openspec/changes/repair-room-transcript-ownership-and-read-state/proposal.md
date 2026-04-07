@@ -13,6 +13,7 @@ The user has explicitly chosen the breaking-path fix: sender identity must be ex
 - Add explicit room `sendAsActorId` semantics from the Messages route through tRPC to the control plane, and validate that the chosen actor matches the credential being used.
 - Repair `@agenter/web-chat-view` message rows so viewer-owned messages align by durable sender identity, use one visual bubble surface, use a real `ContextMenu` primitive, and render markdown through a CodeMirror-based preview component.
 - Replace room read-state durability from room-seat cursor rows to per-message `readActorIds` / `unreadActorIds` arrays, with later reads moving actor ids between the two arrays instead of recalculating history from current membership.
+- Stabilize room latest-visible acknowledgement so the WebUI tracks read floors by actor identity and durable message arrays, avoiding duplicate `/trpc/message.globalMarkRead` mutations when credentials or room projections refresh.
 - **BREAKING** `message-system` may rebuild or migrate its database without backward compatibility for the old `chat_read_state` table.
 
 ## Capabilities

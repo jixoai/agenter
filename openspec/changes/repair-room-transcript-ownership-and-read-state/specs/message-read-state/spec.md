@@ -18,3 +18,9 @@ Room read updates SHALL move actor ids from `unreadActorIds` to `readActorIds` o
 - **WHEN** a room user reads up to message `m3`
 - **THEN** that user's actor id moves from unread to read on `m3` and earlier visible messages
 - **THEN** later room membership changes do not alter the already-frozen arrays on those messages
+
+#### Scenario: Latest-visible acknowledgement stays idempotent across credential refresh
+- **WHEN** the Room route rehydrates or swaps between equivalent credentials for the same viewer actor
+- **AND** the current latest visible message already contains that actor in `readActorIds`
+- **THEN** the WebUI does not emit another `globalMarkRead` mutation for the same actor and message
+- **THEN** local acknowledgement tracking stays keyed by actor identity and durable message truth rather than token churn
