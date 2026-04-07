@@ -11,6 +11,7 @@
 	import { tick, untrack, type ComponentProps } from 'svelte';
 
 	import MessageRoomManageDialog from '$lib/features/messages/message-room-manage-dialog.svelte';
+	import { resolveSeatSubtitleForTranscript } from '$lib/features/messages/message-actor-presentation';
 	import RoomAssetsPane from '$lib/features/messages/room-assets-pane.svelte';
 	import RoomMessageSearchDialog from '$lib/features/messages/room-message-search-dialog.svelte';
 	import RoomPageToolbarContent from '$lib/features/messages/room-page-toolbar-content.svelte';
@@ -195,7 +196,7 @@
 			return {
 				actorId: seat.actorId,
 				label: seat.label,
-				subtitle: seat.subtitle ?? `${seat.role}${seat.currentAdmin ? ' · current admin' : ''}`,
+				subtitle: resolveSeatSubtitleForTranscript(seat, duplicateSeatLabels),
 				iconUrl: seat.iconUrl ?? fallbackIconUrl,
 				kind: seat.actorKind === 'auth' ? 'auth' : seat.actorKind === 'session' ? 'session' : 'system',
 			};
@@ -237,7 +238,7 @@
 						return {
 							actorId,
 							label: seat.label,
-							subtitle: seat.subtitle ?? `${seat.role}${seat.currentAdmin ? ' · current admin' : ''}`,
+							subtitle: resolveSeatSubtitleForTranscript(seat, duplicateSeatLabels),
 							iconUrl: seat.iconUrl ?? null,
 						} satisfies WebChatMessageReadActor;
 					}
