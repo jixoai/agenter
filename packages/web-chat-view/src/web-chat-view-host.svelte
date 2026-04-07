@@ -8,6 +8,7 @@
     initialMessages = [],
     initialSnapshotResolved = false,
     disabled = false,
+    showComposerWhenDisabled = true,
     class: className = "",
     showHeader = true,
     emptyTitle = "No messages yet",
@@ -33,6 +34,7 @@
   {initialMessages}
   {initialSnapshotResolved}
   {disabled}
+  {showComposerWhenDisabled}
   class={className}
   {showHeader}
   {emptyTitle}

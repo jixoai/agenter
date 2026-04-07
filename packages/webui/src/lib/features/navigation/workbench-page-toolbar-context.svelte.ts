@@ -1,19 +1,7 @@
 import { getContext, setContext } from 'svelte';
-import type { Snippet } from 'svelte';
 
 class WorkbenchPageToolbarRegistry {
-	content = $state<Snippet | null>(null);
-
-	set(content: Snippet | null): void {
-		this.content = content;
-	}
-
-	clear(content?: Snippet | null): void {
-		if (content && this.content !== content) {
-			return;
-		}
-		this.content = null;
-	}
+	host = $state.raw<HTMLElement | null>(null);
 }
 
 const WORKBENCH_PAGE_TOOLBAR_CONTEXT_KEY = Symbol('agenter-workbench-page-toolbar');

@@ -5,7 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
-import { defineConfig } from 'vite';
+import type { InlineConfig } from 'vitest/node';
+import type { UserConfig } from 'vite';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 const resolveTrpcProxyTarget = (): string => {
@@ -24,7 +25,7 @@ const resolveTrpcProxyTarget = (): string => {
 };
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
-export default defineConfig({
+const config = {
   plugins: [tailwindcss(), sveltekit()],
   resolve: {
     dedupe: [
@@ -99,4 +100,6 @@ export default defineConfig({
       }
     }]
   }
-});
+} satisfies UserConfig & { test: InlineConfig };
+
+export default config;

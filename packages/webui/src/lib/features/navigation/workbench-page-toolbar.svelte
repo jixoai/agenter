@@ -8,15 +8,32 @@
 	} = $props();
 
 	const registry = getWorkbenchPageToolbarRegistry();
+	let host = $state<HTMLElement | null>(null);
+
+	const portal = (node: HTMLElement, target: HTMLElement | null) => {
+		if (target) {
+			target.append(node);
+		}
+
+		return {
+			update(nextTarget: HTMLElement | null) {
+				if (nextTarget) {
+					nextTarget.append(node);
+				}
+			},
+			destroy() {
+				node.remove();
+			},
+		};
+	};
 
 	$effect(() => {
-		if (!registry) {
-			return;
-		}
-		const content = children ?? null;
-		registry.set(content);
-		return () => {
-			registry.clear(content);
-		};
+		host = registry?.host ?? null;
 	});
 </script>
+
+{#if host && children}
+	<div use:portal={host} class="workbench-page-toolbar-portal">
+		{@render children()}
+	</div>
+{/if}

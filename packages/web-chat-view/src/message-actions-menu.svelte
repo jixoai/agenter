@@ -1,8 +1,9 @@
 <script lang="ts">
   import MoreHorizontal from "@lucide/svelte/icons/more-horizontal";
 
-  import { Button } from "./ui/button";
+  import { buttonVariants } from "./ui/button";
   import * as DropdownMenu from "./ui/dropdown-menu";
+  import { cn } from "./ui/utils";
 
   export interface ResolvedMessageAction {
     id: string;
@@ -35,17 +36,18 @@
 <DropdownMenu.Root bind:open>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <Button
+      <button
         {...props}
         type="button"
-        size="icon-sm"
-        variant="ghost"
-        class="rounded-full text-slate-400 hover:text-slate-900 data-[state=open]:bg-slate-100 data-[state=open]:text-slate-900"
+        class={cn(
+          buttonVariants({ size: "icon-sm", variant: "ghost" }),
+          "rounded-full text-slate-400 hover:text-slate-900 data-[state=open]:bg-slate-100 data-[state=open]:text-slate-900",
+        )}
         aria-label={title}
         title={title}
       >
         <MoreHorizontal class="size-4" />
-      </Button>
+      </button>
     {/snippet}
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="end">

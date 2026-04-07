@@ -28,13 +28,11 @@
 	} = $props();
 
 	const pageToolbarRegistry = setWorkbenchPageToolbarRegistry();
-	const effectiveToolbar = $derived(pageToolbarRegistry.content ?? toolbar ?? null);
 </script>
 
 <div
 	class={cn('workbench-window grid h-full', className)}
 	data-workbench-window
-	data-has-toolbar={effectiveToolbar ? 'true' : 'false'}
 >
 	<WorkbenchTabStrip
 		{ariaLabel}
@@ -45,14 +43,16 @@
 		fusedBelow
 	/>
 
-	{#if effectiveToolbar}
-		<section
-			class="workbench-page-toolbar border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
-			data-workbench-page-toolbar
-		>
-			{@render effectiveToolbar()}
-		</section>
-	{/if}
+	<section
+		class="workbench-page-toolbar border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
+		data-workbench-page-toolbar
+		data-has-local-toolbar={toolbar ? 'true' : 'false'}
+	>
+		{#if toolbar}
+			{@render toolbar()}
+		{/if}
+		<div bind:this={pageToolbarRegistry.host} class="workbench-page-toolbar-host"></div>
+	</section>
 
 	<ClipSurface
 		class={cn(
@@ -62,7 +62,9 @@
 		data-workbench-window-body
 	>
 		<div class="workbench-window-content h-full" data-workbench-window-content>
-			{@render children?.()}
+			{#key value}
+				{@render children?.()}
+			{/key}
 		</div>
 	</ClipSurface>
 </div>
@@ -71,10 +73,6 @@
 	.workbench-window {
 		min-block-size: 0;
 		min-inline-size: 0;
-		grid-template-rows: auto minmax(0, 1fr);
-	}
-
-	.workbench-window[data-has-toolbar='true'] {
 		grid-template-rows: auto auto minmax(0, 1fr);
 	}
 
@@ -86,7 +84,20 @@
 	}
 
 	.workbench-page-toolbar {
-		block-size: 3rem;
+		block-size: 48px;
+		container-type: inline-size;
+		container-name: workbench-page-toolbar;
+		overflow: clip;
+	}
+
+	.workbench-page-toolbar[data-has-local-toolbar='false']:has(.workbench-page-toolbar-host:empty) {
+		display: none;
+	}
+
+	.workbench-page-toolbar-host {
+		display: block;
+		block-size: 100%;
+		min-inline-size: 0;
 	}
 
 	.workbench-window-body,

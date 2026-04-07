@@ -572,16 +572,6 @@
 	};
 
 	$effect(() => {
-		if (!controller.runtimeState.globalRooms.loaded) {
-			return;
-		}
-		if (selectedRoom || controller.runtimeState.globalRooms.loading) {
-			return;
-		}
-		void navigateToFallbackRoom(roomId);
-	});
-
-	$effect(() => {
 		const room = selectedRoomProjection;
 		const chatId = room?.chatId;
 		if (!chatId) {

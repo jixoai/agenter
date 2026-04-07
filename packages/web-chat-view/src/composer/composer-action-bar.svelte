@@ -5,7 +5,8 @@
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import SendHorizontal from "@lucide/svelte/icons/send-horizontal";
 
-  import { Button } from "../ui/button";
+  import { buttonVariants } from "../ui/button";
+  import { cn } from "../ui/utils";
   import type { ResolvedWebChatComposerCapabilities } from "./composer-contract";
 
   let {
@@ -29,57 +30,54 @@
 
 <div class="composer-actions" data-composer-row="actions" part="composer-actions">
   <div class="composer-actions-leading">
-    {#if capabilities.attachmentEnabled}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        class="composer-action-chip"
-        disabled={disabled || submitting}
-        title="Attach files"
-        onclick={onAttach}
-      >
-        {#if capabilities.imageEnabled}
-          <ImagePlus class="size-4" />
-        {:else}
-          <Paperclip class="size-4" />
-        {/if}
-        <span class="composer-action-label">Attach</span>
-      </Button>
-    {/if}
+    <button
+      type="button"
+      class={cn(buttonVariants({ size: "sm", variant: "outline" }), "composer-action-chip")}
+      disabled={disabled || submitting}
+      title="Attach files"
+      hidden={!capabilities.attachmentEnabled}
+      aria-hidden={!capabilities.attachmentEnabled}
+      onclick={onAttach}
+    >
+      <span class:hidden={!capabilities.imageEnabled}>
+        <ImagePlus class="size-4" />
+      </span>
+      <span class:hidden={capabilities.imageEnabled}>
+        <Paperclip class="size-4" />
+      </span>
+      <span class="composer-action-label">Attach</span>
+    </button>
 
-    {#if capabilities.screenshotEnabled}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        class="composer-action-chip"
-        disabled={disabled || submitting}
-        title="Capture screenshot"
-        onclick={onCaptureScreenshot}
-      >
-        <MonitorUp class="size-4" />
-        <span class="composer-action-label">Screenshot</span>
-      </Button>
-    {/if}
+    <button
+      type="button"
+      class={cn(buttonVariants({ size: "sm", variant: "outline" }), "composer-action-chip")}
+      disabled={disabled || submitting}
+      title="Capture screenshot"
+      hidden={!capabilities.screenshotEnabled}
+      aria-hidden={!capabilities.screenshotEnabled}
+      onclick={onCaptureScreenshot}
+    >
+      <MonitorUp class="size-4" />
+      <span class="composer-action-label">Screenshot</span>
+    </button>
   </div>
 
-  <Button
+  <button
     type="button"
-    size="sm"
-    class="composer-send"
+    class={cn(buttonVariants({ size: "sm" }), "composer-send")}
     disabled={!canSubmit}
     title={capabilities.submitTitle ?? capabilities.submitLabel}
     part="composer-send"
     onclick={onSubmit}
   >
-    {#if submitting}
+    <span class:hidden={!submitting}>
       <LoaderCircle class="size-4 animate-spin" />
-    {:else}
+    </span>
+    <span class:hidden={submitting}>
       <SendHorizontal class="size-4" />
-    {/if}
+    </span>
     <span>{capabilities.submitLabel}</span>
-  </Button>
+  </button>
 </div>
 
 <style>

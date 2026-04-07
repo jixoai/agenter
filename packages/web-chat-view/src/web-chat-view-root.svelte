@@ -8,7 +8,7 @@
   import { onMount, untrack } from "svelte";
 
   import ChatAvatar from "./chat-avatar.svelte";
-  import DefaultWebChatComposer from "./default-composer.svelte";
+  import DefaultComposer from "./default-composer.svelte";
   import MessageRow from "./message-row.svelte";
   import { Badge } from "./ui/badge";
   import * as Card from "./ui/card";
@@ -42,6 +42,7 @@
     initialMessages = [],
     initialSnapshotResolved = false,
     disabled = false,
+    showComposerWhenDisabled = true,
     class: className = "",
     showHeader = true,
     emptyTitle = "No messages yet",
@@ -723,9 +724,9 @@
           </div>
         </Scaffold.Body>
 
-        {#if composerProps}
+        {#if composerProps && (showComposerWhenDisabled || !disabled)}
           <Scaffold.Footer class={`chat-footer border-t ${showHeader ? "" : "chat-footer-embedded"}`}>
-            <DefaultWebChatComposer {...composerProps} />
+            <DefaultComposer {...composerProps} />
           </Scaffold.Footer>
         {/if}
       </Scaffold.Root>

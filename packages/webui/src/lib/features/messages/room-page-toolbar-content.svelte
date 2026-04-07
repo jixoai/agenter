@@ -4,9 +4,9 @@
   import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 
   import ProfileAvatar from "$lib/components/profile-avatar.svelte";
-  import { Button } from "$lib/components/ui/button/index.js";
+  import { buttonVariants } from "$lib/components/ui/button/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
-  import type { WorkbenchToolbarRenderState } from "$lib/features/navigation/workbench-toolbar.types";
+  import { cn } from "$lib/utils.js";
 
   import type { MessageSystemRoomSeatState } from "./message-system-surface.types";
 
@@ -17,7 +17,6 @@
   };
 
   let {
-    toolbarState,
     selectedViewer,
     selectedViewerActorId,
     viewerItems,
@@ -31,7 +30,6 @@
     onAddUserClick,
     onManageClick,
   }: {
-    toolbarState: WorkbenchToolbarRenderState;
     selectedViewer: MessageSystemRoomSeatState | null;
     selectedViewerActorId: string | null;
     viewerItems: ViewerOption[];
@@ -51,7 +49,6 @@
 
 <div
   class="room-page-toolbar"
-  data-room-toolbar-breakpoint={toolbarState.breakpoint}
   data-room-toolbar-mode={activeMode}
 >
   <div class="room-page-toolbar__avatar">
@@ -93,37 +90,34 @@
   </div>
 
   <div class="room-page-toolbar__actions" aria-label="Room actions">
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      class="room-page-toolbar__action"
+    <button
+      type="button"
+      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
       aria-label="Search messages"
       title="Search messages"
       disabled={!canSearch}
       onclick={onSearchClick}
     >
       <SearchIcon class="size-4" />
-    </Button>
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      class="room-page-toolbar__action"
+    </button>
+    <button
+      type="button"
+      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
       aria-label="Add user"
       title="Add user"
       onclick={onAddUserClick}
     >
       <UserPlusIcon class="size-4" />
-    </Button>
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      class="room-page-toolbar__action"
+    </button>
+    <button
+      type="button"
+      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
       aria-label="Manage room"
       title="Manage room"
       onclick={onManageClick}
     >
       <Settings2Icon class="size-4" />
-    </Button>
+    </button>
   </div>
 
   <div class="room-page-toolbar__modes" role="tablist" aria-label="Room content mode">

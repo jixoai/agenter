@@ -39,6 +39,8 @@
 </script>
 
 <script lang="ts">
+  import type { Snippet } from "svelte";
+
   let {
     class: className,
     variant = "default",
@@ -49,7 +51,13 @@
     disabled,
     children,
     ...restProps
-  }: ButtonProps = $props();
+  }: ButtonProps & { children?: Snippet | unknown } = $props();
+
+  const resolveChildren = (): Snippet | null => {
+    return typeof children === "function" ? children : null;
+  };
+
+  const childSnippet = $derived.by(resolveChildren);
 </script>
 
 {#if href}
@@ -63,7 +71,7 @@
     tabindex={disabled ? -1 : undefined}
     {...restProps}
   >
-    {@render children?.()}
+    {@render childSnippet?.()}
   </a>
 {:else}
   <button
@@ -74,6 +82,6 @@
     {disabled}
     {...restProps}
   >
-    {@render children?.()}
+    {@render childSnippet?.()}
   </button>
 {/if}

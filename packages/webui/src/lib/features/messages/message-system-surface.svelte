@@ -7,7 +7,7 @@
 		type WebChatMessageReadProgress,
 		type WebChatMessageRenderInput,
 	} from '@agenter/web-chat-view';
-	import { tick, untrack } from 'svelte';
+	import { tick, untrack, type ComponentProps } from 'svelte';
 
 	import MessageRoomManageDialog from '$lib/features/messages/message-room-manage-dialog.svelte';
 	import RoomAssetsPane from '$lib/features/messages/room-assets-pane.svelte';
@@ -15,8 +15,6 @@
 	import RoomPageToolbarContent from '$lib/features/messages/room-page-toolbar-content.svelte';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
-	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
-	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 
 	import type {
 		MessageSystemManageSection,
@@ -139,6 +137,31 @@
 	const searchMatchCount = $derived(searchMatches.length);
 	const messageSearchSignature = $derived(
 		initialMessages.map((message) => `${message.messageId}:${message.updatedAt ?? message.createdAt}`).join('|'),
+	);
+	const roomToolbarProps = $derived.by(
+		() =>
+			({
+				selectedViewer: selectedViewerSeat,
+				selectedViewerActorId,
+				viewerItems,
+				selectedViewerLabel: selectedViewerToolbarLabel,
+				canSelectViewer,
+				activeMode: bodyMode,
+				canSearch: Boolean(selectedRoom),
+				onSelectViewer: onChangeViewerActorId,
+				onSelectMode: (mode: RoomBodyMode) => {
+					bodyMode = mode;
+					if (mode !== 'chat') {
+						searchDialogOpen = false;
+					}
+				},
+				onSearchClick: () => {
+					bodyMode = 'chat';
+					searchDialogOpen = true;
+				},
+				onAddUserClick: openManageAddUser,
+				onManageClick: () => openManageDialog('overview'),
+			}) satisfies ComponentProps<typeof RoomPageToolbarContent>,
 	);
 
 	const resolveActorPresentation = (input: {
@@ -462,35 +485,11 @@
 </script>
 
 <div bind:this={surfaceRef} class="message-system-surface">
-	<WorkbenchPageToolbar>
-		<WorkbenchToolbar class="room-toolbar">
-			{#snippet content(toolbarState: WorkbenchToolbarRenderState)}
-				<RoomPageToolbarContent
-					{toolbarState}
-					selectedViewer={selectedViewerSeat}
-					{selectedViewerActorId}
-					{viewerItems}
-					selectedViewerLabel={selectedViewerToolbarLabel}
-					{canSelectViewer}
-					activeMode={bodyMode}
-					canSearch={Boolean(selectedRoom)}
-					onSelectViewer={onChangeViewerActorId}
-					onSelectMode={(mode) => {
-						bodyMode = mode;
-						if (mode !== 'chat') {
-							searchDialogOpen = false;
-						}
-					}}
-					onSearchClick={() => {
-						bodyMode = 'chat';
-						searchDialogOpen = true;
-					}}
-					onAddUserClick={openManageAddUser}
-					onManageClick={() => openManageDialog('overview')}
-				/>
-			{/snippet}
-		</WorkbenchToolbar>
-	</WorkbenchPageToolbar>
+	{#if selectedRoom}
+		<WorkbenchPageToolbar>
+			<RoomPageToolbarContent {...roomToolbarProps} />
+		</WorkbenchPageToolbar>
+	{/if}
 
 	<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="message-system-route">
 		{#if bodyMode === 'assets'}
@@ -503,6 +502,7 @@
 				{initialSnapshotResolved}
 				class="h-full"
 				disabled={!selectedRoom || !canSendForViewer}
+				showComposerWhenDisabled={false}
 				showHeader={false}
 				emptyTitle="No room selected"
 				emptyMessage="Open or create a room tab to begin."

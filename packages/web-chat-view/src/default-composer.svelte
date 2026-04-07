@@ -6,8 +6,7 @@
   import {
     resolveComposerCapabilities,
   } from "./composer/composer-contract";
-  import ComposerStatusBar from "./composer/composer-status-bar.svelte";
-  import ChatDraftEditor from "./composer/chat-draft-editor.svelte";
+  import { Textarea } from "./ui/textarea";
   import {
     canCaptureDisplayScreenshot,
     captureDisplayScreenshot,
@@ -179,6 +178,21 @@
     );
   };
 
+  const handleTextareaKeydown = (event: KeyboardEvent): void => {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.isComposing
+    ) {
+      return;
+    }
+    event.preventDefault();
+    void submit();
+  };
+
   const handlePaste = (event: ClipboardEvent): void => {
     const files = extractFilesFromTransfer(event.clipboardData, {
       imageEnabled: composerCapabilities.imageEnabled,
@@ -229,21 +243,20 @@
 
     <PendingAssetStrip assets={pendingAssets} onRemove={removePendingAsset} />
 
-    <ChatDraftEditor
+    <Textarea
+      class="composer-textarea"
+      rows={4}
       value={draft}
-      disabled={disabled}
-      submitting={sending}
-      capabilities={composerCapabilities}
       placeholder={composerCapabilities.placeholder}
-      onChange={(value) => {
-        draft = value;
+      disabled={disabled || sending}
+      oninput={(event) => {
+        const target = event.currentTarget as HTMLTextAreaElement;
+        draft = target.value;
         if (notice) {
           notice = null;
         }
       }}
-      onSubmit={() => {
-        void submit();
-      }}
+      onkeydown={handleTextareaKeydown}
     />
 
     <div class="composer-toolbar">
@@ -267,7 +280,7 @@
         <span class="composer-hint" part="composer-hint" aria-live="polite">
           {connectionState === "connected" || connectionState === "idle" ? hintText : "Waiting for channel transport"}
         </span>
-        <ComposerStatusBar disabled={disabled} submitting={sending} capabilities={composerCapabilities} />
+        <div class="composer-status-placeholder" aria-hidden="true"></div>
       </div>
     </div>
   </div>
@@ -314,6 +327,15 @@
     gap: 0.65rem;
   }
 
+  :global(.composer-textarea) {
+    min-block-size: 5rem;
+    resize: vertical;
+    border-radius: 1rem;
+    border-color: rgba(226, 232, 240, 0.95);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
   .composer-footnote {
     display: grid;
     gap: 0.55rem;
@@ -323,6 +345,10 @@
     color: rgba(100, 116, 139, 0.96);
     font-size: 0.72rem;
     line-height: 1.45;
+  }
+
+  .composer-status-placeholder {
+    min-block-size: 0;
   }
 
   @container (max-width: 34rem) {

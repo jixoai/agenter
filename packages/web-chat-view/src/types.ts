@@ -122,6 +122,7 @@ export interface WebChatViewBaseProps {
   initialMessages?: WebChatMessage[];
   initialSnapshotResolved?: boolean;
   disabled?: boolean;
+  showComposerWhenDisabled?: boolean;
   class?: string;
   showHeader?: boolean;
   emptyTitle?: string;
