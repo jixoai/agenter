@@ -72,6 +72,7 @@
   let loadingMore = $state(false);
   let sending = $state(false);
   let stickToBottom = $state(true);
+  let visibilityChatId = $state<string | null>(null);
 
   let nextBefore: ReverseTimeCursor | null = null;
   let socketRef: WebChatSocketLike | null = null;
@@ -472,9 +473,12 @@
   });
 
   $effect(() => {
-    const chatId = channel?.chatId;
+    const chatId = channel?.chatId ?? null;
+    if (chatId === visibilityChatId) {
+      return;
+    }
+    visibilityChatId = chatId;
     clearVisibility();
-    void chatId;
   });
 
   $effect(() => {

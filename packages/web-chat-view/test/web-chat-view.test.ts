@@ -1259,6 +1259,93 @@ describe("Feature: web-chat-view package", () => {
     unmount(component);
   });
 
+  test("Scenario: Given the latest visible message is already known When channel metadata refreshes without changing chatId Then the host does not clear and re-emit the same visibility fact", async () => {
+    const target = document.createElement("div");
+    target.style.height = "520px";
+    document.body.append(target);
+
+    const latestVisibleMessageIdHandler = vi.fn<(messageId: string | null) => void>();
+    const initialChannel = {
+      chatId: "chat-main",
+      kind: "room" as const,
+      title: "Room",
+      owner: "jane",
+      participants: [
+        { id: "session:jane", label: "jane" },
+        { id: "auth:user", label: "User" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
+    };
+
+    const component = mount(WebChatHostHarness, {
+      target,
+      props: {
+        socketFactory,
+        initialChannel,
+        onLatestVisibleMessageIdChange: latestVisibleMessageIdHandler,
+      },
+    });
+    flushSync();
+
+    await vi.waitFor(() => {
+      expect(WebSocketMock.instances).toHaveLength(1);
+    });
+    const socket = WebSocketMock.instances[0]!;
+    socket.open();
+    socket.message(
+      JSON.stringify({
+        type: "snapshot",
+        chatId: "chat-main",
+        snapshot: {
+          channel: initialChannel,
+          items: [
+            {
+              rowId: 1,
+              messageId: "msg-visible",
+              chatId: "chat-main",
+              from: "jane",
+              kind: "text",
+              content: "visibility anchor",
+              createdAt: 100,
+              updatedAt: 100,
+              visibleAt: 100,
+              attentionState: "loaded",
+              editable: false,
+              metadata: {},
+              attachments: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "1",
+        },
+      }),
+    );
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith("msg-visible");
+    });
+    const stableCallCount = latestVisibleMessageIdHandler.mock.calls.length;
+
+    component.setChannel({
+      ...initialChannel,
+      focused: false,
+      updatedAt: 2,
+    });
+    flushSync();
+    await settleLitUpdates();
+
+    expect(latestVisibleMessageIdHandler.mock.calls).toHaveLength(stableCallCount);
+    unmount(component);
+  });
+
   test("Scenario: Given the channel unmounts before the websocket opens When cleanup runs Then the pending handshake settles without an eager close", async () => {
     const target = document.createElement("div");
     target.style.height = "520px";

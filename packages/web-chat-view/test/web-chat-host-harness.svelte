@@ -6,9 +6,11 @@
   let {
     initialChannel,
     socketFactory,
+    onLatestVisibleMessageIdChange,
   }: {
     initialChannel: WebChatChannel;
     socketFactory: WebChatSocketFactory;
+    onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
   } = $props();
 
   let channel = $state<WebChatChannel>(untrack(() => initialChannel));
@@ -18,4 +20,4 @@
   };
 </script>
 
-<WebChatViewHost {channel} {socketFactory} />
+<WebChatViewHost {channel} {socketFactory} {onLatestVisibleMessageIdChange} />
