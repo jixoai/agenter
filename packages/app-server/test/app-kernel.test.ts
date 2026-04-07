@@ -1259,6 +1259,59 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given a superadmin-created room When the kernel materializes the room Then the creator also becomes a durable admin user seat", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = await kernel.createGlobalRoom({
+      title: "Creator admin seat",
+      superadminActorId: "auth:creator",
+      focus: false,
+      initialUsers: [
+        {
+          actorId: "session:jj",
+          label: "JJ",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    expect(room.participants).toEqual([
+      { id: "auth:creator" },
+      { id: "session:jj", label: "JJ" },
+    ]);
+    const grants = kernel.listGlobalRoomGrants({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(grants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: "auth:creator",
+          role: "admin",
+        }),
+        expect.objectContaining({
+          participantId: "session:jj",
+          role: "member",
+        }),
+      ]),
+    );
+    expect(
+      kernel.listGlobalRooms({
+        actorId: "auth:creator",
+      }).some((entry) => entry.chatId === room.chatId && entry.accessRole === "admin" && entry.focused === false),
+    ).toBeTrue();
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given a legacy primary room participant list When the kernel reattaches to that room Then the stored room truth is repaired", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);

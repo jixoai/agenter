@@ -37,18 +37,32 @@
 		{ value: 'readonly', label: 'Readonly' },
 	] as const satisfies { value: MessageSystemGrantRole; label: string }[];
 
-	const selectableActors = $derived(
-		buildActorDirectory({
+	const creatorActorId = $derived.by(() => {
+		const authId = controller.authSession?.claims.authId?.trim();
+		return authId ? (`auth:${authId}` as const) : null;
+	});
+	const selectableActors = $derived.by(() => {
+		const creator = creatorActorId;
+		const actors = buildActorDirectory({
 			sessions: controller.runtimeState.sessions,
 			authActors: controller.authActors,
 			profileIconUrl: (reference) => controller.runtimeStore.profileIconUrl(reference ?? ''),
 			sessionIconUrl: (sessionId) => (sessionId ? controller.runtimeStore.sessionIconUrl(sessionId) : null),
-		}).filter((actor) => actor.actorKind !== 'system'),
-	);
+		}).filter((actor) => actor.actorKind !== 'system');
+		if (!creator) {
+			return actors;
+		}
+		return [...actors].sort((left, right) => {
+			if (left.actorId === creator && right.actorId !== creator) {
+				return -1;
+			}
+			if (right.actorId === creator && left.actorId !== creator) {
+				return 1;
+			}
+			return 0;
+		});
+	});
 	const selectableActorMap = $derived(buildActorDirectoryMap(selectableActors));
-	const selectedUserCount = $derived(
-		selectableActors.filter((actor) => initialUserDrafts[actor.actorId]?.selected).length,
-	);
 
 	const initialUserActorIdPattern = /^(auth|session|system):.+$/u;
 
@@ -82,9 +96,25 @@
 		return initialUsers;
 	};
 
-	const readUserDraft = (actorId: string): InitialUserDraft => initialUserDrafts[actorId] ?? { selected: false, role: 'member' };
+	const isCreatorActor = (actorId: string): boolean => creatorActorId === actorId;
+
+	const readUserDraft = (actorId: string): InitialUserDraft =>
+		initialUserDrafts[actorId] ??
+		(isCreatorActor(actorId)
+			? {
+					selected: true,
+					role: 'admin',
+				}
+			: {
+					selected: false,
+					role: 'member',
+				});
+	const selectedUserCount = $derived(selectableActors.filter((actor) => readUserDraft(actor.actorId).selected).length);
 
 	const setUserSelected = (actor: ActorDirectoryEntry, selected: boolean): void => {
+		if (isCreatorActor(actor.actorId)) {
+			selected = true;
+		}
 		initialUserDrafts = {
 			...initialUserDrafts,
 			[actor.actorId]: {
@@ -95,6 +125,9 @@
 	};
 
 	const setUserRole = (actorId: string, role: MessageSystemGrantRole): void => {
+		if (isCreatorActor(actorId)) {
+			role = 'admin';
+		}
 		initialUserDrafts = {
 			...initialUserDrafts,
 			[actorId]: {
@@ -154,9 +187,9 @@
 
 			<div class="grid gap-3">
 				<div class="grid gap-1">
-					<div class="text-sm font-medium">Initial users</div>
+					<div class="text-sm font-medium">Users</div>
 					<p class="text-sm text-muted-foreground">
-						Select the Users that should join immediately. Every selected User opens this room by default.
+						The creator joins automatically as Admin. Select any additional Users that should join immediately.
 					</p>
 				</div>
 
@@ -178,6 +211,7 @@
 									<Checkbox
 										checked={readUserDraft(actor.actorId).selected}
 										aria-label={`Include ${actor.label}`}
+										disabled={isCreatorActor(actor.actorId)}
 										onCheckedChange={(checked) => {
 											setUserSelected(actor, !!checked);
 										}}
@@ -209,7 +243,7 @@
 											aria-label={`Role for ${actor.label}`}
 											class="w-full min-w-32"
 											data-testid={`new-room-user-role-${actor.actorId}`}
-											disabled={!readUserDraft(actor.actorId).selected}
+											disabled={!readUserDraft(actor.actorId).selected || isCreatorActor(actor.actorId)}
 										>
 											{selectedRoleLabel(actor.actorId)}
 										</Select.Trigger>

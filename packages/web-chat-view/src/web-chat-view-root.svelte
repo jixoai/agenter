@@ -82,6 +82,15 @@
   const visibleAssistantIds = new Map<string, boolean>();
   let latestVisibleMessageId: string | null = null;
   let latestVisibleAssistantMessageId: string | null = null;
+  let latestVisibleMessageEmission = $state<{
+    chatId: string | null;
+    viewerActorId: string | null;
+    messageId: string | null;
+  }>({
+    chatId: null,
+    viewerActorId: null,
+    messageId: null,
+  });
 
   const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
 
@@ -193,6 +202,11 @@
     if (latestVisibleMessageId !== nextMessageId) {
       latestVisibleMessageId = nextMessageId;
       latestVisibleMessageIdHandler?.(nextMessageId);
+      latestVisibleMessageEmission = {
+        chatId: channel?.chatId ?? null,
+        viewerActorId: effectiveViewerActorId ?? null,
+        messageId: nextMessageId,
+      };
     }
     if (latestVisibleAssistantMessageId !== nextAssistantId) {
       latestVisibleAssistantMessageId = nextAssistantId;
@@ -479,6 +493,28 @@
     }
     visibilityChatId = chatId;
     clearVisibility();
+  });
+
+  $effect(() => {
+    const chatId = channel?.chatId ?? null;
+    const viewerActorId = effectiveViewerActorId ?? null;
+    const messageId = latestVisibleMessageId;
+    if (!chatId || !messageId) {
+      return;
+    }
+    if (
+      latestVisibleMessageEmission.chatId !== chatId ||
+      latestVisibleMessageEmission.messageId !== messageId ||
+      latestVisibleMessageEmission.viewerActorId === viewerActorId
+    ) {
+      return;
+    }
+    latestVisibleMessageEmission = {
+      chatId,
+      viewerActorId,
+      messageId,
+    };
+    latestVisibleMessageIdHandler?.(messageId);
   });
 
   $effect(() => {

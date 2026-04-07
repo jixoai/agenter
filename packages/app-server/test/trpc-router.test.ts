@@ -591,6 +591,17 @@ describe("Feature: app-server trpc procedures", () => {
       title: "Superadmin send room",
       focus: false,
     });
+    const grants = await superadminCaller.message.globalListGrants({
+      chatId: created.channel.chatId,
+    });
+    expect(grants.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: `auth:${descriptor.rootAuthId}`,
+          role: "admin",
+        }),
+      ]),
+    );
 
     const sent = await superadminCaller.message.globalSend({
       chatId: created.channel.chatId,

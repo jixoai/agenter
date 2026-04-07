@@ -1874,17 +1874,36 @@ export class AppKernel {
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
   }): Promise<MessageControlPlaneEntry> {
+    const shouldFocus = input.focus ?? true;
+    const creatorActorId = input.actorId ?? input.superadminActorId;
+    const initialUsers =
+      creatorActorId || input.initialUsers?.length
+        ? [
+            ...(creatorActorId
+              ? [
+                  {
+                    actorId: creatorActorId,
+                    label: input.initialUsers?.find((user) => user.actorId === creatorActorId)?.label,
+                    role: "admin" as const,
+                    focused:
+                      shouldFocus ||
+                      input.initialUsers?.find((user) => user.actorId === creatorActorId)?.focused === true,
+                  },
+                ]
+              : []),
+            ...(input.initialUsers?.filter((user) => user.actorId !== creatorActorId) ?? []),
+          ]
+        : undefined;
     const room = this.messageControlPlane.createChannel({
       chatId: input.chatId ?? (await this.allocateGlobalRoomId(input.title)),
       kind: "room",
       title: input.title ?? DEFAULT_MESSAGE_CHAT_TITLE,
       participants: input.participants,
-      initialUsers: input.initialUsers,
+      initialUsers,
       metadata: sanitizeGlobalRoomMetadata(input.metadata),
       adminToken: input.adminToken,
       bootstrapActorId: input.actorId && !input.superadminActorId ? input.actorId : undefined,
     });
-    const shouldFocus = input.focus ?? true;
     if (input.actorId && !input.superadminActorId) {
       if (!shouldFocus) {
         this.messageControlPlane.focusForActor(input.actorId, "remove", [room.chatId]);

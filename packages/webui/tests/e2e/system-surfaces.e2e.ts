@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 
 const terminalCwd = process.cwd();
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -379,6 +379,29 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
     .poll(async () => await stopButton.isVisible().catch(() => false), { timeout: 10_000 })
     .toBeFalsy()
     .catch(() => undefined);
+};
+
+const trackFinishedRequests = (
+  page: Page,
+  matcher: (request: Request) => boolean,
+): {
+  readonly matches: string[];
+  dispose(): void;
+} => {
+  const matches: string[] = [];
+  const handleRequestFinished = (request: Request): void => {
+    if (!matcher(request)) {
+      return;
+    }
+    matches.push(request.url());
+  };
+  page.on("requestfinished", handleRequestFinished);
+  return {
+    matches,
+    dispose: () => {
+      page.off("requestfinished", handleRequestFinished);
+    },
+  };
 };
 
 const openManageRoomDialog = async (page: Page): Promise<Locator> => {
@@ -784,6 +807,122 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await expect(page.getByText(liveMessage)).toBeVisible({ timeout: 15_000 });
     await mirrorPage.close();
+  });
+
+  test("Scenario: Given a room message with another granted seat When the operator idles on the transcript Then read acks settle once and the message discloses read plus unread actors", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-read-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Read detail ${testInfo.project.name} ${Date.now()}`;
+    const roomMessage = `read detail message ${testInfo.project.name}`;
+    let viewerRuntimeUrl: string | null = null;
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const manageRoomDialog = await openManageRoomDialog(page);
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
+      });
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
+        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+      });
+
+      const grantActorSelect = manageRoomDialog.getByLabel("Grant actor");
+      const grantedOption = await chooseSelectOptionByText(
+        manageRoomDialog.page(),
+        grantActorSelect,
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
+
+      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "readonly");
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+        return await manageRoomDialog
+          .getByTestId("room-manage-stage")
+          .locator('[data-testid^="room-seat-"]')
+          .filter({ hasText: grantedLabel })
+          .first()
+          .isVisible()
+          .catch(() => false);
+      });
+      await page.keyboard.press("Escape");
+      await expect(manageRoomDialog).not.toBeVisible({ timeout: 15_000 });
+
+      const readAckRequests = trackFinishedRequests(page, (request) => {
+        return request.url().includes("/trpc/message.globalMarkRead");
+      });
+      const roomComposer = getRoomComposer(page, roomTitle);
+      const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
+      await clickStable(roomComposer);
+      await roomComposer.pressSequentially(roomMessage);
+      await expect(roomComposer).toHaveValue(roomMessage, { timeout: 15_000 });
+      await expect(sendMessageButton).toBeEnabled({ timeout: 15_000 });
+      await activateUntil(sendMessageButton, async () => {
+        return (await roomComposer.inputValue()) === "";
+      });
+
+      const latestMessageRow = page.locator("[data-message-id]").last();
+      await expect(latestMessageRow).toContainText(roomMessage, { timeout: 15_000 });
+      const readIndicator = latestMessageRow.getByTestId("message-read-indicator");
+      await expect(readIndicator).toBeVisible({ timeout: 15_000 });
+      await expect(readIndicator).toHaveAttribute("aria-label", "1/2 read", { timeout: 15_000 });
+
+      await clickStable(readIndicator);
+      const disclosure = page.getByTestId("message-read-disclosure");
+      await expect(disclosure).toBeVisible({ timeout: 15_000 });
+      await expect(disclosure).toContainText("Read");
+      await expect(disclosure).toContainText("Unread");
+      await expect(disclosure).toContainText(grantedLabel);
+      await page.keyboard.press("Escape");
+      await expect(disclosure).not.toBeVisible({ timeout: 15_000 });
+
+      await chooseSelectOptionByText(
+        page,
+        page.getByLabel("View room as user"),
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      await expect
+        .poll(() => readAckRequests.matches.length, { timeout: 15_000 })
+        .toBeGreaterThan(0);
+      const settledReadAckCount = readAckRequests.matches.length;
+      await expect(readIndicator).toHaveAttribute("aria-label", "All 2 users read", { timeout: 15_000 });
+      await expect(readIndicator).toHaveAttribute("data-complete", "true", { timeout: 15_000 });
+      await page.waitForTimeout(1_200);
+      expect(readAckRequests.matches.length).toBe(settledReadAckCount);
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expectSelectedRoomTitle(page, roomTitle);
+      await page.waitForTimeout(1_200);
+      expect(readAckRequests.matches.length).toBe(settledReadAckCount);
+      readAckRequests.dispose();
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
   });
 
   test.fixme("Scenario: Given an authenticated superadmin When quick start launches and closes a runtime tab Then Avatars keeps the attention shell reachable without a secondary running rail", async ({
