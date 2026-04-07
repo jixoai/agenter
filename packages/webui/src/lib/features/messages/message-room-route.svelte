@@ -17,6 +17,7 @@
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
+	import { resolveRoomViewerActorId } from './message-room-viewer';
 	import {
 		maybeStartRoomReadAck,
 		resolveRoomReadAckKey,
@@ -311,11 +312,12 @@
 		if (!room) {
 			return null;
 		}
-		const selected = selectedViewerActorIdByRoomId[room.chatId];
-		if (selected && roomSeatStates.some((state) => state.actorId === selected)) {
-			return selected;
-		}
-		return roomSeatStates[0]?.actorId ?? null;
+		return resolveRoomViewerActorId({
+			storedViewerActorId: selectedViewerActorIdByRoomId[room.chatId] ?? null,
+			roomParticipantId: isUserFacingRoomActorId(room.participantId) ? room.participantId : null,
+			currentAuthActorId,
+			seatActorIds: roomSeatStates.map((state) => state.actorId),
+		});
 	});
 
 	const selectedCallerToken = $derived.by(() => {
