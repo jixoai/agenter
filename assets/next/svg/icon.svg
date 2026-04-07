@@ -1,0 +1,235 @@
+<svg width="1078" height="1078" viewBox="0 0 1078 1078" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1078" height="1078" fill="#2e333a"/>
+  <defs>
+    <linearGradient id="accentBright" x1="132" y1="944" x2="944" y2="132" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2fb381"/>
+      <stop offset="48%" stop-color="#31c6ba"/>
+      <stop offset="100%" stop-color="#2bcfe0"/>
+    </linearGradient>
+    <linearGradient id="accentShadow" x1="132" y1="944" x2="944" y2="132" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#216059"/>
+      <stop offset="48%" stop-color="#1f7e88"/>
+      <stop offset="100%" stop-color="#17404c"/>
+    </linearGradient>
+    <linearGradient id="lightFill" x1="358" y1="358" x2="720" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#edf0f2"/>
+      <stop offset="100%" stop-color="#d7dce1"/>
+    </linearGradient>
+    <linearGradient id="centerDark" x1="404" y1="404" x2="672" y2="672" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#20252c"/>
+      <stop offset="100%" stop-color="#2c323a"/>
+    </linearGradient>
+  </defs>
+  <path d="M 338 1022 L 338 1024 L 356 1024 L 356 1022 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 304 1019 L 306 1022 L 318 1023 L 318 1021 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 800 1015 L 765 1021 L 747 1022 L 747 1025 L 761 1025 L 778 1022 L 781 1020 L 800 1017 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 661 1013 L 661 1015 L 684 1022 L 693 1021 L 708 1025 L 716 1024 L 726 1026 L 745 1026 L 745 1023 L 700 1021 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 634 1005 L 634 1007 L 640 1010 L 656 1014 L 656 1011 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 842 1001 L 824 1007 L 824 1009 L 839 1005 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 709 990 L 709 992 L 723 993 L 750 992 L 750 990 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 597 989 L 599 993 L 629 1005 L 628 1002 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 897 971 L 869 988 L 852 996 L 852 998 L 856 998 L 869 992 L 873 988 L 876 988 L 895 975 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 629 969 L 629 971 L 655 981 L 687 989 L 707 991 L 706 988 L 680 985 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 849 963 L 831 969 L 820 976 L 810 977 L 808 979 L 795 981 L 793 983 L 784 984 L 777 987 L 764 988 L 763 991 L 781 989 L 811 981 L 840 970 L 849 965 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 554 958 L 554 963 L 560 971 L 585 984 L 589 988 L 595 989 L 595 987 L 557 964 L 556 958 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 599 954 L 600 957 L 609 960 L 607 956 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 921 953 L 899 968 L 899 970 L 905 969 L 913 964 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 879 945 L 865 951 L 855 958 L 855 961 L 878 948 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 694 941 L 694 944 L 707 946 L 750 946 L 750 944 L 725 945 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 574 941 L 568 943 L 565 946 L 565 949 L 573 944 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 937 938 L 935 938 L 924 949 L 924 951 L 935 943 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 677 937 L 678 940 L 689 942 L 689 939 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 662 932 L 663 935 L 673 937 L 671 934 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 516 927 L 511 929 L 508 934 L 514 931 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 955 919 L 953 919 L 943 930 L 943 933 L 946 933 L 953 925 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 531 913 L 523 918 L 519 924 L 523 923 L 531 915 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 620 912 L 621 916 L 638 923 L 652 932 L 659 933 L 659 930 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 850 911 L 808 932 L 786 939 L 754 944 L 754 946 L 777 944 L 799 938 L 806 934 L 816 933 L 847 916 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 804 900 L 777 908 L 736 913 L 720 911 L 713 912 L 699 907 L 691 907 L 670 901 L 670 903 L 690 910 L 711 914 L 752 915 L 788 908 L 804 902 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 973 896 L 971 896 L 958 915 L 961 915 L 965 908 L 973 902 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 649 892 L 649 894 L 668 902 L 667 899 L 660 897 L 655 893 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 823 891 L 811 895 L 809 899 L 823 893 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 246 887 L 247 890 L 258 895 L 258 893 L 254 890 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 631 885 L 628 885 L 613 899 L 612 908 L 615 911 L 617 911 L 614 904 L 631 887 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 947 879 L 943 881 L 942 885 L 938 887 L 929 900 L 923 904 L 921 909 L 918 910 L 912 918 L 904 922 L 900 928 L 887 937 L 883 943 L 887 942 L 901 931 L 913 917 L 916 917 L 920 913 L 920 910 L 934 898 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 897 870 L 895 870 L 895 872 L 892 873 L 870 895 L 870 897 L 874 896 L 894 876 L 894 873 L 897 872 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 997 855 L 993 858 L 977 889 L 974 891 L 974 894 L 977 893 L 977 890 L 981 887 L 987 875 L 990 873 L 991 868 L 997 859 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 113 855 L 120 868 L 122 868 L 120 861 L 115 855 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 872 851 L 864 856 L 850 871 L 833 882 L 833 885 L 836 885 L 849 875 L 869 856 L 870 853 L 872 853 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 281 850 L 281 852 L 307 852 L 307 850 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 818 849 L 818 851 L 825 852 L 846 851 L 846 849 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 424 838 L 425 842 L 432 846 L 432 844 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 808 831 L 808 833 L 839 833 L 839 831 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 926 825 L 924 825 L 907 856 L 911 854 L 924 833 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 979 816 L 976 817 L 965 846 L 955 859 L 947 877 L 950 876 L 964 853 L 976 827 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 897 812 L 894 812 L 889 825 L 884 830 L 883 835 L 878 840 L 877 844 L 879 844 L 892 825 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 177 811 L 181 821 L 183 821 L 180 812 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 393 807 L 393 809 L 406 822 L 408 822 L 408 820 L 395 807 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1016 800 L 1014 800 L 1014 805 L 1004 835 L 1006 835 L 1009 830 L 1017 804 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 379 792 L 379 794 L 382 795 L 388 803 L 390 803 L 390 801 L 383 796 L 381 792 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 939 790 L 937 790 L 927 821 L 929 821 L 936 806 L 937 797 L 940 793 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 478 780 L 478 783 L 490 792 L 490 790 L 480 780 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 947 752 L 944 754 L 939 786 L 941 786 L 942 778 L 944 776 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 338 752 L 338 754 L 345 761 L 347 761 L 352 768 L 354 768 L 354 766 L 352 766 L 351 763 L 348 762 L 340 752 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 597 745 L 597 747 L 613 747 L 613 745 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 456 745 L 456 747 L 476 747 L 476 745 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 948 725 L 946 725 L 945 750 L 948 748 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 158 723 L 158 741 L 160 741 L 160 723 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1016 668 L 1020 686 L 1023 721 L 1022 759 L 1020 765 L 1020 776 L 1022 776 L 1026 747 L 1026 714 L 1021 674 L 1019 669 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 253 667 L 257 673 L 263 676 L 262 673 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 902 658 L 900 658 L 900 664 L 903 668 L 909 687 L 909 694 L 913 709 L 914 733 L 912 760 L 904 794 L 900 799 L 899 806 L 901 806 L 907 792 L 916 747 L 915 707 L 911 686 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 932 654 L 942 690 L 944 711 L 946 711 L 947 700 L 945 689 L 943 687 L 942 675 L 935 654 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 834 654 L 832 654 L 828 661 L 825 662 L 820 669 L 822 669 L 827 662 L 833 658 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1011 647 L 1014 661 L 1016 661 L 1016 652 L 1014 648 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 981 647 L 978 648 L 978 651 L 982 658 L 983 671 L 989 698 L 991 745 L 988 761 L 988 773 L 981 796 L 981 805 L 979 807 L 978 814 L 981 813 L 988 786 L 994 740 L 992 696 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 277 647 L 279 652 L 285 656 L 284 652 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 926 639 L 929 649 L 932 651 L 930 642 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1006 630 L 1010 645 L 1012 645 L 1009 631 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 970 625 L 976 644 L 979 644 L 973 626 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 912 613 L 924 637 L 926 637 L 919 619 L 914 615 L 914 613 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 999 611 L 1004 626 L 1007 626 L 1002 611 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 964 610 L 967 620 L 969 620 L 967 612 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 305 607 L 305 610 L 317 619 L 317 617 L 315 617 L 314 614 L 308 610 L 307 607 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 773 605 L 771 605 L 764 612 L 764 614 L 766 614 L 773 607 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 190 604 L 190 606 L 198 614 L 200 614 L 201 617 L 203 617 L 203 615 L 201 615 L 200 612 L 192 604 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 861 598 L 862 603 L 870 609 L 879 621 L 887 636 L 890 637 L 895 653 L 900 656 L 892 637 L 871 606 L 863 598 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 325 592 L 325 611 L 327 611 L 327 592 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 953 590 L 954 599 L 961 607 L 963 607 L 963 604 L 956 591 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 886 578 L 905 604 L 908 605 L 906 597 L 902 595 L 888 578 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 759 574 L 757 574 L 747 585 L 746 605 L 748 623 L 750 623 L 750 586 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 830 566 L 830 570 L 833 574 L 837 575 L 856 595 L 858 595 L 858 592 L 832 566 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 973 563 L 986 584 L 996 606 L 998 606 L 996 598 L 978 565 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 872 563 L 872 565 L 881 574 L 883 574 L 880 568 L 876 564 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 779 553 L 770 559 L 767 566 L 769 566 L 779 556 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 784 549 L 784 551 L 786 551 L 800 563 L 802 567 L 804 567 L 798 557 L 790 550 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 959 542 L 966 554 L 968 554 L 967 549 L 961 544 L 961 542 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 126 538 L 126 541 L 135 550 L 137 550 L 129 539 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 791 527 L 794 533 L 802 539 L 819 558 L 828 564 L 828 562 L 825 561 L 824 558 L 793 527 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 819 510 L 819 512 L 846 539 L 848 539 L 848 536 L 823 511 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 947 500 L 948 504 L 955 509 L 952 503 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 980 497 L 978 497 L 966 515 L 962 515 L 961 513 L 959 513 L 959 515 L 962 517 L 971 515 L 978 504 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 805 496 L 805 498 L 811 502 L 814 507 L 816 507 L 816 504 L 812 503 L 811 499 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 757 493 L 757 495 L 769 507 L 771 512 L 784 520 L 784 518 L 759 493 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 964 461 L 962 461 L 955 469 L 954 477 L 945 489 L 944 497 L 946 497 L 946 493 L 954 481 L 954 478 L 960 471 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 77 461 L 80 471 L 82 471 L 82 467 L 79 461 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 880 459 L 880 462 L 886 466 L 945 528 L 953 534 L 953 537 L 957 539 L 955 534 L 952 533 L 951 529 L 935 514 L 930 506 L 925 503 L 924 500 L 917 495 L 893 469 L 882 459 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 325 452 L 325 473 L 327 473 L 327 452 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1003 451 L 1001 451 L 991 475 L 994 474 L 1002 457 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 757 448 L 757 450 L 783 476 L 785 476 L 785 473 L 782 472 L 780 468 L 759 448 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 747 447 L 748 484 L 751 489 L 755 490 L 750 483 L 750 448 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 887 440 L 888 445 L 904 459 L 911 460 L 911 458 L 908 458 L 889 440 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 923 439 L 921 439 L 913 457 L 915 457 L 919 452 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 979 425 L 976 425 L 972 441 L 968 447 L 965 457 L 967 457 L 971 449 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 900 415 L 897 415 L 888 435 L 891 435 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 787 411 L 799 427 L 813 438 L 821 449 L 831 456 L 832 460 L 835 459 L 836 463 L 863 491 L 877 502 L 881 509 L 885 509 L 887 515 L 890 516 L 892 520 L 911 537 L 911 541 L 933 562 L 944 578 L 946 578 L 946 575 L 932 556 L 887 509 L 885 509 L 884 506 L 838 460 L 836 460 L 835 457 L 789 411 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1016 409 L 1014 409 L 1012 421 L 1005 439 L 1005 444 L 1007 444 L 1012 429 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 254 402 L 250 403 L 243 410 L 243 413 L 245 413 L 254 404 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 942 389 L 939 389 L 937 401 L 927 429 L 929 429 L 934 418 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 745 369 L 745 372 L 758 384 L 759 387 L 772 399 L 774 399 L 775 402 L 777 402 L 777 399 L 752 373 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 789 368 L 791 373 L 865 447 L 868 447 L 869 450 L 876 455 L 876 453 L 868 447 L 864 440 L 848 427 L 846 422 L 834 411 L 833 408 L 829 406 L 796 372 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 726 349 L 729 357 L 741 366 L 741 363 L 728 349 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 309 347 L 307 347 L 296 358 L 296 360 L 292 362 L 292 364 L 294 364 L 295 361 L 309 349 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 834 332 L 835 335 L 844 334 L 844 332 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 158 329 L 158 352 L 160 352 L 160 329 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 993 326 L 991 326 L 990 362 L 988 380 L 982 402 L 982 411 L 984 411 L 992 372 L 994 350 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 947 324 L 945 324 L 946 345 L 940 387 L 943 385 L 947 365 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 453 322 L 454 325 L 477 324 L 477 322 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 377 322 L 375 322 L 375 324 L 372 325 L 369 330 L 365 332 L 365 334 L 367 334 L 369 330 L 372 330 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 695 318 L 695 321 L 700 328 L 709 334 L 712 340 L 722 346 L 720 341 L 711 334 L 697 318 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 614 305 L 614 307 L 624 317 L 626 317 L 626 315 L 616 305 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 358 298 L 356 298 L 356 300 L 353 301 L 348 308 L 345 309 L 345 311 L 347 311 L 347 309 L 350 308 L 355 301 L 358 300 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 940 293 L 944 321 L 946 321 L 945 301 L 943 298 L 943 293 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 911 293 L 909 293 L 909 299 L 913 320 L 913 357 L 909 384 L 901 409 L 903 409 L 909 392 L 916 356 L 916 323 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1018 290 L 1023 328 L 1022 368 L 1020 375 L 1020 383 L 1022 383 L 1026 357 L 1026 335 L 1023 299 L 1021 291 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 553 288 L 554 292 L 559 296 L 560 301 L 565 303 L 576 314 L 578 314 L 584 323 L 590 325 L 619 325 L 619 323 L 588 322 L 578 314 L 578 312 L 559 294 L 555 288 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 525 286 L 523 286 L 522 289 L 519 290 L 519 292 L 507 302 L 499 312 L 495 314 L 495 316 L 499 315 L 499 312 L 502 311 L 504 307 L 511 304 L 512 301 L 515 301 L 519 293 L 525 289 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 584 275 L 584 277 L 591 282 L 595 288 L 597 288 L 597 285 L 592 283 L 591 280 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 425 274 L 423 274 L 415 282 L 415 284 L 421 281 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 571 267 L 561 274 L 555 283 L 557 283 L 571 269 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 641 265 L 641 268 L 655 282 L 664 288 L 664 291 L 671 299 L 675 301 L 682 310 L 690 314 L 690 311 L 667 288 L 664 288 L 663 285 L 643 265 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 143 264 L 141 264 L 138 276 L 141 274 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 848 262 L 848 329 L 851 329 L 850 262 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 977 256 L 986 288 L 989 321 L 993 321 L 992 306 L 986 276 L 980 256 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 65 255 L 63 255 L 60 269 L 62 269 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 404 252 L 399 254 L 394 259 L 393 263 L 395 263 L 401 255 L 404 254 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 518 249 L 509 255 L 506 261 L 499 265 L 498 269 L 500 269 L 505 262 L 518 251 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 566 246 L 564 246 L 548 262 L 548 264 L 534 276 L 534 278 L 537 278 L 543 270 L 546 269 L 548 265 L 566 248 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 818 243 L 822 253 L 821 328 L 824 330 L 824 248 L 820 243 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 787 242 L 787 244 L 815 245 L 815 242 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 736 241 L 736 243 L 750 245 L 780 244 L 780 242 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 578 234 L 576 234 L 569 241 L 569 243 L 574 242 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 610 233 L 611 239 L 631 257 L 633 257 L 633 255 L 612 233 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 842 232 L 848 248 L 848 258 L 850 258 L 850 244 L 845 233 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 1001 228 L 1011 255 L 1014 271 L 1016 271 L 1008 235 L 1004 228 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 914 223 L 914 227 L 929 255 L 935 274 L 937 274 L 936 264 L 932 259 L 930 250 L 919 230 L 919 227 L 916 223 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 618 220 L 613 222 L 611 227 L 613 227 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 594 219 L 586 224 L 582 230 L 591 224 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 550 217 L 548 217 L 543 224 L 538 226 L 537 230 L 532 232 L 527 240 L 529 240 L 536 233 L 536 231 L 550 219 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 253 218 L 253 220 L 277 219 L 277 217 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 730 237 L 734 240 L 734 220 L 740 218 L 821 219 L 830 222 L 839 230 L 841 230 L 841 228 L 834 221 L 821 216 L 743 215 L 737 216 L 734 220 L 732 220 L 730 226 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 633 213 L 633 215 L 753 335 L 759 338 L 759 341 L 778 360 L 785 364 L 785 362 L 780 359 L 779 355 L 775 353 L 764 340 L 759 338 L 756 332 L 752 330 L 749 325 L 744 322 L 730 307 L 728 307 L 719 295 L 714 292 L 707 283 L 698 277 L 688 264 L 683 261 L 681 257 L 669 247 L 663 239 L 660 239 L 658 234 L 654 232 L 644 220 L 637 214 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 858 205 L 858 208 L 863 210 L 863 213 L 868 216 L 876 226 L 876 229 L 883 236 L 894 260 L 899 265 L 906 287 L 909 289 L 903 268 L 888 239 L 871 216 L 863 210 L 860 205 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 496 204 L 494 204 L 480 218 L 480 220 L 490 213 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 949 195 L 955 209 L 964 222 L 964 225 L 972 239 L 972 243 L 975 244 L 973 236 L 963 215 L 951 195 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 463 193 L 457 196 L 451 205 L 447 207 L 447 209 L 449 209 L 450 206 L 463 195 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 576 191 L 568 196 L 567 201 L 569 201 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 625 190 L 610 201 L 610 203 L 602 209 L 596 217 L 604 212 L 613 201 L 625 192 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 834 185 L 834 188 L 843 192 L 841 188 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 476 180 L 470 182 L 465 191 L 467 191 L 476 182 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 933 174 L 935 179 L 940 182 L 939 178 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 597 172 L 594 172 L 582 184 L 582 186 L 584 186 L 597 174 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 868 171 L 868 173 L 888 191 L 908 217 L 911 218 L 907 208 L 900 202 L 897 196 L 877 175 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 806 169 L 806 171 L 814 177 L 832 184 L 832 182 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 462 166 L 460 166 L 451 177 L 447 179 L 447 181 L 450 181 L 462 169 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 610 162 L 601 166 L 599 171 L 610 164 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 785 161 L 788 165 L 800 168 L 798 165 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 499 157 L 497 157 L 495 161 L 488 164 L 478 175 L 478 178 L 480 178 L 490 168 L 490 165 L 494 164 L 495 161 L 499 159 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 754 155 L 754 157 L 783 162 L 783 160 L 773 157 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 958 154 L 982 188 L 982 191 L 986 196 L 999 225 L 1001 225 L 1001 220 L 995 206 L 987 192 L 982 187 L 974 170 L 970 167 L 967 161 L 962 158 L 960 154 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 914 153 L 915 157 L 920 160 L 925 167 L 927 167 L 926 163 L 916 153 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 751 154 L 710 154 L 689 158 L 668 165 L 668 167 L 709 157 L 746 157 L 751 156 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 838 150 L 838 152 L 852 160 L 863 169 L 866 169 L 866 166 L 857 160 L 854 160 L 847 153 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 633 147 L 622 151 L 617 157 L 614 158 L 614 160 L 633 149 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 904 144 L 907 149 L 912 151 L 909 146 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 414 135 L 414 137 L 426 141 L 426 138 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 804 134 L 806 137 L 829 146 L 829 144 L 816 136 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 271 134 L 261 137 L 254 141 L 254 143 L 271 137 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 787 128 L 787 131 L 802 135 L 799 131 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 685 127 L 666 130 L 665 132 L 652 135 L 639 143 L 639 145 L 662 135 L 685 129 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 582 125 L 579 125 L 568 133 L 565 138 L 562 138 L 541 158 L 541 160 L 549 155 L 565 140 L 566 137 L 574 133 L 574 131 L 579 127 L 582 127 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 928 122 L 928 124 L 950 147 L 953 148 L 946 136 L 936 126 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 700 124 L 700 126 L 715 124 L 753 124 L 785 130 L 785 128 L 775 125 L 748 121 L 719 121 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 556 104 L 550 105 L 547 111 L 531 122 L 524 131 L 519 134 L 516 139 L 501 153 L 501 155 L 503 155 L 541 117 L 555 107 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 824 93 L 825 96 L 833 100 L 837 100 L 860 113 L 864 117 L 875 121 L 875 119 L 848 103 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 504 93 L 505 96 L 514 101 L 514 99 L 507 93 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 646 91 L 628 97 L 601 111 L 601 113 L 607 112 L 626 101 L 635 99 L 645 94 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 762 78 L 764 81 L 778 82 L 811 92 L 816 92 L 814 89 L 798 84 L 770 78 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 379 78 L 379 80 L 400 83 L 400 81 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 721 76 L 682 80 L 649 89 L 649 92 L 691 81 L 721 78 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 217 75 L 211 76 L 207 79 L 207 81 L 217 77 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 850 70 L 850 72 L 878 86 L 908 107 L 912 108 L 912 105 L 904 98 L 900 98 L 890 90 L 879 85 L 878 82 L 871 80 L 864 74 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 653 56 L 647 56 L 599 74 L 595 78 L 587 81 L 580 87 L 570 92 L 568 96 L 605 75 L 629 65 L 653 58 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 809 55 L 809 57 L 847 70 L 847 67 L 838 63 L 825 60 L 818 56 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 785 50 L 785 52 L 797 54 L 797 51 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 658 56 L 696 48 L 720 46 L 746 46 L 779 50 L 779 48 L 758 44 L 704 44 L 673 49 L 658 54 Z" fill="url(#accentShadow)" fill-rule="evenodd"/>
+  <path d="M 801 840 L 801 845 L 805 848 L 849 848 L 851 845 L 851 839 L 846 834 L 806 834 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 753 767 L 750 774 L 751 778 L 769 795 L 771 795 L 779 806 L 751 835 L 751 844 L 762 846 L 792 816 L 792 813 L 796 810 L 796 801 L 763 767 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 455 751 L 455 754 L 466 765 L 470 766 L 471 770 L 499 796 L 505 796 L 515 786 L 516 777 L 506 767 L 503 767 L 500 763 L 498 763 L 497 759 L 488 750 L 484 750 L 483 748 L 458 748 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 234 739 L 229 745 L 230 824 L 236 832 L 235 835 L 238 839 L 251 847 L 261 849 L 335 848 L 339 844 L 339 835 L 334 829 L 260 829 L 251 823 L 249 816 L 249 744 L 244 739 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 131 717 L 132 754 L 138 786 L 143 802 L 153 826 L 156 827 L 158 830 L 158 835 L 162 838 L 162 843 L 170 855 L 173 856 L 183 872 L 207 895 L 210 895 L 213 900 L 220 905 L 225 906 L 234 914 L 238 916 L 241 915 L 246 918 L 247 921 L 255 925 L 264 927 L 270 931 L 277 931 L 279 934 L 293 938 L 327 943 L 367 942 L 397 936 L 401 933 L 404 934 L 415 930 L 417 927 L 431 923 L 439 916 L 444 916 L 448 912 L 455 909 L 458 905 L 463 904 L 469 897 L 477 893 L 478 890 L 481 890 L 522 851 L 522 849 L 532 841 L 533 838 L 536 838 L 539 835 L 539 832 L 542 829 L 545 829 L 549 823 L 556 818 L 556 815 L 569 805 L 575 796 L 582 792 L 617 757 L 619 752 L 619 748 L 592 748 L 586 751 L 557 779 L 556 782 L 554 782 L 499 836 L 494 844 L 489 846 L 476 858 L 469 867 L 464 869 L 427 897 L 417 900 L 415 903 L 402 906 L 399 909 L 396 908 L 393 911 L 389 910 L 371 915 L 355 916 L 354 918 L 311 915 L 292 910 L 288 911 L 283 907 L 272 903 L 267 903 L 265 900 L 255 897 L 253 894 L 240 886 L 236 886 L 233 881 L 225 877 L 208 859 L 204 857 L 203 854 L 199 852 L 190 840 L 190 837 L 186 835 L 186 830 L 175 813 L 167 792 L 158 756 L 159 751 L 157 741 L 159 702 L 163 683 L 170 663 L 169 658 L 173 655 L 175 646 L 178 645 L 182 638 L 182 626 L 173 617 L 166 617 L 162 619 L 162 623 L 159 624 L 154 639 L 149 644 L 138 676 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 63 805 L 65 808 L 66 817 L 69 819 L 71 828 L 73 829 L 73 836 L 81 854 L 86 861 L 87 866 L 90 868 L 92 875 L 96 878 L 98 885 L 105 891 L 105 895 L 111 900 L 115 908 L 122 914 L 122 917 L 128 921 L 128 924 L 145 942 L 149 942 L 165 959 L 176 965 L 177 968 L 181 969 L 184 973 L 191 976 L 195 980 L 202 982 L 204 985 L 230 998 L 242 1001 L 245 1004 L 263 1010 L 272 1010 L 273 1012 L 295 1017 L 324 1021 L 361 1021 L 401 1015 L 417 1011 L 424 1007 L 434 1006 L 447 1001 L 448 999 L 458 997 L 468 992 L 472 988 L 478 987 L 514 965 L 519 959 L 522 959 L 531 950 L 545 940 L 551 932 L 554 931 L 562 921 L 588 897 L 590 892 L 596 889 L 611 874 L 611 871 L 616 869 L 628 857 L 628 855 L 631 854 L 650 835 L 650 832 L 653 829 L 656 829 L 681 804 L 682 800 L 686 799 L 711 774 L 712 770 L 715 770 L 749 736 L 749 734 L 766 720 L 766 717 L 778 707 L 780 702 L 787 699 L 800 686 L 802 681 L 809 677 L 828 658 L 828 656 L 831 655 L 835 648 L 839 647 L 840 643 L 843 642 L 843 639 L 849 634 L 854 626 L 843 613 L 833 616 L 827 622 L 825 627 L 821 629 L 811 641 L 806 643 L 802 649 L 799 650 L 796 655 L 793 656 L 789 662 L 782 667 L 766 683 L 766 685 L 761 688 L 753 696 L 753 698 L 738 711 L 735 717 L 731 718 L 725 723 L 720 732 L 713 735 L 706 745 L 699 750 L 686 765 L 680 768 L 666 783 L 666 785 L 658 790 L 633 818 L 631 818 L 615 833 L 614 837 L 611 837 L 573 875 L 572 878 L 570 878 L 537 911 L 513 932 L 512 935 L 508 936 L 494 947 L 478 956 L 476 959 L 463 964 L 459 969 L 449 971 L 425 982 L 402 988 L 366 994 L 320 994 L 302 992 L 267 984 L 234 970 L 227 969 L 226 967 L 219 965 L 215 960 L 204 956 L 203 953 L 166 927 L 165 924 L 152 913 L 150 908 L 126 881 L 125 877 L 120 872 L 119 867 L 114 864 L 115 861 L 105 847 L 105 842 L 98 828 L 92 808 L 88 802 L 89 796 L 86 792 L 87 788 L 84 787 L 85 779 L 80 748 L 80 711 L 85 682 L 84 675 L 87 672 L 90 649 L 95 642 L 103 622 L 103 617 L 108 611 L 108 606 L 114 599 L 114 594 L 117 590 L 119 590 L 122 581 L 126 579 L 125 569 L 116 559 L 110 559 L 102 567 L 101 573 L 96 581 L 93 582 L 90 592 L 87 593 L 72 628 L 73 632 L 69 637 L 69 642 L 66 645 L 57 687 L 58 697 L 56 698 L 54 746 L 56 763 L 58 764 L 57 775 L 60 778 L 59 786 L 64 796 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 786 552 L 774 561 L 751 586 L 751 618 L 756 619 L 802 572 L 800 565 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 324 455 L 316 454 L 315 458 L 312 461 L 309 461 L 303 470 L 299 472 L 293 480 L 290 480 L 277 495 L 277 502 L 285 511 L 294 512 L 295 510 L 298 510 L 301 505 L 305 503 L 305 500 L 312 492 L 320 487 L 322 477 L 324 476 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 758 452 L 751 452 L 751 483 L 872 606 L 893 637 L 908 671 L 914 695 L 917 717 L 917 747 L 908 792 L 902 807 L 885 838 L 875 851 L 842 882 L 823 894 L 788 909 L 752 916 L 719 916 L 690 911 L 661 901 L 634 887 L 630 888 L 615 904 L 619 910 L 662 931 L 694 940 L 725 944 L 764 942 L 786 938 L 808 931 L 843 914 L 871 894 L 891 874 L 904 858 L 924 824 L 938 786 L 945 742 L 943 702 L 936 669 L 926 642 L 910 612 L 885 579 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 558 283 L 558 291 L 588 321 L 619 322 L 620 314 L 578 272 L 569 272 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 274 220 L 257 220 L 245 224 L 235 233 L 234 240 L 230 244 L 229 325 L 231 325 L 234 329 L 244 330 L 249 326 L 250 246 L 255 241 L 274 238 L 276 236 L 278 226 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 738 220 L 738 222 L 735 223 L 734 232 L 735 238 L 741 241 L 813 240 L 818 241 L 825 248 L 825 328 L 828 328 L 829 331 L 844 331 L 847 327 L 847 248 L 842 235 L 836 227 L 821 220 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 626 216 L 615 226 L 615 236 L 787 407 L 933 556 L 949 578 L 968 612 L 982 647 L 991 684 L 995 720 L 993 764 L 982 813 L 972 839 L 955 870 L 935 898 L 901 932 L 869 955 L 840 971 L 811 982 L 781 990 L 748 994 L 700 992 L 655 982 L 635 975 L 600 958 L 578 943 L 572 945 L 557 960 L 560 965 L 590 984 L 621 999 L 652 1010 L 688 1018 L 720 1022 L 746 1022 L 779 1018 L 820 1008 L 845 999 L 881 980 L 906 963 L 933 940 L 968 900 L 983 877 L 996 852 L 1007 824 L 1015 796 L 1022 743 L 1021 705 L 1017 675 L 1006 633 L 996 607 L 978 573 L 952 536 L 936 518 L 634 217 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 456 314 L 457 321 L 484 321 L 485 319 L 489 319 L 610 200 L 628 185 L 646 174 L 668 164 L 698 155 L 732 152 L 754 153 L 773 156 L 793 162 L 820 174 L 841 187 L 872 216 L 893 246 L 908 279 L 914 302 L 917 323 L 917 356 L 915 372 L 906 405 L 892 434 L 893 439 L 891 440 L 891 442 L 906 455 L 913 454 L 932 413 L 940 384 L 945 345 L 945 329 L 941 300 L 932 265 L 913 225 L 887 191 L 860 167 L 839 153 L 818 142 L 790 132 L 753 125 L 715 125 L 683 130 L 662 136 L 630 151 L 605 168 L 585 185 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 364 126 L 343 125 L 342 127 L 341 125 L 312 127 L 293 131 L 289 134 L 285 133 L 282 136 L 279 135 L 255 144 L 243 153 L 235 155 L 217 167 L 214 172 L 206 176 L 178 205 L 175 212 L 170 216 L 164 225 L 163 231 L 158 235 L 158 239 L 149 253 L 140 277 L 132 316 L 131 349 L 136 385 L 145 415 L 150 420 L 151 426 L 158 438 L 158 442 L 162 446 L 162 450 L 168 460 L 175 466 L 176 471 L 181 475 L 182 479 L 187 485 L 194 490 L 195 494 L 202 499 L 207 506 L 210 506 L 211 510 L 215 511 L 215 514 L 218 514 L 226 522 L 233 532 L 255 552 L 255 554 L 268 568 L 286 583 L 286 585 L 312 612 L 319 615 L 324 612 L 324 590 L 309 571 L 306 571 L 301 566 L 301 563 L 281 545 L 278 539 L 272 535 L 264 525 L 261 525 L 249 514 L 247 510 L 226 490 L 218 479 L 210 473 L 210 470 L 206 465 L 199 460 L 197 454 L 192 451 L 191 446 L 186 442 L 186 438 L 178 423 L 175 422 L 176 419 L 172 410 L 169 409 L 169 402 L 163 390 L 164 387 L 162 384 L 158 354 L 156 353 L 157 329 L 162 293 L 164 291 L 170 270 L 182 245 L 188 237 L 188 233 L 193 227 L 195 227 L 195 224 L 199 219 L 201 219 L 205 212 L 211 208 L 212 203 L 218 201 L 219 197 L 224 192 L 234 188 L 238 183 L 241 183 L 258 173 L 259 170 L 263 170 L 267 166 L 278 164 L 287 158 L 292 159 L 313 153 L 323 153 L 325 151 L 361 152 L 380 156 L 386 155 L 388 158 L 393 157 L 395 160 L 417 167 L 435 177 L 448 178 L 448 175 L 452 174 L 458 166 L 457 159 L 447 153 L 442 153 L 421 140 L 416 140 L 413 137 L 409 138 L 401 133 L 385 129 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 276 56 L 274 58 L 271 57 L 230 71 L 219 76 L 213 82 L 208 82 L 204 84 L 203 87 L 199 87 L 194 90 L 193 93 L 183 97 L 160 114 L 151 125 L 148 125 L 128 145 L 128 148 L 122 152 L 110 167 L 109 171 L 106 173 L 93 193 L 79 220 L 73 236 L 73 243 L 66 255 L 67 258 L 65 259 L 57 298 L 58 304 L 56 305 L 55 312 L 56 319 L 54 324 L 54 353 L 56 356 L 56 370 L 58 371 L 57 383 L 60 387 L 59 395 L 62 398 L 62 404 L 64 407 L 62 408 L 63 414 L 66 417 L 68 424 L 67 427 L 71 433 L 72 443 L 79 460 L 84 466 L 84 470 L 88 475 L 89 480 L 92 482 L 102 498 L 103 504 L 107 507 L 107 510 L 113 515 L 115 521 L 130 540 L 147 558 L 152 560 L 152 563 L 170 581 L 182 590 L 182 593 L 193 604 L 197 605 L 197 608 L 229 640 L 235 643 L 236 647 L 319 730 L 326 734 L 334 745 L 365 776 L 368 776 L 371 779 L 372 783 L 440 851 L 450 850 L 457 843 L 459 833 L 449 823 L 447 823 L 419 793 L 413 790 L 405 779 L 402 778 L 401 775 L 388 762 L 382 759 L 382 756 L 372 746 L 370 746 L 369 743 L 361 735 L 359 735 L 355 729 L 353 729 L 348 722 L 340 716 L 339 713 L 329 703 L 327 703 L 291 665 L 288 664 L 288 662 L 277 650 L 273 649 L 273 646 L 267 640 L 263 639 L 262 636 L 253 627 L 251 627 L 248 622 L 240 614 L 238 614 L 223 597 L 218 594 L 218 591 L 211 584 L 208 584 L 203 577 L 200 576 L 196 570 L 188 564 L 188 562 L 174 549 L 173 546 L 169 545 L 167 540 L 139 512 L 137 506 L 133 504 L 131 498 L 129 498 L 125 493 L 121 482 L 114 474 L 110 462 L 107 461 L 107 458 L 103 453 L 103 447 L 99 443 L 99 437 L 94 432 L 95 426 L 92 422 L 90 412 L 88 411 L 89 405 L 87 396 L 84 393 L 85 388 L 80 355 L 80 322 L 85 291 L 84 283 L 88 277 L 88 267 L 93 259 L 95 250 L 101 238 L 101 233 L 105 228 L 105 223 L 115 209 L 115 205 L 120 200 L 120 196 L 124 194 L 130 182 L 138 175 L 144 165 L 151 160 L 154 154 L 189 124 L 203 116 L 203 114 L 207 111 L 212 111 L 226 100 L 232 100 L 254 90 L 255 88 L 274 84 L 276 81 L 281 82 L 314 75 L 356 74 L 386 77 L 413 84 L 425 85 L 427 88 L 438 92 L 445 92 L 448 96 L 472 107 L 493 121 L 505 121 L 515 112 L 515 108 L 510 103 L 509 99 L 502 97 L 499 93 L 495 93 L 493 89 L 485 87 L 481 82 L 471 79 L 469 76 L 461 72 L 449 70 L 448 67 L 417 57 L 380 50 L 369 51 L 368 49 L 328 48 L 324 49 L 323 51 L 322 49 L 317 49 L 314 51 L 306 50 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 1013 267 L 1006 243 L 996 218 L 981 189 L 966 166 L 932 128 L 907 106 L 878 87 L 858 76 L 824 62 L 780 51 L 746 47 L 720 47 L 674 53 L 649 59 L 599 79 L 559 104 L 536 123 L 445 214 L 445 216 L 442 217 L 441 220 L 438 221 L 424 235 L 424 237 L 411 248 L 410 251 L 406 252 L 396 262 L 392 270 L 389 270 L 366 292 L 364 298 L 361 301 L 358 301 L 354 308 L 348 310 L 340 318 L 339 322 L 336 323 L 313 345 L 313 348 L 304 355 L 304 358 L 301 361 L 298 361 L 274 384 L 271 391 L 266 392 L 242 416 L 242 420 L 238 421 L 229 430 L 221 443 L 228 455 L 236 456 L 244 449 L 247 449 L 248 445 L 252 443 L 252 440 L 263 432 L 268 424 L 271 424 L 274 419 L 277 419 L 277 416 L 284 412 L 286 406 L 290 402 L 294 402 L 294 399 L 301 395 L 303 389 L 310 383 L 313 383 L 313 380 L 321 372 L 324 372 L 331 365 L 331 362 L 357 336 L 360 336 L 367 329 L 367 326 L 397 296 L 399 296 L 400 293 L 403 293 L 405 288 L 412 281 L 415 281 L 422 274 L 422 271 L 425 268 L 428 268 L 428 265 L 434 261 L 434 259 L 442 251 L 445 251 L 446 247 L 450 246 L 456 241 L 460 233 L 465 228 L 469 228 L 475 221 L 476 217 L 480 217 L 492 205 L 492 203 L 495 202 L 507 190 L 508 186 L 511 186 L 523 172 L 525 172 L 537 161 L 538 157 L 541 157 L 563 136 L 589 117 L 606 107 L 646 89 L 673 81 L 714 75 L 754 75 L 790 81 L 826 92 L 857 107 L 888 127 L 931 167 L 946 186 L 964 215 L 980 251 L 991 294 L 995 329 L 993 372 L 989 396 L 982 422 L 967 460 L 948 492 L 949 499 L 961 512 L 968 512 L 992 471 L 1002 448 L 1015 405 L 1021 368 L 1022 328 L 1019 297 Z" fill="url(#accentBright)" fill-rule="evenodd"/>
+  <path d="M 387 382 L 374 401 L 370 417 L 370 651 L 374 668 L 383 683 L 393 692 L 400 696 L 420 702 L 654 702 L 671 698 L 688 687 L 697 676 L 701 668 L 705 653 L 705 417 L 701 400 L 692 386 L 676 373 L 666 369 L 655 367 L 419 367 L 403 371 Z" fill="url(#lightFill)"/>
+  <path d="M 417 407 L 427 403 L 648 403 L 658 407 L 665 414 L 669 424 L 669 645 L 665 656 L 660 661 L 648 666 L 427 666 L 417 662 L 410 655 L 406 643 L 406 425 L 410 414 Z" fill="url(#centerDark)"/>
+  <path d="M 463 458 L 457 466 L 455 479 L 455 595 L 457 603 L 461 609 L 469 615 L 493 617 L 597 617 L 606 615 L 616 607 L 620 595 L 620 474 L 616 462 L 610 456 L 601 452 L 475 452 Z" fill="url(#lightFill)"/>
+</svg>
