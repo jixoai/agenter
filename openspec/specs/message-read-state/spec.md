@@ -25,14 +25,20 @@ Message-system SHALL advance room read-state by moving actor ids from `unreadAct
 - **THEN** that user's actor id moves from unread to read on `m3` and earlier visible messages
 - **THEN** later room membership changes do not alter the already-frozen arrays on those messages
 
-### Requirement: Client mark-read acknowledgement SHALL stay monotonic per room seat
+### Requirement: Client mark-read acknowledgement SHALL stay monotonic per room actor
 
-Room clients SHALL treat latest-visible mark-read acknowledgement as monotonic progress for each `room + access token` seat. Transient viewport churn, observer resets, or temporary `null` visibility events SHALL NOT clear previously acknowledged progress or trigger duplicate `globalMarkRead` writes for the same or older durable message row.
+Room clients SHALL treat latest-visible mark-read acknowledgement as monotonic progress for each `room + actor identity`. Transient viewport churn, observer resets, or temporary `null` visibility events SHALL NOT clear previously acknowledged progress or trigger duplicate `globalMarkRead` writes for the same or older durable message row, and credential-source churn for the same actor SHALL NOT create a second acknowledgement track.
 
 #### Scenario: Visibility churn does not resend the same mark-read mutation
 - **WHEN** the transcript briefly reports no visible message and then reports the previously acknowledged message again
 - **THEN** the client keeps the previously acknowledged row floor
 - **THEN** it does not resend `globalMarkRead` for that same or older message
+
+#### Scenario: Credential refresh does not duplicate actor acknowledgement
+- **WHEN** the Room route rehydrates and resolves a different credential source for the same viewer actor
+- **AND** the current visible message already includes that actor inside `readActorIds`
+- **THEN** the client keeps one actor-scoped acknowledgement floor
+- **THEN** it does not emit another `globalMarkRead` for that same actor and message
 
 ### Requirement: Room projections SHALL expose latest-visible read progress from frozen arrays
 
