@@ -121,6 +121,18 @@
     onSubmit();
   };
 
+  /**
+   * TODO(codemirror-dedupe): remove these adapters once the workspace resolves to
+   * a single CodeMirror state/view instance again.
+   */
+  const completionStatusForState = (state: EditorState): ReturnType<typeof completionStatus> => {
+    return completionStatus(state as unknown as Parameters<typeof completionStatus>[0]);
+  };
+
+  const startCompletionForView = (view: EditorView): void => {
+    startCompletion(view as unknown as Parameters<typeof startCompletion>[0]);
+  };
+
   onMount(() => {
     if (!hostRef || !useCodeMirror) {
       return;
@@ -150,11 +162,11 @@
               if (!mentionToken && !slashToken) {
                 return;
               }
-              const status = completionStatus(update.state);
+              const status = completionStatusForState(update.state);
               if (status === "active" || status === "pending") {
                 return;
               }
-              startCompletion(update.view);
+              startCompletionForView(update.view);
             }),
             EditorView.domEventHandlers({
               keydown: (event, viewState) => {
@@ -168,7 +180,7 @@
                 ) {
                   return false;
                 }
-                if (completionStatus(viewState.state)) {
+                if (completionStatusForState(viewState.state)) {
                   return false;
                 }
                 event.preventDefault();
