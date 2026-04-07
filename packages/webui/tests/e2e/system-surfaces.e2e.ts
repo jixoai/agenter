@@ -488,6 +488,71 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.locator('[href*="/messages/room/room-"]')).toHaveCount(0);
   });
 
+  test("Scenario: Given New room selects one additional user When creation completes Then the route focuses the new room and the viewer list only includes joined users", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-new-room-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Selected users ${testInfo.project.name} ${Date.now()}`;
+    let viewerRuntimeUrl: string | null = null;
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      const selectedUserCheckbox = createRoomPage.getByRole("checkbox", {
+        name: new RegExp(`^Include ${escapeRegExp(viewerAvatarName)}$`),
+      });
+      await expect(selectedUserCheckbox).toBeVisible({ timeout: 15_000 });
+      await clickStable(selectedUserCheckbox);
+
+      await expect(createRoomPage.getByText("2 Users selected.", { exact: true })).toBeVisible({ timeout: 15_000 });
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      await expect(page).toHaveURL(/\/messages\/room\/0x[0-9a-f]+$/i, { timeout: 15_000 });
+
+      const viewerTrigger = page.getByLabel("View room as user");
+      const viewerContent = await openSelectContent(page, viewerTrigger);
+      await expect(viewerContent.getByRole("option")).toHaveCount(2, { timeout: 15_000 });
+      await expect(viewerContent.getByRole("option", { name: new RegExp(escapeRegExp(viewerAvatarName)) })).toBeVisible({
+        timeout: 15_000,
+      });
+      await page.keyboard.press("Escape");
+
+      const manageRoomDialog = await openManageRoomDialog(page);
+      const userSeatRows = manageRoomDialog
+        .getByTestId("room-manage-stage")
+        .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])');
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await userSeatRows.filter({ hasText: viewerAvatarName }).first().isVisible().catch(() => false);
+      });
+      await expect(userSeatRows).toHaveCount(2, { timeout: 15_000 });
+      await expect(userSeatRows.filter({ hasText: viewerAvatarName }).first()).toBeVisible({ timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
+  });
+
   test("Scenario: Given first-visit system surfaces When Avatars or Terminals load Then help hints stay collapsed until requested", async ({
     page,
   }) => {
