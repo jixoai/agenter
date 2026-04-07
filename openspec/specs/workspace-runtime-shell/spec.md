@@ -70,6 +70,16 @@ The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Fo
 - **THEN** the shell lands on `Attention` by default
 - **THEN** the most critical runtime surface is visible without an extra tab switch
 
+### Requirement: Runtime shell routes land on a canonical runtime tab
+
+The workspace runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to that tab without requiring feature-level navigation glue.
+
+#### Scenario: Runtime rail links land on attention by default
+
+- **WHEN** the operator opens a session from the runtime rail or a direct runtime entry URL without a tab segment
+- **THEN** the browser lands on `/avatars/runtime/{sessionId}/attention`
+- **AND** the runtime shell renders without an intermediate error page
+
 ### Requirement: Running-avatar detail SHALL link out to global resource pages instead of duplicating them
 
 The running-avatar detail shell SHALL NOT duplicate the global `Chats` or `Terminals` browsing surfaces, and it SHALL use explicit links or source jumps when the user needs to inspect a room or terminal.

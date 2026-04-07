@@ -54,15 +54,18 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 ## 5. 产品表面长期法则
 
-- 一级导航固定为 `Workspaces`、`History`、`Messages`、`Terminals`、`Settings`。
-- `Workspaces` 是统一的 global/workspace shell；`Quick Start` 是该路由中的启动编排区，不再是独立主路由。
-- `History` 是全局 workspace 历史索引页，只列出已有启动记录的 workspace，并支持按最近使用、路径、名字排序。
-- `Messages` 是 `message-system` 的全局 surface；其中 `room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
-- `Terminals` 是 `terminal-system` 的全局 surface；右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。
-- `Settings` 同时承担超级管理员入口、root key 绑定、profile 编辑和全局身份管理；壳层 footer 中的 profile 入口只是一条通往这里的导航。
+- 一级导航固定为 `Avatars`、`Messages`、`Terminals`。
+- 三个一级 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
+- 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责 split-view 次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
+- WebUI 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。
+- `Avatars` 是统一的 avatar workbench；固定 tabs 为 `workspace`、`history`、`settings`，运行中的 avatar session 以动态 tabs 追加在同一层。这里的 `settings` 只表达 workspace-scoped settings workbench，不再承载 superadmin/profile 管理。
+- `Quick Start` 是 `Avatars / workspace` 内的启动编排区，不再是独立主路由；workspace 历史索引页则收拢到 `Avatars / history`。
+- `Messages` 是 `message-system` 的全局 workbench；每个 room 对应一个 tab，并固定保留一个 `new room` tab。`room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
+- `Terminals` 是 `terminal-system` 的全局 workbench；每个 terminal 对应一个 tab，并固定保留一个 `new terminal` tab。terminal surface 内右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。
+- `settings` 不再作为一级入口；超级管理员入口、root key 绑定、profile 编辑和全局身份管理统一收拢到辅助路由 `/admin`，并通过 shell footer 的 `super admin` 入口进入。
 - `~/` 是 special global workspace。canonical avatar catalog 与用户级默认配置通过它暴露，但 room / terminal 自身不从属于 workspace。
 - `Quick Start` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar 与未来可扩展的全局系统引用，并在用户 detour 到 `Messages` / `Terminals` 后继续保留当前草稿。
-- `Running Avatars` 是 secondary runtime rail。进入单个 avatar 后，默认页固定为 `Attention`，runtime tabs 在同一层打平，`Chats` / `Terminals` 只作为 link-out 的全局资源页存在。
+- 运行中的 avatar discoverability 统一通过 `Avatars` 顶部的动态 runtime tabs 表达，不再保留单独的 `Running Avatars` 次级导航卡片。进入单个 avatar 后，默认页固定为 `Attention`，runtime tabs 在同一层打平。
 - `workspace + avatar` 是 durable active-session identity；再次启动同一 pair 时必须复用同一个稳定 session id，而不是创建重复 session。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
@@ -71,7 +74,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Terminals` 是 app-level global workbench，不是 session-private surface；session route 只允许链接或投影该工作台，不能重新定义第二套 terminal truth。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
 - regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
-- Session icon 与 profile/avatar icon 必须通过 profile-service 的语义 URL 消费，fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
+- Session / room / profile-avatar icon 必须通过 profile-service 的 typed semantic URL family 消费；owner type 不能混入无类型 bucket。fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 
 ## 6. 测试与验收法则
