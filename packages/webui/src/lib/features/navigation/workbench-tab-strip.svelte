@@ -129,14 +129,14 @@
 </script>
 
 <Tabs.Root value={value} onValueChange={(nextValue) => void handleTabSelection(nextValue)}>
-	<nav aria-label={ariaLabel} class={cn('grid gap-0', className)} data-workbench-chrome>
+	<nav aria-label={ariaLabel} class={cn('grid w-full min-w-0 gap-0 overflow-hidden', className)} data-workbench-chrome>
 		<div
 			class={cn(
-				'border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--muted),white_52%)_0%,color-mix(in_srgb,var(--muted),white_20%)_52%,color-mix(in_srgb,var(--background),transparent_12%)_100%)] px-2.5 pt-2.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_78%),0_24px_48px_-40px_color-mix(in_srgb,var(--foreground),transparent_24%)]',
+				'w-full min-w-0 overflow-hidden border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--muted),white_52%)_0%,color-mix(in_srgb,var(--muted),white_20%)_52%,color-mix(in_srgb,var(--background),transparent_12%)_100%)] px-2.5 pt-2.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_78%),0_24px_48px_-40px_color-mix(in_srgb,var(--foreground),transparent_24%)]',
 				fusedBelow ? 'rounded-t-[1.35rem] border-b-0 pb-0' : 'rounded-[1.35rem] pb-2.5',
 			)}
 		>
-			<ScrollView class="w-full [touch-action:pan-x]" orientation="horizontal" contentClass="min-w-max">
+			<ScrollView class="w-full min-w-0 [touch-action:pan-x]" orientation="horizontal" contentClass="min-w-max">
 				<Tabs.List class="relative flex w-max min-w-full items-end gap-1.5 bg-transparent px-1 pb-0 after:pointer-events-none after:absolute after:right-0 after:bottom-0 after:left-0 after:h-px after:bg-[color-mix(in_srgb,var(--border),transparent_18%)] after:content-['']">
 					{#each tabs as tab (tab.id)}
 						<div class="group relative shrink-0" data-workbench-tab-entry>
@@ -281,6 +281,9 @@
 <style>
 	:global([data-workbench-chrome]) {
 		container-type: inline-size;
+		inline-size: 100%;
+		min-inline-size: 0;
+		overflow: hidden;
 	}
 
 	:global([data-workbench-tab]) {
