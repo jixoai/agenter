@@ -75,6 +75,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
 - regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
 - Session / room / profile-avatar icon 必须通过 profile-service 的 typed semantic URL family 消费；owner type 不能混入无类型 bucket。fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
+- 应用级品牌图标的 canonical source 固定在仓库根 `assets/source/master`；Web favicon、PWA、Apple、Android、macOS 等派生资产必须由统一脚本从该主源生成，`packages/webui/static` 只承载运行时消费副本，不得成为第二真源。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 
 ## 6. 测试与验收法则
