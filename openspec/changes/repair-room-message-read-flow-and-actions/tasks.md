@@ -16,5 +16,4 @@
 ## 4. Verification
 
 - [x] 4.1 Add focused tests for monotonic mark-read behavior, read disclosure rendering, and shared row actions
-- [ ] 4.2 Run targeted typecheck/tests plus browser verification for the Messages room route
-  - Blocked on existing browser bootstrap failure in `packages/webui/tests/e2e/system-surfaces.e2e.ts`: `authenticateWithManagedKey` never reaches the `Avatars` heading on either desktop or mobile.
+- [x] 4.2 Run targeted typecheck/tests plus browser verification for the Messages room route
