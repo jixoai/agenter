@@ -179,6 +179,8 @@ const activateUntil = async (
       return;
     }
   }
+
+  throw new Error("activateUntil failed to reach the expected state");
 };
 
 const activateTab = async (tab: Locator): Promise<void> => {
