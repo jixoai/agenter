@@ -21,6 +21,7 @@
 	import {
 		maybeStartRoomReadAck,
 		resolveRoomReadAckKey,
+		resolveRoomReadAckProjectionFloor,
 		resolveRoomReadAckServerFloor,
 		settleRoomReadAckFailure,
 		settleRoomReadAckSuccess,
@@ -524,9 +525,13 @@
 		}
 		const { messageId, rowId: targetRowId } = visibleMessage;
 		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
+		const serverFloor = Math.max(
+			resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId),
+			resolveRoomReadAckProjectionFloor(room.readProgress, resolvedRoomSeatStates, viewerActorId),
+		);
 		const currentAckState = syncRoomReadAckState(
 			latestMarkedReadBySeat[markKey],
-			resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId),
+			serverFloor,
 		);
 		if (
 			currentAckState.ackedRowId !== (latestMarkedReadBySeat[markKey]?.ackedRowId ?? 0) ||

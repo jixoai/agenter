@@ -8,6 +8,16 @@ export interface RoomReadAckMessageLike {
   readActorIds?: readonly string[];
 }
 
+export interface RoomReadAckProgressLike {
+  latestVisibleMessageRowId?: number;
+}
+
+export interface RoomReadAckSeatLike {
+  actorId: string;
+  trackedByLatestVisible: boolean;
+  hasReadLatestVisible: boolean;
+}
+
 export const EMPTY_ROOM_READ_ACK_STATE: RoomReadAckState = {
   ackedRowId: 0,
   pendingRowId: null,
@@ -27,6 +37,22 @@ export const resolveRoomReadAckServerFloor = (
     latestReadRowId = Math.max(latestReadRowId, message.rowId);
   }
   return latestReadRowId;
+};
+
+export const resolveRoomReadAckProjectionFloor = (
+  readProgress: RoomReadAckProgressLike | null | undefined,
+  roomSeatStates: readonly RoomReadAckSeatLike[],
+  actorId: string,
+): number => {
+  const latestVisibleRowId = readProgress?.latestVisibleMessageRowId ?? 0;
+  if (latestVisibleRowId <= 0) {
+    return 0;
+  }
+  const viewerSeat = roomSeatStates.find((seat) => seat.actorId === actorId) ?? null;
+  if (!viewerSeat?.trackedByLatestVisible || !viewerSeat.hasReadLatestVisible) {
+    return 0;
+  }
+  return latestVisibleRowId;
 };
 
 export const syncRoomReadAckState = (
