@@ -10,6 +10,7 @@
 		type WorkbenchTabItem,
 	} from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import { setWorkbenchPageToolbarRegistry } from '$lib/features/navigation/workbench-page-toolbar-context.svelte';
+	import { resolveMessageRoomTabLabel, resolveMessageRoomTabTitle } from '$lib/features/messages/message-room-tab-label';
 	import {
 		dismissWorkbenchTabId,
 		filterDismissedWorkbenchTabs,
@@ -97,13 +98,18 @@
 	};
 
 	const tabs = $derived.by(() => {
+		const duplicateTitles = new Set(
+			visibleRooms
+				.map((room) => resolveMessageRoomTabTitle(room))
+				.filter((title, index, values) => values.indexOf(title) !== index),
+		);
 		const roomTabs = visibleRooms.map((room) => ({
 			id: room.chatId,
 			href: `/messages/room/${encodeURIComponent(room.chatId)}`,
-			label: room.title || room.chatId,
-			title: room.title || room.chatId,
+			label: resolveMessageRoomTabLabel(room, duplicateTitles),
+			title: resolveMessageRoomTabTitle(room),
 			description: room.chatId,
-			avatarLabel: room.title || room.chatId,
+			avatarLabel: resolveMessageRoomTabTitle(room),
 			avatarUrl: controller.runtimeStore.roomIconUrl(room.chatId),
 			closable: true,
 			onClose: () => void closeRoomTab(room.chatId),
