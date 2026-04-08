@@ -422,6 +422,10 @@ describe("Feature: web-chat-view package", () => {
     flushSync();
     await Promise.resolve();
 
+    const composerStatus = document.body.querySelector("[part='composer-status']");
+    expect(readRenderedText(composerStatus)).toContain("Draft + files");
+    expect(readRenderedText(composerStatus)).not.toContain("Attachments ready");
+
     const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),
     );
@@ -469,6 +473,7 @@ describe("Feature: web-chat-view package", () => {
       expect(document.body.querySelector("[part='composer-asset']")).toBeTruthy();
     });
     expect(readRenderedText(document.body.querySelector("[part='composer-asset']"))).toContain("notes.txt");
+    expect(readRenderedText(document.body.querySelector("[part='composer-status']"))).toContain("Attachments ready");
 
     const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),

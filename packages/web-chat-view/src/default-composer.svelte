@@ -285,6 +285,7 @@
           disabled={disabled}
           submitting={sending}
           capabilities={composerCapabilities}
+          pendingAssetCount={pendingAssets.length}
         />
       </div>
     </div>

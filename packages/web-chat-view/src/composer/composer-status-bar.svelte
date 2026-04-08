@@ -11,10 +11,12 @@
     disabled,
     submitting,
     capabilities,
+    pendingAssetCount,
   }: {
     disabled: boolean;
     submitting: boolean;
     capabilities: ResolvedWebChatComposerCapabilities;
+    pendingAssetCount: number;
   } = $props();
 
   const helpContext = $derived(capabilities.helpItems.map((item) => `${item.label}:${item.value}`).join(" | "));
@@ -37,7 +39,7 @@
     }
     if (capabilities.attachmentEnabled) {
       return {
-        label: capabilities.screenshotEnabled ? "Attachments ready" : "Draft + files",
+        label: pendingAssetCount > 0 ? "Attachments ready" : "Draft + files",
         toneClassName: "border-teal-200 bg-teal-50 text-teal-800",
         Icon: ImagePlus,
         iconClassName: "",
