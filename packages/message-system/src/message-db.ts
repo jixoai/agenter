@@ -43,6 +43,14 @@ const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
   normalizeActorIds(parseJson<string[]>(value, []).filter(isStoredActorId));
+const remapActorId = (
+  actorId: MessageActorId | undefined,
+  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+): MessageActorId | undefined => (actorId ? (actorIdMap.get(actorId) ?? actorId) : undefined);
+const remapActorIds = (
+  actorIds: readonly MessageActorId[],
+  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+): MessageActorId[] => normalizeActorIds(actorIds.map((actorId) => actorIdMap.get(actorId) ?? actorId));
 
 const normalizeMessageKind = (value: string | null): MessageKind => {
   if (value === "error" || value === "interactive") {
@@ -265,6 +273,57 @@ export class MessageDb {
     return this.getChannel(chatId, focused)!;
   }
 
+  repairMessageActorIds(
+    chatId: string,
+    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+  ): { changed: boolean } {
+    if (actorIdMap.size === 0) {
+      return { changed: false };
+    }
+    const rows = this.db
+      .query(
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, attention_state, attention_loaded_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+         from chat_message
+         where chat_id = ?
+         order by id asc`,
+      )
+      .all(chatId) as Array<Parameters<typeof mapMessage>[0]>;
+
+    let changed = false;
+    const updateMessageActors = this.db.query(
+      `update chat_message
+       set sender_actor_id = ?, read_actor_ids_json = ?, unread_actor_ids_json = ?
+       where id = ?`,
+    );
+
+    for (const row of rows) {
+      const message = mapMessage(row);
+      const nextSenderActorId = remapActorId(message.senderActorId, actorIdMap);
+      const nextReadActorIds = remapActorIds(message.readActorIds, actorIdMap);
+      const nextUnreadActorIds = remapActorIds(message.unreadActorIds, actorIdMap).filter(
+        (actorId) => !nextReadActorIds.includes(actorId),
+      );
+      if (
+        nextSenderActorId === message.senderActorId &&
+        nextReadActorIds.length === message.readActorIds.length &&
+        nextUnreadActorIds.length === message.unreadActorIds.length &&
+        nextReadActorIds.every((actorId, index) => actorId === message.readActorIds[index]) &&
+        nextUnreadActorIds.every((actorId, index) => actorId === message.unreadActorIds[index])
+      ) {
+        continue;
+      }
+      updateMessageActors.run(
+        nextSenderActorId ?? null,
+        toJson(nextReadActorIds),
+        toJson(nextUnreadActorIds),
+        message.rowId,
+      );
+      changed = true;
+    }
+
+    return { changed };
+  }
+
   archiveChannel(chatId: string, archivedBy: string, focused = false): MessageChannelRecord {
     const current = this.getChannel(chatId, focused);
     if (!current) {
@@ -323,6 +382,35 @@ export class MessageDb {
       )
       .get(chatId, grantId) as Parameters<typeof mapGrant>[0] | null;
     return row ? mapGrant(row) : undefined;
+  }
+
+  updateGrant(
+    chatId: string,
+    grantId: string,
+    patch: {
+      role?: MessageIssueGrantInput["role"];
+      label?: string;
+      participantId?: string;
+    },
+  ): MessageChannelGrantRecord {
+    const current = this.getGrantById(chatId, grantId);
+    if (!current) {
+      throw new Error(`unknown chat channel grant: ${grantId}`);
+    }
+    this.db
+      .query(
+        `update chat_channel_grant
+         set role = ?, label = ?, participant_id = ?
+         where chat_id = ? and grant_id = ?`,
+      )
+      .run(
+        patch.role ?? current.role,
+        patch.label ?? current.label ?? null,
+        patch.participantId ?? current.participantId ?? null,
+        chatId,
+        grantId,
+      );
+    return this.getGrantById(chatId, grantId)!;
   }
 
   findActiveGrantByToken(chatId: string, accessToken: string, tokenHash: string): MessageChannelGrantRecord | undefined {

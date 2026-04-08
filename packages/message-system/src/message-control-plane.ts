@@ -183,6 +183,17 @@ const mergeParticipantsWithInitialUsers = (
   }
   return [...merged.values()];
 };
+const remapActorId = (
+  actorId: MessageActorId | undefined,
+  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+): MessageActorId | undefined => (actorId ? (actorIdMap.get(actorId) ?? actorId) : undefined);
+const remapActorIds = (
+  actorIds: readonly MessageActorId[],
+  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+): MessageActorId[] =>
+  [...new Set(actorIds.map((actorId) => actorIdMap.get(actorId) ?? actorId))].sort((left, right) =>
+    left.localeCompare(right),
+  );
 
 const roleRank = (role: MessageChannelAccessRole): number => {
   if (role === "admin") {
@@ -860,6 +871,75 @@ export class MessageControlPlane {
     );
   }
 
+  repairChannelActorAliases(input: {
+    chatId: string;
+    aliases: Array<{
+      fromActorId: MessageActorId;
+      toActorId: MessageActorId;
+    }>;
+  }): MessageControlPlaneEntry | undefined {
+    const actorIdMap = new Map<MessageActorId, MessageActorId>();
+    for (const alias of input.aliases) {
+      this.assertActorId(alias.fromActorId);
+      this.assertActorId(alias.toActorId);
+      if (alias.fromActorId !== alias.toActorId) {
+        actorIdMap.set(alias.fromActorId, alias.toActorId);
+      }
+    }
+    const focused = this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId);
+    const channel = this.db.getChannel(input.chatId, focused);
+    if (!channel) {
+      return undefined;
+    }
+    if (actorIdMap.size === 0) {
+      return this.withProjection(
+        {
+          ...channel,
+          metadata: this.withAdminState(channel.chatId, channel.metadata),
+        },
+        this.issueTrustedBootstrapAccess(input.chatId),
+      );
+    }
+
+    const grantsChanged = this.repairActiveGrantsForActorAliases(input.chatId, actorIdMap);
+    const messagesChanged = this.db.repairMessageActorIds(input.chatId, actorIdMap).changed;
+    const nextParticipants = this.repairChannelParticipants(channel.participants, actorIdMap);
+    const nextMetadata = this.withAdminState(input.chatId, this.repairChannelMetadata(channel.metadata, actorIdMap));
+    const participantsChanged =
+      nextParticipants.length !== channel.participants.length ||
+      nextParticipants.some((participant, index) => {
+        const current = channel.participants[index];
+        return current?.id !== participant.id || current?.label !== participant.label;
+      });
+    const metadataChanged = JSON.stringify(nextMetadata) !== JSON.stringify(channel.metadata ?? {});
+    if (participantsChanged || metadataChanged) {
+      this.db.updateChannel(
+        input.chatId,
+        {
+          participants: nextParticipants,
+          metadata: nextMetadata,
+        },
+        focused,
+      );
+    }
+    if (grantsChanged || messagesChanged || participantsChanged || metadataChanged) {
+      this.bumpVersion();
+      this.emitChannelChanged({
+        chatId: input.chatId,
+        reason: "updated",
+        builtIn: this.isBuiltInChannelMetadata(nextMetadata),
+      });
+    }
+    const repaired = this.db.getChannel(input.chatId, focused)!;
+    return this.withProjection(
+      {
+        ...repaired,
+        metadata: this.withAdminState(repaired.chatId, repaired.metadata),
+      },
+      this.issueTrustedBootstrapAccess(input.chatId),
+    );
+  }
+
   archiveChannelAuthorized(input: {
     chatId: string;
     accessToken?: string;
@@ -1393,6 +1473,114 @@ export class MessageControlPlane {
       readActorIds,
       unreadActorIds: participantActorIds.filter((actorId) => !readActorIds.includes(actorId)),
     };
+  }
+
+  private repairChannelParticipants(
+    participants: MessageParticipant[],
+    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+  ): MessageParticipant[] {
+    return (
+      normalizeChannelParticipants(
+        participants.map((participant) => ({
+          ...participant,
+          id:
+            remapActorId(
+              isCanonicalActorId(participant.id) ? (participant.id as MessageActorId) : undefined,
+              actorIdMap,
+            ) ?? participant.id,
+        })),
+      ) ?? []
+    );
+  }
+
+  private repairChannelMetadata(
+    metadata: Record<string, unknown> | undefined,
+    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+  ): Record<string, unknown> {
+    const candidateIds = remapActorIds(this.readAdminGroupCandidateIds(metadata), actorIdMap);
+    const pendingAdminWork = this.readPendingAdminWork(metadata).map((item) => ({
+      ...item,
+      requestedBy: remapActorId(item.requestedBy, actorIdMap) ?? item.requestedBy,
+      assignedAdminId: remapActorId(item.assignedAdminId, actorIdMap),
+    }));
+    return {
+      ...(metadata ?? {}),
+      [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: candidateIds,
+      [ROOM_PENDING_ADMIN_WORK_KEY]: pendingAdminWork,
+    };
+  }
+
+  private repairActiveGrantsForActorAliases(
+    chatId: string,
+    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+  ): boolean {
+    if (actorIdMap.size === 0) {
+      return false;
+    }
+    const activeGrants = this.db.listActiveGrants(chatId);
+    const sourceActorIds = new Set<MessageActorId>(
+      [...actorIdMap.keys()].filter((actorId) =>
+        activeGrants.some((grant) => grant.participantId === actorId && !this.isTrustedBootstrapGrant(grant)),
+      ),
+    );
+    if (sourceActorIds.size === 0) {
+      return false;
+    }
+    const targetActorIds = new Set<MessageActorId>(
+      [...sourceActorIds].map((actorId) => actorIdMap.get(actorId)!).filter(Boolean),
+    );
+    const grouped = new Map<MessageActorId, MessageChannelGrantRecord[]>();
+    for (const grant of activeGrants) {
+      if (!grant.participantId || this.isTrustedBootstrapGrant(grant)) {
+        continue;
+      }
+      if (!sourceActorIds.has(grant.participantId) && !targetActorIds.has(grant.participantId)) {
+        continue;
+      }
+      const participantId = actorIdMap.get(grant.participantId) ?? grant.participantId;
+      const current = grouped.get(participantId);
+      if (current) {
+        current.push(grant);
+      } else {
+        grouped.set(participantId, [grant]);
+      }
+    }
+
+    let changed = false;
+    for (const [participantId, grants] of grouped) {
+      const preferred = grants.reduce((best, current) => {
+        if (!best) {
+          return current;
+        }
+        const roleDiff = roleRank(current.role) - roleRank(best.role);
+        if (roleDiff !== 0) {
+          return roleDiff > 0 ? current : best;
+        }
+        return current.createdAt >= best.createdAt ? current : best;
+      }, null as MessageChannelGrantRecord | null);
+      if (!preferred) {
+        continue;
+      }
+      const preferredLabel = preferred.label ?? grants.find((grant) => grant.label)?.label;
+      const redundantGrantIds = grants.filter((grant) => grant.grantId !== preferred.grantId).map((grant) => grant.grantId);
+      for (const grantId of redundantGrantIds) {
+        this.db.revokeGrant(chatId, grantId);
+      }
+      const needsPreferredUpdate =
+        preferred.participantId !== participantId ||
+        (preferred.label ?? undefined) !== preferredLabel;
+      if (redundantGrantIds.length === 0 && !needsPreferredUpdate) {
+        continue;
+      }
+      this.db.updateGrant(chatId, preferred.grantId, {
+        participantId,
+        role: preferred.role,
+        label: preferredLabel,
+      });
+      changed = true;
+    }
+
+    return changed;
   }
 
   private requireAccess(

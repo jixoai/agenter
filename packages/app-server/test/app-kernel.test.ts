@@ -200,6 +200,117 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given a room still granted to a legacy session actor When the avatar starts Then grants and unread membership are repaired to the avatar principal", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "jane",
+      name: "legacy-jane",
+      autoStart: false,
+    });
+    if (!session.avatarPrincipalId) {
+      throw new Error("expected avatar principal id");
+    }
+    const legacyActorId = `session:${session.id}` as const;
+
+    const room = await kernel.createGlobalRoom({
+      title: "Legacy actor repair room",
+      initialUsers: [
+        {
+          actorId: "auth:kzf",
+          label: "kzf",
+          role: "member",
+          focused: true,
+        },
+        {
+          actorId: legacyActorId,
+          label: "jane",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    const sent = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      superadminActorId: "auth:kzf",
+      text: "hello legacy jane",
+    });
+    expect(sent.ok).toBeTrue();
+
+    const before = kernel.pageGlobalRoomMessages({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 4,
+    }).items.find((message) => message.content === "hello legacy jane");
+    expect(before?.unreadActorIds).toContain(legacyActorId);
+    expect(before?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+    expect(
+      kernel.listGlobalRooms({
+        actorId: session.avatarPrincipalId,
+      }).some((entry) => entry.chatId === room.chatId),
+    ).toBeFalse();
+
+    await kernel.startSession(session.id);
+
+    const grants = kernel.listGlobalRoomGrants({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(grants.some((grant) => grant.participantId === legacyActorId)).toBeFalse();
+    expect(
+      grants.some((grant) => grant.participantId === session.avatarPrincipalId && grant.role === "member"),
+    ).toBeTrue();
+    expect(
+      kernel.listGlobalRooms({
+        actorId: session.avatarPrincipalId,
+      }).some((entry) => entry.chatId === room.chatId),
+    ).toBeTrue();
+
+    const deadline = Date.now() + 5_000;
+    let loaded = before ?? null;
+    while (Date.now() < deadline) {
+      loaded = kernel
+        .pageGlobalRoomMessages({
+          chatId: room.chatId,
+          accessToken: room.accessToken,
+          limit: 4,
+        })
+        .items.find((message) => message.content === "hello legacy jane") ?? null;
+      if (
+        loaded &&
+        loaded.attentionState === "loaded" &&
+        loaded.readActorIds.includes(session.avatarPrincipalId) &&
+        !loaded.readActorIds.includes(legacyActorId) &&
+        !loaded.unreadActorIds.includes(session.avatarPrincipalId) &&
+        !loaded.unreadActorIds.includes(legacyActorId)
+      ) {
+        break;
+      }
+      await new Promise<void>((resolveReady) => setTimeout(resolveReady, 50));
+    }
+
+    expect(loaded?.attentionState).toBe("loaded");
+    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId);
+    expect(loaded?.readActorIds).not.toContain(legacyActorId);
+    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+    expect(loaded?.unreadActorIds).not.toContain(legacyActorId);
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given session runtime When inspecting model debug Then resolved provider config and empty history are returned", async () => {
     const kernel = createKernel();
     await kernel.start();

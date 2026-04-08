@@ -160,6 +160,71 @@ describe("Feature: message-chat-control-plane", () => {
     expect(updated.participants).toEqual([{ id: "auth:owner", label: "Owner" }]);
   });
 
+  test("Scenario: Given legacy session actor aliases When a room is repaired Then grants message authorship and read membership converge on the principal actor", () => {
+    const plane = createPlane();
+    const principalActorId = generatePrincipalKeyPair().principalId;
+    const room = createRoom(plane, { chatId: createRoomId() });
+
+    const legacySeat = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Jane",
+      participantId: "session:jane",
+    });
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderActorId: "auth:owner",
+      kind: "text",
+      content: "hello legacy jane",
+    });
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: legacySeat.accessToken,
+      senderActorId: "session:jane",
+      kind: "text",
+      content: "legacy jane reply",
+    });
+
+    const repaired = plane.repairChannelActorAliases({
+      chatId: room.chatId,
+      aliases: [{ fromActorId: "session:jane", toActorId: principalActorId }],
+    });
+    const grants = plane.listChannelGrantsAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    const messages = plane.queryMessagesAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 10,
+    }).items;
+    const inbound = messages.find((message) => message.content === "hello legacy jane");
+    const reply = messages.find((message) => message.content === "legacy jane reply");
+
+    expect(repaired?.participants).toEqual([
+      { id: principalActorId },
+      { id: "auth:kzf" },
+    ]);
+    expect(plane.listChannelsForActor("session:jane")).toHaveLength(0);
+    expect(plane.listChannelsForActor(principalActorId)[0]?.chatId).toBe(room.chatId);
+    expect(grants.some((grant) => grant.participantId === "session:jane")).toBeFalse();
+    expect(grants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          participantId: principalActorId,
+          role: "member",
+        }),
+      ]),
+    );
+    expect(inbound?.unreadActorIds).toContain(principalActorId);
+    expect(inbound?.unreadActorIds).not.toContain("session:jane");
+    expect(reply?.senderActorId).toBe(principalActorId);
+    expect(reply?.readActorIds).toContain(principalActorId);
+    expect(reply?.readActorIds).not.toContain("session:jane");
+  });
+
   test("Scenario: Given initial users on room create When the channel is created Then grants and focus materialize immediately without downgrading the bootstrap admin", () => {
     const plane = createPlane();
     const room = plane.createChannel({

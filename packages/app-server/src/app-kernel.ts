@@ -871,6 +871,7 @@ export class AppKernel {
     const boundSessions = await Promise.all(
       this.sessions.list().map(async (session) => this.bindSessionPrimaryRoomId(this.bindSessionAvatarPrincipal(session))),
     );
+    this.repairLegacySessionMessageActors(boundSessions);
     this.syncAvatarCatalogWatchers();
     await Promise.all([
       this.messageControlPlane.startTransport({ port: 0 }),
@@ -966,6 +967,33 @@ export class AppKernel {
       return primaryRoomId;
     }
     throw new Error(`session primary room id unavailable: ${sessionId}`);
+  }
+
+  private collectLegacySessionMessageActorAliases(
+    sessions: Array<Pick<SessionMeta, "id" | "avatarPrincipalId">>,
+  ): Array<{ fromActorId: MessageActorId; toActorId: MessageActorId }> {
+    return sessions.flatMap((session) => {
+      if (!session.avatarPrincipalId) {
+        return [];
+      }
+      const legacyActorId = resolveSessionRoomActorId(session.id);
+      return legacyActorId === session.avatarPrincipalId
+        ? []
+        : [{ fromActorId: legacyActorId, toActorId: session.avatarPrincipalId }];
+    });
+  }
+
+  private repairLegacySessionMessageActors(sessions: Array<Pick<SessionMeta, "id" | "avatarPrincipalId">>): void {
+    const aliases = this.collectLegacySessionMessageActorAliases(sessions);
+    if (aliases.length === 0) {
+      return;
+    }
+    for (const channel of this.messageControlPlane.listChannels({ includeArchived: true })) {
+      this.messageControlPlane.repairChannelActorAliases({
+        chatId: channel.chatId,
+        aliases,
+      });
+    }
   }
 
   private resolveSessionMessageActorId(session: Pick<SessionMeta, "id" | "avatarPrincipalId">): MessageActorId {
@@ -1530,6 +1558,7 @@ export class AppKernel {
           : reusable;
       const updated = await this.bindSessionPrimaryRoomId(renamed);
       await this.syncSessionIconSeed(updated);
+      this.repairLegacySessionMessageActors([updated]);
       this.ensureSessionPrimaryRoom(updated);
       this.emit("session.updated", { session: updated }, updated.id);
       if (input.autoStart === false) {
@@ -1551,6 +1580,7 @@ export class AppKernel {
     });
     const boundSession = await this.bindSessionPrimaryRoomId(session);
     await this.syncSessionIconSeed(boundSession);
+    this.repairLegacySessionMessageActors([boundSession]);
     this.ensureSessionPrimaryRoom(boundSession);
     this.emit("session.updated", { session: boundSession }, boundSession.id);
 
@@ -1614,6 +1644,7 @@ export class AppKernel {
     const meta = await this.bindSessionPrimaryRoomId(avatarBoundMeta);
 
     this.rememberWorkspace(meta.workspacePath);
+    this.repairLegacySessionMessageActors([meta]);
 
     const existing = this.runtimes.get(sessionId);
     if (existing?.isStarted()) {
