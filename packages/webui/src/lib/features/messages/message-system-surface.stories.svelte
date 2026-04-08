@@ -24,7 +24,7 @@
 		const usersSection = await canvas.findByTestId('room-manage-users-section');
 		await userEvent.click(within(usersSection).getByRole('button', { name: 'Add user' }));
 		await waitFor(async () => {
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
+			await expect(canvas.getByLabelText('User')).toBeInTheDocument();
 		});
 	};
 
@@ -80,9 +80,9 @@
 		await expect(canvas.getByTestId('room-manage-rail')).toBeInTheDocument();
 		await expect(canvas.getByTestId('room-manage-stage')).toBeInTheDocument();
 		await openAddUserForm(canvas);
-		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
-		await chooseSelectOption(canvas, 'Grant role', 'readonly');
-		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		await chooseSelectOption(canvas, 'User', /Wallet Operator/u);
+		await chooseSelectOption(canvas, 'Role', 'readonly');
+		(canvas.getByRole('button', { name: 'Add room user' }) as HTMLButtonElement).click();
 
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
@@ -125,7 +125,7 @@
 		await userEvent.click(toolbar.getByRole('button', { name: 'Add user' }));
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
-			await expect(canvas.getByLabelText('Grant actor')).toBeInTheDocument();
+			await expect(canvas.getByLabelText('User')).toBeInTheDocument();
 		});
 		await expect(canvas.getByTestId('room-manage-nav-users')).toHaveAttribute('aria-pressed', 'true');
 	}}
@@ -165,9 +165,9 @@
 		const toolbar = getRoomToolbar(canvasElement);
 		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 		await openAddUserForm(canvas);
-		await chooseSelectOption(canvas, 'Grant actor', /Analyst .*\/repo\/reviewer/u);
-		await chooseSelectOption(canvas, 'Grant role', 'member');
-		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		await chooseSelectOption(canvas, 'User', /Analyst .*\/repo\/reviewer/u);
+		await chooseSelectOption(canvas, 'Role', 'member');
+		(canvas.getByRole('button', { name: 'Add room user' }) as HTMLButtonElement).click();
 		await userEvent.click(canvas.getByRole('button', { name: 'Close' }));
 		await waitFor(() => {
 			expect(canvas.queryByTestId('room-manage-shell')).toBeNull();
@@ -217,9 +217,9 @@
 		const canvas = within(canvasElement);
 		const toolbar = getRoomToolbar(canvasElement);
 		await openAddUserForm(canvas);
-		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
-		await chooseSelectOption(canvas, 'Grant role', 'member');
-		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		await chooseSelectOption(canvas, 'User', /Wallet Operator/u);
+		await chooseSelectOption(canvas, 'Role', 'member');
+		(canvas.getByRole('button', { name: 'Add room user' }) as HTMLButtonElement).click();
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
 		});
@@ -227,7 +227,7 @@
 		const walletSeat = await canvas.findByTestId('room-seat-auth:wallet_evm');
 		await userEvent.click(
 			within(walletSeat).getByRole('button', {
-				name: /Seat actions for Wallet Operator/u,
+				name: /User actions for Wallet Operator/u,
 			}),
 		);
 		await userEvent.click(await screen.findByRole('menuitem', { name: 'Focus seat' }));
@@ -237,7 +237,7 @@
 
 		await userEvent.click(
 			within(walletSeat).getByRole('button', {
-				name: /Seat actions for Wallet Operator/u,
+				name: /User actions for Wallet Operator/u,
 			}),
 		);
 		await userEvent.click(await screen.findByRole('menuitem', { name: 'Revoke user' }));
@@ -256,9 +256,9 @@
 		const canvas = within(canvasElement);
 		const toolbar = getRoomToolbar(canvasElement);
 		await openAddUserForm(canvas);
-		await chooseSelectOption(canvas, 'Grant actor', /Wallet Operator/u);
-		await chooseSelectOption(canvas, 'Grant role', 'readonly');
-		(canvas.getByRole('button', { name: 'Grant seat' }) as HTMLButtonElement).click();
+		await chooseSelectOption(canvas, 'User', /Wallet Operator/u);
+		await chooseSelectOption(canvas, 'Role', 'readonly');
+		(canvas.getByRole('button', { name: 'Add room user' }) as HTMLButtonElement).click();
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
 		});

@@ -72,14 +72,14 @@
 	});
 
 	const actorItems = $derived.by(() => [
-		{ value: '', label: 'Select actor' },
+		{ value: '', label: 'Select user' },
 		...selectableActors.map((actor) => ({
 			value: actor.actorId,
 			label: `${actor.label} · ${actor.subtitle ?? actor.actorId}`,
 		})),
 	]);
 	const selectedActorLabel = $derived(
-		actorItems.find((item) => item.value === grantParticipantId)?.label ?? 'Select actor',
+		actorItems.find((item) => item.value === grantParticipantId)?.label ?? 'Select user',
 	);
 	const selectedRoleLabel = $derived(
 		roleItems.find((item) => item.value === grantRole)?.label ?? 'member',
@@ -118,7 +118,7 @@
 <div class="grid auto-rows-max gap-4" data-testid="room-manage-users-section">
 	<div class="grid gap-1">
 		<h3 class="text-sm font-semibold">Room users</h3>
-		<p class="text-xs text-muted-foreground">List the current seat grants or add another actor to this room.</p>
+		<p class="text-xs text-muted-foreground">List current room users or add another user to this room.</p>
 	</div>
 
 	<Tabs.Root bind:value={view} class="gap-4">
@@ -143,7 +143,7 @@
 			{#if roomSeatStates.length === 0}
 				<Item.Root variant="muted" class="grid gap-2 py-8 text-sm text-muted-foreground">
 					<div>No room users are visible yet.</div>
-					<div>Use the add tab to grant the first seat.</div>
+					<div>Use the add tab to add the first user.</div>
 				</Item.Root>
 			{:else}
 				<div class="grid auto-rows-max gap-2.5">
@@ -178,8 +178,8 @@
 														size="icon-sm"
 														variant="ghost"
 														class="rounded-full text-muted-foreground hover:text-foreground data-[state=open]:bg-accent"
-														aria-label={`Seat actions for ${describeSeatActionTarget(state)}`}
-														title={`Seat actions for ${describeSeatActionTarget(state)}`}
+														aria-label={`User actions for ${describeSeatActionTarget(state)}`}
+														title={`User actions for ${describeSeatActionTarget(state)}`}
 													>
 														<CircleEllipsisIcon class="size-4" />
 													</Button>
@@ -238,14 +238,14 @@
 			<div class="grid gap-1">
 				<div class="text-sm font-semibold">Add user</div>
 				<p class="text-xs text-muted-foreground">
-					Grant one actor a room seat and the smallest role they need.
+					Add one user to this room and give them the smallest role they need.
 				</p>
 			</div>
 
 			<Card.Root>
 				<Card.Content class="grid gap-4 pt-6">
 					<div class="grid gap-2">
-						<Label for={`${uid}-actor`}>Grant actor</Label>
+						<Label for={`${uid}-actor`}>User</Label>
 						<Select.Root
 							type="single"
 							items={actorItems}
@@ -254,7 +254,7 @@
 								onGrantParticipantIdChange(value);
 							}}
 						>
-							<Select.Trigger id={`${uid}-actor`} aria-label="Grant actor" class="w-full">
+							<Select.Trigger id={`${uid}-actor`} aria-label="User" class="w-full">
 								{selectedActorLabel}
 							</Select.Trigger>
 							<Select.Content>
@@ -266,7 +266,7 @@
 					</div>
 
 					<div class="grid gap-2">
-						<Label for={`${uid}-role`}>Grant role</Label>
+						<Label for={`${uid}-role`}>Role</Label>
 						<Select.Root
 							type="single"
 							items={roleItems}
@@ -277,7 +277,7 @@
 								}
 							}}
 						>
-							<Select.Trigger id={`${uid}-role`} aria-label="Grant role" class="w-full">
+							<Select.Trigger id={`${uid}-role`} aria-label="Role" class="w-full">
 								{selectedRoleLabel}
 							</Select.Trigger>
 							<Select.Content>
@@ -295,7 +295,7 @@
 					{/if}
 				</Card.Content>
 				<Card.Footer class="justify-end border-t pt-6">
-					<Button disabled={!grantParticipantId || grantBusy} onclick={onGrantSeat}>Grant seat</Button>
+					<Button disabled={!grantParticipantId || grantBusy} onclick={onGrantSeat}>Add room user</Button>
 				</Card.Footer>
 			</Card.Root>
 		</Tabs.Content>

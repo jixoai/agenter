@@ -24,6 +24,7 @@
   import type {
     WebChatComposerRenderProps,
     WebChatComposerSubmitPayload,
+    WebChatChannel,
     WebChatConnectionState,
     WebChatMessage,
     WebChatRootProps,
@@ -101,6 +102,12 @@
   ): boolean => {
     return left?.messageId === right?.messageId && left?.rowId === right?.rowId;
   };
+  const describeChannelAudience = (currentChannel: WebChatChannel): string => {
+    const count = currentChannel.participants.length;
+    const singular = currentChannel.kind === "room" ? "user" : "participant";
+    const plural = currentChannel.kind === "room" ? "users" : "participants";
+    return `${count} ${count === 1 ? singular : plural} · ${currentChannel.kind}`;
+  };
 
   const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
 
@@ -114,7 +121,7 @@
     return (
       channelPresentation ?? {
         label: channel.title,
-        subtitle: `${channel.participants.length} participants · ${channel.kind}`,
+        subtitle: describeChannelAudience(channel),
         iconUrl: null,
         kind: "room" as const,
       }
@@ -695,7 +702,7 @@
               <div class="chat-eyebrow" part="eyebrow">Room transcript</div>
               <Card.Title>{effectiveChannelPresentation.label}</Card.Title>
               <Card.Description class="chat-header-description">
-                {effectiveChannelPresentation.subtitle ?? `${channel.participants.length} participants · ${channel.kind}`}
+                {effectiveChannelPresentation.subtitle ?? describeChannelAudience(channel)}
               </Card.Description>
             </div>
           </div>

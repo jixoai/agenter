@@ -438,6 +438,31 @@ const openManageRoomDialog = async (page: Page): Promise<Locator> => {
   return manageRoomDialog;
 };
 
+const getManageRoomUserTrigger = (manageRoomDialog: Locator): Locator => {
+  return manageRoomDialog.getByRole("button", { name: "User", exact: true });
+};
+
+const getManageRoomRoleTrigger = (manageRoomDialog: Locator): Locator => {
+  return manageRoomDialog.getByRole("button", { name: "Role", exact: true });
+};
+
+const openManageRoomUsersAddForm = async (manageRoomDialog: Locator): Promise<void> => {
+  await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+    return await manageRoomDialog.getByRole("tab", { name: "Add", exact: true }).isVisible().catch(() => false);
+  });
+  await activateTab(manageRoomDialog.getByRole("tab", { name: "Add", exact: true }));
+  await expect(getManageRoomUserTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
+  await expect(getManageRoomRoleTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
+};
+
+const submitManageRoomUser = async (
+  manageRoomDialog: Locator,
+  predicate: () => Promise<boolean>,
+): Promise<void> => {
+  await clickStable(manageRoomDialog.getByRole("button", { name: "Add room user" }));
+  await expect.poll(predicate, { timeout: 15_000 }).toBeTruthy();
+};
+
 const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   await page.goto("/admin", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/admin(?:$|\/.*|\?.*)/, { timeout: 15_000 });
@@ -708,25 +733,25 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
       await activateUntil(page.getByRole("tab", { name: "Users", exact: true }), async () => {
         return await page
-          .getByLabel("Grant actor")
+          .getByLabel("User")
           .isVisible()
           .catch(() => false);
       });
 
-      const grantActorSelect = page.getByLabel("Grant actor");
+      const grantActorSelect = page.getByLabel("User");
       const requesterOption = await chooseSelectOptionByText(
         page,
         grantActorSelect,
         new RegExp(`^${escapeRegExp(requesterAvatarName)} · .+$`),
       );
       const requesterLabel = requesterOption.split(" · ")[0] ?? requesterOption;
-      await chooseSelectOptionByText(page, page.getByLabel("Grant role"), "requester");
+      await chooseSelectOptionByText(page, page.getByLabel("Role"), "requester");
       const grantedSeat = page
         .locator("div")
         .filter({ has: page.getByText(requesterLabel, { exact: true }) })
         .filter({ has: page.getByRole("button", { name: "Revoke" }) })
         .first();
-      const grantSeatButton = page.getByRole("button", { name: "Grant seat" });
+      const grantSeatButton = page.getByRole("button", { name: "Add user" });
       await expect(grantSeatButton).toBeEnabled({ timeout: 15_000 });
       await activateUntil(grantSeatButton, async () => {
         return await grantedSeat.isVisible().catch(() => false);
@@ -826,29 +851,22 @@ test.describe("Feature: Svelte system surfaces", () => {
       expect(Math.max(...railButtonHeights)).toBeLessThan(96);
     }
     await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-      return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
+      return await manageRoomDialog.getByTestId("room-manage-users-section").isVisible().catch(() => false);
     });
-    await expect(manageRoomDialog.getByRole("button", { name: "Add user" })).toBeVisible({ timeout: 15_000 });
     await expect(manageRoomDialog.getByText("Bootstrap admin", { exact: true })).toHaveCount(0);
-    await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
-      return await manageRoomDialog
-        .getByLabel("Grant actor")
-        .isVisible()
-        .catch(() => false);
-    });
+    await openManageRoomUsersAddForm(manageRoomDialog);
 
-    const grantActorSelect = manageRoomDialog.getByLabel("Grant actor");
+    const grantActorSelect = getManageRoomUserTrigger(manageRoomDialog);
     const grantedOption = await chooseFirstSelectOption(manageRoomDialog.page(), grantActorSelect, (label) => {
-      return label !== "Select actor";
+      return label !== "Select user";
     });
     expect(grantedOption).not.toBeNull();
     if (!grantedOption) {
       return;
     }
 
-    await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "readonly");
-    await clickStable(manageRoomDialog.getByRole("button", { name: "Grant seat" }));
-    await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+    await chooseSelectOptionByText(manageRoomDialog.page(), getManageRoomRoleTrigger(manageRoomDialog), "readonly");
+    await submitManageRoomUser(manageRoomDialog, async () => {
       return await manageRoomDialog
         .getByTestId("room-manage-stage")
         .locator('[data-testid^="room-seat-"]')
@@ -900,21 +918,16 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       await expectSelectedRoomTitle(page, roomTitle);
       const manageRoomDialog = await openManageRoomDialog(page);
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
-      });
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
-        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
-      });
+      await openManageRoomUsersAddForm(manageRoomDialog);
 
       const grantedOption = await chooseSelectOptionByText(
         manageRoomDialog.page(),
-        manageRoomDialog.getByLabel("Grant actor"),
+        getManageRoomUserTrigger(manageRoomDialog),
         new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
       );
       const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
-      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "readonly");
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+      await chooseSelectOptionByText(manageRoomDialog.page(), getManageRoomRoleTrigger(manageRoomDialog), "readonly");
+      await submitManageRoomUser(manageRoomDialog, async () => {
         return await manageRoomDialog
           .getByTestId("room-manage-stage")
           .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
@@ -1036,21 +1049,16 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       await expectSelectedRoomTitle(page, roomTitle);
       const manageRoomDialog = await openManageRoomDialog(page);
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
-      });
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
-        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
-      });
+      await openManageRoomUsersAddForm(manageRoomDialog);
 
       const grantedOption = await chooseSelectOptionByText(
         manageRoomDialog.page(),
-        manageRoomDialog.getByLabel("Grant actor"),
+        getManageRoomUserTrigger(manageRoomDialog),
         new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
       );
       const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
-      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "member");
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+      await chooseSelectOptionByText(manageRoomDialog.page(), getManageRoomRoleTrigger(manageRoomDialog), "member");
+      await submitManageRoomUser(manageRoomDialog, async () => {
         return await manageRoomDialog
           .getByTestId("room-manage-stage")
           .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
@@ -1068,7 +1076,7 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expect(userSeat).toBeVisible({ timeout: 15_000 });
 
       const seatActionsButton = userSeat.getByRole("button", {
-        name: new RegExp(`Seat actions for ${escapeRegExp(grantedLabel)}`, "i"),
+        name: new RegExp(`User actions for ${escapeRegExp(grantedLabel)}`, "i"),
       });
       await clickStable(seatActionsButton);
       await clickStable(page.getByRole("menuitem", { name: "Focus seat", exact: true }));
@@ -1212,19 +1220,14 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       await expectSelectedRoomTitle(page, roomTitle);
       const manageRoomDialog = await openManageRoomDialog(page);
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
-      });
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
-        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
-      });
+      await openManageRoomUsersAddForm(manageRoomDialog);
       await chooseSelectOptionByText(
         manageRoomDialog.page(),
-        manageRoomDialog.getByLabel("Grant actor"),
+        getManageRoomUserTrigger(manageRoomDialog),
         new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
       );
-      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "member");
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+      await chooseSelectOptionByText(manageRoomDialog.page(), getManageRoomRoleTrigger(manageRoomDialog), "member");
+      await submitManageRoomUser(manageRoomDialog, async () => {
         return await page.getByLabel("View room as user").isVisible().catch(() => false);
       });
       await page.keyboard.press("Escape");
@@ -1289,14 +1292,9 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       await expectSelectedRoomTitle(page, roomTitle);
       const manageRoomDialog = await openManageRoomDialog(page);
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
-      });
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
-        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
-      });
+      await openManageRoomUsersAddForm(manageRoomDialog);
 
-      const grantActorSelect = manageRoomDialog.getByLabel("Grant actor");
+      const grantActorSelect = getManageRoomUserTrigger(manageRoomDialog);
       const grantedOption = await chooseSelectOptionByText(
         manageRoomDialog.page(),
         grantActorSelect,
@@ -1304,8 +1302,8 @@ test.describe("Feature: Svelte system surfaces", () => {
       );
       const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
 
-      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "readonly");
-      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+      await chooseSelectOptionByText(manageRoomDialog.page(), getManageRoomRoleTrigger(manageRoomDialog), "readonly");
+      await submitManageRoomUser(manageRoomDialog, async () => {
         return await manageRoomDialog
           .getByTestId("room-manage-stage")
           .locator('[data-testid^="room-seat-"]')
@@ -1388,13 +1386,13 @@ test.describe("Feature: Svelte system surfaces", () => {
     const roomToolbar = page.locator("[data-workbench-page-toolbar]");
     const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
     await activateUntil(roomToolbar.getByRole("button", { name: "Add user", exact: true }), async () => {
-      return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+      return await getManageRoomUserTrigger(manageRoomDialog).isVisible().catch(() => false);
     }, 4);
 
     await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
     await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
-    await expect(manageRoomDialog.getByLabel("Grant actor")).toBeVisible({ timeout: 15_000 });
-    await expect(manageRoomDialog.getByLabel("Grant role")).toBeVisible({ timeout: 15_000 });
+    await expect(getManageRoomUserTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
+    await expect(getManageRoomRoleTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
   });
 
   test("Scenario: Given loaded room messages When the toolbar searches the transcript Then the active match cycles through the loaded chat rows", async ({
