@@ -12,7 +12,7 @@ const config = {
 			const pathSegments = normalizedPath.split(sep);
 			const isNodeModules = pathSegments.includes('node_modules');
 			const isAgenterWorkspacePackage =
-				normalizedPath.includes('@agenter/ui') ||
+				normalizedPath.includes('@agenter/ui-studio') ||
 				normalizedPath.includes('@agenter/web-chat-view') ||
 				normalizedPath.includes('@agenter/web-components') ||
 				normalizedPath.includes('@agenter/webui');

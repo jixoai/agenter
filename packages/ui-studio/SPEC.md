@@ -1,6 +1,6 @@
 # UI Package
 
-`@agenter/ui` 承载可复用的 Svelte UI 工具与独立可挂载的界面原子。
+`@agenter/ui-studio` 承载可复用的 Svelte UI 工具与独立可挂载的界面原子。
 
 当前法则：
 

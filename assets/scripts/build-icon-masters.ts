@@ -5,14 +5,16 @@ import sharp from 'sharp';
 import { optimize } from 'svgo';
 
 import {
+	createRenderInput,
 	type IconBackgroundToken,
 	type IconComposerConfig,
 	type IconPaletteToken,
 	type IconPreset,
 	type IconSlotKind,
 	type IconSlotPreset,
-} from '../../packages/ui/src/icon-studio/icon-system-contract';
-import { createRenderInput, parseGeometryFromSvg, renderIconSvg } from '../../packages/ui/src/icon-studio/icon-system-svg';
+	parseGeometryFromSvg,
+	renderIconSvg,
+} from '@agenter/ui-studio';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const nextDir = resolve(repoRoot, 'assets', 'next');

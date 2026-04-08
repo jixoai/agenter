@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getIconStudioData } from '@agenter/ui';
+import { getIconStudioData } from '@agenter/ui-studio';
 
 export const prerender = true;
 

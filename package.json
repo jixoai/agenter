@@ -27,6 +27,7 @@
     "version-packages": "changeset version"
   },
   "dependencies": {
+    "@agenter/ui-studio": "workspace:*",
     "imagetracerjs": "^1.2.6",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",
