@@ -169,13 +169,13 @@ const activateUntil = async (
       return;
     }
 
-    await locator.evaluate((element: HTMLButtonElement) => element.click()).catch(() => undefined);
-    const activatedByDomClick = await expect
+    await locator.click({ force: true, timeout: 1_000 }).catch(() => undefined);
+    const activatedByForceClick = await expect
       .poll(predicate, { timeout: 1_500 })
       .toBeTruthy()
       .then(() => true)
       .catch(() => false);
-    if (activatedByDomClick) {
+    if (activatedByForceClick) {
       return;
     }
   }
