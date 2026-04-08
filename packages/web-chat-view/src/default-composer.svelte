@@ -3,6 +3,7 @@
 
   import type { WebChatComposerRenderProps } from "./types";
   import ComposerActionBar from "./composer/composer-action-bar.svelte";
+  import ComposerStatusBar from "./composer/composer-status-bar.svelte";
   import {
     resolveComposerCapabilities,
   } from "./composer/composer-contract";
@@ -280,7 +281,11 @@
         <span class="composer-hint" part="composer-hint" aria-live="polite">
           {hintText}
         </span>
-        <div class="composer-status-placeholder" aria-hidden="true"></div>
+        <ComposerStatusBar
+          disabled={disabled}
+          submitting={sending}
+          capabilities={composerCapabilities}
+        />
       </div>
     </div>
   </div>
@@ -345,10 +350,6 @@
     color: rgba(100, 116, 139, 0.96);
     font-size: 0.72rem;
     line-height: 1.45;
-  }
-
-  .composer-status-placeholder {
-    min-block-size: 0;
   }
 
   @container (max-width: 34rem) {
