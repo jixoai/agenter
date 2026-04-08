@@ -91,19 +91,13 @@
 
 <Scaffold.Root class="h-full gap-4 p-4 md:p-6" data-testid="admin-route">
 	<Scaffold.Header class="grid gap-3 rounded-[1.05rem] border border-border/55 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_8%)_0%,color-mix(in_srgb,var(--background),var(--card)_54%)_100%)] px-5 py-4 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_76%)]">
-		<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="grid gap-1">
 			<div class="grid gap-1">
 				<h1 class="text-sm font-semibold tracking-tight">Admin</h1>
 				<p class="text-xs leading-5 text-muted-foreground">
 					Manage the browser superadmin session and durable profile metadata without mixing it into workspace settings.
 				</p>
 			</div>
-			<a
-				href="/admin/icons"
-				class="inline-flex items-center rounded-xl border border-border/70 bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
-			>
-				Open icon studio
-			</a>
 		</div>
 	</Scaffold.Header>
 

@@ -1,1 +1,1 @@
-export * from "./icon-studio/index.js";
+export * from "./lib/icon-studio/index.js";

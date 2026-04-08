@@ -17,6 +17,8 @@
 		type IconSlotPreset,
 		type IconTheme,
 	} from './icon-system-contract';
+	import { loadLucideIconAsset, parseLucideSlotId, renderLucideSlotMarkup } from './lucide-slot-catalog';
+	import SlotSymbolPicker from './slot-symbol-picker.svelte';
 	import { createRenderInput, parseGeometryFromSvg, renderIconSvg } from './icon-system-svg';
 
 	interface Props {
@@ -49,6 +51,7 @@
 			backgroundToken: preset?.backgroundToken ?? fallbackBackground?.id ?? 'light-neutral',
 			family: preset?.family ?? fallbackPalette?.family ?? 'brand',
 			paletteToken: preset?.paletteToken ?? fallbackPalette?.id ?? 'brand-light-emerald-cyan',
+			slotScale: preset?.slotScale,
 			slots: preset?.slots ?? DEFAULT_SLOTS,
 			theme: preset?.theme ?? fallbackPalette?.theme ?? 'light',
 		};
@@ -88,6 +91,8 @@
 		theme: 'light',
 	});
 	let customSlots = $state<Partial<Record<IconSlotKind, string>>>({});
+	let slotMarkup = $state<Partial<Record<IconSlotKind, string>>>({});
+	let slotLoading = $state<Partial<Record<IconSlotKind, boolean>>>({});
 	let didBootstrap = false;
 
 	$effect(() => {
@@ -107,7 +112,7 @@
 		renderIconSvg(
 			createRenderInput({
 				backgrounds,
-				config: { ...config, customSlots },
+				config: { ...config, customSlots, slotMarkup },
 				geometry,
 				palettes,
 				slotCatalog,
@@ -117,10 +122,11 @@
 	const previewDataUri = $derived(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewSvg)}`);
 	const comparisonDataUri = $derived(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(brandDarkSvg)}`);
 
-	const slotOptions = (slot: IconSlotKind): Array<IconSlotPreset | { id: string; label: string }> => [
-		...slotCatalog[slot],
-		{ id: CUSTOM_SLOT_ID, label: 'Custom SVG' },
-	];
+	const withoutSlot = <TValue>(record: Partial<Record<IconSlotKind, TValue>>, slot: IconSlotKind): Partial<Record<IconSlotKind, TValue>> => {
+		const next = { ...record };
+		delete next[slot];
+		return next;
+	};
 
 	const applyPreset = (presetId: string): void => {
 		const preset = presetMap[presetId];
@@ -130,6 +136,8 @@
 		selectedPresetId = presetId;
 		config = coerceConfig(createConfigFromPreset(preset, palettes, backgrounds), palettes, backgrounds);
 		customSlots = {};
+		slotMarkup = {};
+		slotLoading = {};
 	};
 
 	const setThemeFamily = (theme: IconTheme, family: IconFamily): void => {
@@ -147,13 +155,44 @@
 		config = { ...config, backgroundToken };
 	};
 
-	const setSlot = (slot: IconSlotKind, slotId: string): void => {
+	const setSlot = async (slot: IconSlotKind, slotId: string): Promise<void> => {
 		selectedPresetId = '';
 		config = { ...config, slots: { ...config.slots, [slot]: slotId } };
+		slotMarkup = withoutSlot(slotMarkup, slot);
+		slotLoading = withoutSlot(slotLoading, slot);
+
+		const lucideIconId = parseLucideSlotId(slotId);
+		if (!lucideIconId) {
+			return;
+		}
+
+		slotLoading = { ...slotLoading, [slot]: true };
+		const asset = await loadLucideIconAsset(lucideIconId);
+		if (config.slots[slot] !== slotId) {
+			return;
+		}
+
+		slotLoading = withoutSlot(slotLoading, slot);
+		if (!asset) {
+			return;
+		}
+		slotMarkup = { ...slotMarkup, [slot]: renderLucideSlotMarkup(asset) };
+	};
+
+	const setSlotScale = (slot: IconSlotKind, scale: number): void => {
+		selectedPresetId = '';
+		config = {
+			...config,
+			slotScale: {
+				...config.slotScale,
+				[slot]: scale,
+			},
+		};
 	};
 
 	const setCustomSlotMarkup = (slot: IconSlotKind, markup: string): void => {
 		customSlots = { ...customSlots, [slot]: markup };
+		slotMarkup = withoutSlot(slotMarkup, slot);
 	};
 
 	const readCustomSvg = async (slot: IconSlotKind, fileList: FileList | null): Promise<void> => {
@@ -162,7 +201,7 @@
 			return;
 		}
 		customSlots = { ...customSlots, [slot]: await file.text() };
-		setSlot(slot, CUSTOM_SLOT_ID);
+		await setSlot(slot, CUSTOM_SLOT_ID);
 	};
 
 	const downloadBlob = (filename: string, blob: Blob): void => {
@@ -211,6 +250,8 @@
 		anchor.download = `${config.theme}-${config.family}-${size}.png`;
 		anchor.click();
 	};
+
+	const describeSlotScale = (slot: IconSlotKind): string => (config.slotScale?.[slot] ?? 1).toFixed(2);
 </script>
 
 <Scaffold.Root class="h-full gap-4 p-4 md:p-6" data-testid="icon-studio">
@@ -251,7 +292,7 @@
 				<Scaffold.Root class="h-full rounded-xl border bg-card text-card-foreground shadow-sm">
 					<Scaffold.Header class="grid gap-2 border-b px-5 py-4">
 						<h2 class="text-base font-semibold">Composer</h2>
-						<p class="text-sm text-muted-foreground">Curated presets stay constrained, while slot-level custom SVG remains possible.</p>
+						<p class="text-sm text-muted-foreground">Curated presets stay constrained, while Lucide search and custom SVG keep slot exploration open-ended.</p>
 					</Scaffold.Header>
 					<Scaffold.ScrollBody contentClass="grid gap-5 p-4">
 						<label class="grid gap-2 text-sm">
@@ -300,29 +341,36 @@
 						</label>
 
 						{#each slotKinds as slot (slot)}
-							<div class="grid gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-								<label class="grid gap-2 text-sm">
-									<span class="font-medium">{slot} slot</span>
-									<select class={fieldClass} value={config.slots[slot]} onchange={(event) => setSlot(slot, (event.currentTarget as HTMLSelectElement).value)}>
-										{#each slotOptions(slot) as option (option.id)}
-											<option value={option.id}>{option.label}</option>
-										{/each}
-									</select>
-								</label>
+							<div class="grid gap-3">
+								<SlotSymbolPicker
+									curatedOptions={slotCatalog[slot]}
+									customMarkup={customSlots[slot] ?? ''}
+									fieldClass={fieldClass}
+									loading={slotLoading[slot] ?? false}
+									onScaleChange={setSlotScale}
+									onSelect={setSlot}
+									previewColor={slot === 'center' ? activePalette?.center.symbol ?? '#ffffff' : activePalette?.slots[slot] ?? '#0f172a'}
+									runtimeMarkup={slotMarkup[slot] ?? ''}
+									scale={config.slotScale?.[slot] ?? 1}
+									selectedId={config.slots[slot]}
+									{slot}
+								/>
 
 								{#if config.slots[slot] === CUSTOM_SLOT_ID}
-									<label class="grid gap-2 text-sm">
-										<span class="font-medium">Upload custom SVG</span>
-										<input class={fieldClass} type="file" accept=".svg,image/svg+xml" onchange={(event) => void readCustomSvg(slot, (event.currentTarget as HTMLInputElement).files)} />
-									</label>
-									<label class="grid gap-2 text-sm">
-										<span class="font-medium">Custom markup</span>
-										<textarea
-											class="min-h-28 rounded-xl border bg-background px-3 py-2 font-mono text-xs"
-											value={customSlots[slot] ?? ''}
-											oninput={(event) => setCustomSlotMarkup(slot, (event.currentTarget as HTMLTextAreaElement).value)}
-										></textarea>
-									</label>
+									<div class="grid gap-3 rounded-2xl border border-border/60 bg-muted/15 p-4">
+										<label class="grid gap-2 text-sm">
+											<span class="font-medium">Upload custom SVG</span>
+											<input class={fieldClass} type="file" accept=".svg,image/svg+xml" onchange={(event) => void readCustomSvg(slot, (event.currentTarget as HTMLInputElement).files)} />
+										</label>
+										<label class="grid gap-2 text-sm">
+											<span class="font-medium">Custom markup</span>
+											<textarea
+												class="min-h-28 rounded-xl border bg-background px-3 py-2 font-mono text-xs"
+												value={customSlots[slot] ?? ''}
+												oninput={(event) => setCustomSlotMarkup(slot, (event.currentTarget as HTMLTextAreaElement).value)}
+											></textarea>
+										</label>
+									</div>
 								{/if}
 							</div>
 						{/each}
@@ -382,9 +430,9 @@
 									<div class="font-semibold">Active configuration</div>
 									<div>palette: {activePalette?.label ?? config.paletteToken}</div>
 									<div>background: {activeBackground?.label ?? config.backgroundToken}</div>
-									<div>top-left: {config.slots.topLeft}</div>
-									<div>bottom-right: {config.slots.bottomRight}</div>
-									<div>center: {config.slots.center}</div>
+									<div>top-left: {config.slots.topLeft} ({describeSlotScale('topLeft')}x)</div>
+									<div>bottom-right: {config.slots.bottomRight} ({describeSlotScale('bottomRight')}x)</div>
+									<div>center: {config.slots.center} ({describeSlotScale('center')}x)</div>
 								</div>
 							</div>
 						</div>

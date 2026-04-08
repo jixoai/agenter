@@ -1,9 +1,12 @@
-# UI Package
+# UI Studio
 
-`@agenter/ui-studio` 承载可复用的 Svelte UI 工具与独立可挂载的界面原子。
+`@agenter/ui-studio` 是独立的 Svelte 5 + Vite 8 项目，用来承载 icon composer 这类独立工具界面。
 
 当前法则：
 
-- 包级工具不允许依赖 `@agenter/webui` 的本地 feature 或本地组件封装。
-- 可复用工具应直接依赖 package-level contract 与共享 layout primitive。
-- 应用层只负责路由挂载、上下文注入与站点级主题，不拥有工具内部实现。
+- `ui-studio` 不再通过 `@agenter/webui` 的路由挂载运行，它拥有自己的 `dev/build/preview` 生命周期。
+- 工具内部可以复用 workspace 级共享 primitive，例如 `@agenter/svelte-components`，但不能依赖 `webui` 的本地 feature、路由或主题文件。
+- `assets/*` 这类离线构建脚本只允许依赖 `ui-studio` 的包级导出契约，不允许跨目录 import app route 层。
+- `webui` 与 `ui-studio` 只在品牌与资产层保持一致，不共享运行时路由树。
+- icon symbol source 采用分层法则：`assets/next/tokens/slots.json` 继续承载 curated presets，而 Lucide 全量图标通过 `assets/scripts` 生成本地 metadata + lazy chunk registry，再由 `ui-studio` 在前端按需加载。
+- slot 外来图形采用两条正交控制轴：`preview` 负责把当前 fitted 结果可视化为小图与浏览 Dialog，`scale` 负责调节 Lucide / Custom SVG 的 fill 强度；二者都不能反向污染 curated preset 的 authored geometry。
