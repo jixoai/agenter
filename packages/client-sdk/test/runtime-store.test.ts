@@ -3982,6 +3982,67 @@ describe("Feature: runtime store synchronization", () => {
     expect(deleted.chatId).toBe(room.chatId);
   });
 
+  test("Scenario: Given a focused room snapshot watcher When a seat-focus mutation uses a member credential Then snapshot refresh keeps the catalog control token", async () => {
+    const snapshotRequests: Array<{ chatId: string; accessToken?: string; limit?: number }> = [];
+    const room = {
+      chatId: "room-focus-refresh",
+      kind: "room" as const,
+      title: "Focus refresh room",
+      owner: "ops-bot",
+      participants: [
+        { id: "session:ops-bot", label: "ops-bot" },
+        { id: "auth:kzf", label: "kzf" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_ops_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-focus-refresh?token=msgtok_ops_admin",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalListQuery: async () => ({ items: [room] }),
+        messageGlobalFocusMutate: async (input) => ({
+          ok: true,
+          message: "focused",
+          focusedChatIds: input.channels.map((channel) => channel.chatId),
+        }),
+        messageGlobalSnapshotQuery: async (input) => {
+          snapshotRequests.push(input);
+          return {
+            channel: room,
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+            headVersion: "1",
+          };
+        },
+      }),
+    );
+
+    await store.listGlobalRooms();
+    const releaseSnapshot = store.retainGlobalRoomSnapshot(room.chatId);
+    try {
+      await store.focusGlobalRooms({
+        op: "replace",
+        channels: [{ chatId: room.chatId, accessToken: "msgtok_member" }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      releaseSnapshot();
+    }
+
+    expect(snapshotRequests).toEqual([
+      {
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        limit: 120,
+      },
+    ]);
+  });
+
   test("Scenario: Given optional room access tokens When runtime store receives an empty token placeholder Then room-first requests omit the token instead of forwarding an invalid empty string", async () => {
     const requests: {
       snapshot?: { chatId: string; accessToken?: string; limit?: number };

@@ -3139,7 +3139,6 @@ export class RuntimeStore {
       }
       void this.hydrateGlobalRoomSnapshot({
         chatId: channel.chatId,
-        accessToken: channel.accessToken,
         force: true,
       });
     }
