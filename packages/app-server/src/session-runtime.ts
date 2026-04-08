@@ -1894,6 +1894,15 @@ export class SessionRuntime {
   }
 
   private resolveMessageRole(message: MessageRecord): ChatMessage["role"] {
+    const metadata = message.metadata;
+    if (
+      metadata &&
+      typeof metadata === "object" &&
+      metadata.channel === "to_user" &&
+      message.senderActorId === this.messageActorId
+    ) {
+      return "assistant";
+    }
     return message.from === this.getAvatarName() ? "assistant" : "user";
   }
 
@@ -2311,6 +2320,8 @@ export class SessionRuntime {
               to: replyTarget.to,
               content: replyContent,
               metadata: {
+                channel: "to_user",
+                source: "attention_reply",
                 attentionContextId: contextId,
                 attentionCommitId: commit.commitId,
                 cycleId: replyCycleId,

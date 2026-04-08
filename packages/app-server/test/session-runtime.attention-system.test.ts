@@ -686,13 +686,13 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       initialUsers: [
         {
           actorId: "session:jane",
-          label: "jane",
+          label: "Jane",
           role: "member",
           focused: true,
         },
         {
           actorId: "session:jj",
-          label: "jj",
+          label: "JJ",
           role: "member",
           focused: true,
         },
@@ -750,6 +750,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(sent?.readActorIds).toContain("session:jane");
       expect(sent?.unreadActorIds).toContain("session:jj");
       expect(sent?.unreadActorIds).not.toContain("session:jane");
+
+      const janeInputs = await janeInternal.collectLoopInputs();
+      expect(janeInputs).toBeUndefined();
 
       const jjInputs = await jjInternal.collectLoopInputs();
       const jjReply = jjInputs?.find((input) => input.meta?.chatId === roomId && input.text.includes("hello from jane"));
