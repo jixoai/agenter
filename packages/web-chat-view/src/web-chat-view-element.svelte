@@ -10,6 +10,7 @@
     initialMessages = [],
     initialSnapshotResolved = false,
     disabled = false,
+    showComposerWhenDisabled = true,
     class: className = "",
     showHeader = true,
     emptyTitle = "No messages yet",
@@ -20,6 +21,7 @@
     channelPresentation = null,
     resolveActorPresentation,
     resolveMessageActions,
+    resolveMessageReadProgress,
     composerCapabilities,
     submitMessage,
     latestVisibleAssistantMessageIdHandler,
@@ -34,6 +36,7 @@
   {initialMessages}
   {initialSnapshotResolved}
   {disabled}
+  {showComposerWhenDisabled}
   class={className}
   {showHeader}
   {emptyTitle}
@@ -44,6 +47,7 @@
   {channelPresentation}
   {resolveActorPresentation}
   {resolveMessageActions}
+  {resolveMessageReadProgress}
   {composerCapabilities}
   {submitMessage}
   {latestVisibleAssistantMessageIdHandler}

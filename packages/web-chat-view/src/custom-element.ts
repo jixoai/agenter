@@ -14,6 +14,7 @@ export type WebChatViewElement = HTMLElement & {
   initialMessages: import("./types").WebChatMessage[];
   initialSnapshotResolved: boolean;
   disabled: boolean;
+  showComposerWhenDisabled: boolean;
   showHeader: boolean;
   emptyTitle: string;
   emptyMessage: string;
@@ -27,6 +28,9 @@ export type WebChatViewElement = HTMLElement & {
   resolveMessageActions?: (
     input: import("./types").WebChatMessageRenderInput,
   ) => readonly import("./types").WebChatMessageAction[];
+  resolveMessageReadProgress?: (
+    input: import("./types").WebChatMessageRenderInput,
+  ) => import("./types").WebChatMessageReadProgress | null;
   composerCapabilities?: import("./types").WebChatComposerCapabilities;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;

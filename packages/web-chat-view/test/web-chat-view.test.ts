@@ -1553,4 +1553,82 @@ describe("Feature: web-chat-view package", () => {
       expect(submitMessage).toHaveBeenCalledWith({ text: "element send", assets: [] });
     });
   });
+
+  test("Scenario: Given the Svelte custom element When read progress and disabled composer props are preset Then it preserves read disclosure rendering and composer visibility policy", async () => {
+    await defineWebChatView();
+    const element = document.createElement(WEB_CHAT_VIEW_TAG) as HTMLElement & {
+      channel: Record<string, unknown>;
+      initialMessages: WebChatMessage[];
+      initialSnapshotResolved: boolean;
+      disabled: boolean;
+      showComposerWhenDisabled: boolean;
+      resolveMessageReadProgress: (input: { message: WebChatMessage }) => {
+        readCount: number;
+        totalCount: number;
+      } | null;
+    };
+
+    element.channel = {
+      chatId: "chat-main",
+      kind: "room",
+      title: "Room",
+      owner: "jane",
+      participants: [
+        { id: "session:jane", label: "jane" },
+        { id: "auth:user", label: "User" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin",
+      accessToken: "msgtok_admin",
+    };
+    element.initialMessages = [
+      {
+        rowId: 1,
+        messageId: "msg-progress",
+        chatId: "chat-main",
+        senderActorId: "auth:user",
+        from: "User",
+        kind: "text",
+        content: "read me",
+        createdAt: 100,
+        updatedAt: 100,
+        visibleAt: 100,
+        attentionState: "loaded",
+        editable: false,
+        readActorIds: [],
+        unreadActorIds: [],
+        metadata: {},
+        attachments: [],
+      },
+    ];
+    element.initialSnapshotResolved = true;
+    element.disabled = true;
+    element.showComposerWhenDisabled = false;
+    element.resolveMessageReadProgress = ({ message }) =>
+      message.messageId === "msg-progress"
+        ? {
+            readCount: 1,
+            totalCount: 1,
+          }
+        : null;
+    document.body.append(element);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const shadowRoot = element.shadowRoot;
+    if (!shadowRoot) {
+      throw new Error("web-chat-view shadow root missing");
+    }
+
+    await vi.waitFor(() => {
+      expect(shadowRoot.querySelector("textarea")).toBeNull();
+    });
+    await vi.waitFor(() => {
+      const indicator = shadowRoot.querySelector("[data-testid='message-read-indicator']");
+      expect(indicator?.getAttribute("aria-label")).toBe("1/1 read");
+    });
+  });
 });
