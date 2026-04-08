@@ -310,6 +310,10 @@ const sendRoomMessage = async (
   return row;
 };
 
+const resolveMessageAuthorRow = (messageSection: Locator): Locator => {
+  return messageSection.locator("[data-message-author]").first();
+};
+
 const isRoomAlreadySelected = async (page: Page, roomTitle: string): Promise<boolean> => {
   if (await getRoomComposer(page, roomTitle).isVisible().catch(() => false)) {
     return true;
@@ -1169,6 +1173,85 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await expect(page.getByText(liveMessage)).toBeVisible({ timeout: 15_000 });
     await mirrorPage.close();
+  });
+
+  test("Scenario: Given room messages from two granted viewers When View as switches Then the matching sender message moves to viewer ownership", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-viewer-align-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Viewer align ${testInfo.project.name} ${Date.now()}`;
+    const adminMessage = `viewer align admin ${testInfo.project.name}`;
+    const avatarMessage = `viewer align avatar ${testInfo.project.name}`;
+    let viewerRuntimeUrl: string | null = null;
+
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const manageRoomDialog = await openManageRoomDialog(page);
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
+      });
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
+        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+      });
+      await chooseSelectOptionByText(
+        manageRoomDialog.page(),
+        manageRoomDialog.getByLabel("Grant actor"),
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "member");
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+        return await page.getByLabel("View room as user").isVisible().catch(() => false);
+      });
+      await page.keyboard.press("Escape");
+      await expect(manageRoomDialog).not.toBeVisible({ timeout: 15_000 });
+
+      const adminSection = await sendRoomMessage(page, roomTitle, adminMessage);
+      const adminRow = resolveMessageAuthorRow(adminSection);
+      await expect(adminRow).toHaveAttribute("data-message-author", "viewer", { timeout: 15_000 });
+
+      await chooseSelectOptionByText(
+        page,
+        page.getByLabel("View room as user"),
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      await expect(adminRow).toHaveAttribute("data-message-author", "participant", { timeout: 15_000 });
+
+      const avatarSection = await sendRoomMessage(page, roomTitle, avatarMessage);
+      const avatarRow = resolveMessageAuthorRow(avatarSection);
+      await expect(avatarRow).toHaveAttribute("data-message-author", "viewer", { timeout: 15_000 });
+
+      await chooseSelectOptionByText(page, page.getByLabel("View room as user"), /admin$/i);
+      await expect(adminRow).toHaveAttribute("data-message-author", "viewer", { timeout: 15_000 });
+      await expect(avatarRow).toHaveAttribute("data-message-author", "participant", { timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
   });
 
   test("Scenario: Given a room message with another granted seat When the operator idles on the transcript Then read acks settle once and the message discloses read plus unread actors", async ({
