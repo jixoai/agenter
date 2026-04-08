@@ -8,13 +8,11 @@
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import {
-		extractOpenAvatarTabId,
-		OPEN_AVATAR_TABS_CHANGE_EVENT,
-		readOpenAvatarTabs,
-		removeOpenAvatarTab,
-		resolveOpenAvatarTabFromUrl,
-		type OpenAvatarTabEntry,
-	} from '$lib/features/avatars/avatar-open-tabs-state';
+		AVATAR_SESSION_TABS_CHANGE_EVENT,
+		readAvatarSessionTabIds,
+		removeAvatarSessionTabId,
+		upsertAvatarSessionTabId,
+	} from '$lib/features/avatars/avatar-session-tabs-state';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
@@ -25,7 +23,7 @@
 		restoreWorkbenchTabId,
 	} from '$lib/features/navigation/workbench-tab-state';
 	import {
-		buildRunningAvatarRailItems,
+		buildAvatarSessionRailItems,
 		extractRuntimeSessionId,
 	} from '$lib/features/runtime/runtime-shell-state';
 
@@ -36,15 +34,15 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
-	let openAvatarTabs = $state<OpenAvatarTabEntry[]>(readOpenAvatarTabs());
+	let avatarSessionTabIds = $state<string[]>(readAvatarSessionTabIds());
 	let dismissedSessionIds = $state<string[]>(readDismissedWorkbenchTabIds('avatars-runtime'));
 
 	const activeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
-	const activeOpenAvatarTabId = $derived(extractOpenAvatarTabId(page.url));
-	const runningItems = $derived(
+	const runtimeItems = $derived(
 		filterDismissedWorkbenchTabs(
-			buildRunningAvatarRailItems(controller.runtimeState, {
+			buildAvatarSessionRailItems(controller.runtimeState, {
 				activeSessionId,
+				openedSessionIds: avatarSessionTabIds,
 				resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
 			}),
 			(item) => item.sessionId,
@@ -56,27 +54,22 @@
 		if (typeof window === 'undefined') {
 			return;
 		}
-		const syncOpenAvatarTabs = (): void => {
-			openAvatarTabs = readOpenAvatarTabs();
+		const syncAvatarSessionTabs = (): void => {
+			avatarSessionTabIds = readAvatarSessionTabIds();
 		};
-		window.addEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
-		window.addEventListener('storage', syncOpenAvatarTabs);
+		window.addEventListener(AVATAR_SESSION_TABS_CHANGE_EVENT, syncAvatarSessionTabs);
+		window.addEventListener('storage', syncAvatarSessionTabs);
 		return () => {
-			window.removeEventListener(OPEN_AVATAR_TABS_CHANGE_EVENT, syncOpenAvatarTabs);
-			window.removeEventListener('storage', syncOpenAvatarTabs);
+			window.removeEventListener(AVATAR_SESSION_TABS_CHANGE_EVENT, syncAvatarSessionTabs);
+			window.removeEventListener('storage', syncAvatarSessionTabs);
 		};
-	});
-
-	$effect(() => {
-		if (resolveOpenAvatarTabFromUrl(page.url)) {
-			openAvatarTabs = readOpenAvatarTabs();
-		}
 	});
 
 	$effect(() => {
 		if (!activeSessionId) {
 			return;
 		}
+		avatarSessionTabIds = upsertAvatarSessionTabId(avatarSessionTabIds, activeSessionId);
 		dismissedSessionIds = restoreWorkbenchTabId('avatars-runtime', dismissedSessionIds, activeSessionId);
 	});
 
@@ -88,38 +81,13 @@
 	};
 
 	const closeRuntimeTab = async (sessionId: string): Promise<void> => {
-		const nextSession = resolveAdjacentWorkbenchTab(runningItems, (item) => item.sessionId, sessionId);
+		const nextSession = resolveAdjacentWorkbenchTab(runtimeItems, (item) => item.sessionId, sessionId);
+		avatarSessionTabIds = removeAvatarSessionTabId(avatarSessionTabIds, sessionId);
 		dismissedSessionIds = dismissWorkbenchTabId('avatars-runtime', dismissedSessionIds, sessionId);
 		if (activeSessionId !== sessionId) {
 			return;
 		}
 		await goto(nextSession?.href ?? '/avatars/workspace', {
-			replaceState: true,
-			noScroll: true,
-			keepFocus: true,
-		});
-	};
-
-	const closeOpenAvatarTab = async (tabId: string): Promise<void> => {
-		const nextTab = resolveAdjacentWorkbenchTab(
-			[
-				...openAvatarTabs.map((tab) => ({
-					id: tab.id,
-					href: tab.href,
-				})),
-				...runningItems.map((item) => ({
-					id: item.sessionId,
-					href: item.href,
-				})),
-			],
-			(item) => item.id,
-			tabId,
-		);
-		openAvatarTabs = removeOpenAvatarTab(openAvatarTabs, tabId);
-		if (activeOpenAvatarTabId !== tabId) {
-			return;
-		}
-		await goto(nextTab?.href ?? '/avatars/workspace', {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
@@ -154,32 +122,7 @@
 			},
 		] satisfies WorkbenchTabItem[];
 
-		const openTabs = openAvatarTabs.map((tab) => ({
-			id: tab.id,
-			href: tab.href,
-			label: tab.avatarNickname,
-			avatarLabel: tab.avatarNickname,
-			avatarUrl: null,
-			title: `${tab.avatarNickname} · ${tab.workspaceName}`,
-			description: `${tab.workspacePath} · Open avatar`,
-			closable: true,
-			onClose: () => void closeOpenAvatarTab(tab.id),
-			menuItems: [
-				{
-					id: `copy:${tab.id}`,
-					label: 'Copy open-avatar link',
-					onSelect: () => void copyToClipboard(tab.href),
-				},
-				{
-					id: `close:${tab.id}`,
-					label: 'Close tab',
-					danger: true,
-					onSelect: () => void closeOpenAvatarTab(tab.id),
-				},
-			],
-		})) satisfies WorkbenchTabItem[];
-
-		const runtimeTabs = runningItems.map((item) => ({
+		const runtimeTabs = runtimeItems.map((item) => ({
 			id: item.sessionId,
 			href: item.href,
 			label: item.label,
@@ -205,15 +148,12 @@
 			],
 		})) satisfies WorkbenchTabItem[];
 
-		return [...fixedTabs, ...openTabs, ...runtimeTabs];
+		return [...fixedTabs, ...runtimeTabs];
 	});
 
 	const activeTabValue = $derived.by(() => {
 		if (activeSessionId) {
 			return activeSessionId;
-		}
-		if (activeOpenAvatarTabId) {
-			return activeOpenAvatarTabId;
 		}
 		if (page.url.pathname === '/avatars/history') {
 			return 'history';

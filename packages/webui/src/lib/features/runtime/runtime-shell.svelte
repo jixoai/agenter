@@ -2,6 +2,7 @@
 	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import StopCircleIcon from '@lucide/svelte/icons/stop-circle';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	import { goto } from '$app/navigation';
 
@@ -32,7 +33,7 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
-	let hydratedCycleSessionId = $state<string | null>(null);
+	const pendingCycleLoads = new SvelteSet<string>();
 
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
@@ -41,6 +42,9 @@
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
+	const attention = $derived(controller.runtimeState.attentionBySession?.[sessionId] ?? runtime?.attention ?? null);
+	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
+	const traces = $derived(controller.runtimeState.observabilityTracesBySession[sessionId] ?? []);
 	const activeCycle = $derived(runtime?.activeCycle ?? null);
 	const latestCycle = $derived(cycles[cycles.length - 1] ?? activeCycle ?? null);
 	const tabs = $derived(buildRuntimeTabs({ activeCycle, latestCycle }));
@@ -69,18 +73,15 @@
 
 	$effect(() => {
 		if (!session) {
-			hydratedCycleSessionId = null;
 			return;
 		}
-		if (hydratedCycleSessionId === session.id) {
+		if (controller.runtimeState.chatCyclesBySession[session.id] || pendingCycleLoads.has(session.id)) {
 			return;
 		}
 
-		hydratedCycleSessionId = session.id;
-		void controller.runtimeStore.loadChatCycles(session.id).catch(() => {
-			if (hydratedCycleSessionId === session.id) {
-				hydratedCycleSessionId = null;
-			}
+		pendingCycleLoads.add(session.id);
+		void controller.runtimeStore.loadChatCycles(session.id).finally(() => {
+			pendingCycleLoads.delete(session.id);
 		});
 	});
 </script>
@@ -148,6 +149,9 @@
 				{runtime}
 				{channels}
 				{cycles}
+				{attention}
+				{modelCalls}
+				{traces}
 				{activeCycle}
 				{latestCycle}
 				onOpenRoom={(chatId) => void openRoom(chatId)}

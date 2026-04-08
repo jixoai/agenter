@@ -21,11 +21,10 @@
 </script>
 
 <div class="grid auto-rows-max gap-4" data-testid="runtime-settings-stage">
-	<div class="grid gap-4 xl:grid-cols-2">
+	<div class="grid gap-4">
 		<Card.Root>
 			<Card.Header class="border-b">
 				<Card.Title>Runtime identity</Card.Title>
-				<Card.Description>Session identity and workspace binding stay explicit so runtime routes remain orthogonal to settings editors.</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-3 pt-6">
 				<div class="rounded-xl border px-4 py-3">
@@ -46,7 +45,6 @@
 		<Card.Root>
 			<Card.Header class="border-b">
 				<Card.Title>Runtime capabilities</Card.Title>
-				<Card.Description>Capabilities reflect what the current model/runtime profile can do without reopening the full settings editor.</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-3 pt-6">
 				{#if capabilityEntries.length === 0}

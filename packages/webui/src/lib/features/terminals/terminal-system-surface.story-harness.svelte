@@ -114,7 +114,6 @@
 	const initialTerminalId = 'term-story';
 	const terminalFallbackActor = (actorId: string) => actorCatalog.find((actor) => actor.actorId === actorId);
 
-	let terminalCounter = $state(1);
 	let activityCounter = $state(2);
 	let selectedTerminalId = $state(initialTerminalId);
 	let routeNotice: TerminalSystemNotice | null = $state(null);
@@ -313,74 +312,11 @@
 		};
 	};
 
-	const handleSelectTerminal = (terminalId: string): void => {
-		selectedTerminalId = terminalId;
-		routeNotice = null;
-	};
-
 	const handleChangeCallerToken = (accessToken: string): void => {
 		selectedCallerTokenByTerminalId = {
 			...selectedCallerTokenByTerminalId,
 			[selectedTerminalId]: accessToken,
 		};
-	};
-
-	const handleCreateTerminal = async (input: {
-		terminalId?: string;
-		processKind?: string;
-		cwd?: string;
-	}): Promise<void> => {
-		terminalCounter += 1;
-		const terminalId = input.terminalId ?? `term-story-${terminalCounter}`;
-		terminalsState = {
-			...terminalsState,
-			data: [
-				createTerminalEntry({
-					terminalId,
-					title: `Story terminal ${terminalCounter}`,
-					cwd: input.cwd ?? `/repo/story-${terminalCounter}`,
-					seatCount: 0,
-					pendingRequestCount: 0,
-				}),
-				...terminalsState.data,
-			],
-			refreshedAt: Date.now(),
-		};
-		terminalGrantsById = {
-			...terminalGrantsById,
-			[terminalId]: [],
-		};
-		terminalApprovalsById = {
-			...terminalApprovalsById,
-			[terminalId]: [],
-		};
-		terminalActivityById = {
-			...terminalActivityById,
-			[terminalId]: [],
-		};
-		terminalSeatStatesById = {
-			...terminalSeatStatesById,
-			[terminalId]: [
-				{
-					actorId: 'system:trusted-terminal-bootstrap',
-					actorKind: 'system',
-					label: 'Bootstrap admin',
-					subtitle: 'System seat',
-					iconUrl: null,
-					role: 'admin',
-					currentAdmin: true,
-					online: true,
-					focused: false,
-					invalidCredential: false,
-					accessToken: `token:${terminalId}:admin`,
-				},
-			],
-		};
-		selectedCallerTokenByTerminalId = {
-			...selectedCallerTokenByTerminalId,
-			[terminalId]: `token:${terminalId}:admin`,
-		};
-		selectedTerminalId = terminalId;
 	};
 
 	const handleDeleteTerminal = async (): Promise<void> => {
@@ -618,8 +554,6 @@
 
 <div class="h-[54rem] w-full min-w-[76rem] bg-background">
 	<TerminalSystemSurface
-		{terminalsState}
-		{selectedTerminalId}
 		{selectedTerminal}
 		terminalViewportComponent={TerminalViewHost}
 		{terminalGrantsState}
@@ -630,9 +564,7 @@
 		{callAsOptions}
 		{selectedCallerToken}
 		{seatStates}
-		onSelectTerminal={handleSelectTerminal}
 		onChangeCallerToken={handleChangeCallerToken}
-		onCreateTerminal={handleCreateTerminal}
 		onDeleteTerminal={handleDeleteTerminal}
 		onGrantSeat={handleGrantSeat}
 		onToggleSeatFocus={handleToggleSeatFocus}

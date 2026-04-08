@@ -1,7 +1,7 @@
 <script lang="ts">
+	import { ScrollView } from '@agenter/svelte-components';
 	import { goto } from '$app/navigation';
 
-	import ScrollView from '$lib/components/scroll-view.svelte';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { cn } from '$lib/utils.js';
 	import type { RuntimeTabId, RuntimeTabItem } from './runtime-shell-state';
@@ -26,7 +26,7 @@
 			void onNavigate(value as RuntimeTabId);
 			return;
 		}
-		void goto(`/runtime/${encodeURIComponent(sessionId)}/${value}`, {
+		void goto(`/avatars/runtime/${encodeURIComponent(sessionId)}/${value}`, {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,

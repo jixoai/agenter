@@ -1,0 +1,28 @@
+{
+	"plugins": ["eslint"],
+	"overrides": [
+		{
+			"files": [
+				"src/lib/features/**/*.svelte",
+				"src/routes/**/*.svelte"
+			],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "$lib/components/scroll-view.svelte",
+								"message": "Use scaffold-family primitives to host ScrollView in layout-managed routes."
+							},
+							{
+								"name": "$lib/components/panel-shell.svelte",
+								"message": "Use @agenter/svelte-components scaffold-family primitives directly in migrated routes."
+							}
+						]
+					}
+				]
+			}
+		}
+	]
+}

@@ -7,7 +7,6 @@
 		TerminalActivityItem,
 	} from '@agenter/client-sdk';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import {
@@ -25,16 +24,14 @@
 		TerminalSystemSeatState,
 	} from './terminal-system-surface.types';
 
+	let {
+		terminalId,
+	}: {
+		terminalId: string;
+	} = $props();
+
 	const controller = getAppControllerContext();
 
-	const emptyTerminalCatalogState: CachedResourceState<GlobalTerminalEntry[]> = {
-		data: [],
-		loaded: false,
-		loading: false,
-		refreshing: false,
-		error: null,
-		refreshedAt: null,
-	};
 	const emptyTerminalGrantState: CachedResourceState<GlobalTerminalGrantEntry[]> = {
 		data: [],
 		loaded: false,
@@ -74,7 +71,6 @@
 		leaseExpiresAt?: number;
 	};
 
-	let selectedTerminalId = $state(page.url.searchParams.get('terminalId') ?? '');
 	let selectedCallerTokenByTerminalId = $state<Record<string, string>>({});
 	let routeNotice = $state<TerminalSystemNotice | null>(null);
 
@@ -88,22 +84,19 @@
 	);
 	const actorDirectoryMap = $derived(buildActorDirectoryMap(actorDirectory));
 	const selectableActors = $derived(actorDirectory.filter((actor) => actor.actorKind !== 'system'));
-	const terminalsState = $derived(controller.runtimeState.globalTerminals ?? emptyTerminalCatalogState);
-	const terminals = $derived(terminalsState.data);
-	const selectedTerminal = $derived(terminals.find((terminal) => terminal.terminalId === selectedTerminalId) ?? null);
+	const terminals = $derived(controller.runtimeState.globalTerminals.data);
+	const selectedTerminal = $derived(terminals.find((terminal) => terminal.terminalId === terminalId) ?? null);
 	const selectedTerminalGrantsState = $derived(
-		selectedTerminalId
-			? (controller.runtimeState.globalTerminalGrantsById[selectedTerminalId] ?? emptyTerminalGrantState)
-			: emptyTerminalGrantState,
+		terminalId ? (controller.runtimeState.globalTerminalGrantsById[terminalId] ?? emptyTerminalGrantState) : emptyTerminalGrantState,
 	);
 	const selectedTerminalApprovalsState = $derived(
-		selectedTerminalId
-			? (controller.runtimeState.globalTerminalApprovalsById[selectedTerminalId] ?? emptyTerminalApprovalState)
+		terminalId
+			? (controller.runtimeState.globalTerminalApprovalsById[terminalId] ?? emptyTerminalApprovalState)
 			: emptyTerminalApprovalState,
 	);
 	const selectedTerminalActivityState = $derived(
-		selectedTerminalId
-			? (controller.runtimeState.globalTerminalActivityById[selectedTerminalId] ?? emptyTerminalActivityState)
+		terminalId
+			? (controller.runtimeState.globalTerminalActivityById[terminalId] ?? emptyTerminalActivityState)
 			: emptyTerminalActivityState,
 	);
 
@@ -290,7 +283,7 @@
 			selectedTerminalActivityState.error ??
 			selectedTerminalApprovalsState.error ??
 			selectedTerminalGrantsState.error ??
-			terminalsState.error;
+			controller.runtimeState.globalTerminals.error;
 		if (!error) {
 			return null;
 		}
@@ -300,47 +293,25 @@
 		} satisfies TerminalSystemNotice;
 	});
 
-	const syncTerminalQuery = async (terminalId: string): Promise<void> => {
-		const queryTerminalId = page.url.searchParams.get('terminalId') ?? '';
-		if (queryTerminalId === terminalId) {
-			return;
-		}
-		const url = new URL(page.url);
-		if (terminalId) {
-			url.searchParams.set('terminalId', terminalId);
-		} else {
-			url.searchParams.delete('terminalId');
-		}
-		await goto(`${url.pathname}${url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : ''}`, {
+	const navigateToTerminal = async (nextTerminalId: string): Promise<void> => {
+		await goto(`/terminals/${encodeURIComponent(nextTerminalId)}`, {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
 		});
 	};
 
-	const selectTerminal = (terminalId: string): void => {
-		selectedTerminalId = terminalId;
-		routeNotice = null;
-		void syncTerminalQuery(terminalId);
-	};
-
-	const handleCreateTerminal = async (input: {
-		terminalId?: string;
-		processKind?: string;
-		cwd?: string;
-	}): Promise<void> => {
-		try {
-			const created = await controller.runtimeStore.createGlobalTerminal({
-				terminalId: input.terminalId,
-				processKind: input.processKind,
-				cwd: input.cwd,
-			});
-			routeNotice = null;
-			selectTerminal(created.terminal?.terminalId ?? '');
-		} catch (error) {
-			routeNotice = describeTerminalError(error, 'terminal create failed');
-			throw error;
+	const navigateToFallbackTerminal = async (removedTerminalId?: string): Promise<void> => {
+		const nextTerminal = terminals.find((terminal) => terminal.terminalId !== removedTerminalId) ?? null;
+		if (nextTerminal) {
+			await navigateToTerminal(nextTerminal.terminalId);
+			return;
 		}
+		await goto('/terminals/new', {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
 	};
 
 	const handleDeleteTerminal = async (): Promise<void> => {
@@ -353,8 +324,7 @@
 				terminalId: terminal.terminalId,
 			});
 			routeNotice = null;
-			selectedTerminalId = '';
-			await syncTerminalQuery('');
+			await navigateToFallbackTerminal(terminal.terminalId);
 		} catch (error) {
 			routeNotice = describeTerminalError(error, 'terminal delete failed');
 		}
@@ -378,12 +348,22 @@
 			return;
 		}
 		try {
-			await controller.runtimeStore.issueGlobalTerminalGrant({
+			const grant = await controller.runtimeStore.issueGlobalTerminalGrant({
 				terminalId: terminal.terminalId,
 				role: input.role,
 				participantId,
 				label: actorDirectoryMap.get(input.participantId)?.label,
 			});
+			if (
+				grant.accessToken &&
+				input.role !== 'readonly' &&
+				(selectedCallerToken === null || selectedCallerToken === terminal.access?.accessToken)
+			) {
+				selectedCallerTokenByTerminalId = {
+					...selectedCallerTokenByTerminalId,
+					[terminal.terminalId]: grant.accessToken,
+				};
+			}
 			routeNotice = null;
 		} catch (error) {
 			routeNotice = describeTerminalError(error, 'grant seat failed');
@@ -527,73 +507,35 @@
 	};
 
 	$effect(() => {
-		const release = controller.runtimeStore.retainGlobalTerminals();
-		void controller.runtimeStore.hydrateGlobalTerminals();
-		return () => {
-			release();
-		};
+		if (!controller.runtimeState.globalTerminals.loaded) {
+			return;
+		}
+		if (selectedTerminal || controller.runtimeState.globalTerminals.loading) {
+			return;
+		}
+		void navigateToFallbackTerminal(terminalId);
 	});
 
 	$effect(() => {
-		const requestedTerminalId = page.url.searchParams.get('terminalId') ?? '';
-		if (requestedTerminalId && requestedTerminalId !== selectedTerminalId) {
-			selectedTerminalId = requestedTerminalId;
-		}
-	});
-
-	$effect(() => {
-		const requestedTerminalId = page.url.searchParams.get('terminalId') ?? '';
-		if (selectedTerminalId && terminals.some((terminal) => terminal.terminalId === selectedTerminalId)) {
+		const currentTerminalId = selectedTerminal?.terminalId;
+		if (!currentTerminalId) {
 			return;
 		}
-		if (requestedTerminalId) {
-			return;
-		}
-		const nextTerminalId = terminals[0]?.terminalId ?? '';
-		if (!nextTerminalId || nextTerminalId === selectedTerminalId) {
-			return;
-		}
-		selectedTerminalId = nextTerminalId;
-		void syncTerminalQuery(nextTerminalId);
-	});
-
-	$effect(() => {
-		const terminalId = selectedTerminal?.terminalId;
-		if (!terminalId) {
-			return;
-		}
-		const releaseGrants = controller.runtimeStore.retainGlobalTerminalGrants(terminalId);
-		const releaseApprovals = controller.runtimeStore.retainGlobalTerminalApprovals(terminalId);
-		const releaseActivity = controller.runtimeStore.retainGlobalTerminalActivity(terminalId);
-		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId });
-		void controller.runtimeStore.hydrateGlobalTerminalApprovals({ terminalId });
-		void controller.runtimeStore.hydrateGlobalTerminalActivity({ terminalId, limit: 120 });
+		const releaseGrants = controller.runtimeStore.retainGlobalTerminalGrants(currentTerminalId);
+		const releaseApprovals = controller.runtimeStore.retainGlobalTerminalApprovals(currentTerminalId);
+		const releaseActivity = controller.runtimeStore.retainGlobalTerminalActivity(currentTerminalId);
+		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId: currentTerminalId });
+		void controller.runtimeStore.hydrateGlobalTerminalApprovals({ terminalId: currentTerminalId });
+		void controller.runtimeStore.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: 120 });
 		return () => {
 			releaseActivity();
 			releaseApprovals();
 			releaseGrants();
 		};
 	});
-
-	$effect(() => {
-		const terminal = selectedTerminal;
-		const accessToken = selectedCallerToken;
-		if (!terminal || !accessToken) {
-			return;
-		}
-		if (selectedCallerTokenByTerminalId[terminal.terminalId] === accessToken) {
-			return;
-		}
-		selectedCallerTokenByTerminalId = {
-			...selectedCallerTokenByTerminalId,
-			[terminal.terminalId]: accessToken,
-		};
-	});
 </script>
 
 <TerminalSystemSurface
-	{terminalsState}
-	{selectedTerminalId}
 	{selectedTerminal}
 	terminalViewportComponent={TerminalViewHost}
 	terminalGrantsState={selectedTerminalGrantsState}
@@ -604,9 +546,7 @@
 	{callAsOptions}
 	{selectedCallerToken}
 	seatStates={resolvedTerminalSeatStates}
-	onSelectTerminal={selectTerminal}
 	onChangeCallerToken={handleChangeCallerToken}
-	onCreateTerminal={handleCreateTerminal}
 	onDeleteTerminal={handleDeleteTerminal}
 	onGrantSeat={handleGrantSeat}
 	onToggleSeatFocus={handleToggleSeatFocus}

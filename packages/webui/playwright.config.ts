@@ -36,7 +36,7 @@ export default defineConfig({
     },
     {
       command:
-        `PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:${E2E_DAEMON_PORT}/trpc pnpm run build && PUBLIC_AGENTER_WS_URL=ws://127.0.0.1:${E2E_DAEMON_PORT}/trpc pnpm exec vite preview --host 127.0.0.1 --port ${E2E_WEB_PORT}`,
+        `AGENTER_DAEMON_PORT=${E2E_DAEMON_PORT} pnpm exec vite dev --host 127.0.0.1 --port ${E2E_WEB_PORT}`,
       port: E2E_WEB_PORT,
       reuseExistingServer: false,
       timeout: 300_000,

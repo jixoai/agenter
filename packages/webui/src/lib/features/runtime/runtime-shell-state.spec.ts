@@ -1,7 +1,7 @@
 import type { RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
-import { buildRunningAvatarRailItems } from "./runtime-shell-state";
+import { buildAvatarSessionRailItems } from "./runtime-shell-state";
 
 const createSessionEntry = (input: {
   id: string;
@@ -110,14 +110,16 @@ describe("Feature: Avatar submenu navigation order", () => {
       },
     );
 
-    const alphaActive = buildRunningAvatarRailItems(state, {
+    const alphaActive = buildAvatarSessionRailItems(state, {
       activeSessionId: "session-alpha",
       pinnedSessionIds: [],
+      openedSessionIds: [],
       resolveSessionIconUrl: () => null,
     });
-    const betaActive = buildRunningAvatarRailItems(state, {
+    const betaActive = buildAvatarSessionRailItems(state, {
       activeSessionId: "session-beta",
       pinnedSessionIds: [],
+      openedSessionIds: [],
       resolveSessionIconUrl: () => null,
     });
 
@@ -159,15 +161,52 @@ describe("Feature: Avatar submenu navigation order", () => {
       },
     );
 
-    const items = buildRunningAvatarRailItems(state, {
+    const items = buildAvatarSessionRailItems(state, {
       activeSessionId: "session-alpha",
       pinnedSessionIds: ["session-alpha"],
+      openedSessionIds: [],
       resolveSessionIconUrl: () => null,
     });
 
     expect(items.map((item) => item.sessionId)).toEqual(["session-zebra", "session-alpha", "session-beta"]);
     expect(items.map((item) => item.pinned)).toEqual([false, true, false]);
     expect(items.map((item) => item.active)).toEqual([false, true, false]);
+    expect(items[1]?.status).toBe("stopped");
+  });
+
+  test("Scenario: Given an opened stopped avatar session When building sidebar submenu items Then it remains visible so the shared runtime shell stays reachable", () => {
+    const state = createRuntimeState(
+      [
+        createSessionEntry({
+          id: "session-zebra",
+          avatar: "zebra",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          status: "running",
+          workspacePath: "/repo/zebra",
+        }),
+        createSessionEntry({
+          id: "session-helper",
+          avatar: "helper",
+          createdAt: "2026-04-02T00:00:00.000Z",
+          status: "stopped",
+          workspacePath: "/repo/helper",
+        }),
+      ],
+      {
+        "session-zebra": 0,
+        "session-helper": 0,
+      },
+    );
+
+    const items = buildAvatarSessionRailItems(state, {
+      activeSessionId: "session-helper",
+      openedSessionIds: ["session-helper"],
+      pinnedSessionIds: [],
+      resolveSessionIconUrl: () => null,
+    });
+
+    expect(items.map((item) => item.sessionId)).toEqual(["session-zebra", "session-helper"]);
+    expect(items.map((item) => item.active)).toEqual([false, true]);
     expect(items[1]?.status).toBe("stopped");
   });
 });

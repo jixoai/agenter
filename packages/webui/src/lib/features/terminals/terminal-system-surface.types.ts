@@ -74,6 +74,7 @@ export interface TerminalViewportProps {
 	terminalTitle?: string;
 	cwd?: string;
 	status: 'IDLE' | 'BUSY';
+	viewportMode?: 'fit' | 'cover';
 	transportUrl?: string;
 	snapshot?: TerminalViewSnapshot | null;
 	class?: string;
@@ -82,8 +83,6 @@ export interface TerminalViewportProps {
 export type TerminalViewportComponent = Component<TerminalViewportProps>;
 
 export interface TerminalSystemSurfaceProps {
-	terminalsState: CachedResourceState<GlobalTerminalEntry[]>;
-	selectedTerminalId: string;
 	selectedTerminal: GlobalTerminalEntry | null;
 	terminalViewportComponent: TerminalViewportComponent;
 	terminalGrantsState: CachedResourceState<GlobalTerminalGrantEntry[]>;
@@ -94,9 +93,7 @@ export interface TerminalSystemSurfaceProps {
 	callAsOptions: TerminalSystemCallAsOption[];
 	selectedCallerToken: string | null;
 	seatStates: TerminalSystemSeatState[];
-	onSelectTerminal: (terminalId: string) => void;
 	onChangeCallerToken: (accessToken: string) => void;
-	onCreateTerminal: (input: TerminalSystemCreateTerminalInput) => Promise<void>;
 	onDeleteTerminal: () => Promise<void>;
 	onGrantSeat: (input: TerminalSystemGrantSeatInput) => Promise<void>;
 	onToggleSeatFocus: (input: TerminalSystemSeatFocusInput) => Promise<void>;

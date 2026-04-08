@@ -5,7 +5,10 @@
 		type TerminalViewElement,
 		type TerminalViewSnapshot,
 	} from '@agenter/terminal-view';
-	import { onMount } from 'svelte';
+
+	if (typeof window !== 'undefined' && typeof customElements !== 'undefined') {
+		defineTerminalView();
+	}
 
 	let {
 		terminalId,
@@ -34,50 +37,19 @@
 		>;
 
 	let element = $state<TerminalViewHostElement | null>(null);
-	let resolvedTerminalId = '';
-	let resolvedSnapshot: TerminalViewSnapshot | null = null;
-	let resolvedTransportUrl = '';
-	let resolvedCwd = '';
-
-	const syncResolvedProps = (): void => {
-		if (resolvedTerminalId.length === 0 || resolvedTerminalId !== terminalId) {
-			resolvedTerminalId = terminalId;
-			resolvedSnapshot = snapshot ?? null;
-			resolvedTransportUrl = transportUrl ?? '';
-			resolvedCwd = cwd ?? '';
-			return;
-		}
-		if (snapshot) {
-			resolvedSnapshot = snapshot;
-		}
-		if (transportUrl && transportUrl.length > 0) {
-			resolvedTransportUrl = transportUrl;
-		}
-		if (cwd && cwd.trim().length > 0 && cwd !== '.') {
-			resolvedCwd = cwd;
-		}
-	};
 
 	const syncProps = (): void => {
-		syncResolvedProps();
 		if (!element) {
 			return;
 		}
-		element.transportUrl = resolvedTransportUrl;
+		element.transportUrl = transportUrl ?? '';
 		element.terminalId = terminalId;
 		element.terminalTitle = terminalTitle ?? terminalId;
-		element.cwd = resolvedCwd;
+		element.cwd = cwd ?? '';
 		element.status = status;
 		element.viewportMode = viewportMode;
-		element.snapshot = resolvedSnapshot;
+		element.snapshot = snapshot ?? null;
 	};
-
-	onMount(() => {
-		if (typeof customElements !== 'undefined') {
-			defineTerminalView();
-		}
-		syncProps();
-	});
 
 	$effect(() => {
 		syncProps();

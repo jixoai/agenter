@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type {
 		MessageChannelEntry,
+		ModelCallItem,
+		ObservabilityTraceItem,
+		RuntimeAttentionState,
 		RuntimeChatCycle,
 		RuntimeSnapshotEntry,
 		SessionEntry,
@@ -22,6 +25,9 @@
 		runtime: RuntimeSnapshotEntry | null;
 		channels: MessageChannelEntry[];
 		cycles: RuntimeChatCycle[];
+		attention: RuntimeAttentionState | null;
+		modelCalls: ModelCallItem[];
+		traces: ObservabilityTraceItem[];
 		activeCycle: RuntimeChatCycle | null;
 		latestCycle: RuntimeChatCycle | null;
 		onOpenRoom: (chatId: string) => void | Promise<void>;
@@ -34,6 +40,9 @@
 		runtime,
 		channels,
 		cycles,
+		attention,
+		modelCalls,
+		traces,
 		activeCycle,
 		latestCycle,
 		onOpenRoom,
@@ -75,7 +84,7 @@
 		{#if tab === 'attention'}
 			<RuntimeStageAttention {runtime} {channels} {onOpenRoom} {onOpenTerminal} />
 		{:else if tab === 'cycles'}
-			<RuntimeStageCycles {cycles} {activeCycle} {latestCycle} />
+			<RuntimeStageCycles {cycles} {activeCycle} {latestCycle} {attention} {modelCalls} {traces} />
 		{:else if tab === 'systems'}
 			<RuntimeStageSystems {runtime} {channels} />
 		{:else if tab === 'observability'}

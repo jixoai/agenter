@@ -150,10 +150,7 @@ export const upsertOpenAvatarTab = (
 	return { entries: next, entry };
 };
 
-export const removeOpenAvatarTab = (
-	currentEntries: OpenAvatarTabEntry[],
-	tabId: string,
-): OpenAvatarTabEntry[] => {
+export const removeOpenAvatarTab = (currentEntries: OpenAvatarTabEntry[], tabId: string): OpenAvatarTabEntry[] => {
 	const normalizedCurrent = normalizeOpenAvatarTabs(currentEntries);
 	const next = normalizedCurrent.filter((entry) => entry.id !== tabId);
 	if (sameTabIds(currentEntries, next)) {

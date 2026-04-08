@@ -82,7 +82,7 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+	<div class="grid gap-4">
 		<Card.Root>
 			<Card.Header class="border-b">
 				<Card.Title>Active contexts</Card.Title>

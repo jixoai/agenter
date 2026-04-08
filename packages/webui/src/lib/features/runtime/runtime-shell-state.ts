@@ -3,7 +3,7 @@ import type { RuntimeChatCycle, RuntimeClientState, SessionEntry } from "@agente
 
 export type RuntimeTabId = "attention" | "cycles" | "systems" | "observability" | "settings";
 
-export interface RunningAvatarRailItem {
+export interface AvatarSessionRailItem {
   sessionId: string;
   label: string;
   workspacePath: string;
@@ -17,6 +17,8 @@ export interface RunningAvatarRailItem {
   pinned: boolean;
   pinEnabled: boolean;
 }
+
+export type RunningAvatarRailItem = AvatarSessionRailItem;
 
 export interface RuntimeTabItem {
   id: RuntimeTabId;
@@ -124,19 +126,24 @@ export const buildRuntimeTabs = (input: {
   ];
 };
 
-export const buildRunningAvatarRailItems = (
+export const buildAvatarSessionRailItems = (
   state: RuntimeClientState,
   input: {
     activeSessionId: string | null;
+    openedSessionIds?: readonly string[];
     pinnedSessionIds?: readonly string[];
     resolveSessionIconUrl: (sessionId: string) => string | null;
   },
-): RunningAvatarRailItem[] => {
+): AvatarSessionRailItem[] => {
+  const openedSessionIds = new Set((input.openedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
   const pinnedSessionIds = new Set((input.pinnedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
   return state.sessions
     .filter(
       (session) =>
-        session.status === "running" || session.status === "starting" || pinnedSessionIds.has(session.id),
+        session.status === "running" ||
+        session.status === "starting" ||
+        openedSessionIds.has(session.id) ||
+        pinnedSessionIds.has(session.id),
     )
     .map((session) => ({
       sessionId: session.id,
@@ -153,3 +160,5 @@ export const buildRunningAvatarRailItems = (
       pinEnabled: true,
     }));
 };
+
+export const buildRunningAvatarRailItems = buildAvatarSessionRailItems;

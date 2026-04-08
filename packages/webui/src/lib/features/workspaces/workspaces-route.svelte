@@ -11,7 +11,10 @@
 	import AdaptiveIconButton from '$lib/components/web-components/adaptive-icon-button.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
-	import { readOpenAvatarTabs, upsertOpenAvatarTab } from '$lib/features/avatars/avatar-open-tabs-state';
+	import {
+		readAvatarSessionTabIds,
+		upsertAvatarSessionTabId,
+	} from '$lib/features/avatars/avatar-session-tabs-state';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -35,7 +38,7 @@
 
 	let selectedWorkspacePath = $state(page.url.searchParams.get('path') ?? '');
 	let selectedAvatar = $state('default');
-	let createBusy = $state(false);
+	let sessionLaunchState = $state<'open' | 'start' | null>(null);
 	let copyDialogOpen = $state(false);
 	let copyBusy = $state(false);
 	let copyAvatarDraft = $state('');
@@ -81,35 +84,30 @@
 		});
 	};
 
-	const startAvatarSession = async (): Promise<void> => {
-		if (!selectedWorkspace) {
-			return;
-		}
-		createBusy = true;
-		try {
-			const session = await controller.runtimeStore.createSession({
-				cwd: selectedWorkspace.path,
-				avatar: selectedAvatar,
-				autoStart: true,
-			});
-			await goto(`/avatars/runtime/${encodeURIComponent(session.id)}/attention`);
-		} finally {
-			createBusy = false;
-		}
-	};
-
-	const openAvatarTab = async (): Promise<void> => {
+	const openAvatarSession = async (autoStart: boolean): Promise<void> => {
 		if (!selectedWorkspace || !selectedAvatarEntry) {
 			return;
 		}
-		const next = upsertOpenAvatarTab(readOpenAvatarTabs(), {
-			workspacePath: selectedWorkspace.path,
-			avatarNickname: selectedAvatarEntry.nickname,
-		});
-		await goto(next.entry.href, {
-			noScroll: true,
-			keepFocus: true,
-		});
+		sessionLaunchState = autoStart ? 'start' : 'open';
+		try {
+			const session = await controller.runtimeStore.createSession({
+				cwd: selectedWorkspace.path,
+				avatar: selectedAvatarEntry.nickname,
+				autoStart,
+			});
+			upsertAvatarSessionTabId(readAvatarSessionTabIds(), session.id);
+			await goto(`/avatars/runtime/${encodeURIComponent(session.id)}/attention`);
+		} finally {
+			sessionLaunchState = null;
+		}
+	};
+
+	const startAvatarSession = async (): Promise<void> => {
+		await openAvatarSession(true);
+	};
+
+	const openAvatarTab = async (): Promise<void> => {
+		await openAvatarSession(false);
 	};
 
 	const openCopyDialog = (): void => {
@@ -198,17 +196,11 @@
 					<div class="flex items-center justify-between gap-3">
 						<div class="min-w-0">
 							<div class="truncate text-sm font-semibold">{describeCompactWorkspace(workspace.path)}</div>
-							<div class="truncate text-xs text-muted-foreground">
-								{workspace.group} · {workspace.counts.running} running · {workspace.counts.all} total
-							</div>
 						</div>
 						{#if workspace.favorite}
 							<div class="rounded-full border px-2 py-1 text-[11px]">Favorite</div>
 						{/if}
 					</div>
-					{#if workspace.lastSessionActivityAt}
-						<div class="text-[11px] text-muted-foreground">Last used {workspace.lastSessionActivityAt}</div>
-					{/if}
 				</button>
 			{/each}
 		</WorkbenchScaffold>
@@ -287,8 +279,8 @@
 					<div class="flex flex-wrap items-center gap-2">
 						<AdaptiveIconButton
 							label="Open avatar"
-							tooltip="Open avatar in a dedicated workbench tab"
-							disabled={!selectedAvatarEntry}
+							tooltip="Open avatar in the shared runtime workbench"
+							disabled={!selectedWorkspace || !selectedAvatarEntry || sessionLaunchState !== null}
 							onclick={() => void openAvatarTab()}
 						>
 							<EyeIcon class="size-4" />
@@ -301,9 +293,12 @@
 						>
 							<CopyIcon class="size-4" />
 						</AdaptiveIconButton>
-						<Button onclick={() => void startAvatarSession()} disabled={!selectedWorkspace || createBusy}>
+						<Button
+							onclick={() => void startAvatarSession()}
+							disabled={!selectedWorkspace || !selectedAvatarEntry || sessionLaunchState !== null}
+						>
 							<PlayIcon class="size-4" />
-							{createBusy ? 'Starting…' : 'Start avatar'}
+							{sessionLaunchState === 'start' ? 'Starting…' : 'Start avatar'}
 						</Button>
 					</div>
 				</div>

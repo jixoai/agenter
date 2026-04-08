@@ -5,14 +5,14 @@
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { cn } from '$lib/utils.js';
-	import type { RunningAvatarRailItem } from '$lib/features/runtime/runtime-shell-state';
+	import type { AvatarSessionRailItem } from '$lib/features/runtime/runtime-shell-state';
 	import { resolveRuntimeStatusLabel, resolveRuntimeStatusTone } from '$lib/features/runtime/runtime-shell-state';
 
 	let {
 		items,
 		onTogglePin,
 	}: {
-		items: RunningAvatarRailItem[];
+		items: AvatarSessionRailItem[];
 		onTogglePin?: (sessionId: string, nextPinned: boolean) => void;
 	} = $props();
 </script>
@@ -24,7 +24,7 @@
 				class="text-sidebar-foreground/60 flex h-7 items-center rounded-md px-2 text-xs"
 				data-running-avatar-empty
 			>
-				No open avatars
+				No avatar sessions
 			</div>
 		</Sidebar.MenuSubItem>
 	{:else}
