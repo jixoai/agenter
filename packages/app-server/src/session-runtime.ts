@@ -28,6 +28,7 @@ import {
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
   type MessageRecord,
+  type ReverseTimeCursor,
 } from "@agenter/message-system";
 import {
   SessionDb,
@@ -1869,6 +1870,69 @@ export class SessionRuntime {
     return this.isInboundMessage(message) && message.attentionState === "queued";
   }
 
+  private shouldActorLoadInboundMessage(message: MessageRecord): boolean {
+    if (!this.isInboundMessage(message)) {
+      return false;
+    }
+    if (message.unreadActorIds.includes(this.messageActorId)) {
+      return true;
+    }
+    return message.unreadActorIds.length === 0 && message.attentionState === "queued";
+  }
+
+  private enqueueInboundMessage(message: MessageRecord): void {
+    this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
+    this.loopPluginRuntime?.invalidate(
+      this.createMessageSourceRef({
+        chatId: message.chatId,
+        messageId: message.messageId,
+        rootId: message.rootId,
+        from: message.from,
+        to: message.to,
+        content: message.content,
+        attachments: this.toChatMessageFromChannel(message).attachments ?? [],
+        meta:
+          message.metadata && typeof message.metadata === "object"
+            ? (message.metadata as Record<string, string | number | boolean | null>)
+            : undefined,
+      }),
+    );
+  }
+
+  private collectStartupInboundMessages(): MessageRecord[] {
+    const pending: MessageRecord[] = [];
+    for (const channel of this.listActorRooms({ includeArchived: true, touchPresence: false })) {
+      let before: ReverseTimeCursor | null = null;
+      do {
+        const page = this.messageSystem.queryMessages({
+          chatId: channel.chatId,
+          before,
+          limit: 200,
+        });
+        pending.push(...page.items.filter((message) => this.shouldActorLoadInboundMessage(message)));
+        before = page.nextBefore;
+      } while (before);
+    }
+    pending.sort((left, right) => {
+      if (left.createdAt !== right.createdAt) {
+        return left.createdAt - right.createdAt;
+      }
+      return left.rowId - right.rowId;
+    });
+    return pending;
+  }
+
+  private hydrateStartupInboundMessages(): void {
+    const pending = this.collectStartupInboundMessages();
+    if (pending.length === 0) {
+      return;
+    }
+    for (const message of pending) {
+      this.enqueueInboundMessage(message);
+    }
+    this.notifyInput("user");
+  }
+
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
     const meta =
       message.metadata && typeof message.metadata === "object"
@@ -1963,22 +2027,7 @@ export class SessionRuntime {
         if (!this.isQueuedInboundMessage(message)) {
           return;
         }
-        this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
-        this.loopPluginRuntime?.invalidate(
-          this.createMessageSourceRef({
-            chatId,
-            messageId: message.messageId,
-            rootId: message.rootId,
-            from: message.from,
-            to: message.to,
-            content: message.content,
-            attachments: this.toChatMessageFromChannel(message).attachments ?? [],
-            meta:
-              message.metadata && typeof message.metadata === "object"
-                ? (message.metadata as Record<string, string | number | boolean | null>)
-                : undefined,
-          }),
-        );
+        this.enqueueInboundMessage(message);
         this.notifyInput("user");
       }),
     );
@@ -2165,7 +2214,7 @@ export class SessionRuntime {
             typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
           const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
           return {
-            allow: message?.attentionState === "queued",
+            allow: message ? this.shouldActorLoadInboundMessage(message) : false,
             reason: message ? `message.${message.attentionState}` : "message.missing",
           };
         },
@@ -3206,11 +3255,22 @@ export class SessionRuntime {
     request: LoopSourceReadRequest,
   ): Promise<AttentionDraft[]> {
     const chatId = typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+    const actorRoom = this.getActorRoom(chatId, {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    if (actorRoom?.accessToken) {
+      this.messageSystem.markChannelReadAuthorized({
+        chatId,
+        accessToken: actorRoom.accessToken,
+        messageId: request.ref.subjectId,
+      });
+    }
     const loadedMessage = this.messageSystem.markMessageAttentionLoaded({
       chatId,
       messageId: request.ref.subjectId,
     });
-    const channel = this.getActorRoom(chatId) ?? this.messageSystem.getChannel(chatId);
+    const channel = actorRoom ?? this.messageSystem.getChannel(chatId);
     if (loadedMessage.content.trim().length === 0 || loadedMessage.content.trim() === "/compact") {
       return [];
     }
@@ -4365,6 +4425,7 @@ export class SessionRuntime {
       this.bindTerminalSystem();
     }
     this.ensureDefaultChatChannel();
+    this.hydrateStartupInboundMessages();
     this.settingsEditor = new SettingsEditor(this.config.agentCwd, {
       agenterPath: this.config.prompt.agenterPath,
       agenterSystemPath: this.config.prompt.agenterSystemPath,

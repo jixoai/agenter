@@ -113,6 +113,93 @@ describe("Feature: app kernel event replay", () => {
     expect(terminalResult.terminal?.snapshot?.cols).toBeGreaterThan(0);
   });
 
+  test("Scenario: Given a room message is sent before a stopped avatar session starts When the kernel starts that session Then startup replay loads the unread room message for that avatar principal", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "jane",
+      name: "jane",
+      autoStart: false,
+    });
+    if (!session.avatarPrincipalId) {
+      throw new Error("expected avatar principal id");
+    }
+
+    const room = await kernel.createGlobalRoom({
+      title: "Startup replay room",
+      initialUsers: [
+        {
+          actorId: "auth:kzf",
+          label: "kzf",
+          role: "member",
+          focused: true,
+        },
+        {
+          actorId: session.avatarPrincipalId,
+          label: "jane",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    const sent = kernel.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      superadminActorId: "auth:kzf",
+      text: "hello before jane starts",
+    });
+    expect(sent.ok).toBeTrue();
+
+    const before = kernel.pageGlobalRoomMessages({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 4,
+    }).items.find((message) => message.content === "hello before jane starts");
+    expect(before?.attentionState).toBe("queued");
+    expect(before?.unreadActorIds).toContain(session.avatarPrincipalId);
+
+    await kernel.startSession(session.id);
+
+    const deadline = Date.now() + 5_000;
+    let loaded = before ?? null;
+    while (Date.now() < deadline) {
+      loaded = kernel
+        .pageGlobalRoomMessages({
+          chatId: room.chatId,
+          accessToken: room.accessToken,
+          limit: 4,
+        })
+        .items.find((message) => message.content === "hello before jane starts") ?? null;
+      if (
+        loaded &&
+        loaded.attentionState === "loaded" &&
+        loaded.readActorIds.includes(session.avatarPrincipalId) &&
+        !loaded.unreadActorIds.includes(session.avatarPrincipalId)
+      ) {
+        break;
+      }
+      await new Promise<void>((resolveReady) => setTimeout(resolveReady, 50));
+    }
+
+    expect(loaded?.attentionState).toBe("loaded");
+    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId);
+    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given session runtime When inspecting model debug Then resolved provider config and empty history are returned", async () => {
     const kernel = createKernel();
     await kernel.start();

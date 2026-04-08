@@ -38,6 +38,7 @@ interface RuntimeInternal {
   loopPluginRuntime: LoopBusPluginRuntime | null;
   createLoopPluginRuntime: () => Promise<LoopBusPluginRuntime>;
   createLoopPlugins: () => LoopBusPlugin[];
+  hydrateStartupInboundMessages: () => void;
   flushPluginAttentionDrafts: () => Promise<boolean>;
   commitAttentionDrafts: (drafts: AttentionDraft[]) => Promise<boolean>;
   persistCycle: (input: {
@@ -512,6 +513,159 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const jjInputs = await jjInternal.collectLoopInputs();
       expect(janeInputs?.some((input) => input.meta?.chatId === room.chatId)).toBeTrue();
       expect(jjInputs).toBeUndefined();
+    } finally {
+      messageSystem.close();
+    }
+  });
+
+  test("Scenario: Given a room message exists before the avatar runtime starts When the runtime boots later Then startup hydration loads that unread room message and marks the seat read", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-startup-replay-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: join(root, "message.db"),
+    });
+
+    try {
+      const roomId = createPrincipalId(901);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+      const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      const sent = messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        senderActorId: "auth:kzf",
+        from: "kzf",
+        content: "hello before jane starts",
+      });
+      expect(sent.attentionState).toBe("queued");
+      expect(sent.unreadActorIds).toContain("session:jane");
+
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+
+      janeInternal.loopPluginRuntime = await janeInternal.createLoopPluginRuntime();
+      janeInternal.hydrateStartupInboundMessages();
+
+      const firstRound = await janeInternal.collectLoopInputs();
+      const attentionInput = firstRound?.find((item) => item.source === "attention" && item.meta?.chatId === room.chatId);
+      expect(attentionInput).toBeDefined();
+      expect(attentionInput?.text).toContain("hello before jane starts");
+
+      const loaded = messageSystem.getMessage(room.chatId, sent.messageId);
+      expect(loaded?.attentionState).toBe("loaded");
+      expect(loaded?.readActorIds).toContain("session:jane");
+      expect(loaded?.unreadActorIds).not.toContain("session:jane");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
+  test("Scenario: Given one avatar already loaded a room message When another granted avatar starts later Then unread room membership still lets the later avatar consume that same message", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-multi-seat-replay-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: join(root, "message.db"),
+    });
+
+    try {
+      const roomId = createPrincipalId(902);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jj",
+            label: "JJ",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+      const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      const sent = messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        senderActorId: "auth:kzf",
+        from: "kzf",
+        content: "hello everyone",
+      });
+      expect(sent.unreadActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
+
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+      janeInternal.loopPluginRuntime = await janeInternal.createLoopPluginRuntime();
+      janeInternal.hydrateStartupInboundMessages();
+      const janeInputs = await janeInternal.collectLoopInputs();
+      expect(janeInputs?.some((item) => item.source === "attention" && item.meta?.chatId === room.chatId)).toBeTrue();
+
+      const afterJane = messageSystem.getMessage(room.chatId, sent.messageId);
+      expect(afterJane?.attentionState).toBe("loaded");
+      expect(afterJane?.readActorIds).toContain("session:jane");
+      expect(afterJane?.unreadActorIds).toContain("session:jj");
+
+      const jjRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jj",
+        sessionName: "jj",
+        messageSystem,
+      });
+      const jjInternal = jjRuntime as unknown as RuntimeInternal;
+      jjInternal.loopPluginRuntime = await jjInternal.createLoopPluginRuntime();
+      jjInternal.hydrateStartupInboundMessages();
+      const jjInputs = await jjInternal.collectLoopInputs();
+      const attentionInput = jjInputs?.find((item) => item.source === "attention" && item.meta?.chatId === room.chatId);
+      expect(attentionInput).toBeDefined();
+      expect(attentionInput?.text).toContain("hello everyone");
+
+      const afterJj = messageSystem.getMessage(room.chatId, sent.messageId);
+      expect(afterJj?.readActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
+      expect(afterJj?.unreadActorIds).not.toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
     } finally {
       messageSystem.close();
     }
