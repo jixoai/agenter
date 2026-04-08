@@ -14,6 +14,7 @@
 	import {
 		buildActorDirectory,
 		buildActorDirectoryMap,
+		isPrincipalActorId,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
@@ -64,11 +65,8 @@
 	});
 	const selectableActorMap = $derived(buildActorDirectoryMap(selectableActors));
 
-	const initialUserActorIdPattern = /^(auth|session|system):.+$/u;
-
-	const isInitialUserActorId = (
-		value: string,
-	): value is GlobalRoomActorId => initialUserActorIdPattern.test(value);
+	const isInitialUserActorId = (value: string): value is GlobalRoomActorId =>
+		/^(auth|session|system):.+$/u.test(value) || isPrincipalActorId(value);
 
 	const buildInitialUsers = (): Array<{
 		actorId: GlobalRoomActorId;

@@ -7,6 +7,7 @@ const createSessionEntry = (input: {
 	id: string;
 	name: string;
 	avatar?: string;
+	avatarPrincipalId?: string;
 	status?: SessionEntry["status"];
 	storageState?: SessionEntry["storageState"];
 	workspacePath?: string;
@@ -22,6 +23,7 @@ const createSessionEntry = (input: {
 	storageState: input.storageState ?? "active",
 	sessionRoot: `/tmp/sessions/${input.id}`,
 	storeTarget: "global",
+	avatarPrincipalId: input.avatarPrincipalId,
 });
 
 describe('Feature: collaboration actor directory', () => {
@@ -46,6 +48,7 @@ describe('Feature: collaboration actor directory', () => {
 					id: "775921bd-e52b-52d2-9ff3-7b46e742ec45",
 					name: "775921bd-e52b-52d2-9ff3-7b46e742ec45",
 					avatar: "jane",
+					avatarPrincipalId: "0x775921bde52b52d29ff37b46e742ec4500000000",
 					workspacePath: "/repo/jane",
 					status: "stopped",
 				}),
@@ -56,8 +59,11 @@ describe('Feature: collaboration actor directory', () => {
 		});
 		const directoryMap = buildActorDirectoryMap(directory);
 
-		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.label).toBe("jane");
-		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.subtitle).toBe("Avatar session");
+		expect(directoryMap.get("0x775921bde52b52d29ff37b46e742ec4500000000")?.label).toBe("jane");
+		expect(directoryMap.get("0x775921bde52b52d29ff37b46e742ec4500000000")?.subtitle).toBe("Avatar session");
+		expect(directoryMap.get("0x775921bde52b52d29ff37b46e742ec4500000000")?.sessionId).toBe(
+			"775921bd-e52b-52d2-9ff3-7b46e742ec45",
+		);
 	});
 
 	test("Scenario: Given an active running session without an avatar label When building the actor directory Then the runtime name remains the primary label", () => {

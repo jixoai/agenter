@@ -11,6 +11,10 @@
 	import { tick, untrack, type ComponentProps } from 'svelte';
 
 	import MessageRoomManageDialog from '$lib/features/messages/message-room-manage-dialog.svelte';
+	import {
+		fallbackActorLabel,
+		isSystemActorId,
+	} from '$lib/features/collaboration/actor-directory';
 	import { resolveSeatSubtitleForTranscript } from '$lib/features/messages/message-actor-presentation';
 	import RoomAssetsPane from '$lib/features/messages/room-assets-pane.svelte';
 	import RoomMessageSearchDialog from '$lib/features/messages/room-message-search-dialog.svelte';
@@ -29,7 +33,6 @@
 		selectedRoom,
 		selectedRoomIconUrl = null,
 		resolveProfileIconUrl,
-		resolveSessionIconUrl,
 		disableManageDialogPortal = false,
 		initialManageDialogSection = null,
 		initialMessages,
@@ -175,9 +178,6 @@
 		fallbackLabel: string;
 	}): WebChatActorPresentation | null => {
 		const fallbackIconUrl = (() => {
-			if (input.actorId?.startsWith('session:')) {
-				return resolveSessionIconUrl?.(input.actorId.slice('session:'.length)) ?? null;
-			}
 			const iconReference = input.actorId ?? input.fallbackLabel;
 			return iconReference ? (resolveProfileIconUrl?.(iconReference) ?? null) : null;
 		})();
@@ -231,7 +231,7 @@
 	const resolveMessageReadProgress = (input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
 		const projectReadActors = (actorIds: readonly string[]): WebChatMessageReadActor[] =>
 			actorIds
-				.filter((actorId) => !actorId.startsWith('system:'))
+				.filter((actorId) => !isSystemActorId(actorId))
 				.map((actorId) => {
 					const seat = roomSeatMap.get(actorId);
 					if (seat) {
@@ -244,15 +244,9 @@
 					}
 					return {
 						actorId,
-						label: actorId.startsWith('session:')
-							? actorId.slice('session:'.length)
-							: actorId.startsWith('auth:')
-								? actorId.slice('auth:'.length)
-								: actorId,
+						label: fallbackActorLabel(actorId),
 						subtitle: actorId,
-						iconUrl: actorId.startsWith('session:')
-							? (resolveSessionIconUrl?.(actorId.slice('session:'.length)) ?? null)
-							: (resolveProfileIconUrl?.(actorId) ?? null),
+						iconUrl: resolveProfileIconUrl?.(actorId) ?? null,
 					} satisfies WebChatMessageReadActor;
 				});
 

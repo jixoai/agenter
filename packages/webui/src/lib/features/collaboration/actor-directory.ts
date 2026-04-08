@@ -6,12 +6,14 @@ export interface ActorDirectoryEntry {
   label: string;
   subtitle?: string;
   iconUrl?: string | null;
+  sessionId?: string;
 }
 
 const SYSTEM_ACTOR_LABELS: Record<string, string> = {
   "system:trusted-bootstrap": "Bootstrap admin",
   "system:trusted-terminal-bootstrap": "Bootstrap admin",
 };
+const PRINCIPAL_ACTOR_ID_PATTERN = /^0x[0-9a-f]{40}$/iu;
 
 const resolveSessionActorSubtitle = (input: { avatar?: string; name?: string }): string => {
   return input.avatar?.trim() ? "Avatar session" : "Runtime session";
@@ -23,6 +25,25 @@ export const fallbackActorLabel = (actorId: string): string => {
     return knownSystemLabel;
   }
   return actorId.split(":").at(-1) ?? actorId;
+};
+
+export const isPrincipalActorId = (actorId: string | null | undefined): actorId is `0x${string}` =>
+  Boolean(actorId && PRINCIPAL_ACTOR_ID_PATTERN.test(actorId));
+
+export const isSystemActorId = (actorId: string | null | undefined): actorId is `system:${string}` =>
+  Boolean(actorId?.startsWith("system:"));
+
+export const isUserFacingActorId = (actorId: string | null | undefined): actorId is string =>
+  Boolean(actorId) && !isSystemActorId(actorId);
+
+export const resolveActorKind = (actorId: string | null | undefined): ActorDirectoryEntry["actorKind"] => {
+  if (actorId?.startsWith("auth:")) {
+    return "auth";
+  }
+  if (isSystemActorId(actorId)) {
+    return "system";
+  }
+  return "session";
 };
 
 export const buildActorDirectory = (input: {
@@ -52,7 +73,7 @@ export const buildActorDirectory = (input: {
     if (session.storageState !== "active") {
       continue;
     }
-    const actorId = `session:${session.id}`;
+    const actorId = session.avatarPrincipalId?.trim() || `session:${session.id}`;
     const preferredSessionLabel = session.avatar?.trim() || session.name?.trim() || session.id;
     if (seen.has(actorId)) {
       continue;
@@ -64,6 +85,7 @@ export const buildActorDirectory = (input: {
       label: preferredSessionLabel,
       subtitle: resolveSessionActorSubtitle(session),
       iconUrl: input.sessionIconUrl(session.id),
+      sessionId: session.id,
     });
   }
 

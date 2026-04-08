@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type {
 		CachedResourceState,
+		GlobalRoomActorId,
 		GlobalRoomAssetEntry,
 		GlobalRoomEntry,
 		GlobalRoomGrantEntry,
@@ -14,6 +15,10 @@
 		buildActorDirectory,
 		buildActorDirectoryMap,
 		fallbackActorLabel,
+		isPrincipalActorId,
+		isSystemActorId,
+		isUserFacingActorId,
+		resolveActorKind,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
@@ -119,18 +124,11 @@
 		return authId ? (`auth:${authId}` as const) : null;
 	});
 
-	const asRoomActorId = (value: string): `auth:${string}` | `session:${string}` | `system:${string}` | null => {
-		return /^((auth|session|system):.+)$/u.test(value)
-			? (value as `auth:${string}` | `session:${string}` | `system:${string}`)
+	const asRoomActorId = (value: string): GlobalRoomActorId | null =>
+		/^(auth|session|system):.+$/u.test(value) || isPrincipalActorId(value)
+			? (value as GlobalRoomActorId)
 			: null;
-	};
-	const isSystemActorId = (value: string | null | undefined): value is `system:${string}` =>
-		Boolean(value?.startsWith('system:'));
-	const isUserFacingRoomActorId = (
-		value: string | null | undefined,
-	): value is `auth:${string}` | `session:${string}` => {
-		return Boolean(value) && !isSystemActorId(value);
-	};
+	const isUserFacingRoomActorId = (value: string | null | undefined): value is string => isUserFacingActorId(value);
 
 	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
 		if (actorId && actorDirectoryMap.has(actorId)) {
@@ -140,25 +138,17 @@
 				iconUrl:
 					actor.iconUrl ??
 					(actor.actorKind === 'session'
-						? controller.runtimeStore.sessionIconUrl(actor.actorId.slice('session:'.length))
+						? (actor.sessionId ? controller.runtimeStore.sessionIconUrl(actor.sessionId) : null)
 						: controller.runtimeStore.profileIconUrl(actor.actorId)),
 			};
 		}
 		return {
 			actorId: actorId ?? fallback,
-			actorKind: actorId?.startsWith('session:')
-				? 'session'
-				: actorId?.startsWith('system:')
-					? 'system'
-					: 'auth',
+			actorKind: resolveActorKind(actorId ?? fallback),
 			label: fallbackActorLabel(actorId ?? fallback),
 			subtitle: actorId,
 			iconUrl:
-				actorId?.startsWith('session:')
-					? controller.runtimeStore.sessionIconUrl(actorId.slice('session:'.length))
-					: actorId
-						? controller.runtimeStore.profileIconUrl(actorId)
-						: null,
+				actorId && !isSystemActorId(actorId) ? controller.runtimeStore.profileIconUrl(actorId) : null,
 		};
 	};
 

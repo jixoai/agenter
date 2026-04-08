@@ -2,6 +2,7 @@
 	import type {
 		CachedResourceState,
 		GlobalTerminalApprovalRequest,
+		GlobalTerminalActorId,
 		GlobalTerminalEntry,
 		GlobalTerminalGrantEntry,
 		TerminalActivityItem,
@@ -13,6 +14,8 @@
 		buildActorDirectory,
 		buildActorDirectoryMap,
 		fallbackActorLabel,
+		isPrincipalActorId,
+		resolveActorKind,
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
@@ -100,11 +103,10 @@
 			: emptyTerminalActivityState,
 	);
 
-	const asTerminalActorId = (value: string): `auth:${string}` | `session:${string}` | `system:${string}` | null => {
-		return /^((auth|session|system):.+)$/u.test(value)
-			? (value as `auth:${string}` | `session:${string}` | `system:${string}`)
+	const asTerminalActorId = (value: string): GlobalTerminalActorId | null =>
+		/^(auth|session|system):.+$/u.test(value) || isPrincipalActorId(value)
+			? (value as GlobalTerminalActorId)
 			: null;
-	};
 
 	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
 		if (actorId && actorDirectoryMap.has(actorId)) {
@@ -112,11 +114,7 @@
 		}
 		return {
 			actorId: actorId ?? fallback,
-			actorKind: actorId?.startsWith('session:')
-				? 'session'
-				: actorId?.startsWith('system:')
-					? 'system'
-					: 'auth',
+			actorKind: resolveActorKind(actorId ?? fallback),
 			label: fallbackActorLabel(actorId ?? fallback),
 			subtitle: actorId,
 			iconUrl: null,
