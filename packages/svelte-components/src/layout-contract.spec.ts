@@ -5,72 +5,84 @@ import { describe, expect, test } from "vitest";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const layoutPrimitiveFiles = [
-	"src/layout/clip-surface.svelte",
-	"src/layout/scaffold/scaffold-root.svelte",
-	"src/layout/scaffold/scaffold-body.svelte",
-	"src/layout/scaffold/scaffold-scroll-body.svelte",
-	"src/layout/split-view/split-view-root.svelte",
-	"src/layout/split-view/split-view-sidebar.svelte",
-	"src/layout/split-view/split-view-content.svelte",
-	"src/layout/split-view/split-view-detail.svelte",
+  "src/layout/clip-surface.svelte",
+  "src/layout/scaffold/scaffold-root.svelte",
+  "src/layout/scaffold/scaffold-body.svelte",
+  "src/layout/scaffold/scaffold-scroll-body.svelte",
+  "src/layout/split-view/split-view-root.svelte",
+  "src/layout/split-view/split-view-sidebar.svelte",
+  "src/layout/split-view/split-view-content.svelte",
+  "src/layout/split-view/split-view-detail.svelte",
+];
+
+const dialogScaffoldWrapperFiles = [
+  "src/layout/dialog-scaffold/dialog-scaffold-root.svelte",
+  "src/layout/dialog-scaffold/dialog-scaffold-header.svelte",
+  "src/layout/dialog-scaffold/dialog-scaffold-scroll-body.svelte",
+  "src/layout/dialog-scaffold/dialog-scaffold-footer.svelte",
 ];
 
 describe("Feature: svelte-components layout foundation", () => {
-	test("Scenario: Given shared layout primitives When reviewing shrink-law hooks Then they keep internal layout-role anchors", () => {
-		const violations = layoutPrimitiveFiles.filter((relativePath) => {
-			const source = readFileSync(resolve(packageRoot, relativePath), "utf8");
-			return !source.includes("data-layout-role=");
-		});
+  test("Scenario: Given shared layout primitives When reviewing shrink-law hooks Then they keep internal layout-role anchors", () => {
+    const violations = layoutPrimitiveFiles.filter((relativePath) => {
+      const source = readFileSync(resolve(packageRoot, relativePath), "utf8");
+      return !source.includes("data-layout-role=");
+    });
 
-		expect(violations).toEqual([]);
-	});
+    expect(violations).toEqual([]);
+  });
 
-	test("Scenario: Given scaffold roots without optional slots When reviewing source Then slot rows stay explicit inside the shared package", () => {
-		const scaffoldRootSource = readFileSync(
-			resolve(packageRoot, "src/layout/scaffold/scaffold-root.svelte"),
-			"utf8",
-		);
+  test("Scenario: Given scaffold roots without optional slots When reviewing source Then slot rows stay explicit inside the shared package", () => {
+    const scaffoldRootSource = readFileSync(resolve(packageRoot, "src/layout/scaffold/scaffold-root.svelte"), "utf8");
 
-		expect(scaffoldRootSource).toContain('data-slot="scaffold-body"');
-		expect(scaffoldRootSource).toContain('data-slot="scaffold-scroll-body"');
-		expect(scaffoldRootSource).toContain("grid-row: 2");
-	});
+    expect(scaffoldRootSource).toContain('data-slot="scaffold-body"');
+    expect(scaffoldRootSource).toContain('data-slot="scaffold-scroll-body"');
+    expect(scaffoldRootSource).toContain("grid-row: 2");
+  });
 
-	test("Scenario: Given split-view variants When reviewing source Then responsive columns are owned by package-local media rules", () => {
-		const splitViewSource = readFileSync(resolve(packageRoot, "src/layout/split-view/split-view-root.svelte"), "utf8");
+  test("Scenario: Given dialog scaffold wrappers When reviewing source Then they preserve scaffold slot ownership and add dialog-only markers separately", () => {
+    for (const relativePath of dialogScaffoldWrapperFiles) {
+      const source = readFileSync(resolve(packageRoot, relativePath), "utf8");
+      expect(source).toContain("data-dialog-scaffold-slot=");
+      expect(source).not.toContain('data-slot="dialog-scaffold');
+    }
+  });
 
-		expect(splitViewSource).toContain("@media (min-width: 768px)");
-		expect(splitViewSource).toContain("@media (min-width: 1024px)");
-		expect(splitViewSource).toContain('data-variant="sidebar-content-detail"');
-		expect(splitViewSource).not.toContain("md:grid-cols");
-		expect(splitViewSource).not.toContain("xl:grid-cols");
-	});
+  test("Scenario: Given split-view variants When reviewing source Then responsive columns are owned by package-local media rules", () => {
+    const splitViewSource = readFileSync(resolve(packageRoot, "src/layout/split-view/split-view-root.svelte"), "utf8");
 
-	test("Scenario: Given shared layout primitives When reading style selectors Then Tailwind utility display overrides remain available", () => {
-		const violations = layoutPrimitiveFiles.filter((relativePath) => {
-			const source = readFileSync(resolve(packageRoot, relativePath), "utf8");
-			return source.includes("[data-layout-role=") && !source.includes(":where([data-layout-role=");
-		});
+    expect(splitViewSource).toContain("@media (min-width: 768px)");
+    expect(splitViewSource).toContain("@media (min-width: 1024px)");
+    expect(splitViewSource).toContain('data-variant="sidebar-content-detail"');
+    expect(splitViewSource).not.toContain("md:grid-cols");
+    expect(splitViewSource).not.toContain("xl:grid-cols");
+  });
 
-		expect(violations).toEqual([]);
-	});
+  test("Scenario: Given shared layout primitives When reading style selectors Then Tailwind utility display overrides remain available", () => {
+    const violations = layoutPrimitiveFiles.filter((relativePath) => {
+      const source = readFileSync(resolve(packageRoot, relativePath), "utf8");
+      return source.includes("[data-layout-role=") && !source.includes(":where([data-layout-role=");
+    });
 
-	test("Scenario: Given the package export surface When reading index.ts Then ScrollView and scaffold-family namespaces are exported together", () => {
-		const source = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8");
+    expect(violations).toEqual([]);
+  });
 
-		expect(source).toContain('export { default as ScrollView }');
-		expect(source).toContain('export * as Scaffold');
-		expect(source).toContain('export * as DialogScaffold');
-		expect(source).toContain('export * as SplitView');
-		expect(source).toContain('export { default as ClipSurface }');
-	});
+  test("Scenario: Given the package export surface When reading index.ts Then ScrollView and scaffold-family namespaces are exported together", () => {
+    const source = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8");
 
-	test("Scenario: Given dynamically measured virtual rows When reviewing ScrollView source Then the wrapper does not clamp the main axis before measurement", () => {
-		const source = readFileSync(resolve(packageRoot, "src/scroll-view.svelte"), "utf8");
+    expect(source).toContain("export { default as ScrollView }");
+    expect(source).toContain("export * as Scaffold");
+    expect(source).toContain("export * as DialogScaffold");
+    expect(source).toContain("export * as SplitView");
+    expect(source).toContain("export { default as ClipSurface }");
+  });
 
-		expect(source).toContain("const resolveVirtualItemStyle");
-		expect(source).toContain('dynamicMeasure ? "" : `inline-size:${virtualItem.size}px;`');
-		expect(source).toContain('dynamicMeasure ? "" : `block-size:${virtualItem.size}px;`');
-		expect(source).not.toContain("inline-size: 100%;\n  }");
-	});
+  test("Scenario: Given dynamically measured virtual rows When reviewing ScrollView source Then the wrapper does not clamp the main axis before measurement", () => {
+    const source = readFileSync(resolve(packageRoot, "src/scroll-view.svelte"), "utf8");
+
+    expect(source).toContain("const resolveVirtualItemStyle");
+    expect(source).toContain('dynamicMeasure ? "" : `inline-size:${virtualItem.size}px;`');
+    expect(source).toContain('dynamicMeasure ? "" : `block-size:${virtualItem.size}px;`');
+    expect(source).not.toContain("inline-size: 100%;\n  }");
+  });
 });

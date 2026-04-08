@@ -15,6 +15,6 @@
 	} = $props();
 </script>
 
-<Scaffold.Root bind:ref data-slot="dialog-scaffold-root" class={cn("gap-0", className)} {...restProps}>
+<Scaffold.Root bind:ref data-dialog-scaffold-slot="root" class={cn("gap-0", className)} {...restProps}>
 	{@render children?.()}
 </Scaffold.Root>

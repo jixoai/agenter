@@ -17,7 +17,7 @@
 
 <Scaffold.Footer
 	bind:ref
-	data-slot="dialog-scaffold-footer"
+	data-dialog-scaffold-slot="footer"
 	class={cn("flex flex-wrap items-center justify-end gap-2 border-t px-6 py-4", className)}
 	{...restProps}
 >

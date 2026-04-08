@@ -25,7 +25,7 @@
 
 <Scaffold.ScrollBody
 	bind:ref
-	data-slot="dialog-scaffold-scroll-body"
+	data-dialog-scaffold-slot="scroll-body"
 	class={cn("min-w-0", className)}
 	viewportClass={cn("px-0", viewportClass)}
 	{contentClass}
