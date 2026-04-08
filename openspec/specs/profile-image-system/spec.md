@@ -1,7 +1,7 @@
 # profile-image-system Specification
 
 ## Purpose
-Define the shared deterministic icon system for sessions and durable profiles, including upload precedence and backend-rendered fallback behavior.
+Define the shared deterministic icon system for sessions, durable profiles, and typed entity owners such as rooms, including upload precedence and backend-rendered fallback behavior.
 ## Requirements
 ### Requirement: The system SHALL provide deterministic fallback icons for sessions and avatars
 The system SHALL expose stable media endpoints for session icons and profile/avatar icons through profile-service-backed authority. When an uploaded icon asset and any eligible external fallback source are unavailable, those endpoints MUST return deterministic fallback artwork derived from stable owner inputs so the same session or profile identity always renders the same icon. When the canonical source is SVG-backed, the default media response MUST be rasterized server-side instead of leaking raw SVG by default.
@@ -41,3 +41,24 @@ The system SHALL accept uploaded icon files for sessions and profiles/avatars, p
 - **WHEN** the client uploads a new icon for a profile/avatar
 - **THEN** the backend persists that icon for the profile/avatar
 - **THEN** subsequent profile/avatar icon reads return the uploaded icon instead of any gravatar or deterministic fallback source
+
+### Requirement: The system SHALL provide deterministic fallback icons for typed entity owners
+The icon system SHALL support typed entity owners in addition to sessions and profiles. Room icons SHALL be the first additional typed owner, and the same typed owner model SHALL remain available for future entities such as terminals or tasks. When an uploaded icon is absent, each typed owner MUST resolve deterministic fallback artwork from a stable owner-specific seed through the same backend-rendered authority.
+
+#### Scenario: Room icon falls back deterministically
+- **WHEN** the client requests a room icon for a room that has no uploaded icon asset
+- **THEN** the backend returns deterministic fallback artwork derived from that room's stable icon seed
+- **THEN** repeated requests for the same room return visually stable fallback output
+
+#### Scenario: Future typed owners reuse the same authority model
+- **WHEN** the platform introduces another typed owner such as a terminal or task
+- **THEN** that owner can resolve icon fallback through the same typed icon authority contract
+- **THEN** the system does not require a second ad hoc icon service for that entity family
+
+### Requirement: The system SHALL allow uploaded icons for typed entity owners
+The icon system SHALL allow room and future typed entity owners to persist uploaded icons through the canonical icon authority, and those uploaded assets SHALL override deterministic fallback output from the same semantic owner URL.
+
+#### Scenario: Uploaded room icon overrides fallback
+- **WHEN** an authorized caller uploads a new icon for a room
+- **THEN** the backend persists that icon for the room owner
+- **THEN** subsequent room icon reads return the uploaded icon instead of deterministic fallback artwork

@@ -1,9 +1,5 @@
-# workspace-settings Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the durable workspace settings contract for both regular workspaces and the special global workspace rooted at `~/`.
-
-## Requirements
 ### Requirement: Workspace settings SHALL remain workspace-scoped while global settings stay separate
 The system SHALL keep settings inspection and per-layer editing scoped to a semantic workspace target, but the special global workspace rooted at `~/` SHALL be represented through that same workspace model instead of a separate global-settings route. In the active Svelte WebUI, `/avatars/settings` SHALL be the workspace settings workbench, while superadmin/profile administration SHALL live at the separate auxiliary route `/admin`. The response shape SHALL remain consistent across regular workspaces and the global workspace.
 
@@ -64,37 +60,3 @@ The active Svelte WebUI SHALL expose workspace settings through a source/view wo
 - **WHEN** the user opens `/avatars/settings`
 - **THEN** the page shows a workspace selector rail on the left and the selected workspace settings workbench on the right
 - **THEN** switching workspaces refreshes the settings graph without leaving the settings route
-
-### Requirement: Workspace settings SHALL inherit from the global workspace by default
-Each non-global workspace SHALL inherit from the special global workspace rooted at `~/` by default, and the effective settings graph SHALL reflect that inherited base even when the explicit `extends` field remains hidden from first-slice UI.
-
-#### Scenario: Workspace effective settings include inherited global values
-- **WHEN** the user opens settings for a regular workspace with no explicit local override for a setting
-- **THEN** the effective graph includes the value inherited from the global workspace
-- **THEN** provenance for that field points back to the global workspace layer
-
-#### Scenario: Local override masks inherited global value
-- **WHEN** a workspace layer overrides a setting that is otherwise inherited from the global workspace
-- **THEN** the effective graph shows the local value for that workspace
-- **THEN** provenance shows the workspace layer as the winning source for that field
-
-### Requirement: Workspace settings SHALL split shared settings from local secrets
-Workspace settings SHALL store shared settings such as default avatars and workspace-visible defaults in `settings.json`, while sensitive machine-local data such as private keys, JWTs, and auth tokens SHALL be stored in workspace or global `settings.local.json`. Room and terminal truth, naming, membership, and permissions SHALL remain owned by their own global systems, and AvatarSession-scoped room or terminal credentials SHALL NOT be persisted in the workspace root settings files.
-
-#### Scenario: Shared avatar and workspace defaults persist to settings.json
-- **WHEN** the user saves default-avatar selection or other workspace-visible shared defaults from `Welcome`, `Avatars`, or `Settings`
-- **THEN** the shared setting is written to the editable shared settings layer
-- **THEN** another machine can consume that shared value without requiring local secret material
-
-#### Scenario: Sensitive auth values persist to settings.local.json
-- **WHEN** the user saves a private key, JWT, auth token, or other machine-local secret through the global workspace settings flow
-- **THEN** the value is written to the editable local settings layer
-- **THEN** the shared settings layer remains free of that sensitive value
-
-### Requirement: Workspace settings SHALL exclude AvatarSession collaboration credentials
-Room tokens and terminal tokens used by an AvatarSession SHALL NOT be persisted in the editable workspace or global `settings.local.json` root layer. Those credentials belong to the target Avatar seat and SHALL be resolved from avatar-local local files instead.
-
-#### Scenario: Saving workspace local settings does not absorb room or terminal tokens
-- **WHEN** the user saves the editable workspace or global `settings.local.json` layer
-- **THEN** the persisted document excludes AvatarSession-scoped room and terminal credentials
-- **THEN** those collaboration credentials continue to resolve from the target Avatar directory instead of the workspace root

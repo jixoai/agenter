@@ -5,7 +5,7 @@ Define the durable styling contract for Lit-based shared web-components so downs
 ## Requirements
 
 ### Requirement: Lit web-components SHALL expose stable styling slots through css-part
-Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. Product clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names.
+Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. Product clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names. Svelte structural primitives such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SplitView` SHALL NOT be implemented in `@agenter/web-components`; they belong to `@agenter/svelte-components`.
 
 #### Scenario: Product skin styles a Lit atom without shadow-private selectors
 - **WHEN** a client needs to theme a Lit atom implemented in `@agenter/web-components`
@@ -16,6 +16,11 @@ Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable vi
 - **WHEN** a client consumes durable shared atoms such as `adaptive-icon-button`, `async-surface`, `json-viewer`, `markdown-document`, or `tool-invocation-card`
 - **THEN** each atom exposes stable top-level `part` names for its primary visual surfaces
 - **THEN** the client does not need to reopen shadow-private class names to restyle the atom
+
+#### Scenario: Lit atom boundary excludes Svelte layout primitives
+- **WHEN** engineers need a durable Svelte scroll or shell primitive
+- **THEN** they add it to `@agenter/svelte-components`
+- **THEN** `@agenter/web-components` remains limited to Lit custom-element atoms and their styling contracts
 
 ### Requirement: Stateful external theming SHALL use host-reflected facts
 If a Lit atom requires stateful theming from the outside, the host SHALL reflect the relevant state so outer `::part(...)` rules can key off durable facts instead of shadow-private selectors.

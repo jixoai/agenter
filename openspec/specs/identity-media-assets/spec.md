@@ -1,7 +1,7 @@
 # identity-media-assets Specification
 
 ## Purpose
-Define the semantic media URL contracts for user/profile and session identity assets without leaking which backend owns rendering or persistence.
+Define the semantic media URL contracts for user/profile, session, and typed entity identity assets without leaking which backend owns rendering or persistence.
 ## Requirements
 ### Requirement: Session media SHALL provide durable icon upload and fallback retrieval
 The system SHALL provide session-specific icon media endpoints that allow clients to upload a durable session icon asset and retrieve either the uploaded asset or a profile-service-generated deterministic fallback icon when no uploaded asset exists. The backend SHALL be able to produce raster variants from the canonical SVG render without relying on browser-side fallback uploads.
@@ -46,3 +46,16 @@ The system SHALL keep session icon media and profile/avatar media in separate se
 - **WHEN** the client requests Session icon media and Profile/Avatar media
 - **THEN** those requests use different semantic URL patterns
 - **THEN** the caller can distinguish session identity assets from user/profile identity assets without inspecting implementation details
+
+### Requirement: Typed entity icon media SHALL remain semantically separated
+The media system SHALL keep typed entity icon owners in separate semantic URL spaces even when one backend authority serves them. Room icon media SHALL use a distinct semantic URL family from session and profile/avatar media, and future typed owners SHALL follow the same rule.
+
+#### Scenario: Room icon URL stays distinct from session and profile media
+- **WHEN** the client resolves icon URLs for a room, a session, and a profile
+- **THEN** each request uses a distinct semantic URL pattern for its owner type
+- **THEN** the caller can distinguish room identity media from session or profile media without inspecting implementation details
+
+#### Scenario: Typed entity icons do not collapse into a generic bucket
+- **WHEN** a new typed icon owner is introduced
+- **THEN** its media reads and writes remain under an owner-specific semantic URL family
+- **THEN** the system does not expose a single untyped icon bucket that hides ownership semantics

@@ -1,7 +1,8 @@
 # message-system-surface Specification
 
 ## Purpose
-Define the durable operator-facing contract for the standalone message-system route, including shared room transcript rendering, actor-scoped sending, auth-backed access management, read progress, and live room updates.
+Define the durable operator-facing contract for the standalone message-system route, including shared room transcript rendering, actor-scoped sending, auth-backed access management, read progress, room assets, and live room updates.
+
 ## Requirements
 ### Requirement: Message-system SHALL present rooms as a standalone product surface
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
@@ -25,10 +26,25 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** the transcript rerenders from that viewer's perspective instead of guessing from message labels or the current route owner
 - **THEN** the selected viewer does not change which actor is configured in the `Send as` control unless the operator changes it explicitly
 
+#### Scenario: Dense room toolbar shows current viewer identity and room actions
+- **WHEN** a room is selected
+- **THEN** the fixed room toolbar shows the current `View as` user avatar and label as the primary identity
+- **THEN** the toolbar exposes `search-messages`, `add-user`, and `manage` actions in that order
+- **THEN** the toolbar exposes `chat` and `assets` chips as room-local body mode switches
+
+#### Scenario: Room body switches between chat and assets without extra chrome inside content
+- **WHEN** the operator toggles `chat` or `assets`
+- **THEN** `page_content` renders exactly one room body mode at a time
+- **THEN** `chat` shows the shared transcript/composer surface
+- **THEN** `assets` shows the room-owned asset list
+- **THEN** the room body does not add a second room header or toolbar inside `page_content`
+
 #### Scenario: Room administration opens in a dialog-sidebar management shell
 - **WHEN** the operator needs room users, grants, or membership controls
 - **THEN** the route opens a dedicated management dialog with a left management rail and a right detail stage
-- **THEN** the dialog organizes `Overview`, `Users`, and `Access` as section-level destinations without hiding the main transcript workflow
+- **THEN** the dialog organizes `Overview`, `Users`, and `Permissions` as section-level destinations without hiding the main transcript workflow
+- **THEN** `Users` owns the `List | Add` membership workflow, including revoke/focus actions and the add-seat grant form
+- **THEN** `Permissions` owns inline per-user role changes instead of mixing membership mutation and authority mutation in one panel
 - **THEN** each stretchable detail section uses one explicit `ScrollView` owner instead of ad hoc overflow behavior
 
 ### Requirement: Message send SHALL require an explicit acting actor
@@ -72,6 +88,11 @@ The room viewer selector, room management surface, send-as options, and read-pro
 - **AND** that session exposes both a human `avatar` label and an opaque runtime `name`
 - **THEN** the Room toolbar and viewer selector use the avatar label as the primary visible title
 - **THEN** any raw session id remains secondary detail only when needed for disambiguation
+
+#### Scenario: Internal bootstrap control seat stays out of user-facing selectors
+- **WHEN** the selected room is owned by an internal bootstrap control seat
+- **THEN** the control seat does not appear as a normal `Users` entry, viewer choice, or ordinary `Send as` actor
+- **THEN** authenticated human or avatar actors remain the only user-facing membership choices unless a surface explicitly describes control-plane metadata
 
 ### Requirement: Room read state SHALL use message-level group read progress semantics
 The room transcript SHALL present participant read progress and read timestamps as message-level collaboration facts, and SHALL NOT project latest-read progress as a room-header aggregate chip or as an attention-style pending label.
@@ -140,7 +161,7 @@ The message-system workbench SHALL render icon-bearing tabs for fixed views and 
 - **THEN** the initial hydration path does not throw a client runtime error while the room catalog transitions from idle to loading
 
 ### Requirement: Message-system route SHALL expose a rich shared room transcript surface
-The selected room transcript SHALL present canonical avatars, improved message bubbles, attachment rendering, and local hover/context actions through the shared chat component, while keeping room orchestration and management outside the transcript renderer.
+The selected room transcript SHALL present canonical avatars, improved message bubbles, attachment rendering, local hover/context actions, and local transcript search while keeping room orchestration and management outside the transcript renderer.
 
 #### Scenario: Hover or context interaction reveals room message actions
 - **WHEN** the operator hovers a room message or opens its context menu
@@ -156,3 +177,8 @@ The selected room transcript SHALL present canonical avatars, improved message b
 - **WHEN** the operator reloads a room whose transcript contains persisted room attachments
 - **THEN** the transcript renders those attachments with kind-appropriate preview or file affordances
 - **THEN** the operator can inspect the same room history without re-uploading the assets
+
+#### Scenario: Local transcript search navigates loaded room messages
+- **WHEN** the operator invokes `search-messages` from the room toolbar
+- **THEN** the room can search within the currently loaded transcript messages
+- **THEN** search navigation uses transcript row anchors instead of requiring a second route-local message renderer

@@ -1,17 +1,17 @@
 ## Purpose
 
-Define the shared multimodal AI input behavior for Quick Start and Chat in WebUI.
+Define the shared multimodal AI input behavior for Quick Start, session chat, and message-system room chat in WebUI.
 ## Requirements
-### Requirement: Quick Start and Chat SHALL use one CodeMirror-based AI input
-The WebUI SHALL provide a shared `AIInput` component backed by CodeMirror for both Quick Start and Chat so that both entry points behave consistently. That shared composer SHALL expose slash commands, workspace-path completion, attachment picking, drag/drop, and screenshot capture affordances from the same editing surface.
+### Requirement: Quick Start, session chat, and room chat SHALL use one CodeMirror-based input law
+The WebUI SHALL provide one shared CodeMirror-based composer contract for Quick Start, session chat, and message-system room chat so those entry points behave consistently. Quick Start and session chat MAY render the shared `AIInput` component, while room chat MAY render the shared `web-chat-view` composer surface, but all three SHALL expose the same slash-command, workspace-path, attachment, screenshot, help-hint, and submit semantics from the same editing model.
 
-#### Scenario: Quick Start and Chat share the same input semantics
-- **WHEN** the user edits content in Quick Start or Chat
-- **THEN** both surfaces use the same editor behavior, attachment model, and submit controls
+#### Scenario: Quick Start, session chat, and room chat share the same input semantics
+- **WHEN** the user edits content in Quick Start, session chat, or a global room
+- **THEN** all three surfaces use the same editor behavior, attachment model, and submit controls
 
 #### Scenario: Slash commands stay inside the shared composer
 - **WHEN** the user types `/` inside the shared composer
-- **THEN** the same slash-command completion behavior is available from Quick Start and Chat
+- **THEN** the same slash-command completion behavior is available from Quick Start, session chat, and room chat
 
 ### Requirement: AI input SHALL preserve explicit submit and draft behavior
 The AI input SHALL submit on Enter, insert a newline on Shift+Enter, clear the draft after a successful send, and restore the previous draft state when a send fails.
@@ -62,4 +62,3 @@ The AI input SHALL show pending attachment previews for selected, pasted, or dro
 #### Scenario: Picked video or file attachments become pending attachments
 - **WHEN** the user selects one or more supported video or generic files through the picker or drag/drop flow
 - **THEN** the input adds those assets as pending attachments with kind-appropriate preview affordances
-

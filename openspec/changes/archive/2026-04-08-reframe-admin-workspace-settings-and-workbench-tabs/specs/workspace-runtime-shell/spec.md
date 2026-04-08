@@ -1,9 +1,5 @@
-# workspace-runtime-shell Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the durable running-avatar runtime shell that sits behind the `Avatars` workbench and workspace-local avatar entry points.
-
-## Requirements
 ### Requirement: Running-avatar detail SHALL be a secondary runtime surface
 The WebUI SHALL expose running-avatar detail through dynamic session tabs inside the `Avatars` workbench and through workspace-local avatar or session actions, rather than through a separate secondary `Running Avatars` detail rail. In the active Svelte WebUI this shell SHALL remain addressable through dedicated runtime routes and SHALL preserve reload-safe deep linking.
 
@@ -30,19 +26,6 @@ The runtime shell SHALL present the active tab content as the primary stage and 
 - **THEN** the selected tab renders through the same primary-stage shell model
 - **THEN** the right rail remains secondary and does not become the dominant surface
 
-### Requirement: Cycles tab SHALL surface the current running round as an active badge
-The `Cycles` tab SHALL display the current running cycle number as a badge. When the avatar is actively running, the badge background SHALL follow the latest cycle-kind icon color and SHALL render a breathing state.
-
-#### Scenario: Running avatar shows active cycle badge
-- **WHEN** the running-avatar detail shell has an in-flight cycle
-- **THEN** the `Cycles` tab badge shows the current running cycle number
-- **THEN** the badge background uses the latest cycle-kind icon color and renders a breathing state
-
-#### Scenario: Idle avatar shows the latest cycle number without breathing
-- **WHEN** the running-avatar detail shell is not currently executing a cycle but has prior cycle history
-- **THEN** the `Cycles` tab badge shows the latest known cycle number without a breathing state
-- **THEN** the user can still scan the current round index without mistaking it for active execution
-
 ### Requirement: Running-avatar detail SHALL expose flat runtime-specific peer tabs
 The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Former Devtools sub-tabs and `Settings` SHALL remain siblings at the same hierarchy level, and the default selected tab SHALL be `Attention`.
 
@@ -55,19 +38,3 @@ The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Fo
 - **WHEN** the user opens a running-avatar detail shell without an explicit tab
 - **THEN** the shell lands on `Attention` by default
 - **THEN** the most critical runtime surface is visible without an extra tab switch
-
-### Requirement: Runtime shell routes land on a canonical runtime tab
-The workspace runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to that tab without requiring feature-level navigation glue.
-
-#### Scenario: Runtime rail links land on attention by default
-- **WHEN** the operator opens a session from the runtime rail or a direct runtime entry URL without a tab segment
-- **THEN** the browser lands on `/avatars/runtime/{sessionId}/attention`
-- **AND** the runtime shell renders without an intermediate error page
-
-### Requirement: Running-avatar detail SHALL link out to global resource pages instead of duplicating them
-The running-avatar detail shell SHALL NOT duplicate the global `Chats` or `Terminals` browsing surfaces, and it SHALL use explicit links or source jumps when the user needs to inspect a room or terminal.
-
-#### Scenario: Room or terminal inspection leaves the runtime shell
-- **WHEN** the user requests to inspect a room or terminal from inside running-avatar detail
-- **THEN** the application navigates to the corresponding global `Chats` or `Terminals` surface
-- **THEN** the runtime shell does not render a second embedded room or terminal catalog of its own
