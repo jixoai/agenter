@@ -109,6 +109,8 @@
 	);
 	const selectedRoomSnapshot = $derived(selectedRoomSnapshotState.data);
 	const selectedRoomProjection = $derived(selectedRoomSnapshot?.channel ?? selectedRoom ?? null);
+	const selectedRoomChatId = $derived(selectedRoomProjection?.chatId ?? '');
+	const selectedRoomAccessToken = $derived(selectedRoomProjection?.accessToken ?? null);
 	const selectedRoomIconUrl = $derived(
 		selectedRoomProjection ? controller.runtimeStore.roomIconUrl(selectedRoomProjection.chatId) : null,
 	);
@@ -592,9 +594,9 @@
 	};
 
 	$effect(() => {
-		const room = selectedRoomProjection;
-		const chatId = room?.chatId;
-		if (!chatId) {
+		const chatId = selectedRoomChatId;
+		const accessToken = selectedRoomAccessToken;
+		if (!chatId || !accessToken) {
 			return;
 		}
 		const releaseSnapshot = controller.runtimeStore.retainGlobalRoomSnapshot(chatId);
@@ -602,16 +604,16 @@
 		const releaseAssets = controller.runtimeStore.retainGlobalRoomAssets(chatId);
 		void controller.runtimeStore.hydrateGlobalRoomSnapshot({
 			chatId,
-			accessToken: room.accessToken,
+			accessToken,
 			limit: 120,
 		});
 		void controller.runtimeStore.hydrateGlobalRoomGrants({
 			chatId,
-			accessToken: room.accessToken,
+			accessToken,
 		});
 		void controller.runtimeStore.hydrateGlobalRoomAssets({
 			chatId,
-			accessToken: room.accessToken,
+			accessToken,
 		});
 		return () => {
 			releaseSnapshot();
@@ -621,17 +623,17 @@
 	});
 
 	$effect(() => {
-		const room = selectedRoomProjection;
+		const chatId = selectedRoomChatId;
 		const viewerActorId = selectedViewerActorId;
-		if (!room || !viewerActorId) {
+		if (!chatId || !viewerActorId) {
 			return;
 		}
-		if (selectedViewerActorIdByRoomId[room.chatId] === viewerActorId) {
+		if (selectedViewerActorIdByRoomId[chatId] === viewerActorId) {
 			return;
 		}
 		selectedViewerActorIdByRoomId = {
 			...selectedViewerActorIdByRoomId,
-			[room.chatId]: viewerActorId,
+			[chatId]: viewerActorId,
 		};
 	});
 </script>
