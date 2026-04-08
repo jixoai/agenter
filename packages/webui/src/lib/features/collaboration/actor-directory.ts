@@ -13,6 +13,10 @@ const SYSTEM_ACTOR_LABELS: Record<string, string> = {
   "system:trusted-terminal-bootstrap": "Bootstrap admin",
 };
 
+const resolveSessionActorSubtitle = (input: { avatar?: string; name?: string }): string => {
+  return input.avatar?.trim() ? "Avatar session" : "Runtime session";
+};
+
 export const fallbackActorLabel = (actorId: string): string => {
   const knownSystemLabel = SYSTEM_ACTOR_LABELS[actorId];
   if (knownSystemLabel) {
@@ -58,7 +62,7 @@ export const buildActorDirectory = (input: {
       actorId,
       actorKind: "session",
       label: preferredSessionLabel,
-      subtitle: session.workspacePath,
+      subtitle: resolveSessionActorSubtitle(session),
       iconUrl: input.sessionIconUrl(session.id),
     });
   }

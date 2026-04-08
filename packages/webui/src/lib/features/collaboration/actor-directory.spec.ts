@@ -57,7 +57,7 @@ describe('Feature: collaboration actor directory', () => {
 		const directoryMap = buildActorDirectoryMap(directory);
 
 		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.label).toBe("jane");
-		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.subtitle).toBe("/repo/jane");
+		expect(directoryMap.get("session:775921bd-e52b-52d2-9ff3-7b46e742ec45")?.subtitle).toBe("Avatar session");
 	});
 
 	test("Scenario: Given an active running session without an avatar label When building the actor directory Then the runtime name remains the primary label", () => {
@@ -76,5 +76,6 @@ describe('Feature: collaboration actor directory', () => {
 		const directoryMap = buildActorDirectoryMap(directory);
 
 		expect(directoryMap.get("session:session-helper")?.label).toBe("helper-runtime");
+		expect(directoryMap.get("session:session-helper")?.subtitle).toBe("Runtime session");
 	});
 });
