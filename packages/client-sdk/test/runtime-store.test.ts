@@ -3982,6 +3982,87 @@ describe("Feature: runtime store synchronization", () => {
     expect(deleted.chatId).toBe(room.chatId);
   });
 
+  test("Scenario: Given optional room access tokens When runtime store receives an empty token placeholder Then room-first requests omit the token instead of forwarding an invalid empty string", async () => {
+    const requests: {
+      snapshot?: { chatId: string; accessToken?: string; limit?: number };
+      update?: {
+        chatId: string;
+        accessToken?: string;
+        patch: {
+          title?: string;
+          participants?: Array<{ id: string; label?: string }>;
+          metadata?: Record<string, unknown>;
+          adminGroupCandidateIds?: string[];
+        };
+      };
+      listGrants?: { chatId: string; accessToken?: string };
+    } = {};
+    const room = {
+      chatId: "room-empty-token",
+      kind: "room" as const,
+      title: "Empty token room",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: false,
+      accessRole: "admin" as const,
+      accessToken: "",
+      transportUrl: "ws://127.0.0.1:7777/room/room-empty-token",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalListQuery: async () => ({ items: [room] }),
+        messageGlobalSnapshotQuery: async (input) => {
+          requests.snapshot = input;
+          return {
+            channel: room,
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+            headVersion: "1",
+          };
+        },
+        messageGlobalUpdateMutate: async (input) => {
+          requests.update = input;
+          return { channel: { ...room, title: input.patch.title ?? room.title } };
+        },
+        messageGlobalListGrantsQuery: async (input) => {
+          requests.listGrants = input;
+          return { items: [] };
+        },
+      }),
+    );
+
+    await store.listGlobalRooms();
+    await store.hydrateGlobalRoomSnapshot({ chatId: room.chatId, force: true });
+    await store.updateGlobalRoom({
+      chatId: room.chatId,
+      accessToken: "",
+      patch: { title: "Empty token room renamed" },
+    });
+    await store.listGlobalRoomGrants({
+      chatId: room.chatId,
+      accessToken: "",
+    });
+
+    expect(requests.snapshot).toEqual({
+      chatId: room.chatId,
+      accessToken: undefined,
+      limit: 120,
+    });
+    expect(requests.update).toEqual({
+      chatId: room.chatId,
+      accessToken: undefined,
+      patch: { title: "Empty token room renamed" },
+    });
+    expect(requests.listGrants).toEqual({
+      chatId: room.chatId,
+      accessToken: undefined,
+    });
+  });
+
   test("Scenario: Given retained room slices When a live room invalidation arrives Then runtime store refreshes only the retained room resources", async () => {
     const roomA = {
       chatId: "room-alpha",

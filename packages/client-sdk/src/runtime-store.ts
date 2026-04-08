@@ -251,6 +251,9 @@ const mergeTerminalSnapshot = (
   return incoming.seq >= current.seq ? incoming : current;
 };
 
+const normalizeOptionalAccessToken = (value: string | null | undefined): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
 const mergeGlobalTerminalEntry = (
   current: GlobalTerminalEntry | undefined,
   incoming: GlobalTerminalEntry,
@@ -997,7 +1000,10 @@ export class RuntimeStore {
     const previous = this.globalRoomSnapshotQueryById.get(chatId) ?? {};
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
-      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+      accessToken:
+        normalizeOptionalAccessToken(input.accessToken)
+        ?? normalizeOptionalAccessToken(previous.accessToken)
+        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
       limit: input.limit ?? previous.limit ?? 120,
     };
     this.globalRoomSnapshotQueryById.set(chatId, next);
@@ -1033,7 +1039,10 @@ export class RuntimeStore {
     const previous = this.globalRoomGrantQueryById.get(chatId) ?? {};
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
-      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+      accessToken:
+        normalizeOptionalAccessToken(input.accessToken)
+        ?? normalizeOptionalAccessToken(previous.accessToken)
+        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
     };
     this.globalRoomGrantQueryById.set(chatId, next);
     return next;
@@ -1046,7 +1055,10 @@ export class RuntimeStore {
     const previous = this.globalRoomAssetQueryById.get(chatId) ?? {};
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
-      accessToken: input.accessToken ?? previous.accessToken ?? fromCatalog?.accessToken,
+      accessToken:
+        normalizeOptionalAccessToken(input.accessToken)
+        ?? normalizeOptionalAccessToken(previous.accessToken)
+        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
     };
     this.globalRoomAssetQueryById.set(chatId, next);
     return next;
@@ -3113,8 +3125,15 @@ export class RuntimeStore {
     op: "add" | "remove" | "replace" | "clear";
     channels: Array<{ chatId: string; accessToken?: string }>;
   }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }> {
-    const output = await this.client.trpc.message.globalFocus.mutate(input);
-    for (const channel of input.channels) {
+    const channels = input.channels.map((channel) => ({
+      ...channel,
+      accessToken: normalizeOptionalAccessToken(channel.accessToken),
+    }));
+    const output = await this.client.trpc.message.globalFocus.mutate({
+      ...input,
+      channels,
+    });
+    for (const channel of channels) {
       if (!this.shouldRefreshGlobalRoomSnapshot(channel.chatId)) {
         continue;
       }
@@ -3147,7 +3166,10 @@ export class RuntimeStore {
     accessToken?: string;
     messageId?: string;
   }): Promise<GlobalRoomEntry> {
-    const output = await this.client.trpc.message.globalMarkRead.mutate(input);
+    const output = await this.client.trpc.message.globalMarkRead.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
     this.reconcileGlobalRoomEntry(output.channel);
     this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
       if (!resource.loaded || !resource.data) {
@@ -3179,7 +3201,7 @@ export class RuntimeStore {
   }> {
     const output = await this.client.trpc.message.globalPage.query({
       chatId: input.chatId,
-      accessToken: input.accessToken,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
       before: input.before ?? undefined,
       limit: input.limit,
     });
@@ -3198,7 +3220,10 @@ export class RuntimeStore {
     assetIds?: string[];
     clientMessageId?: string;
   }): Promise<{ ok: boolean; reason?: string }> {
-    return await this.client.trpc.message.globalSend.mutate(input);
+    return await this.client.trpc.message.globalSend.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
   }
 
   async updateGlobalRoom(input: {
@@ -3211,7 +3236,10 @@ export class RuntimeStore {
       adminGroupCandidateIds?: GlobalRoomActorId[];
     };
   }): Promise<GlobalRoomEntry> {
-    const output = await this.client.trpc.message.globalUpdate.mutate(input);
+    const output = await this.client.trpc.message.globalUpdate.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
     this.reconcileGlobalRoomEntry(output.channel);
     this.emit();
     return output.channel;
@@ -3222,7 +3250,10 @@ export class RuntimeStore {
     accessToken?: string;
     archivedBy?: string;
   }): Promise<GlobalRoomEntry> {
-    const output = await this.client.trpc.message.globalArchive.mutate(input);
+    const output = await this.client.trpc.message.globalArchive.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
     this.removeGlobalRoomEntry(output.channel.chatId);
     this.setGlobalRoomSnapshotState(output.channel.chatId, (resource) => ({
       ...resource,
@@ -3246,7 +3277,10 @@ export class RuntimeStore {
     chatId: string;
     accessToken?: string;
   }): Promise<GlobalRoomEntry> {
-    const output = await this.client.trpc.message.globalDelete.mutate(input);
+    const output = await this.client.trpc.message.globalDelete.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
     this.removeGlobalRoomEntry(output.channel.chatId);
     this.setGlobalRoomSnapshotState(output.channel.chatId, (resource) => ({
       ...resource,
@@ -3312,7 +3346,7 @@ export class RuntimeStore {
     accessToken?: string;
   }): Promise<GlobalRoomGrantEntry[]> {
     return await this.refreshGlobalRoomGrantsInternal(input.chatId, {
-      accessToken: input.accessToken,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
       force: true,
     });
   }
@@ -3325,7 +3359,11 @@ export class RuntimeStore {
     label?: string;
     accessTokenHint?: string;
   }): Promise<GlobalRoomGrantIssueOutput["grant"]> {
-    const output = await this.client.trpc.message.globalIssueGrant.mutate(input);
+    const accessToken = normalizeOptionalAccessToken(input.accessToken);
+    const output = await this.client.trpc.message.globalIssueGrant.mutate({
+      ...input,
+      accessToken,
+    });
     this.setGlobalRoomGrantsState(input.chatId, (resource) => ({
       ...resource,
       data: resource.data
@@ -3340,7 +3378,7 @@ export class RuntimeStore {
     this.emit();
     void this.hydrateGlobalRoomSnapshot({
       chatId: input.chatId,
-      accessToken: input.accessToken,
+      accessToken,
       force: true,
     }).catch(() => undefined);
     return output.grant;
@@ -3351,7 +3389,11 @@ export class RuntimeStore {
     accessToken?: string;
     grantId: string;
   }): Promise<{ ok: boolean }> {
-    const output = await this.client.trpc.message.globalRevokeGrant.mutate(input);
+    const accessToken = normalizeOptionalAccessToken(input.accessToken);
+    const output = await this.client.trpc.message.globalRevokeGrant.mutate({
+      ...input,
+      accessToken,
+    });
     this.setGlobalRoomGrantsState(input.chatId, (resource) => ({
       ...resource,
       data: resource.data.filter((grant) => grant.grantId !== input.grantId),
@@ -3364,7 +3406,7 @@ export class RuntimeStore {
     this.emit();
     void this.hydrateGlobalRoomSnapshot({
       chatId: input.chatId,
-      accessToken: input.accessToken,
+      accessToken,
       force: true,
     }).catch(() => undefined);
     return output;
