@@ -459,20 +459,21 @@
 		syncRoomProgress(room.chatId);
 	};
 
-	const handleLatestVisibleMessageIdChange = async (messageId: string | null): Promise<void> => {
+	const handleLatestVisibleMessageIdChange = async (
+		visibleMessage: { messageId: string; rowId: number } | null,
+	): Promise<void> => {
 		const room = selectedRoom;
-		if (!room || !messageId) {
+		if (!room || !visibleMessage) {
 			return;
 		}
 		const actorId = selectedViewerActorId;
 		if (!actorId) {
 			return;
 		}
-		const targetMessage = (roomMessagesById[room.chatId] ?? []).find((message) => message.messageId === messageId);
-		const targetRowId = targetMessage?.rowId;
-		if (!targetRowId) {
+		if (visibleMessage.rowId <= 0) {
 			return;
 		}
+		const targetRowId = visibleMessage.rowId;
 		roomMessagesById = {
 			...roomMessagesById,
 			[room.chatId]: (roomMessagesById[room.chatId] ?? []).map((message) =>

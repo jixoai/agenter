@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import WebChatViewHost from "../src/web-chat-view-host.svelte";
-  import type { WebChatChannel, WebChatSocketFactory } from "../src";
+  import type { WebChatChannel, WebChatSocketFactory, WebChatVisibleMessageFact } from "../src";
 
   let {
     initialChannel,
@@ -12,7 +12,7 @@
     initialChannel: WebChatChannel;
     initialViewerActorId?: string | null;
     socketFactory: WebChatSocketFactory;
-    onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
+    onLatestVisibleMessageIdChange?: (message: WebChatVisibleMessageFact | null) => void;
   } = $props();
 
   let channel = $state<WebChatChannel>(untrack(() => initialChannel));

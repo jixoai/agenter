@@ -1264,7 +1264,9 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const latestVisibleMessageIdHandler = vi.fn<(messageId: string | null) => void>();
+    const latestVisibleMessageIdHandler = vi.fn<
+      (message: { messageId: string; rowId: number } | null) => void
+    >();
     const initialChannel = {
       chatId: "chat-main",
       kind: "room" as const,
@@ -1330,7 +1332,10 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     await vi.waitFor(() => {
-      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith("msg-visible");
+      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
+        messageId: "msg-visible",
+        rowId: 1,
+      });
     });
     const stableCallCount = latestVisibleMessageIdHandler.mock.calls.length;
 
@@ -1351,7 +1356,9 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const latestVisibleMessageIdHandler = vi.fn<(messageId: string | null) => void>();
+    const latestVisibleMessageIdHandler = vi.fn<
+      (message: { messageId: string; rowId: number } | null) => void
+    >();
     const initialChannel = {
       chatId: "chat-main",
       kind: "room" as const,
@@ -1419,7 +1426,10 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     await vi.waitFor(() => {
-      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith("msg-visible");
+      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
+        messageId: "msg-visible",
+        rowId: 1,
+      });
     });
     const stableCallCount = latestVisibleMessageIdHandler.mock.calls.length;
 
@@ -1430,7 +1440,12 @@ describe("Feature: web-chat-view package", () => {
     await vi.waitFor(() => {
       expect(latestVisibleMessageIdHandler.mock.calls).toHaveLength(stableCallCount + 1);
     });
-    expect(latestVisibleMessageIdHandler.mock.calls.at(-1)).toEqual(["msg-visible"]);
+    expect(latestVisibleMessageIdHandler.mock.calls.at(-1)).toEqual([
+      {
+        messageId: "msg-visible",
+        rowId: 1,
+      },
+    ]);
 
     component.setViewerActorId("session:reviewer");
     flushSync();

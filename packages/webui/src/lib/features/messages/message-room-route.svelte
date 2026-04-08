@@ -6,7 +6,7 @@
 		GlobalRoomGrantEntry,
 		GlobalRoomSnapshotOutput,
 	} from '@agenter/client-sdk';
-	import type { WebChatNotice } from '@agenter/web-chat-view';
+	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
 	import { goto } from '$app/navigation';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
@@ -361,10 +361,6 @@
 			data,
 		} satisfies CachedResourceState<MessageSystemRoomAssetItem[]>;
 	});
-	const selectedRoomMessageRowIdById = $derived(
-		new Map((selectedRoomSnapshot?.items ?? []).map((message) => [message.messageId, message.rowId])),
-	);
-
 	const roomReadSeatCount = $derived(
 		selectedRoomProjection?.readProgress?.readSeatCount ??
 			resolvedRoomSeatStates.filter((state) => state.trackedByLatestVisible && state.hasReadLatestVisible).length,
@@ -506,7 +502,9 @@
 		routeNotice = null;
 	};
 
-	const handleLatestVisibleMessageIdChange = async (messageId: string | null): Promise<void> => {
+	const handleLatestVisibleMessageIdChange = async (
+		visibleMessage: WebChatVisibleMessageFact | null,
+	): Promise<void> => {
 		const room = selectedRoomProjection;
 		const viewerActorId = selectedViewerActorId;
 		const viewerSeat = viewerActorId
@@ -518,13 +516,13 @@
 		if (!room || !accessToken || !viewerActorId) {
 			return;
 		}
-		if (!messageId) {
+		if (!visibleMessage) {
 			return;
 		}
-		const targetRowId = selectedRoomMessageRowIdById.get(messageId) ?? null;
-		if (!targetRowId) {
+		if (visibleMessage.rowId <= 0) {
 			return;
 		}
+		const { messageId, rowId: targetRowId } = visibleMessage;
 		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
 		const currentAckState = syncRoomReadAckState(
 			latestMarkedReadBySeat[markKey],

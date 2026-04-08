@@ -82,6 +82,11 @@ export interface WebChatMessageReadActor {
   iconUrl?: string | null;
 }
 
+export interface WebChatVisibleMessageFact {
+  messageId: string;
+  rowId: number;
+}
+
 export interface WebChatActorPresentation {
   actorId?: string | null;
   label: string;
@@ -148,11 +153,11 @@ export interface WebChatViewBaseProps {
 export interface WebChatRootProps extends WebChatViewBaseProps {
   submitMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
-  latestVisibleMessageIdHandler?: (messageId: string | null) => void;
+  latestVisibleMessageIdHandler?: (message: WebChatVisibleMessageFact | null) => void;
 }
 
 export interface WebChatViewHostProps extends WebChatViewBaseProps {
   onSendMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
   onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
-  onLatestVisibleMessageIdChange?: (messageId: string | null) => void;
+  onLatestVisibleMessageIdChange?: (message: WebChatVisibleMessageFact | null) => void;
 }

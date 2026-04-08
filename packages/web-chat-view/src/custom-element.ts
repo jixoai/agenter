@@ -30,6 +30,6 @@ export type WebChatViewElement = HTMLElement & {
   composerCapabilities?: import("./types").WebChatComposerCapabilities;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
-  latestVisibleMessageIdHandler?: (messageId: string | null) => void;
+  latestVisibleMessageIdHandler?: (message: import("./types").WebChatVisibleMessageFact | null) => void;
   socketFactory?: import("./types").WebChatSocketFactory;
 };

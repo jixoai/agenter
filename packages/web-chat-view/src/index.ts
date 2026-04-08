@@ -21,6 +21,7 @@ export type {
   WebChatSocketFactory,
   WebChatSocketLike,
   WebChatTransportMessage,
+  WebChatVisibleMessageFact,
   WebChatViewHostProps,
 } from "./types";
 export { default as WebChatView, default as WebChatViewHost } from "./web-chat-view-host.svelte";

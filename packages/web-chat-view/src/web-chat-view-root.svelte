@@ -29,6 +29,7 @@
     WebChatRootProps,
     WebChatSocketFactory,
     WebChatSocketLike,
+    WebChatVisibleMessageFact,
   } from "./types";
 
   const CONNECTING_READY_STATE = 0;
@@ -80,17 +81,26 @@
   let activeTransportKey = "";
   const visibleMessageIds = new Map<string, boolean>();
   const visibleAssistantIds = new Map<string, boolean>();
-  let latestVisibleMessageId: string | null = null;
+  let latestVisibleMessage: WebChatVisibleMessageFact | null = null;
   let latestVisibleAssistantMessageId: string | null = null;
   let latestVisibleMessageEmission = $state<{
     chatId: string | null;
     viewerActorId: string | null;
     messageId: string | null;
+    rowId: number | null;
   }>({
     chatId: null,
     viewerActorId: null,
     messageId: null,
+    rowId: null,
   });
+
+  const sameVisibleMessage = (
+    left: WebChatVisibleMessageFact | null,
+    right: WebChatVisibleMessageFact | null,
+  ): boolean => {
+    return left?.messageId === right?.messageId && left?.rowId === right?.rowId;
+  };
 
   const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
 
@@ -178,15 +188,18 @@
   };
 
   const syncLatestVisibleIds = (): void => {
-    let nextMessageId: string | null = null;
+    let nextMessage: WebChatVisibleMessageFact | null = null;
     let nextAssistantId: string | null = null;
     for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
       const message = transcriptMessages[index];
       if (!message) {
         continue;
       }
-      if (nextMessageId === null && visibleMessageIds.get(message.messageId) === true) {
-        nextMessageId = message.messageId;
+      if (nextMessage === null && visibleMessageIds.get(message.messageId) === true) {
+        nextMessage = {
+          messageId: message.messageId,
+          rowId: message.rowId,
+        };
       }
       if (
         nextAssistantId === null &&
@@ -195,17 +208,18 @@
       ) {
         nextAssistantId = message.messageId;
       }
-      if (nextMessageId !== null && nextAssistantId !== null) {
+      if (nextMessage !== null && nextAssistantId !== null) {
         break;
       }
     }
-    if (latestVisibleMessageId !== nextMessageId) {
-      latestVisibleMessageId = nextMessageId;
-      latestVisibleMessageIdHandler?.(nextMessageId);
+    if (!sameVisibleMessage(latestVisibleMessage, nextMessage)) {
+      latestVisibleMessage = nextMessage;
+      latestVisibleMessageIdHandler?.(nextMessage);
       latestVisibleMessageEmission = {
         chatId: channel?.chatId ?? null,
         viewerActorId: effectiveViewerActorId ?? null,
-        messageId: nextMessageId,
+        messageId: nextMessage?.messageId ?? null,
+        rowId: nextMessage?.rowId ?? null,
       };
     }
     if (latestVisibleAssistantMessageId !== nextAssistantId) {
@@ -215,11 +229,11 @@
   };
 
   const clearVisibility = (): void => {
-    const hadVisibleMessage = latestVisibleMessageId !== null;
+    const hadVisibleMessage = latestVisibleMessage !== null;
     const hadVisibleAssistantMessage = latestVisibleAssistantMessageId !== null;
     visibleMessageIds.clear();
     visibleAssistantIds.clear();
-    latestVisibleMessageId = null;
+    latestVisibleMessage = null;
     latestVisibleAssistantMessageId = null;
     if (hadVisibleMessage) {
       latestVisibleMessageIdHandler?.(null);
@@ -498,13 +512,14 @@
   $effect(() => {
     const chatId = channel?.chatId ?? null;
     const viewerActorId = effectiveViewerActorId ?? null;
-    const messageId = latestVisibleMessageId;
-    if (!chatId || !messageId) {
+    const message = latestVisibleMessage;
+    if (!chatId || !message) {
       return;
     }
     if (
       latestVisibleMessageEmission.chatId !== chatId ||
-      latestVisibleMessageEmission.messageId !== messageId ||
+      latestVisibleMessageEmission.messageId !== message.messageId ||
+      latestVisibleMessageEmission.rowId !== message.rowId ||
       latestVisibleMessageEmission.viewerActorId === viewerActorId
     ) {
       return;
@@ -512,9 +527,10 @@
     latestVisibleMessageEmission = {
       chatId,
       viewerActorId,
-      messageId,
+      messageId: message.messageId,
+      rowId: message.rowId,
     };
-    latestVisibleMessageIdHandler?.(messageId);
+    latestVisibleMessageIdHandler?.(message);
   });
 
   $effect(() => {

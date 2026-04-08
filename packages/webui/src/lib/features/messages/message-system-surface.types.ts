@@ -5,7 +5,11 @@ import type {
   GlobalRoomEntry,
   GlobalRoomSnapshotOutput,
 } from "@agenter/client-sdk";
-import type { WebChatComposerSubmitPayload, WebChatNotice } from "@agenter/web-chat-view";
+import type {
+  WebChatComposerSubmitPayload,
+  WebChatNotice,
+  WebChatVisibleMessageFact,
+} from "@agenter/web-chat-view";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 
@@ -87,5 +91,5 @@ export interface MessageSystemSurfaceProps {
   onToggleSeatFocus: (input: MessageSystemSeatFocusInput) => Promise<void>;
   onRevokeSeat: (input: MessageSystemSeatRevokeInput) => Promise<void>;
   onSendMessage: (payload: WebChatComposerSubmitPayload) => Promise<void>;
-  onLatestVisibleMessageIdChange: (messageId: string | null) => Promise<void> | void;
+  onLatestVisibleMessageIdChange: (message: WebChatVisibleMessageFact | null) => Promise<void> | void;
 }
