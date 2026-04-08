@@ -1079,6 +1079,66 @@ test.describe("Feature: Svelte system surfaces", () => {
     }
   });
 
+  test("Scenario: Given another durable room exists When the operator archives the selected room Then the message route falls back to the remaining room", async ({
+    page,
+  }, testInfo) => {
+    const fallbackTitle = `Archive fallback ${testInfo.project.name} ${Date.now()}`;
+    const archiveTitle = `Archive target ${testInfo.project.name} ${Date.now()}`;
+
+    await navigateToSystem(page, "Messages");
+    const createFallbackPage = await openCreateRoomPage(page);
+    await typeStable(createFallbackPage.getByLabel("Room title"), fallbackTitle);
+    await activateUntil(createFallbackPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+    await expectSelectedRoomTitle(page, fallbackTitle);
+
+    const createArchivePage = await openCreateRoomPage(page);
+    await typeStable(createArchivePage.getByLabel("Room title"), archiveTitle);
+    await activateUntil(createArchivePage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+    await expectSelectedRoomTitle(page, archiveTitle);
+
+    const manageRoomDialog = await openManageRoomDialog(page);
+    await expect(manageRoomDialog.getByTestId("room-manage-overview-section")).toBeVisible({ timeout: 15_000 });
+    await activateUntil(manageRoomDialog.getByRole("button", { name: "Archive room", exact: true }), async () => {
+      return await isRoomAlreadySelected(page, fallbackTitle);
+    });
+    await expectSelectedRoomTitle(page, fallbackTitle);
+    await expect(page.getByRole("tab", { name: new RegExp(escapeRegExp(archiveTitle)) })).toHaveCount(0);
+  });
+
+  test("Scenario: Given another durable room exists When the operator deletes the selected room Then the message route falls back to the remaining room", async ({
+    page,
+  }, testInfo) => {
+    const fallbackTitle = `Delete fallback ${testInfo.project.name} ${Date.now()}`;
+    const deleteTitle = `Delete target ${testInfo.project.name} ${Date.now()}`;
+
+    await navigateToSystem(page, "Messages");
+    const createFallbackPage = await openCreateRoomPage(page);
+    await typeStable(createFallbackPage.getByLabel("Room title"), fallbackTitle);
+    await activateUntil(createFallbackPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+    await expectSelectedRoomTitle(page, fallbackTitle);
+
+    const createDeletePage = await openCreateRoomPage(page);
+    await typeStable(createDeletePage.getByLabel("Room title"), deleteTitle);
+    await activateUntil(createDeletePage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+    await expectSelectedRoomTitle(page, deleteTitle);
+
+    const manageRoomDialog = await openManageRoomDialog(page);
+    await expect(manageRoomDialog.getByTestId("room-manage-overview-section")).toBeVisible({ timeout: 15_000 });
+    await activateUntil(manageRoomDialog.getByRole("button", { name: "Delete room", exact: true }), async () => {
+      return await isRoomAlreadySelected(page, fallbackTitle);
+    });
+    await expectSelectedRoomTitle(page, fallbackTitle);
+    await expect(page.getByRole("tab", { name: new RegExp(escapeRegExp(deleteTitle)) })).toHaveCount(0);
+  });
+
   test("Scenario: Given two room viewers When one viewer sends a message Then the other viewer sees the transcript update without refresh", async ({
     page,
   }, testInfo) => {
