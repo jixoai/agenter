@@ -611,6 +611,68 @@ test.describe("Feature: Svelte system surfaces", () => {
     }
   });
 
+  test("Scenario: Given mobile room viewer switching When a toolbar action follows Then the action still opens its room chrome", async ({
+    page,
+  }, testInfo) => {
+    test.skip(!/mobile/i.test(testInfo.project.name), "This regression only reproduces on mobile viewport");
+
+    const viewerAvatarName = `playwright-mobile-toolbar-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Mobile toolbar after view-as ${testInfo.project.name} ${Date.now()}`;
+    let viewerRuntimeUrl: string | null = null;
+
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      const selectedUserCheckbox = createRoomPage.getByRole("checkbox", {
+        name: new RegExp(`^Include ${escapeRegExp(viewerAvatarName)}$`),
+      });
+      await expect(selectedUserCheckbox).toBeVisible({ timeout: 15_000 });
+      await clickStable(selectedUserCheckbox);
+
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const viewerTrigger = page.getByLabel("View room as user");
+      await chooseSelectOptionByText(
+        page,
+        viewerTrigger,
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
+
+      const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+      const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
+      await activateUntil(roomToolbar.getByRole("button", { name: "Add user", exact: true }), async () => {
+        return await manageRoomDialog.isVisible().catch(() => false);
+      }, 4);
+      await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
+  });
+
   test("Scenario: Given first-visit system surfaces When Avatars or Terminals load Then help hints stay collapsed until requested", async ({
     page,
   }) => {
