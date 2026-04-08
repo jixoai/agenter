@@ -671,6 +671,98 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a runtime avatar replies into a shared room When peer avatars are subscribed Then the sender stays read and peer avatars receive queued unread work", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-runtime-reply-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: join(root, "message.db"),
+    });
+
+    const roomId = createPrincipalId(903);
+    messageSystem.createChannel({
+      chatId: roomId,
+      kind: "room",
+      owner: "ops",
+      contextId: `ctx-${roomId}`,
+      initialUsers: [
+        {
+          actorId: "session:jane",
+          label: "jane",
+          role: "member",
+          focused: true,
+        },
+        {
+          actorId: "session:jj",
+          label: "jj",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    const janeRuntime = createSharedRoomRuntime({
+      root,
+      sessionId: "jane",
+      sessionName: "jane",
+      messageSystem,
+    });
+    const jjRuntime = createSharedRoomRuntime({
+      root,
+      sessionId: "jj",
+      sessionName: "jj",
+      messageSystem,
+    });
+    const janeInternal = janeRuntime as unknown as RuntimeInternal;
+    const jjInternal = jjRuntime as unknown as RuntimeInternal;
+
+    try {
+      janeInternal.loopPluginRuntime = await janeInternal.createLoopPluginRuntime();
+      jjInternal.loopPluginRuntime = await jjInternal.createLoopPluginRuntime();
+      janeInternal.attentionSystem.createContext({
+        contextId: `ctx-${roomId}`,
+        owner: "jane",
+      });
+      const commit = appendAttentionCommit(janeInternal, `ctx-${roomId}`, {
+        meta: {
+          author: "avatar:jane",
+          source: "attention",
+          replyTarget: {
+            systemId: "message",
+            subjectId: roomId,
+            channelId: roomId,
+            from: "jane",
+          },
+        },
+        scores: { "room-reply": 0 },
+        title: "reply",
+        detail: {
+          kind: "replace",
+          value: "hello from jane",
+          format: "text/plain",
+        },
+      });
+
+      await janeInternal.handleCommittedAttentionCommit(`ctx-${roomId}`, commit, { notifyLoop: false });
+
+      const sent = messageSystem.snapshot(roomId, 10).items.find((item) => item.content === "hello from jane");
+      expect(sent).toBeDefined();
+      expect(sent?.senderActorId).toBe("session:jane");
+      expect(sent?.attentionState).toBe("queued");
+      expect(sent?.readActorIds).toContain("session:jane");
+      expect(sent?.unreadActorIds).toContain("session:jj");
+      expect(sent?.unreadActorIds).not.toContain("session:jane");
+
+      const jjInputs = await jjInternal.collectLoopInputs();
+      const jjReply = jjInputs?.find((input) => input.meta?.chatId === roomId && input.text.includes("hello from jane"));
+      expect(jjReply).toBeDefined();
+
+      const afterJj = messageSystem.getMessage(roomId, sent?.messageId ?? "");
+      expect(afterJj?.readActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
+      expect(afterJj?.unreadActorIds).not.toContain("session:jj");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
   test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus and unfocus facts are recorded without becoming active debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

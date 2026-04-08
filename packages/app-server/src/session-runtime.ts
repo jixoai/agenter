@@ -1454,6 +1454,41 @@ export class SessionRuntime {
     });
   }
 
+  private requireActorChannelWriteAccess(chatId: string): { chatId: string; accessToken: string } {
+    if (chatId === this.getDefaultChatId()) {
+      this.ensureDefaultChatChannel();
+    }
+    const actorChannel = this.getActorRoom(chatId);
+    if (!actorChannel?.accessToken) {
+      throw new Error(`runtime actor has no member grant for chat channel: ${chatId}`);
+    }
+    return {
+      chatId: actorChannel.chatId,
+      accessToken: actorChannel.accessToken,
+    };
+  }
+
+  private appendActorChannelReply(input: {
+    chatId: string;
+    content: string;
+    rootId?: string;
+    from: string;
+    to?: string;
+    metadata?: Record<string, unknown>;
+  }): MessageRecord {
+    const access = this.requireActorChannelWriteAccess(input.chatId);
+    return this.messageSystem.replyAuthorized({
+      chatId: access.chatId,
+      accessToken: access.accessToken,
+      senderActorId: this.messageActorId,
+      rootId: input.rootId,
+      from: input.from,
+      to: input.to,
+      content: input.content,
+      metadata: input.metadata,
+    });
+  }
+
   private getMessageSendOriginAckFallback(): string {
     return this.config?.lang === "zh-Hans" ? "收到，我先处理一下。" : "Understood. I'll handle it and report back.";
   }
@@ -1478,7 +1513,7 @@ export class SessionRuntime {
         messageId: redundant.messageId,
       };
     }
-    const message = this.messageSystem.reply({
+    const message = this.appendActorChannelReply({
       chatId: input.chatId,
       rootId: input.rootId ?? (input.cycleId !== null ? String(input.cycleId) : undefined),
       from: input.from,
@@ -2269,7 +2304,7 @@ export class SessionRuntime {
               commit.change.type === "update" && commit.change.value.trim().length > 0
                 ? commit.change.value
                 : commit.summary;
-            const message = this.messageSystem.reply({
+            const message = this.appendActorChannelReply({
               chatId,
               rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
               from: replyTarget.from ?? this.getAvatarName(),
