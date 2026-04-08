@@ -538,7 +538,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.locator('[href*="/messages/room/room-"]')).toHaveCount(0);
   });
 
-  test("Scenario: Given New room selects one additional user When creation completes Then the route focuses the new room and the viewer list only includes joined users", async ({
+  test("Scenario: Given New room selects one additional user When creation completes Then the route focuses the new room and room controls only include joined users", async ({
     page,
   }, testInfo) => {
     const viewerAvatarName = `playwright-new-room-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
@@ -578,15 +578,23 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expectSelectedRoomTitle(page, roomTitle);
       await expect(page).toHaveURL(/\/messages\/room\/0x[0-9a-f]+$/i, { timeout: 15_000 });
 
-      const viewerTrigger = page.getByLabel("View room as user");
-      const viewerContent = await openSelectContent(page, viewerTrigger);
-      await expect(viewerContent.getByRole("option")).toHaveCount(2, { timeout: 15_000 });
-      await expect(viewerContent.getByRole("option", { name: new RegExp(escapeRegExp(viewerAvatarName)) })).toBeVisible({
-        timeout: 15_000,
-      });
-      await page.keyboard.press("Escape");
+      if ((page.viewportSize()?.width ?? 0) >= 768) {
+        const viewerTrigger = page.getByLabel("View room as user");
+        await chooseSelectOptionByText(
+          page,
+          viewerTrigger,
+          new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+        );
+        await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
+      }
 
-      const manageRoomDialog = await openManageRoomDialog(page);
+      const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+      const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
+      await activateUntil(roomToolbar.getByRole("button", { name: "Add user", exact: true }), async () => {
+        return await manageRoomDialog.isVisible().catch(() => false);
+      }, 4);
+      await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+      await activateTab(manageRoomDialog.getByRole("tab", { name: "List", exact: true }));
       const userSeatRows = manageRoomDialog
         .getByTestId("room-manage-stage")
         .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])');
