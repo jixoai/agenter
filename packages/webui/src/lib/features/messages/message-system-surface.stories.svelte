@@ -134,6 +134,30 @@
 </Story>
 
 <Story
+	name="Scenario: Given a fixed 48px room toolbar When compact width is applied Then the viewer trigger and mode chips stay fully visible inside the toolbar"
+	asChild
+	play={async ({ canvasElement }) => {
+		const toolbarElement = canvasElement.querySelector<HTMLElement>('[data-workbench-page-toolbar]');
+		expect(toolbarElement).not.toBeNull();
+		const toolbar = getRoomToolbar(canvasElement);
+		const viewerTrigger = toolbar.getByLabelText('View room as user') as HTMLElement;
+		const chatTab = toolbar.getByRole('tab', { name: 'chat' }) as HTMLElement;
+		const assetsTab = toolbar.getByRole('tab', { name: 'assets' }) as HTMLElement;
+
+		await waitFor(() => {
+			const toolbarRect = toolbarElement!.getBoundingClientRect();
+			for (const node of [viewerTrigger, chatTab, assetsTab]) {
+				const rect = node.getBoundingClientRect();
+				expect(rect.top).toBeGreaterThanOrEqual(toolbarRect.top - 0.5);
+				expect(rect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 0.5);
+			}
+		});
+	}}
+>
+	<Harness disableManageDialogPortal surfaceClass="h-[52rem] w-[390px] max-w-full min-w-0 bg-background" />
+</Story>
+
+<Story
 	name="Scenario: Given duplicate-label room users When viewer changes Then the viewer chooser keeps actors distinguishable"
 	asChild
 	play={async ({ canvasElement }) => {

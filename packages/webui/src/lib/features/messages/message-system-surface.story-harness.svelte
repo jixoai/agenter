@@ -17,9 +17,11 @@
 	let {
 		disableManageDialogPortal = false,
 		initialManageDialogSection = null,
+		surfaceClass = 'h-[52rem] w-full min-w-0 bg-background',
 	}: {
 		disableManageDialogPortal?: boolean;
 		initialManageDialogSection?: 'overview' | 'users' | 'permissions' | null;
+		surfaceClass?: string;
 	} = $props();
 
 	type RoomMessage = GlobalRoomSnapshotOutput['items'][number];
@@ -497,7 +499,7 @@
 </script>
 
 <Tooltip.Provider delayDuration={0}>
-	<div class="h-[52rem] w-full min-w-0 bg-background">
+	<div class={surfaceClass}>
 		<WorkbenchWindow
 			ariaLabel="Message room story window"
 			value={selectedRoomId}

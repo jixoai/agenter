@@ -70,6 +70,7 @@
         }}
       >
         <Select.Trigger
+          size="sm"
           aria-label="View room as user"
           class="room-page-toolbar__viewer-trigger"
           title={selectedViewerLabel}
@@ -179,7 +180,7 @@
   .room-page-toolbar__title {
     grid-column: 2;
     grid-row: 1;
-    align-self: end;
+    align-self: center;
     overflow: hidden;
   }
 
@@ -191,6 +192,8 @@
     inline-size: fit-content;
     max-inline-size: 100%;
     min-inline-size: 0;
+    min-block-size: 0;
+    block-size: auto;
     border-radius: 999px;
     border: 0;
     background: transparent;
@@ -198,8 +201,26 @@
     color: var(--foreground);
     font-size: 0.82rem;
     font-weight: 600;
-    line-height: 1;
+    line-height: 1.05;
     box-shadow: none;
+  }
+
+  :global(.room-page-toolbar__viewer-trigger[data-slot="select-trigger"]) {
+    height: auto;
+    min-height: 0;
+    width: auto;
+    min-width: 0;
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  :global(.room-page-toolbar__viewer-trigger[data-slot="select-trigger"] > svg) {
+    inline-size: 0.8rem;
+    block-size: 0.8rem;
+    opacity: 0.5;
   }
 
   .room-page-toolbar__viewer-fallback {
@@ -237,7 +258,7 @@
     align-items: center;
     gap: 0.3rem;
     min-block-size: 0;
-    align-self: start;
+    align-self: center;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -250,7 +271,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-block-size: 1.15rem;
+    min-block-size: 1rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border), transparent 20%);
     background: color-mix(in srgb, var(--background), transparent 14%);
@@ -300,7 +321,7 @@
     }
 
     .room-page-toolbar__mode-chip {
-      min-block-size: 1.05rem;
+      min-block-size: 0.95rem;
       padding-inline: 0.42rem;
       font-size: 0.63rem;
     }
