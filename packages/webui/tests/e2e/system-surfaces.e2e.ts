@@ -965,6 +965,120 @@ test.describe("Feature: Svelte system surfaces", () => {
     }
   });
 
+  test("Scenario: Given a managed room overview When the operator saves a new title Then the selected room keeps the new title after refresh", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Rename room ${testInfo.project.name} ${Date.now()}`;
+    const renamedTitle = `${roomTitle} renamed`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    const chatId = await readSelectedRoomChatId(page, roomTitle);
+    const manageRoomDialog = await openManageRoomDialog(page);
+    await expect(manageRoomDialog.getByTestId("room-manage-overview-section")).toBeVisible({ timeout: 15_000 });
+    await typeStable(manageRoomDialog.getByLabel("Room title"), renamedTitle);
+    await activateUntil(manageRoomDialog.getByRole("button", { name: "Save title", exact: true }), async () => {
+      return await page.getByRole("tab", { name: new RegExp(escapeRegExp(renamedTitle)) }).first().isVisible().catch(() => false);
+    });
+    await page.keyboard.press("Escape");
+    await expect(manageRoomDialog).not.toBeVisible({ timeout: 15_000 });
+
+    await expectSelectedRoomTitle(page, renamedTitle);
+    expect(await readSelectedRoomChatId(page, renamedTitle)).toBe(chatId);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectSelectedRoomTitle(page, renamedTitle);
+    expect(await readSelectedRoomChatId(page, renamedTitle)).toBe(chatId);
+  });
+
+  test("Scenario: Given a granted room user When seat actions focus and revoke the seat Then the room users list reflects both mutations in place", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-seat-actions-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Seat actions ${testInfo.project.name} ${Date.now()}`;
+    let viewerRuntimeUrl: string | null = null;
+
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const manageRoomDialog = await openManageRoomDialog(page);
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
+      });
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
+        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+      });
+
+      const grantedOption = await chooseSelectOptionByText(
+        manageRoomDialog.page(),
+        manageRoomDialog.getByLabel("Grant actor"),
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
+      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "member");
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+        return await manageRoomDialog
+          .getByTestId("room-manage-stage")
+          .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
+          .filter({ hasText: grantedLabel })
+          .first()
+          .isVisible()
+          .catch(() => false);
+      });
+
+      const userSeat = manageRoomDialog
+        .getByTestId("room-manage-stage")
+        .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
+        .filter({ hasText: grantedLabel })
+        .first();
+      await expect(userSeat).toBeVisible({ timeout: 15_000 });
+
+      const seatActionsButton = userSeat.getByRole("button", {
+        name: new RegExp(`Seat actions for ${escapeRegExp(grantedLabel)}`, "i"),
+      });
+      await clickStable(seatActionsButton);
+      await clickStable(page.getByRole("menuitem", { name: "Focus seat", exact: true }));
+      await expect(userSeat).toContainText("Focused", { timeout: 15_000 });
+
+      await clickStable(seatActionsButton);
+      await clickStable(page.getByRole("menuitem", { name: "Revoke user", exact: true }));
+      await expect(userSeat).toHaveCount(0, { timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
+  });
+
   test("Scenario: Given two room viewers When one viewer sends a message Then the other viewer sees the transcript update without refresh", async ({
     page,
   }, testInfo) => {
