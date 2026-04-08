@@ -1,0 +1,14 @@
+{
+  "id": "brand-light",
+  "label": "Brand light",
+  "description": "Canonical light brand master with metallic center framing.",
+  "theme": "light",
+  "family": "brand",
+  "backgroundToken": "light-neutral",
+  "paletteToken": "brand-light-emerald-cyan",
+  "slots": {
+    "topLeft": "corner-bracket",
+    "bottomRight": "terminal",
+    "center": "blank-chip"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "light-jade-ice",
+  "label": "Light jade ice",
+  "description": "Low-drama palette for documentation and product surfaces.",
+  "theme": "light",
+  "family": "brand",
+  "backgroundToken": "light-mist",
+  "paletteToken": "brand-light-jade-ice",
+  "slots": {
+    "topLeft": "signal",
+    "bottomRight": "status-pulse",
+    "center": "dot-grid"
+  }
+}

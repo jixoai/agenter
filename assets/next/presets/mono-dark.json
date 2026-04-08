@@ -1,0 +1,14 @@
+{
+  "id": "mono-dark",
+  "label": "Mono dark",
+  "description": "Structural white mark for dark surfaces.",
+  "theme": "dark",
+  "family": "mono",
+  "backgroundToken": "dark-canvas",
+  "paletteToken": "mono-dark",
+  "slots": {
+    "topLeft": "corner-bracket",
+    "bottomRight": "terminal",
+    "center": "blank-chip"
+  }
+}

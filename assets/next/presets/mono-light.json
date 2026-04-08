@@ -1,0 +1,14 @@
+{
+  "id": "mono-light",
+  "label": "Mono light",
+  "description": "Structural graphite mark for light surfaces.",
+  "theme": "light",
+  "family": "mono",
+  "backgroundToken": "light-paper",
+  "paletteToken": "mono-light",
+  "slots": {
+    "topLeft": "corner-bracket",
+    "bottomRight": "terminal",
+    "center": "blank-chip"
+  }
+}

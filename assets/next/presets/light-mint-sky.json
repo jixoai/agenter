@@ -1,0 +1,14 @@
+{
+  "id": "light-mint-sky",
+  "label": "Light mint sky",
+  "description": "Softer light palette for marketing and editorial surfaces.",
+  "theme": "light",
+  "family": "brand",
+  "backgroundToken": "light-paper",
+  "paletteToken": "brand-light-mint-sky",
+  "slots": {
+    "topLeft": "spark",
+    "bottomRight": "terminal",
+    "center": "blank-chip"
+  }
+}

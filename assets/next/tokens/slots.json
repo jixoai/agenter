@@ -1,0 +1,99 @@
+{
+  "topLeft": [
+    {
+      "id": "corner-bracket",
+      "label": "Corner bracket",
+      "slot": "topLeft",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M84 20H36c-10 0-18 8-18 18v44\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"14\"/>"
+    },
+    {
+      "id": "signal",
+      "label": "Signal",
+      "slot": "topLeft",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<circle cx=\"28\" cy=\"74\" r=\"8\" fill=\"currentColor\"/><path d=\"M32 66c10-10 22-16 36-18\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"10\"/><path d=\"M38 82c14-8 24-12 36-12\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"10\"/>"
+    },
+    {
+      "id": "spark",
+      "label": "Spark",
+      "slot": "topLeft",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M50 10l8 22 22 8-22 8-8 22-8-22-22-8 22-8z\" fill=\"currentColor\"/>"
+    },
+    {
+      "id": "agent-hook",
+      "label": "Agent hook",
+      "slot": "topLeft",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M76 24H40c-9 0-16 7-16 16v22c0 9 7 16 16 16h10\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"14\"/><circle cx=\"64\" cy=\"78\" r=\"9\" fill=\"currentColor\"/>"
+    }
+  ],
+  "bottomRight": [
+    {
+      "id": "terminal",
+      "label": "Terminal",
+      "slot": "bottomRight",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M18 30l20 20-20 20\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"12\"/><path d=\"M52 72h28\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"12\"/>"
+    },
+    {
+      "id": "status-pulse",
+      "label": "Status pulse",
+      "slot": "bottomRight",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<circle cx=\"28\" cy=\"50\" r=\"10\" fill=\"currentColor\"/><path d=\"M48 50h34\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"12\"/>"
+    },
+    {
+      "id": "chevron-code",
+      "label": "Chevron code",
+      "slot": "bottomRight",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M20 32l18 18-18 18\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"12\"/><path d=\"M54 30l-8 40\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"10\"/><path d=\"M64 70h18\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"12\"/>"
+    },
+    {
+      "id": "orbit",
+      "label": "Orbit",
+      "slot": "bottomRight",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<circle cx=\"42\" cy=\"52\" r=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"12\"/><circle cx=\"68\" cy=\"36\" r=\"8\" fill=\"currentColor\"/>"
+    }
+  ],
+  "center": [
+    {
+      "id": "blank-chip",
+      "label": "Blank chip",
+      "slot": "center",
+      "viewBox": [0, 0, 100, 100],
+      "markup": ""
+    },
+    {
+      "id": "dot-grid",
+      "label": "Dot grid",
+      "slot": "center",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<circle cx=\"28\" cy=\"28\" r=\"6\" fill=\"currentColor\"/><circle cx=\"50\" cy=\"28\" r=\"6\" fill=\"currentColor\"/><circle cx=\"72\" cy=\"28\" r=\"6\" fill=\"currentColor\"/><circle cx=\"28\" cy=\"50\" r=\"6\" fill=\"currentColor\"/><circle cx=\"50\" cy=\"50\" r=\"6\" fill=\"currentColor\"/><circle cx=\"72\" cy=\"50\" r=\"6\" fill=\"currentColor\"/><circle cx=\"28\" cy=\"72\" r=\"6\" fill=\"currentColor\"/><circle cx=\"50\" cy=\"72\" r=\"6\" fill=\"currentColor\"/><circle cx=\"72\" cy=\"72\" r=\"6\" fill=\"currentColor\"/>"
+    },
+    {
+      "id": "terminal-glyph",
+      "label": "Terminal glyph",
+      "slot": "center",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M22 34l18 16-18 16\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"10\"/><path d=\"M52 66h24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"10\"/>"
+    },
+    {
+      "id": "chat-glyph",
+      "label": "Chat glyph",
+      "slot": "center",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<path d=\"M22 28h56v32H44l-16 14V28z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"10\"/>"
+    },
+    {
+      "id": "agent-core",
+      "label": "Agent core",
+      "slot": "center",
+      "viewBox": [0, 0, 100, 100],
+      "markup": "<rect x=\"20\" y=\"20\" width=\"60\" height=\"60\" rx=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\"/><rect x=\"38\" y=\"38\" width=\"24\" height=\"24\" rx=\"8\" fill=\"currentColor\"/>"
+    }
+  ]
+}

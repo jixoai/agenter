@@ -25,6 +25,7 @@
     "@agenter/client-sdk": "workspace:*",
     "@agenter/svelte-components": "workspace:*",
     "@agenter/terminal-view": "workspace:*",
+    "@agenter/ui": "workspace:*",
     "@agenter/web-chat-view": "workspace:*",
     "@agenter/web-components": "workspace:*",
     "@codemirror/autocomplete": "^6.20.1",

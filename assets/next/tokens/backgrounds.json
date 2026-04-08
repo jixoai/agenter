@@ -1,0 +1,26 @@
+[
+  {
+    "id": "dark-canvas",
+    "label": "Dark canvas",
+    "theme": "dark",
+    "color": "#2d3239"
+  },
+  {
+    "id": "light-neutral",
+    "label": "Warm neutral",
+    "theme": "light",
+    "color": "#f3f0ea"
+  },
+  {
+    "id": "light-paper",
+    "label": "Paper white",
+    "theme": "light",
+    "color": "#faf8f3"
+  },
+  {
+    "id": "light-mist",
+    "label": "Mist gray",
+    "theme": "light",
+    "color": "#edf2f1"
+  }
+]

@@ -30,6 +30,16 @@ const sourceFiles = {
 	androidBackground: resolve(sourceDir, 'android-adaptive-background.png'),
 	androidForeground: resolve(sourceDir, 'android-adaptive-foreground.png'),
 };
+const themedSourceFiles = {
+	dark: {
+		favicon: resolve(sourceDir, 'dark', 'favicon-source.png'),
+		tile: resolve(sourceDir, 'dark', 'icon-tile.png'),
+	},
+	light: {
+		favicon: resolve(sourceDir, 'light', 'favicon-source.png'),
+		tile: resolve(sourceDir, 'light', 'icon-tile.png'),
+	},
+} as const;
 
 const faviconSizes = [16, 32, 48] as const;
 const webIcons = [
@@ -79,8 +89,8 @@ const manifest = {
 	start_url: '/',
 	scope: '/',
 	display: 'standalone',
-	background_color: '#0a1219',
-	theme_color: '#0a1219',
+	background_color: '#f3f0ea',
+	theme_color: '#f3f0ea',
 	icons: [
 		{ src: './icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
 		{ src: './icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -107,6 +117,16 @@ writeIco(join(outputs.favicon, 'favicon.ico'), faviconSizes.map((size) => join(o
 
 copyFile(join(outputs.favicon, 'favicon.ico'), join(outputs.web, 'favicon.ico'));
 copyFile(join(outputs.favicon, 'favicon.ico'), join(outputs.webuiStatic, 'favicon.ico'));
+
+for (const [themeName, themeSources] of Object.entries(themedSourceFiles) as Array<
+	[keyof typeof themedSourceFiles, (typeof themedSourceFiles)[keyof typeof themedSourceFiles]]
+>) {
+	for (const size of [16, 32] as const) {
+		const filename = `favicon-${themeName}-${size}.png`;
+		resizePng(themeSources.favicon, join(outputs.web, filename), size);
+		copyFile(join(outputs.web, filename), join(outputs.webuiIcons, filename));
+	}
+}
 
 for (const icon of webIcons) {
 	const webPath = join(outputs.web, icon.filename);

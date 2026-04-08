@@ -1,0 +1,14 @@
+{
+  "id": "brand-dark",
+  "label": "Brand dark",
+  "description": "Canonical dark brand master.",
+  "theme": "dark",
+  "family": "brand",
+  "backgroundToken": "dark-canvas",
+  "paletteToken": "brand-dark",
+  "slots": {
+    "topLeft": "corner-bracket",
+    "bottomRight": "terminal",
+    "center": "blank-chip"
+  }
+}

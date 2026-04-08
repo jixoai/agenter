@@ -1,0 +1,198 @@
+[
+  {
+    "id": "brand-dark",
+    "label": "Brand dark",
+    "description": "Current dark brand mark with teal-to-cyan ribbons.",
+    "theme": "dark",
+    "family": "brand",
+    "backgroundToken": "dark-canvas",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#2ea97e", "end": "#23c1d4" },
+      "outerB": { "angle": 45, "start": "#2da37c", "end": "#23b6ca" },
+      "innerA": { "angle": 315, "start": "#32b684", "end": "#31cfdf" },
+      "innerB": { "angle": 180, "start": "#2bcfe0", "end": "#2fb381" },
+      "capsA": { "angle": 315, "start": "#2fb080", "end": "#26ccde" },
+      "capsB": { "angle": 0, "start": "#2fb381", "end": "#2fb381" }
+    },
+    "center": {
+      "frame": { "angle": 45, "start": "#e8ebee", "end": "#d2d8dd" },
+      "well": { "angle": 45, "start": "#20252c", "end": "#2c323a" },
+      "chip": { "angle": 45, "start": "#f3f5f7", "end": "#dce1e6" },
+      "chipStroke": "#c8d0d6",
+      "symbol": "#243039"
+    },
+    "slots": {
+      "topLeft": "#35c39b",
+      "bottomRight": "#35c39b",
+      "center": "#243039"
+    }
+  },
+  {
+    "id": "brand-light-emerald-cyan",
+    "label": "Light emerald cyan",
+    "description": "Warm neutral light mode with deeper emerald-to-cyan ribbons and a metallic center frame.",
+    "theme": "light",
+    "family": "brand",
+    "backgroundToken": "light-neutral",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#168d66", "end": "#1f9fc4" },
+      "outerB": { "angle": 45, "start": "#157f5f", "end": "#258db1" },
+      "innerA": { "angle": 315, "start": "#1a9d73", "end": "#37add1" },
+      "innerB": { "angle": 180, "start": "#1ba5cb", "end": "#1f9566" },
+      "capsA": { "angle": 315, "start": "#3b8872", "end": "#5c9ec1" },
+      "capsB": { "angle": 0, "start": "#2f865f", "end": "#2f865f" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#a7b2bb", "end": "#f6f6f3" },
+      "well": { "angle": 45, "start": "#57626d", "end": "#2a3139" },
+      "chip": { "angle": 90, "start": "#ffffff", "end": "#eceff1" },
+      "chipStroke": "#c0c8cf",
+      "symbol": "#26333a"
+    },
+    "slots": {
+      "topLeft": "#1d8d71",
+      "bottomRight": "#1d8d71",
+      "center": "#26333a"
+    }
+  },
+  {
+    "id": "brand-light-mint-sky",
+    "label": "Light mint sky",
+    "description": "Softer mint-to-sky palette for brighter surfaces.",
+    "theme": "light",
+    "family": "brand",
+    "backgroundToken": "light-paper",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#29a77d", "end": "#459dd7" },
+      "outerB": { "angle": 45, "start": "#269370", "end": "#4d8ec8" },
+      "innerA": { "angle": 315, "start": "#38b489", "end": "#5aaae4" },
+      "innerB": { "angle": 180, "start": "#4fb0dd", "end": "#36a276" },
+      "capsA": { "angle": 315, "start": "#62aa92", "end": "#7eaad6" },
+      "capsB": { "angle": 0, "start": "#3b9a76", "end": "#3b9a76" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#b7c0c8", "end": "#fcfcfb" },
+      "well": { "angle": 45, "start": "#66707a", "end": "#2f353d" },
+      "chip": { "angle": 90, "start": "#ffffff", "end": "#eef2f4" },
+      "chipStroke": "#c7ced4",
+      "symbol": "#2a3840"
+    },
+    "slots": {
+      "topLeft": "#328f74",
+      "bottomRight": "#328f74",
+      "center": "#2a3840"
+    }
+  },
+  {
+    "id": "brand-light-jade-ice",
+    "label": "Light jade ice",
+    "description": "Calmer jade-to-ice palette tuned for editorial light canvases.",
+    "theme": "light",
+    "family": "brand",
+    "backgroundToken": "light-mist",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#1d7c67", "end": "#5e9fbd" },
+      "outerB": { "angle": 45, "start": "#1f7360", "end": "#628ea9" },
+      "innerA": { "angle": 315, "start": "#2d8c76", "end": "#71b4cf" },
+      "innerB": { "angle": 180, "start": "#5ea9c9", "end": "#2f826c" },
+      "capsA": { "angle": 315, "start": "#6f978f", "end": "#9ab8c7" },
+      "capsB": { "angle": 0, "start": "#3a7e6f", "end": "#3a7e6f" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#adb7bf", "end": "#fbfcfc" },
+      "well": { "angle": 45, "start": "#5b6670", "end": "#2b3138" },
+      "chip": { "angle": 90, "start": "#ffffff", "end": "#eef1f2" },
+      "chipStroke": "#c3ccd1",
+      "symbol": "#243239"
+    },
+    "slots": {
+      "topLeft": "#2d7f6d",
+      "bottomRight": "#2d7f6d",
+      "center": "#243239"
+    }
+  },
+  {
+    "id": "brand-light-graphite-accent",
+    "label": "Light graphite accent",
+    "description": "Low-saturation light palette for more technical surfaces.",
+    "theme": "light",
+    "family": "brand",
+    "backgroundToken": "light-neutral",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#4e6572", "end": "#74a2b6" },
+      "outerB": { "angle": 45, "start": "#51626f", "end": "#6d95a6" },
+      "innerA": { "angle": 315, "start": "#607987", "end": "#8bb4c5" },
+      "innerB": { "angle": 180, "start": "#7aaabd", "end": "#5a7380" },
+      "capsA": { "angle": 315, "start": "#83939c", "end": "#a7bac5" },
+      "capsB": { "angle": 0, "start": "#5c707a", "end": "#5c707a" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#98a4ac", "end": "#f5f5f2" },
+      "well": { "angle": 45, "start": "#4d5862", "end": "#252b31" },
+      "chip": { "angle": 90, "start": "#ffffff", "end": "#edf0f2" },
+      "chipStroke": "#bcc5cb",
+      "symbol": "#223038"
+    },
+    "slots": {
+      "topLeft": "#5e7480",
+      "bottomRight": "#5e7480",
+      "center": "#223038"
+    }
+  },
+  {
+    "id": "mono-dark",
+    "label": "Mono dark",
+    "description": "White structural mark on dark canvas.",
+    "theme": "dark",
+    "family": "mono",
+    "backgroundToken": "dark-canvas",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#ffffff", "end": "#ffffff" },
+      "outerB": { "angle": 45, "start": "#ffffff", "end": "#ffffff" },
+      "innerA": { "angle": 315, "start": "#ffffff", "end": "#ffffff" },
+      "innerB": { "angle": 45, "start": "#ffffff", "end": "#ffffff" },
+      "capsA": { "angle": 315, "start": "#ffffff", "end": "#ffffff" },
+      "capsB": { "angle": 45, "start": "#ffffff", "end": "#ffffff" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#ffffff", "end": "#ffffff" },
+      "well": { "angle": 45, "start": "#2d3239", "end": "#2d3239" },
+      "chip": { "angle": 90, "start": "#ffffff", "end": "#ffffff" },
+      "chipStroke": "#ffffff",
+      "symbol": "#2d3239"
+    },
+    "slots": {
+      "topLeft": "#ffffff",
+      "bottomRight": "#ffffff",
+      "center": "#2d3239"
+    }
+  },
+  {
+    "id": "mono-light",
+    "label": "Mono light",
+    "description": "Graphite structural mark on light canvas.",
+    "theme": "light",
+    "family": "mono",
+    "backgroundToken": "light-paper",
+    "ribbons": {
+      "outerA": { "angle": 315, "start": "#26343c", "end": "#26343c" },
+      "outerB": { "angle": 45, "start": "#26343c", "end": "#26343c" },
+      "innerA": { "angle": 315, "start": "#26343c", "end": "#26343c" },
+      "innerB": { "angle": 45, "start": "#26343c", "end": "#26343c" },
+      "capsA": { "angle": 315, "start": "#26343c", "end": "#26343c" },
+      "capsB": { "angle": 45, "start": "#26343c", "end": "#26343c" }
+    },
+    "center": {
+      "frame": { "angle": 315, "start": "#26343c", "end": "#26343c" },
+      "well": { "angle": 45, "start": "#33424a", "end": "#222e36" },
+      "chip": { "angle": 90, "start": "#faf8f3", "end": "#faf8f3" },
+      "chipStroke": "#d1d7db",
+      "symbol": "#26343c"
+    },
+    "slots": {
+      "topLeft": "#26343c",
+      "bottomRight": "#26343c",
+      "center": "#26343c"
+    }
+  }
+]

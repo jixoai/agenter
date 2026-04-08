@@ -1,0 +1,14 @@
+{
+  "id": "light-graphite-core",
+  "label": "Light graphite core",
+  "description": "Technical light preset with restrained accent and semantic slots.",
+  "theme": "light",
+  "family": "brand",
+  "backgroundToken": "light-neutral",
+  "paletteToken": "brand-light-graphite-accent",
+  "slots": {
+    "topLeft": "agent-hook",
+    "bottomRight": "chevron-code",
+    "center": "agent-core"
+  }
+}
