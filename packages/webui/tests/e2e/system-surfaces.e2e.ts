@@ -291,6 +291,25 @@ const getRoomComposer = (page: Page, roomTitle: string): Locator => {
   return page.getByPlaceholder(new RegExp(`Message ${escapeRegExp(roomTitle)}`));
 };
 
+const sendRoomMessage = async (
+  page: Page,
+  roomTitle: string,
+  message: string,
+): Promise<Locator> => {
+  const roomComposer = getRoomComposer(page, roomTitle);
+  const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
+  await clickStable(roomComposer);
+  await roomComposer.pressSequentially(message);
+  await expect(roomComposer).toHaveValue(message, { timeout: 15_000 });
+  await expect(sendMessageButton).toBeEnabled({ timeout: 15_000 });
+  await activateUntil(sendMessageButton, async () => {
+    return (await roomComposer.inputValue()) === "";
+  });
+  const row = page.locator("[data-message-id]").filter({ hasText: message }).last();
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  return row;
+};
+
 const isRoomAlreadySelected = async (page: Page, roomTitle: string): Promise<boolean> => {
   if (await getRoomComposer(page, roomTitle).isVisible().catch(() => false)) {
     return true;
@@ -842,6 +861,110 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(grantedSeat).toContainText("readonly");
   });
 
+  test("Scenario: Given a granted room user When role changes in Permissions Then the updated permission is reflected in the user list", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-permission-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Permission sync ${testInfo.project.name} ${Date.now()}`;
+    let viewerRuntimeUrl: string | null = null;
+
+    try {
+      await navigateToSystem(page, "Avatars");
+      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
+      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const manageRoomDialog = await openManageRoomDialog(page);
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await manageRoomDialog.getByRole("button", { name: "Add user" }).isVisible().catch(() => false);
+      });
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Add user" }), async () => {
+        return await manageRoomDialog.getByLabel("Grant actor").isVisible().catch(() => false);
+      });
+
+      const grantedOption = await chooseSelectOptionByText(
+        manageRoomDialog.page(),
+        manageRoomDialog.getByLabel("Grant actor"),
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
+      await chooseSelectOptionByText(manageRoomDialog.page(), manageRoomDialog.getByLabel("Grant role"), "readonly");
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Grant seat" }), async () => {
+        return await manageRoomDialog
+          .getByTestId("room-manage-stage")
+          .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
+          .filter({ hasText: grantedLabel })
+          .first()
+          .isVisible()
+          .catch(() => false);
+      });
+
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Permissions section" }), async () => {
+        return await manageRoomDialog
+          .getByTestId("room-manage-stage")
+          .locator('[data-testid^="room-permission-"]')
+          .filter({ hasText: grantedLabel })
+          .first()
+          .isVisible()
+          .catch(() => false);
+      });
+
+      const permissionRow = manageRoomDialog
+        .getByTestId("room-manage-stage")
+        .locator('[data-testid^="room-permission-"]')
+        .filter({ hasText: grantedLabel })
+        .first();
+      await expect(permissionRow).toBeVisible({ timeout: 15_000 });
+      await clickStable(permissionRow.getByRole("button", { name: "Admin", exact: true }));
+      await activateUntil(permissionRow.getByRole("button", { name: "Apply", exact: true }), async () => {
+        return !(await permissionRow.getByRole("button", { name: "Apply", exact: true }).isVisible().catch(() => false));
+      });
+      await expect(permissionRow).toContainText("Current role", { timeout: 15_000 });
+
+      await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
+        return await manageRoomDialog
+          .getByTestId("room-manage-stage")
+          .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
+          .filter({ hasText: grantedLabel })
+          .first()
+          .isVisible()
+          .catch(() => false);
+      });
+
+      const userSeat = manageRoomDialog
+        .getByTestId("room-manage-stage")
+        .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])')
+        .filter({ hasText: grantedLabel })
+        .first();
+      await expect(userSeat).toBeVisible({ timeout: 15_000 });
+      await expect(userSeat).toContainText("admin", { timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page);
+      }
+    }
+  });
+
   test("Scenario: Given two room viewers When one viewer sends a message Then the other viewer sees the transcript update without refresh", async ({
     page,
   }, testInfo) => {
@@ -1013,6 +1136,53 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
     await expect(manageRoomDialog.getByLabel("Grant actor")).toBeVisible({ timeout: 15_000 });
     await expect(manageRoomDialog.getByLabel("Grant role")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given loaded room messages When the toolbar searches the transcript Then the active match cycles through the loaded chat rows", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Search room ${testInfo.project.name} ${Date.now()}`;
+    const plainMessage = `search plain ${testInfo.project.name}`;
+    const firstMatchMessage = `needle ${testInfo.project.name} first`;
+    const secondMatchMessage = `needle ${testInfo.project.name} second`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    await sendRoomMessage(page, roomTitle, plainMessage);
+    const firstMatchRow = await sendRoomMessage(page, roomTitle, firstMatchMessage);
+    const secondMatchRow = await sendRoomMessage(page, roomTitle, secondMatchMessage);
+
+    const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+    await activateUntil(roomToolbar.getByRole("button", { name: "Search messages", exact: true }), async () => {
+      return await page.getByTestId("room-search-dialog").isVisible().catch(() => false);
+    }, 4);
+
+    const searchDialog = page.getByTestId("room-search-dialog");
+    await expect(searchDialog).toBeVisible({ timeout: 15_000 });
+    const searchInput = searchDialog.getByLabel("Search messages");
+    await typeStable(searchInput, "needle");
+    await expect(searchDialog.getByTestId("room-search-count")).toHaveText("1/2", { timeout: 15_000 });
+    await expect(firstMatchRow).toHaveAttribute("data-room-search-match", "true", { timeout: 15_000 });
+    await expect(secondMatchRow).not.toHaveAttribute("data-room-search-match", "true");
+
+    await clickStable(searchDialog.getByRole("button", { name: "Next", exact: true }));
+    await expect(searchDialog.getByTestId("room-search-count")).toHaveText("2/2", { timeout: 15_000 });
+    await expect(secondMatchRow).toHaveAttribute("data-room-search-match", "true", { timeout: 15_000 });
+    await expect(firstMatchRow).not.toHaveAttribute("data-room-search-match", "true");
+
+    await clickStable(searchDialog.getByRole("button", { name: "Previous", exact: true }));
+    await expect(searchDialog.getByTestId("room-search-count")).toHaveText("1/2", { timeout: 15_000 });
+    await expect(firstMatchRow).toHaveAttribute("data-room-search-match", "true", { timeout: 15_000 });
+
+    await page.keyboard.press("Escape");
+    await expect(searchDialog).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("[data-message-id][data-room-search-match='true']")).toHaveCount(0, { timeout: 15_000 });
   });
 
   test("Scenario: Given a room attachment When the toolbar switches to assets Then the durable upload fills page content without transcript chrome pollution", async ({
