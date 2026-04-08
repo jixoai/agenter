@@ -4,7 +4,7 @@
 TBD - created by archiving change codify-scrollview-law-and-svelte-shell-primitives. Update Purpose after archive.
 ## Requirements
 ### Requirement: Frontend feature surfaces SHALL delegate scroll ownership to ScrollView
-User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any scrolling surface, and feature code or shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities. The durable Svelte `ScrollView` primitive SHALL be published from `@agenter/svelte-components`.
+User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any scrolling surface, and feature code or shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities. The durable Svelte `ScrollView` primitive SHALL be published from `@agenter/svelte-components`. Stretchable regions that host `ScrollView` SHALL be created through the shared scaffold-family primitives rather than page-local shell classes.
 
 #### Scenario: Vertical system transcript
 - **WHEN** a system transcript needs vertical scrolling
@@ -24,10 +24,10 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 - **THEN** the rail and detail stage each keep explicit scroll ownership boundaries
 - **THEN** the detail stage delegates its long content to one `ScrollView` instead of mixing multiple competing scroll containers
 
-#### Scenario: Runtime shell uses explicit primary and secondary scroll owners
-- **WHEN** a runtime page contains a primary stage and a secondary facts rail
-- **THEN** each stretchable column uses one explicit `ScrollView` owner
-- **THEN** outer layout wrappers remain responsible only for sizing and placement
+#### Scenario: Scaffold-owned route body hosts the only scroll primitive
+- **WHEN** a route panel or dialog body needs vertical scrolling
+- **THEN** the surface creates that stretch region through `Scaffold.ScrollBody` or `DialogScaffold.ScrollBody`
+- **THEN** `ScrollView` remains the only scroll owner inside that region
 
 #### Scenario: Shared Svelte package consumes ScrollView
 - **WHEN** a shared Svelte package needs a durable scroll owner
@@ -68,4 +68,3 @@ The shared `ScrollView` primitive SHALL derive its virtual-mode type surface fro
 - **WHEN** `ScrollView` renders virtual items in Svelte templates
 - **THEN** the component normalizes nullable lookup results before template rendering
 - **THEN** the template iterates concrete row records instead of re-proving nullability at render sites
-

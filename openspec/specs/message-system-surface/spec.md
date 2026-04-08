@@ -5,7 +5,7 @@ Define the durable operator-facing contract for the standalone message-system ro
 
 ## Requirements
 ### Requirement: Message-system SHALL present rooms as a standalone product surface
-The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
+The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
 
 #### Scenario: Room catalog navigation
 - **WHEN** the operator opens the message-system route
@@ -46,6 +46,11 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** `Users` owns the `List | Add` membership workflow, including revoke/focus actions and the add-seat grant form
 - **THEN** `Permissions` owns inline per-user role changes instead of mixing membership mutation and authority mutation in one panel
 - **THEN** each stretchable detail section uses one explicit `ScrollView` owner instead of ad hoc overflow behavior
+
+#### Scenario: Room management uses scaffold-family shells
+- **WHEN** the operator opens room management or room creation
+- **THEN** the surface uses scaffold-family primitives for fixed chrome, split rail/detail regions, and scroll ownership
+- **THEN** the dialog no longer relies on page-local layout patches to keep headers visible and body regions scrollable
 
 ### Requirement: Message send SHALL require an explicit acting actor
 The room composer SHALL let the operator choose which auth-backed actor sends a message, and message submission SHALL use that actor's room authority context.

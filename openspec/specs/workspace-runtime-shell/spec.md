@@ -17,18 +17,13 @@ The WebUI SHALL expose running-avatar detail through dynamic session tabs inside
 - **THEN** the application opens the same running-avatar detail shell model used by the dynamic avatar tab
 - **THEN** the detail behavior does not depend on which launcher initiated it
 
-### Requirement: Running-avatar detail SHALL use a primary runtime stage plus a secondary facts rail
-The runtime shell SHALL present the active tab content as the primary stage and SHALL keep linked systems, runtime facts, and auxiliary navigation in a visually quieter secondary rail.
+### Requirement: Running-avatar detail SHALL keep one primary runtime stage without a parallel facts rail
+The runtime shell SHALL present the active tab content as the single primary stage, and linked systems, runtime facts, and source jumps SHALL be integrated into stage-local surfaces instead of a parallel secondary facts rail. The route shell and stage panels SHALL derive their structure from shared scaffold-family primitives instead of local split-layout classes.
 
-#### Scenario: Attention opens with a strong primary stage
-- **WHEN** the user opens the runtime shell on `Attention`
-- **THEN** the page shows a summary band plus a primary attention stage that explains the current runtime state
-- **THEN** linked systems and runtime facts remain available in a smaller secondary rail instead of competing as peer empty canvases
-
-#### Scenario: Peer runtime tabs reuse the same shell hierarchy
-- **WHEN** the user switches to `Cycles`, `Systems`, `Observability`, or `Settings`
-- **THEN** the selected tab renders through the same primary-stage shell model
-- **THEN** the right rail remains secondary and does not become the dominant surface
+#### Scenario: Runtime shell derives from shared scaffold law without duplicate detail panes
+- **WHEN** the user opens a runtime route
+- **THEN** the page uses shared scaffold primitives to allocate the primary stage without a competing secondary rail
+- **THEN** the stage header stays outside the body scroll region without page-local stretch-layout patches
 
 ### Requirement: Cycles tab SHALL surface the current running round as an active badge
 The `Cycles` tab SHALL display the current running cycle number as a badge. When the avatar is actively running, the badge background SHALL follow the latest cycle-kind icon color and SHALL render a breathing state.

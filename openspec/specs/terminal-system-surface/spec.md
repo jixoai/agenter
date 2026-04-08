@@ -4,7 +4,7 @@
 TBD - created by archiving change ship-terminal-system-core-surface. Update Purpose after archive.
 ## Requirements
 ### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
-The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides terminal-specific actions and user/access management without requiring workspace ownership.
+The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides terminal-specific actions and user/access management without requiring workspace ownership. The route SHALL use shared split and scaffold primitives so the terminal viewport, tool composer, and collaboration rail each keep explicit layout ownership.
 
 #### Scenario: Global terminal navigation
 - **WHEN** the operator opens the terminal-system route
@@ -14,6 +14,11 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **WHEN** a terminal is selected
 - **THEN** the route shows the terminal transcript plus a side panel with separate Actions and Users tabs
 - **THEN** the bottom tool panel lets the operator invoke terminal actions as an explicit seat
+
+#### Scenario: Terminal-system route uses shared shell primitives
+- **WHEN** the operator opens the terminal-system route
+- **THEN** the route derives its primary columns and panel shells from shared split/scaffold primitives
+- **THEN** terminal rendering, tool composition, and seat management no longer depend on repeated page-local shell classes
 
 ### Requirement: Terminal tool actions SHALL require an explicit acting actor
 Terminal read/write or other tool-call actions initiated from the UI SHALL let the operator choose which auth-backed actor performs the action.
