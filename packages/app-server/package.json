@@ -6,6 +6,7 @@
   "scripts": {
     "test": "bun test",
     "test:real": "bun test test/real-loopbus.integration.test.ts",
+    "test:real-room-terminal": "bun test test/real-room-terminal.integration.test.ts",
     "story:real": "bun run ./scripts/run-real-loopbus-story.ts"
   },
   "exports": {
