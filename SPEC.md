@@ -22,11 +22,14 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention 是内核语义货币。外部熵增必须先被表达为 attention debt，再决定是否进入下一轮模型调用。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
+- AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
 - Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
+- WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
+- AttentionContext 拥有 durable focus state（`focused | background | muted`）与 ingress semantics（`commit | push`）；notification 只是 attention push 的投影，不得再引入第二套 unread truth。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 `ScrollView` 原语；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
@@ -42,6 +45,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。
+- `app-server` 是 WorkspaceSystem、AvatarRuntime lifecycle 与 attention-derived notification projection 的组合根，但它不能偷当 room/terminal durable truth owner。
 - 新能力优先以“新增原子 + 复用平台法则”的方式接入；当现有法则无法优雅容纳时，应优先升级法则，而不是补 source-specific glue。
 
 ## 4. Durable Runtime Contract
@@ -51,6 +55,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `score > 0` 只表示义务仍然存在，不表示允许无限重试；重复等价失败必须进入 containment / backoff，直到新证据或人工干预。
 - Context compact 是强制的内核能力；它只重写 bounded `promptWindow`，可以丢弃已完成噪音，但不得丢弃未完成 attention debt 或 durable facts。
 - 用户可见回复与内部推进必须分离：attention/internal activity 不自动等于 user-visible reply。
+- `session.stop` 的 durable 语义是“runtime 脱离 kernel ownership”；之后的 `session.start` 必须从 persisted session/attention facts 重建 runtime，而不是恢复隐藏的 paused in-memory runtime。
 
 ## 5. 产品表面长期法则
 
@@ -66,7 +71,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `~/` 是 special global workspace。canonical avatar catalog 与用户级默认配置通过它暴露，但 room / terminal 自身不从属于 workspace。
 - `Quick Start` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar 与未来可扩展的全局系统引用，并在用户 detour 到 `Messages` / `Terminals` 后继续保留当前草稿。
 - 运行中的 avatar discoverability 统一通过 `Avatars` 顶部的动态 runtime tabs 表达，不再保留单独的 `Running Avatars` 次级导航卡片。进入单个 avatar 后，默认页固定为 `Attention`，runtime tabs 在同一层打平。
-- `workspace + avatar` 是 durable active-session identity；再次启动同一 pair 时必须复用同一个稳定 session id，而不是创建重复 session。
+- Avatar 是 durable active-session identity；再次启动同一 Avatar 时必须复用同一个稳定 runtime/session id，额外 workspace 通过 mount 追加，而不是创建第二个 `workspace + avatar` pair runtime。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
 - Svelte WebUI feature code 只能使用 canonical shadcn-svelte multipart composition；`Card.Root/Header/Content`、`Tabs.Root/List/Trigger/Content` 这类显式 slot 是 durable contract，alias-style wrapper 不是。

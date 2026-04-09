@@ -1,67 +1,30 @@
 ## Purpose
 
-Define the unread session notification projection and its WebUI entry points.
+Define the attention-derived unread notification projection and its shell-facing entry points.
+
 ## Requirements
-### Requirement: Session notifications SHALL project unread assistant replies
-The app-server SHALL maintain an ephemeral unread-notification projection for assistant replies that are intended for the user and arrive while that session's Chat view is not visibly consumed. This projection SHALL remain distinct from durable room-local read-state.
 
-#### Scenario: Hidden chat reply creates unread notification
-- **WHEN** a running session emits an assistant message with `channel = to_user` while its Chat view is not visible and focused
-- **THEN** the notification projection records an unread entry for that session and increments its unread count
+### Requirement: Attention-derived notifications SHALL project unread background pushes
+The app-server SHALL derive unread notification surfaces from attention push ingress that targets non-focused contexts.
 
-#### Scenario: Visible chat reply does not create unread notification
-- **WHEN** a running session emits an assistant message with `channel = to_user` while its Chat view is visible and the app window is focused
-- **THEN** the notification projection does not create or increment an unread notification for that message
+#### Scenario: Background push creates unread projection
+- **WHEN** a runtime records a push for a non-focused attention context
+- **THEN** the notification projection records an unread entry derived from that push
+- **AND** the unread count for the owning runtime or shell surface increases accordingly
 
-#### Scenario: Multiple hidden replies preserve the true unread count
-- **WHEN** multiple distinct assistant messages with `channel = to_user` arrive while the session's Chat view is not visibly consumed
-- **THEN** the unread projection retains one unread entry per message
-- **THEN** the session unread count reflects the true number of unread messages rather than a collapsed per-session flag
+#### Scenario: Focused ingress does not create unread projection
+- **WHEN** source activity targets a focused attention context and is recorded as a commit
+- **THEN** the notification projection does not create a background unread entry for that ingress
 
-### Requirement: Session notifications SHALL be consumed by visible chat
-The app-server SHALL clear unread notifications for a session when the client reports that the session's Chat view is visible and has consumed messages up to a specific message id.
+### Requirement: Attention-derived notifications SHALL be consumed by restored focus or explicit quick action
+The system SHALL clear unread notification projections when the corresponding attention push is consumed through focus restoration or an explicit quick action, without deleting the underlying attention history.
 
-#### Scenario: Consume unread notifications for a session
-- **WHEN** the client consumes notifications for a session up to a visible assistant message id
-- **THEN** the session's unread count is reduced to exclude consumed entries and those entries no longer appear in the notification list
+#### Scenario: Restoring focus clears unread projection
+- **WHEN** the user or runtime restores focus to the pushed context and consumes the unread notification
+- **THEN** the shell unread projection for that push is cleared
+- **AND** the underlying attention history remains queryable
 
-#### Scenario: Message-first chat consumes only what became visible
-- **WHEN** the message-first Chat viewport reports the last visible assistant `to_user` message id for a session
-- **THEN** the notification projection consumes unread entries only up to that message
-- **THEN** later unread assistant replies remain pending until they become visible
-
-#### Scenario: Session unread badge and room read-state coexist
-- **WHEN** a room already exposes durable message-level read-state and a hidden assistant reply also creates a session unread notification
-- **THEN** the running-session unread badge is still derived from the ephemeral notification projection
-- **THEN** the room-local read-state remains sourced from message-system instead of being overwritten by the session unread badge
-
-### Requirement: Session notifications SHALL be ephemeral runtime state
-The system SHALL treat session notifications as application runtime state instead of durable session history.
-
-#### Scenario: Notification projection starts empty on restart
-- **WHEN** the app-server process starts without any newly observed unread messages
-- **THEN** the notification snapshot is empty until new unread assistant replies are observed
-
-### Requirement: Session notifications SHALL surface through running-session navigation entry points
-Unread session notifications SHALL be visible on the application's running-session navigation surfaces so users can discover background replies without opening the Workspaces view first.
-
-#### Scenario: Desktop sidebar running-session entry shows unread state
-- **WHEN** a running session has unread assistant replies
-- **THEN** its running-session entry in the desktop application sidebar shows an unread badge or count derived from the notification projection
-
-#### Scenario: Mobile navigation drawer running-session entry shows unread state
-- **WHEN** the mobile navigation drawer is opened and one or more sessions have unread assistant replies
-- **THEN** the corresponding running-session entries show the unread state for those sessions
-
-### Requirement: Session notifications SHALL remain stable across real-session history hydration
-Unread projection behavior SHALL remain correct when the client hydrates a persisted session history after the route opens or after a session is resumed from Quick Start or the running-session rail.
-
-#### Scenario: Hydrating persisted history does not falsely consume unread replies
-- **WHEN** a session route hydrates persisted chat history before the assistant reply boundary has been rendered into view
-- **THEN** unread notifications are not consumed early merely because the route became active
-- **THEN** consumption waits for the visible-chat boundary reported by the viewport
-
-#### Scenario: Resumed session can immediately consume the visible unread reply boundary
-- **WHEN** the user resumes a running session and the Chat viewport renders unread assistant replies into view
-- **THEN** the notification projection consumes only the replies up to that visible boundary
-- **THEN** the running-session unread badge reflects the remaining unread replies, if any
+#### Scenario: Quick action clears projection without full navigation
+- **WHEN** the user executes a quick reply or defer action directly from the notification surface
+- **THEN** the unread projection is updated as consumed for that push
+- **AND** the system is not required to open the full source surface first

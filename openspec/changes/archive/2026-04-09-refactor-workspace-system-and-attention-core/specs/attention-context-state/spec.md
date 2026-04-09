@@ -1,9 +1,4 @@
-# attention-context-state Specification
-
-## Purpose
-TBD - created by archiving change attention-context-commit-kernel-vnext. Update Purpose after archive.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Context owns mutable attention state
 The system MUST model each attention context as mutable state with a stable `contextId`, current content, current score map, `headCommitId`, and durable focus state.
@@ -12,7 +7,7 @@ The system MUST model each attention context as mutable state with a stable `con
 - **WHEN** an `attention_commit` with `change.type = "update"` is applied
 - **THEN** the context content becomes the provided value
 - **AND** the context head advances to the new commit
-- **AND** the context score map is updated using the commit score patch.
+- **AND** the context score map is updated using the commit score patch
 
 #### Scenario: Context focus state changes without rewriting content
 - **WHEN** the system changes an attention context from `focused` to `background`, `muted`, or back again
@@ -20,14 +15,7 @@ The system MUST model each attention context as mutable state with a stable `con
 - **AND** the updated context state records the new focus state as durable attention state
 - **AND** later ingress routing uses that focus state as the canonical focus signal
 
-### Requirement: Commit history is immutable
-The system MUST preserve every attention commit as an immutable history entry linked to its context.
-
-#### Scenario: Commit history remains queryable after head advances
-- **GIVEN** a context with multiple commits
-- **WHEN** the head advances to a newer commit
-- **THEN** older commits remain available in commit history
-- **AND** the context head points only to the latest commit.
+## ADDED Requirements
 
 ### Requirement: Context focus state SHALL be the single source of truth for attention engagement
 The attention system MUST treat context focus state as the canonical engagement signal and SHALL project that state outward to source adapters instead of importing source-local focus as the durable truth.
