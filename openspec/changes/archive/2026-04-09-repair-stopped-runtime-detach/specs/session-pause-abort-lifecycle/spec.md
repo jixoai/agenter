@@ -1,15 +1,12 @@
-# session-pause-abort-lifecycle Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change split-session-stop-abort-lifecycle. Update Purpose after archive.
-## Requirements
 ### Requirement: Sessions SHALL distinguish pause from abort
 The session lifecycle SHALL expose a recoverable `session.stop` operation and a destructive `session.abort` operation as separate intents, but both operations SHALL remove live runtime ownership from the kernel once they complete.
 
 #### Scenario: Stop detaches the runtime and preserves durable recovery state
 - **WHEN** a caller invokes `session.stop` for a running session
 - **THEN** the session status becomes `stopped`
-- **THEN** the current LoopBus/model work is canceled
+- **THEN** the current LoopBus or model work is canceled
 - **THEN** the live runtime is detached from kernel ownership
 - **THEN** a later `session.start` rehydrates from persisted session state instead of resuming the previous in-memory runtime
 
@@ -27,17 +24,3 @@ The session start operation SHALL recreate stopped sessions from persisted state
 - **THEN** the kernel creates a new runtime instance
 - **THEN** that runtime restores durable session facts such as attention state from disk
 - **THEN** the session returns to `running`
-
-### Requirement: Stop and abort SHALL cancel in-flight runtime work
-The session lifecycle SHALL cancel in-flight model and tool work through explicit runtime cancellation semantics when a session is stopped or aborted.
-
-#### Scenario: Stop cancels in-flight work before teardown
-- **WHEN** a caller invokes `session.stop` while the runtime has an active model call or tool execution
-- **THEN** the runtime aborts the in-flight work through its shared cancellation signal
-- **THEN** runtime teardown happens only after that cancellation outcome has been recorded
-- **THEN** later recovery comes from persisted session state rather than from the stopped in-memory runtime
-
-#### Scenario: Abort cancels in-flight work before teardown
-- **WHEN** a caller invokes `session.abort` while the runtime has active work in flight
-- **THEN** the runtime aborts the in-flight work through its shared cancellation signal
-- **THEN** resource teardown happens only after the cancellation outcome has been recorded
