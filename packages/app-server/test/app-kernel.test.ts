@@ -1,3 +1,4 @@
+import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
 import { MessageControlPlane } from "@agenter/message-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -388,29 +389,103 @@ describe("Feature: app kernel event replay", () => {
     expect(snapshot.sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
   });
 
-  test("Scenario: Given a running session When stop resume and abort are requested Then stop keeps runtime ownership while abort tears it down", async () => {
+  test("Scenario: Given a running session When stop resume and abort are requested Then stop detaches runtime ownership and resume creates a fresh runtime", async () => {
     const kernel = createKernel();
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: process.cwd(), name: "pause-abort", autoStart: true });
+    const kernelInternal = kernel as unknown as {
+      runtimes: Map<string, unknown>;
+    };
+    const firstRuntime = kernelInternal.runtimes.get(session.id);
 
     expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("running");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+    expect(firstRuntime).toBeDefined();
 
     const paused = await kernel.stopSession(session.id);
     expect(paused.status).toBe("stopped");
     expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
-    expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+    expect(kernelInternal.runtimes.get(session.id)).toBeUndefined();
 
     const resumed = await kernel.startSession(session.id);
+    const resumedRuntime = kernelInternal.runtimes.get(session.id);
     expect(resumed.status).toBe("running");
     expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("running");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeDefined();
+    expect(resumedRuntime).toBeDefined();
+    expect(resumedRuntime).not.toBe(firstRuntime);
 
     const aborted = await kernel.abortSession(session.id);
     expect(aborted.status).toBe("stopped");
     expect(kernel.getSnapshot().sessions.find((item) => item.id === session.id)?.status).toBe("stopped");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+    expect(kernelInternal.runtimes.get(session.id)).toBeUndefined();
+  });
+
+  test("Scenario: Given a stopped session When a persisted attention push is written Then notification snapshot reads the persisted truth instead of stale runtime state", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "stopped-persisted-notification", autoStart: true });
+    await kernel.stopSession(session.id);
+
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+
+    const sessionMeta = kernel.getSession(session.id);
+    if (sessionMeta?.primaryRoomId == null) {
+      throw new Error("expected persisted session metadata with primary room id");
+    }
+
+    await kernel.setChatVisibility({
+      sessionId: session.id,
+      chatId: sessionMeta.primaryRoomId,
+      visible: true,
+      focused: false,
+    });
+
+    const attentionStore = new AttentionStore(join(sessionMeta.sessionRoot, "attention-system"));
+    const attentionSystem = AttentionSystem.fromSnapshot(await attentionStore.load());
+    const contextId = `ctx-${sessionMeta.primaryRoomId}`;
+    if (!attentionSystem.getContext(contextId)) {
+      attentionSystem.createContext({
+        contextId,
+        owner: sessionMeta.avatar,
+        focusState: "background",
+      });
+    } else {
+      attentionSystem.setContextFocusState(contextId, "background");
+    }
+    attentionSystem.commit(contextId, {
+      ingressType: "push",
+      meta: {
+        author: "assistant",
+        source: "message",
+        systemId: "message",
+        channelId: sessionMeta.primaryRoomId,
+        subjectId: "persisted-1",
+      },
+      scores: { persisted_ping: 100 },
+      summary: "Persisted background ping",
+      change: {
+        type: "update",
+        value: "Persisted background ping",
+      },
+    });
+    await attentionStore.save(attentionSystem.snapshot());
+
+    const unreadSnapshot = await kernel.getNotificationSnapshot();
+    expect(unreadSnapshot.unreadBySession[session.id]).toBe(1);
+    expect(unreadSnapshot.unreadByChat[session.id]?.[sessionMeta.primaryRoomId]).toBe(1);
+    expect(unreadSnapshot.items[0]?.messageId).toBe("persisted-1");
+
+    const consumedSnapshot = await kernel.consumeNotifications({
+      sessionId: session.id,
+      chatId: sessionMeta.primaryRoomId,
+    });
+    expect(consumedSnapshot.unreadBySession[session.id] ?? 0).toBe(0);
+    expect(consumedSnapshot.unreadByChat[session.id]?.[sessionMeta.primaryRoomId]).toBeUndefined();
   });
 
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {

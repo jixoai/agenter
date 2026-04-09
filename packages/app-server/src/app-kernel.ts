@@ -1705,9 +1705,11 @@ export class AppKernel {
   async stopSession(sessionId: string): Promise<SessionMeta> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
-      await runtime.stop();
+      await runtime.abort();
+      this.detachRuntime(sessionId);
     }
     const stopped = this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
+    this.emit("notification.updated", { snapshot: await this.buildNotificationSnapshot() }, sessionId);
     this.emit("session.updated", { session: stopped }, sessionId);
     return stopped;
   }
@@ -1719,6 +1721,7 @@ export class AppKernel {
       this.detachRuntime(sessionId);
     }
     const stopped = this.sessions.update(sessionId, { status: "stopped", lastError: undefined });
+    this.emit("notification.updated", { snapshot: await this.buildNotificationSnapshot() }, sessionId);
     this.emit("session.updated", { session: stopped }, sessionId);
     return stopped;
   }
