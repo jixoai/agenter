@@ -70,6 +70,8 @@ export interface ResolvedSessionConfig {
       metadata?: Record<string, unknown>;
       adminToken?: string;
     };
+    maxFocusedRoomCount: number;
+    maxBatchReadRoomMessageCount: number;
   };
 }
 
@@ -212,7 +214,6 @@ export const resolveSessionConfig = async (
   const prompt = settings.prompt ?? {};
   const avatar = resolveAvatarSources({
     nickname: settings.avatar,
-    projectRoot: cwd,
     homeDir,
   });
   const avatarPromptPaths = resolveAvatarPromptPaths(avatar);
@@ -280,6 +281,8 @@ export const resolveSessionConfig = async (
             adminToken: settings.features.message.chatMainDefaults.adminToken,
           }
         : undefined,
+      maxFocusedRoomCount: settings.features?.message?.maxFocusedRoomCount ?? 3,
+      maxBatchReadRoomMessageCount: settings.features?.message?.maxBatchReadRoomMessageCount ?? 20,
     },
   };
 };

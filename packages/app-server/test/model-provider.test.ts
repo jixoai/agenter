@@ -108,4 +108,50 @@ describe("Feature: canonical model provider routing", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("Scenario: Given an anthropic provider with maxToken configured When responding Then the outbound request forwards max_tokens instead of falling back to the adapter default", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedBody: Record<string, unknown> | null = null;
+    const mockedFetch: typeof fetch = Object.assign(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+        return new Response(JSON.stringify({ error: { type: "invalid_request_error", message: "forced failure" } }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      originalFetch,
+    );
+    globalThis.fetch = mockedFetch;
+
+    try {
+      const client = new ModelClient({
+        providerId: "anthropic-main",
+        apiStandard: "anthropic",
+        vendor: "anthropic",
+        model: "claude-sonnet-4-20250514",
+        apiKey: "sk-test",
+        baseUrl: "https://api.anthropic.com",
+        temperature: 0,
+        maxRetries: 0,
+        maxToken: 4096,
+      });
+
+      await expect(
+        client.respondWithMeta({
+          systemPrompt: "You are helpful.",
+          messages: [],
+          tools: [],
+        }),
+      ).rejects.toBeInstanceOf(ModelDecisionError);
+
+      const body = capturedBody;
+      if (body === null) {
+        throw new Error("expected anthropic request body");
+      }
+      expect(body).toMatchObject({ max_tokens: 4096 });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

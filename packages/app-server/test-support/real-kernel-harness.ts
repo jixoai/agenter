@@ -14,6 +14,7 @@ import {
 
 const DEFAULT_POLL_MS = 250;
 export const REAL_MODEL_PROJECT_ROOT = resolve(import.meta.dir, "../../..");
+const FULL_WORKSPACE_GRANT = [{ relativePath: "/", mode: "rw" }] as const;
 
 const allocatePort = async (): Promise<number> => {
   const server = createNetServer();
@@ -57,11 +58,13 @@ export const waitForRealValue = async <T>(
 
 export interface RealKernelHarness {
   rootDir: string;
+  homeDir: string;
   workspacePath: string;
   kernel: AppKernel;
   config: RealModelConfig;
   proxy: CachedModelProxyHandle | null;
   session: SessionMeta;
+  restartKernel: () => Promise<void>;
   stop: () => Promise<void>;
 }
 
@@ -78,7 +81,9 @@ export const createRealKernelHarness = async (
   }
 
   const rootDir = await mkdtemp(join(tmpdir(), "agenter-real-kernel-"));
+  const homeDir = join(rootDir, "home");
   const workspacePath = join(rootDir, "workspace");
+  await mkdir(homeDir, { recursive: true });
   await mkdir(join(workspacePath, ".agenter"), { recursive: true });
 
   let proxy: CachedModelProxyHandle | null = null;
@@ -110,7 +115,7 @@ export const createRealKernelHarness = async (
           baseUrl: providerBaseUrl,
           temperature: 0,
           maxRetries: 1,
-          maxToken: 8_192,
+          maxToken: 64_000,
           compactThreshold: 0.75,
         },
       },
@@ -118,34 +123,72 @@ export const createRealKernelHarness = async (
   };
   await writeFile(join(workspacePath, ".agenter", "settings.json"), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 
-  const kernel = new AppKernel({
+  const kernelOptions: AppKernelOptions = {
+    homeDir,
     globalSessionRoot: join(rootDir, "sessions"),
     archiveSessionRoot: join(rootDir, "archive", "sessions"),
     workspacesPath: join(rootDir, "workspaces.yaml"),
     logger: input.logger,
-  });
+  };
+  const kernel = new AppKernel(kernelOptions);
 
   try {
     await kernel.start();
     const session = await kernel.createSession({
       cwd: workspacePath,
       name: input.sessionName ?? "real-loopbus",
-      autoStart: true,
+      autoStart: false,
     });
-    return {
+    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    kernel.grantRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath,
+      grants: [...FULL_WORKSPACE_GRANT],
+    });
+    const startedSession = await kernel.startSession(session.id);
+    if (!startedSession.primaryRoomId) {
+      throw new Error(`real harness missing primary room after explicit attach: ${startedSession.id}`);
+    }
+    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)) {
+      throw new Error(`real harness failed to restore attached primary room: ${startedSession.id}`);
+    }
+    if (
+      !kernel
+        .listRuntimeWorkspaceMounts(startedSession.id)
+        .some((mount) => mount.workspacePath === resolve(workspacePath))
+    ) {
+      throw new Error(`real harness missing explicit workspace mount: ${startedSession.id}`);
+    }
+    if (kernel.listTerminals(startedSession.id).length > 0) {
+      throw new Error(`real harness booted with unexpected terminals: ${startedSession.id}`);
+    }
+    const harness: RealKernelHarness = {
       rootDir,
+      homeDir,
       workspacePath,
       kernel,
       config,
       proxy,
-      session,
+      session: startedSession,
+      restartKernel: async () => {
+        await harness.kernel.stop();
+        const nextKernel = new AppKernel(kernelOptions);
+        await nextKernel.start();
+        const restored = nextKernel.getSession(harness.session.id);
+        if (!restored) {
+          throw new Error(`real harness failed to reload session after kernel restart: ${harness.session.id}`);
+        }
+        harness.kernel = nextKernel;
+        harness.session = restored;
+      },
       stop: async () => {
-        await kernel.abortSession(session.id).catch(() => {});
-        await kernel.stop();
+        await harness.kernel.abortSession(harness.session.id).catch(() => {});
+        await harness.kernel.stop();
         await proxy?.stop();
         await rm(rootDir, { recursive: true, force: true });
       },
     };
+    return harness;
   } catch (error) {
     await kernel.stop().catch(() => {});
     await proxy?.stop().catch(() => {});

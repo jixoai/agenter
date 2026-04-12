@@ -1,4 +1,5 @@
 import { createRealKernelHarness } from "../test-support/real-kernel-harness";
+import { readModelOutcomeCode } from "../test-support/real-room-terminal-delivery-scenario";
 import {
   runRealLunchRelayScenario,
   runRealSimpleReplyScenario,
@@ -77,7 +78,7 @@ const main = async (): Promise<void> => {
           id: call.id,
           cycleId: call.cycleId,
           status: call.status,
-          outcome: call.outcome?.code ?? null,
+          outcome: readModelOutcomeCode(call),
         })),
       });
       throw error;

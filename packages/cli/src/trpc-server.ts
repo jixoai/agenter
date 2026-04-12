@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -7,6 +7,7 @@ import { AppKernel, appRouter, createTrpcContext, type AppKernelOptions } from "
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
+import { resolveWebUiEntryDocumentPath } from "./webui-static-root";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -49,7 +50,7 @@ const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, 
 const setCors = (res: ServerResponse): void => {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type,authorization");
+  res.setHeader("access-control-allow-headers", "content-type,authorization,x-agenter-room-access-token");
 };
 
 type RequestInitWithDuplex = RequestInit & { duplex: "half" };
@@ -91,7 +92,8 @@ const decodePathMatch = (pathname: string, pattern: RegExp): string[] | null => 
 const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: string): void => {
   const reqPath = req.url ? new URL(req.url, "http://localhost").pathname : "/";
   const safePath = normalize(reqPath).replace(/^\.\.+/, "");
-  const filePath = safePath === "/" ? join(staticDir, "index.html") : join(staticDir, safePath);
+  const entryDocumentPath = resolveWebUiEntryDocumentPath(staticDir);
+  const filePath = safePath === "/" ? (entryDocumentPath ?? join(staticDir, "index.html")) : join(staticDir, safePath);
   const resolvedPath = resolve(filePath);
   if (!resolvedPath.startsWith(resolve(staticDir))) {
     res.statusCode = 403;
@@ -102,8 +104,7 @@ const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: strin
   let targetPath = resolvedPath;
   if (!existsSync(targetPath)) {
     const fallback200 = join(staticDir, "200.html");
-    const fallbackIndex = join(staticDir, "index.html");
-    targetPath = existsSync(fallback200) ? fallback200 : fallbackIndex;
+    targetPath = existsSync(fallback200) ? fallback200 : (entryDocumentPath ?? join(staticDir, "index.html"));
   }
 
   if (!existsSync(targetPath)) {
@@ -199,11 +200,66 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
+    const roomUploadMatch = decodePathMatch(pathname, /^\/api\/rooms\/([^/]+)\/assets$/);
+    if (req.method === "POST" && roomUploadMatch) {
+      setCors(res);
+      const [chatId] = roomUploadMatch;
+      const accessTokenHeader = req.headers["x-agenter-room-access-token"];
+      const accessToken = Array.isArray(accessTokenHeader) ? accessTokenHeader[0] : accessTokenHeader;
+      void (async () => {
+        try {
+          const request = toWebRequest(req, origin);
+          const form = await request.formData();
+          const files = form.getAll("files").filter(isFileValue);
+          if (files.length === 0) {
+            sendJson(res, 400, { ok: false, error: "asset file is required" });
+            return;
+          }
+          const uploads: FileUpload[] = [];
+          for (const file of files) {
+            uploads.push({
+              name: file.name || "asset",
+              mimeType: file.type || "application/octet-stream",
+              bytes: new Uint8Array(await file.arrayBuffer()),
+            });
+          }
+          const items = await kernel.uploadGlobalRoomAssets({
+            chatId,
+            accessToken: accessToken ?? undefined,
+            files: uploads,
+          });
+          sendJson(res, 200, { ok: true, items });
+        } catch (error) {
+          sendJson(res, 500, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return;
+    }
+
     const mediaMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/assets\/([^/]+)$/);
     if (req.method === "GET" && mediaMatch) {
       setCors(res);
       const [sessionId, assetId] = mediaMatch;
       const media = kernel.getSessionAsset(sessionId, assetId);
+      if (!media) {
+        sendJson(res, 404, { ok: false, error: "asset not found" });
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader("content-type", media.mimeType);
+      res.setHeader("content-length", String(media.sizeBytes));
+      createReadStream(media.filePath).pipe(res);
+      return;
+    }
+
+    const roomMediaMatch = decodePathMatch(pathname, /^\/media\/rooms\/([^/]+)\/assets\/([^/]+)$/);
+    if (req.method === "GET" && roomMediaMatch) {
+      setCors(res);
+      const [chatId, assetId] = roomMediaMatch;
+      const media = kernel.getGlobalRoomAsset(chatId, assetId);
       if (!media) {
         sendJson(res, 404, { ok: false, error: "asset not found" });
         return;
@@ -287,23 +343,4 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       });
     },
   };
-};
-
-export const assertStaticDir = (staticDir: string): void => {
-  const indexPath = join(staticDir, "index.html");
-  if (!existsSync(indexPath)) {
-    throw new Error(
-      `webui assets not found at ${staticDir}. run \`bun run --filter '@agenter/webui' build\` then copy dist to cli assets.`,
-    );
-  }
-};
-
-export const readStaticIndexTitle = (staticDir: string): string | null => {
-  const indexPath = join(staticDir, "index.html");
-  if (!existsSync(indexPath)) {
-    return null;
-  }
-  const html = readFileSync(indexPath, "utf8");
-  const match = html.match(/<title>([^<]+)<\/title>/i);
-  return match ? match[1] : null;
 };

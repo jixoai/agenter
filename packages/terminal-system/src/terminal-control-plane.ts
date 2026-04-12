@@ -112,6 +112,7 @@ const cloneShortcuts = (input?: TerminalShortcutMap): TerminalShortcutMap | unde
 const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile => ({
   command: input?.command ? [...input.command] : undefined,
   cwd: input?.cwd,
+  env: input?.env ? { ...input.env } : undefined,
   cols: input?.cols,
   rows: input?.rows,
   gitLog: input?.gitLog,
@@ -139,6 +140,9 @@ const mergeProfile = (...profiles: Array<TerminalProcessProfile | undefined>): T
     }
     if (profile.cwd !== undefined) {
       merged.cwd = profile.cwd;
+    }
+    if (profile.env) {
+      merged.env = { ...(merged.env ?? {}), ...profile.env };
     }
     if (profile.cols !== undefined) {
       merged.cols = profile.cols;
@@ -1170,6 +1174,7 @@ export class TerminalControlPlane {
       terminalId: record.terminalId,
       command: [...record.command],
       cwd: normalizedCwd,
+      env: record.profile.env,
       cols: record.profile.cols ?? 120,
       rows: record.profile.rows ?? 30,
       gitLog: toManagedGitLogMode(record.profile.gitLog),

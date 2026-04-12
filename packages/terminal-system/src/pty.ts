@@ -12,8 +12,8 @@ export class PtyStartError extends Error {
   }
 }
 
-const createEnv = (color: TerminalColorMode): Record<string, string> => {
-  const env: Record<string, string | undefined> = { ...process.env };
+const createEnv = (color: TerminalColorMode, overrides?: Record<string, string>): Record<string, string> => {
+  const env: Record<string, string | undefined> = { ...process.env, ...(overrides ?? {}) };
   if (!env.PATH || env.PATH.trim().length === 0) {
     env.PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
   }
@@ -83,6 +83,7 @@ export class Pty {
     private rows: number,
     private readonly color: TerminalColorMode,
     private readonly cwd?: string,
+    private readonly env?: Record<string, string>,
   ) {}
 
   setOnData(cb: (chunk: Uint8Array) => void): void {
@@ -97,7 +98,7 @@ export class Pty {
     if (this.proc) return;
 
     try {
-      const env = createEnv(this.color);
+      const env = createEnv(this.color, this.env);
       const command = resolveCommand(this.command, env);
       if (this.cwd && this.cwd.length > 0) {
         mkdirSync(this.cwd, { recursive: true });

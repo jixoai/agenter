@@ -24,7 +24,7 @@ export interface PersistedSession {
 
 export interface SessionDocument<TCall = unknown> {
   session: PersistedSession;
-  calls: TCall[];
+  calls?: TCall[];
 }
 
 export const readSessionDocument = <TCall = unknown>(filePath: string): SessionDocument<TCall> | null => {

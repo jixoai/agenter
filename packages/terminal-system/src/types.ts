@@ -14,6 +14,8 @@ export interface TerminalProfile {
   resumePid?: number;
   /** Optional working directory for spawned process. */
   cwd?: string;
+  /** Optional environment overrides for spawned process. */
+  env?: Record<string, string>;
   /** Enable persistent cursor diagnostics log for experiments. */
   debugCursor?: boolean;
   /** Enable workspace git history logs (`normal` keyframes, `verbose` every write). */

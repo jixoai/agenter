@@ -223,6 +223,10 @@ describe("Feature: message-chat-control-plane", () => {
     expect(reply?.senderActorId).toBe(principalActorId);
     expect(reply?.readActorIds).toContain(principalActorId);
     expect(reply?.readActorIds).not.toContain("session:jane");
+    expect(plane.getActorUnreadState(principalActorId).unreadTotal).toBe(1);
+    expect(plane.getActorUnreadState("session:jane").unreadTotal).toBe(0);
+    expect(plane.listUnreadRoomSummaries(principalActorId).map((summary) => summary.chatId)).toContain(room.chatId);
+    expect(plane.listUnreadRoomSummaries("session:jane")).toHaveLength(0);
   });
 
   test("Scenario: Given initial users on room create When the channel is created Then grants and focus materialize immediately without downgrading the bootstrap admin", () => {
@@ -360,9 +364,9 @@ describe("Feature: message-chat-control-plane", () => {
       content: "member message",
     });
     expect(sent.content).toBe("member message");
-    expect(sent.attentionState).toBe("queued");
     expect(sent.visibleAt).toBe(sent.createdAt);
-    expect(sent.editable).toBe(true);
+    expect(sent.readActorIds).toContain("session:relay");
+    expect(sent.unreadActorIds).toEqual(expect.arrayContaining(["auth:owner", "auth:viewer"]));
 
     const interactive = plane.sendAuthorized({
       chatId: room.chatId,
@@ -413,7 +417,6 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(adminError.kind).toBe("error");
     expect(adminError.payload?.error?.code).toBe("E_RUNTIME");
-    expect(adminError.attentionState).toBe("loaded");
     expect(adminError.visibleAt).toBeDefined();
 
     expect(() =>
@@ -542,57 +545,173 @@ describe("Feature: message-chat-control-plane", () => {
     ).toThrow("message channel access denied");
   });
 
-  test("Scenario: Given a queued room message When it is edited before attention reads it Then the same messageId stays visible in transcript order until it is marked loaded", () => {
+  test("Scenario: Given a user joins after historical room traffic When they explicitly read old history Then frozen unread membership stays intact and read membership can still grow", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const member = plane.issueChannelGrantAuthorized({
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const historical = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "hello before viewer joins",
+    });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "readonly",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+
+    expect(historical.unreadActorIds).not.toContain("auth:viewer");
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
+
+    const read = plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+      messageId: historical.messageId,
+    });
+    const viewerState = read.readStates?.find((state) => state.actorId === "auth:viewer");
+    const refreshed = plane.getMessage(room.chatId, historical.messageId);
+
+    expect(viewerState).toMatchObject({
+      actorId: "auth:viewer",
+      trackedByLatestVisible: true,
+      hasReadLatestVisible: true,
+    });
+    expect(refreshed?.readActorIds).toContain("auth:viewer");
+    expect(refreshed?.unreadActorIds).not.toContain("auth:viewer");
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
+  });
+
+  test("Scenario: Given a runtime waits on actor unread state When unread room work arrives or settles Then unread summaries and wait handles resolve without polling room rows", async () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const viewer = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
       role: "member",
-      label: "User",
-      participantId: "session:user-seat",
+      label: "Viewer",
+      participantId: "auth:viewer",
     });
 
-    const queued = plane.sendAuthorized({
+    const initialUnreadVersion = plane.getUnreadVersion("auth:viewer");
+    const unreadHandle = plane.waitUnreadCommitted({
+      actorId: "auth:viewer",
+      fromVersion: initialUnreadVersion,
+    });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const sent = plane.sendAuthorized({
       chatId: room.chatId,
-      accessToken: member.accessToken,
-      from: "user:kzf",
-      content: "first draft",
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "viewer now has unread work",
     });
-    expect(queued.attentionState).toBe("queued");
-    expect(queued.visibleAt).toBe(queued.createdAt);
-    expect(queued.editable).toBe(true);
 
-    const edited = plane.editAuthorized({
-      chatId: room.chatId,
-      accessToken: member.accessToken,
-      messageId: queued.messageId,
-      content: "edited draft",
+    await expect(unreadHandle.promise).resolves.toMatchObject({
+      actorId: "auth:viewer",
+      version: plane.getUnreadVersion("auth:viewer"),
     });
-    expect(edited.messageId).toBe(queued.messageId);
-    expect(edited.content).toBe("edited draft");
-    expect(edited.attentionState).toBe("queued");
-    expect(edited.visibleAt).toBe(queued.createdAt);
-
-    const loaded = plane.markMessageAttentionLoaded({
-      chatId: room.chatId,
-      messageId: queued.messageId,
-      loadedAt: 1234,
-    });
-    expect(loaded.messageId).toBe(queued.messageId);
-    expect(loaded.attentionState).toBe("loaded");
-    expect(loaded.visibleAt).toBe(queued.createdAt);
-    expect(loaded.attentionLoadedAt).toBe(1234);
-    expect(loaded.editable).toBe(false);
-
-    expect(() =>
-      plane.editAuthorized({
+    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
+      expect.objectContaining({
+        actorId: "auth:viewer",
         chatId: room.chatId,
-        accessToken: member.accessToken,
-        messageId: queued.messageId,
-        content: "too late",
+        unreadCount: 1,
+        latestUnreadRowId: sent.rowId,
       }),
-    ).toThrow("queued message can no longer be edited");
+    ]);
+
+    const settledVersion = plane.getUnreadVersion("auth:viewer");
+    const settledHandle = plane.waitUnreadCommitted({
+      actorId: "auth:viewer",
+      fromVersion: settledVersion,
+    });
+    plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+      messageId: sent.messageId,
+    });
+
+    await expect(settledHandle.promise).resolves.toMatchObject({
+      actorId: "auth:viewer",
+      version: plane.getUnreadVersion("auth:viewer"),
+    });
+    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(0);
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
+  });
+
+  test("Scenario: Given an actor still has an older unread message When that actor sends a newer room message Then the room read floor does not jump across the unread hole", () => {
+    interface MessagePlaneDbProbe {
+      db: {
+        getActorRoomState: (
+          chatId: string,
+          actorId: `auth:${string}` | `session:${string}` | `system:${string}` | `0x${string}`,
+        ) =>
+          | {
+              unreadCount: number;
+              lastReadRowId?: number;
+              latestUnreadRowId?: number;
+            }
+          | undefined;
+      };
+    }
+
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const unread = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "viewer still owes a read",
+    });
+    const outbound = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+      senderActorId: "auth:viewer",
+      from: "viewer",
+      content: "viewer sends before reading",
+    });
+
+    const beforeReadState = (plane as unknown as MessagePlaneDbProbe).db.getActorRoomState(room.chatId, "auth:viewer");
+    expect(beforeReadState).toMatchObject({
+      unreadCount: 1,
+      latestUnreadRowId: unread.rowId,
+    });
+    expect(beforeReadState?.lastReadRowId).toBeUndefined();
+
+    plane.markChannelReadAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+      messageId: unread.messageId,
+    });
+
+    const afterReadState = (plane as unknown as MessagePlaneDbProbe).db.getActorRoomState(room.chatId, "auth:viewer");
+    expect(afterReadState).toMatchObject({
+      unreadCount: 0,
+      lastReadRowId: outbound.rowId,
+      latestUnreadRowId: undefined,
+    });
   });
 
   test("Scenario: Given an ordered admin-group When presence changes Then one current admin owns pending room work and higher priority candidates can preempt", () => {
@@ -918,5 +1037,85 @@ describe("Feature: message-chat-control-plane", () => {
     const plane = new MessageControlPlane({ dbPath });
     expect(plane.listChannels()).toHaveLength(0);
     plane.close();
+  });
+
+  test("Scenario: Given a persisted actor-room unread hole When the control plane reopens Then startup repair recomputes the durable room floor from message truth", () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-message-system-repair-"));
+    const dbPath = join(root, ".message", "message.db");
+    const plane = new MessageControlPlane({ dbPath });
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const viewer = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const unread = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "viewer owes a read",
+    });
+    const outbound = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: viewer.accessToken,
+      senderActorId: "auth:viewer",
+      from: "viewer",
+      content: "viewer self-read outbound",
+    });
+    plane.close();
+
+    const corrupted = new Database(dbPath, { create: true, strict: true });
+    corrupted
+      .query(
+        `update actor_room_state
+         set unread_count = 1,
+             last_read_row_id = ?,
+             last_read_at = ?,
+             latest_unread_row_id = null,
+             latest_unread_at = null
+         where chat_id = ? and actor_id = ?`,
+      )
+      .run(outbound.rowId, outbound.visibleAt ?? outbound.createdAt, room.chatId, "auth:viewer");
+    corrupted.close();
+
+    const repaired = new MessageControlPlane({ dbPath });
+    expect(repaired.listUnreadRoomSummaries("auth:viewer")).toEqual([
+      expect.objectContaining({
+        actorId: "auth:viewer",
+        chatId: room.chatId,
+        unreadCount: 1,
+        latestUnreadRowId: unread.rowId,
+      }),
+    ]);
+    repaired.close();
+
+    const verified = new Database(dbPath, { create: true, strict: true });
+    const repairedRow = verified
+      .query(
+        `select unread_count, last_read_row_id, latest_unread_row_id
+         from actor_room_state
+         where chat_id = ? and actor_id = ?`,
+      )
+      .get(room.chatId, "auth:viewer") as
+      | {
+          unread_count: number;
+          last_read_row_id: number | null;
+          latest_unread_row_id: number | null;
+        }
+      | null;
+    verified.close();
+
+    expect(repairedRow).toEqual({
+      unread_count: 1,
+      last_read_row_id: null,
+      latest_unread_row_id: unread.rowId,
+    });
   });
 });

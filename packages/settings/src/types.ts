@@ -116,6 +116,8 @@ export interface MessageChatMainDefaultsSettings {
 
 export interface MessageFeatureSettings {
   chatMainDefaults?: MessageChatMainDefaultsSettings;
+  maxFocusedRoomCount?: number;
+  maxBatchReadRoomMessageCount?: number;
 }
 
 export interface FeatureSettings {

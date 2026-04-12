@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { defaultAvatarNickname, resolveAvatarLayerSettingsPath } from "@agenter/avatar";
+import { defaultAvatarNickname } from "@agenter/avatar";
 import { toJSONSchema } from "zod";
 
 import {
@@ -321,47 +321,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
   };
   const parsedBuiltinLayers: Partial<Record<BuiltinSettingsSource, AgenterSettings>> = {};
 
-  let activeAvatar = options.avatar?.trim() || settings.avatar || defaultAvatarNickname();
-  const appliedAvatarLayers = new Set<string>();
-
   for (const source of descriptors) {
-    if (source.kind === "builtin" || isLocalPath(source.path)) {
-      const avatarLayerPath = resolveAvatarLayerSettingsPath(source.path, activeAvatar);
-      if (!appliedAvatarLayers.has(avatarLayerPath)) {
-        try {
-          const avatarText = await loader.readText(avatarLayerPath);
-          const avatarLayer = parseJsonText(avatarText);
-          const layer = pushLayer({
-            sourceId: `avatar:${source.id}`,
-            kind: "avatar",
-            path: avatarLayerPath,
-            exists: true,
-            note: `avatar layer for ${source.id}`,
-          });
-          applyMergedLayer(avatarLayer, layer, layer.note);
-          if (avatarOverride && settings.avatar !== avatarOverride) {
-            applyDirectMutation(
-              {
-                ...settings,
-                avatar: avatarOverride,
-              },
-              avatarOverrideLayer ?? layer,
-              "re-apply avatar override after avatar layer merge",
-            );
-          }
-        } catch {
-          pushLayer({
-            sourceId: `avatar:${source.id}`,
-            kind: "avatar",
-            path: avatarLayerPath,
-            exists: false,
-            note: `avatar layer missing for ${source.id}`,
-          });
-        }
-        appliedAvatarLayers.add(avatarLayerPath);
-      }
-    }
-
     try {
       const text = await loader.readText(source.uri, { forSettings: true });
       const layer = parseJsonText(text);
@@ -375,10 +335,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
         parsedBuiltinLayers[source.builtin] = layer;
       }
       applyMergedLayer(layer, graphLayer, `settings layer ${source.id}`);
-      if (!options.avatar && settings.avatar?.trim()) {
-        activeAvatar = settings.avatar.trim();
-      }
-      const nextAvatar = avatarOverride ?? activeAvatar;
+      const nextAvatar = avatarOverride ?? settings.avatar?.trim() ?? defaultAvatarNickname();
       if (nextAvatar && settings.avatar !== nextAvatar) {
         applyDirectMutation(
           {
@@ -413,7 +370,7 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
     }
   }
 
-  const finalAvatar = avatarOverride ?? activeAvatar;
+  const finalAvatar = avatarOverride ?? settings.avatar?.trim() ?? defaultAvatarNickname();
   if (finalAvatar && settings.avatar !== finalAvatar) {
     applyDirectMutation(
       {

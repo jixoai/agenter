@@ -3,7 +3,11 @@ export {
   defaultAvatarNickname,
   normalizeAvatarNickname,
   resolveAvatarIconCandidates,
-  resolveAvatarLayerSettingsPath,
+  resolveGlobalAvatarAliasRoot,
+  resolveGlobalAvatarCanonicalRoot,
+  resolveGlobalAvatarNicknamesRoot,
+  resolveGlobalAvatarRoot,
+  resolveGlobalAvatarsRoot,
   resolveAvatarPromptPaths,
   resolveAvatarSources,
 } from "./avatar";

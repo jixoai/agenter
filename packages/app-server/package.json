@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:skills": "bun run ./scripts/build-runtime-skill-catalog.ts",
     "test": "bun test",
     "test:real": "bun test test/real-loopbus.integration.test.ts",
-    "test:real-room-terminal": "bun test test/real-room-terminal.integration.test.ts",
-    "story:real": "bun run ./scripts/run-real-loopbus-story.ts"
+    "story:real": "bun run ./scripts/run-real-loopbus-story.ts",
+    "verify:workspace-attention": "bun run ./scripts/verify-workspace-attention-harness.ts"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -36,6 +37,7 @@
     "@tanstack/ai-ollama": "^0.6.0",
     "@tanstack/ai-openai": "^0.6.0",
     "@trpc/server": "^11.7.1",
+    "just-bash": "^2.14.0",
     "superjson": "^2.2.2",
     "zod": "^4.0.0"
   },

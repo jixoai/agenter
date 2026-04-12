@@ -1,5 +1,8 @@
 import type { AttentionCommitChange } from "./attention-types";
 
+export type AttentionFocusState = "focused" | "background" | "muted";
+export type AttentionIngressType = "commit" | "push";
+
 export interface AttentionCommitMeta {
   author: string;
   source: string;
@@ -8,14 +11,25 @@ export interface AttentionCommitMeta {
   channelId?: string;
   tags?: string[];
   createdAt?: string;
-  [key: string]: unknown;
 }
+
+export interface AttentionMessageReplyEgress {
+  kind: "message_reply";
+  chatId: string;
+  rootId?: string;
+  from?: string;
+  to?: string;
+}
+
+export type AttentionCommitEgress = AttentionMessageReplyEgress;
 
 export interface AttentionCommit {
   commitId: string;
   contextId: string;
+  ingressType: AttentionIngressType;
   parentCommitIds: string[];
   meta: AttentionCommitMeta;
+  egress?: AttentionCommitEgress;
   scores: Record<string, number>;
   summary: string;
   change: AttentionCommitChange;
@@ -25,9 +39,11 @@ export interface AttentionCommit {
 export interface AttentionContextState {
   contextId: string;
   owner: string;
+  focusState: AttentionFocusState;
   content: string;
   contentFormat?: string;
   scoreMap: Record<string, number>;
+  consumedPushCommitIds: string[];
   headCommitId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -40,8 +56,10 @@ export interface AttentionContextSnapshot extends AttentionContextState {
 }
 
 export interface AttentionCommitInput {
+  ingressType?: AttentionIngressType;
   parentCommitIds?: string[];
   meta?: Partial<AttentionCommitMeta>;
+  egress?: AttentionCommitEgress;
   scores?: Record<string, number>;
   summary: string;
   change: AttentionCommitChange;

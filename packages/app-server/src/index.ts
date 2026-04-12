@@ -151,11 +151,14 @@ export {
   type SemanticJudgeSpan,
 } from "./semantic-judge";
 export {
+  judgeConceptChecklist,
+  judgeContainsAllConcepts,
   hasUrlSignal,
   judgeAvoidsForbiddenMentions,
   judgeContainsUrl,
   judgeMentionsConcept,
   judgeUrlSpan,
+  type SemanticConceptChecklistItem,
 } from "./semantic-judge-helpers";
 export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
 export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";

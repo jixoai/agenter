@@ -7,10 +7,10 @@ import { MessageDb } from "./message-db";
 import type {
   CommitWaitHandle,
   MessageActorId,
+  MessageActorStateRecord,
   MessageAdminWorkItem,
   MessageAppendInput,
   MessageAuthorizedMarkReadInput,
-  MessageAuthorizedEditInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
   MessageAuthorizedWriteInput,
@@ -35,6 +35,7 @@ import type {
   MessageTransportConfig,
   MessageTransportEndpoint,
   MessageTransportServerMessage,
+  MessageUnreadRoomSummary,
   ReversePage,
   ReverseTimeCursor,
 } from "./types";
@@ -42,6 +43,14 @@ import type {
 interface Waiter {
   afterVersion: number;
   resolve: (value: { version: string }) => void;
+  reject: (reason: unknown) => void;
+  active: boolean;
+}
+
+interface UnreadWaiter {
+  actorId: MessageActorId;
+  afterVersion: number;
+  resolve: (value: { actorId: MessageActorId; version: string }) => void;
   reject: (reason: unknown) => void;
   active: boolean;
 }
@@ -214,6 +223,8 @@ export class MessageControlPlane {
   private readonly channelChangeListeners = new Set<(payload: MessageChannelChangePayload) => void>();
   private readonly focusListeners = new Set<(payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void>();
   private readonly waiters = new Set<Waiter>();
+  private readonly unreadWaiters = new Set<UnreadWaiter>();
+  private readonly unreadVersionByActor = new Map<MessageActorId, number>();
   private config: MessageControlPlaneConfig;
   private transportServer: Bun.Server<MessageSocketData> | null = null;
   private headVersion = 0;
@@ -234,6 +245,7 @@ export class MessageControlPlane {
   close(): void {
     this.stopTransport();
     this.trustedBootstrapTokens.clear();
+    this.unreadVersionByActor.clear();
     this.db.close();
   }
 
@@ -255,9 +267,14 @@ export class MessageControlPlane {
   setActorPresence(actorId: MessageActorId, input: { online: boolean; ttlMs?: number } | boolean): void {
     this.assertActorId(actorId);
     const online = typeof input === "boolean" ? input : input.online;
+    const now = Date.now();
     const current = this.actorPresence.get(actorId);
     if (!online) {
       this.actorPresence.delete(actorId);
+      this.db.touchActorState(actorId, {
+        lastActiveAt: now,
+        online: false,
+      });
       this.syncAdminAssignments();
       if (current) {
         this.emitPresenceChanged(actorId);
@@ -267,8 +284,13 @@ export class MessageControlPlane {
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
     this.actorPresence.set(actorId, {
       online: true,
-      expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : null,
+      expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? now + ttlMs : null,
       invalidCredential: current?.invalidCredential ?? false,
+    });
+    this.db.touchActorState(actorId, {
+      lastActiveAt: now,
+      lastLoginAt: current?.online ? undefined : now,
+      online: true,
     });
     this.syncAdminAssignments();
     if (!current?.online) {
@@ -525,7 +547,6 @@ export class MessageControlPlane {
 
   send(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
-    const attentionState = input.attentionState ?? "loaded";
     const visibleAt = input.visibleAt ?? createdAt;
     const from =
       input.from?.trim() ||
@@ -541,13 +562,12 @@ export class MessageControlPlane {
       ...input,
       from,
       createdAt,
-      attentionState,
       visibleAt,
-      attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
       readActorIds: readMembership.readActorIds,
       unreadActorIds: readMembership.unreadActorIds,
     });
     this.bumpVersion();
+    this.bumpUnreadVersions(readMembership.readActorIds, readMembership.unreadActorIds);
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
@@ -582,7 +602,6 @@ export class MessageControlPlane {
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
     const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     const createdAt = input.createdAt ?? Date.now();
-    const attentionState = input.attentionState ?? (input.kind && input.kind !== "text" ? "loaded" : "queued");
     const visibleAt = input.visibleAt ?? createdAt;
     return this.send({
       chatId: input.chatId,
@@ -595,44 +614,13 @@ export class MessageControlPlane {
       content: input.content,
       createdAt,
       updatedAt: input.updatedAt ?? createdAt,
-      attentionState,
       visibleAt,
-      attentionLoadedAt: input.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt : undefined),
       readActorIds: readMembership.readActorIds,
       unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
       attachments: input.attachments,
       payload: input.payload,
     });
-  }
-
-  editAuthorized(input: MessageAuthorizedEditInput): MessageRecord {
-    this.requireAccess(input.chatId, input.accessToken, "member");
-    const message = this.db.editQueuedMessage(input);
-    this.bumpVersion();
-    for (const listener of this.messageListeners) {
-      listener({ chatId: input.chatId, message });
-    }
-    this.emitChannelChanged({
-      chatId: input.chatId,
-      reason: "message",
-      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
-    });
-    return message;
-  }
-
-  markMessageAttentionLoaded(input: { chatId: string; messageId: string; loadedAt?: number }): MessageRecord {
-    const message = this.db.markMessageAttentionLoaded(input);
-    this.bumpVersion();
-    for (const listener of this.messageListeners) {
-      listener({ chatId: input.chatId, message });
-    }
-    this.emitChannelChanged({
-      chatId: input.chatId,
-      reason: "message",
-      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
-    });
-    return message;
   }
 
   sendErrorAuthorized(
@@ -656,9 +644,7 @@ export class MessageControlPlane {
       content: input.content,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
-      attentionState: "loaded",
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
-      attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
       readActorIds: readMembership.readActorIds,
       unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
@@ -690,9 +676,7 @@ export class MessageControlPlane {
       content: input.content,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
-      attentionState: "loaded",
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
-      attentionLoadedAt: input.attentionLoadedAt ?? input.createdAt ?? Date.now(),
       readActorIds: readMembership.readActorIds,
       unreadActorIds: readMembership.unreadActorIds,
       metadata: input.metadata,
@@ -770,6 +754,7 @@ export class MessageControlPlane {
     });
     if (result.changed) {
       this.bumpVersion();
+      this.bumpUnreadVersion(grant.participantId as MessageActorId);
       this.emitChannelChanged({
         chatId: input.chatId,
         reason: "read",
@@ -903,6 +888,7 @@ export class MessageControlPlane {
 
     const grantsChanged = this.repairActiveGrantsForActorAliases(input.chatId, actorIdMap);
     const messagesChanged = this.db.repairMessageActorIds(input.chatId, actorIdMap).changed;
+    const roomStateChanged = this.db.repairActorRoomStateAliases(input.chatId, actorIdMap).changed;
     const nextParticipants = this.repairChannelParticipants(channel.participants, actorIdMap);
     const nextMetadata = this.withAdminState(input.chatId, this.repairChannelMetadata(channel.metadata, actorIdMap));
     const participantsChanged =
@@ -922,7 +908,7 @@ export class MessageControlPlane {
         focused,
       );
     }
-    if (grantsChanged || messagesChanged || participantsChanged || metadataChanged) {
+    if (grantsChanged || messagesChanged || roomStateChanged || participantsChanged || metadataChanged) {
       this.bumpVersion();
       this.emitChannelChanged({
         chatId: input.chatId,
@@ -982,6 +968,11 @@ export class MessageControlPlane {
     superadminActorId?: MessageActorId;
   }): MessageControlPlaneEntry {
     const grant = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const affectedActorIds = this.db
+      .listActiveGrants(input.chatId)
+      .flatMap((activeGrant) =>
+        activeGrant.participantId && isCanonicalActorId(activeGrant.participantId) ? [activeGrant.participantId as MessageActorId] : [],
+      );
     const channel = this.db.deleteChannel(
       input.chatId,
       grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
@@ -990,6 +981,7 @@ export class MessageControlPlane {
       focused.delete(input.chatId);
     }
     this.bumpVersion();
+    this.bumpUnreadVersions(affectedActorIds);
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "deleted",
@@ -1030,6 +1022,7 @@ export class MessageControlPlane {
       accessToken,
       tokenHash: hashToken(accessToken),
     });
+    this.db.initializeActorRoomState(input.chatId, input.participantId as MessageActorId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
@@ -1050,8 +1043,20 @@ export class MessageControlPlane {
 
   revokeChannelGrantAuthorized(input: MessageAuthorizedReadInput & { grantId: string; superadminActorId?: MessageActorId }): { ok: boolean } {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const revokedGrant = this.db.getGrantById(input.chatId, input.grantId);
     const ok = this.db.revokeGrant(input.chatId, input.grantId);
     if (ok) {
+      if (revokedGrant?.participantId && isCanonicalActorId(revokedGrant.participantId)) {
+        const stillGranted = this.db
+          .listActiveGrants(input.chatId)
+          .some((grant) => grant.participantId === revokedGrant.participantId && grant.grantId !== input.grantId);
+        if (!stillGranted) {
+          const cleared = this.db.clearActorRoomState(input.chatId, revokedGrant.participantId as MessageActorId);
+          if (cleared.changed) {
+            this.bumpUnreadVersion(revokedGrant.participantId as MessageActorId);
+          }
+        }
+      }
       this.bumpVersion();
       this.emitChannelChanged({
         chatId: input.chatId,
@@ -1064,6 +1069,67 @@ export class MessageControlPlane {
 
   getHeadVersion(): string {
     return String(this.headVersion);
+  }
+
+  getActorUnreadState(actorId: MessageActorId): MessageActorStateRecord {
+    this.assertActorId(actorId);
+    return this.db.getActorState(actorId) ?? this.db.touchActorState(actorId);
+  }
+
+  listUnreadRoomSummaries(actorId: MessageActorId, input: { limit?: number } = {}): MessageUnreadRoomSummary[] {
+    this.assertActorId(actorId);
+    return this.db.listUnreadRoomSummaries(actorId, input.limit);
+  }
+
+  getUnreadVersion(actorId: MessageActorId): string {
+    return String(this.unreadVersionByActor.get(actorId) ?? 0);
+  }
+
+  waitUnreadCommitted(input: {
+    actorId: MessageActorId;
+    fromVersion?: string | null;
+  }): CommitWaitHandle<{ actorId: MessageActorId; version: string }> {
+    this.assertActorId(input.actorId);
+    const afterVersion = parseVersion(input.fromVersion);
+    const currentVersion = this.unreadVersionByActor.get(input.actorId) ?? 0;
+    if (currentVersion > afterVersion) {
+      return {
+        promise: Promise.resolve({
+          actorId: input.actorId,
+          version: this.getUnreadVersion(input.actorId),
+        }),
+        reject: () => {},
+      };
+    }
+
+    let resolveRef: ((value: { actorId: MessageActorId; version: string }) => void) | null = null;
+    let rejectRef: ((reason: unknown) => void) | null = null;
+    const waiter: UnreadWaiter = {
+      actorId: input.actorId,
+      afterVersion,
+      resolve: (value) => resolveRef?.(value),
+      reject: (reason) => rejectRef?.(reason),
+      active: true,
+    };
+    const promise = new Promise<{ actorId: MessageActorId; version: string }>((resolve, reject) => {
+      resolveRef = resolve;
+      rejectRef = reject;
+    }).finally(() => {
+      waiter.active = false;
+      this.unreadWaiters.delete(waiter);
+    });
+    this.unreadWaiters.add(waiter);
+    return {
+      promise,
+      reject: (reason) => {
+        if (!waiter.active) {
+          return;
+        }
+        waiter.active = false;
+        this.unreadWaiters.delete(waiter);
+        rejectRef?.(reason);
+      },
+    };
   }
 
   waitCommitted(input: { fromVersion?: string | null } = {}): CommitWaitHandle<{ version: string }> {
@@ -1237,15 +1303,6 @@ export class MessageControlPlane {
               this.sendAuthorized({ chatId, accessToken, ...message.message });
               return;
             }
-            if (message.type === "edit") {
-              this.editAuthorized({
-                chatId,
-                accessToken,
-                messageId: message.messageId,
-                content: message.content,
-              });
-              return;
-            }
             if (message.type === "page") {
               socket.send(
                 JSON.stringify({
@@ -1344,6 +1401,10 @@ export class MessageControlPlane {
       label: TRUSTED_BOOTSTRAP_LABEL,
       participantId: TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
     };
+  }
+
+  private isTrustedBootstrapActor(actorId: MessageActorId): boolean {
+    return actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID;
   }
 
   private isTrustedBootstrapGrant(grant: Pick<MessageChannelGrantRecord, "role" | "label" | "participantId">): boolean {
@@ -1701,11 +1762,17 @@ export class MessageControlPlane {
   }
 
   private touchActorPresence(actorId: MessageActorId): void {
+    const now = Date.now();
     const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
-      expiresAt: actorId.startsWith("auth:") ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
+      expiresAt: actorId.startsWith("auth:") ? now + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
       invalidCredential: current?.invalidCredential ?? false,
+    });
+    this.db.touchActorState(actorId, {
+      lastActiveAt: now,
+      lastLoginAt: current?.online ? undefined : now,
+      online: true,
     });
     this.syncAdminAssignments();
     if (!current?.online) {
@@ -1720,6 +1787,9 @@ export class MessageControlPlane {
     preferredToken?: string,
   ): MessageChannelAccessProjection {
     this.assertActorId(actorId);
+    if (!this.isTrustedBootstrapActor(actorId)) {
+      this.db.initializeActorRoomState(chatId, actorId);
+    }
     const existing = this.db.findReusableGrant({ chatId, role, participantId: actorId });
     if (existing?.accessToken) {
       return this.createProjection({
@@ -1893,6 +1963,36 @@ export class MessageControlPlane {
           builtIn: channel.builtIn,
         });
       }
+    }
+  }
+
+  private bumpUnreadVersions(...actorGroups: ReadonlyArray<readonly MessageActorId[]>): void {
+    const uniqueActorIds = new Set<MessageActorId>();
+    for (const actorIds of actorGroups) {
+      for (const actorId of actorIds) {
+        if (isCanonicalActorId(actorId) && !this.isTrustedBootstrapActor(actorId)) {
+          uniqueActorIds.add(actorId);
+        }
+      }
+    }
+    for (const actorId of uniqueActorIds) {
+      this.bumpUnreadVersion(actorId);
+    }
+  }
+
+  private bumpUnreadVersion(actorId: MessageActorId): void {
+    const nextVersion = (this.unreadVersionByActor.get(actorId) ?? 0) + 1;
+    this.unreadVersionByActor.set(actorId, nextVersion);
+    for (const waiter of [...this.unreadWaiters]) {
+      if (!waiter.active || waiter.actorId !== actorId || nextVersion <= waiter.afterVersion) {
+        continue;
+      }
+      waiter.active = false;
+      this.unreadWaiters.delete(waiter);
+      waiter.resolve({
+        actorId,
+        version: String(nextVersion),
+      });
     }
   }
 

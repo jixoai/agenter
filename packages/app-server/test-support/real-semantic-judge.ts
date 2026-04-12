@@ -7,6 +7,8 @@ import { ModelClient, resolveApiEnvHint, type ModelProviderConfig } from "../src
 import { createSemanticJudge, type SemanticJudge } from "../src/semantic-judge";
 
 export const REAL_SEMANTIC_JUDGE_PROVIDER_ID = "jixoai/agenter/test";
+const REAL_SEMANTIC_JUDGE_DEFAULT_ATTEMPTS = 3;
+const REAL_SEMANTIC_JUDGE_DEFAULT_MIN_AGREEMENT = 2;
 
 export interface RealSemanticJudgeAvailability {
   available: boolean;
@@ -113,7 +115,10 @@ export const createRealSemanticJudge = async (input: {
     };
   }
   return {
-    judge: createSemanticJudge(new ModelClient(availability.config)),
+    judge: createSemanticJudge(new ModelClient(availability.config), {
+      attempts: REAL_SEMANTIC_JUDGE_DEFAULT_ATTEMPTS,
+      minAgreement: REAL_SEMANTIC_JUDGE_DEFAULT_MIN_AGREEMENT,
+    }),
     availability,
   };
 };

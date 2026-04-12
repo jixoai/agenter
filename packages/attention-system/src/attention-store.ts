@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { AttentionCommit, AttentionContextSnapshot } from "./attention-item";
+import type { AttentionCommit, AttentionCommitEgress, AttentionContextSnapshot } from "./attention-item";
 import { buildAttentionContextStateFromCommits } from "./attention-context";
 import type { AttentionCommitChange, AttentionSystemSnapshot, LegacyAttentionSnapshot } from "./attention-types";
 
@@ -58,7 +58,24 @@ interface PersistedV4 {
   contexts: AttentionContextSnapshot[];
 }
 
-type PersistedAny = PersistedV2 | PersistedV3 | PersistedV4 | LegacyAttentionSnapshot | Record<string, unknown>;
+interface PersistedV5 {
+  version: 5;
+  contexts: AttentionContextSnapshot[];
+}
+
+interface PersistedV6 {
+  version: 6;
+  contexts: AttentionContextSnapshot[];
+}
+
+type PersistedAny =
+  | PersistedV2
+  | PersistedV3
+  | PersistedV4
+  | PersistedV5
+  | PersistedV6
+  | LegacyAttentionSnapshot
+  | Record<string, unknown>;
 
 const DEFAULT_SNAPSHOT: AttentionSystemSnapshot = { contexts: [] };
 
@@ -72,17 +89,63 @@ const normalizeTimestamp = (value?: string): string => {
 
 const cloneChange = (change: AttentionCommitChange): AttentionCommitChange => ({ ...change });
 
+const asUnknownRecord = (value: unknown): Record<string, unknown> => (value ?? {}) as Record<string, unknown>;
+
+const sanitizeCommitMeta = (meta: Record<string, unknown>): AttentionCommit["meta"] => ({
+  author: typeof meta.author === "string" ? meta.author : "unknown",
+  source: typeof meta.source === "string" ? meta.source : "unknown",
+  systemId: typeof meta.systemId === "string" ? meta.systemId : undefined,
+  subjectId: typeof meta.subjectId === "string" ? meta.subjectId : undefined,
+  channelId: typeof meta.channelId === "string" ? meta.channelId : undefined,
+  tags: Array.isArray(meta.tags) ? meta.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+  createdAt: typeof meta.createdAt === "string" ? meta.createdAt : undefined,
+});
+
+const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommitEgress | undefined =>
+  egress ? { ...egress } : undefined;
+
+const readLegacyReplyTarget = (value: unknown): AttentionCommitEgress | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const input = value as Record<string, unknown>;
+  const chatId =
+    typeof input.chatId === "string"
+      ? input.chatId
+      : typeof input.channelId === "string"
+        ? input.channelId
+        : typeof input.subjectId === "string"
+          ? input.subjectId
+          : undefined;
+  if (!chatId) {
+    return undefined;
+  }
+  return {
+    kind: "message_reply",
+    chatId,
+    rootId: typeof input.rootId === "string" ? input.rootId : undefined,
+    from: typeof input.from === "string" ? input.from : undefined,
+    to: typeof input.to === "string" ? input.to : undefined,
+  };
+};
+
 const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
     ...context,
     scoreMap: { ...context.scoreMap },
-    commits: context.commits.map((commit) => ({
-      ...commit,
-      parentCommitIds: [...commit.parentCommitIds],
-      meta: { ...commit.meta, tags: Array.isArray(commit.meta.tags) ? [...commit.meta.tags] : undefined },
-      scores: { ...commit.scores },
-      change: cloneChange(commit.change),
-    })),
+    commits: context.commits.map((commit) => {
+      const metaRecord = asUnknownRecord(commit.meta);
+      return {
+        ...commit,
+        ingressType: commit.ingressType,
+        parentCommitIds: [...commit.parentCommitIds],
+        meta: sanitizeCommitMeta(metaRecord),
+        egress: cloneEgress(commit.egress ?? readLegacyReplyTarget(metaRecord.replyTarget)),
+        scores: { ...commit.scores },
+        change: cloneChange(commit.change),
+      };
+    }),
+    consumedPushCommitIds: [...context.consumedPushCommitIds],
   })),
 });
 
@@ -90,24 +153,27 @@ const toContextSnapshot = (input: { contextId: string; owner: string; commits: A
   ...buildAttentionContextStateFromCommits(input),
   commits: input.commits.map((commit) => ({
     ...commit,
+    ingressType: commit.ingressType,
     parentCommitIds: [...commit.parentCommitIds],
-    meta: { ...commit.meta, tags: Array.isArray(commit.meta.tags) ? [...commit.meta.tags] : undefined },
+    meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
+    egress: cloneEgress(commit.egress),
     scores: { ...commit.scores },
     change: cloneChange(commit.change),
   })),
 });
 
 const migrateV1ToV4 = (legacy: LegacyAttentionSnapshot): AttentionSystemSnapshot => {
-  const commits: AttentionCommit[] = legacy.records.map((record) => ({
-    commitId: `legacy-${record.id}`,
-    contextId: "default",
-    parentCommitIds: [],
-    meta: {
-      author: record.from,
-      source: "legacy-v1",
-      createdAt: normalizeTimestamp(record.createdAt),
-    },
-    scores: { [`legacy-${record.id}`]: record.score },
+    const commits: AttentionCommit[] = legacy.records.map((record) => ({
+      commitId: `legacy-${record.id}`,
+      contextId: "default",
+      ingressType: "commit",
+      parentCommitIds: [],
+      meta: {
+        author: record.from,
+        source: "legacy-v1",
+        createdAt: normalizeTimestamp(record.createdAt),
+      },
+      scores: { [`legacy-${record.id}`]: record.score },
     summary: record.content,
     change: record.remark
       ? { type: "update", value: record.remark, format: "text/plain" }
@@ -124,6 +190,7 @@ const migrateV2ToV4 = (snapshot: PersistedV2): AttentionSystemSnapshot => ({
     const commits: AttentionCommit[] = context.items.map((item) => ({
       commitId: item.id,
       contextId: context.id,
+      ingressType: "commit",
       parentCommitIds: [],
       meta: {
         author: item.meta.from,
@@ -149,6 +216,7 @@ const migrateV3ToV4 = (snapshot: PersistedV3): AttentionSystemSnapshot => ({
     const commits: AttentionCommit[] = context.items.map((item) => ({
       commitId: item.id,
       contextId: context.id,
+      ingressType: "commit",
       parentCommitIds: [...item.parentIds],
       meta: {
         author: typeof item.meta.author === "string" ? item.meta.author : "legacy-v3",
@@ -157,8 +225,8 @@ const migrateV3ToV4 = (snapshot: PersistedV3): AttentionSystemSnapshot => ({
         subjectId: typeof item.meta.subjectId === "string" ? item.meta.subjectId : undefined,
         channelId: typeof item.meta.channelId === "string" ? item.meta.channelId : undefined,
         createdAt: normalizeTimestamp(item.createdAt),
-        ...item.meta,
       },
+      egress: readLegacyReplyTarget(item.meta.replyTarget),
       scores: { ...item.scores },
       summary: item.title,
       change: item.detail
@@ -184,6 +252,32 @@ const isV3 = (parsed: PersistedAny): parsed is PersistedV3 =>
 const isV4 = (parsed: PersistedAny): parsed is PersistedV4 =>
   typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 4 && "contexts" in parsed;
 
+const isV5 = (parsed: PersistedAny): parsed is PersistedV5 =>
+  typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 5 && "contexts" in parsed;
+
+const isV6 = (parsed: PersistedAny): parsed is PersistedV6 =>
+  typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 6 && "contexts" in parsed;
+
+const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
+  contexts: snapshot.contexts.map((context) => ({
+    ...context,
+    focusState: context.focusState ?? "focused",
+    consumedPushCommitIds: [...(context.consumedPushCommitIds ?? [])],
+    commits: context.commits.map((commit) => ({
+      ...commit,
+      ingressType: commit.ingressType ?? "commit",
+      parentCommitIds: [...commit.parentCommitIds],
+      meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
+      egress: cloneEgress(
+        commit.egress ??
+          readLegacyReplyTarget(asUnknownRecord(commit.meta).replyTarget),
+      ),
+      scores: { ...commit.scores },
+      change: cloneChange(commit.change),
+    })),
+  })),
+});
+
 export class AttentionStore {
   private writeQueue = Promise.resolve();
 
@@ -196,8 +290,14 @@ export class AttentionStore {
   async load(): Promise<AttentionSystemSnapshot> {
     try {
       const parsed = JSON.parse(await readFile(this.getStatePath(), "utf8")) as PersistedAny;
-      if (isV4(parsed)) {
+      if (isV6(parsed)) {
         return cloneSnapshot({ contexts: parsed.contexts });
+      }
+      if (isV5(parsed)) {
+        return cloneSnapshot({ contexts: parsed.contexts });
+      }
+      if (isV4(parsed)) {
+        return migrateV4ToV5(parsed);
       }
       if (isV3(parsed)) {
         return migrateV3ToV4(parsed);
@@ -215,7 +315,7 @@ export class AttentionStore {
   }
 
   async save(snapshot: AttentionSystemSnapshot): Promise<void> {
-    const payload = JSON.stringify({ version: 4, contexts: snapshot.contexts } satisfies PersistedV4, null, 2);
+    const payload = JSON.stringify({ version: 6, contexts: snapshot.contexts } satisfies PersistedV6, null, 2);
     this.writeQueue = this.writeQueue.then(async () => {
       await mkdir(this.rootDir, { recursive: true });
       const statePath = this.getStatePath();

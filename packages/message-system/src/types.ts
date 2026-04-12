@@ -47,12 +47,6 @@ export interface MessageAdminWorkItem {
 }
 
 export type MessageKind = "text" | "error" | "interactive";
-/**
- * `queued` means the message still owes AI-side attention or automation work.
- * It does not mean the room transcript should hide the message from humans.
- */
-export type MessageAttentionState = "queued" | "loaded";
-
 export type MessageAttachmentKind = "image" | "video" | "file";
 
 export interface MessageAttachment {
@@ -154,6 +148,28 @@ export interface MessageChannelGrantRecord {
   revokedAt?: number;
 }
 
+export interface MessageActorStateRecord {
+  actorId: MessageActorId;
+  unreadTotal: number;
+  lastActiveAt?: number;
+  lastLoginAt?: number;
+  online: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageActorRoomStateRecord {
+  actorId: MessageActorId;
+  chatId: string;
+  unreadCount: number;
+  lastReadRowId?: number;
+  lastReadAt?: number;
+  latestUnreadRowId?: number;
+  latestUnreadAt?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageUnreadRoomSummary extends MessageActorRoomStateRecord {}
+
 export interface MessageRecord {
   rowId: number;
   messageId: string;
@@ -167,9 +183,6 @@ export interface MessageRecord {
   createdAt: number;
   updatedAt: number;
   visibleAt?: number;
-  attentionState: MessageAttentionState;
-  attentionLoadedAt?: number;
-  editable: boolean;
   readActorIds: MessageActorId[];
   unreadActorIds: MessageActorId[];
   metadata?: Record<string, unknown>;
@@ -242,19 +255,8 @@ export interface MessageAppendInput {
   createdAt?: number;
   updatedAt?: number;
   visibleAt?: number;
-  attentionState?: MessageAttentionState;
-  attentionLoadedAt?: number;
   readActorIds?: MessageActorId[];
   unreadActorIds?: MessageActorId[];
-  metadata?: Record<string, unknown>;
-  attachments?: MessageAttachment[];
-  payload?: MessagePayload;
-}
-
-export interface MessageEditInput {
-  chatId: string;
-  messageId: string;
-  content: string;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -266,10 +268,6 @@ export interface MessageAuthorizedReadInput {
 }
 
 export interface MessageAuthorizedWriteInput extends MessageAppendInput {
-  accessToken: string;
-}
-
-export interface MessageAuthorizedEditInput extends MessageEditInput {
   accessToken: string;
 }
 
@@ -305,11 +303,6 @@ export type MessageTransportClientMessage =
   | {
       type: "send";
       message: Omit<MessageAppendInput, "chatId">;
-    }
-  | {
-      type: "edit";
-      messageId: string;
-      content: string;
     }
   | {
       type: "page";

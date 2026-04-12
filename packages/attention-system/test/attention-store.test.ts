@@ -72,7 +72,7 @@ describe("Feature: attention store persistence", () => {
     );
   });
 
-  test("Scenario: Given a V4 snapshot When saved and reloaded Then parent commit ids and reply targets survive", async () => {
+  test("Scenario: Given a V4 snapshot When saved and reloaded Then parent commit ids and typed egress survive", async () => {
     const root = mkdtempSync(join(tmpdir(), "attn-store-v4-"));
     const store = new AttentionStore(root);
     await store.save({
@@ -80,8 +80,10 @@ describe("Feature: attention store persistence", () => {
         {
           contextId: "ctx-1",
           owner: "jane",
+          focusState: "background",
           content: "fried rice",
           scoreMap: { hash1: 0 },
+          consumedPushCommitIds: ["commit-1"],
           headCommitId: "commit-1",
           createdAt: "2026-03-23T00:00:00.000Z",
           updatedAt: "2026-03-23T00:00:00.000Z",
@@ -89,12 +91,13 @@ describe("Feature: attention store persistence", () => {
             {
               commitId: "commit-1",
               contextId: "ctx-1",
+              ingressType: "push",
               parentCommitIds: ["root-1"],
               meta: {
                 author: "avatar:jane",
                 source: "attention",
-                replyTarget: { systemId: "message", subjectId: "chat-kzf" },
               },
+              egress: { kind: "message_reply", chatId: "chat-kzf" },
               scores: { hash1: 0 },
               summary: "reply",
               change: { type: "update", value: "fried rice" },
@@ -107,6 +110,9 @@ describe("Feature: attention store persistence", () => {
 
     const reloaded = await store.load();
     expect(reloaded.contexts[0]?.commits[0]?.parentCommitIds).toEqual(["root-1"]);
-    expect(reloaded.contexts[0]?.commits[0]?.meta.replyTarget).toEqual({ systemId: "message", subjectId: "chat-kzf" });
+    expect(reloaded.contexts[0]?.commits[0]?.egress).toEqual({ kind: "message_reply", chatId: "chat-kzf" });
+    expect(reloaded.contexts[0]?.focusState).toBe("background");
+    expect(reloaded.contexts[0]?.consumedPushCommitIds).toEqual(["commit-1"]);
+    expect(reloaded.contexts[0]?.commits[0]?.ingressType).toBe("push");
   });
 });

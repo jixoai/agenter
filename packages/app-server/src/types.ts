@@ -1,10 +1,5 @@
-import type {
-  SessionAssetKind,
-  SessionBlockToolMeta,
-  SessionBlockToolPayload,
-  ToolInvocationStatus,
-} from "@agenter/session-system";
-import type { MessageActorId, MessageAttentionState, MessageKind, MessagePayload } from "@agenter/message-system";
+import type { SessionAssetKind } from "@agenter/session-system";
+import type { MessageActorId, MessageKind, MessagePayload } from "@agenter/message-system";
 
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
@@ -40,9 +35,23 @@ export interface ModelCapabilities {
   mcpCatalog: boolean;
 }
 
-export type ChatToolInvocationStatus = ToolInvocationStatus;
-export type ChatToolInvocationPayload = SessionBlockToolPayload;
-export type ChatToolInvocation = SessionBlockToolMeta;
+export type ChatToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
+
+export interface ChatToolInvocationPayload {
+  value: unknown;
+  rawText?: string;
+}
+
+export interface ChatToolInvocation {
+  invocationId: string;
+  name: string;
+  status: ChatToolInvocationStatus;
+  startedAt: number;
+  finishedAt?: number;
+  call?: ChatToolInvocationPayload;
+  result?: ChatToolInvocationPayload;
+  error?: string;
+}
 
 export interface ChatMessage {
   id: string;
@@ -54,9 +63,6 @@ export interface ChatMessage {
   timestamp: number;
   updatedAt?: number;
   visibleAt?: number;
-  attentionState?: MessageAttentionState;
-  attentionLoadedAt?: number;
-  editable?: boolean;
   cycleId?: number | null;
   channel?: "to_user" | "self_talk" | "tool";
   format?: "plain" | "markdown";

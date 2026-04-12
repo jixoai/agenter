@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -17,6 +17,32 @@ export const normalizeAvatarNickname = (value: string): string => sanitizeNickna
 export const defaultAvatarNickname = (): string => {
   return "default";
 };
+
+const resolveAliasTargetOrSelf = (path: string): string => {
+  if (!existsSync(path)) {
+    return path;
+  }
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+export const resolveGlobalAvatarsRoot = (homeDir = homedir()): string =>
+  join(homeDir, ".agenter", "avatars", "by-principal");
+
+export const resolveGlobalAvatarNicknamesRoot = (homeDir = homedir()): string =>
+  join(homeDir, ".agenter", "avatars", "by-nickname");
+
+export const resolveGlobalAvatarCanonicalRoot = (principalId: string, homeDir = homedir()): string =>
+  join(resolveGlobalAvatarsRoot(homeDir), principalId.trim().toLowerCase());
+
+export const resolveGlobalAvatarAliasRoot = (nickname: string, homeDir = homedir()): string =>
+  join(resolveGlobalAvatarNicknamesRoot(homeDir), sanitizeNickname(nickname));
+
+export const resolveGlobalAvatarRoot = (nickname: string, homeDir = homedir()): string =>
+  resolveAliasTargetOrSelf(resolveGlobalAvatarAliasRoot(nickname, homeDir));
 
 const dedupeSources = (sources: AvatarSource[]): AvatarSource[] => {
   const map = new Map<string, AvatarSource>();
@@ -37,11 +63,7 @@ export const resolveAvatarSources = (input: ResolveAvatarInput): ResolvedAvatar 
     sources: dedupeSources([
       {
         name: "user",
-        path: join(homeDir, ".agenter", "avatar", nickname),
-      },
-      {
-        name: "project",
-        path: join(resolve(input.projectRoot), ".agenter", "avatar", nickname),
+        path: resolveGlobalAvatarRoot(nickname, homeDir),
       },
     ]),
   };
@@ -65,11 +87,6 @@ export const resolveAvatarPromptPaths = (avatar: ResolvedAvatar): AvatarPromptPa
     SYSTEM_TEMPLATE: pickExisting(avatar.sources, "SYSTEM_TEMPLATE.mdx"),
     RESPONSE_CONTRACT: pickExisting(avatar.sources, "RESPONSE_CONTRACT.mdx"),
   };
-};
-
-export const resolveAvatarLayerSettingsPath = (sourceSettingsFilePath: string, nickname: string): string => {
-  const baseDir = resolve(sourceSettingsFilePath, "..");
-  return join(baseDir, "avatar", sanitizeNickname(nickname), "settings.json");
 };
 
 export const resolveAvatarIconCandidates = (avatar: ResolvedAvatar): string[] => {

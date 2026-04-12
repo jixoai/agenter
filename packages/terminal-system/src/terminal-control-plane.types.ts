@@ -28,6 +28,7 @@ export interface TerminalShortcutMap {
 export interface TerminalProcessProfile {
   command?: string[];
   cwd?: string;
+  env?: Record<string, string>;
   cols?: number;
   rows?: number;
   gitLog?: false | TerminalGitLogMode;

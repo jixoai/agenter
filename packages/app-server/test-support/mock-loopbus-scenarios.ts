@@ -25,9 +25,6 @@ const toChatMessage = (harness: MockKernelHarness, message: MessageRecord): Chat
   timestamp: message.createdAt,
   updatedAt: message.updatedAt,
   visibleAt: message.visibleAt,
-  attentionState: message.attentionState,
-  attentionLoadedAt: message.attentionLoadedAt,
-  editable: message.editable,
 });
 
 const listRoomTruthMessages = (harness: MockKernelHarness): ChatMessage[] =>

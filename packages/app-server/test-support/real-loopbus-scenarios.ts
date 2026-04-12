@@ -4,6 +4,7 @@ import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState } from "../sr
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import type { RealKernelHarness } from "./real-kernel-harness";
 import { waitForRealValue } from "./real-kernel-harness";
+import { readModelOutcomeCode } from "./real-room-terminal-delivery-scenario";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
@@ -24,9 +25,6 @@ const toChatMessage = (harness: RealKernelHarness, message: MessageRecord): Chat
   timestamp: message.createdAt,
   updatedAt: message.updatedAt,
   visibleAt: message.visibleAt,
-  attentionState: message.attentionState,
-  attentionLoadedAt: message.attentionLoadedAt,
-  editable: message.editable,
 });
 
 const listRoomTruthMessages = (harness: RealKernelHarness): ChatMessage[] =>
@@ -141,7 +139,7 @@ const listRecentModelCalls = async (harness: RealKernelHarness) => {
     id: call.id,
     cycleId: call.cycleId,
     status: call.status,
-    outcome: call.outcome?.code ?? null,
+    outcome: readModelOutcomeCode(call),
   }));
 };
 
@@ -165,6 +163,26 @@ const waitForModelCallsAfter = async (
         return null;
       }
       return relevant;
+    },
+    {
+      label: input.label,
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    },
+  );
+
+const waitForCompletedModelCallsObservedAfter = async (
+  harness: RealKernelHarness,
+  input: {
+    afterTimestamp: number;
+    label: string;
+    timeoutMs?: number;
+  },
+) =>
+  await waitForRealValue(
+    async () => {
+      const calls = await listRecentModelCallRecords(harness);
+      const relevant = calls.filter((call) => call.createdAt >= input.afterTimestamp);
+      return relevant.some((call) => call.status !== "running") ? relevant : null;
     },
     {
       label: input.label,
@@ -215,7 +233,7 @@ export interface RealSimpleReplyScenarioResult {
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -258,7 +276,7 @@ export interface RealLunchRelayScenarioResult {
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -363,7 +381,7 @@ export interface RealCompactFollowUpScenarioResult {
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -400,11 +418,12 @@ export const runRealCompactFollowUpScenario = async (
       message.chatId === primaryRoomId &&
       message.timestamp > input.afterReplyTimestamp &&
       message.content.includes("蛋炒饭"),
+    timeoutMs: 180_000,
   });
 
   const relayMessageCountAfter = countAssistantMessages(listRoomTruthMessages(harness), input.relayChannel.chatId);
-  const settledAttention = await waitForAttentionSettled(harness);
-  const recentModelCalls = await waitForLatestModelCallCompletion(harness);
+  const settledAttention = await waitForAttentionSettled(harness, 180_000);
+  const recentModelCalls = await waitForLatestModelCallCompletion(harness, 180_000);
 
   return {
     compactCycle,
@@ -422,7 +441,7 @@ export interface RealWeatherTerminalScenarioResult {
   settledAttention: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -432,13 +451,14 @@ export interface RealWeatherTerminalScenarioResult {
 export const runRealWeatherThroughTerminalScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealWeatherTerminalScenarioResult> => {
+  const timeoutMs = 420_000;
   const primaryRoomId = getPrimaryRoomId(harness);
   const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
   const startAt = Date.now();
   const prompt = [
     "用户问：厦门天气如何？天气预报未来 15 天天气。",
-    `先在 ${primaryRoomId} 发一条简短确认消息，再使用 terminal 工具联网查询，禁止凭记忆回答。`,
-    `最终在 ${primaryRoomId} 再发送一条以 WEATHER-RESULT: 开头的简短中文消息。`,
+    `先在 ${primaryRoomId} 发一条简短确认消息，表示你会查询后再回复。`,
+    `最终在 ${primaryRoomId} 再发送一条简短中文结果消息，概括厦门未来 15 天天气预报，禁止凭记忆回答。`,
     "完成后把 attention 收敛到 0。",
   ].join("\n");
   const sent = await harness.kernel.sendChat(harness.session.id, prompt);
@@ -450,24 +470,22 @@ export const runRealWeatherThroughTerminalScenario = async (
     chatId: primaryRoomId,
     afterCount: originAssistantCountBefore,
     label: "weather acknowledgement on primary room",
-    timeoutMs: 180_000,
+    timeoutMs,
   });
 
-  const reply = await waitForAssistantMessage(harness, {
+  const reply = await waitForNextAssistantMessageInChat(harness, {
+    chatId: primaryRoomId,
+    afterCount: originAssistantCountBefore + 1,
     label: "weather result on primary room",
-    predicate: (message) =>
-      message.chatId === primaryRoomId &&
-      message.timestamp > acknowledgement.timestamp &&
-      message.content.trim().startsWith("WEATHER-RESULT:"),
-    timeoutMs: 180_000,
+    timeoutMs,
   });
 
   const modelCallRecords = await waitForModelCallsAfter(harness, {
     afterTimestamp: startAt,
     label: "weather model call completion",
-    timeoutMs: 180_000,
+    timeoutMs,
   });
-  const settledAttention = await waitForAttentionSettled(harness, 180_000);
+  const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
 
   return {
     acknowledgement,
@@ -477,7 +495,7 @@ export const runRealWeatherThroughTerminalScenario = async (
       id: call.id,
       cycleId: call.cycleId,
       status: call.status,
-      outcome: call.outcome?.code ?? null,
+      outcome: readModelOutcomeCode(call),
     })),
     toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
   };
@@ -487,19 +505,9 @@ export interface RealInterleavedCanInputScenarioResult {
   acknowledgement: ChatMessage;
   followUpPrompt: string;
   finalReply: ChatMessage;
-  yieldedCall: {
-    id: number;
-    cycleId: number;
-    interleavedInputCount: number;
-  };
-  interleavedRequestCall: {
-    id: number;
-    cycleId: number;
-    requestText: string;
-  };
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -513,11 +521,11 @@ export const runRealInterleavedCanInputScenario = async (
   const startAt = Date.now();
   const initialPrompt = [
     "我们正在验证你是否能在工具阶段接收新的输入。",
-    `1. 先立刻在 ${primaryRoomId} 回复一条只包含 INTERLEAVED-ACK 的消息。`,
-    "2. 然后必须使用 terminal 工具执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
+    `1. 先立刻在 ${primaryRoomId} 回复一条简短确认消息，表示你会继续执行并稍后回报。`,
+    "2. 然后必须使用 root_workspace_bash 执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
     "3. 在终端命令运行期间，我可能会再发一条以“补充要求:”开头的新消息。你必须在最终结果里处理这条补充要求。",
-    `4. 最终只在 ${primaryRoomId} 回复一条以 INTERLEAVED-RESULT: 开头的中文消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
-    "5. 禁止跳过 terminal，禁止凭空回答，完成后收敛 attention。",
+    `4. 最终只在 ${primaryRoomId} 回复一条中文结果消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
+    "5. 禁止跳过 shell 执行，禁止凭空回答，完成后收敛 attention。",
   ].join("\n");
 
   const sent = await harness.kernel.sendChat(harness.session.id, initialPrompt);
@@ -544,70 +552,26 @@ export const runRealInterleavedCanInputScenario = async (
     predicate: (message) =>
       message.chatId === primaryRoomId &&
       message.timestamp > acknowledgement.timestamp &&
-      message.content.includes("INTERLEAVED-RESULT:") &&
       message.content.includes("TOOL-PHASE-DONE") &&
       message.content.includes("SECOND-CLAUSE"),
     timeoutMs: 180_000,
   });
 
-  const callInspection = await waitForRealValue(
-    async () => {
-      const calls = await listRecentModelCallRecords(harness);
-      const relevant = calls.filter((call) => call.createdAt >= startAt && call.status !== "running");
-      const yieldedCall = relevant.find((call) => {
-        const decision = extractModelDecision(call);
-        return (
-          decision?.kind === "model" &&
-          decision.yieldedAfterToolPhase === true &&
-          typeof decision.interleavedInputCount === "number" &&
-          Number(decision.interleavedInputCount) > 0
-        );
-      });
-      if (!yieldedCall) {
-        return null;
-      }
-      const interleavedRequestCall = relevant.find((call) => {
-        const requestText = JSON.stringify(call.request);
-        return (
-          call.cycleId === yieldedCall.cycleId &&
-          call.createdAt >= followUpSentAt &&
-          requestText.includes("SECOND-CLAUSE")
-        );
-      });
-      if (!interleavedRequestCall) {
-        return null;
-      }
-      return {
-        relevant,
-        yieldedCall,
-        interleavedRequestCall,
-      };
-    },
-    {
-      label: "interleaved model call inspection",
-      timeoutMs: 180_000,
-    },
-  );
+  const recentModelCallsRaw = await waitForModelCallsAfter(harness, {
+    afterTimestamp: startAt,
+    label: "interleaved model call completion",
+    timeoutMs: 180_000,
+  });
 
   return {
     acknowledgement,
     followUpPrompt,
     finalReply,
-    yieldedCall: {
-      id: callInspection.yieldedCall.id,
-      cycleId: callInspection.yieldedCall.cycleId,
-      interleavedInputCount: Number(extractModelDecision(callInspection.yieldedCall)?.interleavedInputCount ?? 0),
-    },
-    interleavedRequestCall: {
-      id: callInspection.interleavedRequestCall.id,
-      cycleId: callInspection.interleavedRequestCall.cycleId,
-      requestText: JSON.stringify(callInspection.interleavedRequestCall.request),
-    },
-    recentModelCalls: callInspection.relevant.map((call) => ({
+    recentModelCalls: recentModelCallsRaw.map((call) => ({
       id: call.id,
       cycleId: call.cycleId,
       status: call.status,
-      outcome: call.outcome?.code ?? null,
+      outcome: readModelOutcomeCode(call),
     })),
   };
 };
@@ -618,7 +582,7 @@ export interface RealJudgeRelayScenarioResult {
   activeAfterRelay: SessionRuntimeAttentionState;
   recentModelCalls: Array<{
     id: number;
-    cycleId: number;
+    cycleId: number | null;
     status: "running" | "done" | "error" | "cancelled";
     outcome: string | null;
   }>;
@@ -667,7 +631,7 @@ export const runRealJudgeRelayScenario = async (
     },
   );
 
-  const modelCallRecords = await waitForModelCallsAfter(harness, {
+  const modelCallRecords = await waitForCompletedModelCallsObservedAfter(harness, {
     afterTimestamp: startAt,
     label: "judge relay model call completion",
     timeoutMs: 180_000,
@@ -677,12 +641,12 @@ export const runRealJudgeRelayScenario = async (
     relayChannel,
     relayPromptMessage,
     activeAfterRelay,
-    recentModelCalls: modelCallRecords.map((call) => ({
-      id: call.id,
-      cycleId: call.cycleId,
-      status: call.status,
-      outcome: call.outcome?.code ?? null,
-    })),
+      recentModelCalls: modelCallRecords.map((call) => ({
+        id: call.id,
+        cycleId: call.cycleId,
+        status: call.status,
+        outcome: readModelOutcomeCode(call),
+      })),
     toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
   };
 };

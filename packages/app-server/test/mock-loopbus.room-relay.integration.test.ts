@@ -37,9 +37,9 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         expect(result.settledAttention.active).toHaveLength(0);
 
         const recentResponses = JSON.stringify(result.recentModelCalls.map((call) => call.response));
-        expect(recentResponses).toContain("message_channel_list");
-        expect(recentResponses).toContain("message_send");
-        expect(recentResponses).toContain("attention_commit");
+        expect(recentResponses).toContain("message list");
+        expect(recentResponses).toContain("message send");
+        expect(recentResponses).toContain("attention commit");
         expect(recentResponses).toContain(relayChannel.chatId);
       } finally {
         await harness.stop();

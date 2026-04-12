@@ -1,5 +1,9 @@
-import type { ChatMessage } from "./types";
-import { DEFAULT_MESSAGE_CHAT_ID } from "./session-chat-projection";
+import type {
+  AttentionCommit,
+  AttentionContextSnapshot,
+  AttentionFocusState,
+  AttentionSystemSnapshot,
+} from "@agenter/attention-system";
 
 const toMessageSeq = (messageId: string): number => {
   const value = Number(messageId);
@@ -13,6 +17,8 @@ export interface SessionNotificationItem {
   sessionId: string;
   sourceType: SessionNotificationSourceType;
   sourceId: string;
+  attentionContextId: string;
+  attentionCommitId: string;
   chatId?: string;
   terminalId?: string;
   workspacePath: string;
@@ -30,13 +36,12 @@ export interface SessionNotificationSnapshot {
   unreadByTerminal: Record<string, Record<string, number>>;
 }
 
-interface ChatVisibilityState {
-  visible: boolean;
-  focused: boolean;
-}
-
-const notificationKey = (sessionId: string, sourceType: SessionNotificationSourceType, sourceId?: string): string =>
-  `${sessionId}:${sourceType}:${sourceId ?? "*"}`;
+const EMPTY_SNAPSHOT: SessionNotificationSnapshot = {
+  items: [],
+  unreadBySession: {},
+  unreadByChat: {},
+  unreadByTerminal: {},
+};
 
 const bumpNestedCount = (
   target: Record<string, Record<string, number>>,
@@ -48,209 +53,193 @@ const bumpNestedCount = (
   target[sessionId] = nextSessionCounts;
 };
 
-export class SessionNotificationRegistry {
-  private readonly itemsByKey = new Map<string, SessionNotificationItem[]>();
-  private readonly visibilityByKey = new Map<string, ChatVisibilityState>();
-
-  private getVisibility(
-    sessionId: string,
-    sourceType: SessionNotificationSourceType,
-    sourceId: string,
-  ): ChatVisibilityState | undefined {
-    return (
-      this.visibilityByKey.get(notificationKey(sessionId, sourceType, sourceId)) ??
-      this.visibilityByKey.get(notificationKey(sessionId, sourceType))
-    );
+const isCommitConsumed = (
+  context: AttentionContextSnapshot,
+  commit: AttentionCommit,
+  focusState: AttentionFocusState,
+): boolean => {
+  if (context.consumedPushCommitIds.includes(commit.commitId)) {
+    return true;
   }
+  if (commit.ingressType !== "push") {
+    return false;
+  }
+  return focusState === "focused";
+};
 
-  snapshot(): SessionNotificationSnapshot {
-    const items = [...this.itemsByKey.values()]
-      .flat()
-      .sort((left, right) => left.timestamp - right.timestamp);
-    const unreadCounts = new Map<string, number>();
-    const unreadByChat: Record<string, Record<string, number>> = {};
-    const unreadByTerminal: Record<string, Record<string, number>> = {};
-    for (const item of items) {
-      unreadCounts.set(item.sessionId, (unreadCounts.get(item.sessionId) ?? 0) + 1);
-      if (item.sourceType === "chat" && item.chatId) {
-        bumpNestedCount(unreadByChat, item.sessionId, item.chatId);
-      }
-      if (item.sourceType === "terminal" && item.terminalId) {
-        bumpNestedCount(unreadByTerminal, item.sessionId, item.terminalId);
-      }
+const resolveSource = (
+  context: AttentionContextSnapshot,
+  commit: AttentionCommit,
+):
+  | {
+      sourceType: SessionNotificationSourceType;
+      sourceId: string;
+      chatId?: string;
+      terminalId?: string;
+      messageId?: string;
+      messageSeq?: number;
     }
+  | null => {
+  const systemId = typeof commit.meta.systemId === "string" ? commit.meta.systemId : undefined;
+  if (systemId === "message") {
+    const chatId =
+      typeof commit.meta.channelId === "string" && commit.meta.channelId.length > 0
+        ? commit.meta.channelId
+        : context.contextId.startsWith("ctx-")
+          ? context.contextId.slice(4)
+          : undefined;
+    if (!chatId) {
+      return null;
+    }
+    const messageId =
+      typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0 ? commit.meta.subjectId : undefined;
     return {
-      items,
-      unreadBySession: Object.fromEntries(unreadCounts),
-      unreadByChat,
-      unreadByTerminal,
-    };
-  }
-
-  setChatVisibility(input: {
-    sessionId: string;
-    chatId?: string;
-    visible: boolean;
-    focused: boolean;
-  }): SessionNotificationSnapshot | null {
-    const key = notificationKey(input.sessionId, "chat", input.chatId);
-    const previous = this.visibilityByKey.get(key);
-    if (previous?.visible === input.visible && previous.focused === input.focused) {
-      return null;
-    }
-    this.visibilityByKey.set(key, {
-      visible: input.visible,
-      focused: input.focused,
-    });
-    return this.snapshot();
-  }
-
-  setTerminalVisibility(input: {
-    sessionId: string;
-    terminalId?: string;
-    visible: boolean;
-    focused: boolean;
-  }): SessionNotificationSnapshot | null {
-    const key = notificationKey(input.sessionId, "terminal", input.terminalId);
-    const previous = this.visibilityByKey.get(key);
-    if (previous?.visible === input.visible && previous.focused === input.focused) {
-      return null;
-    }
-    this.visibilityByKey.set(key, {
-      visible: input.visible,
-      focused: input.focused,
-    });
-    return this.snapshot();
-  }
-
-  noteAssistantReply(input: {
-    sessionId: string;
-    workspacePath: string;
-    sessionName: string;
-    message: ChatMessage;
-  }): SessionNotificationSnapshot | null {
-    if (input.message.role !== "assistant" || input.message.channel !== "to_user") {
-      return null;
-    }
-    const chatId = input.message.chatId ?? DEFAULT_MESSAGE_CHAT_ID;
-    const key = notificationKey(input.sessionId, "chat", chatId);
-    const visibility = this.getVisibility(input.sessionId, "chat", chatId);
-    if (visibility?.visible && visibility.focused) {
-      return null;
-    }
-    const current = this.itemsByKey.get(key) ?? [];
-    if (current.some((item) => item.messageId === input.message.id)) {
-      return null;
-    }
-    current.push({
-      id: `${key}:${input.message.id}`,
-      sessionId: input.sessionId,
       sourceType: "chat",
       sourceId: chatId,
       chatId,
-      workspacePath: input.workspacePath,
-      sessionName: input.sessionName,
-      messageId: input.message.id,
-      messageSeq: toMessageSeq(input.message.id),
-      content: input.message.content,
-      timestamp: input.message.timestamp,
-    });
-    this.itemsByKey.set(key, current);
-    return this.snapshot();
+      messageId,
+      messageSeq: messageId ? toMessageSeq(messageId) : undefined,
+    };
   }
-
-  noteTerminalNotification(input: {
-    sessionId: string;
-    workspacePath: string;
-    sessionName: string;
-    terminalId: string;
-    notificationId: string;
-    content: string;
-    timestamp: number;
-  }): SessionNotificationSnapshot | null {
-    const key = notificationKey(input.sessionId, "terminal", input.terminalId);
-    const visibility = this.getVisibility(input.sessionId, "terminal", input.terminalId);
-    if (visibility?.visible && visibility.focused) {
+  if (systemId === "terminal") {
+    const terminalId =
+      typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0
+        ? commit.meta.subjectId
+        : context.contextId.startsWith("ctx-terminal-")
+          ? context.contextId.slice("ctx-terminal-".length)
+          : undefined;
+    if (!terminalId) {
       return null;
     }
-    const current = this.itemsByKey.get(key) ?? [];
-    if (current.some((item) => item.id === `${key}:${input.notificationId}`)) {
-      return null;
-    }
-    current.push({
-      id: `${key}:${input.notificationId}`,
-      sessionId: input.sessionId,
+    return {
       sourceType: "terminal",
-      sourceId: input.terminalId,
-      terminalId: input.terminalId,
-      workspacePath: input.workspacePath,
-      sessionName: input.sessionName,
-      content: input.content,
-      timestamp: input.timestamp,
-    });
-    this.itemsByKey.set(key, current);
-    return this.snapshot();
+      sourceId: terminalId,
+      terminalId,
+    };
+  }
+  return null;
+};
+
+const resolveNotificationContent = (commit: AttentionCommit): string => {
+  if (commit.summary.trim().length > 0) {
+    return commit.summary;
+  }
+  if (commit.change.type === "clean") {
+    return "";
+  }
+  return commit.change.value;
+};
+
+export const projectSessionNotificationSnapshot = (input: {
+  sessionId: string;
+  workspacePath: string;
+  sessionName: string;
+  attention: AttentionSystemSnapshot;
+}): SessionNotificationSnapshot => {
+  const items: SessionNotificationItem[] = [];
+  for (const context of input.attention.contexts) {
+    for (const commit of context.commits) {
+      if (commit.ingressType !== "push") {
+        continue;
+      }
+      if (isCommitConsumed(context, commit, context.focusState)) {
+        continue;
+      }
+      const source = resolveSource(context, commit);
+      if (!source) {
+        continue;
+      }
+      items.push({
+        id: `${input.sessionId}:${context.contextId}:${commit.commitId}`,
+        sessionId: input.sessionId,
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
+        attentionContextId: context.contextId,
+        attentionCommitId: commit.commitId,
+        chatId: source.chatId,
+        terminalId: source.terminalId,
+        workspacePath: input.workspacePath,
+        sessionName: input.sessionName,
+        messageId: source.messageId,
+        messageSeq: source.messageSeq,
+        content: resolveNotificationContent(commit),
+        timestamp: Date.parse(commit.createdAt),
+      });
+    }
   }
 
-  consume(input: {
-    sessionId: string;
-    chatId?: string;
-    terminalId?: string;
-    upToMessageId?: string | null;
-  }): SessionNotificationSnapshot | null {
-    const keys = input.chatId
-      ? [notificationKey(input.sessionId, "chat", input.chatId)]
-      : input.terminalId
-        ? [notificationKey(input.sessionId, "terminal", input.terminalId)]
-        : [...this.itemsByKey.keys()].filter((key) => key.startsWith(`${input.sessionId}:`));
-    if (keys.length === 0) {
-      return null;
-    }
-    const upToMessageId = input.upToMessageId ?? "";
-    let changed = false;
-    for (const key of keys) {
-      const current = this.itemsByKey.get(key) ?? [];
-      if (current.length === 0) {
-        continue;
-      }
-      const next =
-        input.chatId && upToMessageId.length > 0
-          ? current.filter((item) => (item.messageSeq ?? 0) > toMessageSeq(upToMessageId))
-          : [];
-      if (next.length === current.length) {
-        continue;
-      }
-      changed = true;
-      if (next.length === 0) {
-        this.itemsByKey.delete(key);
-      } else {
-        this.itemsByKey.set(key, next);
-      }
-    }
-    if (!changed) {
-      return null;
-    }
-    return this.snapshot();
+  items.sort((left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id));
+  if (items.length === 0) {
+    return EMPTY_SNAPSHOT;
   }
 
-  removeSession(sessionId: string): SessionNotificationSnapshot | null {
-    let hadItems = false;
-    let hadVisibility = false;
-    for (const key of [...this.itemsByKey.keys()]) {
-      if (!key.startsWith(`${sessionId}:`)) {
-        continue;
-      }
-      hadItems = this.itemsByKey.delete(key) || hadItems;
+  const unreadCounts = new Map<string, number>();
+  const unreadByChat: Record<string, Record<string, number>> = {};
+  const unreadByTerminal: Record<string, Record<string, number>> = {};
+  for (const item of items) {
+    unreadCounts.set(item.sessionId, (unreadCounts.get(item.sessionId) ?? 0) + 1);
+    if (item.sourceType === "chat" && item.chatId) {
+      bumpNestedCount(unreadByChat, item.sessionId, item.chatId);
     }
-    for (const key of [...this.visibilityByKey.keys()]) {
-      if (!key.startsWith(`${sessionId}:`)) {
-        continue;
-      }
-      hadVisibility = this.visibilityByKey.delete(key) || hadVisibility;
+    if (item.sourceType === "terminal" && item.terminalId) {
+      bumpNestedCount(unreadByTerminal, item.sessionId, item.terminalId);
     }
-    if (!hadItems && !hadVisibility) {
-      return null;
-    }
-    return this.snapshot();
   }
-}
+
+  return {
+    items,
+    unreadBySession: Object.fromEntries(unreadCounts),
+    unreadByChat,
+    unreadByTerminal,
+  };
+};
+
+export const mergeSessionNotificationSnapshots = (
+  snapshots: readonly SessionNotificationSnapshot[],
+): SessionNotificationSnapshot => {
+  if (snapshots.length === 0) {
+    return EMPTY_SNAPSHOT;
+  }
+  const items = snapshots.flatMap((snapshot) => snapshot.items).sort((left, right) => left.timestamp - right.timestamp);
+  const unreadBySession: Record<string, number> = {};
+  const unreadByChat: Record<string, Record<string, number>> = {};
+  const unreadByTerminal: Record<string, Record<string, number>> = {};
+
+  for (const snapshot of snapshots) {
+    for (const [sessionId, count] of Object.entries(snapshot.unreadBySession)) {
+      unreadBySession[sessionId] = (unreadBySession[sessionId] ?? 0) + count;
+    }
+    for (const [sessionId, byChat] of Object.entries(snapshot.unreadByChat)) {
+      for (const [chatId, count] of Object.entries(byChat)) {
+        bumpNestedCount(unreadByChat, sessionId, chatId);
+        unreadByChat[sessionId]![chatId] = (unreadByChat[sessionId]![chatId] ?? 0) + count - 1;
+      }
+    }
+    for (const [sessionId, byTerminal] of Object.entries(snapshot.unreadByTerminal)) {
+      for (const [terminalId, count] of Object.entries(byTerminal)) {
+        bumpNestedCount(unreadByTerminal, sessionId, terminalId);
+        unreadByTerminal[sessionId]![terminalId] = (unreadByTerminal[sessionId]![terminalId] ?? 0) + count - 1;
+      }
+    }
+  }
+
+  return {
+    items,
+    unreadBySession,
+    unreadByChat,
+    unreadByTerminal,
+  };
+};
+
+export const toAttentionFocusStateFromVisibility = (input: {
+  visible: boolean;
+  focused: boolean;
+}): AttentionFocusState => {
+  if (input.focused) {
+    return "focused";
+  }
+  if (input.visible) {
+    return "background";
+  }
+  return "muted";
+};

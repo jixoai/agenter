@@ -2,7 +2,8 @@ import { runTuiClient } from "@agenter/tui";
 import { join } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import { assertStaticDir, startTrpcServer, type TrpcServerHandle } from "./trpc-server";
+import { startTrpcServer, type TrpcServerHandle } from "./trpc-server";
+import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 
 interface CommonArgs {
   host: string;
@@ -39,16 +40,12 @@ const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => {
   }
 };
 
-const startDaemon = async (args: CommonArgs & { web: boolean }): Promise<TrpcServerHandle> => {
-  const staticDir = args.web ? join(import.meta.dir, "../assets/webui") : undefined;
-  if (staticDir) {
-    assertStaticDir(staticDir);
-  }
+const startDaemon = async (args: CommonArgs & { staticDir?: string }): Promise<TrpcServerHandle> => {
   return await startTrpcServer({
     host: args.host,
     port: args.port,
     workspaceCwd: process.cwd(),
-    staticDir,
+    staticDir: args.staticDir,
   });
 };
 
@@ -111,7 +108,6 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         const daemon = await startDaemon({
           host: String(args.host),
           port: Number(args.port),
-          web: false,
         });
         console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
         await waitForSignal(async () => {
@@ -143,7 +139,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         const daemon = await startDaemon({
           host,
           port,
-          web: !dev,
+          staticDir: dev ? undefined : resolveCanonicalWebUiAssetRoot(import.meta.dir).staticDir,
         });
 
         if (!dev) {
@@ -181,7 +177,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
 
         let localDaemon: TrpcServerHandle | null = null;
         if (!(await isDaemonAlive(common))) {
-          localDaemon = await startDaemon({ ...common, web: false });
+          localDaemon = await startDaemon(common);
         }
 
         await runTuiClient(common);

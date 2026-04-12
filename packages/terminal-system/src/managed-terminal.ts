@@ -5,6 +5,7 @@ export interface ManagedTerminalConfig {
   terminalId: string;
   command: string[];
   cwd: string;
+  env?: Record<string, string>;
   cols: number;
   rows: number;
   outputRoot?: string;
@@ -113,6 +114,7 @@ export class ManagedTerminal {
       cols: this.cols,
       rows: this.rows,
       cwd: this.config.cwd,
+      env: this.config.env,
       outputRoot: this.config.outputRoot,
       gitLog: this.config.gitLog ?? false,
       logStyle: this.config.logStyle ?? "rich",

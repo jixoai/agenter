@@ -2,10 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AttentionSystem } from "@agenter/attention-system";
 
 import {
-  SessionNotificationRegistry,
   listWorkspaceSettingsLayers,
+  projectSessionNotificationSnapshot,
   readWorkspaceSettingsLayer,
   saveWorkspaceSettingsLayer,
 } from "../src";
@@ -75,114 +76,106 @@ describe("Feature: workspace settings and session notifications", () => {
   });
 
   test("Scenario: Given unread assistant replies across channels When chat visibility and consume state change Then unread notifications stay scoped to the visible channel", () => {
-    const registry = new SessionNotificationRegistry();
+    const attention = new AttentionSystem();
+    attention.createContext({ contextId: "ctx-chat-main", owner: "demo", focusState: "background" });
+    const mainPush = attention.commit("ctx-chat-main", {
+      ingressType: "push",
+      meta: { author: "assistant", source: "message", systemId: "message", channelId: "chat-main", subjectId: "9" },
+      scores: { hash1: 100 },
+      summary: "hello",
+      change: { type: "update", value: "hello" },
+    }).commit;
 
-    const hiddenSnapshot = registry.noteAssistantReply({
+    const hiddenSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      message: {
-        id: "9",
-        chatId: "chat-main",
-        role: "assistant",
-        content: "hello",
-        timestamp: 9,
-        channel: "to_user",
-      },
+      attention: attention.snapshot(),
     });
 
-    expect(hiddenSnapshot?.unreadBySession["session-1"]).toBe(1);
-    expect(hiddenSnapshot?.unreadByChat["session-1"]?.["chat-main"]).toBe(1);
-    expect(hiddenSnapshot?.items[0]?.messageId).toBe("9");
+    expect(hiddenSnapshot.unreadBySession["session-1"]).toBe(1);
+    expect(hiddenSnapshot.unreadByChat["session-1"]?.["chat-main"]).toBe(1);
+    expect(hiddenSnapshot.items[0]?.messageId).toBe("9");
 
-    registry.setChatVisibility({ sessionId: "session-1", chatId: "chat-main", visible: true, focused: true });
-    const visibleSnapshot = registry.noteAssistantReply({
+    attention.setContextFocusState("ctx-chat-main", "focused");
+    const focusedSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      message: {
-        id: "10",
-        chatId: "chat-main",
-        role: "assistant",
-        content: "already visible",
-        timestamp: 10,
-        channel: "to_user",
-      },
+      attention: attention.snapshot(),
+    });
+    expect(focusedSnapshot.items).toEqual([]);
+
+    attention.consumePushes("ctx-chat-main", [mainPush.commitId]);
+    attention.createContext({ contextId: "ctx-room-team", owner: "demo", focusState: "background" });
+    attention.commit("ctx-room-team", {
+      ingressType: "push",
+      meta: { author: "assistant", source: "message", systemId: "message", channelId: "room-team", subjectId: "11" },
+      scores: { hash2: 100 },
+      summary: "team reply",
+      change: { type: "update", value: "team reply" },
     });
 
-    expect(visibleSnapshot).toBeNull();
-    expect(registry.snapshot().unreadBySession["session-1"]).toBe(1);
-
-    const otherChannelSnapshot = registry.noteAssistantReply({
+    const consumedSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      message: {
-        id: "11",
-        chatId: "room-team",
-        role: "assistant",
-        content: "team reply",
-        timestamp: 11,
-        channel: "to_user",
-      },
+      attention: attention.snapshot(),
     });
-
-    expect(otherChannelSnapshot?.unreadBySession["session-1"]).toBe(2);
-    expect(otherChannelSnapshot?.unreadByChat["session-1"]?.["room-team"]).toBe(1);
-
-    const consumed = registry.consume({ sessionId: "session-1", chatId: "chat-main", upToMessageId: "9" });
-    expect(consumed?.items.map((item) => item.messageId)).toEqual(["11"]);
-    expect(consumed?.unreadBySession["session-1"]).toBe(1);
-    expect(registry.snapshot().items.map((item) => item.chatId)).toEqual(["room-team"]);
+    expect(consumedSnapshot.items.map((item) => item.chatId)).toEqual(["room-team"]);
+    expect(consumedSnapshot.unreadBySession["session-1"]).toBe(1);
+    expect(consumedSnapshot.unreadByChat["session-1"]?.["room-team"]).toBe(1);
   });
 
   test("Scenario: Given hidden terminal completion notifications When terminal visibility and consume change Then unread terminal badges stay scoped to that terminal", () => {
-    const registry = new SessionNotificationRegistry();
+    const attention = new AttentionSystem();
+    attention.createContext({ contextId: "ctx-terminal-shell-main", owner: "demo", focusState: "background" });
+    const mainPush = attention.commit("ctx-terminal-shell-main", {
+      ingressType: "push",
+      meta: { author: "terminal", source: "terminal", systemId: "terminal", subjectId: "shell-main" },
+      scores: { hash1: 100 },
+      summary: "Terminal shell-main is ready for your input.",
+      change: { type: "update", value: "Terminal shell-main is ready for your input." },
+    }).commit;
 
-    const hiddenSnapshot = registry.noteTerminalNotification({
+    const hiddenSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      terminalId: "shell-main",
-      notificationId: "idle:1",
-      content: "Terminal shell-main is ready for your input.",
-      timestamp: 1,
+      attention: attention.snapshot(),
     });
 
-    expect(hiddenSnapshot?.unreadBySession["session-1"]).toBe(1);
-    expect(hiddenSnapshot?.unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
-    expect(hiddenSnapshot?.items[0]?.sourceType).toBe("terminal");
+    expect(hiddenSnapshot.unreadBySession["session-1"]).toBe(1);
+    expect(hiddenSnapshot.unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
+    expect(hiddenSnapshot.items[0]?.sourceType).toBe("terminal");
 
-    registry.setTerminalVisibility({ sessionId: "session-1", terminalId: "shell-main", visible: true, focused: true });
-    const visibleSnapshot = registry.noteTerminalNotification({
+    attention.setContextFocusState("ctx-terminal-shell-main", "focused");
+    const focusedSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      terminalId: "shell-main",
-      notificationId: "idle:2",
-      content: "Terminal shell-main is ready for your input.",
-      timestamp: 2,
+      attention: attention.snapshot(),
+    });
+    expect(focusedSnapshot.items).toEqual([]);
+
+    attention.consumePushes("ctx-terminal-shell-main", [mainPush.commitId]);
+    attention.createContext({ contextId: "ctx-terminal-shell-side", owner: "demo", focusState: "background" });
+    attention.commit("ctx-terminal-shell-side", {
+      ingressType: "push",
+      meta: { author: "terminal", source: "terminal", systemId: "terminal", subjectId: "shell-side" },
+      scores: { hash2: 100 },
+      summary: "Terminal shell-side is ready for your input.",
+      change: { type: "update", value: "Terminal shell-side is ready for your input." },
     });
 
-    expect(visibleSnapshot).toBeNull();
-    expect(registry.snapshot().unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
-
-    const otherTerminalSnapshot = registry.noteTerminalNotification({
+    const consumedSnapshot = projectSessionNotificationSnapshot({
       sessionId: "session-1",
       workspacePath: "/repo/demo",
       sessionName: "Demo",
-      terminalId: "shell-side",
-      notificationId: "idle:3",
-      content: "Terminal shell-side is ready for your input.",
-      timestamp: 3,
+      attention: attention.snapshot(),
     });
-
-    expect(otherTerminalSnapshot?.unreadBySession["session-1"]).toBe(2);
-    expect(otherTerminalSnapshot?.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
-
-    const consumed = registry.consume({ sessionId: "session-1", terminalId: "shell-main" });
-    expect(consumed?.unreadBySession["session-1"]).toBe(1);
-    expect(consumed?.unreadByTerminal["session-1"]?.["shell-main"]).toBeUndefined();
-    expect(consumed?.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
+    expect(consumedSnapshot.unreadBySession["session-1"]).toBe(1);
+    expect(consumedSnapshot.unreadByTerminal["session-1"]?.["shell-main"]).toBeUndefined();
+    expect(consumedSnapshot.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
   });
 });

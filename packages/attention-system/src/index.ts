@@ -10,8 +10,12 @@ export {
 export { AttentionSystem } from "./attention-system";
 export type {
   AttentionCommit,
+  AttentionCommitEgress,
   AttentionCommitInput,
+  AttentionFocusState,
+  AttentionIngressType,
   AttentionCommitMeta,
+  AttentionMessageReplyEgress,
   AttentionContextSnapshot,
   AttentionContextState,
 } from "./attention-item";

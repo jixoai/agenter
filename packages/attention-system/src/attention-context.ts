@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AttentionCommit,
+  AttentionCommitEgress,
   AttentionCommitInput,
+  AttentionFocusState,
   AttentionCommitMeta,
   AttentionContextSnapshot,
   AttentionContextState,
@@ -39,12 +41,16 @@ const cloneMeta = (meta: AttentionCommitMeta): AttentionCommitMeta => ({
   tags: Array.isArray(meta.tags) ? [...meta.tags] : undefined,
 });
 
+const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommitEgress | undefined =>
+  egress ? { ...egress } : undefined;
+
 const cloneChange = (change: AttentionCommitChange): AttentionCommitChange => ({ ...change });
 
 const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
   parentCommitIds: [...commit.parentCommitIds],
   meta: cloneMeta(commit.meta),
+  egress: cloneEgress(commit.egress),
   scores: { ...commit.scores },
   change: cloneChange(commit.change),
 });
@@ -52,6 +58,7 @@ const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
 const cloneState = (state: AttentionContextState): AttentionContextState => ({
   ...state,
   scoreMap: { ...state.scoreMap },
+  consumedPushCommitIds: [...state.consumedPushCommitIds],
 });
 
 const splitLines = (value: string): string[] => (value.length === 0 ? [] : value.split("\n"));
@@ -155,9 +162,11 @@ const uniqueCommits = (commits: AttentionCommit[]): AttentionCommit[] => {
 export interface AttentionContextConfig {
   contextId: string;
   owner: string;
+  focusState?: AttentionFocusState;
   content?: string;
   contentFormat?: string;
   scoreMap?: Record<string, number>;
+  consumedPushCommitIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -166,19 +175,23 @@ export const buildAttentionContextStateFromCommits = (input: {
   contextId: string;
   owner: string;
   commits: AttentionCommit[];
+  focusState?: AttentionFocusState;
   createdAt?: string;
   updatedAt?: string;
   content?: string;
   contentFormat?: string;
   scoreMap?: Record<string, number>;
+  consumedPushCommitIds?: string[];
 }): AttentionContextState => {
   const createdAt = input.createdAt ?? input.commits[0]?.createdAt ?? nowIso();
   let state: AttentionContextState = {
     contextId: input.contextId,
     owner: input.owner,
+    focusState: input.focusState ?? "focused",
     content: input.content ?? "",
     contentFormat: input.contentFormat,
     scoreMap: normalizeAttentionScores(input.scoreMap ?? {}),
+    consumedPushCommitIds: [...(input.consumedPushCommitIds ?? [])],
     headCommitId: null,
     createdAt,
     updatedAt: input.updatedAt ?? createdAt,
@@ -216,9 +229,11 @@ export class AttentionContext {
       this.state = cloneState({
         contextId: snapshot.contextId,
         owner: snapshot.owner,
+        focusState: snapshot.focusState,
         content: snapshot.content,
         contentFormat: snapshot.contentFormat,
         scoreMap: snapshot.scoreMap,
+        consumedPushCommitIds: snapshot.consumedPushCommitIds,
         headCommitId: snapshot.headCommitId,
         createdAt: snapshot.createdAt,
         updatedAt: snapshot.updatedAt,
@@ -234,9 +249,11 @@ export class AttentionContext {
     this.state = {
       contextId: this.contextId,
       owner: this.owner,
+      focusState: config.focusState ?? "focused",
       content: config.content ?? "",
       contentFormat: config.contentFormat,
       scoreMap: normalizeAttentionScores(config.scoreMap ?? {}),
+      consumedPushCommitIds: [...(config.consumedPushCommitIds ?? [])],
       headCommitId: null,
       createdAt,
       updatedAt: config.updatedAt ?? createdAt,
@@ -248,6 +265,7 @@ export class AttentionContext {
     const commit: AttentionCommit = {
       commitId: generateCommitId(),
       contextId: this.contextId,
+      ingressType: input.ingressType ?? "commit",
       parentCommitIds: input.parentCommitIds?.length
         ? [...input.parentCommitIds]
         : this.state.headCommitId
@@ -260,6 +278,7 @@ export class AttentionContext {
         ...(input.meta ?? {}),
         createdAt,
       }),
+      egress: cloneEgress(input.egress),
       scores: normalizeAttentionScores(input.scores ?? {}),
       summary: input.summary.trim(),
       change: cloneChange(input.change),
@@ -289,6 +308,65 @@ export class AttentionContext {
     };
   }
 
+  setFocusState(focusState: AttentionFocusState): AttentionContextState {
+    if (this.state.focusState === focusState) {
+      return this.getState();
+    }
+    this.state = {
+      ...this.state,
+      focusState,
+      updatedAt: nowIso(),
+    };
+    return this.getState();
+  }
+
+  listPushCommits(input: { includeConsumed?: boolean; limit?: number } = {}): AttentionCommit[] {
+    const includeConsumed = input.includeConsumed ?? false;
+    const consumed = new Set(this.state.consumedPushCommitIds);
+    const commits = this.commitOrder
+      .map((commitId) => this.commits.get(commitId)!)
+      .filter((commit) => commit.ingressType === "push")
+      .filter((commit) => includeConsumed || !consumed.has(commit.commitId))
+      .map((commit) => cloneCommit(commit));
+    const limit = input.limit;
+    if (typeof limit === "number" && limit > 0 && commits.length > limit) {
+      return commits.slice(-limit);
+    }
+    return commits;
+  }
+
+  consumePushes(commitIds?: readonly string[]): AttentionCommit[] {
+    const candidateIds =
+      commitIds && commitIds.length > 0
+        ? commitIds.filter((commitId) => this.commits.get(commitId)?.ingressType === "push")
+        : this.commitOrder.filter((commitId) => this.commits.get(commitId)?.ingressType === "push");
+    if (candidateIds.length === 0) {
+      return [];
+    }
+    const consumed = new Set(this.state.consumedPushCommitIds);
+    const newlyConsumed: AttentionCommit[] = [];
+    for (const commitId of candidateIds) {
+      if (consumed.has(commitId)) {
+        continue;
+      }
+      const commit = this.commits.get(commitId);
+      if (!commit || commit.ingressType !== "push") {
+        continue;
+      }
+      consumed.add(commitId);
+      newlyConsumed.push(cloneCommit(commit));
+    }
+    if (newlyConsumed.length === 0) {
+      return [];
+    }
+    this.state = {
+      ...this.state,
+      consumedPushCommitIds: [...consumed],
+      updatedAt: nowIso(),
+    };
+    return newlyConsumed;
+  }
+
   getState(): AttentionContextState {
     return cloneState(this.state);
   }
@@ -307,8 +385,31 @@ export class AttentionContext {
   }
 
   listActiveScores(minScore = 1): Record<string, number> {
+    const latestByHash = new Map<string, { score: number; ingressType: AttentionCommit["ingressType"]; commitId: string }>();
+    for (const commitId of this.commitOrder) {
+      const commit = this.commits.get(commitId)!;
+      for (const [hash, score] of Object.entries(commit.scores)) {
+        latestByHash.set(hash, {
+          score,
+          ingressType: commit.ingressType,
+          commitId: commit.commitId,
+        });
+      }
+    }
+    const consumedPushCommitIds = new Set(this.state.consumedPushCommitIds);
     return Object.fromEntries(
-      Object.entries(this.state.scoreMap).filter(([, value]) => value >= Math.max(0, Math.trunc(minScore))),
+      [...latestByHash.entries()].filter(([, value]) => {
+        if (value.score < Math.max(0, Math.trunc(minScore))) {
+          return false;
+        }
+        if (value.ingressType === "commit") {
+          return true;
+        }
+        if (consumedPushCommitIds.has(value.commitId)) {
+          return false;
+        }
+        return this.state.focusState === "focused";
+      }).map(([hash, value]) => [hash, value.score]),
     );
   }
 
@@ -318,6 +419,10 @@ export class AttentionContext {
 
   unresolvedScoreCount(minScore = 1): number {
     return Object.keys(this.listActiveScores(minScore)).length;
+  }
+
+  pendingPushCount(): number {
+    return this.listPushCommits().length;
   }
 
   queryCommits(input: AttentionQueryInput = {}): AttentionCommitMatch[] {

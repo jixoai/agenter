@@ -122,8 +122,12 @@ export class SessionCatalog {
     return this.byId.get(sessionId);
   }
 
+  findByAvatar(avatar: string): SessionMeta | undefined {
+    return this.byId.get(resolveWorkspaceAvatarSessionId(GLOBAL_WORKSPACE_PATH, avatar));
+  }
+
   findByWorkspaceAvatar(workspacePath: string, avatar: string): SessionMeta | undefined {
-    return this.byId.get(resolveWorkspaceAvatarSessionId(toWorkspacePath(workspacePath), avatar));
+    return this.findByAvatar(avatar);
   }
 
   create(input: {
@@ -339,20 +343,22 @@ export class SessionCatalog {
   }
 
   private scanWorkspaceSessionRoots(workspacePath: string): string[] {
-    const avatarRoot = join(workspacePath, ".agenter", "avatar");
-    try {
-      const roots: string[] = [];
-      const avatars = readdirSync(avatarRoot, { withFileTypes: true });
-      for (const avatar of avatars) {
-        if (!avatar.isDirectory()) {
-          continue;
+    const legacyRoots = [join(workspacePath, ".agenter", "avatar"), join(workspacePath, ".agenter", "avatars")];
+    const roots: string[] = [];
+    for (const avatarRoot of legacyRoots) {
+      try {
+        const avatars = readdirSync(avatarRoot, { withFileTypes: true });
+        for (const avatar of avatars) {
+          if (!avatar.isDirectory()) {
+            continue;
+          }
+          roots.push(...scanBucketedSessionRoots(join(avatarRoot, avatar.name, "sessions")));
         }
-        roots.push(...scanBucketedSessionRoots(join(avatarRoot, avatar.name, "sessions")));
+      } catch {
+        continue;
       }
-      return roots;
-    } catch {
-      return [];
     }
+    return roots;
   }
 
   private readSessionMeta(sessionRoot: string, target: "global" | "workspace" | "archive"): SessionMeta | undefined {
@@ -394,7 +400,7 @@ export class SessionCatalog {
     if (meta.storeTarget !== "global") {
       return false;
     }
-    return meta.id === resolveWorkspaceAvatarSessionId(meta.workspacePath, meta.avatar);
+    return meta.id === resolveWorkspaceAvatarSessionId(GLOBAL_WORKSPACE_PATH, meta.avatar);
   }
 
   private quarantineSessionRoot(sessionRoot: string): void {
@@ -434,7 +440,6 @@ export class SessionCatalog {
         archivedAt: meta.archivedAt,
         archivedFrom: meta.archivedFrom,
       },
-      calls: existing?.calls ?? [],
     });
   }
 
@@ -442,9 +447,6 @@ export class SessionCatalog {
     input: Pick<SessionMeta, "id" | "cwd" | "workspacePath" | "avatar" | "createdAt" | "storeTarget">,
   ): string {
     const [year, month, day] = toUtcBucket(input.createdAt);
-    if (input.storeTarget === "workspace") {
-      return join(input.cwd, ".agenter", "avatar", input.avatar, "sessions", year, month, day, input.id);
-    }
     return join(this.globalRoot, year, month, day, input.id);
   }
 

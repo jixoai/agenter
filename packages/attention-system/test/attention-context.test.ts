@@ -14,10 +14,13 @@ describe("Feature: attention context commit log", () => {
     });
 
     expect(commit.contextId).toBe("ctx-1");
+    expect(commit.ingressType).toBe("commit");
     expect(commit.parentCommitIds).toEqual([]);
     expect(commit.scores).toEqual({ hash1: 100, hash2: 40 });
     expect(commit.change.type).toBe("update");
     expect(snapshot.content).toBe("帮我问一下中午吃什么");
+    expect(snapshot.focusState).toBe("focused");
+    expect(snapshot.consumedPushCommitIds).toEqual([]);
   });
 
   test("Scenario: Given a second commit When parent ids are omitted Then head commit becomes the parent", () => {
@@ -97,5 +100,27 @@ describe("Feature: attention context commit log", () => {
     });
 
     expect(snapshot.content).toBe("");
+  });
+
+  test("Scenario: Given a background push When focus changes and pushes are consumed Then active debt follows focus truth", () => {
+    const context = new AttentionContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "background" });
+
+    const push = context.commit({
+      ingressType: "push",
+      summary: "background ping",
+      scores: { hash1: 100 },
+      change: { type: "update", value: "background ping" },
+    }).commit;
+
+    expect(context.isActive()).toBeFalse();
+    expect(context.pendingPushCount()).toBe(1);
+
+    context.setFocusState("focused");
+    expect(context.isActive()).toBeTrue();
+
+    const consumed = context.consumePushes([push.commitId]);
+    expect(consumed.map((item) => item.commitId)).toEqual([push.commitId]);
+    expect(context.isActive()).toBeFalse();
+    expect(context.getState().consumedPushCommitIds).toEqual([push.commitId]);
   });
 });

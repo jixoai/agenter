@@ -1,4 +1,4 @@
-import type { SessionBlockRecord, SessionCollectedInput, SessionCycleRecord } from "@agenter/session-system";
+import type { SessionCollectedInput } from "@agenter/session-system";
 
 export const DEFAULT_MESSAGE_CHAT_ID = "room-main";
 export const resolveSessionRoomActorId = (sessionId: string): `session:${string}` => `session:${sessionId}`;
@@ -57,22 +57,4 @@ export const resolveCollectedInputsChatId = (
     }
   }
   return best?.chatId ?? fallback;
-};
-
-export const resolveSessionBlockChatId = (input: {
-  block: Pick<SessionBlockRecord, "cycleId" | "chatId">;
-  getCycleById: (cycleId: number) => Pick<SessionCycleRecord, "collectedInputs"> | null;
-  fallback?: string;
-}): string => {
-  const explicitChatId = normalizeChatId(input.block.chatId);
-  if (explicitChatId) {
-    return explicitChatId;
-  }
-  if (input.block.cycleId === null) {
-    return input.fallback ?? DEFAULT_MESSAGE_CHAT_ID;
-  }
-  return resolveCollectedInputsChatId(
-    input.getCycleById(input.block.cycleId)?.collectedInputs ?? [],
-    input.fallback ?? DEFAULT_MESSAGE_CHAT_ID,
-  );
 };

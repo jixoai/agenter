@@ -38,6 +38,7 @@ const projectAttentionCommit = (commit: AttentionCommit): AttentionCommit => ({
     ...commit.meta,
     tags: Array.isArray(commit.meta.tags) ? [...commit.meta.tags] : undefined,
   },
+  egress: commit.egress ? { ...commit.egress } : undefined,
   scores: { ...commit.scores },
   change: projectAttentionChange(commit.change),
 });

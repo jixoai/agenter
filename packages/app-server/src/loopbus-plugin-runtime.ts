@@ -1,6 +1,8 @@
 import type {
   AttentionCommit,
+  AttentionCommitEgress,
   AttentionCommitHookResult,
+  AttentionCommitMeta,
   AttentionContextState,
 } from "@agenter/attention-system";
 
@@ -15,7 +17,19 @@ export interface LoopSourceRef {
   subjectId: string;
   reason: string;
   versionHint?: string | number;
-  meta?: Record<string, unknown>;
+}
+
+export interface LoopMessageSourceRef extends LoopSourceRef {
+  systemId: "message";
+  channelId: string;
+}
+
+export interface LoopTerminalSourceRef extends LoopSourceRef {
+  systemId: "terminal";
+}
+
+export interface LoopTaskSourceRef extends LoopSourceRef {
+  systemId: "task";
 }
 
 export interface LoopSourceReadRequest {
@@ -31,7 +45,6 @@ export interface LoopSourceReadResult {
   toHash: string | null;
   semanticHash?: string | null;
   viewHash?: string | null;
-  meta?: Record<string, unknown>;
 }
 
 export interface AttentionDraft {
@@ -39,7 +52,16 @@ export interface AttentionDraft {
   content: string;
   from: string;
   score?: number;
-  meta?: Record<string, unknown>;
+  provenance?: Partial<AttentionCommitMeta>;
+  presentation?: {
+    summary: string;
+    body: string;
+    bodyFormat?: string;
+    changeType?: "update" | "diff";
+  };
+  semanticHash?: string | null;
+  versionHint?: string | null;
+  egress?: AttentionCommitEgress;
   supersedeActive?: {
     systemId: string;
     subjectId: string;
@@ -247,7 +269,7 @@ export class LoopBusPluginRuntime {
   }
 
   invalidate(ref: LoopSourceRef): void {
-    this.invalidated.set(this.refKey(ref), { ...ref, meta: ref.meta ? { ...ref.meta } : undefined });
+    this.invalidated.set(this.refKey(ref), { ...ref });
   }
 
   async readInvalidatedAttentionDrafts(): Promise<AttentionDraft[]> {
@@ -362,6 +384,9 @@ export class LoopBusPluginRuntime {
   }
 
   private refKey(ref: LoopSourceRef): string {
+    if (ref.systemId === "message" && "channelId" in ref && typeof ref.channelId === "string") {
+      return `${ref.systemId}:${ref.channelId}:${ref.subjectId}`;
+    }
     return `${ref.systemId}:${ref.subjectId}`;
   }
 

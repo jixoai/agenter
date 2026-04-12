@@ -37,7 +37,8 @@ describe("Feature: attention system context scheduling", () => {
       change: { type: "update", value: "ask gaubee" },
     });
     system.commit("ctx-1", {
-      meta: { author: "avatar:jane", source: "attention", replyTarget: { systemId: "message", subjectId: "chat-kzf" } },
+      meta: { author: "avatar:jane", source: "attention" },
+      egress: { kind: "message_reply", chatId: "chat-kzf" },
       scores: { hash1: 0 },
       summary: "relay finished",
       change: { type: "update", value: "gaubee says fried rice" },
@@ -45,7 +46,7 @@ describe("Feature: attention system context scheduling", () => {
 
     const matches = system.query({ source: "attention", text: "fried", minScore: 0 });
     expect(matches).toHaveLength(1);
-    expect(matches[0]?.commit.meta.replyTarget).toEqual({ systemId: "message", subjectId: "chat-kzf" });
+    expect(matches[0]?.commit.egress).toEqual({ kind: "message_reply", chatId: "chat-kzf" });
   });
 
   test("Scenario: Given subscriptions When a commit lands Then listeners receive the commit", () => {
@@ -98,6 +99,28 @@ describe("Feature: attention system context scheduling", () => {
     expect(active[0]?.recentCommits[0]?.summary).toBe("pending");
   });
 
+  test("Scenario: Given a background push When the system consumes it Then notifications can clear without deleting history", () => {
+    const system = new AttentionSystem();
+    system.createContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "background" });
+
+    const push = system.commit("ctx-1", {
+      ingressType: "push",
+      scores: { hash1: 100 },
+      summary: "ping",
+      change: { type: "update", value: "ping" },
+    }).commit;
+
+    expect(system.listActiveContexts()).toHaveLength(0);
+    expect(system.listPushCommits("ctx-1").map((item) => item.commitId)).toEqual([push.commitId]);
+
+    system.setContextFocusState("ctx-1", "focused");
+    expect(system.listActiveContexts()).toHaveLength(1);
+
+    system.consumePushes("ctx-1", [push.commitId]);
+    expect(system.listActiveContexts()).toHaveLength(0);
+    expect(system.listPushCommits("ctx-1")).toEqual([]);
+  });
+
   test("Scenario: Given a snapshot round-trip When restored Then contexts and commits remain queryable", () => {
     const system = new AttentionSystem();
     system.createContext({ contextId: "ctx-1", owner: "avatar:jane" });
@@ -120,5 +143,6 @@ describe("Feature: attention system context scheduling", () => {
       },
     ]);
     expect(restored.query({ hash: "hash1" })[0]?.commit.commitId).toBe(commit.commitId);
+    expect(restored.getContext("ctx-1")?.getState().focusState).toBe("focused");
   });
 });

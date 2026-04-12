@@ -83,12 +83,22 @@ const compactMetaValue = (key: string, value: unknown, depth: number): unknown =
   return String(value);
 };
 
-const projectAttentionMeta = (meta: AttentionCommitMeta): AttentionCommitMeta =>
-  Object.fromEntries(Object.entries(meta).map(([key, value]) => [key, compactMetaValue(key, value, 0)])) as AttentionCommitMeta;
+const projectAttentionMeta = (meta: AttentionCommitMeta): AttentionCommitMeta => ({
+  author: String(compactMetaValue("author", meta.author, 0)),
+  source: String(compactMetaValue("source", meta.source, 0)),
+  systemId: typeof meta.systemId === "string" ? String(compactMetaValue("systemId", meta.systemId, 0)) : undefined,
+  subjectId: typeof meta.subjectId === "string" ? String(compactMetaValue("subjectId", meta.subjectId, 0)) : undefined,
+  channelId: typeof meta.channelId === "string" ? String(compactMetaValue("channelId", meta.channelId, 0)) : undefined,
+  tags: Array.isArray(meta.tags)
+    ? meta.tags.map((tag, index) => String(compactMetaValue(`tags[${index}]`, tag, 0)))
+    : undefined,
+  createdAt: typeof meta.createdAt === "string" ? String(compactMetaValue("createdAt", meta.createdAt, 0)) : undefined,
+});
 
 const projectAttentionCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
   meta: projectAttentionMeta(commit.meta),
+  egress: commit.egress ? { ...commit.egress } : undefined,
   scores: { ...commit.scores },
   change:
     commit.change.type === "clean"

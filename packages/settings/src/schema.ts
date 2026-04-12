@@ -102,6 +102,18 @@ export const settingsSchema = z.object({
             })
             .describe("Bootstrap config for the primary room inside the chat channel.")
             .optional(),
+          maxFocusedRoomCount: z
+            .number()
+            .int()
+            .positive()
+            .describe("Maximum unread rooms ingested into one runtime cycle.")
+            .optional(),
+          maxBatchReadRoomMessageCount: z
+            .number()
+            .int()
+            .positive()
+            .describe("Maximum unread messages ingested per room for one runtime cycle.")
+            .optional(),
         })
         .describe("Message feature switches.")
         .optional(),

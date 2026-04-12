@@ -6,6 +6,7 @@ import { AppKernel, type AppKernelOptions, type SessionMeta } from "../src";
 import { startMockModelServer, type MockModelServerHandle } from "./mock-model-server";
 
 const DEFAULT_POLL_MS = 50;
+const FULL_WORKSPACE_GRANT = [{ relativePath: "/", mode: "rw" }] as const;
 
 const sleep = async (ms: number): Promise<void> => {
   await new Promise<void>((resolveReady) => setTimeout(resolveReady, ms));
@@ -66,7 +67,7 @@ export const createMockKernelHarness = async (
           baseUrl: mockServer.baseUrl,
           temperature: 0,
           maxRetries: 0,
-          maxToken: 8_192,
+          maxToken: 64_000,
           compactThreshold: 0.75,
         },
       },
@@ -101,16 +102,29 @@ export const createMockKernelHarness = async (
     const session = await kernel.createSession({
       cwd: workspacePath,
       name: input.sessionName ?? "mock-loopbus",
-      autoStart: true,
+      autoStart: false,
     });
+    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    kernel.grantRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath,
+      grants: [...FULL_WORKSPACE_GRANT],
+    });
+    const startedSession = await kernel.startSession(session.id);
+    if (!startedSession.primaryRoomId) {
+      throw new Error(`mock harness missing primary room after explicit attach: ${startedSession.id}`);
+    }
+    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)) {
+      throw new Error(`mock harness failed to restore attached primary room: ${startedSession.id}`);
+    }
     return {
       rootDir,
       workspacePath,
       kernel,
       mockServer,
-      session,
+      session: startedSession,
       stop: async () => {
-        await kernel.abortSession(session.id).catch(() => {});
+        await kernel.abortSession(startedSession.id).catch(() => {});
         await kernel.stop().catch(() => {});
         await mockServer.stop().catch(() => {});
         await rm(rootDir, { recursive: true, force: true });

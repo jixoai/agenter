@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { AttentionCommit, AttentionCommitInput, AttentionContextState } from "./attention-item";
+import type {
+  AttentionCommit,
+  AttentionCommitInput,
+  AttentionContextState,
+  AttentionFocusState,
+} from "./attention-item";
 import type {
   AttentionActiveContextMatch,
   AttentionCommitMatch,
@@ -19,6 +24,7 @@ export class AttentionSystem {
   createContext(input: {
     contextId?: string;
     owner: string;
+    focusState?: AttentionFocusState;
     content?: string;
     contentFormat?: string;
     scoreMap?: Record<string, number>;
@@ -31,6 +37,7 @@ export class AttentionSystem {
       new AttentionContext({
         contextId,
         owner: input.owner,
+        focusState: input.focusState,
         content: input.content,
         contentFormat: input.contentFormat,
         scoreMap: input.scoreMap,
@@ -57,6 +64,18 @@ export class AttentionSystem {
 
   removeContext(contextId: string): void {
     this.contexts.delete(contextId);
+  }
+
+  setContextFocusState(contextId: string, focusState: AttentionFocusState): AttentionContextState {
+    return this.requireContext(contextId).setFocusState(focusState);
+  }
+
+  listPushCommits(contextId: string, input: { includeConsumed?: boolean; limit?: number } = {}): AttentionCommit[] {
+    return this.requireContext(contextId).listPushCommits(input);
+  }
+
+  consumePushes(contextId: string, commitIds?: readonly string[]): AttentionCommit[] {
+    return this.requireContext(contextId).consumePushes(commitIds);
   }
 
   commit(contextId: string, input: AttentionCommitInput): { context: AttentionContextState; commit: AttentionCommit } {
@@ -124,6 +143,7 @@ export class AttentionSystem {
           {
             contextId: contextSnapshot.contextId,
             owner: contextSnapshot.owner,
+            focusState: contextSnapshot.focusState,
           },
           contextSnapshot,
         ),

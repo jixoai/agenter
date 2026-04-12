@@ -3,9 +3,9 @@ export { MessageControlPlane as MessageSystem } from "./message-control-plane";
 export type {
   CommitWaitHandle,
   MessageAppendInput,
-  MessageAttentionState,
+  MessageActorRoomStateRecord,
+  MessageActorStateRecord,
   MessageAuthorizedMarkReadInput,
-  MessageAuthorizedEditInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
   MessageAuthorizedWriteInput,
@@ -25,7 +25,6 @@ export type {
   MessageControlPlaneEntry,
   MessageCreateInput,
   MessageCreateInitialUserInput,
-  MessageEditInput,
   MessageFocusOp,
   MessageIssueGrantInput,
   MessageIssuedGrant,
@@ -43,6 +42,7 @@ export type {
   MessageTransportConfig,
   MessageTransportEndpoint,
   MessageTransportServerMessage,
+  MessageUnreadRoomSummary,
   ReversePage,
   ReverseTimeCursor,
 } from "./types";

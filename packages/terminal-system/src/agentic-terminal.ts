@@ -51,6 +51,7 @@ const resolveProfile = (profile: TerminalProfile | undefined) => {
     workspacePath: next.workspacePath,
     resumePid: next.resumePid,
     cwd: next.cwd,
+    env: next.env,
     debugCursor: next.debugCursor ?? false,
     gitLog: next.gitLog ?? "none",
   };
@@ -149,6 +150,7 @@ export class AgenticTerminal {
         gitLog: this.profile.gitLog,
         outputRoot: this.profile.outputRoot,
         cwd: this.profile.cwd,
+        env: this.profile.env,
       },
     });
     if (this.profile.gitLog !== "none" && this.profile.gitLog !== false) {
@@ -174,6 +176,7 @@ export class AgenticTerminal {
       this.profile.rows,
       this.profile.color,
       this.profile.cwd,
+      this.profile.env,
     );
     this.appliedSize = { cols: this.profile.cols, rows: this.profile.rows };
     this.inbox = new InputInbox({
