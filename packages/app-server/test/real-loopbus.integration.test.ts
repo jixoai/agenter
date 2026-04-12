@@ -15,7 +15,7 @@ import {
   judgeAcknowledgesWorkAndPromisesFollowUp,
   judgeAnswersWeatherForecastRequest,
 } from "../test-support/real-semantic-assertions";
-import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
+import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
@@ -62,12 +62,9 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealLunchRelayScenario(harness);
 
         expect(result.originAcknowledgement.chatId).toBe(primaryRoomId);
@@ -112,12 +109,9 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealLunchRelayScenario(harness);
         const followUp = await runRealCompactFollowUpScenario(harness, {
           relayChannel: result.relayChannel,
@@ -182,12 +176,9 @@ describe("Feature: real AI loopbus convergence", () => {
           throw new Error("expected session primaryRoomId");
         }
         const result = await runRealWeatherThroughTerminalScenario(harness);
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
         expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
@@ -217,12 +208,9 @@ describe("Feature: real AI loopbus convergence", () => {
           throw new Error("expected session primaryRoomId");
         }
         const result = await runRealInterleavedCanInputScenario(harness);
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
         expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
@@ -250,12 +238,9 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealJudgeRelayScenario(harness);
 
         expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);

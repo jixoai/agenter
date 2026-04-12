@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 
 import {
   REAL_SEMANTIC_JUDGE_PROVIDER_ID,
+  loadRequiredRealSemanticJudge,
   resolveRealSemanticJudgeAvailability,
 } from "../test-support/real-semantic-judge";
 
@@ -103,5 +104,18 @@ describe("Feature: fixed real semantic judge provider resolution", () => {
 
     expect(availability.available).toBe(false);
     expect(availability.warning).toContain("DEEPSEEK_API_KEY");
+  });
+
+  test("Scenario: Given the fixed provider is absent When a semantic real-AI suite requires it Then the precondition fails immediately", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-real-semantic-provider-required-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await expect(
+      loadRequiredRealSemanticJudge({
+        projectRoot,
+        homeDir,
+      }),
+    ).rejects.toThrow(REAL_SEMANTIC_JUDGE_PROVIDER_ID);
   });
 });

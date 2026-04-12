@@ -45,6 +45,8 @@ const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommit
   egress ? { ...egress } : undefined;
 
 const cloneChange = (change: AttentionCommitChange): AttentionCommitChange => ({ ...change });
+const hasNotificationTag = (meta: AttentionCommitMeta): boolean =>
+  Array.isArray(meta.tags) && meta.tags.includes("notification");
 
 const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
@@ -385,7 +387,10 @@ export class AttentionContext {
   }
 
   listActiveScores(minScore = 1): Record<string, number> {
-    const latestByHash = new Map<string, { score: number; ingressType: AttentionCommit["ingressType"]; commitId: string }>();
+    const latestByHash = new Map<
+      string,
+      { score: number; ingressType: AttentionCommit["ingressType"]; commitId: string; notification: boolean }
+    >();
     for (const commitId of this.commitOrder) {
       const commit = this.commits.get(commitId)!;
       for (const [hash, score] of Object.entries(commit.scores)) {
@@ -393,6 +398,7 @@ export class AttentionContext {
           score,
           ingressType: commit.ingressType,
           commitId: commit.commitId,
+          notification: hasNotificationTag(commit.meta),
         });
       }
     }
@@ -408,7 +414,10 @@ export class AttentionContext {
         if (consumedPushCommitIds.has(value.commitId)) {
           return false;
         }
-        return this.state.focusState === "focused";
+        if (value.notification) {
+          return true;
+        }
+        return this.state.focusState !== "muted";
       }).map(([hash, value]) => [hash, value.score]),
     );
   }

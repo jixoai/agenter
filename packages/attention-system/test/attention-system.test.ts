@@ -99,7 +99,7 @@ describe("Feature: attention system context scheduling", () => {
     expect(active[0]?.recentCommits[0]?.summary).toBe("pending");
   });
 
-  test("Scenario: Given a background push When the system consumes it Then notifications can clear without deleting history", () => {
+  test("Scenario: Given a background push When the system consumes it Then background debt remains active until the notification is cleared", () => {
     const system = new AttentionSystem();
     system.createContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "background" });
 
@@ -110,7 +110,7 @@ describe("Feature: attention system context scheduling", () => {
       change: { type: "update", value: "ping" },
     }).commit;
 
-    expect(system.listActiveContexts()).toHaveLength(0);
+    expect(system.listActiveContexts()).toHaveLength(1);
     expect(system.listPushCommits("ctx-1").map((item) => item.commitId)).toEqual([push.commitId]);
 
     system.setContextFocusState("ctx-1", "focused");
@@ -119,6 +119,25 @@ describe("Feature: attention system context scheduling", () => {
     system.consumePushes("ctx-1", [push.commitId]);
     expect(system.listActiveContexts()).toHaveLength(0);
     expect(system.listPushCommits("ctx-1")).toEqual([]);
+  });
+
+  test("Scenario: Given a muted notification push When listing active contexts Then the notification still wakes the system until consumed", () => {
+    const system = new AttentionSystem();
+    system.createContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "muted" });
+
+    const push = system.commit("ctx-1", {
+      ingressType: "push",
+      meta: { tags: ["notification"] },
+      scores: { hash1: 100 },
+      summary: "urgent ping",
+      change: { type: "update", value: "urgent ping" },
+    }).commit;
+
+    expect(system.listActiveContexts().map((item) => item.contextId)).toEqual(["ctx-1"]);
+    expect(system.listPushCommits("ctx-1").map((item) => item.commitId)).toEqual([push.commitId]);
+
+    system.consumePushes("ctx-1", [push.commitId]);
+    expect(system.listActiveContexts()).toHaveLength(0);
   });
 
   test("Scenario: Given a snapshot round-trip When restored Then contexts and commits remain queryable", () => {

@@ -102,7 +102,7 @@ describe("Feature: attention context commit log", () => {
     expect(snapshot.content).toBe("");
   });
 
-  test("Scenario: Given a background push When focus changes and pushes are consumed Then active debt follows focus truth", () => {
+  test("Scenario: Given a background push When focus changes and pushes are consumed Then background debt stays active until the push is explicitly consumed", () => {
     const context = new AttentionContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "background" });
 
     const push = context.commit({
@@ -112,7 +112,7 @@ describe("Feature: attention context commit log", () => {
       change: { type: "update", value: "background ping" },
     }).commit;
 
-    expect(context.isActive()).toBeFalse();
+    expect(context.isActive()).toBeTrue();
     expect(context.pendingPushCount()).toBe(1);
 
     context.setFocusState("focused");
@@ -122,5 +122,23 @@ describe("Feature: attention context commit log", () => {
     expect(consumed.map((item) => item.commitId)).toEqual([push.commitId]);
     expect(context.isActive()).toBeFalse();
     expect(context.getState().consumedPushCommitIds).toEqual([push.commitId]);
+  });
+
+  test("Scenario: Given a muted push with notification semantics When committed Then it remains active until consumed", () => {
+    const context = new AttentionContext({ contextId: "ctx-1", owner: "avatar:jane", focusState: "muted" });
+
+    const push = context.commit({
+      ingressType: "push",
+      meta: { tags: ["notification"] },
+      summary: "urgent ping",
+      scores: { hash1: 100 },
+      change: { type: "update", value: "urgent ping" },
+    }).commit;
+
+    expect(context.isActive()).toBeTrue();
+    expect(context.pendingPushCount()).toBe(1);
+
+    context.consumePushes([push.commitId]);
+    expect(context.isActive()).toBeFalse();
   });
 });

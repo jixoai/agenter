@@ -206,6 +206,17 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(api.getRequests()).toHaveLength(0);
   });
 
+  test("Scenario: Given a non-canonical help flag When message -h runs Then the CLI rejects it as an unknown subcommand", async () => {
+    const api = await startMockRuntimeApi();
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(["-h"], createCommandContext());
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("unknown message subcommand: -h");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
   test("Scenario: Given tool namespace help probe When tool --help runs Then helper discovery guidance is returned locally even with no built-in helpers", async () => {
     const api = await startMockRuntimeApi();
     const rootWorkspacePath = createTempRoot();

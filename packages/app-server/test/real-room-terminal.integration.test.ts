@@ -8,7 +8,7 @@ import {
   judgeReportsReadyUrlDelivery,
 } from "../test-support/real-semantic-assertions";
 import { runRealRoomTerminalDeliveryScenario } from "../test-support/real-room-terminal-delivery-scenario";
-import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
+import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
@@ -28,12 +28,9 @@ describe("Feature: real AI room terminal delivery", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealRoomTerminalDeliveryScenario(harness);
         const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
         const updateSpan = await judgeUrlSpan(semanticJudge, result.updateMessage.content);

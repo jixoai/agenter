@@ -123,15 +123,20 @@ export const createRealSemanticJudge = async (input: {
   };
 };
 
-export const loadRealSemanticJudgeOrWarn = async (input: {
+const buildRealSemanticJudgePreconditionError = (availability: RealSemanticJudgeAvailability): Error =>
+  new Error(
+    availability.warning ??
+      `Real semantic judge provider "${availability.providerId}" must be configured before running semantic real-AI tests.`,
+  );
+
+export const loadRequiredRealSemanticJudge = async (input: {
   projectRoot: string;
   cwd?: string;
   homeDir?: string;
-}): Promise<SemanticJudge | null> => {
+}): Promise<SemanticJudge> => {
   const { judge, availability } = await createRealSemanticJudge(input);
   if (!judge) {
-    console.warn(availability.warning ?? "real semantic judge is unavailable");
-    return null;
+    throw buildRealSemanticJudgePreconditionError(availability);
   }
   return judge;
 };

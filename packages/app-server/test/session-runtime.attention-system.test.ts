@@ -1375,6 +1375,94 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a background push with score When it is committed Then runtime wakes without promoting the context to focused", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleCommittedAttentionCommit: (
+        contextId: string,
+        commit: AttentionCommit,
+        input: { notifyLoop: boolean },
+      ) => Promise<void>;
+    };
+
+    await runtime.start();
+    try {
+      internal.attentionSystem.createContext({
+        contextId: "ctx-room-background",
+        owner: "avatar:tester",
+        focusState: "background",
+      });
+      const pendingWake = internal.waitForAnyInput();
+      const commit = internal.attentionSystem.commit("ctx-room-background", {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          systemId: "message",
+          channelId: "room-background",
+          subjectId: "101",
+        },
+        scores: { hash_background: 100 },
+        summary: "background room needs attention",
+        change: { type: "update", value: "background room needs attention" },
+      }).commit;
+
+      await internal.handleCommittedAttentionCommit("ctx-room-background", commit, { notifyLoop: true });
+
+      expect(await pendingWake).toBe("attention");
+      expect(
+        internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-room-background"),
+      ).toBeTrue();
+      expect(internal.attentionSystem.getContext("ctx-room-background")?.getState().focusState).toBe("background");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a muted notification push When it is committed Then runtime still wakes for the forced notification", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleCommittedAttentionCommit: (
+        contextId: string,
+        commit: AttentionCommit,
+        input: { notifyLoop: boolean },
+      ) => Promise<void>;
+    };
+
+    await runtime.start();
+    try {
+      internal.attentionSystem.createContext({
+        contextId: "ctx-room-muted",
+        owner: "avatar:tester",
+        focusState: "muted",
+      });
+      const pendingWake = internal.waitForAnyInput();
+      const commit = internal.attentionSystem.commit("ctx-room-muted", {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          systemId: "message",
+          channelId: "room-muted",
+          subjectId: "202",
+          tags: ["notification"],
+        },
+        scores: { hash_notification: 100 },
+        summary: "notification override",
+        change: { type: "update", value: "notification override" },
+      }).commit;
+
+      await internal.handleCommittedAttentionCommit("ctx-room-muted", commit, { notifyLoop: true });
+
+      expect(await pendingWake).toBe("attention");
+      expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-room-muted")).toBe(
+        true,
+      );
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then only the newest dirty context is sent to the model in that round", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

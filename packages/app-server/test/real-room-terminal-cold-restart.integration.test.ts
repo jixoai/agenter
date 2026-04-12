@@ -8,7 +8,7 @@ import {
   judgeReportsReadyUrlDelivery,
 } from "../test-support/real-semantic-assertions";
 import { runRealRoomTerminalColdRestartScenario } from "../test-support/real-room-terminal-cold-restart-scenario";
-import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
+import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
@@ -24,12 +24,9 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
       }
 
       try {
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealRoomTerminalColdRestartScenario(harness);
         const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
         const resumedSpan = await judgeUrlSpan(semanticJudge, result.resumedMessage.content);

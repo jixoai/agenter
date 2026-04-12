@@ -1497,6 +1497,20 @@ export class SessionRuntime {
     return this.resolveAttentionFocusState(contextId) === "focused" ? "commit" : "push";
   }
 
+  private isNotificationAttentionCommit(commit: AttentionCommit): boolean {
+    return Array.isArray(commit.meta.tags) && commit.meta.tags.includes("notification");
+  }
+
+  private isWakeableAttentionIngress(contextId: string, commit: AttentionCommit): boolean {
+    if (commit.ingressType === "commit") {
+      return true;
+    }
+    if (this.isNotificationAttentionCommit(commit)) {
+      return true;
+    }
+    return this.resolveAttentionFocusState(contextId) === "background";
+  }
+
   private async applyAttentionFocusState(contextId: string, focusState: AttentionFocusState): Promise<void> {
     const before = this.ensureAttentionContext(contextId, focusState);
     if (before.focusState === focusState) {
@@ -1506,7 +1520,7 @@ export class SessionRuntime {
     this.attentionFactsVersion += 1;
     await this.persistAttentionSystem();
     this.emitAttentionState();
-    if (focusState === "focused" && this.attentionSystem.listPushCommits(contextId).length > 0) {
+    if (focusState !== "muted" && this.attentionSystem.listPushCommits(contextId).length > 0) {
       this.markAttentionContextDirty(contextId);
       this.notifyInput("attention");
     }
@@ -4070,7 +4084,7 @@ export class SessionRuntime {
     commit: AttentionCommit,
     input: { notifyLoop: boolean },
   ): Promise<void> {
-    const wakeableAttentionIngress = commit.ingressType === "commit";
+    const wakeableAttentionIngress = this.isWakeableAttentionIngress(contextId, commit);
     if (wakeableAttentionIngress) {
       this.markAttentionContextDirty(contextId);
     }

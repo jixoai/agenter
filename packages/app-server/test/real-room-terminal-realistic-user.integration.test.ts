@@ -8,7 +8,7 @@ import {
   judgeMarkupExpressesConcepts,
 } from "../test-support/real-semantic-assertions";
 import { runRealRoomTerminalRealisticUserScenario } from "../test-support/real-room-terminal-realistic-user-scenario";
-import { createRealSemanticJudge } from "../test-support/real-semantic-judge";
+import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
@@ -28,15 +28,9 @@ describe("Feature: real AI realistic novice-user delivery", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const semanticJudgeResult = await createRealSemanticJudge({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
-        const semanticJudge = semanticJudgeResult.judge;
-        if (!semanticJudge) {
-          console.warn(semanticJudgeResult.availability.warning ?? "real semantic judge is unavailable");
-          return;
-        }
-
         const result = await runRealRoomTerminalRealisticUserScenario(harness);
         const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
         const updateSpan = await judgeUrlSpan(semanticJudge, result.updateMessage.content);

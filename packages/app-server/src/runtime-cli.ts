@@ -27,7 +27,7 @@ import {
 } from "./runtime-tools";
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
-const isHelpArg = (value: string): boolean => value === "--help" || value === "-h" || value === "help";
+const isHelpArg = (value: string): boolean => value === "--help";
 const renderToolNamespaceHelp = (toolFiles: readonly string[]): string =>
   [
     "tool <file>",

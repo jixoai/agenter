@@ -4,7 +4,7 @@ import { judgeUrlSpan } from "../src";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import { runRealProjectRoomRealisticUserScenario } from "../test-support/real-project-room-realistic-user-scenario";
 import { judgeMarkupExpressesConcepts } from "../test-support/real-semantic-assertions";
-import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
+import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 import { createRealTeamKernelHarness, REAL_TEAM_PROJECT_ROOT } from "../test-support/real-team-kernel-harness";
 
 const hasRealModel =
@@ -21,12 +21,9 @@ describe("Feature: real AI realistic project-room collaboration", () => {
       }
 
       try {
-        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+        const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_TEAM_PROJECT_ROOT,
         });
-        if (!semanticJudge) {
-          return;
-        }
         const result = await runRealProjectRoomRealisticUserScenario(harness);
         const finalUrlSpan = await judgeUrlSpan(semanticJudge, result.finalUrlMessage.content);
 
