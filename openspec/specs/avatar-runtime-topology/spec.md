@@ -19,7 +19,7 @@ The system SHALL create and resolve runtime identity from Avatar identity alone.
 - **AND** their attention, cycles, and private workspace slots remain isolated
 
 ### Requirement: AvatarRuntime SHALL support dynamic attachment of system resources
-AvatarRuntime SHALL support dynamic attachment and detachment of workspaces, rooms, and terminals without recreating the runtime.
+AvatarRuntime SHALL support dynamic attachment and detachment of workspaces, rooms, and terminals without recreating the runtime. In addition to those dynamic attachments, every runtime SHALL keep one fixed avatar root workspace keyed by the avatar principal address.
 
 #### Scenario: Detaching a workspace does not recreate the runtime
 - **WHEN** a workspace is detached from an existing AvatarRuntime
@@ -31,10 +31,20 @@ AvatarRuntime SHALL support dynamic attachment and detachment of workspaces, roo
 - **THEN** all attachments are visible through the same runtime surface
 - **AND** none of those attachments require a second runtime identity to be created
 
+#### Scenario: Fixed avatar root workspace survives resource churn
+- **WHEN** dynamic workspaces, rooms, or terminals are attached, detached, stopped, or restored
+- **THEN** the fixed avatar root workspace remains attached to the same runtime identity
+- **AND** the runtime does not need to recreate its identity to regain that private root
+
 ### Requirement: Avatar catalog SHALL be global
-The system SHALL expose a global Avatar catalog rooted in the user's global avatar directory. Workspaces SHALL consume that catalog through mounts and workspace asset slots instead of defining independent workspace-local avatar definitions.
+The system SHALL expose a global Avatar catalog rooted in the user's global avatar directory, and each avatar's canonical private runtime home SHALL be the principal-address directory under that global root. Nicknames SHALL remain discoverability aliases only.
 
 #### Scenario: Workspace launch consumes a global Avatar definition
 - **WHEN** a workspace launches or mounts an Avatar that exists only in the global avatar catalog
 - **THEN** the workspace uses that global Avatar definition directly
 - **AND** the workspace does not need to create a workspace-local avatar copy before the runtime can start
+
+#### Scenario: Principal-address root is canonical and nickname is alias
+- **WHEN** avatar `frontend` resolves to principal `0xabc...`
+- **THEN** its canonical private root is `~/.agenter/avatars/by-principal/0xabc...`
+- **AND** any nickname-based path points to that canonical root through aliasing instead of becoming a second source of truth

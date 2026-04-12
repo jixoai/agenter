@@ -19,11 +19,10 @@ Native attention queries SHALL exclude zero-score items unless callers explicitl
 - **THEN** `query` and `getActive` omit that item by default
 - **THEN** the same item is returned when `minScore = 0`
 
-### Requirement: Attention meta SHALL carry routing intent
-Attention item metadata SHALL be able to describe the source system and optional reply target used by output adapters.
+### Requirement: Attention commits SHALL separate provenance from egress intent
+Attention commits SHALL keep provenance metadata and egress intent as separate durable fields. Provenance metadata is a closed, durable description of origin; egress intent is a typed routing contract for external adapters.
 
-#### Scenario: Reply target survives persistence
-- **WHEN** an item is appended with reply-target metadata
-- **THEN** a persisted snapshot keeps that metadata intact
-- **THEN** a later runtime can route the item without rebuilding side tables
-
+#### Scenario: Provenance remains stable while routing evolves
+- **WHEN** a commit is persisted with origin facts plus message reply intent
+- **THEN** its provenance metadata records only origin fields such as author/source/systemId/subjectId/channelId
+- **AND** its reply routing survives in a typed egress field instead of being merged into metadata

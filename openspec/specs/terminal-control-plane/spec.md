@@ -22,6 +22,11 @@ The global terminal control plane SHALL manage focused terminals through a decla
 - **THEN** semantic changes from those terminals are eligible for terminal-source invalidation into LoopBus attention ingestion
 - **THEN** unfocused terminals do not bypass the source adapter path to trigger model work directly
 
+#### Scenario: Focused terminal observations default to passive history
+- **WHEN** focused terminal output is persisted into the attention source pipeline for inspection
+- **THEN** that output remains queryable in terminal attention history
+- **AND** it does not automatically become unresolved debt unless the terminal event is explicitly modeled as actionable
+
 ### Requirement: Terminal inspection SHALL prefer read and snapshot primitives
 The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` as the primary inspection primitives, and `terminal_read` SHALL return the most compact available representation for the requested terminal state.
 
@@ -43,15 +48,15 @@ The terminal control plane SHALL expose lifecycle operations for listing, creati
 - **THEN** the process is stopped and removed from the active global terminal list
 - **THEN** later reads for that terminal id fail with a terminal-not-found style error
 
-### Requirement: Terminal control plane SHALL define operating-system execution semantics for model work
-The terminal control plane SHALL contribute provider-owned system guidance that describes terminal as the assistant's operating-system workbench. That guidance SHALL prioritize terminal-backed inspection and execution when work depends on external facts, commands, files, processes, or network state.
+### Requirement: Terminal control plane SHALL define operating-system execution semantics through skills and attention
+The terminal control plane SHALL express terminal-side obligations through durable terminal facts and attention items, and the owning terminal skill guidance SHALL describe terminal as the assistant's operating-system workbench. That guidance SHALL prioritize terminal-backed inspection and execution when work depends on external facts, commands, files, processes, or network state.
 
-#### Scenario: Prompt guide prefers terminal for external facts
+#### Scenario: Terminal skill prefers terminal for external facts
 - **WHEN** model work requires network, filesystem, process, command, or operating-system facts
-- **THEN** the system prompt directs the assistant to use terminal tools before answering
+- **THEN** the terminal skill directs the assistant to use terminal-backed execution before answering
 - **AND** unverified external facts are not treated as completed work
 
-#### Scenario: Prompt guide allows tool composition through terminal
+#### Scenario: Terminal skill allows tool composition through terminal
 - **WHEN** the available shell commands are insufficient for the task
-- **THEN** the system prompt allows the assistant to combine commands or author temporary scripts through terminal tools
+- **THEN** the terminal skill allows the assistant to combine commands or author temporary scripts through terminal tools
 - **AND** terminal failure can be escalated through other systems instead of fabricated answers

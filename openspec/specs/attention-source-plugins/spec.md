@@ -3,12 +3,13 @@
 Define how external systems feed attention into LoopBus through source adapters.
 ## Requirements
 ### Requirement: Attention ingestion SHALL be sourced through source adapters
-Message-system, terminal-system, and future systems SHALL integrate with the attention kernel by invalidating source references that source adapters resolve into context-bound attention drafts, not into flattened LoopBus text facts.
+Message-system, terminal-system, and future systems SHALL integrate with the attention kernel by invalidating typed source references that source adapters resolve into context-bound attention drafts, not into flattened LoopBus text facts or generic metadata bags.
 
-#### Scenario: Message invalidation becomes attention input
+#### Scenario: Message invalidation uses typed room coordinates
 - **WHEN** a message channel configured for attention receives a committed message
-- **THEN** the message source plugin invalidates its source reference
-- **THEN** the runtime reads that source into one or more attention drafts bound to the channel context before any cycle scheduling occurs
+- **THEN** the message source plugin invalidates a typed source ref containing the channel identity plus message subject identity
+- **AND** runtime does not rely on a generic source metadata bag to look the message up again
+- **AND** the runtime reads that source into one or more attention drafts bound to the channel context before any cycle scheduling occurs
 
 #### Scenario: Focused terminal invalidation becomes attention input
 - **WHEN** a focused terminal produces a semantic change
@@ -37,3 +38,21 @@ The runtime SHALL decide whether to schedule model work only after attention dra
 - **WHEN** attention drafts are committed but a cycle policy hook defers the next model pass
 - **THEN** the runtime records the pending attention state and item references
 - **THEN** the model call is delayed until the policy allows it
+
+### Requirement: Source adapters SHALL emit typed attention draft fields
+Source adapters SHALL provide typed draft presentation, provenance, semantic identity, and egress intent fields instead of relying on open metadata bags for model-facing information.
+
+#### Scenario: Message source builds a presentation body from message truth
+- **WHEN** a message source is resolved into attention
+- **THEN** the draft contains typed presentation fields derived from the message-system truth
+- **AND** the draft does not require a later raw metadata dump to reconstruct the model-facing envelope
+
+#### Scenario: Terminal semantic identity is preserved without generic metadata dumping
+- **WHEN** a terminal source emits attention for a semantic change
+- **THEN** the draft can still carry semantic identity hints for dedupe/backoff
+- **AND** those hints are stored in typed draft fields rather than an open metadata bag that later leaks into commits or prompt payloads
+
+#### Scenario: Task source facts stay in the draft body instead of the source ref
+- **WHEN** a task source emits attention about a changed task file or heartbeat
+- **THEN** any AI-visible source/path/file facts are represented in the draft content or presentation body
+- **AND** the source ref itself remains limited to typed scheduler coordinates

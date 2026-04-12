@@ -4,17 +4,25 @@
 TBD - created by archiving change attention-kernel-runtime-vnext. Update Purpose after archive.
 ## Requirements
 ### Requirement: Committed attention outcomes SHALL be dispatched through typed egress adapters
-The runtime SHALL route committed attention outcomes into external systems through typed egress adapters that match on item metadata and dispatch with stable attention references.
+The runtime SHALL route committed attention outcomes into external systems through typed egress adapters driven by explicit attention egress descriptors, not by free-form metadata fields.
 
 #### Scenario: A reply item is dispatched to a chat channel
-- **WHEN** a committed attention item matches a message egress adapter for a chat channel
+- **WHEN** a committed attention item carries a typed `message_reply` egress descriptor for a chat channel
 - **THEN** the runtime dispatches the reply with the channel identity, sender identity, content, and linked attention refs
 - **THEN** it records a successful message egress result for that delivery
 
 #### Scenario: A terminal effect dispatches independently of chat
-- **WHEN** a committed attention item matches a terminal egress adapter and not a message egress adapter
+- **WHEN** a committed attention item carries a future terminal egress descriptor and not a message egress descriptor
 - **THEN** the runtime dispatches the item only to the terminal system
 - **THEN** no chat message is created from that item
+
+### Requirement: Typed egress descriptors SHALL drive external routing
+The runtime SHALL route committed attention outcomes through typed egress descriptors attached to the attention commit, not through free-form metadata fields.
+
+#### Scenario: Message reply routing no longer depends on metadata
+- **WHEN** a committed attention item should be dispatched as a room reply
+- **THEN** the runtime reads the target from a typed message egress descriptor
+- **AND** message delivery does not depend on `meta.replyTarget`
 
 ### Requirement: Chat visibility SHALL require successful message egress
 A reply SHALL appear in Chat only after a message egress adapter has accepted and successfully dispatched it into a chat channel. For chat-backed work that requires a round trip across rooms, successful egress into the secondary relay room does NOT complete the task by itself; the work remains unresolved until successful message egress also reaches the originating requester room.

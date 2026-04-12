@@ -5,7 +5,7 @@ Define the public chat projection contract for LoopBus-backed session cycles.
 ## Requirements
 
 ### Requirement: Session chat cycles are projected from LoopBus cycles
-The system SHALL expose chat history as ordered cycles derived from `session_cycle` facts, and all public chat projection APIs SHALL use `cycle` terminology instead of `round`. The WebUI MAY project those cycles into a conversation-first stream, but cycle identity SHALL remain stable so Chat and Devtools can both navigate by cycle. Manual compact requests SHALL remain projected as `kind: "compact"` cycles with their trigger preserved.
+The system SHALL expose chat history as ordered cycles derived from retained `ai_call` ledger rows plus related heartbeat `message_parts`, and all public chat projection APIs SHALL use `cycle` terminology instead of `round`. The WebUI MAY project those cycles into a conversation-first stream, but cycle identity SHALL remain stable so Chat and Devtools can both navigate by cycle. Manual compact requests SHALL remain projected as `kind: "compact"` cycles with their trigger preserved.
 
 #### Scenario: Query completed cycles
 - **WHEN** a client queries chat cycles for a session with completed LoopBus cycles

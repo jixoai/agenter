@@ -162,6 +162,19 @@ Implications:
 - the backend MUST publish enough runtime/workspace/attention contracts for a later frontend change;
 - page composition, navigation, and desktop/mobile shells move to a separate frontend follow-up change.
 
+### Frontend shell laws are still captured here for the follow-up change
+
+Even though frontend implementation is deferred, the backend contracts produced by this change are intended to feed a WebUI shell with these laws:
+
+- the left sidebar is one shared system rail with L1 destinations and nested L2 entries;
+- `pin` is state on each L2 entry under its owning L1 destination, not a detached global `Pinned` section;
+- the main window reads as one chrome application window with `tabs / page-toolbar / page-content`;
+- `page-toolbar` is fixed-height chrome that exposes responsive hooks but does not own page semantics;
+- `page-content` is the adaptive window body, and pages compose `main-area + bottom-area + right-drawer` inside it;
+- the Workspace surface uses `main-area` for the file tree, `bottom-area` for grant/rule editing, and `right-drawer` for effective access plus advanced metadata;
+- the Avatar detail surface uses `main-area` for `AttentionContext`, `bottom-area` for push inbox and quick actions, and `right-drawer` for advanced runtime metadata;
+- Avatar detail tabs are `Attention / Cycles / OpenTelemetry / Settings`, with `Attention` as the default.
+
 ## Risks / Trade-offs
 
 - [Large breaking surface] -> Mitigation: keep this as a dedicated law-replacement change and do not mix backward-compatibility work into it.

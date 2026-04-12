@@ -5,7 +5,7 @@ Define the durable global avatar catalog, default-avatar contract, and avatar-lo
 
 ## Requirements
 
-### Requirement: Avatar management SHALL define a default avatar contract
+### Requirement: Default avatar remains discoverable through nickname while storage stays principal-keyed
 The system SHALL define `default` as the default avatar nickname in the global avatar catalog, but durable avatar storage SHALL remain principal-keyed. Global avatar discovery SHALL use nickname aliases under `by-nickname`, while the canonical root stays under `by-principal`.
 
 #### Scenario: No explicit avatar falls back to default
@@ -19,6 +19,12 @@ The system SHALL define `default` as the default avatar nickname in the global a
 - **THEN** the `default` avatar is visible even if it has never been customized
 - **AND** the user can use it as the blank starting point for a runtime or workspace-mount flow
 
+#### Scenario: Default avatar resolves through a nickname alias
+- **WHEN** the avatar catalog resolves the default avatar
+- **THEN** the nickname `default` remains visible in the catalog
+- **AND** the canonical directory resolves under `~/.agenter/avatars/by-principal/<principalId>`
+- **AND** the nickname alias resolves under `~/.agenter/avatars/by-nickname/default`
+
 ### Requirement: Global avatar catalog SHALL survive principal-keyed storage migration
 The system SHALL keep principal-keyed storage as the canonical global avatar law, while providing a backend-owned migration bridge for legacy nickname-keyed alias paths so runtime launch does not fail on older installations.
 
@@ -27,7 +33,7 @@ The system SHALL keep principal-keyed storage as the canonical global avatar law
 - **THEN** the backend tolerates or migrates that legacy shape into canonical `by-principal` plus `by-nickname` alias form before continuing
 - **AND** frontend runtime launch does not need a storage-specific workaround
 
-### Requirement: Avatar-scoped collaboration credentials SHALL live inside the target avatar directory
+### Requirement: Avatar seat credentials SHALL live under principal-keyed canonical roots
 Room and terminal credentials for an Avatar SHALL be persisted in that Avatar's canonical principal directory rather than in workspace root settings layers. Nickname paths act only as aliases that resolve to the canonical principal root.
 
 #### Scenario: Regular workspace stores seat credentials under the workspace avatar-private directory
@@ -41,6 +47,16 @@ Room and terminal credentials for an Avatar SHALL be persisted in that Avatar's 
 - **THEN** the system writes that credential into `~/.agenter/avatars/by-principal/<principalId>/settings.local.json`
 - **AND** `~/.agenter/avatars/by-nickname/<nickname>` resolves to that same canonical root
 - **AND** the credential remains attached to that Avatar instead of leaking into workspace root settings files
+
+#### Scenario: Workspace seat persistence provisions canonical root and nickname alias
+- **WHEN** a workspace avatar seat is first initialized for nickname `helper`
+- **THEN** the system creates or uses `<workspace>/.agenter/avatars/by-principal/<principalId>/settings.local.json`
+- **AND** it provisions `<workspace>/.agenter/avatars/by-nickname/helper` as an alias to that canonical root
+
+#### Scenario: Global seat persistence uses the same principal-keyed law
+- **WHEN** the global avatar seat for nickname `default` stores a credential
+- **THEN** the system writes it under `~/.agenter/avatars/by-principal/<principalId>/settings.local.json`
+- **AND** `~/.agenter/avatars/by-nickname/default` resolves to that same canonical root
 
 #### Scenario: Invalid credential is retained with an invalid marker
 - **WHEN** a stored room token or terminal token fails validation

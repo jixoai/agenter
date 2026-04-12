@@ -6,6 +6,7 @@
 
 - `@agenter/web-components` 提供 framework-agnostic 的 durable UI atoms。
 - 这些 atoms 负责行为、结构、最小 fallback 可视性，不负责把某个产品的完整皮肤硬编码进实现。
+- Svelte structural primitives（例如 `ScrollView`、`Scaffold`、`DialogScaffold`、`SplitView`）不属于这个包；它们属于 `@agenter/svelte-components`。
 
 ## 2. Lit 样式契约
 

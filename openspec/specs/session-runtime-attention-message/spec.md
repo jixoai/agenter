@@ -4,11 +4,11 @@
 TBD - created by archiving change session-runtime-attention-message-migration. Update Purpose after archive.
 ## Requirements
 ### Requirement: Session runtime SHALL route chat through attention and message adapters
-Session runtime SHALL ingest chat-channel inputs into attention and route reply items back into message-system through adapters. For chat-backed work, visible message dispatch alone MUST NOT count as completion; the related attention MUST remain unresolved until the assistant also records the settlement. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
+Session runtime SHALL ingest room work from actor unread state, convert selected unread room slices into attention, and route committed reply items back into message-system through authorized adapters. For chat-backed work, visible message dispatch alone MUST NOT count as completion; the related attention MUST remain unresolved until the assistant also records settlement. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
 
-#### Scenario: Attention reply is delivered through message-system
+#### Scenario: Attention reply is delivered through an authorized message-system write
 - **WHEN** a committed attention item targets a chat channel reply
-- **THEN** session runtime dispatches it through `messageSystem.reply`
+- **THEN** session runtime dispatches it through an authorized message-system write for the current actor
 - **THEN** the chat surface only receives message-system output, not raw attention facts
 
 #### Scenario: Single-room reply stays unresolved until attention settles
@@ -17,7 +17,7 @@ Session runtime SHALL ingest chat-channel inputs into attention and route reply 
 - **THEN** the task is not considered complete while only the visible reply exists
 
 #### Scenario: Main room request relays through a manually configured secondary room
-- **GIVEN** the runtime has a default room for user `kzf`
+- **GIVEN** the runtime has an attached originating room for user `kzf`
 - **AND** a secondary room is manually created for user `gaubee`
 - **WHEN** `kzf` asks `gaubee在吗？问他中午吃什么？`
 - **THEN** the assistant first sends a message to the `gaubee` room
@@ -31,15 +31,34 @@ Session runtime SHALL ingest chat-channel inputs into attention and route reply 
 - **THEN** the assistant answers correctly in the original `kzf` room from compacted factual history
 - **AND** the assistant does not need a fresh relay through the `gaubee` room to answer that follow-up
 
-#### Scenario: A queued user message becomes read only when the load gate passes
-- **WHEN** a queued chat message is invalidated for attention
-- **THEN** session runtime asks LoopBus whether that source should load now
-- **AND** the message is marked as read and visible only after the gate allows it
+#### Scenario: Cycle ingress starts from actor unread room state
+- **WHEN** a runtime is about to start a new cycle or attach new attention during tool egress
+- **THEN** it first queries actor unread room state instead of scanning message rows for AI queue markers
+- **THEN** it converts the selected unread room slices into attention-items for that round
 
-#### Scenario: Deferred queued messages survive active tool work
-- **WHEN** a new queued chat message arrives while the runtime is still working on other attention
-- **THEN** the message remains pending instead of being falsely marked complete
-- **AND** the runtime may load it in a later eligible round through the same attention ingress gate
+#### Scenario: Selected unread messages become read when a real model request is dispatched
+- **WHEN** a runtime has selected unread room messages for one outbound model request
+- **AND** that outbound request is actually dispatched to the provider
+- **THEN** the runtime marks those selected unread room messages as read
+- **THEN** merely discovering unread candidates does not mark them read earlier
+
+#### Scenario: Failed model work does not require unread rollback
+- **WHEN** a dispatched model request later fails after the selected unread room messages were marked read
+- **THEN** the related attention debt remains active through its score vectors
+- **THEN** later cycles may query more room history through tools without pretending those same messages were never read
+
+### Requirement: Session runtime SHALL bound unread room ingestion by configured room limits
+Session runtime SHALL select unread room work using configuration-driven limits so one noisy room cannot starve all other rooms.
+
+#### Scenario: Runtime selects only the configured number of focused unread rooms
+- **WHEN** more unread rooms exist than `message.maxFocusedRoomCount`
+- **THEN** the runtime selects only the highest-priority unread rooms up to that configured limit
+- **THEN** lower-priority unread rooms remain pending for later rounds
+
+#### Scenario: Runtime pages only the configured number of unread messages per room
+- **WHEN** one selected room has more unread messages than `message.maxBatchReadRoomMessageCount`
+- **THEN** the runtime only ingests the newest configured slice for that room in the current round
+- **THEN** older unread history remains queryable through room pagination in later rounds or tools
 
 ### Requirement: Stop and abort SHALL have different runtime scopes
 The runtime SHALL distinguish between stopping LoopBus work and destroying runtime-owned systems.

@@ -1,24 +1,30 @@
 # workbench-tabs Specification
 
 ## Purpose
-Define the shared browser-style workbench chrome for primary operator systems, including tab lifecycle, context actions, and the fixed-height toolbar companion contract.
+Define the shared browser-style workbench chrome for primary operator systems, including tab lifecycle, context actions, the fixed-height toolbar companion contract, and the adaptive page-content window law.
 
 ## Requirements
 ### Requirement: Primary workbenches SHALL use one shared chrome-style workbench chrome
-The WebUI SHALL render the top edge of `Avatars`, `Messages`, and `Terminals` through one shared workbench chrome primitive that supports browser-style tab affordances, a toolbar row beneath those tabs, and route-driven selection.
+The WebUI SHALL render the top edge of `Avatars`, `Messages`, `Workspaces`, and `Terminals` through one shared workbench chrome primitive that supports browser-style tab affordances, a toolbar row beneath those tabs, and route-driven selection.
 
 #### Scenario: Shared tabs primitive renders fixed and dynamic tabs
 - **WHEN** a primary workbench contains fixed tabs, dynamic resource tabs, or both
 - **THEN** the workbench renders them through the same shared tabs primitive
 - **THEN** the active tab remains the one selected by the current route
 
+#### Scenario: Fixed management tabs remain while addable tabs open
+- **WHEN** a primary workbench keeps a fixed start or catalog tab and the user opens runtime or creation flows from that workbench
+- **THEN** the fixed tab remains visible as part of the same chrome window
+- **THEN** each runtime or creation flow opens as its own addable tab instead of replacing the fixed management tab
+
 #### Scenario: Active tabs and toolbar render as one continuous chrome surface
 - **WHEN** a primary workbench mounts local title, metadata, or actions into the shared chrome
 - **THEN** the workbench renders those controls in the toolbar row directly below the tab row
 - **THEN** the active tab and toolbar present one continuous browser-style surface instead of separate page-local headers
+- **THEN** the active tab does not keep a visible bottom dividing border against the toolbar surface
 
 #### Scenario: Chrome body renders as the same switched window
-- **WHEN** the user switches between `Avatars`, `Messages`, or `Terminals`
+- **WHEN** the user switches between `Avatars`, `Messages`, `Workspaces`, or `Terminals`
 - **THEN** the selected workbench renders its tab body as part of the same shared chrome window
 - **THEN** the result reads as one switched window surface rather than detached tab chrome above a separate page card
 
@@ -54,14 +60,39 @@ The shared workbench tabs primitive SHALL support context-menu actions so each w
 - **THEN** the tab primitive remains reusable while still allowing workbench-specific commands
 
 ### Requirement: Workbench chrome SHALL provide a responsive toolbar companion
-The shared workbench chrome SHALL include a reusable toolbar companion that keeps local information and actions readable across compact and wide layouts while remaining a fixed-height chrome slot. The shared toolbar primitive SHALL provide viewport state and container-query hooks, but page-specific content layout remains the responsibility of the consuming workbench surface.
+The shared workbench chrome SHALL include a reusable toolbar companion that keeps local information and actions readable across compact and wide layouts while remaining a fixed-height chrome region. The shared toolbar primitive SHALL provide viewport state and container-query hooks, but page-specific content layout remains the responsibility of the consuming workbench surface.
 
 #### Scenario: Toolbar slot stays fixed while content adapts
-- **WHEN** a workbench renders its local title, actions, or dense metadata inside the shared toolbar on a compact viewport or narrow container
-- **THEN** the toolbar slot remains fixed at `48px`
-- **THEN** the workbench adapts its own content inside that slot instead of growing the shared chrome vertically
+- **WHEN** a workbench renders its local title, actions, dense metadata, or local navigation inside the shared toolbar on a compact viewport or narrow container
+- **THEN** the toolbar remains fixed-height inside chrome and does not scroll with `page_content`
+- **THEN** the workbench adapts its own content inside that region instead of leaking local chrome into `page_content`
+
+#### Scenario: Pages may use one-row or two-row toolbar content
+- **WHEN** a workbench only needs one line of local chrome
+- **THEN** it may render a single-row toolbar band
+- **WHEN** a workbench needs both identity/actions and local navigation or perspective switching
+- **THEN** it may render a two-row toolbar band while keeping both rows compact enough to stay inside the same fixed-height chrome region
 
 #### Scenario: Shared toolbar primitive does not encode page-owned row semantics
 - **WHEN** a page needs a dense or specialized toolbar layout
 - **THEN** the shared toolbar primitive exposes only responsive state and slot/container hooks
 - **THEN** the page itself decides how to arrange its local toolbar content inside the fixed chrome slot
+
+### Requirement: Workbench window SHALL expose explicit `tabs`, `page_toolbar`, and `page_content` bands
+The shared chrome window SHALL read as one application window with three explicit vertical bands: `tabs`, `page_toolbar`, and `page_content`. `page_toolbar` SHALL remain fixed-height chrome, while `page_content` SHALL be the adaptive content viewport that receives the page-owned layout.
+
+#### Scenario: Fixed chrome stays outside the adaptive content viewport
+- **WHEN** a workbench route renders scrollable or multi-pane content
+- **THEN** the `tabs` strip and `page_toolbar` remain outside the scrolling content viewport
+- **THEN** the route places scrolling responsibility inside `page_content` instead of stretching the toolbar or tab bands
+
+#### Scenario: Page content hosts the page-owned tri-region layout
+- **WHEN** a workbench route needs a primary stage, a supporting bottom surface, and an advanced detail drawer
+- **THEN** that route composes those regions inside `page_content`
+- **THEN** the shared chrome does not insert a second detached outer card or page-local pseudo-header above them
+
+#### Scenario: Page content reads as the route's own window body
+- **WHEN** a route renders inside the shared chrome window
+- **THEN** `page_content` behaves like one independent embedded window body for that route
+- **THEN** the route avoids wrapping its entire body in another large rounded or bordered page card
+- **THEN** borders, padding, and separators are used only for route-local subregions that genuinely need them

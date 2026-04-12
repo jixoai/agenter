@@ -20,9 +20,10 @@ The WebUI SHALL render the workspace Chat route as a conversation-first stage th
 - **THEN** the Chat route inserts a centered time or date divider into the transcript
 - **THEN** the divider stays visually secondary to the message bubbles
 
-#### Scenario: Group chat shows read progress instead of pending strip
+#### Scenario: Group chat shows message-level read progress instead of pending strip
 - **WHEN** the user is viewing a shared room conversation
-- **THEN** the primary room status affordance summarizes who has read the conversation or latest message
+- **THEN** each message row may expose its own read-progress affordance at inline-end
+- **THEN** the route does not summarize latest-read state as a room-header `x/y read` chip
 - **THEN** the UI does not treat "pending for attention" as the main collaboration summary for that room
 
 ### Requirement: Room create and edit surfaces SHALL model seats, not fake identity roles

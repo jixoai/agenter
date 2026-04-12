@@ -4,7 +4,7 @@
 Define the global room-first message control plane, its transport contract, and the model-facing semantics for collaboration across auth actors and session actors.
 ## Requirements
 ### Requirement: Message-system SHALL manage multiple chat channels
-The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, and room-local read-state SHALL remain durable as per-message frozen read membership rather than mutable actor read cursors.
+The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, room-local read-state SHALL remain durable as per-message frozen read membership rather than mutable actor read cursors, and durable room messages SHALL NOT encode AI scheduling or cycle queue state.
 
 #### Scenario: One room is shared by human and session actors
 - **WHEN** an auth actor and one or more session actors are granted access to the same room
@@ -21,10 +21,11 @@ The message control plane SHALL manage multiple global room resources independen
 - **THEN** the room definition, grants, history, and assets remain available in the global message store
 - **THEN** a later auth actor or session actor can reattach to that same room
 
-#### Scenario: Queued user input stays visible while awaiting attention
+#### Scenario: Authorized text input becomes a durable visible room fact without AI state
 - **WHEN** a member sends a text message through an authorized chat transport
-- **THEN** the message is persisted in a queued attention state
-- **AND** it remains visible in the room transcript in send order while still being editable until attention loads it
+- **THEN** the message is persisted immediately as a durable visible room fact in send order
+- **THEN** the stored room message keeps canonical sender identity and frozen read arrays
+- **THEN** the stored room message does not add an AI-specific queue or load field
 
 #### Scenario: Assistant-visible output is immediately visible
 - **WHEN** the runtime or assistant writes a visible reply or structured error through the control plane
@@ -35,6 +36,21 @@ The message control plane SHALL manage multiple global room resources independen
 - **WHEN** a room has message-level durable read-state and one contributing session later stops
 - **THEN** the room history and room read-state remain available in the global message store
 - **THEN** a later actor reattaching to that room can still observe the current read progression without recomputing prior message membership
+
+### Requirement: Message control plane SHALL expose unread room summaries and unread subscriptions
+The message control plane SHALL expose authorized unread summary reads and actor-scoped unread subscriptions so runtimes can discover unread room work without scanning whole room histories.
+
+#### Scenario: Authorized runtime reads unread room summaries
+- **WHEN** an authorized runtime reads unread summaries for actor `A`
+- **THEN** the control plane returns per-room unread counts, latest unread ordering facts, and the latest durable read floor for `A`
+- **THEN** the runtime can rank rooms without paging the full message history of every room
+
+#### Scenario: Authorized runtime waits on unread state instead of polling room rows
+- **GIVEN** actor `A` currently has no unread rooms
+- **AND** a runtime is waiting on `A`'s unread subscription through the control plane
+- **WHEN** a new unread room message is persisted for `A`
+- **THEN** the unread wait resolves
+- **THEN** the runtime can perform one new unread summary read instead of polling all room rows
 
 ### Requirement: Room lifecycle SHALL distinguish archive from dissolve
 
@@ -131,15 +147,15 @@ The global room message control plane SHALL allow room text messages to referenc
 - **THEN** the control plane still returns those attachment references with the durable room history
 - **THEN** the client does not need a running session runtime to reconstruct the room attachment timeline
 
-### Requirement: Message-system SHALL define communication semantics for model work
-The message control plane SHALL contribute provider-owned system guidance that describes message-system as an asynchronous multi-channel communication surface. That guidance SHALL teach role-aware dispatch instead of reducing message tools to mechanical quote forwarding.
+### Requirement: Message-system SHALL define communication semantics through skills and attention
+The message control plane SHALL express room-facing obligations through durable message facts and attention items, and the owning message skill guidance SHALL describe message-system as an asynchronous multi-channel communication surface. That guidance SHALL teach role-aware dispatch instead of reducing room CLI usage to mechanical quote forwarding.
 
-#### Scenario: Prompt guide teaches role-aware relay
-- **WHEN** a model call includes message-system tools
-- **THEN** the system prompt explains that the assistant must first decide whether it is replying, relaying, judging, coordinating, or notifying
+#### Scenario: Message skill teaches role-aware relay
+- **WHEN** room work requires the assistant to use message-system
+- **THEN** the message skill explains that the assistant must first decide whether it is replying, relaying, judging, coordinating, or notifying
 - **AND** relay messages are composed for the target participant instead of blindly copying the originating user's raw sentence
 
-#### Scenario: Prompt guide preserves assistant role boundaries
+#### Scenario: Message attention items preserve assistant role boundaries
 - **WHEN** the assistant is asked to mediate or judge between channels
-- **THEN** the system prompt reminds it not to speak as another participant
+- **THEN** the message skill and message-shaped attention items remind it not to speak as another participant
 - **AND** lack of a user reply in one channel does not block unrelated work elsewhere in the runtime

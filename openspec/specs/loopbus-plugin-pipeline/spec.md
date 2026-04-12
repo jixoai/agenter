@@ -45,3 +45,21 @@ The plugin runtime SHALL allow plugins to expose and consume named services thro
 - **WHEN** a plugin exposes a named service during setup
 - **THEN** another plugin can resolve that service through the plugin API
 - **THEN** the interaction does not require direct access to `SessionRuntime` private state
+
+### Requirement: Plugin/runtime source contracts SHALL distinguish lookup hints from attention payload facts
+LoopBus plugin contracts SHALL use typed source coordinates and first-class read-result fields for adapter lookup. They SHALL treat source lookup hints as adapter-internal addressing only, and they SHALL NOT expose a generic source-ref or read-result metadata bag. Any fact that must survive into durable attention or model payloads SHALL be promoted into typed draft fields before commit serialization.
+
+#### Scenario: Built-in source refs stay typed
+- **WHEN** a built-in system invalidates a message, terminal, or task source
+- **THEN** the invalidated ref carries only typed coordinates required to re-read truth
+- **AND** it does not carry a generic `meta` object
+
+#### Scenario: Source reads expose only first-class scheduler fields
+- **WHEN** a source adapter reads a deferred source ref
+- **THEN** the read result exposes only explicit fields such as `kind`, `fromHash`, `toHash`, `semanticHash`, or `viewHash`
+- **AND** AI-visible detail must still be promoted into attention drafts instead of a read-result metadata bag
+
+#### Scenario: Deferred source refs do not become hidden model state
+- **WHEN** a plugin invalidates a source ref and the runtime reads it in a later eligible round
+- **THEN** any AI-relevant detail required by that source is emitted through typed draft fields or commit body content
+- **AND** the runtime does not rely on a generic source-ref metadata bag as hidden model state

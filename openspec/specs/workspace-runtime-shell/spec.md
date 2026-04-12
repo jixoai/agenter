@@ -1,68 +1,142 @@
 # workspace-runtime-shell Specification
 
 ## Purpose
-Define the durable running-avatar runtime shell that sits behind the `Avatars` workbench and workspace-local avatar entry points.
+Define the durable Avatar detail shell that sits behind the global `Avatars` workbench and runtime entry actions.
 
 ## Requirements
+
 ### Requirement: Running-avatar detail SHALL be a secondary runtime surface
-The WebUI SHALL expose running-avatar detail through dynamic session tabs inside the `Avatars` workbench and through workspace-local avatar or session actions, rather than through a separate secondary `Running Avatars` detail rail. In the active Svelte WebUI this shell SHALL remain addressable through dedicated runtime routes and SHALL preserve reload-safe deep linking.
+The WebUI SHALL expose running-avatar detail through dynamic session tabs inside the global `Avatars` workbench and through explicit runtime-entry actions, rather than through workspace-local embedded avatar pages or a separate secondary `Running Avatars` detail rail. In the active Svelte WebUI this shell SHALL remain addressable through dedicated runtime routes and SHALL preserve reload-safe deep linking.
 
 #### Scenario: Dynamic avatar tab opens the running-avatar shell
 - **WHEN** the user activates a running-avatar tab from the `Avatars` workbench
 - **THEN** the application opens the running-avatar detail shell for that session
-- **THEN** the current primary destination remains `Avatars`, `Messages`, or `Terminals`
+- **AND** the current primary destination remains `Avatars`, `Messages`, `Workspaces`, or `Terminals`
 
-#### Scenario: Workspace avatar actions open the same shell
-- **WHEN** the user opens a running avatar from a workspace-local avatar or session action
+#### Scenario: Global runtime entry opens the same shell
+- **WHEN** the user opens a running avatar from a global runtime entry point rather than a workspace-local avatar page
 - **THEN** the application opens the same running-avatar detail shell model used by the dynamic avatar tab
-- **THEN** the detail behavior does not depend on which launcher initiated it
+- **AND** the detail behavior does not depend on a workspace-local avatar wrapper being present
 
-### Requirement: Running-avatar detail SHALL keep one primary runtime stage without a parallel facts rail
-The runtime shell SHALL present the active tab content as the single primary stage, and linked systems, runtime facts, and source jumps SHALL be integrated into stage-local surfaces instead of a parallel secondary facts rail. The route shell and stage panels SHALL derive their structure from shared scaffold-family primitives instead of local split-layout classes.
+### Requirement: Avatar detail SHALL compose `main-area`, `bottom-area`, and `right-drawer` inside `page_content`
+The runtime shell SHALL present the active tab content through one `page_content` region that contains a large primary `main-area`, a quieter `bottom-area` for auxiliary actions or inbox material, and a `right-drawer` for advanced metadata or inspection. The route shell and stage panels SHALL derive their structure from shared scaffold-family primitives instead of local split-layout classes.
 
-#### Scenario: Runtime shell derives from shared scaffold law without duplicate detail panes
+#### Scenario: Runtime shell derives from shared scaffold law without duplicate outer panes
 - **WHEN** the user opens a runtime route
-- **THEN** the page uses shared scaffold primitives to allocate the primary stage without a competing secondary rail
-- **THEN** the stage header stays outside the body scroll region without page-local stretch-layout patches
+- **THEN** the page uses shared scaffold primitives to allocate `main-area`, `bottom-area`, and `right-drawer` inside the shared window body
+- **AND** the stage header stays outside the body scroll region without page-local stretch-layout patches
 
-### Requirement: Cycles tab SHALL surface the current running round as an active badge
-The `Cycles` tab SHALL display the current running cycle number as a badge. When the avatar is actively running, the badge background SHALL follow the latest cycle-kind icon color and SHALL render a breathing state.
+### Requirement: Avatar detail SHALL expose `Heartbeat`, `Attention`, and `Settings` as peer runtime tabs
+The Avatar detail shell SHALL expose flat runtime-specific peer tabs named `Heartbeat`, `Attention`, and `Settings`. The default selected tab SHALL be `Heartbeat`.
 
-#### Scenario: Running avatar shows active cycle badge
-- **WHEN** the running-avatar detail shell has an in-flight cycle
-- **THEN** the `Cycles` tab badge shows the current running cycle number
-- **THEN** the badge background uses the latest cycle-kind icon color and renders a breathing state
-
-#### Scenario: Idle avatar shows the latest cycle number without breathing
-- **WHEN** the running-avatar detail shell is not currently executing a cycle but has prior cycle history
-- **THEN** the `Cycles` tab badge shows the latest known cycle number without a breathing state
-- **THEN** the user can still scan the current round index without mistaking it for active execution
-
-### Requirement: Running-avatar detail SHALL expose flat runtime-specific peer tabs
-The running-avatar detail shell SHALL expose flat runtime-specific peer tabs. Former Devtools sub-tabs and `Settings` SHALL remain siblings at the same hierarchy level, and the default selected tab SHALL be `Attention`.
-
-#### Scenario: Runtime peer tabs are visible at the same level
+#### Scenario: Runtime peer tabs stay focused on the simplified shell
 - **WHEN** the user opens a running-avatar detail shell
-- **THEN** `Attention`, `Cycles`, `Systems`, `Observability`, and `Settings` are available as peer tabs in the same shell layer
-- **THEN** the user does not descend through a nested tab stack to reach technical runtime surfaces
+- **THEN** `Heartbeat`, `Attention`, and `Settings` are available as peer tabs in the same shell layer
+- **AND** `Cycles` or `OpenTelemetry` are not required as primary peer tabs
 
-#### Scenario: Attention is the default runtime tab
+#### Scenario: Heartbeat is the default runtime tab
 - **WHEN** the user opens a running-avatar detail shell without an explicit tab
-- **THEN** the shell lands on `Attention` by default
-- **THEN** the most critical runtime surface is visible without an extra tab switch
+- **THEN** the shell lands on `Heartbeat` by default
+- **AND** the current runtime heartbeat is visible without an extra tab switch
 
-### Requirement: Runtime shell routes land on a canonical runtime tab
-The workspace runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to that tab without requiring feature-level navigation glue.
+### Requirement: Runtime shell routes land on the canonical heartbeat tab
+The runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to `Heartbeat` without requiring feature-level navigation glue.
 
-#### Scenario: Runtime rail links land on attention by default
+#### Scenario: Runtime rail links land on heartbeat by default
 - **WHEN** the operator opens a session from the runtime rail or a direct runtime entry URL without a tab segment
-- **THEN** the browser lands on `/avatars/runtime/{sessionId}/attention`
+- **THEN** the browser lands on `/avatars/runtime/{sessionId}/heartbeat`
 - **AND** the runtime shell renders without an intermediate error page
 
-### Requirement: Running-avatar detail SHALL link out to global resource pages instead of duplicating them
-The running-avatar detail shell SHALL NOT duplicate the global `Chats` or `Terminals` browsing surfaces, and it SHALL use explicit links or source jumps when the user needs to inspect a room or terminal.
+### Requirement: Heartbeat SHALL render one continuous AI-call runtime stream
+The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime message surface backed by the session AI-call ledger. It SHALL present role-user and role-assistant messages as the dominant stream and SHALL treat virtualization as a list concern separate from message rendering primitives.
 
-#### Scenario: Room or terminal inspection leaves the runtime shell
-- **WHEN** the user requests to inspect a room or terminal from inside running-avatar detail
-- **THEN** the application navigates to the corresponding global `Chats` or `Terminals` surface
-- **THEN** the runtime shell does not render a second embedded room or terminal catalog of its own
+#### Scenario: Heartbeat shows the runtime message stream
+- **WHEN** the operator opens `Heartbeat`
+- **THEN** the `main-area` renders the current session heartbeat as one ordered user/assistant stream
+- **AND** that stream is hydrated from persisted or live AI-call and message-part facts instead of old cycle cards
+
+#### Scenario: Long heartbeat history remains renderable
+- **WHEN** the session contains a long heartbeat history
+- **THEN** the page can virtualize the list without changing the message rendering contract
+- **AND** the runtime shell does not hard-couple one message UI library to the list controller
+
+### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
+The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.
+
+#### Scenario: Background notification appears inside Attention
+- **WHEN** the runtime receives a push for a non-focused context and the operator opens Avatar detail
+- **THEN** the `Attention` surface can show that notification summary and its quick actions inside the same runtime shell
+- **AND** the operator is not required to switch into a separate notification-only page
+
+#### Scenario: Attention detail keeps notifications subordinate
+- **WHEN** the operator scans Avatar detail navigation
+- **THEN** notification actions stay subordinate to `Attention`
+- **AND** they do not become their own primary runtime tab
+
+### Requirement: Attention main-area SHALL present one continuous runtime story
+The `Attention` tab `main-area` SHALL remain a continuous runtime surface rather than a split dashboard. It SHALL present the selected `AttentionContext` first, then the currently focused context stack, and then the queued push inbox. Notification rows SHALL stay compact until they are promoted into active attention or resolved through `bottom-area` quick actions.
+
+#### Scenario: Operator reads the current attention state from top to bottom
+- **WHEN** the operator opens the `Attention` tab
+- **THEN** the first visible runtime block identifies the currently selected `AttentionContext`
+- **AND** focused contexts appear below it as the active stack
+- **AND** queued pushes appear after the focused stack instead of occupying a separate peer pane
+
+#### Scenario: Queued push stays subordinate until promoted
+- **WHEN** a background notification enters `Attention`
+- **THEN** it appears inside the push inbox as a compact queued row
+- **AND** the operator can resolve it with `bottom-area` quick actions
+- **AND** it does not replace the current `AttentionContext` until explicitly promoted
+
+### Requirement: Attention drawer SHALL use light sectional inspection
+The `Attention` tab `right-drawer` SHALL prefer section headings plus simple dividers over stacked metadata cards. Runtime inspection sections such as selection facts, delivery contract, suggested response, and linked runtime sources SHALL remain readable without turning the drawer into another dashboard. Low-priority summary facts SHALL stay docked at the bottom of the drawer.
+
+#### Scenario: Operator inspects a selected attention source
+- **WHEN** the operator selects or focuses one attention source
+- **THEN** the `right-drawer` shows lightweight inspection sections for that source
+- **AND** the drawer preserves a clear top-to-bottom reading order for actionable facts before passive metadata
+
+#### Scenario: Drawer keeps summary facts subordinate
+- **WHEN** the drawer displays selection counts or passive runtime facts
+- **THEN** those facts appear in a docked summary section near the bottom
+- **AND** they do not reappear as a second stack of bordered cards above the main inspection sections
+
+### Requirement: Avatar detail SHALL NOT re-embed workspace or history surfaces as primary runtime panes
+The Avatar detail shell SHALL focus on runtime concerns and SHALL NOT restore workspace browsing, history browsing, or other system catalogs as first-class peer panes inside the runtime body. When the operator needs those resources, the shell SHALL link out to the corresponding global system surface.
+
+#### Scenario: Runtime detail stays heartbeat-first
+- **WHEN** the operator opens Avatar detail
+- **THEN** the dominant `main-area` remains the current heartbeat or attention work surface
+- **AND** the shell does not embed a workspace catalog or history page as another primary runtime pane
+
+#### Scenario: Operator leaves runtime detail to inspect another system surface
+- **WHEN** the operator wants to inspect a workspace, room, or terminal in depth
+- **THEN** the application navigates to the corresponding global system surface
+- **AND** Avatar detail remains a runtime workbench rather than a nested all-systems dashboard
+
+### Requirement: Settings SHALL remain runtime-scoped and separate from workspace rules
+The `Settings` tab SHALL preserve avatar-runtime configuration as a dedicated surface. Its `main-area` SHALL present runtime-scoped settings, its `bottom-area` SHALL expose save/reset/restart-style actions, and its detail sheet or drawer SHALL surface passive runtime metadata without taking over the page.
+
+#### Scenario: Edit avatar runtime settings
+- **WHEN** the operator opens `Settings`
+- **THEN** the main surface shows avatar-runtime settings such as attention defaults, notification policy, quick replies, or linked-system preferences
+- **AND** the page does not masquerade as a workspace-rule editor
+
+#### Scenario: Save or revert runtime configuration
+- **WHEN** the operator changes settings inside the runtime shell
+- **THEN** save/reset/restart-style actions remain in the `bottom-area`
+- **AND** passive metadata such as runtime status or export flags remains secondary in the detail sheet or drawer
+
+### Requirement: Avatar runtime pages SHALL preserve the same capability path across desktop and compact breakpoints
+Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page responsibilities even when the geometry changes. `Tablet landscape` MAY keep a visible left sidebar and persistent drawer longer, while `tablet portrait` and `phone` MAY collapse navigation into a compact shell and stack the detail surface below the `bottom-area`.
+
+#### Scenario: Use avatar runtime on tablet landscape
+- **WHEN** the operator opens avatar runtime detail on a landscape tablet viewport
+- **THEN** the page can keep the visible sidebar and persistent right drawer if space allows
+- **AND** the operator can still switch between `Heartbeat`, `Attention`, and `Settings`
+
+#### Scenario: Use avatar runtime on portrait tablet or phone
+- **WHEN** the operator opens avatar runtime detail on a portrait tablet or phone viewport
+- **THEN** the left navigation can collapse into a compact shell
+- **AND** the drawer can become a stacked sheet below the `bottom-area`
+- **AND** the same runtime tabs and page actions remain reachable
