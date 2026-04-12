@@ -3,6 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { judgeUrlSpan } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
+import {
+  judgeAcknowledgesWorkAndPromisesFollowUp,
+  judgeReportsReadyUrlDelivery,
+} from "../test-support/real-semantic-assertions";
 import { runRealRoomTerminalDeliveryScenario } from "../test-support/real-room-terminal-delivery-scenario";
 import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 
@@ -35,14 +39,16 @@ describe("Feature: real AI room terminal delivery", () => {
         const updateSpan = await judgeUrlSpan(semanticJudge, result.updateMessage.content);
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(result.acknowledgement.content.startsWith("APP-ACK:")).toBe(true);
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
         expect(result.deliveryMessage.chatId).toBe(primaryRoomId);
+        expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.deliveryMessage.content)).toBe(true);
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.deliveryMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
         expect(result.initialBody).toContain("REAL-ROOM-APP-V1");
         expect(result.initialBody).toContain("BUTTON-LABEL-V1");
         expect(result.initialBody).toContain("STATUS-V1");
         expect(result.updateMessage.chatId).toBe(primaryRoomId);
+        expect(await judgeReportsReadyUrlDelivery(semanticJudge, result.updateMessage.content)).toBe(true);
         expect(updateSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.updateMessage.content.slice(updateSpan.start, updateSpan.end)).toBe(result.deliveryUrl);
         expect(result.updatedBody).toContain("REAL-ROOM-APP-V2");

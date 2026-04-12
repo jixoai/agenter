@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { judgeUrlSpan } from "../src";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import { runRealProjectRoomCollaborationScenario } from "../test-support/real-project-room-collaboration-scenario";
+import { judgeMarkupExpressesConcepts } from "../test-support/real-semantic-assertions";
 import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 import { createRealTeamKernelHarness, REAL_TEAM_PROJECT_ROOT } from "../test-support/real-team-kernel-harness";
 
@@ -49,11 +50,25 @@ describe("Feature: real AI multi-avatar project room collaboration", () => {
         expect(result.projectUrlMessage.content).toContain("PROJECT-URL");
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.projectUrlMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
-        expect(result.htmlBody).toContain("TEAM-UI-READY");
-        expect(result.htmlBody).toContain("USES-API:/api/status");
-        expect(result.htmlBody).toContain("PROJECT-COLLAB-V1");
-        expect(result.apiBody).toContain("TEAM-API-READY");
-        expect(result.apiBody).toContain("PROJECT-COLLAB-V1");
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.htmlBody,
+            concepts: [
+              { key: "ui_ready", concept: "team UI ready marker", aliases: ["TEAM-UI-READY"] },
+              { key: "api_usage", concept: "uses /api/status endpoint", aliases: ["USES-API:/api/status"] },
+              { key: "project_version", concept: "project collaboration version 1 marker", aliases: ["PROJECT-COLLAB-V1"] },
+            ],
+          }),
+        ).toBe(true);
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.apiBody,
+            concepts: [
+              { key: "api_ready", concept: "team API ready marker", aliases: ["TEAM-API-READY"] },
+              { key: "project_version", concept: "project collaboration version 1 marker", aliases: ["PROJECT-COLLAB-V1"] },
+            ],
+          }),
+        ).toBe(true);
         expect(result.userAcceptanceMessage.senderActorId).toBe(harness.userActorId);
         expect(acceptanceSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.userAcceptanceMessage.content.slice(acceptanceSpan.start, acceptanceSpan.end)).toBe(

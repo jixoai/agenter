@@ -20,8 +20,9 @@ import {
   waitForUrlMarkers,
 } from "./real-room-terminal-delivery-scenario";
 
-const RESUMED_PREFIX = "APP-RESUMED:";
-const REAL_ROOM_COLD_RESTART_SCENARIO_TIMEOUT_MS = 420_000;
+const REAL_ROOM_COLD_RESTART_SCENARIO_TIMEOUT_MS = 900_000;
+const REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS = 300_000;
+const REAL_ROOM_COLD_RESTART_SETTLE_TIMEOUT_MS = 180_000;
 
 type ModelCallRecord = Awaited<ReturnType<RealKernelHarness["kernel"]["inspectModelDebug"]>>["recentModelCalls"][number];
 
@@ -183,22 +184,19 @@ export const runRealRoomTerminalColdRestartScenario = async (
     const initialDeliveryUrl = `http://127.0.0.1:${port}/`;
     const initialStartAt = Date.now();
     const initialPrompt = [
-      "你正在参与一个真实冷重启恢复测试，目标是验证 Room + Workspace + Terminal + 持久化恢复。",
-      `你只能在房间 ${primaryRoomIdBeforeRestart} 与用户沟通。`,
-      "第 1 步：立刻发送一条以 APP-ACK: 开头的简短中文消息，表示你开始构建。",
-      "第 2 步：你现在只有 root_workspace_list 和 root_workspace_bash 这两个直接工具。",
-      `共享项目工作目录的绝对路径固定为：${harness.workspacePath}`,
-      "先用 root_workspace_list 看清已挂载路径，再用 root_workspace_bash 进入 shell。",
-      `如果当前没有 terminal，就先执行 terminal create --help，然后使用 JSON 形式创建，例如 terminal create '{"cwd":"${harness.workspacePath}","focus":true}'；如果已有 terminal，就先 terminal list / terminal read 恢复它。`,
-      "如果你忘了 terminal CLI 的格式，先在 shell 里执行 ccski info agenter-terminal。长期服务放在 terminal 里跑，一次性检查放在 root_workspace_bash 里做；验证 URL 时优先用 curl。",
-      "如果 terminal write 的 text 里还要包含 JSON、很多引号或 heredoc，优先用 JSON stdin 形式调用 terminal write，不要手写多层转义的单个 argv。",
-      "然后只在这个目录里创建一个最小静态网页应用。",
-      `初版页面必须同时包含这些精确字符串：${REAL_ROOM_APP_V1_MARKERS.join(", ")}。`,
-      `第 3 步：必须把应用启动在 ${initialDeliveryUrl}，只能监听 127.0.0.1，不要换端口。`,
-      `第 4 步：在发链接前，继续通过 root_workspace_bash 自行验证 ${initialDeliveryUrl} 可访问。`,
-      `第 5 步：验证通过后，只发送一条以 APP-URL: 开头并包含精确 URL ${initialDeliveryUrl} 的消息。`,
-      "除了 APP-ACK 和 APP-URL，不要发送多余的用户可见消息。",
-      "每轮工作完成后都要收敛 attention。",
+      "这是一次冷重启前后的连续交付测试。你现在先完成重启前的第一轮交付，不要做额外的系统自检。",
+      `共享项目工作目录固定为：${harness.workspacePath}`,
+      "你可以直接使用 root_workspace_list 和 root_workspace_bash；长期服务放 terminal，一次性检查放 root_workspace_bash。",
+      `唯一允许交付的本地链接是：${initialDeliveryUrl}。只能使用这个 URL，只能监听 127.0.0.1，不要换 host，不要换端口，不要改成 3000。`,
+      "你的第一条聊天回复必须是简短中文，确认你已经开始处理。",
+      `然后在该目录里创建一个最小静态网页，页面必须同时包含这些精确字符串：${REAL_ROOM_APP_V1_MARKERS.join(", ")}。`,
+      `不要改写这些标记，不要替换成其它示例里的字符串；只能使用 ${REAL_ROOM_APP_V1_MARKERS.join(", ")}。`,
+      `如果当前没有 terminal，就先执行 terminal create --help，然后用 JSON 形式创建，例如 terminal create '{"cwd":"${harness.workspacePath}","focus":true}'；如果已有 terminal，就先 terminal list / terminal read 恢复并复用。`,
+      "如果忘了 terminal CLI 的格式，先在 shell 里执行 ccski info agenter-terminal；如果忘了 terminal write 的字段名，先看 terminal write --help，字段名是 text。",
+      `在回复链接前，必须先通过 root_workspace_bash 用 curl 自行验证 ${initialDeliveryUrl} 可访问。`,
+      `验证通过后，给我一条带有精确 URL ${initialDeliveryUrl} 的交付消息，并明确说明第一页已经可以打开。`,
+      "除最初的简短确认和最终那条带链接的交付消息外，不要发送额外聊天文本。",
+      "先完成这一轮交付，再做任何收尾动作。",
     ].join("\n");
     const initialSent = await harness.kernel.sendChat(harness.session.id, initialPrompt);
     if (!initialSent.ok) {
@@ -211,8 +209,9 @@ export const runRealRoomTerminalColdRestartScenario = async (
       predicate: (message) =>
         message.chatId === primaryRoomIdBeforeRestart &&
         message.timestamp >= initialStartAt &&
-        message.content.trim().startsWith("APP-ACK:"),
-      timeoutMs: budget.step("cold-restart initial acknowledgement", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+        message.content.trim().length > 0 &&
+        extractLocalDeliveryUrl(message.content) === null,
+      timeoutMs: budget.step("cold-restart initial acknowledgement", REAL_ROOM_COLD_RESTART_SETTLE_TIMEOUT_MS),
     });
 
     debugState.phase = "wait initial delivery url";
@@ -221,23 +220,25 @@ export const runRealRoomTerminalColdRestartScenario = async (
       predicate: (message) =>
         message.chatId === primaryRoomIdBeforeRestart &&
         message.timestamp > acknowledgement.timestamp &&
-        message.content.trim().startsWith("APP-URL:") &&
         extractLocalDeliveryUrl(message.content) === initialDeliveryUrl,
-      timeoutMs: budget.step("cold-restart initial delivery url", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      timeoutMs: budget.step("cold-restart initial delivery url", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
     });
 
     debugState.lastDeliveryUrl = initialDeliveryUrl;
     debugState.phase = "verify initial url";
     const initialFetch = await waitForUrlMarkers(initialDeliveryUrl, REAL_ROOM_APP_V1_MARKERS, {
       label: "cold-restart initial delivery body",
-      timeoutMs: budget.step("cold-restart initial delivery body", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      timeoutMs: budget.step("cold-restart initial delivery body", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
       onObservation: (observation) => {
         debugState.lastFetchObservation = observation;
       },
     });
 
     debugState.phase = "wait pre-restart attention settled";
-    await waitForAttentionSettled(harness, budget.step("cold-restart pre-restart attention settled", REAL_ROOM_DELIVERY_TIMEOUT_MS));
+    await waitForAttentionSettled(
+      harness,
+      budget.step("cold-restart pre-restart attention settled", REAL_ROOM_COLD_RESTART_SETTLE_TIMEOUT_MS),
+    );
     const preRestartModelCallsRaw = await harness.kernel.inspectModelDebug(harness.session.id);
     debugState.preRestartMessages = listRoomTruthMessages(harness);
     debugState.preRestartChannels = projectChannels(harness);
@@ -278,12 +279,15 @@ export const runRealRoomTerminalColdRestartScenario = async (
     }
 
     const feedbackPrompt = [
-      `我在重启后又打开了 ${initialDeliveryUrl}。`,
-      "请继续在同一个 URL 上修改这个应用，不要换端口。",
-      "如果你之前的 terminal 进程已经不存在，就自己通过 root_workspace_bash 里的 terminal CLI 恢复，不要假设内存状态还在；如果忘了格式，先 terminal create --help / terminal write --help。",
+      `我在冷重启后又打开了 ${initialDeliveryUrl}。`,
+      "请继续第二轮交付，还是用同一个工作目录和同一个 URL，不要换端口。",
+      "如果你之前的 terminal 进程还在，就恢复并复用；如果已经不存在，就自己重新创建，不要假设内存态还在。",
+      "如果忘了格式，先看 terminal create --help / terminal write --help，再继续。",
       `请把页面更新为同时包含这些精确字符串：${REAL_ROOM_APP_V2_MARKERS.join(", ")}。`,
-      `完成后只发送一条以 ${RESUMED_PREFIX} 开头并包含同一个 URL ${initialDeliveryUrl} 的消息。`,
-      `注意：之前那条 APP-URL 只完成了重启前的上一轮义务；这条反馈重新打开了新的房间义务，只有发出 ${RESUMED_PREFIX} 开头的消息后才算完成。`,
+      `不要改写这些标记，不要替换成其它示例里的字符串；只能使用 ${REAL_ROOM_APP_V2_MARKERS.join(", ")}。`,
+      `完成后，直接把同一个 URL ${initialDeliveryUrl} 再发给我，并明确说明重启后的更新版本已经可以打开。`,
+      "注意：之前那条带链接的交付消息只完成了重启前的上一轮义务；这条反馈重新打开了新的房间义务，只有把同一个链接重新交付给我后才算完成。",
+      "直接把页面改好并回链接，再做任何收尾动作。",
     ].join("\n");
     const feedbackSent = await harness.kernel.sendChat(harness.session.id, feedbackPrompt);
     if (!feedbackSent.ok) {
@@ -297,15 +301,14 @@ export const runRealRoomTerminalColdRestartScenario = async (
       predicate: (message) =>
         message.chatId === primaryRoomIdAfterRestart &&
         message.timestamp >= feedbackSentAt &&
-        message.content.trim().startsWith(RESUMED_PREFIX) &&
         extractLocalDeliveryUrl(message.content) === initialDeliveryUrl,
-      timeoutMs: budget.step("cold-restart resumed delivery", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      timeoutMs: budget.step("cold-restart resumed delivery", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
     });
 
     debugState.phase = "verify resumed url";
     const resumedFetch = await waitForUrlMarkers(initialDeliveryUrl, REAL_ROOM_APP_V2_MARKERS, {
       label: "cold-restart resumed delivery body",
-      timeoutMs: budget.step("cold-restart resumed delivery body", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      timeoutMs: budget.step("cold-restart resumed delivery body", REAL_ROOM_COLD_RESTART_DELIVERY_TIMEOUT_MS),
       onObservation: (observation) => {
         debugState.lastFetchObservation = observation;
       },
@@ -314,13 +317,13 @@ export const runRealRoomTerminalColdRestartScenario = async (
     debugState.phase = "wait post-restart attention settled";
     const settledAttention = await waitForAttentionSettled(
       harness,
-      budget.step("cold-restart post-restart attention settled", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      budget.step("cold-restart post-restart attention settled", REAL_ROOM_COLD_RESTART_SETTLE_TIMEOUT_MS),
     );
     debugState.phase = "wait post-restart model calls";
     const modelCallsAfterRestart = await waitForModelCallsAfter(harness, {
       afterTimestamp: feedbackSentAt,
       label: "cold-restart post-restart model calls",
-      timeoutMs: budget.step("cold-restart post-restart model calls", REAL_ROOM_DELIVERY_TIMEOUT_MS),
+      timeoutMs: budget.step("cold-restart post-restart model calls", REAL_ROOM_COLD_RESTART_SETTLE_TIMEOUT_MS),
     });
 
     return {

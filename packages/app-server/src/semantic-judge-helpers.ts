@@ -1,9 +1,25 @@
+import { z } from "zod";
+
 import type { SemanticJudge, SemanticJudgeSpan } from "./semantic-judge";
 
 const URL_SIGNAL_PATTERN = /(https?:\/\/|www\.)/iu;
+const DETERMINISTIC_URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/iu;
 const normalizeSignal = (value: string): string => value.trim().toLocaleLowerCase();
 
 export const hasUrlSignal = (content: string): boolean => URL_SIGNAL_PATTERN.test(content);
+
+const findDeterministicUrlSpan = (content: string): SemanticJudgeSpan | null => {
+  const match = DETERMINISTIC_URL_PATTERN.exec(content);
+  if (!match || typeof match.index !== "number") {
+    return null;
+  }
+  const start = match.index;
+  let end = start + match[0].length;
+  while (end > start && /[),.;!?]/u.test(content[end - 1] ?? "")) {
+    end -= 1;
+  }
+  return end > start ? { start, end } : null;
+};
 
 const hasConceptSignal = (
   content: string,
@@ -27,11 +43,20 @@ const hasForbiddenSignal = (content: string, forbidden: readonly string[]): bool
   return normalizedForbidden.some((candidate) => normalizedContent.includes(candidate));
 };
 
+export interface SemanticConceptChecklistItem {
+  key: string;
+  concept: string;
+  aliases?: readonly string[];
+}
+
 export const judgeContainsUrl = async (
   judge: SemanticJudge,
   content: string,
   signal?: AbortSignal,
 ): Promise<boolean> => {
+  if (findDeterministicUrlSpan(content)) {
+    return true;
+  }
   if (!hasUrlSignal(content)) {
     return false;
   }
@@ -48,6 +73,10 @@ export const judgeUrlSpan = async (
   content: string,
   signal?: AbortSignal,
 ): Promise<SemanticJudgeSpan> => {
+  const deterministic = findDeterministicUrlSpan(content);
+  if (deterministic) {
+    return deterministic;
+  }
   if (!hasUrlSignal(content)) {
     return { start: 0, end: 0 };
   }
@@ -82,6 +111,63 @@ export const judgeMentionsConcept = async (
     signal: input.signal,
     maxTokens: 1,
   });
+};
+
+export const judgeConceptChecklist = async (
+  judge: SemanticJudge,
+  input: {
+    content: string;
+    items: readonly SemanticConceptChecklistItem[];
+    signal?: AbortSignal;
+  },
+): Promise<Record<string, boolean>> => {
+  const optimistic: Record<string, boolean> = {};
+  const unresolved = input.items.filter((item) => {
+    if (hasConceptSignal(input.content, item)) {
+      optimistic[item.key] = true;
+      return false;
+    }
+    return true;
+  });
+  if (unresolved.length === 0) {
+    return Object.fromEntries(input.items.map((item) => [item.key, optimistic[item.key] ?? false]));
+  }
+
+  const shape: Record<string, z.ZodBoolean> = {};
+  for (const item of unresolved) {
+    shape[item.key] = z.boolean();
+  }
+  const judged = await judge.judgeStructured({
+    instruction: [
+      "判断内容是否明确提到、表达、满足或交付了以下概念清单。",
+      "对每个 key 返回 true 或 false，不要遗漏任何 key。",
+      ...unresolved.map((item) =>
+        item.aliases && item.aliases.length > 0
+          ? `${item.key}: ${item.concept}。可接受等价表达：${item.aliases.join("、")}。`
+          : `${item.key}: ${item.concept}。`,
+      ),
+    ].join("\n"),
+    content: input.content,
+    signal: input.signal,
+    maxTokens: Math.max(64, unresolved.length * 16),
+    outputSchema: z.object(shape),
+  });
+
+  return Object.fromEntries(
+    input.items.map((item) => [item.key, optimistic[item.key] ?? judged[item.key] ?? false]),
+  );
+};
+
+export const judgeContainsAllConcepts = async (
+  judge: SemanticJudge,
+  input: {
+    content: string;
+    items: readonly SemanticConceptChecklistItem[];
+    signal?: AbortSignal;
+  },
+): Promise<boolean> => {
+  const checklist = await judgeConceptChecklist(judge, input);
+  return input.items.every((item) => checklist[item.key] === true);
 };
 
 export const judgeAvoidsForbiddenMentions = async (

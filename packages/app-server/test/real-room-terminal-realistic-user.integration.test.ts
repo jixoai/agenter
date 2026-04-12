@@ -3,6 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { judgeContainsUrl, judgeUrlSpan } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
+import {
+  judgeAcknowledgesWorkAndPromisesFollowUp,
+  judgeMarkupExpressesConcepts,
+} from "../test-support/real-semantic-assertions";
 import { runRealRoomTerminalRealisticUserScenario } from "../test-support/real-room-terminal-realistic-user-scenario";
 import { createRealSemanticJudge } from "../test-support/real-semantic-judge";
 
@@ -38,20 +42,34 @@ describe("Feature: real AI realistic novice-user delivery", () => {
         const updateSpan = await judgeUrlSpan(semanticJudge, result.updateMessage.content);
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(result.acknowledgement.content.trim().length).toBeGreaterThan(0);
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
         expect(await judgeContainsUrl(semanticJudge, result.acknowledgement.content)).toBe(false);
         expect(result.deliveryMessage.chatId).toBe(primaryRoomId);
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.deliveryMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
-        expect(result.initialBody).toContain("周末喝水提醒");
-        expect(result.initialBody).toContain("点我一下");
-        expect(result.initialBody).toContain("今天先从第一杯开始");
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.initialBody,
+            concepts: [
+              { key: "title", concept: "weekend water reminder app title", aliases: ["周末喝水提醒"] },
+              { key: "cta", concept: "tap or click call-to-action", aliases: ["点我一下"] },
+              { key: "status", concept: "start from the first cup today", aliases: ["今天先从第一杯开始"] },
+            ],
+          }),
+        ).toBe(true);
         expect(result.updateMessage.chatId).toBe(primaryRoomId);
         expect(updateSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.updateMessage.content.slice(updateSpan.start, updateSpan.end)).toBe(result.deliveryUrl);
-        expect(result.updatedBody).toContain("周末喝水提醒");
-        expect(result.updatedBody).toContain("继续喝水");
-        expect(result.updatedBody).toContain("已根据反馈更新");
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.updatedBody,
+            concepts: [
+              { key: "title", concept: "weekend water reminder app title", aliases: ["周末喝水提醒"] },
+              { key: "cta", concept: "continue drinking water action", aliases: ["继续喝水"] },
+              { key: "feedback", concept: "feedback-applied update notice", aliases: ["已根据反馈更新"] },
+            ],
+          }),
+        ).toBe(true);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
         expect(result.toolTraceTools).toContain("root_workspace_bash");

@@ -102,6 +102,67 @@ describe("Feature: semantic judge primitives", () => {
     ).rejects.toBeInstanceOf(SemanticJudgeDecisionError);
   });
 
+  test("Scenario: Given redundant boolean attempts When a quorum agrees Then one malformed response does not fail the decision", async () => {
+    const responses = ["", "1", "1"];
+    const { client, calls } = createStubModelClient(async () => ({
+      thinking: "",
+      text: responses.shift() ?? "1",
+    }));
+    const judge = createSemanticJudge(client, {
+      attempts: 3,
+      minAgreement: 2,
+    });
+
+    await expect(
+      judge.judgeBoolean({
+        instruction: "如果内容中包含 URL，判断为是。",
+        content: "This is the backend url: http://localhost:12555",
+      }),
+    ).resolves.toBe(true);
+
+    expect(calls).toHaveLength(3);
+  });
+
+  test("Scenario: Given redundant boolean attempts and the structured fallback also fails When the judge resolves the boolean Then it surfaces the fallback failure", async () => {
+    const responses = ["1", "0", ""];
+    const { client } = createStubModelClient(async () => ({
+      thinking: "",
+      text: responses.shift() ?? "",
+    }));
+    const judge = createSemanticJudge(client, {
+      attempts: 3,
+      minAgreement: 2,
+    });
+
+    await expect(
+      judge.judgeBoolean({
+        instruction: "如果内容中包含 URL，判断为是。",
+        content: "This is the backend url: http://localhost:12555",
+      }),
+    ).rejects.toThrow('did not return JSON');
+  });
+
+  test("Scenario: Given redundant boolean attempts all fail When the structured fallback succeeds Then the boolean decision still resolves", async () => {
+    const responses = ["", "", "", '{"answer":true}'];
+    const { client, calls } = createStubModelClient(async () => ({
+      thinking: "",
+      text: responses.shift() ?? "",
+    }));
+    const judge = createSemanticJudge(client, {
+      attempts: 3,
+      minAgreement: 2,
+    });
+
+    await expect(
+      judge.judgeBoolean({
+        instruction: "如果内容中包含 URL，判断为是。",
+        content: "This is the backend url: http://localhost:12555",
+      }),
+    ).resolves.toBe(true);
+
+    expect(calls).toHaveLength(4);
+  });
+
   test("Scenario: Given content without URL-like signal When judgeContainsUrl runs Then it returns false without paying for a model call", async () => {
     let modelCalls = 0;
     const { client } = createStubModelClient(async () => {
@@ -128,6 +189,24 @@ describe("Feature: semantic judge primitives", () => {
 
     await expect(judgeContainsUrl(judge, content)).resolves.toBe(true);
     await expect(judgeUrlSpan(judge, content)).resolves.toEqual({ start: 25, end: 47 });
+  });
+
+  test("Scenario: Given an obvious deterministic URL When URL helpers run Then they return the exact span without paying for AI", async () => {
+    let modelCalls = 0;
+    const { client } = createStubModelClient(async () => {
+      modelCalls += 1;
+      return {
+        thinking: "",
+        text: "0",
+      };
+    });
+    const judge = createSemanticJudge(client);
+    const content = "Please open http://127.0.0.1:59697/ right now.";
+
+    await expect(judgeContainsUrl(judge, content)).resolves.toBe(true);
+    await expect(judgeUrlSpan(judge, content)).resolves.toEqual({ start: 12, end: 35 });
+    expect(content.slice(12, 35)).toBe("http://127.0.0.1:59697/");
+    expect(modelCalls).toBe(0);
   });
 
   test("Scenario: Given a known alias match When judgeMentionsConcept runs Then it returns true without paying for a model call", async () => {

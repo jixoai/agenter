@@ -16,11 +16,16 @@ export interface SemanticJudgeSpan {
   end: number;
 }
 
+export interface SemanticJudgeQuorumOptions {
+  attempts?: number;
+  minAgreement?: number;
+}
+
 export interface SemanticJudgeModelClient {
   respondWithMeta: (input: SemanticJudgeModelInput) => Promise<AssistantTurn>;
 }
 
-interface SemanticJudgeCallBase {
+interface SemanticJudgeCallBase extends SemanticJudgeQuorumOptions {
   content: string;
   signal?: AbortSignal;
   maxTokens?: number;
@@ -48,12 +53,29 @@ export interface JudgeCompletionInput<TResult> extends SemanticJudgeCallBase {
   parse: (value: string) => TResult;
 }
 
+export interface SemanticJudgeAttemptDiagnostic {
+  attempt: number;
+  raw: string;
+  parsedKey?: string;
+  error?: string;
+}
+
 export class SemanticJudgeDecisionError extends Error {
+  readonly attempts?: readonly SemanticJudgeAttemptDiagnostic[];
+
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "SemanticJudgeDecisionError";
   }
 }
+
+const withAttemptDiagnostics = (
+  error: SemanticJudgeDecisionError,
+  attempts: SemanticJudgeAttemptDiagnostic[],
+): SemanticJudgeDecisionError => {
+  Reflect.set(error, "attempts", attempts);
+  return error;
+};
 
 const toMessage = (role: TextOnlyModelMessage["role"], content: string): TextOnlyModelMessage =>
   ({
@@ -121,7 +143,24 @@ const parseSpan = (value: string): SemanticJudgeSpan => {
 };
 
 export class SemanticJudge {
-  constructor(private readonly modelClient: SemanticJudgeModelClient) {}
+  constructor(
+    private readonly modelClient: SemanticJudgeModelClient,
+    private readonly defaults: SemanticJudgeQuorumOptions = {},
+  ) {}
+
+  private resolveQuorum(input: SemanticJudgeQuorumOptions): Required<SemanticJudgeQuorumOptions> {
+    const attempts = Math.max(1, Math.trunc(input.attempts ?? this.defaults.attempts ?? 1));
+    const minAgreement = Math.max(
+      1,
+      Math.trunc(input.minAgreement ?? this.defaults.minAgreement ?? (attempts === 1 ? 1 : Math.floor(attempts / 2) + 1)),
+    );
+    if (minAgreement > attempts) {
+      throw new SemanticJudgeDecisionError(
+        `semantic judge quorum is invalid: minAgreement=${minAgreement} exceeds attempts=${attempts}`,
+      );
+    }
+    return { attempts, minAgreement };
+  }
 
   private async runText(input: {
     systemPrompt: string;
@@ -146,33 +185,145 @@ export class SemanticJudge {
     }
   }
 
+  private async runParsedWithQuorum<TResult>(input: {
+    systemPrompt: string;
+    messages: TextOnlyModelMessage[];
+    signal?: AbortSignal;
+    maxTokens?: number;
+    temperature?: number;
+    attempts?: number;
+    minAgreement?: number;
+    parse: (value: string) => TResult;
+    keyOf: (value: TResult) => string;
+  }): Promise<TResult> {
+    const quorum = this.resolveQuorum({
+      attempts: input.attempts,
+      minAgreement: input.minAgreement,
+    });
+    if (quorum.attempts === 1) {
+      const raw = await this.runText(input);
+      return input.parse(raw);
+    }
+
+    const attempts = await Promise.all(
+      Array.from({ length: quorum.attempts }, async (_, index) => {
+        const raw = await this.runText(input);
+        try {
+          const parsed = input.parse(raw);
+          return {
+            attempt: index + 1,
+            raw,
+            parsed,
+            parsedKey: input.keyOf(parsed),
+          } satisfies SemanticJudgeAttemptDiagnostic & { parsed: TResult };
+        } catch (error) {
+          return {
+            attempt: index + 1,
+            raw,
+            error: error instanceof Error ? error.message : String(error),
+          } satisfies SemanticJudgeAttemptDiagnostic;
+        }
+      }),
+    );
+
+    const grouped = new Map<string, { count: number; value: TResult }>();
+    for (const attempt of attempts) {
+      if (!("parsed" in attempt)) {
+        continue;
+      }
+      const parsedKey = attempt.parsedKey;
+      if (!parsedKey) {
+        continue;
+      }
+      const current = grouped.get(parsedKey);
+      if (current) {
+        current.count += 1;
+      } else {
+        grouped.set(parsedKey, {
+          count: 1,
+          value: attempt.parsed,
+        });
+      }
+    }
+
+    for (const [key, entry] of grouped) {
+      if (entry.count >= quorum.minAgreement) {
+        return entry.value;
+      }
+      grouped.set(key, entry);
+    }
+
+    const diagnosticText = attempts
+      .map((attempt) =>
+        attempt.error
+          ? `#${attempt.attempt}:${JSON.stringify(attempt.raw)} -> ${attempt.error}`
+          : `#${attempt.attempt}:${JSON.stringify(attempt.raw)} -> ${attempt.parsedKey}`,
+      )
+      .join("; ");
+    throw withAttemptDiagnostics(
+      new SemanticJudgeDecisionError(
+        `semantic judge failed to reach quorum ${quorum.minAgreement}/${quorum.attempts}: ${diagnosticText}`,
+      ),
+      attempts,
+    );
+  }
+
   async judgeBoolean(input: JudgeBooleanInput): Promise<boolean> {
     const trueToken = input.trueToken ?? DEFAULT_BOOLEAN_TRUE_TOKEN;
     const falseToken = input.falseToken ?? DEFAULT_BOOLEAN_FALSE_TOKEN;
-    const response = await this.runText({
-      systemPrompt: [
-        "进行内容分析判断。",
-        `任务：${input.instruction}`,
-        `如果结果为是，返回 ${trueToken}。`,
-        `如果结果为否，返回 ${falseToken}。`,
-        "只返回答案本身，不要解释。",
-      ].join("\n"),
-      messages: [toMessage("user", input.content)],
-      signal: input.signal,
-      maxTokens: input.maxTokens ?? DEFAULT_BOOLEAN_MAX_TOKENS,
-      temperature: input.temperature ?? 0,
-    });
-    if (response === trueToken) {
-      return true;
+    try {
+      return await this.runParsedWithQuorum({
+        systemPrompt: [
+          "进行内容分析判断。",
+          `任务：${input.instruction}`,
+          `如果结果为是，返回 ${trueToken}。`,
+          `如果结果为否，返回 ${falseToken}。`,
+          "只返回答案本身，不要解释。",
+        ].join("\n"),
+        messages: [toMessage("user", input.content)],
+        signal: input.signal,
+        maxTokens: input.maxTokens ?? DEFAULT_BOOLEAN_MAX_TOKENS,
+        temperature: input.temperature ?? 0,
+        attempts: input.attempts,
+        minAgreement: input.minAgreement,
+        parse: (response) => {
+          if (response === trueToken) {
+            return true;
+          }
+          if (response === falseToken) {
+            return false;
+          }
+          throw new SemanticJudgeDecisionError(`semantic judge returned invalid boolean token: ${JSON.stringify(response)}`);
+        },
+        keyOf: (value) => (value ? trueToken : falseToken),
+      });
+    } catch (error) {
+      if (!(error instanceof SemanticJudgeDecisionError)) {
+        throw error;
+      }
+      const fallback = await this.judgeStructured({
+        instruction: [
+          input.instruction,
+          "请改为返回 JSON 对象。",
+          "如果判断为是，返回 {\"answer\":true}。",
+          "如果判断为否，返回 {\"answer\":false}。",
+        ].join("\n"),
+        content: input.content,
+        signal: input.signal,
+        maxTokens: Math.max(32, input.maxTokens ?? DEFAULT_BOOLEAN_MAX_TOKENS),
+        temperature: input.temperature ?? 0,
+        attempts: 1,
+        minAgreement: 1,
+        outputSchema: z.object({
+          answer: z.boolean(),
+        }),
+      });
+      return fallback.answer;
     }
-    if (response === falseToken) {
-      return false;
-    }
-    throw new SemanticJudgeDecisionError(`semantic judge returned invalid boolean token: ${JSON.stringify(response)}`);
   }
 
   async judgeCompletion<TResult>(input: JudgeCompletionInput<TResult>): Promise<TResult> {
-    const suffix = await this.runText({
+    return this.runParsedWithQuorum({
       systemPrompt: [
         "进行内容分析判断。",
         `任务：${input.instruction}`,
@@ -183,10 +334,15 @@ export class SemanticJudge {
       signal: input.signal,
       maxTokens: input.maxTokens ?? DEFAULT_SPAN_MAX_TOKENS,
       temperature: input.temperature ?? 0,
+      attempts: input.attempts,
+      minAgreement: input.minAgreement,
+      parse: (suffix) => {
+        const trimmedSuffix = suffix.trim();
+        const combined = trimmedSuffix.startsWith(input.prefix) ? trimmedSuffix : `${input.prefix}${trimmedSuffix}`;
+        return input.parse(combined);
+      },
+      keyOf: (value) => JSON.stringify(value),
     });
-    const trimmedSuffix = suffix.trim();
-    const combined = trimmedSuffix.startsWith(input.prefix) ? trimmedSuffix : `${input.prefix}${trimmedSuffix}`;
-    return input.parse(combined);
   }
 
   async judgeSpan(input: JudgeSpanInput): Promise<SemanticJudgeSpan> {
@@ -208,7 +364,7 @@ export class SemanticJudge {
 
   async judgeStructured<TSchema extends z.ZodType>(input: JudgeStructuredInput<TSchema>): Promise<z.infer<TSchema>> {
     const schemaJson = JSON.stringify(toJSONSchema(input.outputSchema), null, 2);
-    const response = await this.runText({
+    return this.runParsedWithQuorum({
       systemPrompt: [
         "进行内容分析判断。",
         `任务：${input.instruction}`,
@@ -219,18 +375,25 @@ export class SemanticJudge {
       signal: input.signal,
       maxTokens: input.maxTokens ?? DEFAULT_STRUCTURED_MAX_TOKENS,
       temperature: input.temperature ?? 0,
+      attempts: input.attempts,
+      minAgreement: input.minAgreement,
+      parse: (response) => {
+        const jsonText = extractJsonText(response);
+        if (!jsonText) {
+          throw new SemanticJudgeDecisionError(`semantic judge did not return JSON: ${JSON.stringify(response)}`);
+        }
+        try {
+          return input.outputSchema.parse(JSON.parse(jsonText)) as z.infer<TSchema>;
+        } catch (error) {
+          throw new SemanticJudgeDecisionError("semantic judge returned invalid structured payload", { cause: error });
+        }
+      },
+      keyOf: (value) => JSON.stringify(value),
     });
-    const jsonText = extractJsonText(response);
-    if (!jsonText) {
-      throw new SemanticJudgeDecisionError(`semantic judge did not return JSON: ${JSON.stringify(response)}`);
-    }
-    try {
-      return input.outputSchema.parse(JSON.parse(jsonText)) as z.infer<TSchema>;
-    } catch (error) {
-      throw new SemanticJudgeDecisionError("semantic judge returned invalid structured payload", { cause: error });
-    }
   }
 }
 
-export const createSemanticJudge = (modelClient: SemanticJudgeModelClient): SemanticJudge =>
-  new SemanticJudge(modelClient);
+export const createSemanticJudge = (
+  modelClient: SemanticJudgeModelClient,
+  defaults?: SemanticJudgeQuorumOptions,
+): SemanticJudge => new SemanticJudge(modelClient, defaults);

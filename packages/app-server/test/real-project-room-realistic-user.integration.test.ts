@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { judgeUrlSpan } from "../src";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import { runRealProjectRoomRealisticUserScenario } from "../test-support/real-project-room-realistic-user-scenario";
+import { judgeMarkupExpressesConcepts } from "../test-support/real-semantic-assertions";
 import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 import { createRealTeamKernelHarness, REAL_TEAM_PROJECT_ROOT } from "../test-support/real-team-kernel-harness";
 
@@ -39,17 +40,36 @@ describe("Feature: real AI realistic project-room collaboration", () => {
         expect(result.apiAnswerMessage.senderActorId).toBe(harness.backendActorId);
         expect(/\/api\/status|READY-API|PROJECT-BOARD-V1/iu.test(result.apiAnswerMessage.content)).toBe(true);
         expect(result.designSvg).toContain("<svg");
-        expect(result.designSvg).toContain("小队项目看板");
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.designSvg,
+            concepts: [{ key: "board_title", concept: "team project board title", aliases: ["小队项目看板"] }],
+          }),
+        ).toBe(true);
         expect(result.designAttachmentMessage.senderActorId).toBe(harness.frontendActorId);
         expect(result.designAttachmentMessage.attachments?.[0]?.assetId).toBe(result.attachedAssetId);
         expect(result.finalUrlMessage.senderActorId).toBe(harness.backendActorId);
         expect(finalUrlSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.finalUrlMessage.content.slice(finalUrlSpan.start, finalUrlSpan.end)).toBe(result.deliveryUrl);
-        expect(result.htmlBody).toContain("小队项目看板");
-        expect(result.htmlBody).toContain("接口状态");
-        expect(result.htmlBody).toContain("准备好了");
-        expect(result.apiBody).toContain("READY-API");
-        expect(result.apiBody).toContain("PROJECT-BOARD-V1");
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.htmlBody,
+            concepts: [
+              { key: "board_title", concept: "team project board title", aliases: ["小队项目看板"] },
+              { key: "api_status", concept: "API status section", aliases: ["接口状态"] },
+              { key: "ready_state", concept: "ready status copy", aliases: ["准备好了"] },
+            ],
+          }),
+        ).toBe(true);
+        expect(
+          await judgeMarkupExpressesConcepts(semanticJudge, {
+            content: result.apiBody,
+            concepts: [
+              { key: "api_ready", concept: "ready API marker", aliases: ["READY-API"] },
+              { key: "project_version", concept: "project board version 1 marker", aliases: ["PROJECT-BOARD-V1"] },
+            ],
+          }),
+        ).toBe(true);
         expect(result.userAcceptanceMessage.senderActorId).toBe(harness.userActorId);
         expect(result.backendAttention.active).toHaveLength(0);
         expect(result.frontendAttention.active).toHaveLength(0);

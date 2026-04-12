@@ -11,6 +11,10 @@ import {
   runRealWeatherThroughTerminalScenario,
 } from "../test-support/real-loopbus-scenarios";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
+import {
+  judgeAcknowledgesWorkAndPromisesFollowUp,
+  judgeAnswersWeatherForecastRequest,
+} from "../test-support/real-semantic-assertions";
 import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
@@ -178,11 +182,17 @@ describe("Feature: real AI loopbus convergence", () => {
           throw new Error("expected session primaryRoomId");
         }
         const result = await runRealWeatherThroughTerminalScenario(harness);
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(result.acknowledgement.content.length).toBeGreaterThan(0);
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
         expect(result.reply.chatId).toBe(primaryRoomId);
-        expect(result.reply.content.startsWith("WEATHER-RESULT:")).toBe(true);
+        expect(await judgeAnswersWeatherForecastRequest(semanticJudge, result.reply.content)).toBe(true);
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.toolTraceTools).toContain("root_workspace_bash");
@@ -207,11 +217,16 @@ describe("Feature: real AI loopbus convergence", () => {
           throw new Error("expected session primaryRoomId");
         }
         const result = await runRealInterleavedCanInputScenario(harness);
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(result.acknowledgement.content).toContain("INTERLEAVED-ACK");
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
         expect(result.finalReply.chatId).toBe(primaryRoomId);
-        expect(result.finalReply.content).toContain("INTERLEAVED-RESULT:");
         expect(result.finalReply.content).toContain("TOOL-PHASE-DONE");
         expect(result.finalReply.content).toContain("SECOND-CLAUSE");
         expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
