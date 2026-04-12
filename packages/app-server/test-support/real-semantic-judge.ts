@@ -117,3 +117,16 @@ export const createRealSemanticJudge = async (input: {
     availability,
   };
 };
+
+export const loadRealSemanticJudgeOrWarn = async (input: {
+  projectRoot: string;
+  cwd?: string;
+  homeDir?: string;
+}): Promise<SemanticJudge | null> => {
+  const { judge, availability } = await createRealSemanticJudge(input);
+  if (!judge) {
+    console.warn(availability.warning ?? "real semantic judge is unavailable");
+    return null;
+  }
+  return judge;
+};

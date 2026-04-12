@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   SemanticJudgeDecisionError,
   createSemanticJudge,
+  judgeAvoidsForbiddenMentions,
   judgeContainsUrl,
+  judgeMentionsConcept,
   judgeUrlSpan,
   type SemanticJudgeModelClient,
 } from "../src";
@@ -126,5 +128,81 @@ describe("Feature: semantic judge primitives", () => {
 
     await expect(judgeContainsUrl(judge, content)).resolves.toBe(true);
     await expect(judgeUrlSpan(judge, content)).resolves.toEqual({ start: 25, end: 47 });
+  });
+
+  test("Scenario: Given a known alias match When judgeMentionsConcept runs Then it returns true without paying for a model call", async () => {
+    let modelCalls = 0;
+    const { client } = createStubModelClient(async () => {
+      modelCalls += 1;
+      return {
+        thinking: "",
+        text: "0",
+      };
+    });
+    const judge = createSemanticJudge(client);
+
+    await expect(
+      judgeMentionsConcept(judge, {
+        content: "中午吃蛋炒饭。",
+        concept: "gaubee said egg fried rice for lunch",
+        aliases: ["蛋炒饭"],
+      }),
+    ).resolves.toBe(true);
+    expect(modelCalls).toBe(0);
+  });
+
+  test("Scenario: Given no alias hit When judgeMentionsConcept runs Then it falls back to the semantic judge layer", async () => {
+    const { client, calls } = createStubModelClient(async () => ({
+      thinking: "",
+      text: "1",
+    }));
+    const judge = createSemanticJudge(client);
+
+    await expect(
+      judgeMentionsConcept(judge, {
+        content: "Gaubee recommended fried rice for lunch.",
+        concept: "gaubee said egg fried rice for lunch",
+        aliases: ["蛋炒饭"],
+      }),
+    ).resolves.toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("Scenario: Given a forbidden exact phrase When judgeAvoidsForbiddenMentions runs Then it returns false without paying for a model call", async () => {
+    let modelCalls = 0;
+    const { client } = createStubModelClient(async () => {
+      modelCalls += 1;
+      return {
+        thinking: "",
+        text: "0",
+      };
+    });
+    const judge = createSemanticJudge(client);
+
+    await expect(
+      judgeAvoidsForbiddenMentions(judge, {
+        content: "请转告：我出布。",
+        forbidden: ["我出剪刀", "我出石头", "我出布"],
+        description: "玩家出招信息",
+      }),
+    ).resolves.toBe(false);
+    expect(modelCalls).toBe(0);
+  });
+
+  test("Scenario: Given no forbidden literal hit When judgeAvoidsForbiddenMentions runs Then it falls back to the semantic judge layer", async () => {
+    const { client, calls } = createStubModelClient(async () => ({
+      thinking: "",
+      text: "0",
+    }));
+    const judge = createSemanticJudge(client);
+
+    await expect(
+      judgeAvoidsForbiddenMentions(judge, {
+        content: "请联系 kzf 获取他的出招后再汇报结果。",
+        forbidden: ["我出剪刀", "我出石头", "我出布"],
+        description: "玩家出招信息",
+      }),
+    ).resolves.toBe(true);
+    expect(calls).toHaveLength(1);
   });
 });

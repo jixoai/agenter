@@ -150,7 +150,13 @@ export {
   type SemanticJudgeModelClient,
   type SemanticJudgeSpan,
 } from "./semantic-judge";
-export { hasUrlSignal, judgeContainsUrl, judgeUrlSpan } from "./semantic-judge-helpers";
+export {
+  hasUrlSignal,
+  judgeAvoidsForbiddenMentions,
+  judgeContainsUrl,
+  judgeMentionsConcept,
+  judgeUrlSpan,
+} from "./semantic-judge-helpers";
 export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
 export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 export {

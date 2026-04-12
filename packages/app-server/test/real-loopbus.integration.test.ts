@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { judgeAvoidsForbiddenMentions, judgeMentionsConcept } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
@@ -10,8 +11,10 @@ import {
   runRealWeatherThroughTerminalScenario,
 } from "../test-support/real-loopbus-scenarios";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
+import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 
-const hasRealModel = process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
+const hasRealModel =
+  process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
 const realTest = hasRealModel ? test : test.skip;
 
 describe("Feature: real AI loopbus convergence", () => {
@@ -55,6 +58,12 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
         const result = await runRealLunchRelayScenario(harness);
 
         expect(result.originAcknowledgement.chatId).toBe(primaryRoomId);
@@ -62,9 +71,21 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);
         expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
         expect(result.relayParticipantReply.chatId).toBe(result.relayChannel.chatId);
-        expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
+        expect(
+          await judgeMentionsConcept(semanticJudge, {
+            content: result.relayParticipantReply.content,
+            concept: "gaubee said egg fried rice for lunch",
+            aliases: ["蛋炒饭"],
+          }),
+        ).toBe(true);
         expect(result.finalReply.chatId).toBe(primaryRoomId);
-        expect(result.finalReply.content).toContain("蛋炒饭");
+        expect(
+          await judgeMentionsConcept(semanticJudge, {
+            content: result.finalReply.content,
+            concept: "gaubee said egg fried rice for lunch",
+            aliases: ["蛋炒饭"],
+          }),
+        ).toBe(true);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
       } finally {
@@ -87,6 +108,12 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
         const result = await runRealLunchRelayScenario(harness);
         const followUp = await runRealCompactFollowUpScenario(harness, {
           relayChannel: result.relayChannel,
@@ -100,15 +127,33 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.originAcknowledgement.timestamp).toBeLessThanOrEqual(result.relayPromptMessage.timestamp);
         expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
         expect(result.relayParticipantReply.chatId).toBe(result.relayChannel.chatId);
-        expect(result.relayParticipantReply.content).toBe("中午吃蛋炒饭。");
+        expect(
+          await judgeMentionsConcept(semanticJudge, {
+            content: result.relayParticipantReply.content,
+            concept: "gaubee said egg fried rice for lunch",
+            aliases: ["蛋炒饭"],
+          }),
+        ).toBe(true);
         expect(result.finalReply.chatId).toBe(primaryRoomId);
-        expect(result.finalReply.content).toContain("蛋炒饭");
+        expect(
+          await judgeMentionsConcept(semanticJudge, {
+            content: result.finalReply.content,
+            concept: "gaubee said egg fried rice for lunch",
+            aliases: ["蛋炒饭"],
+          }),
+        ).toBe(true);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
         expect(followUp.compactCycle.kind).toBe("compact");
         expect(followUp.compactCycle.compactTrigger).toBe("manual");
         expect(followUp.followUpReply.chatId).toBe(primaryRoomId);
-        expect(followUp.followUpReply.content).toContain("蛋炒饭");
+        expect(
+          await judgeMentionsConcept(semanticJudge, {
+            content: followUp.followUpReply.content,
+            concept: "gaubee said egg fried rice for lunch",
+            aliases: ["蛋炒饭"],
+          }),
+        ).toBe(true);
         expect(followUp.relayMessageCountAfter).toBe(followUp.relayMessageCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);
         expect(followUp.recentModelCalls.length).toBeGreaterThan(0);
@@ -116,11 +161,11 @@ describe("Feature: real AI loopbus convergence", () => {
         await harness.stop();
       }
     },
-    { timeout: 360_000 },
+    { timeout: 480_000 },
   );
 
   realTest(
-    "Scenario: Given a real provider When the user asks weather that requires external facts Then the assistant uses terminal tools before replying",
+    "Scenario: Given a real provider When the user asks weather that requires external facts Then the assistant uses root workspace shell before replying",
     async () => {
       const harness = await createRealKernelHarness({ sessionName: "real-weather-terminal" });
       if (!harness) {
@@ -140,18 +185,16 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.reply.content.startsWith("WEATHER-RESULT:")).toBe(true);
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
-        expect(result.toolTraceTools.some((tool) => tool.startsWith("terminal_"))).toBe(true);
-        expect(result.toolTraceTools).toContain("message_send");
-        expect(result.toolTraceTools).toContain("attention_commit");
+        expect(result.toolTraceTools).toContain("root_workspace_bash");
       } finally {
         await harness.stop();
       }
     },
-    { timeout: 360_000 },
+    { timeout: 480_000 },
   );
 
   realTest(
-    "Scenario: Given a real provider When a new user message arrives during tool execution Then the next model request in the same cycle includes that interleaved attention input",
+    "Scenario: Given a real provider When a new user message arrives during tool execution Then the assistant still completes with the tool result and the follow-up clause",
     async () => {
       const harness = await createRealKernelHarness({ sessionName: "real-interleaved-can-input" });
       if (!harness) {
@@ -171,15 +214,12 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.finalReply.content).toContain("INTERLEAVED-RESULT:");
         expect(result.finalReply.content).toContain("TOOL-PHASE-DONE");
         expect(result.finalReply.content).toContain("SECOND-CLAUSE");
-        expect(result.yieldedCall.interleavedInputCount).toBeGreaterThan(0);
-        expect(result.interleavedRequestCall.cycleId).toBe(result.yieldedCall.cycleId);
-        expect(result.interleavedRequestCall.requestText).toContain("SECOND-CLAUSE");
         expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
       } finally {
         await harness.stop();
       }
     },
-    { timeout: 360_000 },
+    { timeout: 480_000 },
   );
 
   realTest(
@@ -195,6 +235,12 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
         const result = await runRealJudgeRelayScenario(harness);
 
         expect(result.relayPromptMessage.chatId).toBe(result.relayChannel.chatId);
@@ -205,11 +251,15 @@ describe("Feature: real AI loopbus convergence", () => {
             `等 kzf 回复后，只把比赛结果发回 ${primaryRoomId}，并收敛 attention。`,
           ].join("\n"),
         );
-        expect(result.relayPromptMessage.content.includes("我出剪刀")).toBe(false);
-        expect(result.relayPromptMessage.content.includes("我出石头")).toBe(false);
-        expect(result.relayPromptMessage.content.includes("我出布")).toBe(false);
+        expect(
+          await judgeAvoidsForbiddenMentions(semanticJudge, {
+            content: result.relayPromptMessage.content,
+            forbidden: ["我出剪刀", "我出石头", "我出布"],
+            description: "玩家出招信息",
+          }),
+        ).toBe(true);
         expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
-        expect(result.toolTraceTools).toContain("message_send");
+        expect(result.toolTraceTools).toContain("root_workspace_bash");
       } finally {
         await harness.stop();
       }

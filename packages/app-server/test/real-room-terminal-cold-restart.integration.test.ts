@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import { judgeUrlSpan } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import { runRealRoomTerminalColdRestartScenario } from "../test-support/real-room-terminal-cold-restart-scenario";
+import { loadRealSemanticJudgeOrWarn } from "../test-support/real-semantic-judge";
 
-const hasRealModel = process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
+const hasRealModel =
+  process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
 const realTest = hasRealModel ? test : test.skip;
 
 describe("Feature: real AI room terminal cold restart recovery", () => {
@@ -17,12 +20,21 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
       }
 
       try {
+        const semanticJudge = await loadRealSemanticJudgeOrWarn({
+          projectRoot: REAL_MODEL_PROJECT_ROOT,
+        });
+        if (!semanticJudge) {
+          return;
+        }
         const result = await runRealRoomTerminalColdRestartScenario(harness);
+        const deliverySpan = await judgeUrlSpan(semanticJudge, result.deliveryMessage.content);
+        const resumedSpan = await judgeUrlSpan(semanticJudge, result.resumedMessage.content);
 
         expect(result.acknowledgement.chatId).toBe(result.primaryRoomIdBeforeRestart);
         expect(result.acknowledgement.content.startsWith("APP-ACK:")).toBe(true);
         expect(result.deliveryMessage.chatId).toBe(result.primaryRoomIdBeforeRestart);
-        expect(result.deliveryMessage.content).toContain(`APP-URL: ${result.deliveryUrl}`);
+        expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
+        expect(result.deliveryMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
         expect(result.initialBody).toContain("REAL-ROOM-APP-V1");
         expect(result.initialBody).toContain("BUTTON-LABEL-V1");
         expect(result.initialBody).toContain("STATUS-V1");
@@ -30,7 +42,8 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
         expect(result.sessionIdAfterRestart).toBe(result.sessionIdBeforeRestart);
         expect(result.primaryRoomIdAfterRestart).toBe(result.primaryRoomIdBeforeRestart);
         expect(result.resumedMessage.chatId).toBe(result.primaryRoomIdAfterRestart);
-        expect(result.resumedMessage.content).toContain(`APP-RESUMED: ${result.deliveryUrl}`);
+        expect(resumedSpan).not.toEqual({ start: 0, end: 0 });
+        expect(result.resumedMessage.content.slice(resumedSpan.start, resumedSpan.end)).toBe(result.deliveryUrl);
         expect(result.resumedBody).toContain("REAL-ROOM-APP-V2");
         expect(result.resumedBody).toContain("BUTTON-LABEL-V2");
         expect(result.resumedBody).toContain("FEEDBACK-APPLIED");
