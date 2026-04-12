@@ -1,8 +1,4 @@
-## Purpose
-
-Define the compact cycle that rewrites only the bounded model prompt window while durable runtime facts continue to grow.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Compact SHALL rewrite only the bounded model prompt window
 
@@ -11,7 +7,7 @@ The system SHALL treat compact as a special cycle that rewrites only the model's
 #### Scenario: Compact leaves durable facts intact while rotating bounded AI-call retention
 
 - **WHEN** compact is triggered manually, by threshold, or by recovery logic
-- **THEN** the runtime rewrites only the prompt-window memory used for later model calls
+- **THEN** the runtime rewrites only the bounded prompt-window memory used for later model calls
 - **THEN** persisted attention and `message_parts` facts remain queryable and unchanged
 - **THEN** retained `ai_call` rows are rotated so older full request/response rounds are pruned
 
@@ -23,18 +19,12 @@ The compact cycle SHALL not expose normal work tools. It SHALL consume the prior
 
 - **WHEN** a compact cycle completes
 - **THEN** the result contains structured summary fields describing decisions, key files or facts, reusable ready-reply facts, unresolved work, and next steps
-- **THEN** unresolved attention items are carried into the next prompt window alongside that summary
+- **THEN** unresolved attention items are carried into the next bounded prompt window alongside that summary
 - **THEN** the next bounded prompt context can be reconstructed from ledger facts rather than a dedicated prompt-window snapshot table
 
 ### Requirement: Compact ready replies SHALL remain reusable after compaction
 
 Compact summaries SHALL preserve resolved facts and unresolved work needed for later follow-up without replaying old tool dispatches back into the prompt window.
-
-#### Scenario: Compact preserves durable facts without replay artifacts
-
-- **WHEN** the runtime rebuilds prompt history after a compact cycle
-- **THEN** it keeps the compact overview, decisions, key files, key facts, unresolved work, and next steps
-- **AND** it does not re-inject `readyReplies` or other replay-only relay artifacts as prompt-window messages
 
 #### Scenario: Delivered answers remain reusable even when they only exist in tool history
 
