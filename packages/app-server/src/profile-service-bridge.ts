@@ -2,10 +2,12 @@ import {
   type AuthChallengeDescriptor,
   type AuthDescriptor,
   type AuthSessionProjection,
+  buildAvatarIconUrl,
   buildProfileIconUrl,
   buildRoomIconUrl,
   buildSessionIconUrl,
   type CreateManagedPrincipalInput,
+  type ListManagedPrincipalsInput,
   type ManagedPrincipalRecord,
   type PrincipalProjection,
   type RootAuthPrivateKeyReveal,
@@ -343,6 +345,26 @@ export class ProfileServiceBridge {
     };
   }
 
+  async uploadAvatarIcon(
+    principalId: string,
+    file: { bytes: Uint8Array; mimeType: string },
+  ): Promise<{ ok: true; principalId: string; iconUrl: string }> {
+    const response = await this.request(`/avatars/${encodeURIComponent(principalId)}/icon`, {
+      method: "POST",
+      headers: { "content-type": file.mimeType },
+      body: new Blob([toOwnedArrayBuffer(file.bytes)], { type: file.mimeType }),
+    });
+    if (!response.ok) {
+      throw new Error(`profile-service avatar icon upload failed (${response.status})`);
+    }
+    const payload = (await response.json()) as { ok: true; principalId: string; iconUrl?: string };
+    return {
+      ok: true,
+      principalId: payload.principalId,
+      iconUrl: payload.iconUrl ?? (await this.buildAbsoluteUrl(buildAvatarIconUrl(payload.principalId))),
+    };
+  }
+
   async createManagedPrincipal(input: CreateManagedPrincipalInput): Promise<ManagedPrincipalRecord> {
     const response = await this.request("/principals/managed", {
       method: "POST",
@@ -353,6 +375,23 @@ export class ProfileServiceBridge {
       throw new Error(`profile-service managed principal create failed (${response.status})`);
     }
     return (await response.json()) as ManagedPrincipalRecord;
+  }
+
+  async listManagedPrincipals(input: ListManagedPrincipalsInput = {}): Promise<PrincipalProjection[]> {
+    const params = new URLSearchParams();
+    if (input.kind) {
+      params.set("kind", input.kind);
+    }
+    if (input.ownerKey) {
+      params.set("ownerKey", input.ownerKey);
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    const response = await this.request(`/principals${suffix}`);
+    if (!response.ok) {
+      throw new Error(`profile-service principal list failed (${response.status})`);
+    }
+    const payload = (await response.json()) as { items: PrincipalProjection[] };
+    return payload.items;
   }
 
   async getPrincipal(principalId: string): Promise<PrincipalProjection | null> {

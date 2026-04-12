@@ -15,6 +15,7 @@ import type {
   GlobalRoomGrantIssueOutput,
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
+  GlobalAvatarCatalogEntry,
   GlobalTerminalApprovalRequest,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
@@ -42,6 +43,8 @@ import type {
   UploadedSessionAsset,
   WorkspacePathSearchOutput,
   WorkspaceAvatarCatalogEntry,
+  WorkspaceWorkbenchPreviewOutput,
+  WorkspaceWorkbenchTreeOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
@@ -64,6 +67,7 @@ const createInitialState = (): RuntimeClientState => ({
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],
+  globalAvatarCatalog: createCachedResourceState<GlobalAvatarCatalogEntry[]>([]),
   workspaceAvatarCatalogByPath: {},
   globalRooms: {
     data: [],
@@ -460,6 +464,8 @@ export class RuntimeStore {
   private shouldReconnect = false;
   private readonly sessionResourceHandles = new Map<string, SessionResourceHandle>();
   private readonly messageChannelRefreshTasks = new WeakMap<SessionResourceHandle, Promise<MessageChannelEntry[]>>();
+  private globalAvatarCatalogRefreshTask: Promise<GlobalAvatarCatalogEntry[]> | null = null;
+  private globalAvatarCatalogWatchCount = 0;
   private readonly workspaceAvatarCatalogRefreshTasks = new Map<string, Promise<WorkspaceAvatarCatalogEntry[]>>();
   private readonly workspaceAvatarCatalogWatchCountByPath = new Map<string, number>();
   private globalRoomsRefreshTask: Promise<GlobalRoomEntry[]> | null = null;
@@ -761,6 +767,94 @@ export class RuntimeStore {
     return next;
   }
 
+  private ensureGlobalAvatarCatalogState(): CachedResourceState<GlobalAvatarCatalogEntry[]> {
+    return this.state.globalAvatarCatalog;
+  }
+
+  private setGlobalAvatarCatalogState(
+    updater: (
+      current: CachedResourceState<GlobalAvatarCatalogEntry[]>,
+    ) => CachedResourceState<GlobalAvatarCatalogEntry[]>,
+  ): CachedResourceState<GlobalAvatarCatalogEntry[]> {
+    const next = updater(this.ensureGlobalAvatarCatalogState());
+    this.state.globalAvatarCatalog = next;
+    return next;
+  }
+
+  private reconcileGlobalAvatarCatalogEntry(entry: GlobalAvatarCatalogEntry): void {
+    this.setGlobalAvatarCatalogState((resource) => {
+      const nextData = resource.data.filter(
+        (candidate) =>
+          candidate.avatarPrincipalId !== entry.avatarPrincipalId &&
+          candidate.nickname !== entry.nickname,
+      );
+      nextData.push(entry);
+      return {
+        ...resource,
+        data: sortWorkspaceAvatarCatalog(nextData),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private async refreshGlobalAvatarCatalogInternal(
+    input: { force?: boolean } = {},
+  ): Promise<GlobalAvatarCatalogEntry[]> {
+    const current = this.ensureGlobalAvatarCatalogState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+    if (this.globalAvatarCatalogRefreshTask) {
+      return await this.globalAvatarCatalogRefreshTask;
+    }
+
+    this.setGlobalAvatarCatalogState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    const task = this.client.trpc.avatar.catalog
+      .query()
+      .then((output) => {
+        const data = sortWorkspaceAvatarCatalog(output.items);
+        this.setGlobalAvatarCatalogState((resource) => ({
+          ...resource,
+          data,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return data;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setGlobalAvatarCatalogState((resource) => ({
+          ...resource,
+          loading: false,
+          refreshing: false,
+          error: message,
+        }));
+        this.emit();
+        throw error;
+      })
+      .finally(() => {
+        this.globalAvatarCatalogRefreshTask = null;
+      });
+
+    this.globalAvatarCatalogRefreshTask = task;
+    return await task;
+  }
+
   private ensureWorkspaceAvatarCatalogState(workspacePath: string): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
     return this.state.workspaceAvatarCatalogByPath[workspacePath] ?? createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
   }
@@ -813,13 +907,18 @@ export class RuntimeStore {
       return { applied: false, optimisticNickname };
     }
 
-    const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
-    const sameNicknameCopy = input.sourceAvatar === optimisticNickname;
-    const optimisticEntry: WorkspaceAvatarCatalogEntry = {
-      nickname: optimisticNickname,
-      defaultAvatar: optimisticNickname === "default",
-      sourceScope: "global",
-      globalAvailable: sameNicknameCopy ? (sourceEntry?.globalAvailable ?? true) : false,
+	    const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
+	    const sameNicknameCopy = input.sourceAvatar === optimisticNickname;
+	    const optimisticEntry: WorkspaceAvatarCatalogEntry = {
+	      avatarPrincipalId: sameNicknameCopy ? (sourceEntry?.avatarPrincipalId ?? null) : null,
+	      runtimeId: sameNicknameCopy ? (sourceEntry?.runtimeId ?? optimisticNickname) : optimisticNickname,
+	      nickname: optimisticNickname,
+	      displayName: sameNicknameCopy ? (sourceEntry?.displayName ?? null) : null,
+	      classify: sameNicknameCopy ? (sourceEntry?.classify ?? null) : null,
+	      iconUrl: sameNicknameCopy ? (sourceEntry?.iconUrl ?? null) : null,
+	      defaultAvatar: optimisticNickname === "default",
+	      sourceScope: "global",
+	      globalAvailable: sameNicknameCopy ? (sourceEntry?.globalAvailable ?? true) : false,
       workspacePrivateSlotReady: true,
       globalPath: sameNicknameCopy ? (sourceEntry?.globalPath ?? "") : "",
       workspacePrivatePath: "",
@@ -2169,6 +2268,8 @@ export class RuntimeStore {
     this.chatCyclesBeforeCursorBySession.clear();
     this.terminalActivityBeforeCursorByKey.clear();
     this.sessionResourceHandles.clear();
+    this.globalAvatarCatalogRefreshTask = null;
+    this.globalAvatarCatalogWatchCount = 0;
     this.workspaceAvatarCatalogRefreshTasks.clear();
     this.workspaceAvatarCatalogWatchCountByPath.clear();
     this.globalRoomsRefreshTask = null;
@@ -2300,6 +2401,7 @@ export class RuntimeStore {
           Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.apiCallRecording]),
         ),
         workspaces: previousState.workspaces,
+        globalAvatarCatalog: previousState.globalAvatarCatalog,
         workspaceAvatarCatalogByPath: previousState.workspaceAvatarCatalogByPath,
         globalRooms: previousState.globalRooms,
         globalRoomSnapshotsById: previousState.globalRoomSnapshotsById,
@@ -2325,6 +2427,9 @@ export class RuntimeStore {
       this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
       this.restoreRetainedApiCallStreams();
       this.emit();
+      if (previousState.globalAvatarCatalog.loaded || this.globalAvatarCatalogWatchCount > 0) {
+        void this.hydrateGlobalAvatarCatalog({ force: true });
+      }
       for (const [workspacePath, resource] of Object.entries(previousState.workspaceAvatarCatalogByPath)) {
         if (!resource.loaded && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
           continue;
@@ -2565,6 +2670,33 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.listSessions.query(input);
   }
 
+  getGlobalAvatarCatalogState(): CachedResourceState<GlobalAvatarCatalogEntry[]> {
+    return this.ensureGlobalAvatarCatalogState();
+  }
+
+  retainGlobalAvatarCatalog(): () => void {
+    this.globalAvatarCatalogWatchCount += 1;
+    return () => {
+      this.globalAvatarCatalogWatchCount = Math.max(0, this.globalAvatarCatalogWatchCount - 1);
+    };
+  }
+
+  async hydrateGlobalAvatarCatalog(input: { force?: boolean } = {}): Promise<GlobalAvatarCatalogEntry[]> {
+    return await this.refreshGlobalAvatarCatalogInternal(input);
+  }
+
+  async createGlobalAvatar(input: {
+    nickname: string;
+    displayName?: string | null;
+    classify?: GlobalAvatarCatalogEntry["classify"];
+  }): Promise<GlobalAvatarCatalogEntry> {
+    const output = await this.client.trpc.avatar.create.mutate(input);
+    this.reconcileGlobalAvatarCatalogEntry(output.avatar);
+    this.emit();
+    void this.hydrateGlobalAvatarCatalog({ force: true });
+    return output.avatar;
+  }
+
   getWorkspaceAvatarCatalogState(workspacePath: string): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
     return this.ensureWorkspaceAvatarCatalogState(workspacePath);
   }
@@ -2661,6 +2793,37 @@ export class RuntimeStore {
     avatar: string;
   }): Promise<RuntimeWorkspaceAssetRootsOutput> {
     return await this.client.trpc.workspace.assetRoots.query(input);
+  }
+
+  async listWorkspaceWorkbenchTree(input: {
+    workspacePath: string;
+    avatar: string;
+    mode: "explorer" | "private";
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<WorkspaceWorkbenchTreeOutput> {
+    return await this.client.trpc.workspace.workbenchTree.query(input);
+  }
+
+  async readWorkspaceWorkbenchPreview(input: {
+    workspacePath: string;
+    avatar: string;
+    mode: "explorer" | "private";
+    path: string;
+    maxBytes?: number;
+  }): Promise<WorkspaceWorkbenchPreviewOutput> {
+    return await this.client.trpc.workspace.workbenchPreview.query(input);
+  }
+
+  async createWorkspacePrivateAsset(input: {
+    workspacePath: string;
+    avatar: string;
+    parentPath?: string;
+    name: string;
+    kind: "file" | "directory";
+  }): Promise<{ path: string }> {
+    return await this.client.trpc.workspace.createPrivateAsset.mutate(input);
   }
 
   async execRuntimeWorkspace(input: {
@@ -4795,6 +4958,9 @@ export class RuntimeStore {
     if (event.type === "workspace.avatarCatalog.updated") {
       const payload = event.payload as { workspacePaths?: string[] };
       for (const workspacePath of payload.workspacePaths ?? []) {
+        if (workspacePath === "~/" && (this.globalAvatarCatalogWatchCount > 0 || this.state.globalAvatarCatalog.loaded)) {
+          void this.hydrateGlobalAvatarCatalog({ force: true });
+        }
         const resource = this.state.workspaceAvatarCatalogByPath[workspacePath];
         if (!resource && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
           continue;

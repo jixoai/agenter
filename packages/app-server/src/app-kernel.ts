@@ -18,6 +18,16 @@ import {
   normalizeAvatarNickname,
   resolveGlobalAvatarCanonicalRoot,
 } from "@agenter/avatar";
+import {
+  buildAvatarIconUrl,
+  formatAvatarDisplayName,
+  normalizeAvatarPrincipalMetadata,
+  readAvatarPrincipalMetadata,
+  resolveAvatarOwnerKey,
+  type AvatarClassify,
+  type AvatarPrincipalMetadata,
+  type PrincipalProjection,
+} from "@agenter/profile-service";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   AttentionStore,
@@ -63,13 +73,16 @@ import {
 import { type ChatCycle } from "./chat-cycles";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import {
+  buildWorkspaceAvatarCatalogEntry,
   copyAvatarIntoWorkspace,
-  listWorkspaceAvatarCatalog,
   forkAvatarIntoWorkspace,
+  listGlobalAvatarNicknamesFromStorage,
+  listWorkspaceAvatarNicknamesFromStorage,
   resolveWorkspaceAvatarRoot,
   type WorkspaceAvatarCatalogEntry,
 } from "./avatar-catalog";
 import {
+  ensureAvatarNicknameAlias,
   ensureAvatarSeatPrincipal,
   readAvatarSeatDocument,
   saveAvatarMessageSeatCredential,
@@ -78,6 +91,12 @@ import {
 } from "./avatar-seat-store";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { resolveModelCapabilities } from "./model-capabilities";
+import {
+  createWorkspacePrivateAsset,
+  listWorkspaceWorkbenchTree,
+  readWorkspaceWorkbenchPreview,
+  type WorkspaceWorkbenchMode,
+} from "./workspace-workbench";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import { projectAuthActors } from "./auth-actor-catalog";
@@ -641,7 +660,7 @@ export class AppKernel {
             this.syncAvatarCatalogWatchers();
           }
           this.queueAvatarCatalogInvalidation(
-            workspacePath === GLOBAL_WORKSPACE_PATH ? this.workspaces.list() : [workspacePath],
+            workspacePath === GLOBAL_WORKSPACE_PATH ? [GLOBAL_WORKSPACE_PATH, ...this.workspaces.list()] : [workspacePath],
           );
         });
         this.avatarCatalogWatchers.set(workspacePath, watcher);
@@ -1190,8 +1209,218 @@ export class AppKernel {
     });
   }
 
-  listWorkspaceAvatarCatalog(workspacePath: string): WorkspaceAvatarCatalogEntry[] {
-    return listWorkspaceAvatarCatalog(toWorkspacePath(workspacePath));
+  private readAvatarPrincipalRecord(
+    principal: PrincipalProjection,
+  ): { principal: PrincipalProjection; metadata: AvatarPrincipalMetadata } | null {
+    const metadata =
+      readAvatarPrincipalMetadata(principal.metadata) ??
+      (principal.kind === "avatar" && principal.ownerKey
+        ? normalizeAvatarPrincipalMetadata({
+            nickname: principal.ownerKey,
+            displayName: formatAvatarDisplayName(principal.ownerKey),
+            classify: null,
+          })
+        : null);
+    return metadata ? { principal, metadata } : null;
+  }
+
+  private compareAvatarCatalogRecords(
+    left: { metadata: AvatarPrincipalMetadata },
+    right: { metadata: AvatarPrincipalMetadata },
+  ): number {
+    if (left.metadata.nickname === defaultAvatarNickname()) {
+      return -1;
+    }
+    if (right.metadata.nickname === defaultAvatarNickname()) {
+      return 1;
+    }
+    return left.metadata.nickname.localeCompare(right.metadata.nickname);
+  }
+
+  private async ensureGlobalAvatarPrincipal(input: {
+    nickname: string;
+    displayName?: string | null;
+    classify?: AvatarClassify | null;
+    createMissing?: boolean;
+  }): Promise<{ principal: PrincipalProjection; metadata: AvatarPrincipalMetadata } | null> {
+    const nickname = resolveAvatarOwnerKey(input.nickname);
+    const existing = await this.authService.listManagedPrincipals({
+      kind: "avatar",
+      ownerKey: nickname,
+    });
+    const existingRecord = existing
+      .map((principal) => this.readAvatarPrincipalRecord(principal))
+      .find(
+        (
+          record,
+        ): record is {
+          principal: PrincipalProjection;
+          metadata: AvatarPrincipalMetadata;
+        } => record !== null,
+      );
+    if (existingRecord) {
+      ensureAvatarNicknameAlias({
+        workspacePath: GLOBAL_WORKSPACE_PATH,
+        avatar: existingRecord.metadata.nickname,
+        principalId: existingRecord.principal.principalId,
+        homeDir: this.getHomeDir(),
+      });
+      return existingRecord;
+    }
+    if (!input.createMissing) {
+      return null;
+    }
+    const metadata = normalizeAvatarPrincipalMetadata({
+      nickname,
+      displayName: input.displayName,
+      classify: input.classify,
+    });
+    const created = await this.authService.createManagedPrincipal({
+      kind: "avatar",
+      metadata: { ...metadata },
+    });
+    ensureAvatarNicknameAlias({
+      workspacePath: GLOBAL_WORKSPACE_PATH,
+      avatar: metadata.nickname,
+      principalId: created.principalId,
+      homeDir: this.getHomeDir(),
+    });
+    return {
+      principal: created,
+      metadata,
+    };
+  }
+
+  private async ensureRegisteredGlobalAvatarPrincipals(): Promise<
+    Array<{ principal: PrincipalProjection; metadata: AvatarPrincipalMetadata }>
+  > {
+    const nicknames = new Set(listGlobalAvatarNicknamesFromStorage(this.getHomeDir()));
+    nicknames.add(defaultAvatarNickname());
+
+    const records = new Map<string, { principal: PrincipalProjection; metadata: AvatarPrincipalMetadata }>();
+    for (const principal of await this.authService.listManagedPrincipals({ kind: "avatar" })) {
+      const record = this.readAvatarPrincipalRecord(principal);
+      if (record && !records.has(record.metadata.nickname)) {
+        records.set(record.metadata.nickname, record);
+      }
+    }
+
+    for (const nickname of nicknames) {
+      if (records.has(nickname)) {
+        continue;
+      }
+      const imported = await this.ensureGlobalAvatarPrincipal({
+        nickname,
+        displayName: nickname === defaultAvatarNickname() ? formatAvatarDisplayName(nickname) : null,
+        classify: null,
+        createMissing: true,
+      });
+      if (imported) {
+        records.set(imported.metadata.nickname, imported);
+      }
+    }
+
+    const ordered = [...records.values()].sort((left, right) => this.compareAvatarCatalogRecords(left, right));
+    for (const record of ordered) {
+      ensureAvatarNicknameAlias({
+        workspacePath: GLOBAL_WORKSPACE_PATH,
+        avatar: record.metadata.nickname,
+        principalId: record.principal.principalId,
+        homeDir: this.getHomeDir(),
+      });
+    }
+    return ordered;
+  }
+
+  private buildAvatarCatalogEntry(input: {
+    workspacePath: string;
+    nickname: string;
+    avatarPrincipalId?: string | null;
+    displayName?: string | null;
+    classify?: AvatarClassify | null;
+    iconUrl?: string | null;
+    globalAvailable?: boolean;
+  }): WorkspaceAvatarCatalogEntry {
+    return buildWorkspaceAvatarCatalogEntry({
+      workspacePath: toWorkspacePath(input.workspacePath),
+      nickname: input.nickname,
+      homeDir: this.getHomeDir(),
+      avatarPrincipalId: input.avatarPrincipalId,
+      displayName: input.displayName,
+      classify: input.classify,
+      iconUrl: input.iconUrl,
+      globalAvailable: input.globalAvailable,
+    });
+  }
+
+  async listWorkspaceAvatarCatalog(workspacePath: string): Promise<WorkspaceAvatarCatalogEntry[]> {
+    const normalizedWorkspacePath = toWorkspacePath(workspacePath);
+    const globalCatalog = await this.listGlobalAvatarCatalog();
+    if (normalizedWorkspacePath === GLOBAL_WORKSPACE_PATH) {
+      return globalCatalog;
+    }
+    const globalByNickname = new Map(globalCatalog.map((entry) => [entry.nickname, entry]));
+    return listWorkspaceAvatarNicknamesFromStorage(normalizedWorkspacePath, this.getHomeDir()).map((nickname) => {
+      const globalEntry = globalByNickname.get(nickname);
+      return this.buildAvatarCatalogEntry({
+        workspacePath: normalizedWorkspacePath,
+        nickname,
+        avatarPrincipalId: globalEntry?.avatarPrincipalId ?? null,
+        displayName: globalEntry?.displayName ?? null,
+        classify: globalEntry?.classify ?? null,
+        iconUrl: globalEntry?.iconUrl ?? null,
+        globalAvailable: globalEntry?.globalAvailable,
+      });
+    });
+  }
+
+  async listGlobalAvatarCatalog(): Promise<WorkspaceAvatarCatalogEntry[]> {
+    const baseUrl = await this.authService.getBaseUrl();
+    return (await this.ensureRegisteredGlobalAvatarPrincipals()).map((record) =>
+      this.buildAvatarCatalogEntry({
+        workspacePath: GLOBAL_WORKSPACE_PATH,
+        nickname: record.metadata.nickname,
+        avatarPrincipalId: record.principal.principalId,
+        displayName: record.metadata.displayName,
+        classify: record.metadata.classify,
+        iconUrl: `${baseUrl}${buildAvatarIconUrl(record.principal.principalId)}`,
+        globalAvailable: true,
+      }),
+    );
+  }
+
+  async createGlobalAvatar(input: {
+    nickname: string;
+    displayName?: string | null;
+    classify?: AvatarClassify | null;
+  }): Promise<WorkspaceAvatarCatalogEntry> {
+    const nickname = resolveAvatarOwnerKey(input.nickname);
+    const existing = await this.ensureGlobalAvatarPrincipal({
+      nickname,
+      createMissing: false,
+    });
+    if (existing) {
+      throw new Error(`avatar nickname already exists: ${nickname}`);
+    }
+    const created = await this.ensureGlobalAvatarPrincipal({
+      nickname,
+      displayName: input.displayName,
+      classify: input.classify,
+      createMissing: true,
+    });
+    if (!created) {
+      throw new Error(`failed to create avatar principal: ${nickname}`);
+    }
+    this.queueAvatarCatalogInvalidation([GLOBAL_WORKSPACE_PATH, ...this.workspaces.list()]);
+    return this.buildAvatarCatalogEntry({
+      workspacePath: GLOBAL_WORKSPACE_PATH,
+      nickname: created.metadata.nickname,
+      avatarPrincipalId: created.principal.principalId,
+      displayName: created.metadata.displayName,
+      classify: created.metadata.classify,
+      iconUrl: `${await this.authService.getBaseUrl()}${buildAvatarIconUrl(created.principal.principalId)}`,
+      globalAvailable: true,
+    });
   }
 
   listRuntimeWorkspaceMounts(runtimeId: string): WorkspaceMountRecord[] {
@@ -1309,6 +1538,67 @@ export class AppKernel {
     };
   }
 
+  listWorkspaceWorkbenchTree(input: {
+    workspacePath: string;
+    avatar: string;
+    mode: WorkspaceWorkbenchMode;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }) {
+    const workspacePath = toWorkspacePath(input.workspacePath);
+    const avatar = normalizeAvatarNickname(input.avatar);
+    const runtimeId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
+    const grants =
+      input.mode === "explorer"
+        ? this.workspaceSystem.listRuntimeWorkspaceGrants({
+            runtimeId,
+            workspacePath,
+          })
+        : [];
+    return listWorkspaceWorkbenchTree({
+      workspacePath,
+      avatar,
+      mode: input.mode,
+      path: input.path,
+      offset: input.offset,
+      limit: input.limit,
+      grants,
+    });
+  }
+
+  readWorkspaceWorkbenchPreview(input: {
+    workspacePath: string;
+    avatar: string;
+    mode: WorkspaceWorkbenchMode;
+    path: string;
+    maxBytes?: number;
+  }) {
+    return readWorkspaceWorkbenchPreview({
+      workspacePath: toWorkspacePath(input.workspacePath),
+      avatar: normalizeAvatarNickname(input.avatar),
+      mode: input.mode,
+      path: input.path,
+      maxBytes: input.maxBytes,
+    });
+  }
+
+  createWorkspacePrivateAsset(input: {
+    workspacePath: string;
+    avatar: string;
+    parentPath?: string;
+    name: string;
+    kind: "file" | "directory";
+  }) {
+    return createWorkspacePrivateAsset({
+      workspacePath: toWorkspacePath(input.workspacePath),
+      avatar: normalizeAvatarNickname(input.avatar),
+      parentPath: input.parentPath,
+      name: input.name,
+      kind: input.kind,
+    });
+  }
+
   async execRuntimeWorkspace(input: {
     runtimeId: string;
     workspacePath: string;
@@ -1337,41 +1627,45 @@ export class AppKernel {
     });
   }
 
-  forkWorkspaceAvatar(input: { workspacePath: string; avatar: string }): WorkspaceAvatarCatalogEntry {
+  async forkWorkspaceAvatar(input: { workspacePath: string; avatar: string }): Promise<WorkspaceAvatarCatalogEntry> {
     const workspacePath = toWorkspacePath(input.workspacePath);
     this.rememberWorkspace(workspacePath);
-    const avatar = forkAvatarIntoWorkspace({
+    const projected = forkAvatarIntoWorkspace({
       workspacePath,
       nickname: input.avatar,
     });
     this.queueAvatarCatalogInvalidation([workspacePath]);
-    return avatar;
+    return (
+      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ?? projected
+    );
   }
 
-  copyWorkspaceAvatar(input: {
+  async copyWorkspaceAvatar(input: {
     workspacePath: string;
     sourceAvatar: string;
     targetAvatar: string;
-  }): WorkspaceAvatarCatalogEntry {
+  }): Promise<WorkspaceAvatarCatalogEntry> {
     const workspacePath = toWorkspacePath(input.workspacePath);
     this.rememberWorkspace(workspacePath);
-    const avatar = copyAvatarIntoWorkspace({
+    const projected = copyAvatarIntoWorkspace({
       workspacePath,
       sourceNickname: input.sourceAvatar,
       targetNickname: input.targetAvatar,
     });
     this.queueAvatarCatalogInvalidation([workspacePath]);
-    return avatar;
+    return (
+      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ?? projected
+    );
   }
 
-  inspectWorkspaceWelcome(input: {
+  async inspectWorkspaceWelcome(input: {
     workspacePath: string;
     avatar?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
     terminalActorId?: TerminalActorId;
     superadminTerminalActorId?: TerminalActorId;
-  }): WorkspaceWelcomeSnapshot {
+  }): Promise<WorkspaceWelcomeSnapshot> {
     const workspacePath = toWorkspacePath(input.workspacePath);
     const avatar = normalizeAvatarNickname(input.avatar ?? defaultAvatarNickname());
     const sessionId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
@@ -1429,7 +1723,7 @@ export class AppKernel {
       workspacePath,
       avatar,
       sessionId,
-      avatars: this.listWorkspaceAvatarCatalog(workspacePath),
+      avatars: await this.listWorkspaceAvatarCatalog(workspacePath),
       rooms,
       terminals,
     };

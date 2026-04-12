@@ -15,5 +15,7 @@
     "@trpc/server": "^11.7.1",
     "superjson": "^2.2.2"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
 }

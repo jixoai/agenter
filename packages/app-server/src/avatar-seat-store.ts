@@ -1,6 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import {
   generatePrincipalKeyPair,
@@ -17,7 +28,11 @@ import type { MessageChannelAccessRole } from "@agenter/message-system";
 import type { TerminalGrantRole } from "@agenter/terminal-system";
 import { normalizeAvatarNickname } from "@agenter/avatar";
 
-import { toWorkspaceCwd } from "./workspace-target";
+import {
+  resolveWorkspaceAvatarAliasRoot,
+  resolveWorkspaceAvatarCanonicalRoot,
+  resolveWorkspaceAvatarSeatPath,
+} from "./workspace-system";
 
 export type AvatarSeatState = "active" | "credential-invalid";
 
@@ -47,16 +62,75 @@ export interface AvatarSeatDocument {
   terminalSeats: Record<string, AvatarTerminalSeatCredential>;
 }
 
-const DEFAULT_DOCUMENT: AvatarSeatDocument = {
+const createEmptyAvatarSeatDocument = (): AvatarSeatDocument => ({
   version: 2,
   messageSeats: {},
   terminalSeats: {},
+});
+
+const mergeLegacyAvatarDirectory = (sourceRoot: string, canonicalRoot: string): void => {
+  mkdirSync(canonicalRoot, { recursive: true });
+  for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
+    const sourcePath = join(sourceRoot, entry.name);
+    const canonicalPath = join(canonicalRoot, entry.name);
+    if (existsSync(canonicalPath)) {
+      if (entry.isDirectory() && lstatSync(canonicalPath).isDirectory()) {
+        mergeLegacyAvatarDirectory(sourcePath, canonicalPath);
+        rmSync(sourcePath, { recursive: true, force: true });
+        continue;
+      }
+      rmSync(sourcePath, { recursive: true, force: true });
+      continue;
+    }
+    renameSync(sourcePath, canonicalPath);
+  }
+};
+
+export const ensureAvatarNicknameAlias = (input: {
+  workspacePath: string;
+  avatar: string;
+  principalId: string;
+  homeDir?: string;
+}): { canonicalRoot: string; aliasPath: string } => {
+  const homeDir = input.homeDir ?? homedir();
+  const canonicalRoot = resolveWorkspaceAvatarCanonicalRoot(input.workspacePath, input.principalId, homeDir);
+  const aliasPath = resolveWorkspaceAvatarAliasRoot(input.workspacePath, input.avatar, homeDir);
+  mkdirSync(canonicalRoot, { recursive: true });
+  mkdirSync(dirname(aliasPath), { recursive: true });
+
+  try {
+    const stats = lstatSync(aliasPath);
+    if (stats.isDirectory()) {
+      mergeLegacyAvatarDirectory(aliasPath, canonicalRoot);
+      rmSync(aliasPath, { recursive: true, force: true });
+    } else if (!stats.isSymbolicLink()) {
+      throw new Error(`avatar nickname alias path is not a symlink: ${aliasPath}`);
+    }
+    if (stats.isSymbolicLink()) {
+      try {
+        if (realpathSync(aliasPath) === canonicalRoot) {
+          return { canonicalRoot, aliasPath };
+        }
+      } catch {
+        // Fall through and replace stale or broken aliases.
+      }
+      rmSync(aliasPath, { recursive: true, force: true });
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const relativeTarget = relative(dirname(aliasPath), canonicalRoot) || ".";
+  symlinkSync(relativeTarget, aliasPath, "dir");
+  return { canonicalRoot, aliasPath };
 };
 
 const nowIso = (): string => new Date().toISOString();
 
 export const resolveAvatarSeatSettingsPath = (workspacePath: string, avatar: string, homeDir = homedir()): string => {
-  return join(toWorkspaceCwd(workspacePath, homeDir), ".agenter", "avatar", normalizeAvatarNickname(avatar), "settings.local.json");
+  return resolveWorkspaceAvatarSeatPath(workspacePath, normalizeAvatarNickname(avatar), homeDir);
 };
 
 const readAvatarPrincipal = (value: {
@@ -98,7 +172,7 @@ const readAvatarPrincipal = (value: {
 
 const normalizeSeatDocument = (value: unknown): AvatarSeatDocument => {
   if (!value || typeof value !== "object") {
-    return DEFAULT_DOCUMENT;
+    return createEmptyAvatarSeatDocument();
   }
   const raw = value as {
     version?: unknown;
@@ -116,20 +190,20 @@ const normalizeSeatDocument = (value: unknown): AvatarSeatDocument => {
     algorithm: principal?.algorithm,
     publicKey: principal?.publicKey,
     privateKey: principal?.privateKey,
-    messageSeats: raw.messageSeats ?? {},
-    terminalSeats: raw.terminalSeats ?? {},
+    messageSeats: { ...(raw.messageSeats ?? {}) },
+    terminalSeats: { ...(raw.terminalSeats ?? {}) },
   };
 };
 
 export const readAvatarSeatDocument = (workspacePath: string, avatar: string, homeDir = homedir()): AvatarSeatDocument => {
   const filePath = resolveAvatarSeatSettingsPath(workspacePath, avatar, homeDir);
   if (!existsSync(filePath)) {
-    return DEFAULT_DOCUMENT;
+    return createEmptyAvatarSeatDocument();
   }
   try {
     return normalizeSeatDocument(JSON.parse(readFileSync(filePath, "utf8")) as unknown);
   } catch {
-    return DEFAULT_DOCUMENT;
+    return createEmptyAvatarSeatDocument();
   }
 };
 
@@ -140,6 +214,12 @@ export const ensureAvatarSeatPrincipal = (input: {
 }): AvatarPrincipalRecord => {
   const doc = readAvatarSeatDocument(input.workspacePath, input.avatar, input.homeDir);
   if (doc.principalId && doc.algorithm && doc.publicKey && doc.privateKey) {
+    ensureAvatarNicknameAlias({
+      workspacePath: input.workspacePath,
+      avatar: input.avatar,
+      principalId: doc.principalId,
+      homeDir: input.homeDir,
+    });
     return {
       principalId: doc.principalId,
       algorithm: doc.algorithm,
@@ -169,7 +249,18 @@ export const writeAvatarSeatDocument = (input: {
   homeDir?: string;
 }): AvatarSeatDocument => {
   const homeDir = input.homeDir ?? homedir();
-  const filePath = resolveAvatarSeatSettingsPath(input.workspacePath, input.avatar, homeDir);
+  const filePath =
+    typeof input.doc.principalId === "string"
+      ? join(
+          ensureAvatarNicknameAlias({
+            workspacePath: input.workspacePath,
+            avatar: input.avatar,
+            principalId: input.doc.principalId,
+            homeDir,
+          }).canonicalRoot,
+          "settings.local.json",
+        )
+      : resolveAvatarSeatSettingsPath(input.workspacePath, input.avatar, homeDir);
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(input.doc, null, 2)}\n`, "utf8");
   return input.doc;
@@ -184,6 +275,11 @@ export const saveAvatarMessageSeatCredential = (input: {
   state?: AvatarSeatState;
   homeDir?: string;
 }): AvatarSeatDocument => {
+  ensureAvatarSeatPrincipal({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar,
+    homeDir: input.homeDir,
+  });
   const doc = readAvatarSeatDocument(input.workspacePath, input.avatar, input.homeDir);
   doc.messageSeats[input.chatId] = {
     accessToken: input.accessToken,
@@ -208,6 +304,11 @@ export const saveAvatarTerminalSeatCredential = (input: {
   state?: AvatarSeatState;
   homeDir?: string;
 }): AvatarSeatDocument => {
+  ensureAvatarSeatPrincipal({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar,
+    homeDir: input.homeDir,
+  });
   const doc = readAvatarSeatDocument(input.workspacePath, input.avatar, input.homeDir);
   doc.terminalSeats[input.terminalId] = {
     accessToken: input.accessToken,
@@ -231,6 +332,11 @@ export const markAvatarSeatCredentialState = (input: {
   state: AvatarSeatState;
   homeDir?: string;
 }): AvatarSeatDocument => {
+  ensureAvatarSeatPrincipal({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar,
+    homeDir: input.homeDir,
+  });
   const doc = readAvatarSeatDocument(input.workspacePath, input.avatar, input.homeDir);
   if (input.kind === "message") {
     const current = doc.messageSeats[input.resourceId];

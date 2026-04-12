@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { readBearerToken } from "../auth/tokens";
-import { buildRoomIconUrl, buildSessionIconUrl } from "../render/fallback-icons";
+import { buildAvatarIconUrl, buildRoomIconUrl, buildSessionIconUrl } from "../render/fallback-icons";
 import { rasterizeSvg, type RasterImageFormat } from "../render/resvg-ffi";
 import type { ProfileService } from "../service/profile-service";
 import type { CreateManagedPrincipalInput, ProfileMetadata } from "../types";
@@ -122,6 +122,13 @@ const managedPrincipalCreateSchema = z
   })
   .strict();
 
+const managedPrincipalListSchema = z
+  .object({
+    kind: z.enum(["user", "avatar", "room", "terminal", "system", "delegate"]).optional(),
+    ownerKey: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
 const SUPPORTED_ICON_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/svg+xml", "image/webp"]);
 const SVG_ICON_MIME_TYPE = "image/svg+xml";
 
@@ -139,6 +146,7 @@ const mapErrorStatus = (error: Error): number => {
     error.message.includes("invalid ") ||
     error.message.includes("required") ||
     error.message.includes("already bound") ||
+    error.message.includes("already exists") ||
     error.message.includes("not found")
   ) {
     return 400;
@@ -316,6 +324,21 @@ export const createProfileServiceApp = ({
     return context.json(await service.createManagedPrincipal(payload));
   });
 
+  app.get("/principals", async (context) => {
+    const parsed = managedPrincipalListSchema.safeParse({
+      kind: context.req.query("kind") ?? undefined,
+      ownerKey: context.req.query("ownerKey") ?? undefined,
+    });
+    if (!parsed.success) {
+      throw new HTTPException(400, {
+        message: parsed.error.issues[0]?.message ?? "invalid request query",
+      });
+    }
+    return context.json({
+      items: await service.listManagedPrincipals(parsed.data),
+    });
+  });
+
   app.get("/principals/:principalId", async (context) => {
     const principal = await service.resolvePrincipal(context.req.param("principalId"));
     if (!principal) {
@@ -367,6 +390,34 @@ export const createProfileServiceApp = ({
       resvgLibraryPath,
     });
     return writeIconResponse(icon);
+  });
+
+  app.post("/avatars/:principalId/icon", async (context) => {
+    const principalId = context.req.param("principalId");
+    const principal = await service.resolvePrincipal(principalId);
+    if (!principal || principal.kind !== "avatar") {
+      return jsonErrorResponse("avatar principal not found", 404);
+    }
+    const { mimeType, bytes } = await readIconUpload(context.req.raw);
+    await service.putAvatarIcon(principal.principalId, mimeType, bytes);
+    return context.json({
+      ok: true,
+      principalId: principal.principalId,
+      iconUrl: `${publicBaseUrl}${buildAvatarIconUrl(principal.principalId)}`,
+    });
+  });
+
+  app.get("/media/avatars/:principalId/icon", async (context) => {
+    const icon = await service.resolveAvatarIcon(context.req.param("principalId"));
+    if (!icon) {
+      return jsonErrorResponse("avatar principal not found", 404);
+    }
+    const resolved = await resolveIconVariant(icon, {
+      format: parseRequestedFormat(context.req.query("format")),
+      size: parseRequestedSize(context.req.query("size")),
+      resvgLibraryPath,
+    });
+    return writeIconResponse(resolved);
   });
 
   app.post("/sessions/:sessionId/icon", async (context) => {

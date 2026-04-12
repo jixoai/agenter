@@ -31,6 +31,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
     });
     await kernel.start();
     const caller = appRouter.createCaller(await createTrpcContext(kernel));
@@ -99,6 +100,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
     });
     await kernel.start();
     const caller = appRouter.createCaller(await createTrpcContext(kernel));
@@ -126,6 +128,58 @@ describe("Feature: app-server trpc procedures", () => {
             kind: "wallet_evm",
             value: account.address.toLowerCase(),
           },
+        }),
+      ]),
+    );
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given the avatar control plane When catalog and create are called Then global avatars stay principal-backed with backend-owned icon projection", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const initialCatalog = await caller.avatar.catalog();
+    expect(initialCatalog.items.some((item) => item.nickname === "default")).toBeTrue();
+    const defaultEntry = initialCatalog.items.find((item) => item.nickname === "default");
+    expect(defaultEntry).toMatchObject({
+      avatarPrincipalId: expect.any(String),
+      displayName: "Default",
+      classify: null,
+    });
+    expect(defaultEntry?.iconUrl).toContain("/media/avatars/");
+    expect(defaultEntry?.globalPath).toContain(join(".agenter", "avatars", "by-principal"));
+
+    const created = await caller.avatar.create({
+      nickname: "backend",
+      displayName: "Backend",
+      classify: "backend",
+    });
+    expect(created.avatar).toMatchObject({
+      avatarPrincipalId: expect.any(String),
+      nickname: "backend",
+      displayName: "Backend",
+      classify: "backend",
+    });
+    expect(created.avatar.iconUrl).toContain("/media/avatars/");
+    expect(created.avatar.globalAvailable).toBeTrue();
+
+    const catalog = await caller.avatar.catalog();
+    expect(catalog.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          avatarPrincipalId: created.avatar.avatarPrincipalId,
+          nickname: "backend",
+          displayName: "Backend",
+          classify: "backend",
+          iconUrl: created.avatar.iconUrl,
         }),
       ]),
     );

@@ -10,6 +10,7 @@ import type {
   CreateManagedPrincipalInput,
   IconAssetRecord,
   IconOwnerKind,
+  ListManagedPrincipalsInput,
   ManagedPrincipalRecord,
   ProfileIdentifier,
   ProfileMetadata,
@@ -709,5 +710,36 @@ export class ProfileStore {
   async getManagedPrincipal(principalId: string): Promise<ManagedPrincipalRecord | null> {
     const row = await this.readPrincipalRow(principalId);
     return row ? this.mapManagedPrincipal(row) : null;
+  }
+
+  async listPrincipals(input: ListManagedPrincipalsInput = {}): Promise<PrincipalProjection[]> {
+    const filters: string[] = [];
+    const values: Record<string, unknown> = {};
+    if (input.kind) {
+      filters.push("kind = $kind");
+      values.kind = input.kind;
+    }
+    if (typeof input.ownerKey === "string" && input.ownerKey.trim().length > 0) {
+      filters.push("owner_key = $ownerKey");
+      values.ownerKey = input.ownerKey.trim();
+    }
+    const whereClause = filters.length > 0 ? `where ${filters.join(" and ")}` : "";
+    const rows = await this.readRows(
+      `select
+         principal_id,
+         kind,
+         algorithm,
+         public_key,
+         owner_key,
+         cast(metadata_json as varchar) as metadata_json,
+         cast(encrypted_private_key_json as varchar) as encrypted_private_key_json,
+         created_at,
+         updated_at
+       from principal_registry
+       ${whereClause}
+       order by created_at asc, principal_id asc`,
+      values,
+    );
+    return rows.map((row) => this.mapPrincipalProjection(row as unknown as PrincipalRegistryRow));
   }
 }

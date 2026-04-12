@@ -7,6 +7,9 @@ export type RouterInputs = inferRouterInputs<AppRouter>;
 
 export type SessionListOutput = RouterOutputs["session"]["list"];
 export type SessionEntry = SessionListOutput["sessions"][number];
+export type GlobalAvatarCatalogOutput = RouterOutputs["avatar"]["catalog"];
+export type GlobalAvatarCatalogEntry = GlobalAvatarCatalogOutput["items"][number];
+export type GlobalAvatarCreateOutput = RouterOutputs["avatar"]["create"];
 export type WorkspaceListOutput = RouterOutputs["workspace"]["listAll"];
 export type WorkspaceEntry = WorkspaceListOutput["items"][number];
 export type WorkspaceSessionListOutput = RouterOutputs["workspace"]["listSessions"];
@@ -21,6 +24,16 @@ export type WorkspaceWelcomeSnapshotOutput = RouterOutputs["workspace"]["welcome
 export type WorkspaceWelcomeRoomItem = WorkspaceWelcomeSnapshotOutput["rooms"][number];
 export type WorkspaceWelcomeTerminalItem = WorkspaceWelcomeSnapshotOutput["terminals"][number];
 export type WorkspacePathSearchOutput = RouterOutputs["workspace"]["searchPaths"];
+export type RuntimeWorkspaceMountsOutput = RouterOutputs["workspace"]["runtimeMounts"];
+export type RuntimeWorkspaceMountEntry = RuntimeWorkspaceMountsOutput["items"][number];
+export type RuntimeWorkspaceGrantsOutput = RouterOutputs["workspace"]["runtimeGrants"];
+export type RuntimeWorkspaceGrantEntry = RuntimeWorkspaceGrantsOutput["items"][number];
+export type RuntimeWorkspaceGrantMutationOutput = RouterOutputs["workspace"]["grantRuntime"];
+export type RuntimeWorkspaceAssetRootsOutput = RouterOutputs["workspace"]["assetRoots"];
+export type WorkspaceWorkbenchTreeOutput = RouterOutputs["workspace"]["workbenchTree"];
+export type WorkspaceWorkbenchTreeEntry = WorkspaceWorkbenchTreeOutput["items"][number];
+export type WorkspaceWorkbenchPreviewOutput = RouterOutputs["workspace"]["workbenchPreview"];
+export type RuntimeWorkspaceExecOutput = RouterOutputs["workspace"]["exec"];
 export type DraftResolutionOutput = RouterOutputs["draft"]["resolve"];
 export type GlobalSettingsFileOutput = RouterOutputs["settings"]["global"]["read"];
 export type ChatListOutput = RouterOutputs["chat"]["list"];
@@ -155,6 +168,7 @@ export interface RuntimeClientState {
   tasksBySession: Record<string, RuntimeSnapshotEntry["tasks"]>;
   recentWorkspaces: string[];
   workspaces: WorkspaceEntry[];
+  globalAvatarCatalog: CachedResourceState<GlobalAvatarCatalogEntry[]>;
   workspaceAvatarCatalogByPath: Record<string, CachedResourceState<WorkspaceAvatarCatalogEntry[]>>;
   globalRooms: CachedResourceState<GlobalRoomEntry[]>;
   globalRoomSnapshotsById: Record<string, CachedResourceState<GlobalRoomSnapshotOutput | null>>;

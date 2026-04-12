@@ -6,8 +6,22 @@ import {
   type RegistrationResponseJson,
   ProfileWebAuthnControlPlane,
 } from "../auth/webauthn-control-plane";
+import {
+  formatAvatarDisplayName,
+  normalizeAvatarPrincipalMetadata,
+  readAvatarPrincipalMetadata,
+  resolveAvatarOwnerKey,
+} from "../avatar-metadata";
 import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toAuthId, toIdentifierKey } from "../identifiers";
-import { buildRoomIconUrl, buildSessionIconUrl, renderProfileFallbackSvg, renderRoomFallbackSvg, renderSessionFallbackSvg } from "../render/fallback-icons";
+import {
+  buildAvatarIconUrl,
+  buildRoomIconUrl,
+  buildSessionIconUrl,
+  renderAvatarFallbackSvg,
+  renderProfileFallbackSvg,
+  renderRoomFallbackSvg,
+  renderSessionFallbackSvg,
+} from "../render/fallback-icons";
 import { fetchGravatar } from "../render/gravatar";
 import type {
   AuthChallengeDescriptor,
@@ -18,6 +32,7 @@ import type {
   EmailChallengeIssuedEvent,
   IconAssetRecord,
   IconOwnerKind,
+  ListManagedPrincipalsInput,
   ManagedPrincipalRecord,
   ProfileIdentifier,
   ProfileMetadata,
@@ -204,7 +219,30 @@ export class ProfileService {
     return await this.store.createOrBindProfile(identifier);
   }
 
+  async listManagedPrincipals(input: ListManagedPrincipalsInput = {}): Promise<PrincipalProjection[]> {
+    return await this.store.listPrincipals(input);
+  }
+
   async createManagedPrincipal(input: CreateManagedPrincipalInput): Promise<ManagedPrincipalRecord> {
+    if (input.kind === "avatar") {
+      const metadata = readAvatarPrincipalMetadata(input.metadata);
+      if (!metadata) {
+        throw new Error("avatar nickname is required");
+      }
+      const ownerKey = resolveAvatarOwnerKey(metadata.nickname);
+      const existing = await this.store.listPrincipals({
+        kind: "avatar",
+        ownerKey,
+      });
+      if (existing.length > 0) {
+        throw new Error(`avatar nickname already exists: ${ownerKey}`);
+      }
+      return await this.store.createManagedPrincipal({
+        ...input,
+        ownerKey,
+        metadata: { ...metadata },
+      });
+    }
     return await this.store.createManagedPrincipal(input);
   }
 
@@ -264,6 +302,14 @@ export class ProfileService {
 
   async putRoomIcon(roomId: string, mimeType: string, bytes: Uint8Array): Promise<void> {
     await this.putIconAsset("room", roomId, mimeType, bytes);
+  }
+
+  async putAvatarIcon(principalId: string, mimeType: string, bytes: Uint8Array): Promise<void> {
+    const principal = await this.resolvePrincipal(principalId);
+    if (!principal || principal.kind !== "avatar") {
+      throw new Error("avatar principal not found");
+    }
+    await this.putIconAsset("avatar", principal.principalId, mimeType, bytes);
   }
 
   async upsertSessionSeed(seed: SessionIconSeed): Promise<void> {
@@ -332,6 +378,40 @@ export class ProfileService {
       mimeType: "image/svg+xml",
       svg: renderRoomFallbackSvg(seed),
       iconUrl: buildRoomIconUrl(roomId),
+    };
+  }
+
+  async resolveAvatarIcon(
+    principalId: string,
+  ): Promise<{ mimeType: string; bytes?: Uint8Array; svg?: string; iconUrl: string } | null> {
+    const principal = await this.resolvePrincipal(principalId);
+    if (!principal || principal.kind !== "avatar") {
+      return null;
+    }
+    const uploaded = await this.store.getIconAsset("avatar", principal.principalId);
+    if (uploaded) {
+      return {
+        mimeType: uploaded.mimeType,
+        bytes: uploaded.bytes,
+        iconUrl: buildAvatarIconUrl(principal.principalId),
+      };
+    }
+    const metadata =
+      readAvatarPrincipalMetadata(principal.metadata) ??
+      normalizeAvatarPrincipalMetadata({
+        nickname: principal.ownerKey ?? principal.principalId.slice(2, 10),
+        displayName: formatAvatarDisplayName(principal.ownerKey ?? "avatar"),
+        classify: null,
+      });
+    return {
+      mimeType: "image/svg+xml",
+      svg: renderAvatarFallbackSvg({
+        principalId: principal.principalId,
+        nickname: metadata.nickname,
+        displayName: metadata.displayName,
+        classify: metadata.classify,
+      }),
+      iconUrl: buildAvatarIconUrl(principal.principalId),
     };
   }
 

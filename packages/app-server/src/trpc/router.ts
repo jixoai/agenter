@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/profile-service";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import type { MessageActorId } from "@agenter/message-system";
 import type { TerminalActorId } from "@agenter/terminal-system";
@@ -48,6 +49,10 @@ const terminalProcessProfileSchema = z.object({
   icon: z.string().trim().min(1).optional(),
   title: z.string().trim().min(1).optional(),
   shortcuts: z.record(z.string(), z.string().min(1)).optional(),
+});
+const workspaceGrantInputSchema = z.object({
+  relativePath: z.string().trim().min(1),
+  mode: z.enum(["ro", "rw"]),
 });
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
@@ -149,6 +154,22 @@ export const appRouter = t.router({
       claims: ctx.auth.claims,
     })),
   }),
+  avatar: t.router({
+    catalog: t.procedure.query(async ({ ctx }) => ({
+      items: await ctx.kernel.listGlobalAvatarCatalog(),
+    })),
+    create: t.procedure
+      .input(
+        z.object({
+          nickname: z.string().trim().min(1).max(64),
+          displayName: z.string().trim().min(1).max(128).nullable().optional(),
+          classify: z.enum(AVATAR_CLASSIFY_VALUES).nullable().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        avatar: await ctx.kernel.createGlobalAvatar(input),
+      })),
+  }),
   session: t.router({
     list: t.procedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
     create: t.procedure
@@ -207,7 +228,7 @@ export const appRouter = t.router({
           terminalId: z.string().min(1),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.focusTerminal(input.sessionId, input.terminalId)),
+      .mutation(async ({ ctx, input }) => await ctx.kernel.focusTerminal(input.sessionId, input.terminalId)),
     cycles: t.procedure
       .input(
         z.object({
@@ -296,8 +317,8 @@ export const appRouter = t.router({
           channels: z.array(channelAccessInput).default([]),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        items: ctx.kernel.focusMessageChannels({
+      .mutation(async ({ ctx, input }) => ({
+        items: await ctx.kernel.focusMessageChannels({
           sessionId: input.sessionId,
           op: input.op,
           channels: input.channels,
@@ -731,7 +752,7 @@ export const appRouter = t.router({
           terminalIds: z.array(z.string().min(1)).default([]),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.focusTerminals(input)),
+      .mutation(async ({ ctx, input }) => await ctx.kernel.focusTerminals(input)),
     delete: t.procedure
       .input(
         z.object({
@@ -1083,7 +1104,7 @@ export const appRouter = t.router({
     }),
   }),
   notification: t.router({
-    snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getNotificationSnapshot()),
+    snapshot: t.procedure.query(async ({ ctx }) => await ctx.kernel.getNotificationSnapshot()),
     setChatVisibility: t.procedure
       .input(
         z.object({
@@ -1093,7 +1114,7 @@ export const appRouter = t.router({
           focused: z.boolean(),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.setChatVisibility(input)),
+      .mutation(async ({ ctx, input }) => await ctx.kernel.setChatVisibility(input)),
     setTerminalVisibility: t.procedure
       .input(
         z.object({
@@ -1103,7 +1124,7 @@ export const appRouter = t.router({
           focused: z.boolean(),
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.setTerminalVisibility(input)),
+      .mutation(async ({ ctx, input }) => await ctx.kernel.setTerminalVisibility(input)),
     consume: t.procedure
       .input(
         z.object({
@@ -1116,7 +1137,7 @@ export const appRouter = t.router({
           path: ["terminalId"],
         }),
       )
-      .mutation(({ ctx, input }) => ctx.kernel.consumeNotifications(input)),
+      .mutation(async ({ ctx, input }) => await ctx.kernel.consumeNotifications(input)),
   }),
   task: t.router({
     list: t.procedure
@@ -1343,8 +1364,8 @@ export const appRouter = t.router({
           workspacePath: z.string().min(1),
         }),
       )
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listWorkspaceAvatarCatalog(input.workspacePath),
+      .query(async ({ ctx, input }) => ({
+        items: await ctx.kernel.listWorkspaceAvatarCatalog(input.workspacePath),
       })),
     forkAvatar: t.procedure
       .input(
@@ -1353,8 +1374,8 @@ export const appRouter = t.router({
           avatar: z.string().min(1),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        avatar: ctx.kernel.forkWorkspaceAvatar(input),
+      .mutation(async ({ ctx, input }) => ({
+        avatar: await ctx.kernel.forkWorkspaceAvatar(input),
       })),
     copyAvatar: t.procedure
       .input(
@@ -1364,8 +1385,8 @@ export const appRouter = t.router({
           targetAvatar: z.string().min(1),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        avatar: ctx.kernel.copyWorkspaceAvatar(input),
+      .mutation(async ({ ctx, input }) => ({
+        avatar: await ctx.kernel.copyWorkspaceAvatar(input),
       })),
     welcomeSnapshot: t.procedure
       .input(
@@ -1374,9 +1395,9 @@ export const appRouter = t.router({
           avatar: z.string().min(1).optional(),
         }),
       )
-      .query(({ ctx, input }) => {
+      .query(async ({ ctx, input }) => {
         const terminalScope = resolveTerminalCallerScope(ctx.auth);
-        return ctx.kernel.inspectWorkspaceWelcome({
+        return await ctx.kernel.inspectWorkspaceWelcome({
           workspacePath: input.workspacePath,
           avatar: input.avatar,
           ...resolveMessageCallerScope(ctx.auth),
@@ -1419,6 +1440,99 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.searchWorkspacePaths(input),
       })),
+    runtimeMounts: t.procedure
+      .input(
+        z.object({
+          runtimeId: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listRuntimeWorkspaceMounts(input.runtimeId),
+      })),
+    runtimeGrants: t.procedure
+      .input(
+        z.object({
+          runtimeId: z.string().min(1),
+          workspacePath: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listRuntimeWorkspaceGrants(input),
+      })),
+    grantRuntime: t.procedure
+      .input(
+        z.object({
+          runtimeId: z.string().min(1),
+          workspacePath: z.string().min(1),
+          grants: z.array(workspaceGrantInputSchema),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        items: ctx.kernel.grantRuntimeWorkspace(input),
+      })),
+    detachRuntime: t.procedure
+      .input(
+        z.object({
+          runtimeId: z.string().min(1),
+          workspacePath: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.detachRuntimeWorkspace(input)),
+    assetRoots: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+        }),
+      )
+      .query(({ ctx, input }) => ctx.kernel.getRuntimeWorkspaceAssetRoots(input)),
+    workbenchTree: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          mode: z.enum(["explorer", "private"]),
+          path: z.string().optional(),
+          offset: z.number().int().nonnegative().optional(),
+          limit: z.number().int().positive().max(1000).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ctx.kernel.listWorkspaceWorkbenchTree(input)),
+    workbenchPreview: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          mode: z.enum(["explorer", "private"]),
+          path: z.string().min(1),
+          maxBytes: z.number().int().positive().max(512 * 1024).optional(),
+        }),
+      )
+      .query(({ ctx, input }) => ctx.kernel.readWorkspaceWorkbenchPreview(input)),
+    createPrivateAsset: t.procedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          parentPath: z.string().optional(),
+          name: z.string().trim().min(1),
+          kind: z.enum(["file", "directory"]),
+        }),
+      )
+      .mutation(({ ctx, input }) => ctx.kernel.createWorkspacePrivateAsset(input)),
+    exec: t.procedure
+      .input(
+        z.object({
+          runtimeId: z.string().min(1),
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+          command: z.string().min(1),
+          cwd: z.string().min(1).optional(),
+          env: z.record(z.string(), z.string()).optional(),
+          stdin: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => await ctx.kernel.execRuntimeWorkspace(input)),
     toggleFavorite: t.procedure
       .input(
         z.object({

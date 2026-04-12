@@ -1,4 +1,4 @@
-import type { ProfileIconSeed, RoomIconSeed, SessionIconSeed } from "../types";
+import type { AvatarClassify, AvatarIconSeed, ProfileIconSeed, RoomIconSeed, SessionIconSeed } from "../types";
 
 const toTrimmedOrFallback = (value: string | undefined, fallback: string): string => {
   const trimmed = value?.trim();
@@ -78,11 +78,73 @@ const buildRadialStops = (seed: number, accentHue: number) => {
 export const buildProfileIconUrl = (identifier: string): string =>
   `/media/profiles/${encodeURIComponent(identifier)}/icon`;
 
+export const buildAvatarIconUrl = (principalId: string): string =>
+  `/media/avatars/${encodeURIComponent(principalId)}/icon`;
+
 export const buildSessionIconUrl = (sessionId: string): string =>
   `/media/sessions/${encodeURIComponent(sessionId)}/icon`;
 
 export const buildRoomIconUrl = (roomId: string): string =>
   `/media/rooms/${encodeURIComponent(roomId)}/icon`;
+
+const buildAvatarClassifyGlyph = (classify: AvatarClassify): string => {
+  switch (classify) {
+    case "assistant":
+      return `<path d="M24 8l3 9 9 3-9 3-3 9-3-9-9-3 9-3z" /><path d="M38 14l1.5 4.5L44 20l-4.5 1.5L38 26l-1.5-4.5L32 20l4.5-1.5z" />`;
+    case "backend":
+      return `<rect x="10" y="10" width="28" height="10" rx="3" /><rect x="10" y="28" width="28" height="10" rx="3" /><path d="M16 15h.01M16 33h.01M23 15h9M23 33h9" />`;
+    case "frontend":
+      return `<rect x="8" y="10" width="32" height="22" rx="4" /><path d="M20 38h8M24 32v6" />`;
+    case "design":
+      return `<path d="M18 12l12 12-10 10-12-12z" /><path d="M26 20l8-8 6 6-8 8" /><path d="M14 36h10" />`;
+    case "ops":
+      return `<path d="M30 10a8 8 0 0 0-7 11l-11 11a3 3 0 1 0 4 4l11-11a8 8 0 1 0 3-15z" /><path d="M16 32l4 4" />`;
+    case "reviewer":
+      return `<circle cx="21" cy="21" r="9" /><path d="M27.5 27.5L36 36" /><path d="M17 21l3 3 6-6" />`;
+  }
+};
+
+export const renderAvatarFallbackSvg = (input: AvatarIconSeed): string => {
+  const principalId = input.principalId.trim().toLowerCase();
+  const seed = hashString(`avatar::${principalId}`);
+  const accentHue = seed % 360;
+  const background = buildRadialStops(seed, accentHue);
+  const panel = buildRadialStops(hashString(principalId), accentHue + 70);
+  const label = escapeXml(labelFromValue(input.displayName ?? input.nickname, principalId.slice(-2).toUpperCase()));
+  const orbCx = percent(0.2 + fractionFromSeed(seed, 1) * 0.56);
+  const orbCy = percent(0.16 + fractionFromSeed(seed, 2) * 0.42);
+  const turbulenceSeed = (seed % 983) + 11;
+  const glyph = input.classify ? buildAvatarClassifyGlyph(input.classify) : null;
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none">`,
+    `<defs>`,
+    `<radialGradient id="bg" cx="${orbCx}" cy="${orbCy}" r="82%">`,
+    `<stop offset="0%" stop-color="${background.accent}" />`,
+    `<stop offset="56%" stop-color="${background.glow}" />`,
+    `<stop offset="100%" stop-color="${background.depth}" />`,
+    `</radialGradient>`,
+    `<linearGradient id="panel" x1="18" y1="18" x2="78" y2="78">`,
+    `<stop offset="0%" stop-color="${panel.accent}" stop-opacity="0.96" />`,
+    `<stop offset="100%" stop-color="${panel.depth}" stop-opacity="0.9" />`,
+    `</linearGradient>`,
+    `<filter id="grain">`,
+    `<feTurbulence type="fractalNoise" baseFrequency="0.78" numOctaves="2" seed="${turbulenceSeed}" />`,
+    `<feComponentTransfer>`,
+    `<feFuncA type="table" tableValues="0 0.16" />`,
+    `</feComponentTransfer>`,
+    `</filter>`,
+    `</defs>`,
+    `<rect width="96" height="96" rx="28" fill="url(#bg)" />`,
+    `<circle cx="72" cy="22" r="11" fill="white" fill-opacity="0.12" />`,
+    `<rect x="18" y="18" width="60" height="60" rx="20" fill="url(#panel)" />`,
+    `<rect width="96" height="96" rx="28" filter="url(#grain)" opacity="0.28" />`,
+    glyph
+      ? `<g transform="translate(24 24)" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">${glyph}</g>`
+      : `<text x="48" y="50" text-anchor="middle" dominant-baseline="middle" font-family="ui-sans-serif, 'IBM Plex Sans', sans-serif" font-size="30" font-weight="700" fill="white">${label}</text>`,
+    `</svg>`,
+  ].join("");
+};
 
 export const renderSessionFallbackSvg = (input: SessionIconSeed): string => {
   const workspacePath = input.workspacePath.trim();

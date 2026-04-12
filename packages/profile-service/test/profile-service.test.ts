@@ -287,6 +287,135 @@ describe("Feature: profile-service control plane", () => {
     expect(revealed.privateKey).toBe(created.privateKey);
   });
 
+  test("Scenario: Given a managed avatar principal When it is created and listed Then nickname-backed metadata stays on the auth control plane", async () => {
+    const { handle } = await startServer(4609);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const createResponse = await fetch(`${baseUrl}/principals/managed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "avatar",
+        metadata: {
+          nickname: "backend",
+          displayName: "Backend",
+          classify: "backend",
+        },
+      }),
+    });
+    expect(createResponse.status).toBe(200);
+    const created = (await createResponse.json()) as {
+      principalId: string;
+      kind: string;
+      ownerKey?: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(created.kind).toBe("avatar");
+    expect(created.ownerKey).toBe("backend");
+    expect(created.metadata).toEqual({
+      nickname: "backend",
+      displayName: "Backend",
+      classify: "backend",
+    });
+
+    const listResponse = await fetch(`${baseUrl}/principals?kind=avatar&ownerKey=backend`);
+    expect(listResponse.status).toBe(200);
+    const listed = (await listResponse.json()) as { items: Array<Record<string, unknown>> };
+    expect(listed.items).toEqual([
+      expect.objectContaining({
+        principalId: created.principalId,
+        kind: "avatar",
+        ownerKey: "backend",
+        metadata: {
+          nickname: "backend",
+          displayName: "Backend",
+          classify: "backend",
+        },
+      }),
+    ]);
+
+    const duplicateResponse = await fetch(`${baseUrl}/principals/managed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "avatar",
+        metadata: {
+          nickname: "backend",
+        },
+      }),
+    });
+    expect(duplicateResponse.status).toBe(400);
+    await expect(duplicateResponse.json()).resolves.toMatchObject({
+      error: "avatar nickname already exists: backend",
+    });
+  });
+
+  test("Scenario: Given an avatar principal with classify metadata When svg icon is requested twice Then the fallback stays deterministic and classify-backed", async () => {
+    const { handle } = await startServer(4610);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const createResponse = await fetch(`${baseUrl}/principals/managed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "avatar",
+        metadata: {
+          nickname: "backend",
+          displayName: "Backend",
+          classify: "backend",
+        },
+      }),
+    });
+    const created = (await createResponse.json()) as { principalId: string };
+
+    const firstResponse = await fetch(`${baseUrl}/media/avatars/${encodeURIComponent(created.principalId)}/icon?format=svg`);
+    const secondResponse = await fetch(`${baseUrl}/media/avatars/${encodeURIComponent(created.principalId)}/icon?format=svg`);
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+    expect(firstResponse.headers.get("content-type")).toBe("image/svg+xml");
+    const firstSvg = await firstResponse.text();
+    const secondSvg = await secondResponse.text();
+    expect(firstSvg).toBe(secondSvg);
+    expect(firstSvg).toContain(`<rect x="10" y="10" width="28" height="10" rx="3" />`);
+    expect(firstSvg.includes(">Backend<")).toBeFalse();
+  });
+
+  test("Scenario: Given an avatar principal without classify When fallback is requested and an icon is uploaded Then text fallback works until the uploaded asset overrides it", async () => {
+    const { handle } = await startServer(4611);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const createResponse = await fetch(`${baseUrl}/principals/managed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "avatar",
+        metadata: {
+          nickname: "reviewer",
+          displayName: "Reviewer",
+          classify: null,
+        },
+      }),
+    });
+    const created = (await createResponse.json()) as { principalId: string };
+
+    const fallbackResponse = await fetch(`${baseUrl}/media/avatars/${encodeURIComponent(created.principalId)}/icon?format=svg`);
+    expect(fallbackResponse.status).toBe(200);
+    const fallbackSvg = await fallbackResponse.text();
+    expect(fallbackSvg).toContain(">Reviewer<");
+
+    const uploadedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><text x="0" y="12">avatar</text></svg>`;
+    const uploadResponse = await fetch(`${baseUrl}/avatars/${encodeURIComponent(created.principalId)}/icon`, {
+      method: "POST",
+      headers: { "content-type": "image/svg+xml" },
+      body: uploadedSvg,
+    });
+    expect(uploadResponse.status).toBe(200);
+
+    const resolvedResponse = await fetch(`${baseUrl}/media/avatars/${encodeURIComponent(created.principalId)}/icon?format=svg`);
+    expect(resolvedResponse.status).toBe(200);
+    expect(await resolvedResponse.text()).toBe(uploadedSvg);
+  });
+
   test("Scenario: Given a temporary identifier When profile icon is requested Then the default response is rasterized png", async () => {
     const { handle } = await startServer(4600);
     const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon`);

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
-import type { RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
+import type { GlobalAvatarCatalogEntry, RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
 
 type ReversePageResult<T> = {
   items: T[];
@@ -129,6 +129,30 @@ const emptyNotificationSnapshot = () => ({
   unreadByTerminal: {},
 });
 
+const createAvatarCatalogEntry = (
+  nickname: string,
+  overrides: Partial<WorkspaceAvatarCatalogEntry> = {},
+): WorkspaceAvatarCatalogEntry => {
+  const normalized = nickname.trim().toLowerCase() || "default";
+  const workspacePrivatePath = overrides.workspacePrivatePath ?? `/workspace/.agenter/avatars/by-principal/${normalized}`;
+  const workspacePrivateSlotReady = overrides.workspacePrivateSlotReady ?? false;
+  return {
+    avatarPrincipalId: overrides.avatarPrincipalId ?? `avatar-${normalized}`,
+    runtimeId: overrides.runtimeId ?? `runtime-${normalized}`,
+    nickname: normalized,
+    displayName: overrides.displayName ?? null,
+    classify: overrides.classify ?? null,
+    iconUrl: overrides.iconUrl ?? null,
+    defaultAvatar: overrides.defaultAvatar ?? normalized === "default",
+    sourceScope: overrides.sourceScope ?? "global",
+    globalAvailable: overrides.globalAvailable ?? true,
+    workspacePrivateSlotReady,
+    globalPath: overrides.globalPath ?? `/global/${normalized}`,
+    workspacePrivatePath,
+    effectivePath: overrides.effectivePath ?? (workspacePrivateSlotReady ? workspacePrivatePath : `/global/${normalized}`),
+  };
+};
+
 const createMockClient = (input: {
   snapshotQuery: () => Promise<RuntimeSnapshot>;
   onSubscribe?: (handlers: { onData?: (event: unknown) => void; onError?: () => void }) => void;
@@ -154,6 +178,12 @@ const createMockClient = (input: {
   workspaceAvatarCatalogQuery?: (input: {
     workspacePath: string;
   }) => Promise<{ items: WorkspaceAvatarCatalogEntry[] }>;
+  globalAvatarCatalogQuery?: () => Promise<{ items: GlobalAvatarCatalogEntry[] }>;
+  globalAvatarCreateMutate?: (input: {
+    nickname: string;
+    displayName?: string | null;
+    classify?: GlobalAvatarCatalogEntry["classify"];
+  }) => Promise<{ avatar: GlobalAvatarCatalogEntry }>;
   workspaceForkAvatarMutate?: (input: {
     workspacePath: string;
     avatar: string;
@@ -1281,6 +1311,27 @@ const createMockClient = (input: {
           },
         },
       },
+      avatar: {
+        catalog: {
+          query: async () => (input.globalAvatarCatalogQuery ? await input.globalAvatarCatalogQuery() : { items: [] }),
+        },
+        create: {
+          mutate: async (payload: {
+            nickname: string;
+            displayName?: string | null;
+            classify?: GlobalAvatarCatalogEntry["classify"];
+          }) =>
+            input.globalAvatarCreateMutate
+              ? await input.globalAvatarCreateMutate(payload)
+              : {
+                  avatar: createAvatarCatalogEntry(payload.nickname, {
+                    displayName: payload.displayName ?? null,
+                    classify: payload.classify ?? null,
+                    iconUrl: `http://127.0.0.1:4591/media/avatars/${encodeURIComponent(payload.nickname)}/icon`,
+                  }),
+                },
+        },
+      },
       notification: {
         snapshot: {
           query: async () =>
@@ -1329,16 +1380,9 @@ const createMockClient = (input: {
             input.workspaceForkAvatarMutate
               ? await input.workspaceForkAvatarMutate(payload)
               : {
-                  avatar: {
-                    nickname: payload.avatar,
-                    defaultAvatar: payload.avatar === "default",
-                    sourceScope: "global",
-                    globalAvailable: true,
+                  avatar: createAvatarCatalogEntry(payload.avatar, {
                     workspacePrivateSlotReady: true,
-                    globalPath: "",
-                    workspacePrivatePath: "",
-                    effectivePath: "",
-                  },
+                  }),
                 },
         },
         copyAvatar: {
@@ -1346,16 +1390,10 @@ const createMockClient = (input: {
             input.workspaceCopyAvatarMutate
               ? await input.workspaceCopyAvatarMutate(payload)
               : {
-                  avatar: {
-                    nickname: payload.targetAvatar,
-                    defaultAvatar: payload.targetAvatar === "default",
-                    sourceScope: "global",
+                  avatar: createAvatarCatalogEntry(payload.targetAvatar, {
                     globalAvailable: false,
                     workspacePrivateSlotReady: true,
-                    globalPath: "",
-                    workspacePrivatePath: "",
-                    effectivePath: "",
-                  },
+                  }),
                 },
         },
         searchPaths: {
@@ -5522,28 +5560,72 @@ describe("Feature: runtime store synchronization", () => {
     expect(requestCount).toBe(1);
   });
 
+  test("Scenario: Given a loaded global avatar catalog When create succeeds Then runtime-store reconciles the principal-backed entry by durable identity", async () => {
+    const defaultAvatar: GlobalAvatarCatalogEntry = createAvatarCatalogEntry("default", {
+      avatarPrincipalId: "avatar-default",
+      iconUrl: "http://127.0.0.1:4591/media/avatars/avatar-default/icon",
+    });
+    const createdAvatar: GlobalAvatarCatalogEntry = createAvatarCatalogEntry("backend", {
+      avatarPrincipalId: "avatar-backend",
+      displayName: "Backend",
+      classify: "backend",
+      iconUrl: "http://127.0.0.1:4591/media/avatars/avatar-backend/icon",
+    });
+    let catalog: GlobalAvatarCatalogEntry[] = [defaultAvatar];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        globalAvatarCatalogQuery: async () => ({ items: catalog }),
+        globalAvatarCreateMutate: async () => {
+          catalog = [defaultAvatar, createdAvatar];
+          return { avatar: createdAvatar };
+        },
+      }),
+    );
+
+    await store.connect();
+    const releaseCatalog = store.retainGlobalAvatarCatalog();
+    await store.hydrateGlobalAvatarCatalog();
+
+    const created = await store.createGlobalAvatar({
+      nickname: "backend",
+      displayName: "Backend",
+      classify: "backend",
+    });
+
+    expect(created).toMatchObject({
+      avatarPrincipalId: "avatar-backend",
+      nickname: "backend",
+      displayName: "Backend",
+      classify: "backend",
+    });
+    await waitFor(() =>
+      store.getState().globalAvatarCatalog.data.some((entry) => entry.avatarPrincipalId === "avatar-backend"),
+    );
+    expect(store.getState().globalAvatarCatalog.data).toEqual([defaultAvatar, createdAvatar]);
+
+    releaseCatalog();
+    store.disconnect();
+  });
+
   test("Scenario: Given a loaded workspace avatar catalog When copy starts Then the optimistic workspace-local avatar appears before server reconciliation", async () => {
     const workspacePath = "/repo/demo";
-    const helperAvatar: WorkspaceAvatarCatalogEntry = {
-      nickname: "helper",
-      defaultAvatar: false,
-      sourceScope: "global",
-      globalAvailable: true,
-      workspacePrivateSlotReady: false,
+    const helperAvatar = createAvatarCatalogEntry("helper", {
+      avatarPrincipalId: "avatar-helper",
+      runtimeId: "runtime-helper",
       globalPath: "/global/helper",
       workspacePrivatePath: "/repo/demo/.agenter/avatars/by-principal/helper",
       effectivePath: "/global/helper",
-    };
-    const copiedAvatar: WorkspaceAvatarCatalogEntry = {
-      nickname: "helper-copy",
-      defaultAvatar: false,
-      sourceScope: "global",
+    });
+    const copiedAvatar = createAvatarCatalogEntry("helper-copy", {
+      avatarPrincipalId: null,
+      runtimeId: "runtime-helper-copy",
       globalAvailable: false,
       workspacePrivateSlotReady: true,
       globalPath: "/global/helper-copy",
       workspacePrivatePath: "/repo/demo/.agenter/avatars/by-principal/helper-copy",
       effectivePath: "/repo/demo/.agenter/avatars/by-principal/helper-copy",
-    };
+    });
     let catalog = [helperAvatar];
     const copyDeferred = createDeferred<{ avatar: WorkspaceAvatarCatalogEntry }>();
     const store = new RuntimeStore(
@@ -5570,6 +5652,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.find((entry) => entry.nickname === "helper-copy"))
       .toMatchObject({
         nickname: "helper-copy",
+        avatarPrincipalId: null,
         sourceScope: "global",
         globalAvailable: false,
         workspacePrivateSlotReady: true,
@@ -5598,30 +5681,8 @@ describe("Feature: runtime store synchronization", () => {
       [workspaceB]: 0,
     };
     const catalogByWorkspace: Record<string, WorkspaceAvatarCatalogEntry[]> = {
-      [workspaceA]: [
-        {
-          nickname: "alpha",
-          defaultAvatar: false,
-          sourceScope: "global",
-          globalAvailable: true,
-          workspacePrivateSlotReady: false,
-          globalPath: "/global/alpha",
-          workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha",
-          effectivePath: "/global/alpha",
-        },
-      ],
-      [workspaceB]: [
-        {
-          nickname: "beta",
-          defaultAvatar: false,
-          sourceScope: "global",
-          globalAvailable: true,
-          workspacePrivateSlotReady: false,
-          globalPath: "/global/beta",
-          workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta",
-          effectivePath: "/global/beta",
-        },
-      ],
+      [workspaceA]: [createAvatarCatalogEntry("alpha", { workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha" })],
+      [workspaceB]: [createAvatarCatalogEntry("beta", { workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta" })],
     };
     let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
     const store = new RuntimeStore(
@@ -5645,16 +5706,14 @@ describe("Feature: runtime store synchronization", () => {
 
     catalogByWorkspace[workspaceA] = [
       ...catalogByWorkspace[workspaceA]!,
-      {
-        nickname: "alpha-copy",
-        defaultAvatar: false,
-        sourceScope: "global",
+      createAvatarCatalogEntry("alpha-copy", {
+        avatarPrincipalId: null,
         globalAvailable: false,
         workspacePrivateSlotReady: true,
         globalPath: "/global/alpha-copy",
         workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha-copy",
         effectivePath: "/repo/a/.agenter/avatars/by-principal/alpha-copy",
-      },
+      }),
     ];
 
     eventHandlers?.onData?.({

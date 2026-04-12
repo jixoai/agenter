@@ -2,7 +2,18 @@ import type { PrincipalAlgorithm, PrincipalId, PrincipalKeyPair, PrincipalKind }
 
 export type ProfileIdentifierKind = "email" | "wallet_evm" | "wallet_solana" | "temp";
 
-export type IconOwnerKind = "profile" | "session" | "room";
+export const AVATAR_CLASSIFY_VALUES = [
+  "assistant",
+  "backend",
+  "frontend",
+  "design",
+  "ops",
+  "reviewer",
+] as const;
+
+export type AvatarClassify = (typeof AVATAR_CLASSIFY_VALUES)[number];
+
+export type IconOwnerKind = "profile" | "session" | "room" | "avatar";
 
 export interface ProfileIdentifier {
   kind: ProfileIdentifierKind;
@@ -29,6 +40,17 @@ export interface CreateManagedPrincipalInput {
   kind: PrincipalKind;
   ownerKey?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface ListManagedPrincipalsInput {
+  kind?: PrincipalKind;
+  ownerKey?: string;
+}
+
+export interface AvatarPrincipalMetadata {
+  nickname: string;
+  displayName: string | null;
+  classify: AvatarClassify | null;
 }
 
 export interface PrincipalProjection
@@ -107,6 +129,13 @@ export interface RoomIconSeed {
 export interface ProfileIconSeed {
   identifier: ProfileIdentifier;
   label?: string;
+}
+
+export interface AvatarIconSeed {
+  principalId: PrincipalId;
+  nickname: string;
+  displayName: string | null;
+  classify: AvatarClassify | null;
 }
 
 export interface ProfileServiceOptions {

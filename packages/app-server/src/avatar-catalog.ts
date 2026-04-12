@@ -1,24 +1,54 @@
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
 
-import { defaultAvatarNickname, normalizeAvatarNickname } from "@agenter/avatar";
+import {
+  defaultAvatarNickname,
+  normalizeAvatarNickname,
+  resolveGlobalAvatarAliasRoot,
+  resolveGlobalAvatarNicknamesRoot,
+  resolveGlobalAvatarRoot,
+} from "@agenter/avatar";
+import type { AvatarClassify } from "@agenter/profile-service";
 
-import { GLOBAL_WORKSPACE_PATH, isGlobalWorkspacePath, toWorkspaceCwd } from "./workspace-target";
+import { resolveAvatarRuntimeId } from "./avatar-runtime-id";
+import { ensureAvatarSeatPrincipal } from "./avatar-seat-store";
+import {
+  resolveWorkspaceAvatarAliasRoot,
+  resolveWorkspaceAvatarNicknamesRoot,
+  resolveWorkspaceAvatarPrivateRoot,
+} from "./workspace-system";
+import { GLOBAL_WORKSPACE_PATH, isGlobalWorkspacePath } from "./workspace-target";
 
 export interface WorkspaceAvatarCatalogEntry {
+  avatarPrincipalId: string | null;
+  runtimeId: string;
   nickname: string;
+  displayName: string | null;
+  classify: AvatarClassify | null;
+  iconUrl: string | null;
   defaultAvatar: boolean;
-  sourceScope: "global" | "workspace";
+  sourceScope: "global";
   globalAvailable: boolean;
-  workspaceAvailable: boolean;
+  workspacePrivateSlotReady: boolean;
   globalPath: string;
-  workspacePath: string;
+  workspacePrivatePath: string;
   effectivePath: string;
 }
 
+const compareAvatarNickname = (left: string, right: string): number => {
+  if (left === defaultAvatarNickname()) {
+    return -1;
+  }
+  if (right === defaultAvatarNickname()) {
+    return 1;
+  }
+  return left.localeCompare(right);
+};
+
 export const resolveWorkspaceAvatarRoot = (workspacePath: string, homeDir: string): string => {
-  return join(toWorkspaceCwd(workspacePath, homeDir), ".agenter", "avatar");
+  return isGlobalWorkspacePath(workspacePath, homeDir)
+    ? resolveGlobalAvatarNicknamesRoot(homeDir)
+    : resolveWorkspaceAvatarNicknamesRoot(workspacePath, homeDir);
 };
 
 const listAvatarNicknames = (root: string): string[] => {
@@ -27,64 +57,66 @@ const listAvatarNicknames = (root: string): string[] => {
   }
   try {
     return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
       .map((entry) => normalizeAvatarNickname(entry.name));
   } catch {
     return [];
   }
 };
 
-const buildCatalogEntry = (input: {
+export const listGlobalAvatarNicknamesFromStorage = (homeDir = homedir()): string[] => {
+  const nicknames = new Set<string>([normalizeAvatarNickname(defaultAvatarNickname())]);
+  for (const nickname of listAvatarNicknames(resolveGlobalAvatarNicknamesRoot(homeDir))) {
+    nicknames.add(nickname);
+  }
+  return [...nicknames].sort(compareAvatarNickname);
+};
+
+export const listWorkspaceAvatarNicknamesFromStorage = (workspacePath: string, homeDir = homedir()): string[] => {
+  const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : workspacePath;
+  const nicknames = new Set<string>(listGlobalAvatarNicknamesFromStorage(homeDir));
+  if (!isGlobalWorkspacePath(normalizedWorkspacePath, homeDir)) {
+    for (const nickname of listAvatarNicknames(resolveWorkspaceAvatarNicknamesRoot(normalizedWorkspacePath, homeDir))) {
+      nicknames.add(nickname);
+    }
+  }
+  return [...nicknames].sort(compareAvatarNickname);
+};
+
+export const buildWorkspaceAvatarCatalogEntry = (input: {
   workspacePath: string;
   nickname: string;
   homeDir: string;
+  avatarPrincipalId?: string | null;
+  displayName?: string | null;
+  classify?: AvatarClassify | null;
+  iconUrl?: string | null;
+  globalAvailable?: boolean;
 }): WorkspaceAvatarCatalogEntry => {
-  const globalPath = join(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, input.homeDir), input.nickname);
-  const workspacePath = join(resolveWorkspaceAvatarRoot(input.workspacePath, input.homeDir), input.nickname);
-  const globalAvailable = existsSync(globalPath);
-  const workspaceAvailable = !isGlobalWorkspacePath(input.workspacePath, input.homeDir) && existsSync(workspacePath);
-  const sourceScope = workspaceAvailable ? "workspace" : "global";
+  const nickname = normalizeAvatarNickname(input.nickname);
+  const globalPath = resolveGlobalAvatarRoot(nickname, input.homeDir);
+  const workspacePrivatePath = resolveWorkspaceAvatarPrivateRoot(input.workspacePath, nickname, input.homeDir);
+  const globalAvailable =
+    input.globalAvailable ?? (existsSync(resolveGlobalAvatarAliasRoot(nickname, input.homeDir)) || existsSync(globalPath));
+  const workspacePrivateSlotReady =
+    !isGlobalWorkspacePath(input.workspacePath, input.homeDir) &&
+    existsSync(resolveWorkspaceAvatarAliasRoot(input.workspacePath, nickname, input.homeDir));
+
   return {
-    nickname: input.nickname,
-    defaultAvatar: input.nickname === defaultAvatarNickname(),
-    sourceScope,
+    avatarPrincipalId: input.avatarPrincipalId ?? null,
+    runtimeId: resolveAvatarRuntimeId(nickname),
+    nickname,
+    displayName: input.displayName ?? null,
+    classify: input.classify ?? null,
+    iconUrl: input.iconUrl ?? null,
+    defaultAvatar: nickname === defaultAvatarNickname(),
+    sourceScope: "global",
     globalAvailable,
-    workspaceAvailable,
+    workspacePrivateSlotReady,
     globalPath,
-    workspacePath,
-    effectivePath: sourceScope === "workspace" ? workspacePath : globalPath,
+    workspacePrivatePath,
+    effectivePath: workspacePrivateSlotReady ? workspacePrivatePath : globalPath,
   };
-};
-
-export const listWorkspaceAvatarCatalog = (workspacePath: string, homeDir = homedir()): WorkspaceAvatarCatalogEntry[] => {
-  const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : workspacePath;
-  const nicknames = new Set<string>([normalizeAvatarNickname(defaultAvatarNickname())]);
-  listAvatarNicknames(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir)).forEach((nickname) =>
-    nicknames.add(nickname),
-  );
-  if (!isGlobalWorkspacePath(normalizedWorkspacePath, homeDir)) {
-    listAvatarNicknames(resolveWorkspaceAvatarRoot(normalizedWorkspacePath, homeDir)).forEach((nickname) =>
-      nicknames.add(nickname),
-    );
-  }
-
-  return [...nicknames]
-    .sort((left, right) => {
-      if (left === defaultAvatarNickname()) {
-        return -1;
-      }
-      if (right === defaultAvatarNickname()) {
-        return 1;
-      }
-      return left.localeCompare(right);
-    })
-    .map((nickname) =>
-      buildCatalogEntry({
-        workspacePath: normalizedWorkspacePath,
-        nickname,
-        homeDir,
-      }),
-    );
 };
 
 export const forkAvatarIntoWorkspace = (input: {
@@ -108,32 +140,17 @@ export const copyAvatarIntoWorkspace = (input: {
 }): WorkspaceAvatarCatalogEntry => {
   const homeDir = input.homeDir ?? homedir();
   const workspacePath = isGlobalWorkspacePath(input.workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : input.workspacePath;
-  if (isGlobalWorkspacePath(workspacePath, homeDir)) {
-    return buildCatalogEntry({
+  const targetNickname = normalizeAvatarNickname(input.targetNickname);
+
+  if (!isGlobalWorkspacePath(workspacePath, homeDir)) {
+    ensureAvatarSeatPrincipal({
       workspacePath,
-      nickname: normalizeAvatarNickname(input.targetNickname),
+      avatar: targetNickname,
       homeDir,
     });
   }
 
-  const sourceNickname = normalizeAvatarNickname(input.sourceNickname);
-  const targetNickname = normalizeAvatarNickname(input.targetNickname);
-  const workspaceSourcePath = join(resolveWorkspaceAvatarRoot(workspacePath, homeDir), sourceNickname);
-  const globalSourcePath = join(resolveWorkspaceAvatarRoot(GLOBAL_WORKSPACE_PATH, homeDir), sourceNickname);
-  const sourcePath = existsSync(workspaceSourcePath) ? workspaceSourcePath : globalSourcePath;
-  const targetPath = join(resolveWorkspaceAvatarRoot(workspacePath, homeDir), targetNickname);
-
-  mkdirSync(dirname(targetPath), { recursive: true });
-  if (!existsSync(targetPath) && existsSync(sourcePath)) {
-    cpSync(sourcePath, targetPath, {
-      recursive: true,
-      force: true,
-    });
-  } else if (!existsSync(targetPath)) {
-    mkdirSync(targetPath, { recursive: true });
-  }
-
-  return buildCatalogEntry({
+  return buildWorkspaceAvatarCatalogEntry({
     workspacePath,
     nickname: targetNickname,
     homeDir,

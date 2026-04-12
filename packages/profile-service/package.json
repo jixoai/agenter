@@ -13,6 +13,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@agenter/avatar": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@duckdb/node-api": "^1.5.1-r.1",
     "@hono/node-server": "^1.19.11",
@@ -28,7 +29,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
     "@simplewebauthn/browser": "^13.3.0",
-    "svelte": "^5.55.1",
+    "svelte": "^5.55.2",
     "vite": "^8.0.3"
   }
 }
