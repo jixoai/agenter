@@ -9,8 +9,10 @@ const attention: RuntimeAttentionState = {
       {
         contextId: "ctx-room",
         owner: "message",
+        focusState: "focused",
         content: "Room context body",
         scoreMap: { unread: 2 },
+        consumedPushCommitIds: [],
         headCommitId: "commit-3",
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:30.000Z",
@@ -18,6 +20,7 @@ const attention: RuntimeAttentionState = {
           {
             commitId: "commit-2",
             contextId: "ctx-room",
+            ingressType: "commit",
             parentCommitIds: [],
             meta: { author: "system", source: "room" },
             scores: { unread: 1 },
@@ -28,6 +31,7 @@ const attention: RuntimeAttentionState = {
           {
             commitId: "commit-3",
             contextId: "ctx-room",
+            ingressType: "commit",
             parentCommitIds: ["commit-2"],
             meta: { author: "assistant", source: "model" },
             scores: { unread: 0 },
@@ -45,8 +49,10 @@ const attention: RuntimeAttentionState = {
       context: {
         contextId: "ctx-room",
         owner: "message",
+        focusState: "focused",
         content: "Room context body",
         scoreMap: { unread: 2 },
+        consumedPushCommitIds: [],
         headCommitId: "commit-3",
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:30.000Z",
@@ -55,6 +61,7 @@ const attention: RuntimeAttentionState = {
         {
           commitId: "commit-3",
           contextId: "ctx-room",
+          ingressType: "commit",
           parentCommitIds: ["commit-2"],
           meta: { author: "assistant", source: "model" },
           scores: { unread: 0 },
@@ -99,10 +106,16 @@ const attention: RuntimeAttentionState = {
 const modelCall: ModelCallItem = {
   id: 55,
   cycleId: 12,
+  roundIndex: 0,
+  kind: "model",
   createdAt: 1711929621000,
+  updatedAt: 1711929630000,
+  completedAt: 1711929630000,
+  isComplete: true,
   status: "done",
   provider: "openai/chat",
   model: "gpt-test",
+  requestUrl: "https://example.test/v1/chat/completions",
   request: {
     systemPrompt: "You are helpful.",
     messages: [{ role: "user", content: "Need review." }],
@@ -115,6 +128,7 @@ const modelCall: ModelCallItem = {
       finishReason: "stop",
     },
   },
+  error: null,
   outcome: { code: "done" },
 };
 

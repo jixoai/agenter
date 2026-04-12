@@ -3,12 +3,12 @@
 		CachedResourceState,
 		GlobalRoomActorId,
 		GlobalRoomAssetEntry,
-		GlobalRoomEntry,
 		GlobalRoomGrantEntry,
 		GlobalRoomSnapshotOutput,
 	} from '@agenter/client-sdk';
 	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import {
@@ -40,6 +40,12 @@
 		MessageSystemRoomSeatState,
 		MessageSystemSendAsOption,
 	} from './message-system-surface.types';
+	import { readMessageRoomSessionId } from './message-room-location';
+	import {
+		buildMessageWorkbenchRooms,
+		getMessageWorkbenchSessionRoomState,
+		resolveMessageWorkbenchRoom,
+	} from './message-workbench-room-state';
 
 	let {
 		roomId,
@@ -90,6 +96,8 @@
 
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
 	let latestMarkedReadBySeat = $state<Record<string, RoomReadAckState>>({});
+	let latestVisibleMessageByRoomId = $state<Record<string, WebChatVisibleMessageFact | null>>({});
+	let latestVisibleReplayKeyByRoomId = $state<Record<string, string>>({});
 	let routeNotice = $state<WebChatNotice | null>(null);
 
 	const actorDirectory = $derived(
@@ -102,13 +110,31 @@
 	);
 	const actorDirectoryMap = $derived(buildActorDirectoryMap(actorDirectory));
 	const selectableActors = $derived(actorDirectory.filter((actor) => actor.actorKind !== 'system'));
-	const rooms = $derived(controller.runtimeState.globalRooms.data);
-	const selectedRoom = $derived(rooms.find((room) => room.chatId === roomId) ?? null);
+	const routeSessionId = $derived(readMessageRoomSessionId(page.url.searchParams));
+	const routeSessionRoomState = $derived(
+		getMessageWorkbenchSessionRoomState(controller.runtimeState.messageChannelsBySession, routeSessionId),
+	);
+	const rooms = $derived(
+		buildMessageWorkbenchRooms({
+			activeRoomId: roomId,
+			activeSessionId: routeSessionId,
+			globalRooms: controller.runtimeState.globalRooms.data,
+			messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
+		}),
+	);
+	const selectedRoom = $derived(
+		resolveMessageWorkbenchRoom({
+			chatId: roomId,
+			sessionId: routeSessionId,
+			globalRooms: controller.runtimeState.globalRooms.data,
+			messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
+		}),
+	);
 	const selectedRoomSnapshotState = $derived(
 		roomId ? (controller.runtimeState.globalRoomSnapshotsById[roomId] ?? emptyRoomSnapshotState) : emptyRoomSnapshotState,
 	);
 	const selectedRoomSnapshot = $derived(selectedRoomSnapshotState.data);
-	const selectedRoomProjection = $derived(selectedRoomSnapshot?.channel ?? selectedRoom ?? null);
+	const selectedRoomProjection = $derived(selectedRoomSnapshot?.channel ?? selectedRoom?.projection ?? null);
 	const selectedRoomChatId = $derived(selectedRoomProjection?.chatId ?? '');
 	const selectedRoomAccessToken = $derived(selectedRoomProjection?.accessToken ?? null);
 	const selectedRoomIconUrl = $derived(
@@ -324,6 +350,15 @@
 		}
 		return sendAsOptions.find((option) => option.participantId === viewerActorId)?.accessToken ?? null;
 	});
+	const selectedViewerAccessToken = $derived.by(() => {
+		const room = selectedRoomProjection;
+		const viewerActorId = selectedViewerActorId;
+		if (!room || !viewerActorId) {
+			return null;
+		}
+		const viewerSeat = roomSeatStates.find((state) => state.actorId === viewerActorId) ?? null;
+		return viewerSeat?.accessToken ?? (room.participantId === viewerActorId ? room.accessToken ?? null : null);
+	});
 
 	const resolvedRoomSeatStates = $derived.by(() => {
 		return roomSeatStates.map((state) => {
@@ -366,7 +401,10 @@
 		if (routeNotice) {
 			return routeNotice;
 		}
-		const error = selectedRoomSnapshotState.error ?? selectedRoomGrantsState.error ?? controller.runtimeState.globalRooms.error;
+		const roomAccessError = routeSessionId
+			? (routeSessionRoomState?.error ?? null)
+			: controller.runtimeState.globalRooms.error;
+		const error = selectedRoomSnapshotState.error ?? selectedRoomGrantsState.error ?? roomAccessError;
 		if (!error) {
 			return null;
 		}
@@ -376,8 +414,8 @@
 		} satisfies WebChatNotice;
 	});
 
-	const navigateToRoom = async (chatId: string): Promise<void> => {
-		await goto(`/messages/room/${encodeURIComponent(chatId)}`, {
+	const navigateToRoom = async (href: string): Promise<void> => {
+		await goto(href, {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
@@ -387,7 +425,7 @@
 	const navigateToFallbackRoom = async (removedRoomId?: string): Promise<void> => {
 		const nextRoom = rooms.find((room) => room.chatId !== removedRoomId) ?? null;
 		if (nextRoom) {
-			await navigateToRoom(nextRoom.chatId);
+			await navigateToRoom(nextRoom.href);
 			return;
 		}
 		await goto('/messages/new', {
@@ -395,6 +433,34 @@
 			noScroll: true,
 			keepFocus: true,
 		});
+	};
+
+	const sameVisibleMessageFact = (
+		left: WebChatVisibleMessageFact | null | undefined,
+		right: WebChatVisibleMessageFact | null | undefined,
+	): boolean => {
+		return (left?.messageId ?? null) === (right?.messageId ?? null) && (left?.rowId ?? null) === (right?.rowId ?? null);
+	};
+
+	const buildVisibleReplayKey = (viewerActorId: string, visibleMessage: WebChatVisibleMessageFact): string =>
+		`${viewerActorId}:${visibleMessage.messageId}:${visibleMessage.rowId}`;
+
+	const resolveLatestReplayVisibleMessage = (
+		room: NonNullable<typeof selectedRoomProjection>,
+	): WebChatVisibleMessageFact | null => {
+		const trackedVisibleMessage = latestVisibleMessageByRoomId[room.chatId] ?? null;
+		if (trackedVisibleMessage) {
+			return trackedVisibleMessage;
+		}
+		const messageId = room.readProgress?.latestVisibleMessageId;
+		const rowId = room.readProgress?.latestVisibleMessageRowId;
+		if (!messageId || !rowId || rowId <= 0) {
+			return null;
+		}
+		return {
+			messageId,
+			rowId,
+		};
 	};
 
 	const handleChangeViewerActorId = (actorId: string): void => {
@@ -499,13 +565,20 @@
 		visibleMessage: WebChatVisibleMessageFact | null,
 	): Promise<void> => {
 		const room = selectedRoomProjection;
+		if (room) {
+			const currentVisibleMessage = latestVisibleMessageByRoomId[room.chatId] ?? null;
+			if (!sameVisibleMessageFact(currentVisibleMessage, visibleMessage)) {
+				latestVisibleMessageByRoomId = {
+					...latestVisibleMessageByRoomId,
+					[room.chatId]: visibleMessage,
+				};
+			}
+		}
 		const viewerActorId = selectedViewerActorId;
 		const viewerSeat = viewerActorId
 			? resolvedRoomSeatStates.find((state) => state.actorId === viewerActorId)
 			: null;
-		const accessToken =
-			viewerSeat?.accessToken ??
-			(viewerActorId && room?.participantId === viewerActorId ? room.accessToken : null);
+		const accessToken = selectedViewerAccessToken;
 		if (!room || !accessToken || !viewerActorId) {
 			return;
 		}
@@ -594,6 +667,14 @@
 	};
 
 	$effect(() => {
+		const sessionId = routeSessionId;
+		if (!sessionId) {
+			return;
+		}
+		void controller.runtimeStore.ensureMessageChannels(sessionId).catch(() => undefined);
+	});
+
+	$effect(() => {
 		const chatId = selectedRoomChatId;
 		const accessToken = selectedRoomAccessToken;
 		if (!chatId || !accessToken) {
@@ -635,6 +716,28 @@
 			...selectedViewerActorIdByRoomId,
 			[chatId]: viewerActorId,
 		};
+	});
+
+	$effect(() => {
+		const room = selectedRoomProjection;
+		const viewerActorId = selectedViewerActorId;
+		const viewerAccessToken = selectedViewerAccessToken;
+		if (!room || !viewerActorId || !viewerAccessToken) {
+			return;
+		}
+		const latestVisibleMessage = resolveLatestReplayVisibleMessage(room);
+		if (!latestVisibleMessage) {
+			return;
+		}
+		const replayKey = buildVisibleReplayKey(viewerActorId, latestVisibleMessage);
+		if (latestVisibleReplayKeyByRoomId[room.chatId] === replayKey) {
+			return;
+		}
+		latestVisibleReplayKeyByRoomId = {
+			...latestVisibleReplayKeyByRoomId,
+			[room.chatId]: replayKey,
+		};
+		void handleLatestVisibleMessageIdChange(latestVisibleMessage);
 	});
 </script>
 

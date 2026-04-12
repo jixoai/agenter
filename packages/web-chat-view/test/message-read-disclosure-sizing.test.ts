@@ -24,4 +24,11 @@ describe("Feature: message read disclosure sizing contract", () => {
     expect(messageReadIndicatorSource).toContain('--popover-max-inline-size: calc(100vw - 1rem);');
     expect(messageReadIndicatorSource).not.toContain('w-[min(17rem,calc(100vw-1rem))]');
   });
+
+  test("Scenario: Given the message read disclosure surface When reading the source Then it composes shared card primitives instead of hand-rolling a detached container shell", () => {
+    expect(messageReadIndicatorSource).toContain('import * as Card from "./ui/card";');
+    expect(messageReadIndicatorSource).toContain("<Card.Root");
+    expect(messageReadIndicatorSource).toContain("<Card.Header");
+    expect(messageReadIndicatorSource).toContain("<Card.Content");
+  });
 });

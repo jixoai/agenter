@@ -102,8 +102,6 @@
 				createdAt: 1_710_000_000_000,
 				updatedAt: 1_710_000_000_000,
 				visibleAt: 1_710_000_000_000,
-				attentionState: 'loaded',
-				editable: false,
 				readActorIds: normalizeRoomActorIds(['auth:analyst']),
 				unreadActorIds: normalizeRoomActorIds([]),
 				metadata: {},
@@ -436,8 +434,6 @@
 					createdAt: 1_710_000_000_000 + messageCounter * 1_000,
 					updatedAt: 1_710_000_000_000 + messageCounter * 1_000,
 					visibleAt: 1_710_000_000_000 + messageCounter * 1_000,
-					attentionState: 'loaded',
-					editable: false,
 					readActorIds:
 						senderActorId === 'system:trusted-bootstrap'
 							? normalizeRoomActorIds([])

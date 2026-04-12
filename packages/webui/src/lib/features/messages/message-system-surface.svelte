@@ -229,9 +229,10 @@
 	};
 
 	const resolveMessageReadProgress = (input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
+		const selfActorId = selectedViewerActorId;
 		const projectReadActors = (actorIds: readonly string[]): WebChatMessageReadActor[] =>
 			actorIds
-				.filter((actorId) => !isSystemActorId(actorId))
+				.filter((actorId) => !isSystemActorId(actorId) && actorId !== selfActorId)
 				.map((actorId) => {
 					const seat = roomSeatMap.get(actorId);
 					if (seat) {

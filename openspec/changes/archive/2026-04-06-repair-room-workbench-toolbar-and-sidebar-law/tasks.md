@@ -11,4 +11,4 @@
 ## 3. Compact Verification
 
 - [x] 3.1 Make room tabs and toolbar responsive on iPhone 14-sized viewports without transcript overlap
-- [ ] 3.2 Verify desktop and iPhone 14 walkthroughs, then archive the change
+- [x] 3.2 Verify desktop and iPhone 14 walkthroughs, then archive the change

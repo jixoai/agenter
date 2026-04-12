@@ -12,6 +12,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import { buildMessageRoomHref } from '$lib/features/messages/message-room-location';
 	import { describeWorkspace } from '$lib/features/workspaces/workspace-sorting';
 	import { cn } from '$lib/utils.js';
 	import RuntimePrimaryStage from './runtime-primary-stage.svelte';
@@ -34,6 +35,7 @@
 
 	const controller = getAppControllerContext();
 	const pendingCycleLoads = new SvelteSet<string>();
+	const pendingMessageLoads = new SvelteSet<string>();
 
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
@@ -41,10 +43,11 @@
 	const channels = $derived(
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
+	const messages = $derived(controller.runtimeState.chatsBySession[sessionId] ?? runtime?.chatMessages ?? []);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
-	const attention = $derived(controller.runtimeState.attentionBySession?.[sessionId] ?? runtime?.attention ?? null);
-	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
-	const traces = $derived(controller.runtimeState.observabilityTracesBySession[sessionId] ?? []);
+	const notifications = $derived(
+		controller.runtimeState.notifications.filter((notification) => notification.sessionId === sessionId),
+	);
 	const activeCycle = $derived(runtime?.activeCycle ?? null);
 	const latestCycle = $derived(cycles[cycles.length - 1] ?? activeCycle ?? null);
 	const tabs = $derived(buildRuntimeTabs({ activeCycle, latestCycle }));
@@ -52,8 +55,9 @@
 	const sessionIconUrl = $derived(session ? controller.runtimeStore.sessionIconUrl(session.id) : null);
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
+
 	const openRoom = async (chatId: string): Promise<void> => {
-		await goto(`/messages/room/${encodeURIComponent(chatId)}`);
+		await goto(buildMessageRoomHref({ chatId, sessionId }));
 	};
 
 	const openTerminal = async (terminalId: string): Promise<void> => {
@@ -78,10 +82,22 @@
 		if (controller.runtimeState.chatCyclesBySession[session.id] || pendingCycleLoads.has(session.id)) {
 			return;
 		}
-
 		pendingCycleLoads.add(session.id);
 		void controller.runtimeStore.loadChatCycles(session.id).finally(() => {
 			pendingCycleLoads.delete(session.id);
+		});
+	});
+
+	$effect(() => {
+		if (!session) {
+			return;
+		}
+		if ((controller.runtimeState.chatsBySession[session.id]?.length ?? 0) > 0 || pendingMessageLoads.has(session.id)) {
+			return;
+		}
+		pendingMessageLoads.add(session.id);
+		void controller.runtimeStore.loadChatMessages(session.id, 160).finally(() => {
+			pendingMessageLoads.delete(session.id);
 		});
 	});
 </script>
@@ -148,14 +164,35 @@
 				{session}
 				{runtime}
 				{channels}
-				{cycles}
-				{attention}
-				{modelCalls}
-				{traces}
-				{activeCycle}
-				{latestCycle}
+				{notifications}
+				{messages}
 				onOpenRoom={(chatId) => void openRoom(chatId)}
 				onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
+				onSetRoomVisibility={async (chatId, focused) => {
+					await controller.runtimeStore.setChatVisibility({
+						sessionId: session.id,
+						chatId,
+						visible: true,
+						focused,
+					});
+				}}
+				onSetTerminalVisibility={async (terminalId, focused) => {
+					await controller.runtimeStore.setTerminalVisibility({
+						sessionId: session.id,
+						terminalId,
+						visible: true,
+						focused,
+					});
+				}}
+				onConsumeNotification={async (input) => {
+					await controller.runtimeStore.consumeNotifications({
+						sessionId: session.id,
+						chatId: input.chatId,
+						terminalId: input.terminalId,
+						upToMessageId: input.upToMessageId ?? null,
+					});
+				}}
+				onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreChatMessagesBefore(session.id, 120)}
 			/>
 		</Scaffold.Body>
 	</Scaffold.Root>

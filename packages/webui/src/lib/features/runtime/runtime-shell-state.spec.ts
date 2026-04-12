@@ -41,6 +41,14 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],
+  globalAvatarCatalog: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
   workspaceAvatarCatalogByPath: {},
   globalRooms: {
     data: [],

@@ -86,6 +86,30 @@ class IntersectionObserverMock {
   unobserve(): void {}
 }
 
+class FirstObservationOnlyIntersectionObserverMock {
+  private observedCount = 0;
+
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+
+  observe(target: Element): void {
+    this.observedCount += 1;
+    const visible = this.observedCount === 1;
+    this.callback(
+      [
+        {
+          target,
+          isIntersecting: visible,
+          intersectionRatio: visible ? 1 : 0,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    );
+  }
+
+  disconnect(): void {}
+  unobserve(): void {}
+}
+
 class ResizeObserverMock {
   constructor(private readonly callback: ResizeObserverCallback) {}
 
@@ -323,8 +347,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 200,
               updatedAt: 200,
               visibleAt: 200,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -338,8 +360,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 300,
               updatedAt: 300,
               visibleAt: 300,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -377,8 +397,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 100,
               updatedAt: 100,
               visibleAt: 100,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -416,9 +434,12 @@ describe("Feature: web-chat-view package", () => {
       onSendMessage: submitMessage,
     });
 
-    const textarea = document.body.querySelector("textarea") as HTMLTextAreaElement;
-    textarea.value = "hello channel";
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    const editor = document.body.querySelector("[data-testid='web-chat-draft-editor']");
+    if (!(editor instanceof HTMLTextAreaElement)) {
+      throw new Error("composer editor missing");
+    }
+    editor.value = "hello channel";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     await Promise.resolve();
 
@@ -554,8 +575,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [
             {
@@ -616,8 +635,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -694,8 +711,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -749,8 +764,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -907,8 +920,6 @@ describe("Feature: web-chat-view package", () => {
         createdAt: (index + 1) * 100,
         updatedAt: (index + 1) * 100,
         visibleAt: (index + 1) * 100,
-        attentionState: "loaded" as const,
-        editable: false,
         metadata: {},
         attachments: [],
       })),
@@ -961,8 +972,6 @@ describe("Feature: web-chat-view package", () => {
           content: "queued visible draft",
           createdAt: 100,
           updatedAt: 100,
-          attentionState: "queued",
-          editable: true,
           metadata: {},
           attachments: [],
         },
@@ -976,8 +985,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 200,
           updatedAt: 200,
           visibleAt: 200,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -1020,8 +1027,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -1036,8 +1041,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 200,
           updatedAt: 200,
           visibleAt: 200,
-          attentionState: "loaded",
-          editable: false,
           metadata: {},
           attachments: [],
         },
@@ -1086,8 +1089,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 100,
           updatedAt: 100,
           visibleAt: 100,
-          attentionState: "loaded",
-          editable: false,
           metadata: { channel: "user_input", format: "markdown", cycleId: 7 },
           attachments: [],
         },
@@ -1101,8 +1102,6 @@ describe("Feature: web-chat-view package", () => {
           createdAt: 200,
           updatedAt: 200,
           visibleAt: 200,
-          attentionState: "loaded",
-          editable: false,
           metadata: { channel: "to_user", format: "markdown", cycleId: 7 },
           attachments: [],
         },
@@ -1147,8 +1146,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 100,
               updatedAt: 100,
               visibleAt: 100,
-              attentionState: "loaded",
-              editable: false,
               metadata: { channel: "user_input", format: "markdown", cycleId: 7 },
               attachments: [],
             },
@@ -1162,8 +1159,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 200,
               updatedAt: 200,
               visibleAt: 200,
-              attentionState: "loaded",
-              editable: false,
               metadata: { channel: "to_user", format: "markdown", cycleId: 7 },
               attachments: [],
             },
@@ -1235,8 +1230,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 100,
               updatedAt: 100,
               visibleAt: 100,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -1321,8 +1314,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 100,
               updatedAt: 100,
               visibleAt: 100,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -1415,8 +1406,6 @@ describe("Feature: web-chat-view package", () => {
               createdAt: 100,
               updatedAt: 100,
               visibleAt: 100,
-              attentionState: "loaded",
-              editable: false,
               metadata: {},
               attachments: [],
             },
@@ -1457,6 +1446,118 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     expect(latestVisibleMessageIdHandler.mock.calls).toHaveLength(stableCallCount + 1);
+    unmount(component);
+  });
+
+  test("Scenario: Given the transcript stays pinned to the bottom When a newer message arrives before intersection observers report it Then the host still promotes the latest transcript row as visible", async () => {
+    vi.stubGlobal("IntersectionObserver", FirstObservationOnlyIntersectionObserverMock);
+
+    const target = document.createElement("div");
+    target.style.height = "520px";
+    document.body.append(target);
+
+    const latestVisibleMessageIdHandler = vi.fn<
+      (message: { messageId: string; rowId: number } | null) => void
+    >();
+    const initialChannel = {
+      chatId: "chat-main",
+      kind: "room" as const,
+      title: "Room",
+      owner: "jane",
+      participants: [
+        { id: "session:jane", label: "jane" },
+        { id: "auth:user", label: "User" },
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
+    };
+
+    const component = mount(WebChatHostHarness, {
+      target,
+      props: {
+        socketFactory,
+        initialChannel,
+        onLatestVisibleMessageIdChange: latestVisibleMessageIdHandler,
+      },
+    });
+    flushSync();
+
+    await vi.waitFor(() => {
+      expect(WebSocketMock.instances).toHaveLength(1);
+    });
+    const socket = WebSocketMock.instances[0]!;
+    socket.open();
+    socket.message(
+      JSON.stringify({
+        type: "snapshot",
+        chatId: "chat-main",
+        snapshot: {
+          channel: initialChannel,
+          items: [
+            {
+              rowId: 1,
+              messageId: "msg-earlier",
+              chatId: "chat-main",
+              from: "User",
+              kind: "text",
+              content: "first visible",
+              createdAt: 100,
+              updatedAt: 100,
+              visibleAt: 100,
+              metadata: {},
+              attachments: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "1",
+        },
+      }),
+    );
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
+        messageId: "msg-earlier",
+        rowId: 1,
+      });
+    });
+
+    socket.message(
+      JSON.stringify({
+        type: "messages",
+        chatId: "chat-main",
+        items: [
+          {
+            rowId: 2,
+            messageId: "msg-latest",
+            chatId: "chat-main",
+            from: "jane",
+            kind: "text",
+            content: "newest while sticky",
+            createdAt: 200,
+            updatedAt: 200,
+            visibleAt: 200,
+            metadata: {},
+            attachments: [],
+          },
+        ],
+      }),
+    );
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(latestVisibleMessageIdHandler).toHaveBeenLastCalledWith({
+        messageId: "msg-latest",
+        rowId: 2,
+      });
+    });
     unmount(component);
   });
 
@@ -1536,12 +1637,12 @@ describe("Feature: web-chat-view package", () => {
       throw new Error("web-chat-view shadow root missing");
     }
 
-    const textarea = shadowRoot.querySelector("textarea");
-    if (!(textarea instanceof HTMLTextAreaElement)) {
-      throw new Error("composer textarea missing");
+    const editor = shadowRoot.querySelector("[data-testid='web-chat-draft-editor']");
+    if (!(editor instanceof HTMLTextAreaElement)) {
+      throw new Error("composer editor missing");
     }
-    textarea.value = "element send";
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    editor.value = "element send";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     await Promise.resolve();
 
@@ -1600,8 +1701,6 @@ describe("Feature: web-chat-view package", () => {
         createdAt: 100,
         updatedAt: 100,
         visibleAt: 100,
-        attentionState: "loaded",
-        editable: false,
         readActorIds: [],
         unreadActorIds: [],
         metadata: {},
@@ -1629,7 +1728,7 @@ describe("Feature: web-chat-view package", () => {
     }
 
     await vi.waitFor(() => {
-      expect(shadowRoot.querySelector("textarea")).toBeNull();
+      expect(shadowRoot.querySelector("[data-testid='web-chat-draft-editor']")).toBeNull();
     });
     await vi.waitFor(() => {
       const indicator = shadowRoot.querySelector("[data-testid='message-read-indicator']");

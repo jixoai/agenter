@@ -3,6 +3,7 @@
 
   import ChatAvatar from "./chat-avatar.svelte";
   import { Badge } from "./ui/badge";
+  import * as Card from "./ui/card";
   import * as Popover from "./ui/popover";
   import type { WebChatMessageReadActor, WebChatMessageReadProgress } from "./types";
 
@@ -27,20 +28,12 @@
     showUnreadColumn ? "grid gap-2 min-[21rem]:grid-cols-2" : "grid gap-2",
   );
 
-  const renderActorState = (actor: WebChatMessageReadActor, tone: "read" | "unread") =>
-    tone === "read"
-      ? {
-          rowClass:
-            "flex min-w-0 items-center gap-2.5 rounded-xl border border-emerald-200/70 bg-white px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
-          avatarClass: "size-8 rounded-xl border-white/80 text-[0.56rem] tracking-[0.12em] shadow-none",
-          subtitleClass: "truncate text-[0.72rem] text-emerald-700/70",
-        }
-      : {
-          rowClass:
-            "flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
-          avatarClass: "size-8 rounded-xl text-[0.56rem] tracking-[0.12em] shadow-none",
-          subtitleClass: "truncate text-[0.72rem] text-slate-500",
-        };
+  const renderActorState = (_actor: WebChatMessageReadActor, _tone: "read" | "unread") =>
+    ({
+      rowClass: "flex min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-background px-2.5 py-2",
+      avatarClass: "size-7 rounded-lg text-[0.56rem] tracking-[0.12em] shadow-none",
+      subtitleClass: "truncate text-[0.72rem] text-muted-foreground",
+    });
 </script>
 
 {#snippet actorList(
@@ -107,61 +100,67 @@
       {/snippet}
     </Popover.Trigger>
     <Popover.Content
-      class="message-read-disclosure space-y-2 p-2"
+      class="message-read-disclosure border-0 bg-transparent p-0 shadow-none"
       style="--popover-inline-size: 17rem; --popover-max-inline-size: calc(100vw - 1rem);"
       data-testid="message-read-disclosure"
     >
-      <div class="flex items-center justify-between gap-2">
-        <div class="space-y-0.5">
-          <div class="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Read status</div>
-          <div class="text-sm font-semibold text-slate-900">{title}</div>
-        </div>
-        <Badge
-          variant={complete ? "secondary" : "outline"}
-          class={
-            complete
-              ? "h-6 rounded-full border-emerald-200 bg-emerald-50 px-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-emerald-700"
-              : "h-6 rounded-full border-slate-200 bg-white px-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600"
-          }
-        >
-          {readCount}/{totalCount}
-        </Badge>
-      </div>
-
-      <div class={disclosureGridClass}>
-        <section class="min-w-0 space-y-2 rounded-2xl border border-emerald-200/70 bg-emerald-50/60 p-2.5">
-          <div class="flex items-center justify-between gap-2">
+      <Card.Root class="gap-0 rounded-xl border-border/80 bg-popover py-0 shadow-md">
+        <Card.Header class="grid-cols-[1fr_auto] gap-2 border-b border-border/70 px-3 py-3">
+          <div class="space-y-1">
+            <Card.Description class="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              Read status
+            </Card.Description>
+            <Card.Title class="text-sm font-semibold text-foreground">{title}</Card.Title>
+          </div>
+          <Card.Action>
             <Badge
               variant="outline"
-              class="h-6 rounded-full border-emerald-200 bg-white px-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-emerald-700"
+              class={
+                complete
+                  ? "h-6 rounded-full border-emerald-200/70 bg-emerald-50/40 px-2.5 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-emerald-700"
+                  : "h-6 rounded-full border-border/70 bg-background px-2.5 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+              }
             >
-              Read
+              {readCount}/{totalCount}
             </Badge>
-            <span class="text-xs font-semibold text-emerald-800/75">{readActors.length}</span>
-          </div>
-          {@render actorList(readActors, "read", "Nobody yet")}
-          {#if !showUnreadColumn}
-            <div class="rounded-xl border border-emerald-200/80 bg-white/85 px-3 py-2 text-xs text-emerald-700">
-              Everyone read
-            </div>
-          {/if}
-        </section>
+          </Card.Action>
+        </Card.Header>
 
-        {#if showUnreadColumn}
-          <section class="min-w-0 space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-2.5">
+        <Card.Content class={`${disclosureGridClass} px-3 py-3`}>
+          <section class="min-w-0 space-y-2 rounded-lg border border-border/70 bg-muted/20 p-2.5">
             <div class="flex items-center justify-between gap-2">
               <Badge
                 variant="outline"
-                class="h-6 rounded-full border-slate-200 bg-white px-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600"
+                class="h-6 rounded-full border-emerald-200/70 bg-background px-2.5 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-emerald-700"
               >
-                Unread
+                Read
               </Badge>
-              <span class="text-xs font-semibold text-slate-500">{unreadActors.length}</span>
+              <span class="text-xs font-medium text-muted-foreground">{readActors.length}</span>
             </div>
-            {@render actorList(unreadActors, "unread", "Everybody is up to date")}
+            {@render actorList(readActors, "read", "Nobody yet")}
+            {#if !showUnreadColumn}
+              <div class="rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+                Everyone read
+              </div>
+            {/if}
           </section>
-        {/if}
-      </div>
+
+          {#if showUnreadColumn}
+            <section class="min-w-0 space-y-2 rounded-lg border border-border/70 bg-muted/20 p-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <Badge
+                  variant="outline"
+                  class="h-6 rounded-full border-border/70 bg-background px-2.5 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+                >
+                  Unread
+                </Badge>
+                <span class="text-xs font-medium text-muted-foreground">{unreadActors.length}</span>
+              </div>
+              {@render actorList(unreadActors, "unread", "Everybody is up to date")}
+            </section>
+          {/if}
+        </Card.Content>
+      </Card.Root>
     </Popover.Content>
   </Popover.Root>
 {:else}

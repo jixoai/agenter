@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils.js';
 	import type {
@@ -37,11 +38,11 @@
 		actions,
 	}: {
 		class?: string;
-		content?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
-		navigation?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
-		primary?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
-		meta?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
-		actions?: import('svelte').Snippet<[WorkbenchToolbarRenderState]>;
+		content?: Snippet<[WorkbenchToolbarRenderState]>;
+		navigation?: Snippet<[WorkbenchToolbarRenderState]>;
+		primary?: Snippet<[WorkbenchToolbarRenderState]>;
+		meta?: Snippet<[WorkbenchToolbarRenderState]>;
+		actions?: Snippet<[WorkbenchToolbarRenderState]>;
 	} = $props();
 
 	let rootRef = $state<HTMLElement | null>(null);

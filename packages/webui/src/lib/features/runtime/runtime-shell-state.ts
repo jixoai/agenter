@@ -1,7 +1,7 @@
 import { describeCompactWorkspace } from "$lib/features/workspaces/workspace-sorting";
 import type { RuntimeChatCycle, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
 
-export type RuntimeTabId = "attention" | "cycles" | "systems" | "observability" | "settings";
+export type RuntimeTabId = "heartbeat" | "attention" | "settings";
 
 export interface AvatarSessionRailItem {
   sessionId: string;
@@ -29,10 +29,8 @@ export interface RuntimeTabItem {
 }
 
 export const RUNTIME_TAB_LABELS: Record<RuntimeTabId, string> = {
+  heartbeat: "Heartbeat",
   attention: "Attention",
-  cycles: "Cycles",
-  systems: "Systems",
-  observability: "Observability",
   settings: "Settings",
 };
 
@@ -41,16 +39,10 @@ export const basenameWorkspace = (workspacePath: string): string => {
 };
 
 export const normalizeRuntimeTab = (value: string | null | undefined): RuntimeTabId => {
-  if (
-    value === "attention" ||
-    value === "cycles" ||
-    value === "systems" ||
-    value === "observability" ||
-    value === "settings"
-  ) {
+  if (value === "heartbeat" || value === "attention" || value === "settings") {
     return value;
   }
-  return "attention";
+  return "heartbeat";
 };
 
 export const extractRuntimeSessionId = (pathname: string): string | null => {
@@ -112,16 +104,14 @@ export const buildRuntimeTabs = (input: {
 }): RuntimeTabItem[] => {
   const cycle = input.activeCycle ?? input.latestCycle;
   return [
-    { id: "attention", label: "Attention" },
     {
-      id: "cycles",
-      label: "Cycles",
+      id: "heartbeat",
+      label: "Heartbeat",
       badgeLabel: cycle ? (cycle.cycleId === null ? "P" : String(cycle.cycleId)) : undefined,
       badgeClassName: resolveCycleBadgeClassName(cycle, Boolean(input.activeCycle)),
       badgeAnimated: Boolean(input.activeCycle),
     },
-    { id: "systems", label: "Systems" },
-    { id: "observability", label: "Observability" },
+    { id: "attention", label: "Attention" },
     { id: "settings", label: "Settings" },
   ];
 };
@@ -154,7 +144,7 @@ export const buildAvatarSessionRailItems = (
       status: session.status,
       unreadCount: state.unreadBySession[session.id] ?? 0,
       iconUrl: input.resolveSessionIconUrl(session.id),
-      href: `/avatars/runtime/${encodeURIComponent(session.id)}/attention`,
+      href: `/avatars/runtime/${encodeURIComponent(session.id)}/heartbeat`,
       active: input.activeSessionId === session.id,
       pinned: pinnedSessionIds.has(session.id),
       pinEnabled: true,

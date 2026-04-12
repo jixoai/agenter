@@ -41,7 +41,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
     "jsdom": "^26.1.0",
-    "svelte": "^5.54.0",
+    "svelte": "^5.55.2",
     "svelte-check": "^4.4.2",
     "typescript": "latest",
     "vitest": "^4.1.2"

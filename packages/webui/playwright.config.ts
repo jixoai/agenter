@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const E2E_DAEMON_PORT = 19190;
 const E2E_WEB_PORT = 44173;
+const E2E_WS_URL = `ws://127.0.0.1:${E2E_DAEMON_PORT}/trpc`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -36,7 +37,7 @@ export default defineConfig({
     },
     {
       command:
-        `AGENTER_DAEMON_PORT=${E2E_DAEMON_PORT} pnpm exec vite dev --host 127.0.0.1 --port ${E2E_WEB_PORT}`,
+        `PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} pnpm exec vite build && PUBLIC_AGENTER_WS_URL=${E2E_WS_URL} pnpm exec vite preview --host 127.0.0.1 --port ${E2E_WEB_PORT}`,
       port: E2E_WEB_PORT,
       reuseExistingServer: false,
       timeout: 300_000,

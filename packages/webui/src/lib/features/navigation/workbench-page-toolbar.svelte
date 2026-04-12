@@ -1,10 +1,12 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	import { getWorkbenchPageToolbarRegistry } from './workbench-page-toolbar-context.svelte';
 
 	let {
 		children,
 	}: {
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const registry = getWorkbenchPageToolbarRegistry();

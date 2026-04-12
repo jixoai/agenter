@@ -109,8 +109,8 @@
 		await waitFor(() => {
 			expect(containsVisibleTextDeep(canvasElement, 'Story transcript append')).toBe(true);
 		});
-		await expect(canvas.queryByText(/^1\/2 read$/u)).toBeNull();
-		await expect(canvas.getAllByLabelText('1/2 read').length).toBeGreaterThan(0);
+		await expect(canvas.queryByText(/^0\/1 read$/u)).toBeNull();
+		await expect(canvas.getAllByLabelText('0/1 read').length).toBeGreaterThan(0);
 	}}
 >
 	<Harness disableManageDialogPortal initialManageDialogSection="users" />

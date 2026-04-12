@@ -1,0 +1,91 @@
+diff --git a/dist/parser/extract/compiled/nodes.js b/dist/parser/extract/compiled/nodes.js
+index 08ed35f17c860e8e1f0e2393df8dc2d14ba0e349..ed6aa0b921cbaff2158eda79e97ac25afc75d296 100644
+--- a/dist/parser/extract/compiled/nodes.js
++++ b/dist/parser/extract/compiled/nodes.js
+@@ -12,7 +12,7 @@ const AST_NODES_NAMES = {
+ export async function extractCompiledASTNodes(params) {
+     const { ast, filename } = params;
+     const { walk } = await import('zimmerframe');
+-    const state = { potentialStoriesFunctionDeclaration: [] };
++    const state = { potentialStoriesFunctionDeclaration: [], potentialVariableDeclarationByName: {} };
+     const visitors = {
+         ImportDeclaration(node, { state, visit }) {
+             const { source, specifiers } = node;
+@@ -34,6 +34,9 @@ export async function extractCompiledASTNodes(params) {
+             const { declarations } = node;
+             const declaration = declarations[0];
+             const { id, init } = declaration;
++            if (id.type === 'Identifier') {
++                state.potentialVariableDeclarationByName[id.name] = node;
++            }
+             if (id.type === 'ObjectPattern' &&
+                 init?.type === 'CallExpression' &&
+                 init.callee.type === 'Identifier' &&
+@@ -73,7 +76,23 @@ export async function extractCompiledASTNodes(params) {
+         },
+     };
+     walk(ast, state, visitors);
+-    const { defineMetaImport, defineMetaVariableDeclaration, exportDefault, storyIdentifier, storiesFunctionDeclaration, } = state;
++    if (!state.storiesFunctionDeclaration && state.storyIdentifier) {
++        state.storiesFunctionDeclaration = state.potentialStoriesFunctionDeclaration.find((potential) => {
++            let foundStoryCall = false;
++            walk(potential.body, undefined, {
++                CallExpression(node) {
++                    if (node.callee.type === 'Identifier' && node.callee.name === state.storyIdentifier.name) {
++                        foundStoryCall = true;
++                    }
++                },
++            });
++            return foundStoryCall;
++        });
++    }
++    if (state.exportDefault?.declaration.type === 'Identifier') {
++        state.exportDefaultVariableDeclaration = state.potentialVariableDeclarationByName[state.exportDefault.declaration.name];
++    }
++    const { defineMetaImport, defineMetaVariableDeclaration, exportDefault, exportDefaultVariableDeclaration, storyIdentifier, storiesFunctionDeclaration, } = state;
+     if (!defineMetaImport) {
+         throw new MissingImportedDefineMetaError(filename);
+     }
+@@ -93,6 +112,7 @@ export async function extractCompiledASTNodes(params) {
+         defineMetaImport,
+         defineMetaVariableDeclaration,
+         exportDefault,
++        exportDefaultVariableDeclaration,
+         storyIdentifier,
+         storiesFunctionDeclaration,
+     };
+diff --git a/dist/parser/extract/svelte/define-meta.js b/dist/parser/extract/svelte/define-meta.js
+index 008900c12f36733b7e6321639f656a0b658f8614..f19f585d5532c124a7c449864fe853acb559a3d8 100644
+--- a/dist/parser/extract/svelte/define-meta.js
++++ b/dist/parser/extract/svelte/define-meta.js
+@@ -23,16 +23,26 @@ export function extractDefineMetaPropertiesNodes(options) {
+  */
+ export function getDefineMetaFirstArgumentObjectExpression(options) {
+     const { nodes, filename } = options;
+-    const { defineMetaVariableDeclaration, defineMetaImport } = nodes;
++    const { defineMetaVariableDeclaration, defineMetaImport, exportDefaultVariableDeclaration } = nodes;
+     const { declarations } = defineMetaVariableDeclaration;
+     const declaration = declarations[0];
+     const { init } = declaration;
+     if (init?.type === 'CallExpression' &&
+         init.callee.type === 'Identifier' &&
+         init.callee.name === defineMetaImport.local.name && // NOTE: the callee.name could be renamed by user
+-        init.arguments.length === 1 &&
+-        init.arguments[0].type === 'ObjectExpression') {
+-        return init.arguments[0];
++        init.arguments.length === 1) {
++        const metaArgument = init.arguments[0];
++        if (metaArgument.type === 'ObjectExpression') {
++            return metaArgument;
++        }
++        if (metaArgument.type === 'Identifier') {
++            const exportDefaultDeclarator = exportDefaultVariableDeclaration?.declarations?.[0];
++            if (exportDefaultDeclarator?.id.type === 'Identifier' &&
++                exportDefaultDeclarator.id.name === metaArgument.name &&
++                exportDefaultDeclarator.init?.type === 'ObjectExpression') {
++                return exportDefaultDeclarator.init;
++            }
++        }
+     }
+     throw new GetDefineMetaFirstArgumentError({
+         filename,

@@ -15,16 +15,14 @@
 	import type { RuntimeTabId } from './runtime-shell-state';
 
 	const tabs = [
-		{ id: 'attention', label: 'Attention' },
 		{
-			id: 'cycles',
-			label: 'Cycles',
+			id: 'heartbeat',
+			label: 'Heartbeat',
 			badgeLabel: '12',
 			badgeClassName: 'bg-teal-600 text-white',
 			badgeAnimated: true,
 		},
-		{ id: 'systems', label: 'Systems' },
-		{ id: 'observability', label: 'Observability' },
+		{ id: 'attention', label: 'Attention' },
 		{ id: 'settings', label: 'Settings' },
 	] satisfies Array<{
 		id: RuntimeTabId;
@@ -38,13 +36,13 @@
 </script>
 
 <Story
-	name="Cycles badge"
+	name="Heartbeat badge"
 	asChild
 	play={async ({ canvasElement, userEvent }) => {
 		const canvas = within(canvasElement);
 		await expect(canvas.getByText('12')).toBeInTheDocument();
-		await userEvent.click(canvas.getByRole('tab', { name: /cycles/i }));
-		await expect(onNavigate).toHaveBeenCalledWith('cycles');
+		await userEvent.click(canvas.getByRole('tab', { name: /heartbeat/i }));
+		await expect(onNavigate).toHaveBeenCalledWith('heartbeat');
 	}}
 >
 	<div class="w-full max-w-3xl rounded-2xl border p-3">

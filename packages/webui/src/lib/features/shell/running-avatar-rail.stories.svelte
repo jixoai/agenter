@@ -24,7 +24,7 @@
 			status: 'running' as const,
 			unreadCount: 3,
 			iconUrl: null,
-			href: '/avatars/runtime/session-alpha/attention',
+			href: '/avatars/runtime/session-alpha/heartbeat',
 			active: true,
 			pinned: true,
 			pinEnabled: true,
@@ -38,7 +38,7 @@
 			status: 'starting' as const,
 			unreadCount: 0,
 			iconUrl: null,
-			href: '/avatars/runtime/session-beta/attention',
+			href: '/avatars/runtime/session-beta/heartbeat',
 			active: false,
 			pinned: false,
 			pinEnabled: true,
@@ -53,7 +53,7 @@
 		const canvas = within(canvasElement);
 		await expect(canvas.getByRole('link', { name: /architect/i })).toHaveAttribute(
 			'href',
-			'/avatars/runtime/session-alpha/attention',
+			'/avatars/runtime/session-alpha/heartbeat',
 		);
 		await expect(canvas.getByText('3')).toBeInTheDocument();
 		await expect(canvas.queryByText('Running Avatars')).toBeNull();

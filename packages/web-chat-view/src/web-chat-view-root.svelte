@@ -197,6 +197,13 @@
   const syncLatestVisibleIds = (): void => {
     let nextMessage: WebChatVisibleMessageFact | null = null;
     let nextAssistantId: string | null = null;
+    const stickyBottomMessage = stickToBottom ? transcriptMessages[transcriptMessages.length - 1] : null;
+    if (stickyBottomMessage) {
+      nextMessage = {
+        messageId: stickyBottomMessage.messageId,
+        rowId: stickyBottomMessage.rowId,
+      };
+    }
     for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
       const message = transcriptMessages[index];
       if (!message) {

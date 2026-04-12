@@ -130,15 +130,17 @@ const templateStyles = `
     height: 100%;
     min-height: 0;
     overflow: auto;
-    padding: 12px;
-    background: #f1f5f9;
+    padding: 10px;
+    background:
+      radial-gradient(circle at top, rgba(30, 41, 59, 0.92), rgba(2, 6, 23, 0.98) 62%),
+      #020617;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
   }
 
   .terminal-stage[data-viewport-mode="fit"] {
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
   }
 
   .terminal-stage[data-viewport-mode="cover"] {
@@ -149,6 +151,8 @@ const templateStyles = `
   .terminal-frame-shell {
     position: relative;
     flex: none;
+    max-width: 100%;
+    max-height: 100%;
   }
 
   .terminal-frame {
@@ -422,6 +426,13 @@ export class TerminalViewElement extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.upgradeProperty("transportUrl");
+    this.upgradeProperty("terminalId");
+    this.upgradeProperty("terminalTitle");
+    this.upgradeProperty("cwd");
+    this.upgradeProperty("status");
+    this.upgradeProperty("viewportMode");
+    this.upgradeProperty("snapshot");
     this.syncSocket();
   }
 
@@ -580,6 +591,17 @@ export class TerminalViewElement extends LitElement {
         this.liveSnapshotHydrated = true;
       }
     }
+  }
+
+  private upgradeProperty(
+    name: "transportUrl" | "terminalId" | "terminalTitle" | "cwd" | "status" | "viewportMode" | "snapshot",
+  ): void {
+    if (!Object.prototype.hasOwnProperty.call(this, name)) {
+      return;
+    }
+    const value = (this as Record<string, unknown>)[name];
+    delete (this as Record<string, unknown>)[name];
+    (this as Record<string, unknown>)[name] = value;
   }
 
   private observeStage(): void {

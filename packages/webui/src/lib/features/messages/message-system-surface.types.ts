@@ -4,12 +4,9 @@ import type {
   GlobalRoomAssetEntry,
   GlobalRoomEntry,
   GlobalRoomSnapshotOutput,
+  MessageChannelEntry,
 } from "@agenter/client-sdk";
-import type {
-  WebChatComposerSubmitPayload,
-  WebChatNotice,
-  WebChatVisibleMessageFact,
-} from "@agenter/web-chat-view";
+import type { WebChatComposerSubmitPayload, WebChatNotice, WebChatVisibleMessageFact } from "@agenter/web-chat-view";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 
@@ -67,7 +64,7 @@ export interface MessageSystemSeatRevokeInput {
 }
 
 export interface MessageSystemSurfaceProps {
-  selectedRoom: GlobalRoomEntry | null;
+  selectedRoom: GlobalRoomEntry | MessageChannelEntry | null;
   selectedRoomIconUrl?: string | null;
   resolveProfileIconUrl?: (reference: string) => string | null;
   resolveSessionIconUrl?: (sessionId: string) => string | null;

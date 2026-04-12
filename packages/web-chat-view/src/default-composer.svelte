@@ -3,11 +3,11 @@
 
   import type { WebChatComposerRenderProps } from "./types";
   import ComposerActionBar from "./composer/composer-action-bar.svelte";
+  import ChatDraftEditor from "./composer/chat-draft-editor.svelte";
   import ComposerStatusBar from "./composer/composer-status-bar.svelte";
   import {
     resolveComposerCapabilities,
   } from "./composer/composer-contract";
-  import { Textarea } from "./ui/textarea";
   import {
     canCaptureDisplayScreenshot,
     captureDisplayScreenshot,
@@ -179,21 +179,6 @@
     );
   };
 
-  const handleTextareaKeydown = (event: KeyboardEvent): void => {
-    if (
-      event.key !== "Enter" ||
-      event.shiftKey ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
-      event.isComposing
-    ) {
-      return;
-    }
-    event.preventDefault();
-    void submit();
-  };
-
   const handlePaste = (event: ClipboardEvent): void => {
     const files = extractFilesFromTransfer(event.clipboardData, {
       imageEnabled: composerCapabilities.imageEnabled,
@@ -244,20 +229,19 @@
 
     <PendingAssetStrip assets={pendingAssets} onRemove={removePendingAsset} />
 
-    <Textarea
-      class="composer-textarea"
-      rows={4}
+    <ChatDraftEditor
       value={draft}
       placeholder={composerCapabilities.placeholder}
-      disabled={disabled || sending}
-      oninput={(event) => {
-        const target = event.currentTarget as HTMLTextAreaElement;
-        draft = target.value;
-        if (notice) {
-          notice = null;
-        }
+      disabled={disabled}
+      submitting={sending}
+      capabilities={composerCapabilities}
+      onChange={(value) => {
+        draft = value;
+        clearNotice();
       }}
-      onkeydown={handleTextareaKeydown}
+      onSubmit={() => {
+        void submit();
+      }}
     />
 
     <div class="composer-toolbar">
@@ -332,16 +316,6 @@
     display: grid;
     gap: 0.65rem;
   }
-
-  :global(.composer-textarea) {
-    min-block-size: 5rem;
-    resize: vertical;
-    border-radius: 1rem;
-    border-color: rgba(226, 232, 240, 0.95);
-    background: rgba(255, 255, 255, 0.78);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  }
-
   .composer-footnote {
     display: grid;
     gap: 0.55rem;

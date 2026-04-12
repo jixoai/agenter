@@ -6,6 +6,9 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import {
+		buildWorkspaceDetailHref,
+	} from './workspace-location';
+	import {
 		describeCompactWorkspace,
 		sortWorkspacesForHistory,
 		type WorkspaceHistorySortMode,
@@ -55,11 +58,11 @@
 
 	{#each sorted as workspace (workspace.path)}
 		<a
-			href={`/avatars/workspace?path=${encodeURIComponent(workspace.path)}`}
+			href={buildWorkspaceDetailHref({ workspacePath: workspace.path })}
 			class="grid gap-2 px-5 py-4 transition-colors hover:bg-muted/30 md:px-7"
 			onclick={(event) => {
 				event.preventDefault();
-				void goto(`/avatars/workspace?path=${encodeURIComponent(workspace.path)}`);
+				void goto(buildWorkspaceDetailHref({ workspacePath: workspace.path }));
 			}}
 		>
 			<div class="flex items-center justify-between gap-3">

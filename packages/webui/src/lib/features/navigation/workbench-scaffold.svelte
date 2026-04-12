@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Scaffold } from '@agenter/svelte-components';
+	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils.js';
 
@@ -49,9 +50,9 @@
 		bodyClass?: string;
 		contentClass?: string;
 		footerClass?: string;
-		header?: import('svelte').Snippet;
-		footer?: import('svelte').Snippet;
-		children?: import('svelte').Snippet;
+		header?: Snippet;
+		footer?: Snippet;
+		children?: Snippet;
 	} = $props();
 </script>
 

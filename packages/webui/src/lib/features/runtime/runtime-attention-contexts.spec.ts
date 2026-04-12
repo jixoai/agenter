@@ -17,6 +17,7 @@ const createCommit = (input: {
 }): RuntimeAttentionState["active"][number]["recentCommits"][number] => ({
   commitId: input.commitId,
   contextId: input.contextId,
+  ingressType: "commit",
   parentCommitIds: [],
   meta: {
     author: "system",
@@ -39,11 +40,13 @@ const createContextState = (input: {
 }): RuntimeAttentionState["active"][number]["context"] => ({
   contextId: input.contextId,
   owner: input.owner,
+  focusState: "focused",
   content: "",
   headCommitId: null,
   createdAt: input.updatedAt,
   updatedAt: input.updatedAt,
   scoreMap: input.scoreMap ?? {},
+  consumedPushCommitIds: [],
 });
 
 const createSnapshotContext = (input: {

@@ -82,15 +82,10 @@ export const mergeMessages = (current: WebChatMessage[], incoming: WebChatMessag
 };
 
 export const normalizeMessageRecord = (message: WebChatMessage): WebChatMessage => {
-  const attentionState = message.attentionState ?? "loaded";
   const visibleAt = message.visibleAt ?? message.createdAt;
   return {
     ...message,
-    attentionState,
     visibleAt,
-    attentionLoadedAt:
-      message.attentionLoadedAt ?? (attentionState === "loaded" ? visibleAt ?? message.createdAt : undefined),
-    editable: message.editable ?? attentionState === "queued",
   };
 };
 

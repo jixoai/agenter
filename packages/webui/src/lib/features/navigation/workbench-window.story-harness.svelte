@@ -23,7 +23,7 @@
 		{
 			id: 'workspace',
 			label: 'Workspace',
-			href: '/avatars/workspace',
+			href: '/workspaces',
 			title: 'Workspace',
 			description: 'Primary workspace window surface.',
 			icon: FolderKanbanIcon,

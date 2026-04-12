@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ClipSurface } from '@agenter/svelte-components';
+	import type { Snippet } from 'svelte';
 
 	import WorkbenchTabStrip, { type WorkbenchTabItem } from './workbench-tab-strip.svelte';
 	import { setWorkbenchPageToolbarRegistry } from './workbench-page-toolbar-context.svelte';
@@ -20,11 +21,11 @@
 		value: string;
 		tabs: WorkbenchTabItem[];
 		onValueChange?: (value: string) => void | Promise<void>;
-		toolbar?: import('svelte').Snippet;
+		toolbar?: Snippet;
 		bodyClass?: string;
 		chromeClass?: string;
 		class?: string;
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const pageToolbarRegistry = setWorkbenchPageToolbarRegistry();
@@ -84,10 +85,19 @@
 	}
 
 	.workbench-page-toolbar {
-		block-size: 48px;
+		--workbench-page-toolbar-rows: 1;
+		block-size: calc(var(--workbench-page-toolbar-rows) * 48px);
+		display: grid;
+		grid-auto-rows: minmax(0, 1fr);
 		container-type: inline-size;
 		container-name: workbench-page-toolbar;
 		overflow: clip;
+		position: relative;
+		z-index: 1;
+	}
+
+	.workbench-page-toolbar[data-has-local-toolbar='true']:has(.workbench-page-toolbar-host:not(:empty)) {
+		--workbench-page-toolbar-rows: 2;
 	}
 
 	.workbench-page-toolbar[data-has-local-toolbar='false']:has(.workbench-page-toolbar-host:empty) {
@@ -98,6 +108,10 @@
 		display: block;
 		block-size: 100%;
 		min-inline-size: 0;
+	}
+
+	.workbench-page-toolbar-host:empty {
+		display: none;
 	}
 
 	.workbench-window-body,

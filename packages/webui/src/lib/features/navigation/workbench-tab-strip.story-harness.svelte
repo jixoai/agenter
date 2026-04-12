@@ -44,7 +44,7 @@
 		{
 			id: 'workspace',
 			label: 'Workspace',
-			href: '/avatars/workspace',
+			href: '/workspaces',
 			title: 'Workspace',
 			description: 'Browse avatars, launch sessions, and inspect the workspace catalog.',
 			icon: FolderKanbanIcon,
@@ -52,7 +52,7 @@
 		{
 			id: 'history',
 			label: 'History',
-			href: '/avatars/history',
+			href: '/workspaces/root/%2Frepo%2Falpha?mode=explorer',
 			title: 'History',
 			description: 'Inspect recent workspace and avatar activity across prior sessions.',
 			icon: HistoryIcon,
@@ -60,7 +60,7 @@
 		{
 			id: 'session-reviewer',
 			label: 'reviewer · workspace alpha pending tools',
-			href: '/avatars/runtime/session-reviewer/attention',
+			href: '/avatars/runtime/session-reviewer/heartbeat',
 			title: 'reviewer · alpha workspace',
 			description: 'Workspace alpha · attention pending and 2 unread tool results.',
 			avatarLabel: 'reviewer',

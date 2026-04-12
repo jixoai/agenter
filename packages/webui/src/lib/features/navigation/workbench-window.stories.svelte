@@ -16,6 +16,7 @@
 
 <Story
 	name="Scenario: Given a switched workbench window When chrome and body render Then the body remains fused to the same surface"
+	exportName="ChromeFusesIntoBodySurface"
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);

@@ -1,3 +1,6 @@
 packages:
   - demo
   - packages/*
+
+patchedDependencies:
+  '@storybook/addon-svelte-csf': patches/@storybook__addon-svelte-csf.patch

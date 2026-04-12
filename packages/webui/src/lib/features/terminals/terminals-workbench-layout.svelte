@@ -3,10 +3,12 @@
 	import { goto } from '$app/navigation';
 
 	import { page } from '$app/state';
+	import type { Snippet } from 'svelte';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
@@ -20,7 +22,7 @@
 	let {
 		children,
 	}: {
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const controller = getAppControllerContext();
@@ -117,7 +119,7 @@
 	});
 </script>
 
-{#snippet terminalsToolbarMeta()}
+{#snippet terminalsToolbarMeta(_toolbarState: WorkbenchToolbarRenderState)}
 	<Badge variant="outline" class="bg-background/70">{visibleTerminals.length} open tabs</Badge>
 	<Badge variant="outline" class="bg-background/70">
 		{controller.runtimeState.globalTerminals.data.length} total terminals

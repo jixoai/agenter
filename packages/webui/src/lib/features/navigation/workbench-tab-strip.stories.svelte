@@ -17,6 +17,7 @@
 
 <Story
 	name="Scenario: Given a chrome-style runtime tab When hovering it Then tooltip detail and fused status indicators stay visible"
+	exportName="HoveringRuntimeTabShowsTooltip"
 	asChild
 	play={async ({ canvasElement, userEvent }) => {
 		const canvas = within(canvasElement);
@@ -44,6 +45,7 @@
 
 <Story
 	name="Scenario: Given a running workbench tab When opening its context menu and closing it Then menu actions dispatch and selection falls back"
+	exportName="ContextMenuCloseFallsBackSelection"
 	asChild
 	play={async ({ canvasElement, userEvent }) => {
 		const canvas = within(canvasElement);
@@ -74,7 +76,8 @@
 </Story>
 
 <Story
-	name="Scenario: Given a narrow workbench chrome When toolbar content reflows Then metadata and actions stay visible without horizontal overflow"
+	name="Scenario: Given a narrow workbench chrome When toolbar content reflows Then metadata stays visible and hover actions collapse without horizontal overflow"
+	exportName="NarrowToolbarStaysSingleSurface"
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
@@ -85,17 +88,18 @@
 		const toolbar = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar]');
 		const contentRegion = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar-region="content"]');
 		const runtimeTab = canvas.getByRole('tab', { name: /reviewer/u });
-		const closeButton = canvas.getByRole('button', { name: /Close reviewer/u });
+		const closeButton = canvasElement.querySelector<HTMLElement>('[data-workbench-tab-action="close"]');
 
 		expect(toolbarSlot).not.toBeNull();
 		expect(toolbar).not.toBeNull();
 		expect(contentRegion).not.toBeNull();
+		expect(closeButton).not.toBeNull();
 
 		const overflowX = (toolbar?.scrollWidth ?? 0) - (toolbar?.clientWidth ?? 0);
 		expect(overflowX).toBeLessThanOrEqual(1);
 		expect(Math.round(toolbarSlot?.getBoundingClientRect().height ?? 0)).toBe(48);
 		expect(runtimeTab.getBoundingClientRect().width).toBeLessThanOrEqual(193);
-		expect(getComputedStyle(closeButton).pointerEvents).toBe('none');
+		expect(getComputedStyle(closeButton!).display).toBe('none');
 	}}
 >
 	<Tooltip.Provider delayDuration={0}>

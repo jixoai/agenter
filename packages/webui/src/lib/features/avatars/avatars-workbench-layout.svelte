@@ -1,20 +1,23 @@
 <script lang="ts">
-	import Settings2Icon from '@lucide/svelte/icons/settings-2';
-	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban';
-	import HistoryIcon from '@lucide/svelte/icons/history';
+	import BotIcon from '@lucide/svelte/icons/bot';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { goto } from '$app/navigation';
-
 	import { page } from '$app/state';
+	import type { Snippet } from 'svelte';
 
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
+	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
+	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
 		AVATAR_SESSION_TABS_CHANGE_EVENT,
 		readAvatarSessionTabIds,
 		removeAvatarSessionTabId,
 		upsertAvatarSessionTabId,
 	} from '$lib/features/avatars/avatar-session-tabs-state';
-	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
-	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
 		dismissWorkbenchTabId,
 		filterDismissedWorkbenchTabs,
@@ -26,18 +29,34 @@
 		buildAvatarSessionRailItems,
 		extractRuntimeSessionId,
 	} from '$lib/features/runtime/runtime-shell-state';
+	import {
+		AVATAR_CREATE_TABS_CHANGE_EVENT,
+		readAvatarCreateTabs,
+		removeAvatarCreateTab,
+		upsertAvatarCreateTab,
+		type AvatarCreateTabEntry,
+	} from './avatar-create-tabs-state';
+	import { buildAvatarCatalogHref, buildAvatarNewHref, createAvatarDraftId } from './avatar-workbench-location';
 
 	let {
 		children,
 	}: {
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const controller = getAppControllerContext();
 	let avatarSessionTabIds = $state<string[]>(readAvatarSessionTabIds());
+	let avatarCreateTabs = $state<AvatarCreateTabEntry[]>(readAvatarCreateTabs());
 	let dismissedSessionIds = $state<string[]>(readDismissedWorkbenchTabIds('avatars-runtime'));
+	let nextToolbarDraftId = $state(createAvatarDraftId());
+	let lastToolbarRoute = $state('');
 
 	const activeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
+	const activeDraftId = $derived.by(() => {
+		const match = /^\/avatars\/new\/([^/]+)$/u.exec(page.url.pathname);
+		return match ? decodeURIComponent(match[1] ?? '') : null;
+	});
+	const activeDraftHref = $derived.by(() => (activeDraftId ? `${page.url.pathname}${page.url.search}` : null));
 	const runtimeItems = $derived(
 		filterDismissedWorkbenchTabs(
 			buildAvatarSessionRailItems(controller.runtimeState, {
@@ -66,11 +85,39 @@
 	});
 
 	$effect(() => {
+		if (typeof window === 'undefined') {
+			return;
+		}
+		const syncAvatarCreateTabs = (): void => {
+			avatarCreateTabs = readAvatarCreateTabs();
+		};
+		window.addEventListener(AVATAR_CREATE_TABS_CHANGE_EVENT, syncAvatarCreateTabs);
+		window.addEventListener('storage', syncAvatarCreateTabs);
+		return () => {
+			window.removeEventListener(AVATAR_CREATE_TABS_CHANGE_EVENT, syncAvatarCreateTabs);
+			window.removeEventListener('storage', syncAvatarCreateTabs);
+		};
+	});
+
+	$effect(() => {
 		if (!activeSessionId) {
 			return;
 		}
 		avatarSessionTabIds = upsertAvatarSessionTabId(avatarSessionTabIds, activeSessionId);
 		dismissedSessionIds = restoreWorkbenchTabId('avatars-runtime', dismissedSessionIds, activeSessionId);
+	});
+
+	$effect(() => {
+		if (!activeDraftId || !activeDraftHref) {
+			return;
+		}
+		const existing = avatarCreateTabs.find((tab) => tab.draftId === activeDraftId) ?? null;
+		avatarCreateTabs = upsertAvatarCreateTab(avatarCreateTabs, {
+			draftId: activeDraftId,
+			href: activeDraftHref,
+			draftNickname: existing?.draftNickname ?? '',
+			sourceAvatarNickname: existing?.sourceAvatarNickname ?? '',
+		});
 	});
 
 	const copyToClipboard = async (value: string): Promise<void> => {
@@ -87,40 +134,81 @@
 		if (activeSessionId !== sessionId) {
 			return;
 		}
-		await goto(nextSession?.href ?? '/avatars/workspace', {
+		await goto(nextSession?.href ?? '/avatars/catalog', {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
 		});
 	};
 
+	const closeCreateTab = async (draftId: string): Promise<void> => {
+		const dynamicTabs = [
+			...avatarCreateTabs.map((tab) => ({
+				id: `new:${tab.draftId}`,
+				href: tab.href,
+			})),
+			...runtimeItems.map((item) => ({
+				id: item.sessionId,
+				href: item.href,
+			})),
+		];
+		const nextTab = resolveAdjacentWorkbenchTab(dynamicTabs, (tab) => tab.id, `new:${draftId}`);
+		if (activeDraftId !== draftId) {
+			avatarCreateTabs = removeAvatarCreateTab(avatarCreateTabs, draftId);
+			return;
+		}
+		await goto(nextTab?.href ?? buildAvatarCatalogHref(), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true,
+		});
+		avatarCreateTabs = removeAvatarCreateTab(avatarCreateTabs, draftId);
+	};
+
+	$effect(() => {
+		const currentRoute = `${page.url.pathname}${page.url.search}`;
+		if (currentRoute === lastToolbarRoute) {
+			return;
+		}
+		lastToolbarRoute = currentRoute;
+		nextToolbarDraftId = createAvatarDraftId();
+	});
+
 	const tabs = $derived.by(() => {
 		const fixedTabs = [
 			{
-				id: 'workspace',
-				href: '/avatars/workspace',
-				label: 'Workspace',
-				icon: FolderKanbanIcon,
-				title: 'Workspace',
-				description: 'Start avatars and browse the workspace avatar catalog.',
-			},
-			{
-				id: 'history',
-				href: '/avatars/history',
-				label: 'History',
-				icon: HistoryIcon,
-				title: 'History',
-				description: 'Inspect workspace history and recent session activity.',
-			},
-			{
-				id: 'settings',
-				href: '/avatars/settings',
-				label: 'Settings',
-				icon: Settings2Icon,
-				title: 'Workspace settings',
-				description: 'Inspect workspace inheritance, source layers, and effective settings.',
+				id: 'catalog',
+				href: buildAvatarCatalogHref(),
+				label: 'Catalog',
+				icon: BotIcon,
+				title: 'Avatar catalog',
+				description: 'Inspect global avatar identities, open runtime shells, and manage addable avatar drafts.',
 			},
 		] satisfies WorkbenchTabItem[];
+
+		const createTabs = avatarCreateTabs.map((entry) => ({
+			id: `new:${entry.draftId}`,
+			href: entry.href,
+			label: entry.draftNickname.length > 0 ? entry.draftNickname : 'New avatar',
+			icon: PlusIcon,
+			title: entry.draftNickname.length > 0 ? `New avatar · ${entry.draftNickname}` : `New avatar draft · ${entry.draftId}`,
+			description: entry.sourceAvatarNickname ? `Template source: ${entry.sourceAvatarNickname}` : 'Avatar creation draft',
+			closable: true,
+			onClose: () => void closeCreateTab(entry.draftId),
+			menuItems: [
+				{
+					id: `copy:${entry.draftId}`,
+					label: 'Copy draft id',
+					onSelect: () => void copyToClipboard(entry.draftId),
+				},
+				{
+					id: `close:${entry.draftId}`,
+					label: 'Close tab',
+					danger: true,
+					onSelect: () => void closeCreateTab(entry.draftId),
+				},
+			],
+		})) satisfies WorkbenchTabItem[];
 
 		const runtimeTabs = runtimeItems.map((item) => ({
 			id: item.sessionId,
@@ -136,7 +224,7 @@
 			menuItems: [
 				{
 					id: `copy:${item.sessionId}`,
-					label: 'Copy session id',
+					label: 'Copy runtime id',
 					onSelect: () => void copyToClipboard(item.sessionId),
 				},
 				{
@@ -148,28 +236,39 @@
 			],
 		})) satisfies WorkbenchTabItem[];
 
-		return [...fixedTabs, ...runtimeTabs];
+		return [...fixedTabs, ...createTabs, ...runtimeTabs];
 	});
 
-	const activeTabValue = $derived.by(() => {
-		if (activeSessionId) {
-			return activeSessionId;
-		}
-		if (page.url.pathname === '/avatars/history') {
-			return 'history';
-		}
-		if (page.url.pathname === '/avatars/settings') {
-			return 'settings';
-		}
-		return 'workspace';
-	});
+	const activeTabValue = $derived(activeDraftId ? `new:${activeDraftId}` : activeSessionId ?? 'catalog');
+	const nextToolbarDraftHref = $derived(buildAvatarNewHref({ draftId: nextToolbarDraftId }));
 </script>
+
+{#snippet avatarsToolbarMeta(_toolbarState: WorkbenchToolbarRenderState)}
+	<Badge variant="outline" class="bg-background/70">{controller.runtimeState.globalAvatarCatalog.data.length} avatars</Badge>
+	<Badge variant="outline" class="bg-background/70">{avatarCreateTabs.length} draft tabs</Badge>
+	<Badge variant="outline" class="bg-background/70">{runtimeItems.length} runtime tabs</Badge>
+	{#if dismissedSessionIds.length > 0}
+		<Badge variant="outline" class="bg-background/70">{dismissedSessionIds.length} hidden tabs</Badge>
+	{/if}
+{/snippet}
+
+{#snippet avatarsToolbarActions(_toolbarState: WorkbenchToolbarRenderState)}
+	<Button size="sm" variant="outline" href={nextToolbarDraftHref}>
+		<PlusIcon class="size-4" />
+		New avatar
+	</Button>
+{/snippet}
+
+{#snippet avatarsToolbar()}
+	<WorkbenchToolbar meta={avatarsToolbarMeta} actions={avatarsToolbarActions} />
+{/snippet}
 
 <div class="h-full" data-testid="avatars-workbench">
 	<WorkbenchWindow
 		ariaLabel="Avatar workbench tabs"
 		value={activeTabValue}
 		{tabs}
+		toolbar={avatarsToolbar}
 	>
 		<div class="h-full">{@render children?.()}</div>
 	</WorkbenchWindow>

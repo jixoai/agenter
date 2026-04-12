@@ -1,9 +1,11 @@
 <script lang="ts">
 	import MailIcon from '@lucide/svelte/icons/mail';
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import BotIcon from '@lucide/svelte/icons/bot';
 
 	import { page } from '$app/state';
+	import type { Snippet } from 'svelte';
 
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
@@ -31,11 +33,12 @@
 		children,
 	}: {
 		controller: AppController;
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const navItems = [
 		{ href: '/avatars', label: 'Avatars', icon: BotIcon },
+		{ href: '/workspaces', label: 'Workspaces', icon: FolderKanbanIcon },
 		{ href: '/messages', label: 'Messages', icon: MailIcon },
 		{ href: '/terminals', label: 'Terminals', icon: SquareTerminalIcon },
 	] as const;

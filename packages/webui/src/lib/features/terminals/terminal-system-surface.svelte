@@ -637,6 +637,11 @@
 												</Button>
 											{/if}
 										</div>
+										{#if seat.leaseExpiresAt}
+											<div class="mt-2 text-xs text-muted-foreground">
+												Lease until {formatTimestamp(seat.leaseExpiresAt)}
+											</div>
+										{/if}
 									</div>
 								{/each}
 							</div>
@@ -764,6 +769,11 @@
 												</Button>
 											{/if}
 										</div>
+										{#if seat.leaseExpiresAt}
+											<div class="mt-2 text-xs text-muted-foreground">
+												Lease until {formatTimestamp(seat.leaseExpiresAt)}
+											</div>
+										{/if}
 									</div>
 								{/each}
 							</Scaffold.ScrollBody>

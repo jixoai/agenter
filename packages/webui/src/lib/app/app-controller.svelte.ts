@@ -18,6 +18,7 @@ const runtimeClone = (store: RuntimeStore) => {
 		chatCyclesBySession: { ...state.chatCyclesBySession },
 		attentionBySession: { ...state.attentionBySession },
 		tasksBySession: { ...state.tasksBySession },
+		globalAvatarCatalog: state.globalAvatarCatalog,
 		workspaceAvatarCatalogByPath: { ...state.workspaceAvatarCatalogByPath },
 		globalRoomSnapshotsById: { ...state.globalRoomSnapshotsById },
 		globalRoomGrantsById: { ...state.globalRoomGrantsById },

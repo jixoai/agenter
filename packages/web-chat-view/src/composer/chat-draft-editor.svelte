@@ -285,7 +285,7 @@
 {#if useCodeMirror}
   <div
     bind:this={hostRef}
-    class="chat-draft-editor min-w-0 rounded-[1.05rem] border border-slate-200/85 bg-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]"
+    class="chat-draft-editor min-w-0 rounded-[1rem] border border-slate-200/95 bg-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-[color,box-shadow] focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
   ></div>
@@ -294,7 +294,7 @@
     value={value}
     rows={4}
     disabled={disabled || submitting}
-    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,5.1rem)] resize-none rounded-[1.05rem] border-slate-200/85 bg-white/88 px-3 py-2.5 text-[13px] leading-6"
+    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,5.1rem)] resize-none rounded-[1rem] border-slate-200/95 bg-white/78 px-3 py-2.5 text-[13px] leading-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
     {placeholder}

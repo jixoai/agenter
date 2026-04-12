@@ -1,9 +1,9 @@
 /// <reference types="vitest/config" />
 import tailwindcss from '@tailwindcss/vite';
+import { viteFinal as svelteCsfViteFinal } from '@storybook/addon-svelte-csf/preset';
 import { sveltekit } from '@sveltejs/kit/vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import type { InlineConfig } from 'vitest/node';
 import type { UserConfig } from 'vite';
@@ -26,89 +26,100 @@ const resolveTrpcProxyTarget = (): string => {
 
 const proxyTarget = resolveTrpcProxyTarget();
 
-// More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
-const config = {
-  plugins: [tailwindcss(), sveltekit()],
-  resolve: {
-    dedupe: [
-      '@codemirror/autocomplete',
-      '@codemirror/lang-markdown',
-      '@codemirror/language',
-      '@codemirror/language-data',
-      '@codemirror/state',
-      '@codemirror/view'
-    ]
-  },
-  server: {
-    proxy: {
-      '/trpc': {
-        target: proxyTarget,
-        changeOrigin: true,
-        ws: true
-      },
-      '/api': {
-        target: proxyTarget,
-        changeOrigin: true
-      },
-      '/media': {
-        target: proxyTarget,
-        changeOrigin: true
-      }
-    }
-  },
-  optimizeDeps: {
-    include: [
-      '@lucide/svelte/icons/message-square-more',
-      '@lucide/svelte/icons/circle-ellipsis',
-      '@lucide/svelte/icons/loader-circle',
-      '@lucide/svelte/icons/chevron-right',
-      '@lucide/svelte/icons/help-circle',
-      '@lucide/svelte/icons/folder-kanban',
-      '@lucide/svelte/icons/history',
-      '@lucide/svelte/icons/user-round',
-      '@lucide/svelte/icons/users',
-      '@codemirror/autocomplete',
-      '@codemirror/lang-markdown',
-      '@codemirror/language',
-      '@codemirror/language-data',
-      '@codemirror/state',
-      '@codemirror/view',
-      'lit/static-html.js'
-    ]
-  },
-  test: {
-    expect: {
-      requireAssertions: true
+const codemirrorDedupe = [
+  '@codemirror/autocomplete',
+  '@codemirror/lang-markdown',
+  '@codemirror/language',
+  '@codemirror/language-data',
+  '@codemirror/state',
+  '@codemirror/view'
+];
+
+const optimizeDepsInclude = [...codemirrorDedupe, 'lit/static-html.js'];
+
+const appSvelteDependencyExcludes = [
+  '@agenter/svelte-components',
+  '@agenter/terminal-view',
+  '@agenter/web-chat-view',
+  '@agenter/web-components',
+  '@lucide/svelte',
+  'bits-ui',
+  'shadcn-svelte'
+];
+const storybookSvelteDependencyExcludes = [
+  '@storybook/addon-svelte-csf',
+  '@storybook/svelte',
+  '@storybook/sveltekit'
+];
+
+const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
+  const shouldEnableVitestSvelteCsf = Boolean(process.env.VITEST);
+  const svelteCsfConfig = shouldEnableVitestSvelteCsf && svelteCsfViteFinal
+    ? await svelteCsfViteFinal(
+        {},
+        // The preset only reads `legacyTemplate`; Storybook runtime options are irrelevant in Vitest.
+        { legacyTemplate: false } as never
+      )
+    : {};
+
+  return {
+    plugins: [tailwindcss(), sveltekit(), ...(svelteCsfConfig.plugins ?? [])],
+    resolve: {
+      dedupe: codemirrorDedupe
     },
-    projects: [{
-      extends: './vite.config.ts',
-      test: {
-        name: 'server',
-        environment: 'node',
-        include: ['src/**/*.{test,spec}.{js,ts}'],
-        exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
-      }
-    }, {
-      extends: true,
-      plugins: [
-      // The plugin will run tests for the stories defined in your Storybook config
-      // See options at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon#storybooktest
-      storybookTest({
-        configDir: path.join(dirname, '.storybook')
-      })],
-      test: {
-        name: 'storybook',
-        browser: {
-          enabled: true,
-          headless: true,
-          provider: playwright({}),
-          instances: [{
-            browser: 'chromium'
-          }]
+    server: {
+      proxy: {
+        '/trpc': {
+          target: proxyTarget,
+          changeOrigin: true,
+          ws: true
+        },
+        '/api': {
+          target: proxyTarget,
+          changeOrigin: true
+        },
+        '/media': {
+          target: proxyTarget,
+          changeOrigin: true
         }
       }
-    }]
-  }
-} satisfies UserConfig & { test: InlineConfig };
+    },
+    optimizeDeps: {
+      include: optimizeDepsInclude,
+      exclude: shouldEnableVitestSvelteCsf
+        ? storybookSvelteDependencyExcludes
+        : [...appSvelteDependencyExcludes, ...storybookSvelteDependencyExcludes]
+    },
+    test: {
+      expect: {
+        requireAssertions: true
+      },
+      projects: [{
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['src/**/*.{test,spec}.{js,ts}'],
+          exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+        }
+      }, {
+        extends: true,
+        test: {
+          name: 'storybook',
+          include: ['test/storybook/**/*.test.ts'],
+          setupFiles: [path.join(dirname, 'test/storybook/vitest.setup.ts')],
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright({}),
+            instances: [{
+              browser: 'chromium'
+            }]
+          }
+        }
+      }]
+    }
+  } satisfies UserConfig & { test: InlineConfig };
+};
 
-export default config;
+export default createConfig();

@@ -27,6 +27,8 @@ The app connects to the Agenter daemon over TRPC websocket transport.
 - Default websocket endpoint fallback: `ws://127.0.0.1:4580/trpc`
 - Override for dev/smoke runs: `PUBLIC_AGENTER_WS_URL=ws://host:port/trpc`
 - `vite dev` now proxies `/trpc` to `AGENTER_DAEMON_PORT` and defaults that port to `4580`, so local walkthroughs do not need `vite preview`
+- In a workspace checkout, default `agenter web` serves the canonical static build from `packages/webui/build`; run `bun run build:webui` before browser verification
+- `packages/cli/assets/webui` is a derived packaging artifact refreshed by `bun run build:ui`, not a second runtime truth for workspace verification
 
 ## Product Surfaces
 

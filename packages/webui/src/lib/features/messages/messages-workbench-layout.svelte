@@ -4,13 +4,20 @@
 	import { goto } from '$app/navigation';
 
 	import { page } from '$app/state';
+	import type { Snippet } from 'svelte';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import WorkbenchTabStrip, {
 		type WorkbenchTabItem,
 	} from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import { setWorkbenchPageToolbarRegistry } from '$lib/features/navigation/workbench-page-toolbar-context.svelte';
+	import { readMessageRoomSessionId } from '$lib/features/messages/message-room-location';
 	import { resolveMessageRoomTabLabel, resolveMessageRoomTabTitle } from '$lib/features/messages/message-room-tab-label';
+	import {
+		buildMessageWorkbenchRooms,
+		getMessageWorkbenchSessionRoomState,
+		resolveMessageWorkbenchRoom,
+	} from '$lib/features/messages/message-workbench-room-state';
 	import {
 		dismissWorkbenchTabId,
 		filterDismissedWorkbenchTabs,
@@ -22,7 +29,7 @@
 	let {
 		children,
 	}: {
-		children?: import('svelte').Snippet;
+		children?: Snippet;
 	} = $props();
 
 	const controller = getAppControllerContext();
@@ -33,6 +40,10 @@
 		const match = /^\/messages\/room\/([^/]+)$/u.exec(page.url.pathname);
 		return match ? decodeURIComponent(match[1] ?? '') : null;
 	});
+	const activeSessionId = $derived(readMessageRoomSessionId(page.url.searchParams));
+	const activeSessionRoomState = $derived(
+		getMessageWorkbenchSessionRoomState(controller.runtimeState.messageChannelsBySession, activeSessionId),
+	);
 
 	$effect(() => {
 		const release = controller.runtimeStore.retainGlobalRooms();
@@ -43,15 +54,31 @@
 	});
 
 	$effect(() => {
+		const sessionId = activeSessionId;
+		if (!sessionId) {
+			return;
+		}
+		void controller.runtimeStore.ensureMessageChannels(sessionId).catch(() => undefined);
+	});
+
+	$effect(() => {
 		if (!activeRoomId) {
 			return;
 		}
 		dismissedRoomIds = restoreWorkbenchTabId('messages', dismissedRoomIds, activeRoomId);
 	});
 
+	const rooms = $derived(
+		buildMessageWorkbenchRooms({
+			activeRoomId,
+			activeSessionId,
+			globalRooms: controller.runtimeState.globalRooms.data,
+			messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
+		}),
+	);
 	const visibleRooms = $derived(
 		filterDismissedWorkbenchTabs(
-			controller.runtimeState.globalRooms.data,
+			rooms,
 			(room) => room.chatId,
 			dismissedRoomIds,
 		),
@@ -63,14 +90,29 @@
 
 		if (page.url.pathname === '/messages') {
 			const nextRoom = visibleRooms[0] ?? null;
-			return nextRoom ? `/messages/room/${encodeURIComponent(nextRoom.chatId)}` : '/messages/new';
+			return nextRoom ? nextRoom.href : '/messages/new';
 		}
 
 		if (activeRoomId) {
-			const roomStillVisible = controller.runtimeState.globalRooms.data.some((room) => room.chatId === activeRoomId);
-			if (!roomStillVisible) {
+			const activeSessionRoomPending =
+				Boolean(activeSessionId) &&
+				(!activeSessionRoomState ||
+					activeSessionRoomState.loading ||
+					activeSessionRoomState.refreshing ||
+					(!activeSessionRoomState.loaded && !activeSessionRoomState.error));
+			if (activeSessionRoomPending) {
+				return null;
+			}
+
+			const activeRoom = resolveMessageWorkbenchRoom({
+				chatId: activeRoomId,
+				sessionId: activeSessionId,
+				globalRooms: controller.runtimeState.globalRooms.data,
+				messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
+			});
+			if (!activeRoom) {
 				const nextRoom = visibleRooms.find((room) => room.chatId !== activeRoomId) ?? null;
-				return nextRoom ? `/messages/room/${encodeURIComponent(nextRoom.chatId)}` : '/messages/new';
+				return nextRoom ? nextRoom.href : '/messages/new';
 			}
 		}
 
@@ -90,7 +132,7 @@
 		if (activeRoomId !== chatId) {
 			return;
 		}
-		await goto(nextRoom ? `/messages/room/${encodeURIComponent(nextRoom.chatId)}` : '/messages/new', {
+		await goto(nextRoom ? nextRoom.href : '/messages/new', {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
@@ -105,7 +147,7 @@
 		);
 		const roomTabs = visibleRooms.map((room) => ({
 			id: room.chatId,
-			href: `/messages/room/${encodeURIComponent(room.chatId)}`,
+			href: room.href,
 			label: resolveMessageRoomTabLabel(room, duplicateTitles),
 			title: resolveMessageRoomTabTitle(room),
 			description: room.chatId,
@@ -141,7 +183,9 @@
 		] satisfies WorkbenchTabItem[];
 	});
 
-	const contentKey = $derived.by(() => activeRoomId ?? page.url.pathname);
+	const contentKey = $derived.by(() =>
+		activeRoomId ? `${activeRoomId}:${activeSessionId ?? ''}` : page.url.pathname,
+	);
 
 	$effect(() => {
 		if (!redirectHref || redirectHref === page.url.pathname) {

@@ -50,7 +50,7 @@
 
 	const syncWorkspaceSelection = async (workspacePath: string): Promise<void> => {
 		selectedWorkspacePath = workspacePath;
-		await goto(`/avatars/settings?path=${encodeURIComponent(workspacePath)}`, {
+		await goto(`/admin?path=${encodeURIComponent(workspacePath)}`, {
 			replaceState: true,
 			noScroll: true,
 			keepFocus: true,
