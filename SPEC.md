@@ -31,7 +31,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
 - Avatar private runtime home 是固定原语：每个 runtime 都必须拥有一个按 principal address 定位的 root workspace，dynamic workspace mounts 只是在此基础上的额外授权。
-- AttentionContext 拥有 durable focus state（`focused | background | muted`）与 ingress semantics（`commit | push`）；notification 只是 attention push 的投影，不得再引入第二套 unread truth。
+- AttentionContext 拥有 durable focus state（`focused | background | muted`）与 ingress semantics（`commit | push`）；`focused` 与 `background` 的未清 score 都可以继续激活 LoopBus，`muted` 默认不激活，notification-class push 可以忽略 focus 抑制强制唤醒；notification 仍然只是 attention push 的投影，不得再引入第二套 unread truth。
 - Attention durable fact 必须显式分层为 provenance / body / egress 三个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容，外部路由意图走 typed `egress`；不得再把 reply target、私有 blob、快捷动作塞回 metadata。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 typed coordinate law：message 依赖 `channelId + subjectId`，terminal/task 依赖最小寻址字段；不得重新打开 `meta` 逃逸口。
@@ -41,7 +41,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
 - Provider 请求保持纯度。HTTP/model body 只表达真实 provider 参数；调度、cycle、trace identity 等运行事实只能进入 `ai_call.requestBody.meta` 与 runtime publication contract，不能重新落回独立 `session_cycle` 或 session-db telemetry 表。
 - LoopBus 的模型表面必须保持极小：稳定 attention law、`skills.list`、以及 `root_workspace_list` / `root_workspace_bash` 两个 root workspace 原语。message / workspace / terminal / future systems 的操作统一经由 runtime-local CLI/API 自助发现，不再直接注入成 model tools。
-- runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin。
+- runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin，且当前唯一的特殊非 JSON 标记就是 `--help`。
 
 ## 3. 正交设计边界
 

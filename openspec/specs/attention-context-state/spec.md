@@ -36,3 +36,16 @@ The attention system MUST treat context focus state as the canonical engagement 
 - **WHEN** a source adapter needs to know whether an attention context is engaged
 - **THEN** it reads the current focus state from the attention context or its derived hook output
 - **AND** it does not become the durable owner of that focus state itself
+
+### Requirement: Focus state SHALL define whether push debt remains active
+The attention system SHALL interpret unresolved push scores through the context focus state. `focused` and `background` pushes remain active until they are consumed or resolved, while ordinary `muted` pushes stay dormant unless they carry notification-class semantics.
+
+#### Scenario: Background push remains active without focus promotion
+- **WHEN** a context in `background` receives a push with unresolved scores
+- **THEN** the context still reports active debt
+- **AND** the push remains separately queryable for notification projection until it is consumed
+
+#### Scenario: Muted push stays dormant by default
+- **WHEN** a context in `muted` receives a normal push with unresolved scores
+- **THEN** the context does not report active debt from that push alone
+- **AND** the push still remains in durable history for later inspection

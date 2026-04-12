@@ -18,6 +18,19 @@ The attention system SHALL record external ingress as `commit` when it targets a
 - **THEN** the runtime records that ingress as an attention `push`
 - **AND** the source adapter does not need to promote the context to focused first
 
+### Requirement: Background pushes SHALL stay actionable while muted pushes stay dormant by default
+Unconsumed push ingress with unresolved score SHALL remain active for `background` contexts, while ordinary `muted` pushes SHALL remain durable but non-wakeable until focus changes or another explicit override arrives.
+
+#### Scenario: Background push keeps LoopBus eligible to wake
+- **WHEN** a `background` context receives an unconsumed push with unresolved score
+- **THEN** the attention system still reports that context as active debt
+- **AND** scheduling may wake LoopBus for that background work
+
+#### Scenario: Muted push does not wake by itself
+- **WHEN** a `muted` context receives an ordinary unconsumed push with unresolved score
+- **THEN** the push is stored durably
+- **AND** the context does not become wakeable from that push alone
+
 ### Requirement: Push ingress SHALL remain durable attention state
 Attention `push` ingress SHALL be stored as attention history within the target context rather than as a separate notification ledger.
 
@@ -46,3 +59,11 @@ Push ingress SHALL support source-provided quick-action metadata so the UI can e
 - **WHEN** a message or other source publishes a push with quick-action metadata
 - **THEN** the attention projection includes that metadata for UI consumption
 - **AND** the runtime can execute the quick action without requiring the user to navigate away from the current focused context first
+
+### Requirement: Notification-class push SHALL override muted default
+Push ingress MAY carry notification-class semantics for urgent interruption. Notification-class pushes SHALL remain active even when the target context is `muted`.
+
+#### Scenario: Notification push forces wake from a muted context
+- **WHEN** a `muted` context receives a push marked as notification-class with unresolved score
+- **THEN** the attention system reports that context as active debt
+- **AND** the runtime may wake LoopBus without changing the durable focus state

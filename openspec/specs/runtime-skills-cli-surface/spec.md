@@ -82,6 +82,19 @@ The `message`, `terminal`, and `attention commit` CLI commands exposed inside `r
 - **THEN** the runtime parses the JSON payload exactly
 - **AND** shell tooling keeps the full JSON escape hatch for long-form settle flows
 
+### Requirement: Runtime-local system CLI SHALL reserve only `--help` as the non-JSON marker
+The `attention`, `message`, `workspace`, and `terminal` commands SHALL treat `--help` as the only special non-JSON argv token. Short aliases such as `-h`, bare `help`, or `--arg=value`-style positional forms SHALL NOT become alternate parsing modes.
+
+#### Scenario: Canonical help stays on `--help`
+- **WHEN** the AI runs `message --help`
+- **THEN** the runtime returns local schema-backed help without calling the runtime API
+- **AND** the canonical examples stay JSON-first
+
+#### Scenario: Non-canonical help alias is rejected as ordinary argv
+- **WHEN** the AI runs `message -h`
+- **THEN** the runtime treats `-h` as an ordinary token instead of a help alias
+- **AND** the command fails through the normal JSON-only CLI rules
+
 ### Requirement: Runtime skills SHALL require terminal plus exact-path verification before delivery announcements
 Built-in runtime skills SHALL teach that `terminal write` only delivers input, that terminal state alone does not prove a service is reachable, and that the exact promised URL or path must be freshly verified from root workspace bash before any room-visible delivery message is sent.
 

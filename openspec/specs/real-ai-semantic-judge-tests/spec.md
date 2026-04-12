@@ -14,7 +14,7 @@ Real-AI semantic test utilities SHALL resolve provider id `jixoai/agenter/test` 
 - **THEN** they resolve provider id `jixoai/agenter/test` from the inherited settings cascade instead of using a separate semantic-test config format
 - **THEN** the resolved provider preserves the canonical provider metadata needed by `ModelClient`
 
-#### Scenario: Missing fixed provider emits a warning precondition
+#### Scenario: Missing fixed provider exposes the exact configuration precondition
 
 - **WHEN** the inherited settings cascade does not contain usable provider id `jixoai/agenter/test`
 - **THEN** semantic test availability resolves to "not configured"
@@ -83,15 +83,15 @@ Targeted semantic helpers SHALL apply cheap deterministic pre-checks before dele
 - **THEN** it does not pay for redundant AI calls
 - **THEN** only the ambiguous remainder is delegated to the redundant generic judge
 
-### Requirement: Real semantic validations SHALL stay opt-in and explicit
+### Requirement: Enabled real semantic validations SHALL hard-fail on missing provider setup
 
-Real semantic validations SHALL remain opt-in test flows that skip cleanly when the fixed judge provider is unavailable, and those validations SHALL prefer semantic-judge-backed behavioral assertions over brute-force literal string enumeration.
+Real semantic validations MAY still be gated behind an explicit real-test switch, but once that suite is enabled, provider id `jixoai/agenter/test` becomes a mandatory CI precondition. Missing provider setup SHALL fail immediately instead of warning-and-skipping.
 
-#### Scenario: Opt-in semantic test suite skips without hidden fallback
+#### Scenario: Enabled semantic suite fails before execution when provider is absent
 
-- **WHEN** the real semantic test flag is disabled or the fixed judge provider is unavailable
-- **THEN** semantic real-AI tests are skipped instead of failing deep inside model transport
-- **THEN** the skip reason identifies the fixed provider precondition
+- **WHEN** the real semantic test flag is enabled but the fixed judge provider is unavailable
+- **THEN** the suite fails immediately with the fixed-provider configuration error
+- **THEN** it does not downgrade the run to a warning or skip
 
 #### Scenario: Real integration tests validate semantic behavior without brittle allowlists
 
