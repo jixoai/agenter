@@ -3,6 +3,7 @@ import type {
   AuthServiceInfoOutput,
   AuthSessionOutput,
   AttentionQueryItem,
+  ApiCallItem,
   CachedResourceState,
   ChatCycleItem,
   ChatListItem,
@@ -22,12 +23,17 @@ import type {
   HistoryPageCursor,
   MessageChannelEntry,
   MessageChannelGrantEntry,
+  ModelCallItem,
   NotificationSnapshotOutput,
   RuntimeAttentionState,
-  TerminalActivityItem,
   RuntimeChatCycle,
   RuntimeChatMessage,
   RuntimeClientState,
+  RuntimeWorkspaceAssetRootsOutput,
+  RuntimeWorkspaceExecOutput,
+  RuntimeWorkspaceGrantEntry,
+  RuntimeWorkspaceMountEntry,
+  TerminalActivityItem,
   ProfileServiceInfoOutput,
   RuntimeEvent,
   RuntimeSchedulerContainmentState,
@@ -254,6 +260,19 @@ const mergeTerminalSnapshot = (
 const normalizeOptionalAccessToken = (value: string | null | undefined): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
+const buildGlobalRoomReadInflightKey = (input: {
+  chatId: string;
+  accessToken?: string;
+  messageId?: string;
+}): string => [input.chatId, input.accessToken ?? "", input.messageId ?? ""].join("\u0000");
+
+const sameActorIdSet = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean => {
+  if ((left?.length ?? 0) !== (right?.length ?? 0)) {
+    return false;
+  }
+  return (left ?? []).every((actorId, index) => actorId === right?.[index]);
+};
+
 const mergeGlobalTerminalEntry = (
   current: GlobalTerminalEntry | undefined,
   incoming: GlobalTerminalEntry,
@@ -385,8 +404,6 @@ const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessa
   return (
     left.chatId === right.chatId &&
     left.role === right.role &&
-    (left.attentionState ?? null) === (right.attentionState ?? null) &&
-    (left.attentionLoadedAt ?? null) === (right.attentionLoadedAt ?? null) &&
     (left.visibleAt ?? null) === (right.visibleAt ?? null) &&
     (left.cycleId ?? null) === (right.cycleId ?? null) &&
     left.channel === right.channel &&
@@ -456,6 +473,7 @@ export class RuntimeStore {
   private readonly globalRoomAssetRefreshTasks = new Map<string, GlobalRoomAssetsRefreshTask>();
   private readonly globalRoomAssetWatchCountById = new Map<string, number>();
   private readonly globalRoomAssetQueryById = new Map<string, { accessToken?: string }>();
+  private readonly globalRoomReadMutations = new Map<string, Promise<GlobalRoomEntry>>();
   private globalTerminalsRefreshTask: Promise<GlobalTerminalEntry[]> | null = null;
   private globalTerminalsWatchCount = 0;
   private readonly globalTerminalGrantRefreshTasks = new Map<string, Promise<GlobalTerminalGrantEntry[]>>();
@@ -574,9 +592,6 @@ export class RuntimeStore {
       cycleId: message.cycleId ?? null,
       updatedAt: message.updatedAt ?? message.timestamp,
       visibleAt: message.visibleAt,
-      attentionState: message.attentionState,
-      attentionLoadedAt: message.attentionLoadedAt,
-      editable: message.editable ?? message.attentionState === "queued",
       attachments: message.attachments?.map((attachment) => ({
         ...attachment,
         url: this.resolveMediaUrl(attachment.url),
@@ -619,9 +634,6 @@ export class RuntimeStore {
       timestamp: item.timestamp,
       updatedAt: item.updatedAt ?? item.timestamp,
       visibleAt: item.visibleAt,
-      attentionState: item.attentionState,
-      attentionLoadedAt: item.attentionLoadedAt,
-      editable: item.attentionState === "queued",
       cycleId: item.cycleId ?? null,
       channel: normalizeChatChannel(item.channel as RuntimeChatMessage["channel"] | "user_input" | null | undefined),
       format: item.format,
@@ -802,15 +814,16 @@ export class RuntimeStore {
     }
 
     const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
+    const sameNicknameCopy = input.sourceAvatar === optimisticNickname;
     const optimisticEntry: WorkspaceAvatarCatalogEntry = {
       nickname: optimisticNickname,
       defaultAvatar: optimisticNickname === "default",
-      sourceScope: "workspace",
-      globalAvailable: false,
-      workspaceAvailable: true,
-      globalPath: sourceEntry?.globalPath ?? "",
-      workspacePath: sourceEntry?.workspacePath ?? "",
-      effectivePath: sourceEntry?.workspacePath ?? "",
+      sourceScope: "global",
+      globalAvailable: sameNicknameCopy ? (sourceEntry?.globalAvailable ?? true) : false,
+      workspacePrivateSlotReady: true,
+      globalPath: sameNicknameCopy ? (sourceEntry?.globalPath ?? "") : "",
+      workspacePrivatePath: "",
+      effectivePath: "",
     };
     this.setWorkspaceAvatarCatalogState(input.workspacePath, (current) => ({
       ...current,
@@ -951,6 +964,57 @@ export class RuntimeStore {
     return this.state.globalRooms.data.find((room) => room.chatId === chatId) ?? null;
   }
 
+  private reconcileLatestVisibleRoomMessageReadState(entry: Pick<GlobalRoomEntry, "chatId" | "readProgress" | "readStates">): void {
+    const latestVisibleMessageId = entry.readProgress?.latestVisibleMessageId;
+    const latestVisibleMessageRowId = entry.readProgress?.latestVisibleMessageRowId ?? 0;
+    const trackedStates = (entry.readStates ?? []).filter((state) => state.trackedByLatestVisible);
+    if (!latestVisibleMessageId || latestVisibleMessageRowId <= 0 || trackedStates.length === 0) {
+      return;
+    }
+
+    const readActorIds = trackedStates.filter((state) => state.hasReadLatestVisible).map((state) => state.actorId);
+    const unreadActorIds = trackedStates.filter((state) => !state.hasReadLatestVisible).map((state) => state.actorId);
+
+    this.setGlobalRoomSnapshotState(entry.chatId, (resource) => {
+      const snapshot = resource.data;
+      if (!resource.loaded || !snapshot) {
+        return resource;
+      }
+
+      let changed = false;
+      const items = snapshot.items.map((item) => {
+        const matchesLatestVisible =
+          item.messageId === latestVisibleMessageId || item.rowId === latestVisibleMessageRowId;
+        if (!matchesLatestVisible) {
+          return item;
+        }
+        if (sameActorIdSet(item.readActorIds, readActorIds) && sameActorIdSet(item.unreadActorIds, unreadActorIds)) {
+          return item;
+        }
+        changed = true;
+        return {
+          ...item,
+          readActorIds: [...readActorIds],
+          unreadActorIds: [...unreadActorIds],
+        };
+      });
+
+      if (!changed) {
+        return resource;
+      }
+
+      return {
+        ...resource,
+        data: {
+          ...snapshot,
+          items,
+        },
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
   private reconcileGlobalRoomEntry(entry: GlobalRoomEntry): void {
     this.setGlobalRoomsState((resource) => {
       const nextData = resource.data.filter((candidate) => candidate.chatId !== entry.chatId);
@@ -965,6 +1029,7 @@ export class RuntimeStore {
         refreshedAt: Date.now(),
       };
     });
+    this.reconcileLatestVisibleRoomMessageReadState(entry);
     this.setGlobalRoomSnapshotState(entry.chatId, (resource) => {
       if (!resource.loaded || !resource.data) {
         return resource;
@@ -1094,6 +1159,9 @@ export class RuntimeStore {
           error: null,
           refreshedAt: Date.now(),
         }));
+        for (const room of data) {
+          this.reconcileLatestVisibleRoomMessageReadState(room);
+        }
         this.emit();
         return data;
       })
@@ -2562,6 +2630,51 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.welcomeSnapshot.query(input);
   }
 
+  async listRuntimeWorkspaceMounts(runtimeId: string): Promise<RuntimeWorkspaceMountEntry[]> {
+    const output = await this.client.trpc.workspace.runtimeMounts.query({ runtimeId });
+    return output.items;
+  }
+
+  async listRuntimeWorkspaceGrants(input: {
+    runtimeId: string;
+    workspacePath: string;
+  }): Promise<RuntimeWorkspaceGrantEntry[]> {
+    const output = await this.client.trpc.workspace.runtimeGrants.query(input);
+    return output.items;
+  }
+
+  async grantRuntimeWorkspace(input: {
+    runtimeId: string;
+    workspacePath: string;
+    grants: Array<{ relativePath: string; mode: "ro" | "rw" }>;
+  }): Promise<RuntimeWorkspaceGrantEntry[]> {
+    const output = await this.client.trpc.workspace.grantRuntime.mutate(input);
+    return output.items;
+  }
+
+  async detachRuntimeWorkspace(input: { runtimeId: string; workspacePath: string }): Promise<{ detached: boolean }> {
+    return await this.client.trpc.workspace.detachRuntime.mutate(input);
+  }
+
+  async getRuntimeWorkspaceAssetRoots(input: {
+    workspacePath: string;
+    avatar: string;
+  }): Promise<RuntimeWorkspaceAssetRootsOutput> {
+    return await this.client.trpc.workspace.assetRoots.query(input);
+  }
+
+  async execRuntimeWorkspace(input: {
+    runtimeId: string;
+    workspacePath: string;
+    avatar: string;
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  }): Promise<RuntimeWorkspaceExecOutput> {
+    return await this.client.trpc.workspace.exec.mutate(input);
+  }
+
   async saveWorkspaceAvatarRoomSeat(input: {
     workspacePath: string;
     avatar: string;
@@ -3165,27 +3278,43 @@ export class RuntimeStore {
     accessToken?: string;
     messageId?: string;
   }): Promise<GlobalRoomEntry> {
-    const output = await this.client.trpc.message.globalMarkRead.mutate({
-      ...input,
-      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    const accessToken = normalizeOptionalAccessToken(input.accessToken);
+    const key = buildGlobalRoomReadInflightKey({
+      chatId: input.chatId,
+      accessToken,
+      messageId: input.messageId,
     });
-    this.reconcileGlobalRoomEntry(output.channel);
-    this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
-      if (!resource.loaded || !resource.data) {
-        return resource;
-      }
-      return {
-        ...resource,
-        data: {
-          ...resource.data,
-          channel: output.channel,
-        },
-        error: null,
-        refreshedAt: Date.now(),
-      };
+    const inflight = this.globalRoomReadMutations.get(key);
+    if (inflight) {
+      return await inflight;
+    }
+    const promise = (async () => {
+      const output = await this.client.trpc.message.globalMarkRead.mutate({
+        ...input,
+        accessToken,
+      });
+      this.reconcileGlobalRoomEntry(output.channel);
+      this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
+        if (!resource.loaded || !resource.data) {
+          return resource;
+        }
+        return {
+          ...resource,
+          data: {
+            ...resource.data,
+            channel: output.channel,
+          },
+          error: null,
+          refreshedAt: Date.now(),
+        };
+      });
+      this.emit();
+      return output.channel;
+    })().finally(() => {
+      this.globalRoomReadMutations.delete(key);
     });
-    this.emit();
-    return output.channel;
+    this.globalRoomReadMutations.set(key, promise);
+    return await promise;
   }
 
   async pageGlobalRoomMessages(input: {
@@ -4887,32 +5016,7 @@ export class RuntimeStore {
           LOOPBUS_LRU_LIMIT,
         );
       } else if (event.type === "runtime.modelCall") {
-        const payload = event.payload as {
-          entry: {
-            id: number;
-            cycleId: number;
-            createdAt: number;
-            status: "running" | "done" | "error" | "cancelled";
-            completedAt?: number;
-            provider: string;
-            model: string;
-            request: unknown;
-            response?: unknown;
-            error?: unknown;
-            trace?: {
-              traceId: string;
-              spanId: string;
-              parentSpanId?: string | null;
-            };
-            outcome?: {
-              code: "done" | "error" | "timeout" | "stopped" | "aborted" | "cancelled";
-              message?: string;
-              retryable?: boolean;
-              error?: unknown;
-              reason?: string;
-            };
-          };
-        };
+        const payload = event.payload as { entry: ModelCallItem };
         const current = this.state.modelCallsBySession[sessionId] ?? [];
         this.state.modelCallsBySession[sessionId] = this.applyLruEntries(
           this.modelCallsAccessBySession,
@@ -4943,16 +5047,7 @@ export class RuntimeStore {
           MODEL_CALL_DELTA_LRU_LIMIT,
         );
       } else if (event.type === "runtime.apiCall") {
-        const payload = event.payload as {
-          entry: {
-            id: number;
-            modelCallId: number;
-            createdAt: number;
-            request: unknown;
-            response?: unknown;
-            error?: unknown;
-          };
-        };
+        const payload = event.payload as { entry: ApiCallItem };
         const current = this.state.apiCallsBySession[sessionId] ?? [];
         if (current.some((entry) => entry.id === payload.entry.id)) {
           return;
@@ -5049,6 +5144,8 @@ export class RuntimeStore {
           enabled: false,
           refCount: 0,
         },
+        attentionApi: null,
+        rootWorkspace: null,
         modelCapabilities: DEFAULT_MODEL_CAPABILITIES,
         activeCycle: null,
       };

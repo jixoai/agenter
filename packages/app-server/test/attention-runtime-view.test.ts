@@ -6,6 +6,7 @@ import type { SessionRuntimeAttentionState } from "../src/session-runtime";
 const createCommit = (index: number) => ({
   commitId: `commit-${index}`,
   contextId: "ctx-terminal-main",
+  ingressType: "commit" as const,
   parentCommitIds: index > 0 ? [`commit-${index - 1}`] : [],
   meta: {
     author: "terminal:main",
@@ -33,9 +34,11 @@ describe("Feature: runtime attention preview projection", () => {
           {
             contextId: "ctx-terminal-main",
             owner: "tester-bot",
+            focusState: "focused",
             content: "terminal context\n" + "y".repeat(3_000),
             contentFormat: "text/markdown",
             scoreMap: { abc123: 100 },
+            consumedPushCommitIds: [],
             headCommitId: commits.at(-1)?.commitId ?? null,
             createdAt: commits[0]!.createdAt,
             updatedAt: commits.at(-1)?.createdAt ?? commits[0]!.createdAt,
@@ -51,9 +54,11 @@ describe("Feature: runtime attention preview projection", () => {
           context: {
             contextId: "ctx-terminal-main",
             owner: "tester-bot",
+            focusState: "focused",
             content: "terminal context\n" + "z".repeat(3_000),
             contentFormat: "text/markdown",
             scoreMap: { abc123: 100 },
+            consumedPushCommitIds: [],
             headCommitId: commits.at(-1)?.commitId ?? null,
             createdAt: commits[0]!.createdAt,
             updatedAt: commits.at(-1)?.createdAt ?? commits[0]!.createdAt,

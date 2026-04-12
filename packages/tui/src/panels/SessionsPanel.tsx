@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/react */
+
 import type { SessionEntry } from "@agenter/client-sdk";
 
 interface SessionsPanelProps {

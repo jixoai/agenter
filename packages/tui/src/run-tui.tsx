@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/react */
+
 import { createAgenterClient, createRuntimeStore, type RuntimeClientState } from "@agenter/client-sdk";
 import { createCliRenderer, type TextareaRenderable } from "@opentui/core";
 import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
@@ -23,32 +25,6 @@ const App = ({ host, port }: { host: string; port: number }) => {
   const renderer = useRenderer();
   const inputRef = useRef<TextareaRenderable | null>(null);
   const pendingActiveSessionIdRef = useRef<string | null>(null);
-
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [localInput, setLocalInput] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [state, setState] = useState<RuntimeClientState>(() => ({
-    connected: false,
-    connectionStatus: "connecting",
-    lastEventId: 0,
-    sessions: [],
-    runtimes: {},
-    activityBySession: {},
-    terminalSnapshotsBySession: {},
-    chatsBySession: {},
-    chatCyclesBySession: {},
-    tasksBySession: {},
-    recentWorkspaces: [],
-    workspaces: [],
-    loopbusStateLogsBySession: {},
-    loopbusTracesBySession: {},
-    apiCallsBySession: {},
-    modelCallsBySession: {},
-    apiCallRecordingBySession: {},
-    notifications: [],
-    unreadBySession: {},
-  }));
-
   const client = useMemo(
     () =>
       createAgenterClient({
@@ -59,6 +35,11 @@ const App = ({ host, port }: { host: string; port: number }) => {
     [host, port],
   );
   const store = useMemo(() => createRuntimeStore(client), [client]);
+
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [localInput, setLocalInput] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [state, setState] = useState<RuntimeClientState>(() => store.getState());
 
   useEffect(() => {
     const unsubscribe = store.subscribe((next) => {

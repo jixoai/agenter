@@ -1,21 +1,11 @@
+/** @jsxImportSource @opentui/react */
+
+import type { ModelCallItem, ObservabilityTraceItem } from "@agenter/client-sdk";
+
 interface LoopBusPanelProps {
   phaseText: string;
-  traces: Array<{
-    id: number;
-    cycleId: number;
-    seq: number;
-    step: string;
-    status: "ok" | "error" | "running";
-    endedAt: number;
-  }>;
-  modelCalls: Array<{
-    id: number;
-    cycleId: number;
-    provider: string;
-    model: string;
-    createdAt: number;
-    error?: unknown;
-  }>;
+  traces: ObservabilityTraceItem[];
+  modelCalls: ModelCallItem[];
   apiRecording: { enabled: boolean; refCount: number };
 }
 
@@ -32,7 +22,7 @@ export const LoopBusPanel = ({ phaseText, traces, modelCalls, apiRecording }: Lo
       </text>
       <text>
         trace:{" "}
-        {latestTrace ? `#${latestTrace.cycleId}.${latestTrace.seq} ${latestTrace.step} ${latestTrace.status}` : "none"}
+        {latestTrace ? `#${latestTrace.cycleId}.${latestTrace.seq} ${latestTrace.name} ${latestTrace.status}` : "none"}
       </text>
       <text>
         model:{" "}
@@ -44,12 +34,12 @@ export const LoopBusPanel = ({ phaseText, traces, modelCalls, apiRecording }: Lo
         <box flexDirection="column">
           {traces.slice(-12).map((trace) => (
             <text key={`trace-${trace.id}`} fg={trace.status === "error" ? "red" : "gray"}>
-              [{formatTime(trace.endedAt)}] #{trace.cycleId}.{trace.seq} {trace.step} {trace.status}
+              [{formatTime(trace.endedAt)}] #{trace.cycleId}.{trace.seq} {trace.name} {trace.status}
             </text>
           ))}
           {modelCalls.slice(-6).map((call) => (
             <text key={`model-${call.id}`} fg={call.error ? "red" : "green"}>
-              [{formatTime(call.createdAt)}] cycle#{call.cycleId} {call.provider}/{call.model}
+              [{formatTime(call.createdAt)}] cycle#{call.cycleId ?? call.roundIndex} {call.provider}/{call.model}
             </text>
           ))}
         </box>

@@ -14,6 +14,7 @@ const createKernel = (): AppKernel => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
   tempDirs.push(dir);
   return new AppKernel({
+    homeDir: join(dir, "home"),
     globalSessionRoot: join(dir, "sessions"),
     archiveSessionRoot: join(dir, "archive", "sessions"),
     workspacesPath: join(dir, "workspaces.yaml"),
@@ -33,6 +34,7 @@ describe("Feature: app kernel event replay", () => {
     const workspacePath = join(dir, "workspace");
     const workspacesPath = join(dir, "workspaces.yaml");
     const kernel = new AppKernel({
+      homeDir: join(dir, "home"),
       globalSessionRoot: join(dir, "sessions"),
       archiveSessionRoot: join(dir, "archive", "sessions"),
       workspacesPath,
@@ -70,6 +72,7 @@ describe("Feature: app kernel event replay", () => {
     mkdirSync(workspace, { recursive: true });
 
     const kernel = new AppKernel({
+      homeDir: join(root, "home"),
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
@@ -89,6 +92,148 @@ describe("Feature: app kernel event replay", () => {
     const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
     expect(page.counts).toEqual({ all: 1, running: 0, stopped: 1, archive: 0 });
     expect(page.items[0]?.sessionId).toBe(session.id);
+  });
+
+  test("Scenario: Given a fresh runtime boot When no explicit mounts or attachments are orchestrated Then the runtime stays unattached by default", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: workspace, name: "cold-empty", autoStart: true });
+    const runtime = kernel.getSnapshot().runtimes[session.id];
+
+    expect(kernel.listRuntimeWorkspaceMounts(session.id)).toEqual([
+      expect.objectContaining({
+        kind: "avatar-root",
+      }),
+    ]);
+    expect(kernel.listMessageChannels(session.id)).toEqual([]);
+    expect(runtime?.terminals ?? []).toEqual([]);
+    expect(runtime?.focusedTerminalIds ?? []).toEqual([]);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a running session without an attached primary room When sendChat is called Then the kernel rejects the chat instead of synthesizing a hidden room", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: workspace, name: "chat-needs-room", autoStart: true });
+
+    await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({
+      ok: false,
+      reason: expect.stringContaining("default room is not attached"),
+    });
+    expect(kernel.listMessageChannels(session.id)).toEqual([]);
+
+    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    expect(room.chatId).toBeTruthy();
+    await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({ ok: true });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given explicit room terminal and workspace authorities When the session stops and starts Then recovery reuses those durable facts without synthesizing new defaults", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "recoverer",
+      name: "recoverer",
+      autoStart: true,
+    });
+    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
+    kernel.grantRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      grants: [{ relativePath: "/", mode: "rw" }],
+    });
+    const terminalResult = await kernel.createTerminal({
+      sessionId: session.id,
+      terminalId: "recovery-main",
+      cwd: workspace,
+      focus: true,
+    });
+    expect(terminalResult.ok).toBeTrue();
+
+    expect(kernel.listRuntimeWorkspaceMounts(session.id)).toEqual([
+      expect.objectContaining({
+        kind: "avatar-root",
+      }),
+      expect.objectContaining({
+        kind: "workspace",
+        workspacePath: resolve(workspace),
+      }),
+    ]);
+
+    await kernel.stopSession(session.id);
+
+    expect(kernel.listMessageChannels(session.id).some((entry) => entry.chatId === room.chatId)).toBeTrue();
+    expect(
+      kernel
+        .listGlobalTerminals({
+          actorId: (session.avatarPrincipalId ?? `session:${session.id}`) as never,
+        })
+        .some((entry) => entry.terminalId === "recovery-main"),
+    ).toBeTrue();
+    expect(kernel.listRuntimeWorkspaceMounts(session.id)).toEqual([
+      expect.objectContaining({
+        kind: "avatar-root",
+      }),
+      expect.objectContaining({
+        kind: "workspace",
+        workspacePath: resolve(workspace),
+      }),
+    ]);
+
+    const resumed = await kernel.startSession(session.id);
+    const runtime = kernel.getSnapshot().runtimes[session.id];
+
+    expect(resumed.status).toBe("running");
+    expect(runtime?.messageChannels?.some((entry) => entry.chatId === room.chatId)).toBeTrue();
+    expect(runtime?.terminals.some((entry) => entry.terminalId === "recovery-main")).toBeTrue();
+    expect(runtime?.focusedTerminalIds).toContain("recovery-main");
+    expect(kernel.listRuntimeWorkspaceMounts(session.id)).toEqual([
+      expect.objectContaining({
+        kind: "avatar-root",
+      }),
+      expect.objectContaining({
+        kind: "workspace",
+        workspacePath: resolve(workspace),
+      }),
+    ]);
+
+    await kernel.stop();
   });
 
   test("Scenario: Given kernel startup When creating global room and terminal surfaces Then live transport URLs initial snapshots and absolute cwd are available immediately", async () => {
@@ -147,7 +292,7 @@ describe("Feature: app kernel event replay", () => {
           focused: true,
         },
         {
-          actorId: session.avatarPrincipalId,
+          actorId: session.avatarPrincipalId as `0x${string}`,
           label: "jane",
           role: "member",
           focused: true,
@@ -168,8 +313,7 @@ describe("Feature: app kernel event replay", () => {
       accessToken: room.accessToken,
       limit: 4,
     }).items.find((message) => message.content === "hello before jane starts");
-    expect(before?.attentionState).toBe("queued");
-    expect(before?.unreadActorIds).toContain(session.avatarPrincipalId);
+    expect(before?.unreadActorIds).toContain(session.avatarPrincipalId as `0x${string}`);
 
     await kernel.startSession(session.id);
 
@@ -185,18 +329,16 @@ describe("Feature: app kernel event replay", () => {
         .items.find((message) => message.content === "hello before jane starts") ?? null;
       if (
         loaded &&
-        loaded.attentionState === "loaded" &&
-        loaded.readActorIds.includes(session.avatarPrincipalId) &&
-        !loaded.unreadActorIds.includes(session.avatarPrincipalId)
+        loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
+        !loaded.unreadActorIds.includes(session.avatarPrincipalId as `0x${string}`)
       ) {
         break;
       }
       await new Promise<void>((resolveReady) => setTimeout(resolveReady, 50));
     }
 
-    expect(loaded?.attentionState).toBe("loaded");
-    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId);
-    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId as `0x${string}`);
+    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId as `0x${string}`);
 
     await kernel.stop();
   });
@@ -257,10 +399,10 @@ describe("Feature: app kernel event replay", () => {
       limit: 4,
     }).items.find((message) => message.content === "hello legacy jane");
     expect(before?.unreadActorIds).toContain(legacyActorId);
-    expect(before?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+    expect(before?.unreadActorIds).not.toContain(session.avatarPrincipalId as `0x${string}`);
     expect(
       kernel.listGlobalRooms({
-        actorId: session.avatarPrincipalId,
+        actorId: session.avatarPrincipalId as `0x${string}`,
       }).some((entry) => entry.chatId === room.chatId),
     ).toBeFalse();
 
@@ -272,11 +414,11 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(grants.some((grant) => grant.participantId === legacyActorId)).toBeFalse();
     expect(
-      grants.some((grant) => grant.participantId === session.avatarPrincipalId && grant.role === "member"),
+      grants.some((grant) => grant.participantId === (session.avatarPrincipalId as `0x${string}`) && grant.role === "member"),
     ).toBeTrue();
     expect(
       kernel.listGlobalRooms({
-        actorId: session.avatarPrincipalId,
+        actorId: session.avatarPrincipalId as `0x${string}`,
       }).some((entry) => entry.chatId === room.chatId),
     ).toBeTrue();
 
@@ -292,10 +434,9 @@ describe("Feature: app kernel event replay", () => {
         .items.find((message) => message.content === "hello legacy jane") ?? null;
       if (
         loaded &&
-        loaded.attentionState === "loaded" &&
-        loaded.readActorIds.includes(session.avatarPrincipalId) &&
+        loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
         !loaded.readActorIds.includes(legacyActorId) &&
-        !loaded.unreadActorIds.includes(session.avatarPrincipalId) &&
+        !loaded.unreadActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
         !loaded.unreadActorIds.includes(legacyActorId)
       ) {
         break;
@@ -303,10 +444,9 @@ describe("Feature: app kernel event replay", () => {
       await new Promise<void>((resolveReady) => setTimeout(resolveReady, 50));
     }
 
-    expect(loaded?.attentionState).toBe("loaded");
-    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId);
+    expect(loaded?.readActorIds).toContain(session.avatarPrincipalId as `0x${string}`);
     expect(loaded?.readActorIds).not.toContain(legacyActorId);
-    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId);
+    expect(loaded?.unreadActorIds).not.toContain(session.avatarPrincipalId as `0x${string}`);
     expect(loaded?.unreadActorIds).not.toContain(legacyActorId);
 
     await kernel.stop();
@@ -328,53 +468,6 @@ describe("Feature: app kernel event replay", () => {
     expect(debug.recentApiCalls).toEqual([]);
   });
 
-  test("Scenario: Given a persisted session ledger without a live runtime When inspecting model debug Then model-call history is read directly from session.db", async () => {
-    const kernel = createKernel();
-    await kernel.start();
-
-    const session = await kernel.createSession({ cwd: process.cwd(), name: "persisted-model-debug", autoStart: false });
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    try {
-      const cycle = db.appendCycle({
-        wake: { source: "user" },
-        collectedInputs: [
-          {
-            source: "message",
-            role: "user",
-            name: "User",
-            parts: [{ type: "text", text: "hello" }],
-          },
-        ],
-        result: { kind: "model-call" },
-      });
-      db.setHead(cycle.id);
-      const call = db.appendModelCall({
-        cycleId: cycle.id,
-        createdAt: 100,
-        status: "done",
-        completedAt: 120,
-        provider: "deepseek/openai-chat",
-        model: "deepseek-chat",
-        request: { messages: [{ role: "user", content: "hello" }] },
-        response: { assistant: { text: "hi" } },
-      });
-      db.appendApiCall({
-        modelCallId: call.id,
-        createdAt: 121,
-        request: { url: "https://api.deepseek.com/v1/chat/completions" },
-        response: { id: "resp_1" },
-      });
-    } finally {
-      db.close();
-    }
-
-    const debug = await kernel.inspectModelDebug(session.id);
-
-    expect(debug.latestModelCall?.status).toBe("done");
-    expect(debug.latestModelCall?.response).toEqual({ assistant: { text: "hi" } });
-    expect(debug.recentModelCalls).toHaveLength(1);
-    expect(debug.recentApiCalls).toHaveLength(1);
-  });
 
   test("Scenario: Given a stopped session When retaining the Devtools API stream Then the kernel stays stopped and reports recording disabled", async () => {
     const kernel = createKernel();
@@ -434,7 +527,7 @@ describe("Feature: app kernel event replay", () => {
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
 
     const sessionMeta = kernel.getSession(session.id);
-    if (sessionMeta?.primaryRoomId == null) {
+    if (!sessionMeta?.primaryRoomId) {
       throw new Error("expected persisted session metadata with primary room id");
     }
 
@@ -507,149 +600,6 @@ describe("Feature: app kernel event replay", () => {
     const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
     expect(page.items[0]?.sessionId).toBe(session.id);
     expect(page.items[0]?.preview).toEqual({ firstUserMessage: null, latestMessages: [] });
-  });
-
-  test("Scenario: Given legacy internal failure bubbles in session history When listing workspace sessions Then preview only includes user-facing conversation text", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-preview-"));
-    tempDirs.push(root);
-    const workspace = join(root, "workspace");
-    mkdirSync(workspace, { recursive: true });
-
-    const kernel = new AppKernel({
-      globalSessionRoot: join(root, "sessions"),
-      archiveSessionRoot: join(root, "archive", "sessions"),
-      workspacesPath: join(root, "workspaces.yaml"),
-    });
-    await kernel.start();
-
-    const session = await kernel.createSession({ cwd: workspace, name: "preview-filter", autoStart: false });
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    try {
-      db.appendBlock({
-        role: "user",
-        channel: "user_input",
-        content: "现在几点？",
-      });
-      db.appendBlock({
-        role: "assistant",
-        channel: "to_user",
-        content:
-          'agenter-ai call failed: openai-chat response failed after 1 attempt(s): 402 status code ({"error":{"message":"Insufficient Balance"}})',
-      });
-      db.appendBlock({
-        role: "assistant",
-        channel: "to_user",
-        content: "北京时间下午四点。",
-      });
-    } finally {
-      db.close();
-    }
-
-    const page = kernel.listWorkspaceSessions({ path: workspace, tab: "all", limit: 20 });
-
-    expect(page.items[0]?.preview).toEqual({
-      firstUserMessage: "现在几点？",
-      latestMessages: ["现在几点？", "北京时间下午四点。"],
-    });
-  });
-
-  test("Scenario: Given persisted multi-channel chat history When the kernel pages chat messages Then each block keeps the chat channel inferred from its cycle inputs", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-chat-history-"));
-    tempDirs.push(root);
-    const workspace = join(root, "workspace");
-    mkdirSync(workspace, { recursive: true });
-
-    const kernel = new AppKernel({
-      globalSessionRoot: join(root, "sessions"),
-      archiveSessionRoot: join(root, "archive", "sessions"),
-      workspacesPath: join(root, "workspaces.yaml"),
-    });
-    await kernel.start();
-
-    const session = await kernel.createSession({ cwd: workspace, name: "chat-history", autoStart: false });
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    try {
-      const mainCycle = db.appendCycle({
-        createdAt: 100,
-        wake: { source: "message" },
-        collectedInputs: [
-          {
-            source: "message",
-            role: "user",
-            name: "User",
-            parts: [{ type: "text", text: "main prompt" }],
-            meta: { chatId: "chat-main", createdAt: new Date(100).toISOString() },
-          },
-        ],
-        result: { kind: "model" },
-      });
-      db.appendBlock({
-        cycleId: mainCycle.id,
-        createdAt: 100,
-        role: "user",
-        channel: "user_input",
-        content: "main prompt",
-      });
-      db.appendBlock({
-        cycleId: mainCycle.id,
-        createdAt: 160,
-        role: "assistant",
-        channel: "to_user",
-        content: "main reply",
-      });
-
-      const relayCycle = db.appendCycle({
-        createdAt: 200,
-        wake: { source: "message" },
-        collectedInputs: [
-          {
-            source: "message",
-            role: "user",
-            name: "User",
-            parts: [{ type: "text", text: "relay prompt" }],
-            meta: { chatId: "chat-chat-2", createdAt: new Date(200).toISOString() },
-          },
-        ],
-        result: { kind: "model" },
-      });
-      db.appendBlock({
-        cycleId: relayCycle.id,
-        createdAt: 200,
-        role: "user",
-        channel: "user_input",
-        content: "relay prompt",
-      });
-      db.appendBlock({
-        cycleId: relayCycle.id,
-        createdAt: 260,
-        role: "assistant",
-        channel: "to_user",
-        content: "relay reply",
-      });
-
-      db.appendBlock({
-        createdAt: 320,
-        role: "user",
-        channel: "user_input",
-        content: "legacy fallback prompt",
-      });
-    } finally {
-      db.close();
-    }
-
-    const page = kernel.pageChatMessages(session.id, { limit: 16 });
-    const primaryRoomId = session.primaryRoomId;
-    if (!primaryRoomId) {
-      throw new Error("expected session primaryRoomId");
-    }
-
-    expect(page.items.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
-      { content: "main prompt", chatId: "chat-main" },
-      { content: "main reply", chatId: "chat-main" },
-      { content: "relay prompt", chatId: "chat-chat-2" },
-      { content: "relay reply", chatId: "chat-chat-2" },
-      { content: "legacy fallback prompt", chatId: primaryRoomId },
-    ]);
   });
 
   test("Scenario: Given invalid workspace directory When creating session Then kernel rejects the malformed path", async () => {
@@ -804,6 +754,7 @@ describe("Feature: app kernel event replay", () => {
     });
 
     expect(session.status).toBe("running");
+    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
     await expect(kernel.sendChat(session.id, "hello")).resolves.toEqual({ ok: true });
     await kernel.stop();
   });
@@ -896,11 +847,12 @@ describe("Feature: app kernel event replay", () => {
     expect(media?.mimeType).toBe("image/png");
     expect(media?.name).toBe("diagram.png");
 
+    await kernel.attachSessionPrimaryRoom(session.id, { focus: true });
     const sendResult = await kernel.sendChat(session.id, "Please inspect the image.", [attachment.assetId]);
     expect(sendResult).toEqual({ ok: true });
 
     const messages = kernel.listChatMessages(session.id, 0, 20);
-    const userMessage = messages.find((item) => item.role === "user");
+    const userMessage = messages.find((item) => item.role === "user" && item.content === "Please inspect the image.");
     const userAttachments = userMessage?.attachments ?? [];
     expect(userAttachments).toHaveLength(1);
     expect(userAttachments[0]?.assetId).toBe(attachment.assetId);
@@ -1009,227 +961,6 @@ describe("Feature: app kernel event replay", () => {
     await restarted.stop();
   });
 
-  test("Scenario: Given projected session cycles When listing chat cycles Then collected inputs client ids and compact kind are preserved", async () => {
-    const kernel = createKernel();
-    await kernel.start();
-
-    const session = await kernel.createSession({
-      cwd: process.cwd(),
-      name: "cycles",
-      autoStart: false,
-    });
-
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    const roundA = db.appendCycle({
-      wake: { source: "user" },
-      collectedInputs: [
-        {
-          source: "message",
-          role: "user",
-          name: "User",
-          parts: [{ type: "text", text: "hello cycle" }],
-          meta: { clientMessageId: "client-cycle-1" },
-        },
-      ],
-      result: { kind: "model" },
-    });
-    db.appendBlock({
-      cycleId: roundA.id,
-      role: "assistant",
-      channel: "to_user",
-      content: "done",
-    });
-    db.appendModelCall({
-      cycleId: roundA.id,
-      provider: "openai-compatible",
-      model: "test",
-      request: {},
-      response: { ok: true },
-    });
-
-    const roundB = db.appendCycle({
-      prevCycleId: roundA.id,
-      wake: { source: "user" },
-      collectedInputs: [
-        {
-          source: "message",
-          role: "user",
-          name: "User",
-          parts: [{ type: "text", text: "/compact" }],
-          meta: { clientMessageId: "client-compact-1" },
-        },
-      ],
-      result: { kind: "compact", compactTrigger: "manual" },
-    });
-    db.setHead(roundB.id);
-    db.close();
-
-    const cycles = kernel.listChatCycles(session.id, 20);
-    const firstCycle = cycles.find((cycle) => cycle.clientMessageIds.includes("client-cycle-1"));
-    const compactCycle = cycles.find((cycle) => cycle.clientMessageIds.includes("client-compact-1"));
-
-    expect(firstCycle?.kind).toBe("model");
-    expect(firstCycle?.compactTrigger).toBeNull();
-    expect(firstCycle?.inputs[0]?.parts[0]).toEqual({ type: "text", text: "hello cycle" });
-    expect(firstCycle?.outputs[0]?.content).toBe("done");
-    expect(compactCycle?.kind).toBe("compact");
-    expect(compactCycle?.compactTrigger).toBe("manual");
-
-    await kernel.stop();
-  });
-
-  test("Scenario: Given one persisted cycle with replies to two chats When reading session history Then each block keeps its own chatId instead of inheriting one cycle room", async () => {
-    const kernel = createKernel();
-    await kernel.start();
-
-    const session = await kernel.createSession({
-      cwd: process.cwd(),
-      name: "multi-chat-cycle",
-      autoStart: false,
-    });
-
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    const cycle = db.appendCycle({
-      wake: { source: "attention" },
-      collectedInputs: [
-        {
-          source: "message",
-          role: "user",
-          name: "Gaubee",
-          parts: [{ type: "text", text: "ask kzf dinner" }],
-          meta: { chatId: "chat-main", createdAt: new Date(100).toISOString() },
-        },
-        {
-          source: "message",
-          role: "user",
-          name: "kzf",
-          parts: [{ type: "text", text: "eat fried rice" }],
-          meta: { chatId: "chat-chat-2", createdAt: new Date(200).toISOString() },
-        },
-      ],
-      result: { kind: "model" },
-    });
-    db.appendBlock({
-      cycleId: cycle.id,
-      role: "assistant",
-      channel: "to_user",
-      chatId: "chat-chat-2",
-      content: "好的，那就吃蛋炒饭吧！",
-    });
-    db.appendBlock({
-      cycleId: cycle.id,
-      role: "assistant",
-      channel: "to_user",
-      chatId: "chat-main",
-      content: "我问了 kzf，他说今天晚上吃蛋炒饭。",
-    });
-    db.setHead(cycle.id);
-    db.close();
-
-    const messages = kernel.listChatMessages(session.id, 0, 20);
-    expect(messages.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
-      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
-      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
-    ]);
-
-    const beforeMessages = kernel.listChatMessagesBefore(session.id, Number.MAX_SAFE_INTEGER, 20);
-    expect(beforeMessages.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
-      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
-      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
-    ]);
-
-    const cycles = kernel.listChatCycles(session.id, 20);
-    expect(cycles[0]?.outputs.map((item) => ({ content: item.content, chatId: item.chatId }))).toEqual([
-      { content: "好的，那就吃蛋炒饭吧！", chatId: "chat-chat-2" },
-      { content: "我问了 kzf，他说今天晚上吃蛋炒饭。", chatId: "chat-main" },
-    ]);
-
-    await kernel.stop();
-  });
-
-  test("Scenario: Given a stopped session with room-backed message refs When listing session history Then app-server joins the global room truth instead of trusting a stale session copy", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
-    tempDirs.push(root);
-    const kernel = new AppKernel({
-      globalSessionRoot: join(root, "sessions"),
-      archiveSessionRoot: join(root, "archive", "sessions"),
-      workspacesPath: join(root, "workspaces.yaml"),
-    });
-    await kernel.start();
-
-    const session = await kernel.createSession({ cwd: process.cwd(), name: "room-read-model", autoStart: true });
-    const room = kernel.listMessageChannels(session.id)[0];
-    if (!room) {
-      throw new Error("expected primary room");
-    }
-
-    const sent = await kernel.sendMessageChannelError({
-      sessionId: session.id,
-      chatId: room.chatId,
-      accessToken: room.accessToken,
-      content: "room truth wins",
-      error: {
-        title: "room truth wins",
-      },
-    });
-    expect(sent.ok).toBeTrue();
-
-    await kernel.stopSession(session.id);
-
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    try {
-      const block = db.listBlocksAfter(0, 20).find((item) => item.messageId);
-      if (!block?.messageId) {
-        throw new Error("expected persisted room-backed block");
-      }
-      const cycle = db.appendCycle({
-        wake: { source: "message" },
-        collectedInputs: [
-          {
-            source: "message",
-            role: "user",
-            name: "User",
-            parts: [{ type: "text", text: "room truth wins" }],
-            meta: { chatId: room.chatId, createdAt: new Date(block.createdAt).toISOString() },
-          },
-        ],
-        result: { kind: "model" },
-      });
-      expect(block.projection).toEqual({
-        source: "room-message-ref",
-        roomId: room.chatId,
-        messageId: block.messageId,
-      });
-      db.upsertMessageBlock({
-        cycleId: cycle.id,
-        createdAt: block.createdAt,
-        updatedAt: block.updatedAt,
-        messageId: block.messageId,
-        projection: block.projection,
-        visibleAt: block.visibleAt,
-        attentionState: block.attentionState,
-        attentionLoadedAt: block.attentionLoadedAt,
-        role: block.role,
-        channel: block.channel,
-        chatId: block.chatId,
-        format: block.format,
-        content: "stale local copy",
-        tool: block.tool,
-      });
-      db.setHead(cycle.id);
-    } finally {
-      db.close();
-    }
-
-    const messages = kernel.listChatMessages(session.id, 0, 20);
-    expect(messages.some((item) => item.content === "room truth wins")).toBeTrue();
-    expect(messages.some((item) => item.content === "stale local copy")).toBeFalse();
-    const cycles = kernel.listChatCycles(session.id, 20);
-    expect(cycles.some((cycle) => cycle.outputs.some((item) => item.content === "room truth wins"))).toBeTrue();
-    expect(cycles.some((cycle) => cycle.outputs.some((item) => item.content === "stale local copy"))).toBeFalse();
-
-    await kernel.stop();
-  });
 
   test("Scenario: Given a room created by a session When that session is deleted Then the global room truth remains in .message", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
@@ -1242,10 +973,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: process.cwd(), name: "room-survival", autoStart: true });
-    const room = kernel.listMessageChannels(session.id)[0];
-    if (!room) {
-      throw new Error("expected primary room");
-    }
+    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
 
     const sent = await kernel.sendMessageChannelError({
       sessionId: session.id,
@@ -1305,7 +1033,6 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(snapshot.items.some((item) => item.content === "global hello")).toBeTrue();
     const sentMessage = snapshot.items.find((item) => item.content === "global hello");
-    expect(sentMessage?.attentionState).toBe("queued");
     expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
     expect(sentMessage?.senderActorId).toBe("system:trusted-bootstrap");
     const issued = kernel.issueGlobalRoomGrant({
@@ -1596,7 +1323,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.start();
 
     const session = await kernel.createSession({ cwd: process.cwd(), name: "repair-room", autoStart: false });
-    const room = kernel.listMessageChannels(session.id)[0];
+    const room = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
     if (!room) {
       throw new Error("expected primary room");
     }
@@ -1619,7 +1346,7 @@ describe("Feature: app kernel event replay", () => {
       db.close();
     }
 
-    const repaired = kernel.listMessageChannels(session.id).find((channel) => channel.chatId === room.chatId);
+    const repaired = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
     expect(repaired?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
 
     const repairedDb = new MessageDb(join(root, ".message", "message.db"));
@@ -1632,52 +1359,4 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given legacy orphan user_input blocks When listing chat cycles Then the first matching cycle backfills those user messages", async () => {
-    const kernel = createKernel();
-    await kernel.start();
-
-    const session = await kernel.createSession({
-      cwd: process.cwd(),
-      name: "legacy-cycles",
-      autoStart: false,
-    });
-
-    const db = new SessionDb(join(session.sessionRoot, "session.db"));
-    db.appendBlock({
-      role: "user",
-      channel: "user_input",
-      content: "legacy hello",
-    });
-    const cycle = db.appendCycle({
-      wake: { source: "terminal" },
-      collectedInputs: [
-        {
-          source: "terminal",
-          sourceId: "iflow",
-          role: "user",
-          name: "Terminal-iflow",
-          parts: [{ type: "text", text: "{\"kind\":\"terminal-diff\"}" }],
-        },
-      ],
-      result: { kind: "model" },
-    });
-    db.appendBlock({
-      cycleId: cycle.id,
-      role: "assistant",
-      channel: "to_user",
-      content: "legacy done",
-    });
-    db.setHead(cycle.id);
-    db.close();
-
-    const cycles = kernel.listChatCycles(session.id, 20);
-
-    expect(cycles).toHaveLength(1);
-    expect(cycles[0]?.inputs[0]?.source).toBe("message");
-    expect(cycles[0]?.inputs[0]?.parts[0]).toEqual({ type: "text", text: "legacy hello" });
-    expect(cycles[0]?.inputs[1]?.source).toBe("terminal");
-    expect(cycles[0]?.outputs[0]?.content).toBe("legacy done");
-
-    await kernel.stop();
-  });
 });

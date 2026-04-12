@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/react */
+
 interface StatusBarProps {
   host: string;
   port: number;

@@ -4,31 +4,22 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 
 import type {
-  ApiCallInsert,
-  ApiCallRecord,
-  LoopbusStateLogInsert,
-  LoopbusStateLogRecord,
-  LoopbusTraceInsert,
-  LoopbusTraceRecord,
-  LoopbusTraceUpdate,
   ReversePage,
   ReverseTimeCursor,
+  SessionAiCallInsert,
+  SessionAiCallRecord,
+  SessionAiCallUpdate,
   SessionAssetInsert,
   SessionAssetRecord,
-  SessionBlockAssetRecord,
-  SessionBlockInsert,
-  SessionBlockRecord,
-  SessionCycleInsert,
-  SessionCycleRecord,
-  SessionCycleUpdate,
   SessionHeadRecord,
-  SessionModelCallInsert,
-  SessionModelCallRecord,
-  SessionModelCallUpdate,
-  TerminalActivityInsert,
-  TerminalActivityRecord,
+  SessionMessagePartRecord,
+  SessionMessageRecord,
+  SessionMessageScope,
+  SessionMessageUpsertInput,
+  SessionPromptWindowRecord,
 } from "./types";
-import { decodeLoopTraceRow, encodeLoopTraceRow, mergeLoopTraceRecord, type StoredLoopTraceRow } from "./trace-row";
+
+const SESSION_DB_SCHEMA_VERSION = 1;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -70,6 +61,20 @@ const buildNextCursor = <T extends { createdAt: number; id: number }>(
   };
 };
 
+const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+interface StoredMessageEnvelope {
+  id: number;
+  message_id: string;
+  window_id: string | null;
+  ai_call_id: number | null;
+  round_index: number;
+  scope: SessionMessageScope;
+  role: SessionMessageRecord["role"];
+  created_at: number;
+  updated_at: number;
+}
+
 export class SessionDb {
   private readonly db: Database;
 
@@ -87,286 +92,396 @@ export class SessionDb {
 
   getHead(): SessionHeadRecord {
     const row = this.db
-      .query(`select head_cycle_id, updated_at from session_head where id = 1`)
-      .get() as { head_cycle_id: number | null; updated_at: number } | null;
+      .query(
+        `select current_round_index, current_prompt_window_id, updated_at
+         from session_head
+         where id = 1`,
+      )
+      .get() as
+      | {
+          current_round_index: number;
+          current_prompt_window_id: string | null;
+          updated_at: number;
+        }
+      | null;
     return {
-      headCycleId: row?.head_cycle_id ?? null,
+      currentRoundIndex: row?.current_round_index ?? 0,
+      currentPromptWindowId: row?.current_prompt_window_id ?? null,
       updatedAt: row?.updated_at ?? Date.now(),
     };
   }
 
-  setHead(headCycleId: number | null, updatedAt = Date.now()): SessionHeadRecord {
+  setCurrentRoundIndex(currentRoundIndex: number, updatedAt = Date.now()): SessionHeadRecord {
     this.db
-      .query(`update session_head set head_cycle_id = ?, updated_at = ? where id = 1`)
-      .run(headCycleId, updatedAt);
-    return { headCycleId, updatedAt };
+      .query(`update session_head set current_round_index = ?, updated_at = ? where id = 1`)
+      .run(currentRoundIndex, updatedAt);
+    return this.getHead();
   }
 
-  appendCycle(input: SessionCycleInsert): SessionCycleRecord {
+  bumpRound(updatedAt = Date.now()): SessionHeadRecord {
+    const next = this.getHead().currentRoundIndex + 1;
+    return this.setCurrentRoundIndex(next, updatedAt);
+  }
+
+  setCurrentPromptWindow(promptWindowId: string | null, updatedAt = Date.now()): SessionHeadRecord {
+    this.db
+      .query(`update session_head set current_prompt_window_id = ?, updated_at = ? where id = 1`)
+      .run(promptWindowId, updatedAt);
+    return this.getHead();
+  }
+
+  savePromptWindow(input: {
+    createdAt?: number;
+    roundIndex?: number;
+    messages: unknown[];
+    setCurrent?: boolean;
+  }): SessionPromptWindowRecord {
     const createdAt = input.createdAt ?? Date.now();
-    const seq = this.nextSeq('session_cycle');
-    const result = this.db
-      .query(
-        `insert into session_cycle (
-          seq,
-          prev_cycle_id,
-          created_at,
-          wake_json,
-          collected_inputs_json,
-          extends_json,
-          result_json
-        ) values (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        seq,
-        input.prevCycleId ?? null,
+    const promptWindowId = createId();
+    const roundIndex = input.roundIndex ?? this.getHead().currentRoundIndex;
+    input.messages.forEach((message, index) => {
+      const normalized =
+        message && typeof message === "object"
+          ? (message as { role?: string; content?: unknown })
+          : { role: undefined, content: message };
+      const role =
+        normalized.role === "assistant" || normalized.role === "system" || normalized.role === "tool"
+          ? normalized.role
+          : "user";
+      this.upsertMessage({
+        messageId: `${promptWindowId}:message:${index}`,
+        windowId: promptWindowId,
+        roundIndex,
+        scope: "prompt_window",
+        role,
         createdAt,
-        toJson(input.wake ?? {}),
-        toJson(input.collectedInputs ?? []),
-        toJson(input.extendsRecord ?? {}),
-        toJson(input.result ?? {}),
-      );
-    const record = this.getCycleById(Number(result.lastInsertRowid));
-    if (!record) {
-      throw new Error('failed to load inserted cycle');
+        updatedAt: createdAt,
+        parts: [
+          {
+            partType: "message",
+            payload: {
+              content: normalized.content ?? "",
+            },
+            isComplete: true,
+          },
+        ],
+      });
+    });
+    if (input.setCurrent ?? true) {
+      this.setCurrentPromptWindow(promptWindowId, createdAt);
     }
-    return record;
+    return {
+      promptWindowId,
+      roundIndex,
+      createdAt,
+      messages: structuredClone(input.messages),
+    };
   }
 
-  getCycleById(id: number): SessionCycleRecord | null {
-    const row = this.db
-      .query(
-        `select id, seq, prev_cycle_id, created_at, wake_json, collected_inputs_json, extends_json, result_json
-         from session_cycle
-         where id = ?`,
-      )
-      .get(id) as
-      | {
-          id: number;
-          seq: number;
-          prev_cycle_id: number | null;
-          created_at: number;
-          wake_json: string;
-          collected_inputs_json: string;
-          extends_json: string;
-          result_json: string;
-        }
-      | null;
-    if (!row) {
+  getPromptWindow(promptWindowId: string): SessionPromptWindowRecord | null {
+    const messages = this.listMessagesByScope("prompt_window", { windowId: promptWindowId });
+    if (messages.length === 0) {
       return null;
     }
     return {
-      id: row.id,
-      seq: row.seq,
-      prevCycleId: row.prev_cycle_id,
-      createdAt: row.created_at,
-      wake: parseJson(row.wake_json, {}),
-      collectedInputs: parseJson(row.collected_inputs_json, []),
-      extendsRecord: parseJson(row.extends_json, {}),
-      result: parseJson(row.result_json, {}),
+      promptWindowId,
+      roundIndex: messages[0]!.roundIndex,
+      createdAt: messages[0]!.createdAt,
+      messages: messages.map((message) => ({
+        role: message.role,
+        content: this.messageToPromptContent(message),
+      })),
     };
   }
 
-  updateCycle(id: number, input: SessionCycleUpdate): SessionCycleRecord {
-    const current = this.getCycleById(id);
-    if (!current) {
-      throw new Error(`cycle not found: ${id}`);
+  getCurrentPromptWindow(): SessionPromptWindowRecord | null {
+    const promptWindowId = this.getHead().currentPromptWindowId;
+    if (!promptWindowId) {
+      return null;
     }
-    this.db
+    return this.getPromptWindow(promptWindowId);
+  }
+
+  upsertMessage(input: SessionMessageUpsertInput): SessionMessageRecord {
+    const createdAt = input.createdAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? createdAt;
+    const existing = this.db
       .query(
-        `update session_cycle
-         set wake_json = ?,
-             collected_inputs_json = ?,
-             extends_json = ?,
-             result_json = ?
-         where id = ?`,
+        `select part_id, part_index
+         from message_part
+         where message_id = ?
+         order by part_index asc`,
       )
-      .run(
-        toJson(input.wake ?? current.wake),
-        toJson(input.collectedInputs ?? current.collectedInputs),
-        toJson(input.extendsRecord ?? current.extendsRecord),
-        toJson(input.result ?? current.result),
-        id,
-      );
-    const record = this.getCycleById(id);
+      .all(input.messageId) as Array<{ part_id: number; part_index: number }>;
+
+    this.db.exec("begin immediate");
+    try {
+      for (const [index, part] of input.parts.entries()) {
+        const existingRow = existing[index];
+        if (existingRow) {
+          this.db
+            .query(
+              `update message_part
+               set window_id = ?,
+                   ai_call_id = ?,
+                   round_index = ?,
+                   scope = ?,
+                   role = ?,
+                   part_type = ?,
+                   mime_type = ?,
+                   payload_json = ?,
+                   created_at = ?,
+                   updated_at = ?,
+                   is_complete = ?
+               where part_id = ?`,
+            )
+            .run(
+              input.windowId ?? null,
+              input.aiCallId ?? null,
+              input.roundIndex,
+              input.scope,
+              input.role,
+              part.partType,
+              part.mimeType ?? null,
+              toJson(part.payload),
+              createdAt,
+              updatedAt,
+              (part.isComplete ?? true) ? 1 : 0,
+              existingRow.part_id,
+            );
+        } else {
+          this.db
+            .query(
+               `insert into message_part (
+                 part_index,
+                 message_id,
+                 window_id,
+                 ai_call_id,
+                 round_index,
+                 scope,
+                 role,
+                 part_type,
+                 mime_type,
+                 payload_json,
+                 created_at,
+                 updated_at,
+                 is_complete
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              index,
+              input.messageId,
+              input.windowId ?? null,
+              input.aiCallId ?? null,
+              input.roundIndex,
+              input.scope,
+              input.role,
+              part.partType,
+              part.mimeType ?? null,
+              toJson(part.payload),
+              createdAt,
+              updatedAt,
+              (part.isComplete ?? true) ? 1 : 0,
+            );
+        }
+      }
+      for (const extra of existing.slice(input.parts.length)) {
+        this.db.query(`delete from message_part where part_id = ?`).run(extra.part_id);
+      }
+      this.db.exec("commit");
+    } catch (error) {
+      this.db.exec("rollback");
+      throw error;
+    }
+    const record = this.getMessageById(input.messageId);
     if (!record) {
-      throw new Error("failed to load updated cycle");
+      throw new Error(`failed to load message ${input.messageId}`);
     }
     return record;
   }
 
-  listCycles(limit = 200): SessionCycleRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
+  getMessageById(messageId: string): SessionMessageRecord | null {
     const rows = this.db
       .query(
-        `select id, seq, prev_cycle_id, created_at, wake_json, collected_inputs_json, extends_json, result_json
-         from session_cycle
-         order by seq desc
-         limit ?`,
+        `select part_id, part_index, message_id, window_id, ai_call_id, round_index, scope, role,
+                part_type, mime_type, payload_json, created_at, updated_at, is_complete
+         from message_part
+         where message_id = ?
+         order by part_index asc, part_id asc`,
       )
-      .all(safeLimit) as Array<{
-      id: number;
-      seq: number;
-      prev_cycle_id: number | null;
+      .all(messageId) as Array<{
+      part_id: number;
+      part_index: number;
+      message_id: string;
+      window_id: string | null;
+      ai_call_id: number | null;
+      round_index: number;
+      scope: SessionMessageScope;
+      role: SessionMessageRecord["role"];
+      part_type: string;
+      mime_type: string | null;
+      payload_json: string;
       created_at: number;
-      wake_json: string;
-      collected_inputs_json: string;
-      extends_json: string;
-      result_json: string;
+      updated_at: number;
+      is_complete: number;
     }>;
-
-    return rows.reverse().map((row) => ({
-      id: row.id,
-      seq: row.seq,
-      prevCycleId: row.prev_cycle_id,
+    if (rows.length === 0) {
+      return null;
+    }
+    const parts: SessionMessagePartRecord[] = rows.map((row) => ({
+      partId: row.part_id,
+      partIndex: row.part_index,
+      messageId: row.message_id,
+      windowId: row.window_id,
+      aiCallId: row.ai_call_id,
+      roundIndex: row.round_index,
+      scope: row.scope,
+      role: row.role,
+      partType: row.part_type,
+      mimeType: row.mime_type,
+      payload: parseJson(row.payload_json, null),
       createdAt: row.created_at,
-      wake: parseJson(row.wake_json, {}),
-      collectedInputs: parseJson(row.collected_inputs_json, []),
-      extendsRecord: parseJson(row.extends_json, {}),
-      result: parseJson(row.result_json, {}),
+      updatedAt: row.updated_at,
+      isComplete: row.is_complete === 1,
     }));
-  }
-
-  listCurrentBranchCycles(limit = 200): SessionCycleRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const head = this.getHead().headCycleId;
-    if (head === null) {
-      return [];
-    }
-    const items: SessionCycleRecord[] = [];
-    let cursor: number | null = head;
-    while (cursor !== null && items.length < safeLimit) {
-      const row = this.getCycleById(cursor);
-      if (!row) {
-        break;
-      }
-      items.push(row);
-      cursor = row.prevCycleId;
-    }
-    return items.reverse();
-  }
-
-  listCurrentBranchCyclesBefore(beforeId: number, limit = 200): SessionCycleRecord[] {
-    if (beforeId <= 0) {
-      return [];
-    }
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const before = this.getCycleById(beforeId);
-    if (!before) {
-      return [];
-    }
-    const items: SessionCycleRecord[] = [];
-    let cursor: number | null = before.prevCycleId;
-    while (cursor !== null && items.length < safeLimit) {
-      const row = this.getCycleById(cursor);
-      if (!row) {
-        break;
-      }
-      items.push(row);
-      cursor = row.prevCycleId;
-    }
-    return items.reverse();
-  }
-
-  listCurrentBranchCyclesPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<SessionCycleRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const head = this.getHead().headCycleId;
-    if (head === null) {
-      return {
-        items: [],
-        nextBefore: null,
-        hasMoreBefore: false,
-      };
-    }
-
-    const itemsDescending: SessionCycleRecord[] = [];
-    let cursor: number | null = head;
-    while (cursor !== null) {
-      const row = this.getCycleById(cursor);
-      if (!row) {
-        break;
-      }
-      cursor = row.prevCycleId;
-      if (!isBeforeCursor({ createdAt: row.createdAt, id: row.id }, input?.before)) {
-        continue;
-      }
-      itemsDescending.push(row);
-      if (itemsDescending.length > safeLimit) {
-        break;
-      }
-    }
-
-    const hasMoreBefore = itemsDescending.length > safeLimit;
-    const visibleDescending = hasMoreBefore ? itemsDescending.slice(0, safeLimit) : itemsDescending;
+    const first = parts[0]!;
     return {
-      items: visibleDescending.slice().reverse(),
-      nextBefore: buildNextCursor(visibleDescending, hasMoreBefore),
-      hasMoreBefore,
+      id: first.partId,
+      messageId: first.messageId,
+      windowId: first.windowId,
+      aiCallId: first.aiCallId,
+      roundIndex: first.roundIndex,
+      scope: first.scope,
+      role: first.role,
+      createdAt: first.createdAt,
+      updatedAt: Math.max(...parts.map((part) => part.updatedAt)),
+      isComplete: parts.every((part) => part.isComplete),
+      parts,
+      text: parts.map((part) => this.partPayloadToText(part.payload)).join(""),
     };
   }
 
-  appendModelCall(input: SessionModelCallInsert): SessionModelCallRecord {
+  listMessagesByScope(
+    scope: SessionMessageScope,
+    input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
+  ): SessionMessageRecord[] {
+    const limit = resolvePageLimit(input?.limit);
+    const before = input?.before;
+    const rows = this.queryMessageEnvelopes(scope, input?.windowId ?? undefined);
+    const filteredDescending = rows
+      .sort((left, right) => (left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at))
+      .filter((row) => isBeforeCursor({ createdAt: row.created_at, id: row.id }, before))
+      .slice(0, limit)
+      .reverse();
+    return filteredDescending
+      .map((row) => this.getMessageById(row.message_id))
+      .filter((row): row is SessionMessageRecord => row !== null);
+  }
+
+  pageMessagesByScope(
+    scope: SessionMessageScope,
+    input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
+    const limit = resolvePageLimit(input?.limit);
+    const before = input?.before;
+    const envelopesDescending = this.queryMessageEnvelopes(scope, input?.windowId ?? undefined).sort((left, right) =>
+      left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at,
+    );
+    const filteredDescending = envelopesDescending.filter((row) =>
+      isBeforeCursor({ createdAt: row.created_at, id: row.id }, before),
+    );
+    const pageDescending = filteredDescending.slice(0, limit);
+    const itemsDescending = pageDescending
+      .map((row) => this.getMessageById(row.message_id))
+      .filter((row): row is SessionMessageRecord => row !== null)
+      .reverse();
+    return {
+      items: itemsDescending,
+      nextBefore: buildNextCursor(itemsDescending, filteredDescending.length > pageDescending.length),
+      hasMoreBefore: filteredDescending.length > pageDescending.length,
+    };
+  }
+
+  appendAiCall(input: SessionAiCallInsert): SessionAiCallRecord {
     const createdAt = input.createdAt ?? Date.now();
-    const status = input.status ?? (input.error ? "error" : input.response === undefined ? "running" : "done");
+    const updatedAt = input.updatedAt ?? createdAt;
     const result = this.db
       .query(
-        `insert into model_call (
-          cycle_id,
-          created_at,
-          status,
-          completed_at,
-          provider,
-          model,
-          request_json,
-          response_json,
-          error_json,
-          trace_json,
-          outcome_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `insert into ai_call (
+           round_index,
+           kind,
+           status,
+           provider,
+           model,
+           request_url,
+           request_body_json,
+           response_body_json,
+           error_json,
+           outcome_json,
+           request_message_ids_json,
+           response_message_ids_json,
+           auxiliary_message_ids_json,
+           created_at,
+           updated_at,
+           completed_at,
+           is_complete
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        input.cycleId,
-        createdAt,
-        status,
-        input.completedAt ?? null,
+        input.roundIndex,
+        input.kind,
+        input.status ?? "running",
         input.provider,
         input.model,
-        toJson(input.request),
-        input.response === undefined ? null : toJson(input.response),
+        input.requestUrl,
+        toJson(input.requestBody),
+        input.responseBody === undefined ? null : toJson(input.responseBody),
         input.error === undefined ? null : toJson(input.error),
-        input.trace === undefined ? null : toJson(input.trace),
         input.outcome === undefined ? null : toJson(input.outcome),
+        toJson(input.requestMessageIds ?? []),
+        toJson(input.responseMessageIds ?? []),
+        toJson(input.auxiliaryMessageIds ?? []),
+        createdAt,
+        updatedAt,
+        input.completedAt ?? null,
+        input.isComplete ?? false ? 1 : 0,
       );
-    const row = this.getModelCallById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error('failed to load inserted model_call');
+    const record = this.getAiCallById(Number(result.lastInsertRowid));
+    if (!record) {
+      throw new Error("failed to load inserted ai_call");
     }
-    return row;
+    return record;
   }
 
-  getModelCallById(id: number): SessionModelCallRecord | null {
+  getAiCallById(id: number): SessionAiCallRecord | null {
     const row = this.db
       .query(
-        `select id, cycle_id, created_at, status, completed_at, provider, model, request_json, response_json, error_json, trace_json, outcome_json
-         from model_call where id = ?`,
+        `select id, round_index, kind, status, provider, model, request_url, request_body_json, response_body_json,
+                error_json, outcome_json, request_message_ids_json, response_message_ids_json, auxiliary_message_ids_json,
+                created_at, updated_at, completed_at, is_complete
+         from ai_call
+         where id = ?`,
       )
       .get(id) as
       | {
           id: number;
-          cycle_id: number;
-          created_at: number;
-          status: SessionModelCallRecord["status"];
-          completed_at: number | null;
+          round_index: number;
+          kind: string;
+          status: SessionAiCallRecord["status"];
           provider: string;
           model: string;
-          request_json: string;
-          response_json: string | null;
+          request_url: string;
+          request_body_json: string;
+          response_body_json: string | null;
           error_json: string | null;
-          trace_json: string | null;
           outcome_json: string | null;
+          request_message_ids_json: string;
+          response_message_ids_json: string;
+          auxiliary_message_ids_json: string;
+          created_at: number;
+          updated_at: number;
+          completed_at: number | null;
+          is_complete: number;
         }
       | null;
     if (!row) {
@@ -374,153 +489,165 @@ export class SessionDb {
     }
     return {
       id: row.id,
-      cycleId: row.cycle_id,
-      createdAt: row.created_at,
+      roundIndex: row.round_index,
+      kind: row.kind,
       status: row.status,
-      completedAt: row.completed_at ?? undefined,
       provider: row.provider,
       model: row.model,
-      request: parseJson(row.request_json, null),
-      response: row.response_json ? parseJson(row.response_json, null) : undefined,
-      error: row.error_json ? parseJson(row.error_json, null) : undefined,
-      trace: row.trace_json ? parseJson(row.trace_json, null) ?? undefined : undefined,
-      outcome: row.outcome_json ? parseJson(row.outcome_json, null) ?? undefined : undefined,
+      requestUrl: row.request_url,
+      requestBody: parseJson(row.request_body_json, null),
+      responseBody: row.response_body_json === null ? null : parseJson(row.response_body_json, null),
+      error: row.error_json === null ? null : parseJson(row.error_json, null),
+      outcome: row.outcome_json === null ? null : parseJson(row.outcome_json, null),
+      requestMessageIds: parseJson(row.request_message_ids_json, []),
+      responseMessageIds: parseJson(row.response_message_ids_json, []),
+      auxiliaryMessageIds: parseJson(row.auxiliary_message_ids_json, []),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+      isComplete: row.is_complete === 1,
     };
   }
 
-  updateModelCall(id: number, input: SessionModelCallUpdate): SessionModelCallRecord {
+  updateAiCall(id: number, input: SessionAiCallUpdate): SessionAiCallRecord {
+    const current = this.getAiCallById(id);
+    if (!current) {
+      throw new Error(`ai_call not found: ${id}`);
+    }
     this.db
       .query(
-        `update model_call
-         set status = coalesce(?, status),
-             completed_at = ?,
-             response_json = ?,
+        `update ai_call
+         set round_index = ?,
+             kind = ?,
+             status = ?,
+             provider = ?,
+             model = ?,
+             request_url = ?,
+             request_body_json = ?,
+             response_body_json = ?,
              error_json = ?,
-             trace_json = ?,
-             outcome_json = ?
+             outcome_json = ?,
+             request_message_ids_json = ?,
+             response_message_ids_json = ?,
+             auxiliary_message_ids_json = ?,
+             updated_at = ?,
+             completed_at = ?,
+             is_complete = ?
          where id = ?`,
       )
       .run(
-        input.status ?? null,
-        input.completedAt ?? null,
-        input.response === undefined ? null : toJson(input.response),
-        input.error === undefined ? null : toJson(input.error),
-        input.trace === undefined ? null : toJson(input.trace),
-        input.outcome === undefined ? null : toJson(input.outcome),
+        input.roundIndex ?? current.roundIndex,
+        input.kind ?? current.kind,
+        input.status ?? current.status,
+        input.provider ?? current.provider,
+        input.model ?? current.model,
+        input.requestUrl ?? current.requestUrl,
+        toJson(input.requestBody ?? current.requestBody),
+        toJson(input.responseBody === undefined ? current.responseBody : input.responseBody),
+        toJson(input.error === undefined ? current.error : input.error),
+        toJson(input.outcome === undefined ? current.outcome : input.outcome),
+        toJson(input.requestMessageIds ?? current.requestMessageIds),
+        toJson(input.responseMessageIds ?? current.responseMessageIds),
+        toJson(input.auxiliaryMessageIds ?? current.auxiliaryMessageIds),
+        input.updatedAt ?? Date.now(),
+        input.completedAt === undefined ? current.completedAt : input.completedAt,
+        input.isComplete === undefined ? current.isComplete : input.isComplete ? 1 : 0,
         id,
       );
-    const row = this.getModelCallById(id);
-    if (!row) {
-      throw new Error("failed to load updated model_call");
+    const record = this.getAiCallById(id);
+    if (!record) {
+      throw new Error(`failed to load updated ai_call ${id}`);
     }
-    return row;
+    return record;
   }
 
-  getModelCallByCycleId(cycleId: number): SessionModelCallRecord | null {
-    const row = this.db
-      .query(`select id from model_call where cycle_id = ? order by id desc limit 1`)
-      .get(cycleId) as { id: number } | null;
-    return row ? this.getModelCallById(row.id) : null;
-  }
-
-  listModelCalls(limit = 200): SessionModelCallRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
+  listAiCalls(limit = 200): SessionAiCallRecord[] {
     const rows = this.db
-      .query(`select id from model_call order by id desc limit ?`)
-      .all(safeLimit) as Array<{ id: number }>;
-    return rows.reverse().map((row) => this.getModelCallById(row.id)).filter((row): row is SessionModelCallRecord => row !== null);
+      .query(`select id from ai_call order by created_at desc, id desc limit ?`)
+      .all(resolvePageLimit(limit)) as Array<{ id: number }>;
+    return rows
+      .reverse()
+      .map((row) => this.getAiCallById(row.id))
+      .filter((row): row is SessionAiCallRecord => row !== null);
   }
 
-  listModelCallsAfter(afterId = 0, limit = 200): SessionModelCallRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
+  listAiCallsAfter(afterId = 0, limit = 200): SessionAiCallRecord[] {
     const rows = this.db
-      .query(`select id from model_call where id > ? order by id asc limit ?`)
-      .all(afterId, safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getModelCallById(row.id)).filter((row): row is SessionModelCallRecord => row !== null);
+      .query(`select id from ai_call where id > ? order by id asc limit ?`)
+      .all(afterId, resolvePageLimit(limit)) as Array<{ id: number }>;
+    return rows.map((row) => this.getAiCallById(row.id)).filter((row): row is SessionAiCallRecord => row !== null);
   }
 
-  listModelCallsBefore(beforeId: number, limit = 200): SessionModelCallRecord[] {
+  listAiCallsBefore(beforeId: number, limit = 200): SessionAiCallRecord[] {
     if (beforeId <= 0) {
       return [];
     }
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
     const rows = this.db
-      .query(`select id from model_call where id < ? order by id desc limit ?`)
-      .all(beforeId, safeLimit) as Array<{ id: number }>;
-    rows.reverse();
-    return rows.map((row) => this.getModelCallById(row.id)).filter((row): row is SessionModelCallRecord => row !== null);
+      .query(`select id from ai_call where id < ? order by id desc limit ?`)
+      .all(beforeId, resolvePageLimit(limit)) as Array<{ id: number }>;
+    return rows
+      .reverse()
+      .map((row) => this.getAiCallById(row.id))
+      .filter((row): row is SessionAiCallRecord => row !== null);
   }
 
-  listModelCallsPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<SessionModelCallRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from model_call
-             where created_at < ? or (created_at = ? and id < ?)
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
-          id: number;
-        }>)
-      : (this.db
-          .query(
-            `select id
-             from model_call
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getModelCallById(row.id))
-      .filter((row): row is SessionModelCallRecord => row !== null);
+  pageAiCalls(input?: { before?: ReverseTimeCursor; limit?: number }): ReversePage<SessionAiCallRecord> {
+    const limit = resolvePageLimit(input?.limit);
+    const before = input?.before;
+    const rowsDescending = (this.db
+      .query(`select id, created_at from ai_call order by created_at desc, id desc`)
+      .all() as Array<{ id: number; created_at: number }>).filter((row) =>
+      isBeforeCursor({ createdAt: row.created_at, id: row.id }, before),
+    );
+    const pageDescending = rowsDescending.slice(0, limit);
+    const itemsDescending = pageDescending
+      .map((row) => this.getAiCallById(row.id))
+      .filter((row): row is SessionAiCallRecord => row !== null)
+      .reverse();
     return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
-      hasMoreBefore,
+      items: itemsDescending,
+      nextBefore: buildNextCursor(itemsDescending, rowsDescending.length > pageDescending.length),
+      hasMoreBefore: rowsDescending.length > pageDescending.length,
     };
+  }
+
+  pruneAiCallsBeforeRound(minRoundIndex: number): void {
+    this.db.query(`delete from ai_call where round_index < ?`).run(minRoundIndex);
   }
 
   appendAsset(input: SessionAssetInsert): SessionAssetRecord {
     const createdAt = input.createdAt ?? Date.now();
     this.db
       .query(
-        `insert into session_asset (
-          id,
-          kind,
-          created_at,
-          name,
-          mime_type,
-          size_bytes,
-          relative_path
-        ) values (?, ?, ?, ?, ?, ?, ?)`
+        `insert or replace into session_asset (
+           id,
+           kind,
+           created_at,
+           name,
+           mime_type,
+           size_bytes,
+           relative_path
+         ) values (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(input.id, input.kind, createdAt, input.name, input.mimeType, input.sizeBytes, input.relativePath);
-    const row = this.getAssetById(input.id);
-    if (!row) {
-      throw new Error('failed to load inserted session_asset');
+    const record = this.getAssetById(input.id);
+    if (!record) {
+      throw new Error(`failed to load asset ${input.id}`);
     }
-    return row;
+    return record;
   }
 
   getAssetById(id: string): SessionAssetRecord | null {
     const row = this.db
       .query(
         `select id, kind, created_at, name, mime_type, size_bytes, relative_path
-         from session_asset where id = ?`
+         from session_asset
+         where id = ?`,
       )
       .get(id) as
       | {
           id: string;
-          kind: SessionAssetRecord['kind'];
+          kind: SessionAssetRecord["kind"];
           created_at: number;
           name: string;
           mime_type: string;
@@ -543,851 +670,157 @@ export class SessionDb {
   }
 
   listAssetsByIds(ids: string[]): SessionAssetRecord[] {
-    const result: SessionAssetRecord[] = [];
-    for (const id of ids) {
-      const row = this.getAssetById(id);
-      if (row) {
-        result.push(row);
-      }
-    }
-    return result;
+    return ids.map((id) => this.getAssetById(id)).filter((row): row is SessionAssetRecord => row !== null);
   }
 
-  listAssetsByBlockId(blockId: number): SessionAssetRecord[] {
+  getLatestAuxiliaryMessage(partType: string): SessionMessageRecord | null {
+    const row = this.db
+      .query(
+        `select message_id
+         from message_part
+         where scope = 'request_aux' and part_type = ?
+         order by created_at desc, part_id desc
+         limit 1`,
+      )
+      .get(partType) as { message_id: string } | null;
+    return row ? this.getMessageById(row.message_id) : null;
+  }
+
+  private queryMessageEnvelopes(scope: SessionMessageScope, windowId?: string): StoredMessageEnvelope[] {
     const rows = this.db
-      .query(`select asset_id from session_block_asset where block_id = ? order by seq asc`)
-      .all(blockId) as Array<{ asset_id: string }>;
-    return rows
-      .map((row) => this.getAssetById(row.asset_id))
-      .filter((row): row is SessionAssetRecord => row !== null);
-  }
-
-  linkBlockAssets(blockId: number, assetIds: string[]): SessionBlockAssetRecord[] {
-    const rows: SessionBlockAssetRecord[] = [];
-    for (const assetId of assetIds) {
-      const seq = this.nextBlockAssetSeq(blockId);
-      this.db
-        .query(`insert into session_block_asset (block_id, asset_id, seq) values (?, ?, ?)`)
-        .run(blockId, assetId, seq);
-      rows.push({ blockId, assetId, seq });
-    }
+      .query(
+        `select min(part_id) as id,
+                message_id,
+                window_id,
+                ai_call_id,
+                round_index,
+                scope,
+                role,
+                min(created_at) as created_at,
+                max(updated_at) as updated_at
+         from message_part
+         where scope = ?
+           and (? is null or window_id = ?)
+         group by message_id, window_id, ai_call_id, round_index, scope, role`,
+      )
+      .all(scope, windowId ?? null, windowId ?? null) as StoredMessageEnvelope[];
     return rows;
   }
 
-  replaceBlockAssets(blockId: number, assetIds: string[]): SessionBlockAssetRecord[] {
-    this.db.query(`delete from session_block_asset where block_id = ?`).run(blockId);
-    return this.linkBlockAssets(blockId, assetIds);
-  }
-
-  appendBlock(input: SessionBlockInsert): SessionBlockRecord {
-    const createdAt = input.createdAt ?? Date.now();
-    const updatedAt = input.updatedAt ?? createdAt;
-    const seq = this.nextSeq('session_block');
-    const result = this.db
-      .query(
-        `insert into session_block (
-          seq,
-          cycle_id,
-          created_at,
-          updated_at,
-          message_id,
-          projection_json,
-          visible_at,
-          attention_state,
-          attention_loaded_at,
-          role,
-          channel,
-          chat_id,
-          format,
-          content,
-          tool_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        seq,
-        input.cycleId ?? null,
-        createdAt,
-        updatedAt,
-        input.messageId ?? null,
-        input.projection === undefined ? null : toJson(input.projection),
-        input.visibleAt ?? null,
-        input.attentionState ?? null,
-        input.attentionLoadedAt ?? null,
-        input.role,
-        input.channel,
-        input.chatId ?? null,
-        input.format ?? 'markdown',
-        input.content,
-        input.tool === undefined ? null : toJson(input.tool),
-      );
-    const row = this.getBlockById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error('failed to load inserted session_block');
+  private partPayloadToText(payload: unknown): string {
+    if (typeof payload === "string") {
+      return payload;
     }
-    return row;
-  }
-
-  upsertMessageBlock(input: SessionBlockInsert & { messageId: string }): SessionBlockRecord {
-    const current = this.getBlockByMessageId(input.messageId);
-    if (!current) {
-      return this.appendBlock(input);
-    }
-    this.db
-      .query(
-        `update session_block
-         set cycle_id = ?,
-             created_at = ?,
-             updated_at = ?,
-             visible_at = ?,
-             attention_state = ?,
-             attention_loaded_at = ?,
-             role = ?,
-             channel = ?,
-             chat_id = ?,
-             format = ?,
-             content = ?,
-             tool_json = ?,
-             projection_json = ?
-         where id = ?`,
-      )
-      .run(
-        input.cycleId ?? current.cycleId,
-        input.createdAt ?? current.createdAt,
-        input.updatedAt ?? current.updatedAt,
-        input.visibleAt ?? current.visibleAt ?? null,
-        input.attentionState ?? current.attentionState ?? null,
-        input.attentionLoadedAt ?? current.attentionLoadedAt ?? null,
-        input.role,
-        input.channel,
-        input.chatId ?? current.chatId,
-        input.format ?? current.format,
-        input.content,
-        input.tool === undefined ? null : toJson(input.tool),
-        input.projection === undefined ? (current.projection === undefined ? null : toJson(current.projection)) : toJson(input.projection),
-        current.id,
-      );
-    const row = this.getBlockById(current.id);
-    if (!row) {
-      throw new Error("failed to load updated session_block");
-    }
-    return row;
-  }
-
-  getBlockByMessageId(messageId: string): SessionBlockRecord | null {
-    const row = this.db
-      .query(`select id from session_block where message_id = ?`)
-      .get(messageId) as { id: number } | null;
-    return row ? this.getBlockById(row.id) : null;
-  }
-
-  getBlockById(id: number): SessionBlockRecord | null {
-    const row = this.db
-      .query(
-        `select id, seq, cycle_id, created_at, updated_at, message_id, projection_json, visible_at, attention_state, attention_loaded_at, role, channel, chat_id, format, content, tool_json
-         from session_block where id = ?`,
-      )
-      .get(id) as
-      | {
-          id: number;
-          seq: number;
-          cycle_id: number | null;
-          created_at: number;
-          updated_at: number;
-          message_id: string | null;
-          projection_json: string | null;
-          visible_at: number | null;
-          attention_state: 'queued' | 'loaded' | null;
-          attention_loaded_at: number | null;
-          role: 'user' | 'assistant';
-          channel: SessionBlockRecord['channel'];
-          chat_id: string | null;
-          format: SessionBlockRecord['format'];
-          content: string;
-          tool_json: string | null;
-        }
-      | null;
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      seq: row.seq,
-      cycleId: row.cycle_id,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      messageId: row.message_id ?? undefined,
-      projection: row.projection_json ? parseJson(row.projection_json, undefined) : undefined,
-      visibleAt: row.visible_at ?? undefined,
-      attentionState: row.attention_state ?? undefined,
-      attentionLoadedAt: row.attention_loaded_at ?? undefined,
-      role: row.role,
-      channel: row.channel,
-      chatId: row.chat_id,
-      format: row.format,
-      content: row.content,
-      tool: row.tool_json ? parseJson(row.tool_json, undefined) : undefined,
-      attachments: this.listAssetsByBlockId(row.id),
-    };
-  }
-
-  listBlocksAfter(afterId = 0, limit = 200): SessionBlockRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from session_block where id > ? order by id asc limit ?`)
-      .all(afterId, safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getBlockById(row.id)).filter((row): row is SessionBlockRecord => row !== null);
-  }
-
-  listBlocksByCycleId(cycleId: number): SessionBlockRecord[] {
-    const rows = this.db
-      .query(`select id from session_block where cycle_id = ? order by id asc`)
-      .all(cycleId) as Array<{ id: number }>;
-    return rows.map((row) => this.getBlockById(row.id)).filter((row): row is SessionBlockRecord => row !== null);
-  }
-
-  listOrphanUserInputBlocks(limit = 200): SessionBlockRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 10_000));
-    const rows = this.db
-      .query(
-        `select id
-         from session_block
-         where cycle_id is null and role = 'user' and channel = 'user_input'
-         order by id asc
-         limit ?`,
-      )
-      .all(safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getBlockById(row.id)).filter((row): row is SessionBlockRecord => row !== null);
-  }
-
-  listBlocksBefore(beforeId: number, limit = 200): SessionBlockRecord[] {
-    if (beforeId <= 0) {
-      return [];
-    }
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from session_block where id < ? order by id desc limit ?`)
-      .all(beforeId, safeLimit) as Array<{ id: number }>;
-    rows.reverse();
-    return rows.map((row) => this.getBlockById(row.id)).filter((row): row is SessionBlockRecord => row !== null);
-  }
-
-  listBlocksPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<SessionBlockRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from session_block
-             where created_at < ? or (created_at = ? and id < ?)
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
-          id: number;
-        }>)
-      : (this.db
-          .query(
-            `select id
-             from session_block
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getBlockById(row.id))
-      .filter((row): row is SessionBlockRecord => row !== null);
-    return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
-      hasMoreBefore,
-    };
-  }
-
-  appendLoopStateLog(input: LoopbusStateLogInsert): LoopbusStateLogRecord {
-    const result = this.db
-      .query(
-        `insert into loopbus_state_log (
-          timestamp,
-          state_version,
-          event,
-          prev_hash,
-          state_hash,
-          patch_json
-        ) values (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(input.timestamp, input.stateVersion, input.event, input.prevHash, input.stateHash, toJson(input.patch));
-    const row = this.getLoopStateLogById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error("failed to load inserted loopbus_state_log");
-    }
-    return row;
-  }
-
-  getLoopStateLogById(id: number): LoopbusStateLogRecord | null {
-    const row = this.db
-      .query(
-        `select id, timestamp, state_version, event, prev_hash, state_hash, patch_json
-         from loopbus_state_log where id = ?`,
-      )
-      .get(id) as
-      | {
-          id: number;
-          timestamp: number;
-          state_version: number;
-          event: string;
-          prev_hash: string | null;
-          state_hash: string;
-          patch_json: string;
-        }
-      | null;
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      timestamp: row.timestamp,
-      stateVersion: row.state_version,
-      event: row.event,
-      prevHash: row.prev_hash,
-      stateHash: row.state_hash,
-      patch: parseJson(row.patch_json, []),
-    };
-  }
-
-  listLoopStateLogsPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<LoopbusStateLogRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from loopbus_state_log
-             where timestamp < ? or (timestamp = ? and id < ?)
-             order by timestamp desc, id desc
-             limit ?`,
-          )
-          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
-          id: number;
-        }>)
-      : (this.db
-          .query(
-            `select id
-             from loopbus_state_log
-             order by timestamp desc, id desc
-             limit ?`,
-          )
-          .all(safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getLoopStateLogById(row.id))
-      .filter((row): row is LoopbusStateLogRecord => row !== null);
-    return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(
-        recordsDescending.map((record) => ({
-          ...record,
-          createdAt: record.timestamp,
-        })),
-        hasMoreBefore,
-      ),
-      hasMoreBefore,
-    };
-  }
-
-  appendLoopTrace(input: LoopbusTraceInsert): LoopbusTraceRecord {
-    const seq = this.nextSeq('loopbus_trace', 'cycle_id', input.cycleId);
-    const encoded = encodeLoopTraceRow(input);
-    const result = this.db
-      .query(
-        `insert into loopbus_trace (
-          cycle_id,
-          seq,
-          step,
-          status,
-          started_at,
-          ended_at,
-          detail_json
-        ) values (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(input.cycleId, seq, encoded.step, input.status, input.startedAt, input.endedAt, encoded.detailJson);
-    const row = this.getLoopTraceById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error('failed to load inserted loopbus_trace');
-    }
-    return row;
-  }
-
-  updateLoopTrace(id: number, input: LoopbusTraceUpdate): LoopbusTraceRecord {
-    const current = this.getLoopTraceById(id);
-    if (!current) {
-      throw new Error("failed to load current loopbus_trace");
-    }
-    const next = mergeLoopTraceRecord(current, input);
-    const encoded = encodeLoopTraceRow(next);
-    this.db
-      .query(
-        `update loopbus_trace
-         set step = ?,
-             status = ?,
-             ended_at = ?,
-             detail_json = ?
-         where id = ?`,
-      )
-      .run(encoded.step, next.status, next.endedAt, encoded.detailJson, id);
-    const row = this.getLoopTraceById(id);
-    if (!row) {
-      throw new Error("failed to load updated loopbus_trace");
-    }
-    return row;
-  }
-
-  getLoopTraceById(id: number): LoopbusTraceRecord | null {
-    const row = this.db
-      .query(
-        `select id, cycle_id, seq, step, status, started_at, ended_at, detail_json
-         from loopbus_trace where id = ?`,
-      )
-      .get(id) as StoredLoopTraceRow | null;
-    if (!row) {
-      return null;
-    }
-    return decodeLoopTraceRow(row);
-  }
-
-  listLoopTracesByCycle(cycleId: number, afterId = 0, limit = 200): LoopbusTraceRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from loopbus_trace where cycle_id = ? and id > ? order by id asc limit ?`)
-      .all(cycleId, afterId, safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getLoopTraceById(row.id)).filter((row): row is LoopbusTraceRecord => row !== null);
-  }
-
-  listLoopTracesAfter(afterId = 0, limit = 200): LoopbusTraceRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from loopbus_trace where id > ? order by id asc limit ?`)
-      .all(afterId, safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getLoopTraceById(row.id)).filter((row): row is LoopbusTraceRecord => row !== null);
-  }
-
-  listLoopTracesByRef(ref: string, limit = 200): LoopbusTraceRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from loopbus_trace order by started_at desc, id desc`)
-      .all() as Array<{ id: number }>;
-    const matchedDescending: LoopbusTraceRecord[] = [];
-    for (const row of rows) {
-      const record = this.getLoopTraceById(row.id);
-      if (!record) {
-        continue;
+    if (payload && typeof payload === "object") {
+      if ("content" in payload && typeof payload.content === "string") {
+        return payload.content;
       }
-      if (
-        record.refs.some((item) => item.ref === ref) ||
-        record.links.some((item) => item.ref?.ref === ref)
-      ) {
-        matchedDescending.push(record);
-      }
-      if (matchedDescending.length >= safeLimit) {
-        break;
+      if ("text" in payload && typeof payload.text === "string") {
+        return payload.text;
       }
     }
-    return matchedDescending.reverse();
+    return typeof payload === "undefined" ? "" : JSON.stringify(payload);
   }
 
-  listLoopTracesBefore(beforeId: number, limit = 200): LoopbusTraceRecord[] {
-    if (beforeId <= 0) {
-      return [];
+  private messageToPromptContent(message: SessionMessageRecord): unknown {
+    if (message.parts.length === 1) {
+      const payload = message.parts[0]?.payload;
+      if (payload && typeof payload === "object" && !Array.isArray(payload) && "content" in payload) {
+        return structuredClone((payload as { content: unknown }).content);
+      }
+      return structuredClone(payload);
     }
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from loopbus_trace where id < ? order by id desc limit ?`)
-      .all(beforeId, safeLimit) as Array<{ id: number }>;
-    rows.reverse();
-    return rows.map((row) => this.getLoopTraceById(row.id)).filter((row): row is LoopbusTraceRecord => row !== null);
-  }
-
-  listLoopTracesPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<LoopbusTraceRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from loopbus_trace
-             where started_at < ? or (started_at = ? and id < ?)
-             order by started_at desc, id desc
-             limit ?`,
-          )
-          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
-          id: number;
-        }>)
-      : (this.db
-          .query(
-            `select id
-             from loopbus_trace
-             order by started_at desc, id desc
-             limit ?`,
-          )
-          .all(safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getLoopTraceById(row.id))
-      .filter((row): row is LoopbusTraceRecord => row !== null);
-    return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(
-        recordsDescending.map((record) => ({
-          ...record,
-          createdAt: record.startedAt,
-        })),
-        hasMoreBefore,
-      ),
-      hasMoreBefore,
-    };
-  }
-
-  appendApiCall(input: ApiCallInsert): ApiCallRecord {
-    const createdAt = input.createdAt ?? Date.now();
-    const result = this.db
-      .query(
-        `insert into api_call (
-          model_call_id,
-          created_at,
-          request_json,
-          response_json,
-          error_json
-        ) values (?, ?, ?, ?, ?)`,
-      )
-      .run(
-        input.modelCallId,
-        createdAt,
-        toJson(input.request),
-        input.response === undefined ? null : toJson(input.response),
-        input.error === undefined ? null : toJson(input.error),
-      );
-    const row = this.getApiCallById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error('failed to load inserted api_call');
-    }
-    return row;
-  }
-
-  getApiCallById(id: number): ApiCallRecord | null {
-    const row = this.db
-      .query(
-        `select id, model_call_id, created_at, request_json, response_json, error_json
-         from api_call where id = ?`,
-      )
-      .get(id) as
-      | {
-          id: number;
-          model_call_id: number;
-          created_at: number;
-          request_json: string;
-          response_json: string | null;
-          error_json: string | null;
-        }
-      | null;
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      modelCallId: row.model_call_id,
-      createdAt: row.created_at,
-      request: parseJson(row.request_json, null),
-      response: row.response_json ? parseJson(row.response_json, null) : undefined,
-      error: row.error_json ? parseJson(row.error_json, null) : undefined,
-    };
-  }
-
-  listApiCallsByModelCall(modelCallId: number): ApiCallRecord[] {
-    const rows = this.db
-      .query(`select id from api_call where model_call_id = ? order by id asc`)
-      .all(modelCallId) as Array<{ id: number }>;
-    return rows.map((row) => this.getApiCallById(row.id)).filter((row): row is ApiCallRecord => row !== null);
-  }
-
-  listApiCallsAfter(afterId = 0, limit = 200): ApiCallRecord[] {
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from api_call where id > ? order by id asc limit ?`)
-      .all(afterId, safeLimit) as Array<{ id: number }>;
-    return rows.map((row) => this.getApiCallById(row.id)).filter((row): row is ApiCallRecord => row !== null);
-  }
-
-  listApiCallsBefore(beforeId: number, limit = 200): ApiCallRecord[] {
-    if (beforeId <= 0) {
-      return [];
-    }
-    const safeLimit = Math.max(1, Math.min(limit, 1_000));
-    const rows = this.db
-      .query(`select id from api_call where id < ? order by id desc limit ?`)
-      .all(beforeId, safeLimit) as Array<{ id: number }>;
-    rows.reverse();
-    return rows.map((row) => this.getApiCallById(row.id)).filter((row): row is ApiCallRecord => row !== null);
-  }
-
-  listApiCallsPage(input?: {
-    before?: ReverseTimeCursor;
-    limit?: number;
-  }): ReversePage<ApiCallRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from api_call
-             where created_at < ? or (created_at = ? and id < ?)
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId, safeLimit + 1) as Array<{
-          id: number;
-        }>)
-      : (this.db
-          .query(
-            `select id
-             from api_call
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getApiCallById(row.id))
-      .filter((row): row is ApiCallRecord => row !== null);
-    return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
-      hasMoreBefore,
-    };
-  }
-
-  appendTerminalActivity(input: TerminalActivityInsert): TerminalActivityRecord {
-    const createdAt = input.createdAt ?? Date.now();
-    const result = this.db
-      .query(
-        `insert into terminal_activity (
-          terminal_id,
-          created_at,
-          kind,
-          cycle_id,
-          role,
-          channel,
-          title,
-          content,
-          tool_json,
-          detail_json
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        input.terminalId,
-        createdAt,
-        input.kind,
-        input.cycleId ?? null,
-        input.role ?? null,
-        input.channel ?? null,
-        input.title,
-        input.content,
-        input.tool === undefined ? null : toJson(input.tool),
-        input.detail === undefined ? null : toJson(input.detail),
-      );
-    const row = this.getTerminalActivityById(Number(result.lastInsertRowid));
-    if (!row) {
-      throw new Error("failed to load inserted terminal_activity");
-    }
-    return row;
-  }
-
-  getTerminalActivityById(id: number): TerminalActivityRecord | null {
-    const row = this.db
-      .query(
-        `select id, terminal_id, created_at, kind, cycle_id, role, channel, title, content, tool_json, detail_json
-         from terminal_activity where id = ?`,
-      )
-      .get(id) as
-      | {
-          id: number;
-          terminal_id: string;
-          created_at: number;
-          kind: TerminalActivityRecord["kind"];
-          cycle_id: number | null;
-          role: TerminalActivityRecord["role"] | null;
-          channel: TerminalActivityRecord["channel"] | null;
-          title: string;
-          content: string;
-          tool_json: string | null;
-          detail_json: string | null;
-        }
-      | null;
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      terminalId: row.terminal_id,
-      createdAt: row.created_at,
-      kind: row.kind,
-      cycleId: row.cycle_id,
-      role: row.role ?? undefined,
-      channel: row.channel ?? undefined,
-      title: row.title,
-      content: row.content,
-      tool: row.tool_json ? parseJson(row.tool_json, undefined) : undefined,
-      detail: row.detail_json ? parseJson(row.detail_json, undefined) : undefined,
-    };
-  }
-
-  listTerminalActivityPage(
-    terminalId: string,
-    input?: {
-      before?: ReverseTimeCursor;
-      limit?: number;
-    },
-  ): ReversePage<TerminalActivityRecord> {
-    const safeLimit = resolvePageLimit(input?.limit);
-    const rows = input?.before
-      ? (this.db
-          .query(
-            `select id
-             from terminal_activity
-             where terminal_id = ? and (created_at < ? or (created_at = ? and id < ?))
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(
-            terminalId,
-            input.before.beforeTimeMs,
-            input.before.beforeTimeMs,
-            input.before.beforeId,
-            safeLimit + 1,
-          ) as Array<{ id: number }>)
-      : (this.db
-          .query(
-            `select id
-             from terminal_activity
-             where terminal_id = ?
-             order by created_at desc, id desc
-             limit ?`,
-          )
-          .all(terminalId, safeLimit + 1) as Array<{ id: number }>);
-
-    const hasMoreBefore = rows.length > safeLimit;
-    const visibleRows = hasMoreBefore ? rows.slice(0, safeLimit) : rows;
-    const recordsDescending = visibleRows
-      .map((row) => this.getTerminalActivityById(row.id))
-      .filter((row): row is TerminalActivityRecord => row !== null);
-    return {
-      items: recordsDescending.slice().reverse(),
-      nextBefore: buildNextCursor(recordsDescending, hasMoreBefore),
-      hasMoreBefore,
-    };
-  }
-
-  private nextSeq(table: 'session_cycle' | 'session_block' | 'loopbus_trace', scopeColumn?: 'cycle_id', scopeValue?: number): number {
-    if (scopeColumn && scopeValue !== undefined) {
-      const row = this.db
-        .query(`select max(seq) as value from ${table} where ${scopeColumn} = ?`)
-        .get(scopeValue) as { value: number | null } | null;
-      return (row?.value ?? 0) + 1;
-    }
-    const row = this.db.query(`select max(seq) as value from ${table}`).get() as { value: number | null } | null;
-    return (row?.value ?? 0) + 1;
-  }
-
-  private nextBlockAssetSeq(blockId: number): number {
-    const row = this.db
-      .query(`select max(seq) as value from session_block_asset where block_id = ?`)
-      .get(blockId) as { value: number | null } | null;
-    return (row?.value ?? 0) + 1;
+    return message.parts.map((part) => structuredClone(part.payload));
   }
 
   private ensureHeadRow(): void {
-    const row = this.db.query(`select id from session_head where id = 1`).get() as { id: number } | null;
-    if (row) {
-      return;
+    const existing = this.db.query(`select id from session_head where id = 1`).get() as { id: number } | null;
+    if (!existing) {
+      this.db
+        .query(
+          `insert into session_head (id, current_round_index, current_prompt_window_id, updated_at)
+           values (1, 0, null, ?)`,
+        )
+        .run(Date.now());
     }
-    this.db.query(`insert into session_head (id, head_cycle_id, updated_at) values (1, null, ?)`).run(Date.now());
   }
 
   private migrate(): void {
+    const currentVersion =
+      (this.db.query(`pragma user_version`).get() as { user_version?: number } | null)?.user_version ?? 0;
+    if (currentVersion !== SESSION_DB_SCHEMA_VERSION) {
+      this.db.exec(`
+        drop table if exists session_head;
+        drop table if exists message_part;
+        drop table if exists ai_call;
+        drop table if exists session_asset;
+        drop table if exists session_cycle;
+        drop table if exists prompt_window_state;
+        drop table if exists model_call;
+        drop table if exists api_call;
+        drop table if exists session_block;
+        drop table if exists loopbus_state_log;
+        drop table if exists loopbus_trace;
+        drop table if exists terminal_activity;
+      `);
+    }
     this.db.exec(`
       create table if not exists session_head (
         id integer primary key check (id = 1),
-        head_cycle_id integer,
+        current_round_index integer not null default 0,
+        current_prompt_window_id text,
         updated_at integer not null
       );
 
-      create table if not exists session_cycle (
-        id integer primary key autoincrement,
-        seq integer not null unique,
-        prev_cycle_id integer,
-        created_at integer not null,
-        wake_json text not null,
-        collected_inputs_json text not null,
-        extends_json text not null,
-        result_json text not null
-      );
-
-      create index if not exists idx_session_cycle_prev on session_cycle(prev_cycle_id);
-      create index if not exists idx_session_cycle_created on session_cycle(created_at desc, id desc);
-
-      create table if not exists model_call (
-        id integer primary key autoincrement,
-        cycle_id integer not null,
-        created_at integer not null,
-        status text not null default 'done',
-        completed_at integer,
-        provider text not null,
-        model text not null,
-        request_json text not null,
-        response_json text,
-        error_json text,
-        trace_json text,
-        outcome_json text
-      );
-
-      create index if not exists idx_model_call_cycle on model_call(cycle_id);
-      create index if not exists idx_model_call_created on model_call(created_at desc, id desc);
-
-      create table if not exists session_block (
-        id integer primary key autoincrement,
-        seq integer not null unique,
-        cycle_id integer,
+      create table if not exists message_part (
+        part_id integer primary key autoincrement,
+        part_index integer not null,
+        message_id text not null,
+        window_id text,
+        ai_call_id integer,
+        round_index integer not null,
+        scope text not null,
+        role text not null,
+        part_type text not null,
+        mime_type text,
+        payload_json text not null,
         created_at integer not null,
         updated_at integer not null,
-        message_id text,
-        projection_json text,
-        visible_at integer,
-        attention_state text,
-        attention_loaded_at integer,
-        role text not null,
-        channel text not null,
-        chat_id text,
-        format text not null,
-        content text not null,
-        tool_json text
+        is_complete integer not null default 0
       );
+      create unique index if not exists idx_message_part_message_index
+        on message_part(message_id, part_index);
+      create index if not exists idx_message_part_scope_created
+        on message_part(scope, created_at desc, part_id desc);
+      create index if not exists idx_message_part_window
+        on message_part(window_id, created_at asc, part_id asc);
+      create index if not exists idx_message_part_ai_call
+        on message_part(ai_call_id, part_id asc);
 
-      create index if not exists idx_session_block_cycle on session_block(cycle_id, id asc);
-      create index if not exists idx_session_block_created on session_block(created_at desc, id desc);
+      create table if not exists ai_call (
+        id integer primary key autoincrement,
+        round_index integer not null,
+        kind text not null,
+        status text not null,
+        provider text not null,
+        model text not null,
+        request_url text not null,
+        request_body_json text not null,
+        response_body_json text,
+        error_json text,
+        outcome_json text,
+        request_message_ids_json text not null,
+        response_message_ids_json text not null,
+        auxiliary_message_ids_json text not null,
+        created_at integer not null,
+        updated_at integer not null,
+        completed_at integer,
+        is_complete integer not null default 0
+      );
+      create index if not exists idx_ai_call_created
+        on ai_call(created_at desc, id desc);
+      create index if not exists idx_ai_call_round
+        on ai_call(round_index desc, id desc);
 
       create table if not exists session_asset (
         id text primary key,
@@ -1398,158 +831,7 @@ export class SessionDb {
         size_bytes integer not null,
         relative_path text not null
       );
-
-      create table if not exists session_block_asset (
-        block_id integer not null,
-        asset_id text not null,
-        seq integer not null,
-        primary key (block_id, asset_id)
-      );
-
-      create index if not exists idx_session_block_asset_block on session_block_asset(block_id, seq asc);
-      create index if not exists idx_session_block_asset_asset on session_block_asset(asset_id, block_id asc);
-
-      create table if not exists loopbus_state_log (
-        id integer primary key autoincrement,
-        timestamp integer not null,
-        state_version integer not null,
-        event text not null,
-        prev_hash text,
-        state_hash text not null,
-        patch_json text not null
-      );
-
-      create index if not exists idx_loopbus_state_log_timestamp on loopbus_state_log(timestamp desc, id desc);
-
-      create table if not exists loopbus_trace (
-        id integer primary key autoincrement,
-        cycle_id integer not null,
-        seq integer not null,
-        step text not null,
-        status text not null,
-        started_at integer not null,
-        ended_at integer not null,
-        detail_json text not null
-      );
-
-      create index if not exists idx_loopbus_trace_cycle on loopbus_trace(cycle_id, id asc);
-      create index if not exists idx_loopbus_trace_started on loopbus_trace(started_at desc, id desc);
-
-      create table if not exists api_call (
-        id integer primary key autoincrement,
-        model_call_id integer not null,
-        created_at integer not null,
-        request_json text not null,
-        response_json text,
-        error_json text
-      );
-
-      create index if not exists idx_api_call_model_call on api_call(model_call_id, id asc);
-      create index if not exists idx_api_call_created on api_call(created_at desc, id desc);
-
-      create table if not exists terminal_activity (
-        id integer primary key autoincrement,
-        terminal_id text not null,
-        created_at integer not null,
-        kind text not null,
-        cycle_id integer,
-        role text,
-        channel text,
-        title text not null,
-        content text not null,
-        tool_json text,
-        detail_json text
-      );
-
-      create index if not exists idx_terminal_activity_terminal_created on terminal_activity(terminal_id, created_at desc, id desc);
     `);
-
-    this.ensureColumn("model_call", "status", "alter table model_call add column status text not null default 'done'");
-    this.ensureColumn("model_call", "completed_at", "alter table model_call add column completed_at integer");
-    this.ensureColumn("model_call", "trace_json", "alter table model_call add column trace_json text");
-    this.ensureColumn("model_call", "outcome_json", "alter table model_call add column outcome_json text");
-    this.ensureColumn("session_block", "chat_id", "alter table session_block add column chat_id text");
-    this.ensureColumn("session_block", "updated_at", "alter table session_block add column updated_at integer");
-    this.ensureColumn("session_block", "message_id", "alter table session_block add column message_id text");
-    this.ensureColumn("session_block", "projection_json", "alter table session_block add column projection_json text");
-    this.ensureColumn("session_block", "visible_at", "alter table session_block add column visible_at integer");
-    this.ensureColumn("session_block", "attention_state", "alter table session_block add column attention_state text");
-    this.ensureColumn("session_block", "attention_loaded_at", "alter table session_block add column attention_loaded_at integer");
-    this.db.exec(`update session_block set updated_at = coalesce(updated_at, created_at);`);
-    this.db.exec(
-      `create unique index if not exists idx_session_block_message_id on session_block(message_id) where message_id is not null;`,
-    );
-    this.ensureModelCallCycleMultiplicity();
-    this.db.query(`update model_call set status = 'done' where status is null or status = ''`).run();
-  }
-
-  private ensureColumn(tableName: string, columnName: string, ddl: string): void {
-    const columns = this.db.query(`pragma table_info(${tableName})`).all() as Array<{ name: string }>;
-    if (columns.some((column) => column.name === columnName)) {
-      return;
-    }
-    this.db.exec(ddl);
-  }
-
-  private ensureModelCallCycleMultiplicity(): void {
-    const row = this.db
-      .query(`select sql from sqlite_master where type = 'table' and name = 'model_call'`)
-      .get() as { sql: string | null } | null;
-    const sql = row?.sql ?? "";
-    if (!/cycle_id\s+integer\s+not\s+null\s+unique/i.test(sql)) {
-      return;
-    }
-
-    this.db.exec(`
-      begin;
-      create table model_call_v2 (
-        id integer primary key autoincrement,
-        cycle_id integer not null,
-        created_at integer not null,
-        status text not null default 'done',
-        completed_at integer,
-        provider text not null,
-        model text not null,
-        request_json text not null,
-        response_json text,
-        error_json text,
-        trace_json text,
-        outcome_json text
-      );
-      insert into model_call_v2 (
-        id,
-        cycle_id,
-        created_at,
-        status,
-        completed_at,
-        provider,
-        model,
-        request_json,
-        response_json,
-        error_json,
-        trace_json,
-        outcome_json
-      )
-      select
-        id,
-        cycle_id,
-        created_at,
-        status,
-        completed_at,
-        provider,
-        model,
-        request_json,
-        response_json,
-        error_json,
-        trace_json,
-        outcome_json
-      from model_call
-      order by id asc;
-      drop table model_call;
-      alter table model_call_v2 rename to model_call;
-      create index if not exists idx_model_call_cycle on model_call(cycle_id);
-      create index if not exists idx_model_call_created on model_call(created_at desc, id desc);
-      commit;
-    `);
+    this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);
   }
 }

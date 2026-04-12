@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -191,6 +191,136 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given one avatar across multiple workspaces When runtime workspace procedures are used Then mounts grants asset roots and bash exec follow the workspace-system contract", async () => {
+    const root = makeTempDir();
+    const workspaceA = join(root, "workspace-a");
+    const workspaceB = join(root, "workspace-b");
+    mkdirSync(workspaceA, { recursive: true });
+    mkdirSync(workspaceB, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const first = await caller.session.create({
+      cwd: workspaceA,
+      name: "Architect",
+      avatar: "architect",
+      autoStart: false,
+    });
+    const second = await caller.session.create({
+      cwd: workspaceB,
+      name: "Architect",
+      avatar: "architect",
+      autoStart: false,
+    });
+
+    expect(second.session.id).toBe(first.session.id);
+
+    const coldMounts = await caller.workspace.runtimeMounts({
+      runtimeId: first.session.id,
+    });
+    expect(coldMounts.items).toEqual([]);
+
+    const grantedWorkspaceA = await caller.workspace.grantRuntime({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+      grants: [{ relativePath: "/", mode: "rw" }],
+    });
+    expect(grantedWorkspaceA.items).toEqual([
+      expect.objectContaining({
+        workspacePath: workspaceA,
+        relativePath: "/",
+        mode: "rw",
+      }),
+    ]);
+
+    await caller.workspace.grantRuntime({
+      runtimeId: first.session.id,
+      workspacePath: workspaceB,
+      grants: [{ relativePath: "/", mode: "rw" }],
+    });
+
+    const mounts = await caller.workspace.runtimeMounts({
+      runtimeId: first.session.id,
+    });
+    expect(mounts.items.map((item) => item.workspacePath).sort()).toEqual([workspaceA, workspaceB].sort());
+
+    const initialGrants = await caller.workspace.runtimeGrants({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+    });
+    expect(initialGrants.items).toEqual([
+      expect.objectContaining({
+        workspacePath: workspaceA,
+        relativePath: "/",
+        mode: "rw",
+      }),
+    ]);
+
+    const assetRoots = await caller.workspace.assetRoots({
+      workspacePath: workspaceA,
+      avatar: "architect",
+    });
+    expect(assetRoots.workspacePath).toBe(workspaceA);
+    expect(assetRoots.avatar).toBe("architect");
+    writeFileSync(
+      join(assetRoots.publicRoots.tools, "hello.sh"),
+      "#!/usr/bin/env bash\necho tool-ok\n",
+      "utf8",
+    );
+
+    const granted = await caller.workspace.grantRuntime({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+      grants: [{ relativePath: "/sandbox", mode: "rw" }],
+    });
+    expect(granted.items).toEqual([
+      expect.objectContaining({
+        workspacePath: workspaceA,
+        relativePath: "/sandbox",
+        mode: "rw",
+      }),
+    ]);
+
+    const execOk = await caller.workspace.exec({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+      avatar: "architect",
+      command: "mkdir -p /workspace/sandbox && printf workspace-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
+    });
+    expect(execOk.exitCode).toBe(0);
+    expect(execOk.stdout).toContain("tool-ok");
+    expect(execOk.stdout).toContain("workspace-ok");
+    expect(readFileSync(join(workspaceA, "sandbox", "out.txt"), "utf8")).toBe("workspace-ok");
+
+    const execDenied = await caller.workspace.exec({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+      avatar: "architect",
+      command: "printf blocked > /workspace/blocked.txt",
+    });
+    expect(execDenied.exitCode).not.toBe(0);
+    expect(existsSync(join(workspaceA, "blocked.txt"))).toBeFalse();
+
+    const detached = await caller.workspace.detachRuntime({
+      runtimeId: first.session.id,
+      workspacePath: workspaceB,
+    });
+    expect(detached.detached).toBeTrue();
+
+    const mountsAfterDetach = await caller.workspace.runtimeMounts({
+      runtimeId: first.session.id,
+    });
+    expect(mountsAfterDetach.items.map((item) => item.workspacePath)).toEqual([workspaceA]);
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given tokenized chat-channel routes When caller edits metadata and revokes grants Then channel access stays scoped to the issued token", async () => {
     const root = makeTempDir();
     const workspace = join(root, "workspace");
@@ -212,11 +342,16 @@ describe("Feature: app-server trpc procedures", () => {
     const sessionId = created.session.id;
 
     const listed = await caller.message.listChannels({ sessionId });
-    const channel = listed.items[0];
-    expect(channel?.accessRole).toBe("admin");
-    if (!channel) {
-      throw new Error("expected default chat channel");
-    }
+    expect(listed.items).toEqual([]);
+
+    const createdChannel = await caller.message.createChannel({
+      sessionId,
+      kind: "room",
+      title: "Lunch relay",
+      focus: false,
+    });
+    const channel = createdChannel.channel;
+    expect(channel.accessRole).toBe("admin");
 
     const focused = await caller.message.focus({
       sessionId,
@@ -347,7 +482,6 @@ describe("Feature: app-server trpc procedures", () => {
     expect(snapshot.channel.chatId).toBe(room.chatId);
     expect(snapshot.items.some((item) => item.content === "hello ops")).toBeTrue();
     const sentMessage = snapshot.items.find((item) => item.content === "hello ops");
-    expect(sentMessage?.attentionState).toBe("queued");
     expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
     const relay = await caller.message.globalIssueGrant({
       chatId: room.chatId,
@@ -364,8 +498,8 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(relayRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: sentMessage?.messageId,
-      totalSeatCount: 0,
-      readSeatCount: 0,
+      totalSeatCount: 1,
+      readSeatCount: 1,
       unreadSeatCount: 0,
     });
 

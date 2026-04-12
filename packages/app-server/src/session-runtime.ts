@@ -3,12 +3,15 @@ import {
   AttentionSystem,
   type AttentionActiveContextMatch,
   type AttentionCommit,
+  type AttentionCommitEgress,
   type AttentionCommitChange,
   type AttentionCommitMatch,
   type AttentionCommitMeta,
   type AttentionCommitRef,
   type AttentionCommitToolInput,
   type AttentionContextDescriptor,
+  type AttentionContextState,
+  type AttentionFocusState,
   type AttentionContextRef,
   type AttentionCycleFrame,
   type AttentionHookRecord,
@@ -28,23 +31,19 @@ import {
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
   type MessageRecord,
+  type MessageSnapshot,
   type ReverseTimeCursor,
 } from "@agenter/message-system";
 import {
   SessionDb,
+  type SessionAiCallRecord,
   type SessionAssetRecord,
-  type SessionBlockProjection,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
-  type SessionCycleRecord,
-  type ApiCallRecord as SessionDbApiCallRecord,
-  type SessionBlockRecord as SessionDbChatMessageRecord,
-  type LoopbusStateLogRecord as SessionDbLoopbusStateLogRecord,
-  type LoopbusTraceRecord as SessionDbLoopbusTraceRecord,
   type ReversePage as SessionDbReversePage,
   type ReverseTimeCursor as SessionDbReverseTimeCursor,
-  type TerminalActivityRecord as SessionDbTerminalActivityRecord,
-  type SessionModelCallRecord,
+  type SessionMessageRecord,
+  type SessionPromptWindowRecord,
   type SessionTerminalOutcome,
   type SessionTraceRef,
 } from "@agenter/session-system";
@@ -53,12 +52,8 @@ import {
   TaskEngine,
   resolveTaskSources,
   serializeTaskMarkdown,
-  type TaskCreateInput,
-  type TaskEventInput,
-  type TaskImportItem,
   type TaskSourceName,
   type TaskSourceResolved,
-  type TaskUpdateInput,
   type TaskView,
 } from "@agenter/task-system";
 import {
@@ -74,7 +69,7 @@ import { toolDefinition } from "@tanstack/ai";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { createRuntimeAttentionPreview } from "./attention-runtime-view";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
@@ -82,14 +77,14 @@ import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-
 import { AgentRuntime } from "./agent-runtime";
 import {
   AgenterAI,
+  type AgentPromptWindowStateRecord,
   type AgentModelCallRecord,
   type AgentRuntimeStats,
   type AgentToolProvider,
-  type AgentToolProviderPromptContext,
   type AgentToolTraceEntry,
 } from "./agenter-ai";
 import { AttentionHashAliasRegistry, AttentionHashAliasStore } from "./attention-hash-alias-registry";
-import { projectAttentionActiveContextForModel, projectAttentionCommitMatchForModel } from "./attention-model-view";
+import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import {
   collectClientMessageIds,
   detectChatCycleKind,
@@ -104,26 +99,73 @@ import {
   LoopBusPluginRuntime,
   type AttentionDraft,
   type LoopBusPlugin,
+  type LoopMessageSourceRef,
   type LoopSourceReadRequest,
   type LoopSourceReadResult,
   type LoopSourceRef,
+  type LoopTaskSourceRef,
+  type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
+import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
+import { createRuntimeShellCommands } from "./runtime-cli";
+import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
+import { buildRuntimeTerminalEnvironment } from "./runtime-shell-bin";
+import {
+  projectRuntimeAttentionActiveMatch,
+  projectRuntimeMessageChannel,
+  projectRuntimeMessageSnapshot,
+  projectRuntimeTerminal,
+  projectRuntimeWorkspaceSurface,
+  type RuntimeReachableParticipantView,
+  type RuntimeMessageChannelView,
+  type RuntimeMessageSnapshotView,
+  type RuntimeVisibleMessageRoomView,
+  type RuntimeWorkspaceSurface,
+} from "./runtime-tool-views";
 import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
+import {
+  buildRuntimeSkillsList,
+  listRuntimeSkillMountRoots,
+  listRuntimeSkills,
+  RUNTIME_API_BASE_URL_ENV,
+  RUNTIME_HOME_DIR_ENV,
+  RUNTIME_PRINCIPAL_ID_ENV,
+  RUNTIME_PRIVATE_KEY_ENV,
+  RUNTIME_ROOT_WORKSPACE_ENV,
+  type RuntimeSkillRecord,
+} from "./runtime-skills";
+import { listRuntimeToolFiles } from "./runtime-tools";
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
 import {
+  projectAiCallToChatCycle,
+  projectAiCallToModelCall,
+  projectHeartbeatMessageToChatMessage,
+  toHeartbeatMessageUpsertInput,
+  type RuntimeModelCallRecord,
+} from "./session-ledger-view";
+import {
   DEFAULT_MESSAGE_CHAT_ID,
-  resolveSessionBlockChatId,
   resolveSessionRoomActorId,
 } from "./session-chat-projection";
+import type {
+  RuntimeCycleRecord,
+  RuntimeLoopStateLogRecord,
+  RuntimeLoopTraceRecord,
+  RuntimeTerminalActivityRecord,
+} from "./runtime-history-records";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
-import { projectPersistedBlockToChatMessage } from "./session-room-read-model";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
+import {
+  projectSessionNotificationSnapshot,
+  toAttentionFocusStateFromVisibility,
+  type SessionNotificationSnapshot,
+} from "./session-notifications";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from "./types";
 import {
@@ -133,9 +175,38 @@ import {
   type SettingsLayerSnapshot,
   type SettingsLayersResult,
 } from "./workspace-settings";
+import {
+  executeRootWorkspaceBash,
+  type RootWorkspaceBashExecResult,
+  type RootWorkspaceMountInput,
+  type WorkspaceGrantRecord,
+  type WorkspaceMountRecord,
+} from "./workspace-system";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
+
+const clonePromptWindowMessages = (
+  messages: unknown[] | null | undefined,
+): ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"] =>
+  structuredClone((messages ?? []) as ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"]);
+
+const toAgentPromptWindowStateRecord = (
+  record: SessionPromptWindowRecord,
+): AgentPromptWindowStateRecord => ({
+  id: record.promptWindowId,
+  createdAt: record.createdAt,
+  roundIndex: record.roundIndex,
+  messages: clonePromptWindowMessages(record.messages),
+});
+
+type SessionDbChatMessageRecord = SessionMessageRecord;
+type SessionDbApiCallRecord = SessionAiCallRecord;
+type SessionModelCallRecord = RuntimeModelCallRecord;
+type SessionCycleRecord = RuntimeCycleRecord;
+type SessionDbLoopbusStateLogRecord = RuntimeLoopStateLogRecord;
+type SessionDbLoopbusTraceRecord = RuntimeLoopTraceRecord;
+type SessionDbTerminalActivityRecord = RuntimeTerminalActivityRecord;
 
 const toToolRecord = (value: object): Record<string, unknown> => {
   return Object.fromEntries(Object.entries(value));
@@ -147,7 +218,7 @@ const ATTENTION_DEBT_INITIAL_BACKOFF_MS = 600;
 const ATTENTION_DEBT_MAX_BACKOFF_MS = 5_000;
 const ATTENTION_DEBT_BACKOFF_MULTIPLIER = 2;
 const PASSIVE_LIFECYCLE_ATTENTION_SCORE = 0;
-const ACTIVE_LIFECYCLE_ATTENTION_SCORE = 1;
+const PASSIVE_TERMINAL_OBSERVATION_SCORE = 0;
 
 type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 type TerminalReadMode = "auto" | "diff" | "snapshot";
@@ -175,6 +246,10 @@ interface AttentionContainmentSummary {
 
 type CompactCycleTrigger = "manual" | "threshold" | "error" | "attention_retry";
 type AttentionInputProtocolKind = "context" | "items";
+interface AttentionCommitRefEnvelope {
+  contextId: string;
+  commitId: string;
+}
 
 interface PendingCompactRequest {
   trigger: CompactCycleTrigger;
@@ -209,6 +284,28 @@ const serializeAttentionCommitIds = (commitIds: readonly string[]): string | und
   return JSON.stringify(commitIds);
 };
 
+const serializeAttentionContextIds = (contextIds: readonly string[]): string | undefined => {
+  if (contextIds.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify([...new Set(contextIds)]);
+};
+
+const parseAttentionContextIds = (value: unknown): string[] => {
+  if (typeof value !== "string" || value.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return [...new Set(parsed.filter((item): item is string => typeof item === "string" && item.length > 0))];
+  } catch {
+    return [];
+  }
+};
+
 const parseAttentionCommitIds = (value: unknown): string[] => {
   if (typeof value !== "string" || value.length === 0) {
     return [];
@@ -222,6 +319,74 @@ const parseAttentionCommitIds = (value: unknown): string[] => {
   } catch {
     return [];
   }
+};
+
+const serializeAttentionCommitRefs = (refs: readonly AttentionCommitRefEnvelope[]): string | undefined => {
+  if (refs.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify(
+    refs.map((ref) => ({
+      contextId: ref.contextId,
+      commitId: ref.commitId,
+    })),
+  );
+};
+
+const parseAttentionCommitRefs = (value: unknown): AttentionCommitRefEnvelope[] => {
+  if (typeof value !== "string" || value.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (item): item is AttentionCommitRefEnvelope =>
+        !!item &&
+        typeof item === "object" &&
+        typeof (item as Record<string, unknown>).contextId === "string" &&
+        typeof (item as Record<string, unknown>).commitId === "string",
+    );
+  } catch {
+    return [];
+  }
+};
+
+const pageLocalRecords = <T extends { id: number }>(
+  items: readonly T[],
+  input: { before?: SessionDbReverseTimeCursor; limit?: number } | undefined,
+  readTimestamp: (item: T) => number,
+): SessionDbReversePage<T> => {
+  const limit = Math.max(1, Math.min(input?.limit ?? 200, 1_000));
+  const before = input?.before;
+  const descending = [...items].sort((left, right) => {
+    const leftTime = readTimestamp(left);
+    const rightTime = readTimestamp(right);
+    return leftTime === rightTime ? right.id - left.id : rightTime - leftTime;
+  });
+  const filtered = descending.filter((item) => {
+    if (!before) {
+      return true;
+    }
+    const timestamp = readTimestamp(item);
+    return timestamp < before.beforeTimeMs || (timestamp === before.beforeTimeMs && item.id < before.beforeId);
+  });
+  const pageDescending = filtered.slice(0, limit);
+  const pageItems = [...pageDescending].reverse();
+  const oldest = pageItems[0] ?? null;
+  return {
+    items: pageItems,
+    nextBefore:
+      filtered.length > pageDescending.length && oldest
+        ? {
+            beforeTimeMs: readTimestamp(oldest),
+            beforeId: oldest.id,
+          }
+        : null,
+    hasMoreBefore: filtered.length > pageDescending.length,
+  };
 };
 
 type PendingTraceSpan = Omit<SessionDbLoopbusTraceRecord, "id" | "seq" | "cycleId">;
@@ -250,28 +415,15 @@ const toModelCallTraceRef = (modelCallId: number): SessionTraceRef =>
 const toAttentionHookTraceRef = (hookId: string): SessionTraceRef =>
   createTraceRef("attention.hook", hookId, { label: hookId });
 
-interface AttentionReplyTarget {
-  systemId?: string;
-  subjectId?: string;
-  channelId?: string;
-  rootId?: string;
-  from?: string;
-  to?: string;
-}
+const readMessageReplyEgress = (commit: AttentionCommit): AttentionCommitEgress | null =>
+  commit.egress?.kind === "message_reply" ? commit.egress : null;
 
-const readAttentionReplyTarget = (value: unknown): AttentionReplyTarget | null => {
-  if (!value || typeof value !== "object") {
+const resolveVisibleAttentionReplyContent = (commit: AttentionCommit): string | null => {
+  // Room-visible replies must come from an explicit body, not an internal summary.
+  if (commit.change.type !== "update") {
     return null;
   }
-  const input = value as Record<string, unknown>;
-  return {
-    systemId: typeof input.systemId === "string" ? input.systemId : undefined,
-    subjectId: typeof input.subjectId === "string" ? input.subjectId : undefined,
-    channelId: typeof input.channelId === "string" ? input.channelId : undefined,
-    rootId: typeof input.rootId === "string" ? input.rootId : undefined,
-    from: typeof input.from === "string" ? input.from : undefined,
-    to: typeof input.to === "string" ? input.to : undefined,
-  };
+  return commit.change.value.trim().length > 0 ? commit.change.value : null;
 };
 
 const extractKnownTerminalIds = (value: string, terminalIds: Iterable<string>): string[] => {
@@ -558,8 +710,93 @@ const truncateAttentionTitle = (value: string): string => {
 const serializeAttentionCommitMatch = (match: AttentionCommitMatch): string =>
   mdFence("yaml+attention_commit", toYaml(projectAttentionCommitMatchForModel(match)));
 
-const serializeAttentionActiveContext = (match: AttentionActiveContextMatch): string =>
-  mdFence("yaml+attention_context", toYaml(projectAttentionActiveContextForModel(match)));
+const projectBackgroundAttentionContextForModel = (
+  match: AttentionActiveContextMatch,
+): Record<string, unknown> => ({
+  contextId: match.contextId,
+  owner: match.context.owner,
+  focusState: match.context.focusState,
+  updatedAt: match.context.updatedAt,
+  headCommitId: match.context.headCommitId,
+  scoreMap: match.context.scoreMap,
+  contentPreview: truncateAttentionDetail(match.context.content, 280),
+  recentCommitSummaries: match.recentCommits.slice(-3).map((commit) => ({
+    commitId: commit.commitId,
+    summary: commit.summary,
+    scores: commit.scores,
+  })),
+});
+
+const projectAttentionCommitForPrompt = (commit: AttentionCommit): Record<string, unknown> => ({
+  commitId: commit.commitId,
+  ingressType: commit.ingressType,
+  parentCommitIds: [...commit.parentCommitIds],
+  provenance: {
+    author: commit.meta.author,
+    source: commit.meta.source,
+    systemId: commit.meta.systemId,
+    subjectId: commit.meta.subjectId,
+    channelId: commit.meta.channelId,
+    tags: commit.meta.tags,
+    createdAt: commit.meta.createdAt,
+  },
+  egress: commit.egress ? { ...commit.egress } : undefined,
+  scores: { ...commit.scores },
+  summary: commit.summary,
+  change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
+  createdAt: commit.createdAt,
+});
+
+const projectAttentionActiveContextForPrompt = (match: AttentionActiveContextMatch): Record<string, unknown> => ({
+  contextId: match.contextId,
+  context: {
+    contextId: match.context.contextId,
+    owner: match.context.owner,
+    focusState: match.context.focusState,
+    content: truncateAttentionDetail(match.context.content, 1_600),
+    contentFormat: match.context.contentFormat,
+    scoreMap: { ...match.context.scoreMap },
+    headCommitId: match.context.headCommitId,
+    createdAt: match.context.createdAt,
+    updatedAt: match.context.updatedAt,
+  },
+  recentCommits: match.recentCommits.map(projectAttentionCommitForPrompt),
+});
+
+const collapseSingleAttentionValue = <T>(items: readonly T[]): T | T[] => (items.length === 1 ? items[0]! : [...items]);
+
+const serializeFocusedAttentionContext = (match: AttentionActiveContextMatch): string =>
+  mdFence("yaml+focused-attention-context", toYaml(projectAttentionActiveContextForPrompt(match)));
+
+const serializeFocusedAttentionContexts = (matches: readonly AttentionActiveContextMatch[]): string =>
+  mdFence(
+    "yaml+focused-attention-context",
+    toYaml(collapseSingleAttentionValue(matches.map((match) => projectAttentionActiveContextForPrompt(match)))),
+  );
+
+const serializeBackgroundAttentionContext = (match: AttentionActiveContextMatch): string =>
+  mdFence(
+    "yaml+background-attention-context",
+    toYaml(projectBackgroundAttentionContextForModel(match)),
+  );
+
+const serializeBackgroundAttentionContexts = (matches: readonly AttentionActiveContextMatch[]): string =>
+  mdFence(
+    "yaml+background-attention-context",
+    toYaml(collapseSingleAttentionValue(matches.map((match) => projectBackgroundAttentionContextForModel(match)))),
+  );
+
+const serializeMutedAttentionContextList = (matches: readonly AttentionActiveContextMatch[]): string =>
+  mdFence(
+    "yaml+muted-attention-context-list",
+    toYaml(
+      matches.map((match) => ({
+        contextId: match.contextId,
+        updatedAt: match.context.updatedAt,
+        headCommitId: match.context.headCommitId,
+      })),
+    ),
+  );
 
 const yamlScalar = (input: unknown): string => {
   if (input === null || input === undefined) {
@@ -662,16 +899,27 @@ const pathExists = async (path: string): Promise<boolean> => {
 
 type LoopInputKind = "user" | "terminal" | "task" | "attention";
 const IGNORE_WAIT = Symbol("ignore-wait");
+const DEFAULT_MAX_FOCUSED_ROOM_COUNT = 3;
+const DEFAULT_MAX_BATCH_READ_ROOM_MESSAGE_COUNT = 20;
+
+interface PendingUnreadReadAck {
+  chatId: string;
+  accessToken: string;
+  targetMessageId: string;
+  selectedMessageIds: string[];
+}
 
 const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
   const semanticHint =
-    typeof draft.meta?.semanticHash === "string"
-      ? draft.meta.semanticHash
-      : typeof draft.meta?.toHash === "string"
-        ? draft.meta.toHash
+    typeof draft.semanticHash === "string"
+      ? draft.semanticHash
+      : typeof draft.versionHint === "string"
+        ? draft.versionHint
         : JSON.stringify({
             content: draft.content,
-            meta: draft.meta ?? null,
+            presentation: draft.presentation ?? null,
+            provenance: draft.provenance ?? null,
+            egress: draft.egress ?? null,
           });
   return `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}:${semanticHint}`;
 };
@@ -680,7 +928,7 @@ const buildAttentionScoreSubjectSeed = (draft: AttentionDraft): string =>
   `subject:${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}`;
 
 const buildAttentionScoreSemanticSeed = (draft: AttentionDraft): string | null => {
-  const semanticHash = typeof draft.meta?.semanticHash === "string" ? draft.meta.semanticHash.trim() : "";
+  const semanticHash = typeof draft.semanticHash === "string" ? draft.semanticHash.trim() : "";
   if (semanticHash.length === 0) {
     return null;
   }
@@ -807,6 +1055,18 @@ export interface SessionRuntimeAttentionState {
   hooks: AttentionHookRecord[];
 }
 
+export interface SessionRuntimeAttentionApiSurface {
+  baseUrl: string;
+  principalId: string;
+}
+
+export interface SessionRuntimeRootWorkspaceSurface {
+  path: string;
+  commandNames: string[];
+  toolNames: string[];
+  skillRoots: string[];
+}
+
 export type ModelCallDeltaKind = "assistant_draft" | "tool_call" | "tool_result" | "run_finished";
 
 export interface SessionModelCallDeltaRecord {
@@ -890,6 +1150,8 @@ export interface SessionRuntimeSnapshot {
     enabled: boolean;
     refCount: number;
   };
+  attentionApi: SessionRuntimeAttentionApiSurface | null;
+  rootWorkspace: SessionRuntimeRootWorkspaceSurface | null;
   modelCapabilities: ModelCapabilities;
   activeCycle: ChatCycle | null;
 }
@@ -899,6 +1161,9 @@ export interface SessionRuntimeOptions {
   cwd: string;
   avatar?: string;
   avatarPrincipalId?: string;
+  avatarPrivateKey?: string;
+  homeDir?: string;
+  rootWorkspacePath?: string;
   sessionRoot: string;
   sessionName: string;
   storeTarget: "global" | "workspace";
@@ -907,6 +1172,17 @@ export interface SessionRuntimeOptions {
   terminalSystem: TerminalControlPlane;
   terminalActorId?: TerminalActorId;
   primaryRoomId: string;
+  resolveRuntimeTerminalCwd?: (input: {
+    sessionId: string;
+    cwd?: string;
+  }) =>
+    | Promise<{ ok: true; cwd: string } | { ok: false; message: string }>
+    | { ok: true; cwd: string }
+    | { ok: false; message: string };
+  listRuntimeWorkspaceAuthorities?: () => Array<{
+    mount: WorkspaceMountRecord;
+    grants: WorkspaceGrantRecord[];
+  }>;
   allocateRoomId?: (input: { kind: MessageChannelKind; title?: string }) => Promise<string>;
   logger?: {
     log: (line: {
@@ -952,6 +1228,7 @@ export class SessionRuntime {
   private readonly terminalLatestSeq: Record<string, number> = {};
   private readonly terminalViewFingerprint: Record<string, string> = {};
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
+  private readonly terminalStatusById = new Map<string, { running: boolean; status: "IDLE" | "BUSY" }>();
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
   private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
@@ -974,9 +1251,13 @@ export class SessionRuntime {
   private readonly terminalActorId: TerminalActorId;
   private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
+  private readonly pendingUnreadMessageIds = new Set<string>();
   private readonly messageSystemCleanup: Array<() => void> = [];
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
+  private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
+  private runtimeSkills: RuntimeSkillRecord[] = [];
+  private runtimeSkillsList = "";
   private readonly terminalControlPlane: TerminalControlPlane;
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
@@ -990,13 +1271,44 @@ export class SessionRuntime {
   private focusedTerminalIds: string[] = [];
   private chatMessages: ChatMessage[] = [];
   private activeCycle: ChatCycle | null = null;
+  private readonly cycleRecords: RuntimeCycleRecord[] = [];
   private loopKernelSnapshot: LoopBusKernelSnapshot | null = null;
   private activeCycleId: number | null = null;
   private activeModelCallId: number | null = null;
+  private activeModelResponseDraft:
+    | {
+        assistant?: {
+          thinking?: string;
+          text?: string;
+          finishReason?: string | null;
+        };
+        usage?: {
+          promptTokens?: number;
+          completionTokens?: number;
+          totalTokens?: number;
+        };
+        toolTrace: Array<{
+          invocationId: string;
+          tool: string;
+          input: unknown;
+          output?: unknown;
+          error?: string;
+          startedAt: number;
+          finishedAt: number;
+        }>;
+      }
+    | null = null;
   private modelCallDeltaSeq = 0;
+  private cycleSeq = 0;
+  private loopStateLogSeq = 0;
+  private loopTraceSeq = 0;
+  private terminalActivitySeq = 0;
   private readonly pendingTraceSpans: PendingTraceSpan[] = [];
   private readonly traceRowIdBySpanId = new Map<string, number>();
   private readonly runningTraceRowsByName = new Map<string, SessionDbLoopbusTraceRecord>();
+  private readonly loopStateLogEntries: SessionDbLoopbusStateLogRecord[] = [];
+  private readonly loopTraceEntries: SessionDbLoopbusTraceRecord[] = [];
+  private readonly terminalActivityByTerminalId = new Map<string, SessionDbTerminalActivityRecord[]>();
   private readonly cycleReplyChatIds = new Map<number, string>();
   private pendingCompactRequest: PendingCompactRequest | null = null;
   private abortingActiveCycle = false;
@@ -1041,6 +1353,9 @@ export class SessionRuntime {
   private readonly attentionContainment = new Map<string, AttentionContainmentEntry>();
   private lastAttentionProgressAt: number | null = null;
   private loopPluginRuntime: LoopBusPluginRuntime | null = null;
+  private stagedUnreadReadAcks: PendingUnreadReadAck[] = [];
+  private activeCycleUnreadReadAcks: PendingUnreadReadAck[] = [];
+  private activeCycleUnreadReadCommitted = false;
 
   constructor(private readonly options: SessionRuntimeOptions) {
     this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
@@ -1065,31 +1380,70 @@ export class SessionRuntime {
     this.bindMessageSystem();
   }
 
+  private getHomeDir(): string {
+    return this.options.homeDir ?? homedir();
+  }
+
+  private getRootWorkspacePath(): string {
+    return this.options.rootWorkspacePath ?? this.options.cwd;
+  }
+
+  private listWorkspaceAuthorities(): Array<{
+    mount: WorkspaceMountRecord;
+    grants: WorkspaceGrantRecord[];
+  }> {
+    return this.options.listRuntimeWorkspaceAuthorities?.() ?? [];
+  }
+
+  private getRootWorkspaceSkillRoots(): string[] {
+    return listRuntimeSkillMountRoots({
+      homeDir: this.getHomeDir(),
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      principalId: this.options.avatarPrincipalId,
+    });
+  }
+
+  private getRootWorkspaceToolFiles(): string[] {
+    return listRuntimeToolFiles({
+      homeDir: this.getHomeDir(),
+      rootWorkspacePath: this.getRootWorkspacePath(),
+    });
+  }
+
+  private getRootWorkspaceSkillMounts(): RootWorkspaceMountInput[] {
+    const rootWorkspacePath = resolve(this.getRootWorkspacePath());
+    return this.getRootWorkspaceSkillRoots()
+      .map((path) => resolve(path))
+      .filter((path) => {
+        if (path === rootWorkspacePath) {
+          return false;
+        }
+        const rel = relative(rootWorkspacePath, path);
+        return rel.startsWith("..") || rel === "";
+      })
+      .map((path) => ({
+        path,
+        mode: "ro" as const,
+      }));
+  }
+
   private createMessageSourceRef(input: {
     chatId: string;
     messageId: string;
-    rootId?: string;
-    from: string;
-    to?: string;
-    content: string;
-    attachments: ChatSessionAsset[];
-    meta?: Record<string, string | number | boolean | null>;
-  }): LoopSourceRef {
+  }): LoopMessageSourceRef {
     return {
       systemId: "message",
       subjectId: input.messageId,
+      channelId: input.chatId,
       reason: "message-committed",
-      meta: {
-        chatId: input.chatId,
-        messageId: input.messageId,
-        rootId: input.rootId,
-        from: input.from,
-        to: input.to,
-        content: input.content,
-        attachments: input.attachments,
-        meta: input.meta,
-      },
     };
+  }
+
+  private getMessageSourceChannelId(ref: LoopSourceRef): string {
+    if (ref.systemId === "message" && "channelId" in ref && typeof ref.channelId === "string") {
+      return ref.channelId;
+    }
+    return this.getDefaultChatId();
   }
 
   private getDefaultChatId(): string {
@@ -1123,25 +1477,44 @@ export class SessionRuntime {
     return "ctx-terminal-control-plane";
   }
 
+  private ensureAttentionContext(contextId: string, focusState: AttentionFocusState = "focused"): AttentionContextState {
+    const existing = this.attentionSystem.getContext(contextId);
+    if (existing) {
+      return existing.getState();
+    }
+    return this.attentionSystem.createContext({
+      contextId,
+      owner: this.getAvatarName(),
+      focusState,
+    }).getState();
+  }
+
+  private resolveAttentionFocusState(contextId: string): AttentionFocusState {
+    return this.attentionSystem.getContext(contextId)?.getState().focusState ?? "focused";
+  }
+
+  private resolveAttentionIngressType(contextId: string): "commit" | "push" {
+    return this.resolveAttentionFocusState(contextId) === "focused" ? "commit" : "push";
+  }
+
+  private async applyAttentionFocusState(contextId: string, focusState: AttentionFocusState): Promise<void> {
+    const before = this.ensureAttentionContext(contextId, focusState);
+    if (before.focusState === focusState) {
+      return;
+    }
+    this.attentionSystem.setContextFocusState(contextId, focusState);
+    this.attentionFactsVersion += 1;
+    await this.persistAttentionSystem();
+    this.emitAttentionState();
+    if (focusState === "focused" && this.attentionSystem.listPushCommits(contextId).length > 0) {
+      this.markAttentionContextDirty(contextId);
+      this.notifyInput("attention");
+    }
+  }
+
   private resolveLifecycleAttentionScore(input: { systemId: "message" | "terminal"; event: string }): number {
-    if (input.systemId === "message") {
-      switch (input.event) {
-        case "channel_create":
-        case "channel_update":
-        case "channel_archive":
-          return ACTIVE_LIFECYCLE_ATTENTION_SCORE;
-        default:
-          return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
-      }
-    }
-    switch (input.event) {
-      case "terminal_create":
-      case "terminal_delete":
-      case "terminal_config_update":
-        return ACTIVE_LIFECYCLE_ATTENTION_SCORE;
-      default:
-        return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
-    }
+    void input;
+    return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
   }
 
   private summarizeTerminalControlPlanePatch(patch: TerminalControlPlaneConfigPatch): Record<string, unknown> {
@@ -1222,7 +1595,11 @@ export class SessionRuntime {
   }
 
   private ensureAttentionContextForChannel(chatId: string): AttentionContextDescriptor {
-    const channel = this.messageSystem.getChannel(chatId);
+    const actorChannel = this.getActorRoom(chatId, {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const channel = actorChannel ?? this.messageSystem.getChannel(chatId);
     const contextId = channel?.contextId ?? this.getDefaultAttentionContextId(chatId);
     const existing = this.attentionSystem.getContext(contextId);
     if (existing) {
@@ -1236,7 +1613,21 @@ export class SessionRuntime {
       };
     }
     const owner = channel?.owner ?? this.getAvatarName();
-    const created = this.attentionSystem.createContext({ contextId, owner });
+    const created = this.attentionSystem.createContext({
+      contextId,
+      owner,
+      focusState: actorChannel
+        ? actorChannel.focused
+          ? "focused"
+          : "background"
+        : channel
+          ? channel.focused
+            ? "focused"
+            : "background"
+        : chatId === this.getDefaultChatId()
+          ? "focused"
+          : "background",
+    });
     const state = created.getState();
     return {
       contextId: state.contextId,
@@ -1247,51 +1638,36 @@ export class SessionRuntime {
     };
   }
 
-  private ensureDefaultChatChannel(): MessageControlPlaneEntry {
+  private requireDefaultChatChannel(): MessageControlPlaneEntry {
     const chatId = this.getDefaultChatId();
     const context = this.ensureAttentionContextForChannel(chatId);
     const existing = this.getActorRoom(chatId);
-    if (existing) {
-      const repaired = repairRoomParticipantsIfNeeded(this.messageSystem, existing);
-      this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
-      return repaired;
+    if (!existing) {
+      throw new Error(`default room is not attached: ${chatId}`);
     }
-    const sharedRoom = this.messageSystem.getChannel(chatId);
-    if (sharedRoom) {
-      const repairedSharedRoom = repairRoomParticipantsIfNeeded(this.messageSystem, sharedRoom);
-      this.messageSystem.issueChannelGrantAuthorized({
-        chatId,
-        accessToken: repairedSharedRoom.accessToken,
-        role: "admin",
-        label: this.getAvatarName(),
-        participantId: this.messageActorId,
-      });
+    const created = repairRoomParticipantsIfNeeded(this.messageSystem, existing);
+    if (this.resolveAttentionFocusState(context.contextId) === "focused") {
       this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
-      const granted = this.getActorRoom(chatId);
-      if (granted) {
-        return repairRoomParticipantsIfNeeded(this.messageSystem, granted);
-      }
+    } else {
+      this.messageSystem.focusForActor(this.messageActorId, "remove", [chatId]);
     }
-    const avatar = this.getAvatarName();
-    const defaults = this.config?.message?.chatMainDefaults;
-    const created = this.messageSystem.createChannel({
-      chatId,
-      kind: "room",
-      title: defaults?.title ?? "Room",
-      owner: avatar,
-      contextId: context.contextId,
-      participants: defaults?.participants ?? [],
-      metadata: {
-        builtIn: true,
-        primaryRoom: true,
-        sessionId: this.options.sessionId,
-        ...(defaults?.metadata ?? {}),
-      },
-      adminToken: defaults?.adminToken,
-      bootstrapActorId: this.messageActorId,
-    });
-    this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
     return created;
+  }
+
+  private async resolveRuntimeTerminalCwd(input: {
+    cwd?: string;
+  }): Promise<{ ok: true; cwd: string } | { ok: false; message: string }> {
+    const resolver = this.options.resolveRuntimeTerminalCwd;
+    if (!resolver) {
+      return {
+        ok: false,
+        message: "runtime terminal cwd resolution requires explicit workspace mount authority",
+      };
+    }
+    return await resolver({
+      sessionId: this.options.sessionId,
+      cwd: input.cwd,
+    });
   }
 
   private async allocateMessageChannelId(kind: MessageChannelKind, title?: string): Promise<string> {
@@ -1317,84 +1693,40 @@ export class SessionRuntime {
         channel.metadata && typeof channel.metadata === "object"
           ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
           : {},
+      readProgress: channel.readProgress
+        ? {
+            ...channel.readProgress,
+          }
+        : undefined,
+      readStates: channel.readStates?.map((state) => ({
+        actorId: state.actorId,
+        label: state.label,
+        role: state.role,
+        currentAdmin: state.currentAdmin,
+        online: state.online,
+        focused: state.focused,
+        hasReadLatestVisible: state.hasReadLatestVisible,
+      })),
+      presence: this.projectMessagePresenceSummary(channel),
       focused: channel.focused,
       archivedAt: channel.archivedAt ?? null,
       archivedBy: channel.archivedBy ?? null,
     };
   }
 
-  private projectMessageChannelForTooling(channel: MessageControlPlaneEntry): {
-    chatId: string;
-    kind: "room";
-    title: string;
-    owner: string;
-    contextId?: string;
-    participants: Array<{
-      id: string;
-      label?: string;
-    }>;
-    metadata?: Record<string, unknown>;
-    focused: boolean;
-    archivedAt?: number;
-    archivedBy?: string;
-  } {
-    return {
-      chatId: channel.chatId,
-      kind: channel.kind,
-      title: channel.title,
-      owner: channel.owner,
-      contextId: channel.contextId,
-      participants: channel.participants.map((participant) => ({
-        id: participant.id,
-        label: participant.label,
-      })),
-      metadata:
-        channel.metadata && typeof channel.metadata === "object"
-          ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
-          : undefined,
-      focused: channel.focused,
-      archivedAt: channel.archivedAt,
-      archivedBy: channel.archivedBy,
-    };
+  private projectMessageChannelForTooling(channel: MessageControlPlaneEntry): RuntimeMessageChannelView {
+    return projectRuntimeMessageChannel(channel);
   }
 
-  private listMessageChannelsForTooling(input: { includeArchived?: boolean } = {}): Array<{
-    chatId: string;
-    kind: "room";
-    title: string;
-    owner: string;
-    contextId?: string;
-    participants: Array<{
-      id: string;
-      label?: string;
-    }>;
-    metadata?: Record<string, unknown>;
-    focused: boolean;
-    archivedAt?: number;
-    archivedBy?: string;
-  }> {
+  private listMessageChannelsForTooling(input: { includeArchived?: boolean } = {}): RuntimeMessageChannelView[] {
     return this.listMessageChannels({ includeArchived: input.includeArchived }).map((channel) =>
       this.projectMessageChannelForTooling(channel),
     );
   }
 
-  private getMessageChannelForTooling(input: { chatId: string; includeArchived?: boolean }): {
-    chatId: string;
-    kind: "room";
-    title: string;
-    owner: string;
-    contextId?: string;
-    participants: Array<{
-      id: string;
-      label?: string;
-    }>;
-    metadata?: Record<string, unknown>;
-    focused: boolean;
-    archivedAt?: number;
-    archivedBy?: string;
-  } | null {
+  private getMessageChannelForTooling(input: { chatId: string; includeArchived?: boolean }): RuntimeMessageChannelView | null {
     if (input.chatId === this.getDefaultChatId()) {
-      this.ensureDefaultChatChannel();
+      this.requireDefaultChatChannel();
     }
     const channel =
       this.getActorRoom(input.chatId, {
@@ -1404,6 +1736,287 @@ export class SessionRuntime {
         includeArchived: input.includeArchived ?? false,
       });
     return channel ? this.projectMessageChannelForTooling(channel) : null;
+  }
+
+  private readMessageChannelForTooling(input: { chatId: string; limit?: number }): RuntimeMessageSnapshotView {
+    const visibleRooms = this.listVisibleMessageRoomSummaries(input.chatId);
+    return projectRuntimeMessageSnapshot(this.readMessageChannel(input), {
+      visibleRooms,
+      reachableParticipants: this.projectReachableMessageParticipants(visibleRooms),
+    });
+  }
+
+  private resolveMessageSeatLabel(input: { id: string; label?: string }): string {
+    const label = input.label?.trim();
+    return label && label.length > 0 ? label : input.id;
+  }
+
+  private listVisibleMessageRoomSummaries(currentChatId: string): Array<{
+    chatId: string;
+    title: string;
+    participantLabels: string[];
+    focused: boolean;
+  }> {
+    return this.listMessageChannels()
+      .filter((channel) => channel.chatId !== currentChatId)
+      .map((channel) => ({
+        chatId: channel.chatId,
+        title: channel.title,
+        participantLabels: this.projectMessagePresenceSummary(channel).participantLabels,
+        focused: channel.focused,
+      }))
+      .sort((left, right) => {
+        if (left.focused !== right.focused) {
+          return left.focused ? -1 : 1;
+        }
+        return left.title.localeCompare(right.title);
+      })
+      .slice(0, 8);
+  }
+
+  private projectReachableMessageParticipants(
+    visibleRooms: RuntimeVisibleMessageRoomView[],
+  ): RuntimeReachableParticipantView[] {
+    const directory = new Map<string, RuntimeVisibleMessageRoomView[]>();
+    for (const room of visibleRooms) {
+      for (const label of room.participantLabels) {
+        const normalizedLabel = label.trim();
+        if (normalizedLabel.length === 0) {
+          continue;
+        }
+        const rooms = directory.get(normalizedLabel) ?? [];
+        rooms.push(room);
+        directory.set(normalizedLabel, rooms);
+      }
+    }
+    return [...directory.entries()]
+      .map(([label, rooms]) => ({
+        label,
+        rooms: rooms.sort((left, right) => {
+          if (left.focused !== right.focused) {
+            return left.focused ? -1 : 1;
+          }
+          return left.title.localeCompare(right.title);
+        }),
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  private projectMessagePresenceSummary(channel: MessageControlPlaneEntry): {
+    totalSeatCount: number;
+    participantLabels: string[];
+    onlineLabels: string[];
+    offlineLabels: string[];
+    focusedLabels: string[];
+  } {
+    return summarizeMessageChannelPresence(channel);
+  }
+
+  private shouldTreatSharedMessageAsReplyPending(input: {
+    message: MessageRecord;
+    selfActorId: string;
+    selfLabel: string;
+    audience: "direct" | "group";
+  }): boolean {
+    const senderActorId = input.message.senderActorId ?? null;
+    if (senderActorId === null || senderActorId === input.selfActorId) {
+      return false;
+    }
+    if (input.audience === "direct") {
+      return true;
+    }
+    if (senderActorId.startsWith("auth:")) {
+      return true;
+    }
+
+    const explicitTo = input.message.to?.trim();
+    if (explicitTo) {
+      const normalizedExplicitTo = explicitTo.toLowerCase();
+      const normalizedSelfActorId = input.selfActorId.toLowerCase();
+      const normalizedSelfLabel = input.selfLabel.trim().toLowerCase();
+      if (
+        normalizedExplicitTo === normalizedSelfActorId ||
+        (normalizedSelfLabel.length > 0 && normalizedExplicitTo === normalizedSelfLabel)
+      ) {
+        return true;
+      }
+    }
+
+    return /[?？]/u.test(input.message.content);
+  }
+
+  private buildMessageLoopMeta(
+    message: MessageRecord,
+    channel: MessageControlPlaneEntry | undefined,
+    existingMeta: Record<string, string | number | boolean | null>,
+  ): Record<string, string | number | boolean | null> {
+    const nextMeta = { ...existingMeta };
+    if (!channel) {
+      return nextMeta;
+    }
+
+    const seatEntries = listMessageSeatEntries(channel);
+    const toLabels = (
+      entries: Array<{
+        label: string;
+      }>,
+    ): string[] => entries.map((entry) => entry.label);
+
+    const selfActorId = this.messageActorId;
+    const selfState = seatEntries.find((state) => state.actorId === selfActorId);
+    const senderActorId = message.senderActorId ?? null;
+    const senderState =
+      (senderActorId ? seatEntries.find((state) => state.actorId === senderActorId) : undefined) ??
+      seatEntries.find((state) => state.label === message.from);
+    const otherStates = seatEntries.filter((state) => state.actorId !== selfActorId);
+    const onlineStates = seatEntries.filter((state) => state.online === true);
+    const offlineStates = seatEntries.filter((state) => state.online === false);
+    const focusedStates = seatEntries.filter((state) => state.focused === true);
+    const otherOnlineStates = otherStates.filter((state) => state.online === true);
+    const otherOfflineStates = otherStates.filter((state) => state.online === false);
+    const chatAudience = seatEntries.length > 2 ? "group" : "direct";
+
+    nextMeta.chatParticipantCount = seatEntries.length;
+    nextMeta.chatParticipantLabels = JSON.stringify(toLabels(seatEntries));
+    nextMeta.chatOtherParticipantLabels = JSON.stringify(toLabels(otherStates));
+    nextMeta.chatOnlineParticipantLabels = JSON.stringify(toLabels(onlineStates));
+    nextMeta.chatOfflineParticipantLabels = JSON.stringify(toLabels(offlineStates));
+    nextMeta.chatFocusedParticipantLabels = JSON.stringify(toLabels(focusedStates));
+    nextMeta.chatOtherOnlineParticipantLabels = JSON.stringify(toLabels(otherOnlineStates));
+    nextMeta.chatOtherOfflineParticipantLabels = JSON.stringify(toLabels(otherOfflineStates));
+    nextMeta.chatSelfActorId = selfActorId;
+    nextMeta.chatSelfLabel = selfState?.label ?? this.getAvatarName();
+    const latestMessagePerspective = senderActorId !== null && senderActorId === selfActorId ? "self" : "other";
+    const replyPending =
+      latestMessagePerspective === "other" &&
+      this.shouldTreatSharedMessageAsReplyPending({
+        message,
+        selfActorId,
+        selfLabel: String(nextMeta.chatSelfLabel ?? ""),
+        audience: chatAudience,
+      });
+    nextMeta.chatSenderActorId = senderActorId;
+    nextMeta.chatSenderLabel = senderState?.label ?? message.from;
+    nextMeta.chatMessagePerspective = latestMessagePerspective;
+    nextMeta.chatTurnState = replyPending ? "your_turn" : "waiting";
+    nextMeta.chatObligationKind = replyPending ? "room_reply_pending" : "self_update";
+    nextMeta.chatAudience = chatAudience;
+    const visibleRooms = this.listVisibleMessageRoomSummaries(channel.chatId);
+    nextMeta.chatVisibleRoomCount = visibleRooms.length;
+    nextMeta.chatVisibleRoomSummaries = JSON.stringify(visibleRooms);
+    return nextMeta;
+  }
+
+  private parseMessageMetaLabelList(value: unknown): string[] {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private parseMessageMetaRoomSummaries(
+    value: unknown,
+  ): Array<{
+    chatId: string;
+    title: string;
+    participantLabels: string[];
+    focused: boolean;
+  }> {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return [];
+        }
+        const record = entry as Record<string, unknown>;
+        const chatId = typeof record.chatId === "string" ? record.chatId : null;
+        const title = typeof record.title === "string" ? record.title : null;
+        if (!chatId || !title) {
+          return [];
+        }
+        const participantLabels = Array.isArray(record.participantLabels)
+          ? record.participantLabels.filter((label): label is string => typeof label === "string" && label.trim().length > 0)
+          : [];
+        return [
+          {
+            chatId,
+            title,
+            participantLabels,
+            focused: record.focused === true,
+          },
+        ];
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  private buildMessageModelEnvelope(
+    content: string,
+    meta: Record<string, unknown>,
+    attachments: ChatSessionAsset[] = [],
+  ): string {
+    const participantLabels = this.parseMessageMetaLabelList(meta.chatParticipantLabels);
+    const otherParticipantLabels = this.parseMessageMetaLabelList(meta.chatOtherParticipantLabels);
+    const onlineLabels = this.parseMessageMetaLabelList(meta.chatOnlineParticipantLabels);
+    const offlineLabels = this.parseMessageMetaLabelList(meta.chatOfflineParticipantLabels);
+    const focusedLabels = this.parseMessageMetaLabelList(meta.chatFocusedParticipantLabels);
+    const visibleRooms = this.parseMessageMetaRoomSummaries(meta.chatVisibleRoomSummaries);
+    const socialContext = {
+      channel: {
+        chatId: typeof meta.chatId === "string" ? meta.chatId : null,
+        title: typeof meta.chatTitle === "string" ? meta.chatTitle : null,
+        kind: typeof meta.chatKind === "string" ? meta.chatKind : null,
+        audience: typeof meta.chatAudience === "string" ? meta.chatAudience : null,
+        participantCount:
+          typeof meta.chatParticipantCount === "number" ? meta.chatParticipantCount : participantLabels.length || null,
+        participants: participantLabels,
+        otherParticipants: otherParticipantLabels,
+      },
+      perspective: {
+        latestMessage: typeof meta.chatMessagePerspective === "string" ? meta.chatMessagePerspective : null,
+        senderActorId: typeof meta.chatSenderActorId === "string" ? meta.chatSenderActorId : null,
+        senderLabel: typeof meta.chatSenderLabel === "string" ? meta.chatSenderLabel : null,
+        selfActorId: typeof meta.chatSelfActorId === "string" ? meta.chatSelfActorId : null,
+        selfLabel: typeof meta.chatSelfLabel === "string" ? meta.chatSelfLabel : null,
+        turnState: typeof meta.chatTurnState === "string" ? meta.chatTurnState : null,
+      },
+      obligation: {
+        kind: typeof meta.chatObligationKind === "string" ? meta.chatObligationKind : null,
+        settlesWhen:
+          meta.chatObligationKind === "room_reply_pending" ? "required_room_reply_sent" : "no_external_reply_needed",
+      },
+      presence: {
+        online: onlineLabels,
+        offline: offlineLabels,
+        focused: focusedLabels,
+      },
+      visibleRooms,
+    };
+    const attachmentFacts =
+      attachments.length === 0
+        ? []
+        : [
+            "attachments:",
+            ...attachments.map(
+              (attachment) =>
+                `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
+            ),
+          ];
+    return [mdFence("yaml", toYaml(socialContext)), content, ...attachmentFacts].join("\n\n");
   }
 
   private async sendMessageTool(input: {
@@ -1456,7 +2069,7 @@ export class SessionRuntime {
 
   private requireActorChannelWriteAccess(chatId: string): { chatId: string; accessToken: string } {
     if (chatId === this.getDefaultChatId()) {
-      this.ensureDefaultChatChannel();
+      this.requireDefaultChatChannel();
     }
     const actorChannel = this.getActorRoom(chatId);
     if (!actorChannel?.accessToken) {
@@ -1491,6 +2104,29 @@ export class SessionRuntime {
 
   private getMessageSendOriginAckFallback(): string {
     return this.config?.lang === "zh-Hans" ? "收到，我先处理一下。" : "Understood. I'll handle it and report back.";
+  }
+
+  private maybeAutoAcknowledgeOriginRoomForToolWork(command: string): void {
+    const cycleId = this.activeCycleId;
+    const originChatId = this.getOriginChatIdForCycle(cycleId);
+    if (!originChatId || this.hasDeliveredMessageSendForCycle(originChatId, cycleId)) {
+      return;
+    }
+    const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
+    if (!originChannel) {
+      return;
+    }
+    this.deliverMessageSend({
+      chatId: originChatId,
+      content: this.getMessageSendOriginAckFallback(),
+      from: this.getAvatarName(),
+      cycleId,
+      metadata: {
+        autoOriginAck: true,
+        autoOriginAckReason: "tool_work_start",
+        toolWorkCommandPreview: command.slice(0, 160),
+      },
+    });
   }
 
   private deliverMessageSend(input: {
@@ -1533,8 +2169,30 @@ export class SessionRuntime {
   }
 
   listMessageChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
-    this.ensureDefaultChatChannel();
     return this.listActorRooms({ includeArchived: input.includeArchived });
+  }
+
+  readMessageChannel(input: { chatId: string; limit?: number }): MessageSnapshot {
+    const access = this.getActorRoom(input.chatId);
+    if (!access?.accessToken) {
+      throw new Error(`runtime actor has no grant for chat channel: ${input.chatId}`);
+    }
+    return this.messageSystem.snapshotAuthorized({
+      chatId: access.chatId,
+      accessToken: access.accessToken,
+      limit: input.limit,
+    });
+  }
+
+  async sendRuntimeMessage(input: {
+    chatId: string;
+    content: string;
+    rootId?: string;
+    from?: string;
+    to?: string;
+    originAckFallback?: string;
+  }): Promise<{ ok: boolean; messageId: string }> {
+    return await this.sendMessageTool(input);
   }
 
   async createMessageChannel(input: {
@@ -1551,6 +2209,7 @@ export class SessionRuntime {
     const avatar = this.getAvatarName();
     const chatId = await this.allocateMessageChannelId(input.kind, input.title);
     const context = this.ensureAttentionContextForChannel(chatId);
+    await this.applyAttentionFocusState(context.contextId, input.focus ?? true ? "focused" : "background");
     const channel = this.messageSystem.createChannel({
       chatId,
       kind: "room",
@@ -1596,10 +2255,10 @@ export class SessionRuntime {
     return this.getActorRoom(chatId) ?? channel;
   }
 
-  focusMessageChannels(input: {
+  async focusMessageChannels(input: {
     op: MessageFocusOp;
     channels: Array<{ chatId: string; accessToken: string }>;
-  }): MessageControlPlaneEntry[] {
+  }): Promise<MessageControlPlaneEntry[]> {
     const focusedBefore = new Set(this.messageSystem.getFocusedChatIds(this.messageActorId));
     const focusedAfter = new Set(this.messageSystem.focusAuthorized(input.op, input.channels));
     const channels = this.listActorRooms();
@@ -1614,6 +2273,10 @@ export class SessionRuntime {
         continue;
       }
       const focused = focusedAfter.has(chatId);
+      await this.applyAttentionFocusState(
+        channel.contextId ?? this.getDefaultAttentionContextId(chatId),
+        focused ? "focused" : "background",
+      );
       const wasFocused = focusedBefore.has(chatId);
       if (focused === wasFocused && !input.channels.some((item) => item.chatId === chatId)) {
         continue;
@@ -1764,6 +2427,63 @@ export class SessionRuntime {
     return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
   }
 
+  async readRuntimeTerminal(input: {
+    terminalId: string;
+    mode?: TerminalReadMode;
+  }): Promise<TerminalReadPayload> {
+    return await this.readTerminalRepresentation(input.terminalId, {
+      mode: input.mode ?? "auto",
+      remark: false,
+    });
+  }
+
+  async writeRuntimeTerminal(input: {
+    terminalId: string;
+    text: string;
+    submit?: boolean;
+    submitKey?: "enter" | "linefeed";
+  }): Promise<{ ok: boolean; message: string }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    if (!controlPlane.has(input.terminalId)) {
+      return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+    }
+    const submitGapMs = this.config?.terminals[input.terminalId]?.submitGapMs ?? 80;
+    try {
+      if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
+        controlPlane.start(input.terminalId);
+        await controlPlane.markDirty(input.terminalId);
+      }
+      const result = await controlPlane.write({
+        terminalId: input.terminalId,
+        text: input.text,
+        submit: input.submit,
+        submitKey: input.submitKey,
+        submitGapMs,
+        actorId: this.terminalActorId,
+      });
+      if (result.ok) {
+        this.appendTerminalActivity({
+          terminalId: input.terminalId,
+          kind: "terminal_write",
+          cycleId: this.activeCycleId,
+          title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+          content: result.eventId ? "" : input.text,
+          detail: result.eventId
+            ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_write")
+            : {
+                submit: input.submit,
+                submitKey: input.submitKey ?? null,
+              },
+        });
+      }
+      return { ok: result.ok, message: result.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
+      return { ok: false, message };
+    }
+  }
+
   async createRuntimeTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -1772,12 +2492,19 @@ export class SessionRuntime {
     profile?: TerminalProcessProfile;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: TerminalControlPlaneEntry }> {
+    await this.ensureRuntimeLocalApiStarted();
     const controlPlane = this.requireTerminalControlPlane();
     const targetTerminalId = input.terminalId;
     try {
+      if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
+        return { ok: false, message: "runtime local api unavailable" };
+      }
       let createdTerminalId: string;
       if (targetTerminalId && this.config?.terminals[targetTerminalId]) {
-        await this.createTerminal(targetTerminalId, this.config.terminals[targetTerminalId]);
+        const created = await this.createTerminal(targetTerminalId, this.config.terminals[targetTerminalId]);
+        if (!created.ok) {
+          return created;
+        }
         controlPlane.start(targetTerminalId);
         if (this.config.terminals[targetTerminalId]?.gitLog) {
           await controlPlane.markDirty(targetTerminalId);
@@ -1785,12 +2512,26 @@ export class SessionRuntime {
         this.terminalDirtyState[targetTerminalId] = false;
         createdTerminalId = targetTerminalId;
       } else {
+        const cwdResolution = await this.resolveRuntimeTerminalCwd({ cwd: input.cwd });
+        if (!cwdResolution.ok) {
+          return cwdResolution;
+        }
         const created = await controlPlane.createForActor(this.terminalActorId, {
           terminalId: input.terminalId,
           processKind: input.processKind,
           command: input.command,
-          cwd: input.cwd,
-          profile: input.profile,
+          cwd: cwdResolution.cwd,
+          profile: {
+            ...(input.profile ?? {}),
+            env: buildRuntimeTerminalEnvironment({
+              rootWorkspacePath: this.getRootWorkspacePath(),
+              homeDir: this.getHomeDir(),
+              apiBaseUrl: this.runtimeLocalApi.baseUrl,
+              privateKey: this.options.avatarPrivateKey,
+              principalId: this.options.avatarPrincipalId,
+              env: input.profile?.env,
+            }),
+          },
         });
         const managed = controlPlane.getManagedTerminal(created.terminalId);
         if (managed) {
@@ -1799,6 +2540,11 @@ export class SessionRuntime {
         this.terminalDirtyState[created.terminalId] = false;
         createdTerminalId = created.terminalId;
       }
+
+      await this.applyAttentionFocusState(
+        this.getTerminalAttentionContextId(createdTerminalId),
+        input.focus ?? true ? "focused" : "background",
+      );
 
       this.enqueueLifecycleAttentionCommit({
         systemId: "terminal",
@@ -1822,9 +2568,15 @@ export class SessionRuntime {
       }
 
       const terminal = controlPlane.listForActor(this.terminalActorId).find((item) => item.terminalId === createdTerminalId);
+      if (!terminal) {
+        return {
+          ok: false,
+          message: `runtime actor has no terminal grant: ${createdTerminalId}`,
+        };
+      }
       return {
         ok: true,
-        message: terminal ? "terminal created" : "terminal created but unavailable in snapshot",
+        message: "terminal created",
         terminal,
       };
     } catch (error) {
@@ -1834,11 +2586,11 @@ export class SessionRuntime {
     }
   }
 
-  focusRuntimeTerminals(input: { op: TerminalFocusOp; terminalIds: string[] }): {
+  async focusRuntimeTerminals(input: { op: TerminalFocusOp; terminalIds: string[] }): Promise<{
     ok: boolean;
     message: string;
     focusedTerminalIds: string[];
-  } {
+  }> {
     const controlPlane = this.requireTerminalControlPlane();
     const visibleIds = new Set(controlPlane.listForActor(this.terminalActorId).map((terminal) => terminal.terminalId));
     const unknown = input.terminalIds.filter((terminalId) => !visibleIds.has(terminalId));
@@ -1851,6 +2603,13 @@ export class SessionRuntime {
     }
     const focusedBefore = [...this.focusedTerminalIds];
     const focusedTerminalIds = this.updateFocusedTerminals(input.op, input.terminalIds);
+    const touchedTerminalIds = new Set<string>([...focusedBefore, ...focusedTerminalIds, ...input.terminalIds]);
+    for (const terminalId of touchedTerminalIds) {
+      await this.applyAttentionFocusState(
+        this.getTerminalAttentionContextId(terminalId),
+        focusedTerminalIds.includes(terminalId) ? "focused" : "background",
+      );
+    }
     this.recordTerminalFocusTransitions({
       before: focusedBefore,
       after: focusedTerminalIds,
@@ -1883,6 +2642,7 @@ export class SessionRuntime {
     }
     this.focusedTerminalIds = controlPlane.getFocusedTerminalIds(this.terminalActorId);
     this.emitFocusedTerminal();
+    await this.applyAttentionFocusState(this.getTerminalAttentionContextId(terminalId), "background");
     this.enqueueLifecycleAttentionCommit({
       systemId: "terminal",
       subjectId: terminalId,
@@ -1910,81 +2670,239 @@ export class SessionRuntime {
     return message.kind === "text" && this.resolveMessageRole(message) === "user";
   }
 
-  private isQueuedInboundMessage(message: MessageRecord): boolean {
-    return this.isInboundMessage(message) && message.attentionState === "queued";
+  private isUnreadInboundMessage(message: MessageRecord): boolean {
+    return this.isInboundMessage(message) && message.unreadActorIds.includes(this.messageActorId);
   }
 
-  private shouldActorLoadInboundMessage(message: MessageRecord): boolean {
-    if (!this.isInboundMessage(message)) {
-      return false;
-    }
-    if (message.unreadActorIds.includes(this.messageActorId)) {
-      return true;
-    }
-    return message.unreadActorIds.length === 0 && message.attentionState === "queued";
+  private getMaxFocusedRoomCount(): number {
+    return this.config?.message.maxFocusedRoomCount ?? DEFAULT_MAX_FOCUSED_ROOM_COUNT;
   }
 
-  private enqueueInboundMessage(message: MessageRecord): void {
-    this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
-    this.loopPluginRuntime?.invalidate(
+  private getMaxBatchReadRoomMessageCount(): number {
+    return this.config?.message.maxBatchReadRoomMessageCount ?? DEFAULT_MAX_BATCH_READ_ROOM_MESSAGE_COUNT;
+  }
+
+  private isLoopPaused(): boolean {
+    return this.runtime?.getLoopState().paused ?? false;
+  }
+
+  private hasUnreadRoomWork(): boolean {
+    return this.messageSystem.getActorUnreadState(this.messageActorId).unreadTotal > this.pendingUnreadMessageIds.size;
+  }
+
+  private stageUnreadReadAck(ack: PendingUnreadReadAck): void {
+    const existing = this.stagedUnreadReadAcks.find((candidate) => candidate.chatId === ack.chatId);
+    if (!existing) {
+      this.stagedUnreadReadAcks.push({
+        ...ack,
+        selectedMessageIds: [...ack.selectedMessageIds],
+      });
+      return;
+    }
+    existing.accessToken = ack.accessToken;
+    existing.targetMessageId = ack.targetMessageId;
+    existing.selectedMessageIds = [...new Set([...existing.selectedMessageIds, ...ack.selectedMessageIds])];
+  }
+
+  private releaseUnreadReadAcks(acks: readonly PendingUnreadReadAck[]): void {
+    for (const ack of acks) {
+      for (const messageId of ack.selectedMessageIds) {
+        this.pendingUnreadMessageIds.delete(messageId);
+      }
+    }
+  }
+
+  private clearActiveCycleUnreadReadAcks(): void {
+    if (!this.activeCycleUnreadReadCommitted) {
+      this.releaseUnreadReadAcks(this.activeCycleUnreadReadAcks);
+    }
+    this.activeCycleUnreadReadAcks = [];
+    this.activeCycleUnreadReadCommitted = false;
+  }
+
+  private consumeStagedUnreadReadAcks(): PendingUnreadReadAck[] {
+    const staged = this.stagedUnreadReadAcks.map((ack) => ({
+      ...ack,
+      selectedMessageIds: [...ack.selectedMessageIds],
+    }));
+    this.stagedUnreadReadAcks = [];
+    return staged;
+  }
+
+  private buildUnreadReadAck(
+    channel: Pick<MessageControlPlaneEntry, "chatId" | "accessToken">,
+    messages: readonly MessageRecord[],
+    targetMessageId = messages[messages.length - 1]?.messageId,
+  ): PendingUnreadReadAck | null {
+    if (!channel.accessToken || !targetMessageId || messages.length === 0) {
+      return null;
+    }
+    return {
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+      targetMessageId,
+      selectedMessageIds: messages.map((message) => message.messageId),
+    };
+  }
+
+  private reserveUnreadMessages(
+    channel: Pick<MessageControlPlaneEntry, "chatId" | "accessToken">,
+    messages: readonly MessageRecord[],
+    targetMessageId = messages[messages.length - 1]?.messageId,
+  ): void {
+    const ack = this.buildUnreadReadAck(channel, messages, targetMessageId);
+    if (!ack) {
+      return;
+    }
+    for (const messageId of ack.selectedMessageIds) {
+      this.pendingUnreadMessageIds.add(messageId);
+    }
+    this.stageUnreadReadAck(ack);
+  }
+
+  private invalidatePluginForMessage(message: MessageRecord): void {
+    if (!this.loopPluginRuntime) {
+      return;
+    }
+    this.loopPluginRuntime.invalidate(
       this.createMessageSourceRef({
         chatId: message.chatId,
         messageId: message.messageId,
-        rootId: message.rootId,
-        from: message.from,
-        to: message.to,
-        content: message.content,
-        attachments: this.toChatMessageFromChannel(message).attachments ?? [],
-        meta:
-          message.metadata && typeof message.metadata === "object"
-            ? (message.metadata as Record<string, string | number | boolean | null>)
-            : undefined,
       }),
     );
   }
 
-  private collectStartupInboundMessages(): MessageRecord[] {
-    const pending: MessageRecord[] = [];
-    for (const channel of this.listActorRooms({ includeArchived: true, touchPresence: false })) {
-      let before: ReverseTimeCursor | null = null;
-      do {
-        const page = this.messageSystem.queryMessages({
-          chatId: channel.chatId,
-          before,
-          limit: 200,
-        });
-        pending.push(...page.items.filter((message) => this.shouldActorLoadInboundMessage(message)));
-        before = page.nextBefore;
-      } while (before);
-    }
-    pending.sort((left, right) => {
-      if (left.createdAt !== right.createdAt) {
-        return left.createdAt - right.createdAt;
+  private collectUnreadMessagesForRoom(chatId: string, limit: number): MessageRecord[] {
+    const selected: MessageRecord[] = [];
+    let before: ReverseTimeCursor | null = null;
+    do {
+      const page = this.messageSystem.queryMessages({
+        chatId,
+        before,
+        limit: Math.max(limit * 3, 64),
+      });
+      selected.push(
+        ...page.items.filter(
+          (message) => this.isUnreadInboundMessage(message) && !this.pendingUnreadMessageIds.has(message.messageId),
+        ),
+      );
+      before = page.nextBefore;
+      if (selected.length >= limit) {
+        break;
       }
-      return left.rowId - right.rowId;
-    });
-    return pending;
+    } while (before);
+    return selected.slice(0, limit).reverse();
   }
 
-  private hydrateStartupInboundMessages(): void {
-    const pending = this.collectStartupInboundMessages();
-    if (pending.length === 0) {
+  private collectUnreadRoomIngress(): void {
+    if (this.isLoopPaused()) {
       return;
     }
-    for (const message of pending) {
-      this.enqueueInboundMessage(message);
+    const roomLimit = this.getMaxFocusedRoomCount();
+    const messageLimit = this.getMaxBatchReadRoomMessageCount();
+    if (roomLimit <= 0 || messageLimit <= 0) {
+      return;
     }
-    this.notifyInput("user");
+
+    const roomSelections = this.messageSystem
+      .listUnreadRoomSummaries(this.messageActorId)
+      .map((summary) => ({
+        summary,
+        channel: this.getActorRoom(summary.chatId, {
+          includeArchived: true,
+          touchPresence: false,
+        }),
+      }))
+      .filter(
+        (
+          item,
+        ): item is {
+          summary: ReturnType<MessageControlPlane["listUnreadRoomSummaries"]>[number];
+          channel: MessageControlPlaneEntry & { accessToken: string };
+        } => item.channel?.accessToken !== undefined,
+      )
+      .sort((left, right) => {
+        if (left.channel.focused !== right.channel.focused) {
+          return left.channel.focused ? -1 : 1;
+        }
+        if ((left.summary.latestUnreadAt ?? 0) !== (right.summary.latestUnreadAt ?? 0)) {
+          return (right.summary.latestUnreadAt ?? 0) - (left.summary.latestUnreadAt ?? 0);
+        }
+        if (left.summary.unreadCount !== right.summary.unreadCount) {
+          return right.summary.unreadCount - left.summary.unreadCount;
+        }
+        return left.summary.chatId.localeCompare(right.summary.chatId);
+      })
+      .slice(0, roomLimit)
+      .map((item) => ({
+        channel: item.channel,
+        messages: this.collectUnreadMessagesForRoom(item.channel.chatId, messageLimit),
+      }))
+      .filter((item) => item.messages.length > 0);
+
+    if (roomSelections.length === 0) {
+      return;
+    }
+
+    const compactSelections = roomSelections
+      .map((item) => ({
+        channel: item.channel,
+        compactMessages: item.messages.filter((message) => message.content.trim() === "/compact"),
+      }))
+      .filter((item) => item.compactMessages.length > 0);
+    if (compactSelections.length > 0) {
+      for (const selection of compactSelections) {
+        const targetMessageId = selection.compactMessages[selection.compactMessages.length - 1]?.messageId;
+        this.reserveUnreadMessages(selection.channel, selection.compactMessages, targetMessageId);
+      }
+      this.queueCompactCycle("manual");
+      return;
+    }
+
+    for (const selection of roomSelections) {
+      this.reserveUnreadMessages(selection.channel, selection.messages);
+      for (const message of selection.messages) {
+        if (this.loopPluginRuntime) {
+          this.invalidatePluginForMessage(message);
+          continue;
+        }
+        this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
+      }
+    }
+  }
+
+  private commitActiveCycleUnreadReadAcks(): void {
+    if (this.activeCycleUnreadReadCommitted || this.activeCycleUnreadReadAcks.length === 0) {
+      return;
+    }
+    const acks = [...this.activeCycleUnreadReadAcks];
+    this.activeCycleUnreadReadCommitted = true;
+    this.releaseUnreadReadAcks(acks);
+    for (const ack of acks) {
+      try {
+        this.messageSystem.markChannelReadAuthorized({
+          chatId: ack.chatId,
+          accessToken: ack.accessToken,
+          messageId: ack.targetMessageId,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emit("error", {
+          message: `message unread ack failed (${ack.chatId}): ${message}`,
+        });
+      }
+    }
   }
 
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
-    const meta =
+    const existingMeta =
       message.metadata && typeof message.metadata === "object"
         ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
         : {};
     const channel =
       this.getActorRoom(message.chatId, { includeArchived: true }) ??
       this.messageSystem.getChannel(message.chatId, { includeArchived: true });
+    const meta = this.buildMessageLoopMeta(message, channel, existingMeta);
     if (message.chatId) {
       meta.chatId = message.chatId;
     }
@@ -2028,9 +2946,6 @@ export class SessionRuntime {
       timestamp: message.createdAt,
       updatedAt: message.updatedAt,
       visibleAt: message.visibleAt,
-      attentionState: message.attentionState,
-      attentionLoadedAt: message.attentionLoadedAt,
-      editable: message.editable,
       cycleId:
         typeof metadata.cycleId === "number" && Number.isInteger(metadata.cycleId) ? metadata.cycleId : undefined,
       channel:
@@ -2068,20 +2983,10 @@ export class SessionRuntime {
         if (actorRoom.focused) {
           this.recordChatMessage(this.toChatMessageFromChannel(message));
         }
-        if (!this.isQueuedInboundMessage(message)) {
-          return;
-        }
-        this.enqueueInboundMessage(message);
-        this.notifyInput("user");
       }),
     );
     this.messageSystemCleanup.push(
-      this.messageSystem.onFocus(({ actorId }) => {
-        if (actorId !== this.messageActorId) {
-          return;
-        }
-        this.notifyInput("attention");
-      }),
+      this.messageSystem.onFocus(() => {}),
     );
   }
 
@@ -2129,7 +3034,11 @@ export class SessionRuntime {
     );
   }
 
-  private createTerminalSourceRef(terminalId: string, reason: string, versionHint?: string | number): LoopSourceRef {
+  private createTerminalSourceRef(
+    terminalId: string,
+    reason: string,
+    versionHint?: string | number,
+  ): LoopTerminalSourceRef {
     return {
       systemId: "terminal",
       subjectId: terminalId,
@@ -2154,15 +3063,13 @@ export class SessionRuntime {
   private createTaskSourceRef(
     subjectId: string,
     reason: string,
-    meta?: Record<string, unknown>,
     versionHint?: string | number,
-  ): LoopSourceRef {
+  ): LoopTaskSourceRef {
     return {
       systemId: "task",
       subjectId,
       reason,
       versionHint,
-      meta,
     };
   }
 
@@ -2171,20 +3078,31 @@ export class SessionRuntime {
     reason: string;
     content: string;
     from: string;
-    meta?: Record<string, unknown>;
     score?: number;
     versionHint?: string | number;
+    semanticHash?: string;
   }): void {
-    const meta = input.meta ? { ...input.meta } : undefined;
+    const taskPresentation = buildTaskAttentionPresentation(input.content, input.subjectId);
     this.taskAttentionDraftQueue.push({
-      sourceRef: this.createTaskSourceRef(input.subjectId, input.reason, meta, input.versionHint),
+      sourceRef: this.createTaskSourceRef(input.subjectId, input.reason, input.versionHint),
       content: input.content,
       from: input.from,
       score: input.score ?? 100,
-      meta: {
+      provenance: {
+        author: input.from,
         source: "task",
-        ...(meta ?? {}),
+        systemId: "task",
+        subjectId: input.subjectId,
+        createdAt: new Date().toISOString(),
       },
+      presentation: {
+        summary: taskPresentation.title,
+        body: taskPresentation.detailValue,
+        bodyFormat: taskPresentation.detailFormat,
+        changeType: "update",
+      },
+      semanticHash: typeof input.semanticHash === "string" ? input.semanticHash : undefined,
+      versionHint: input.versionHint !== undefined ? String(input.versionHint) : undefined,
       supersedeActive: {
         systemId: "task",
         subjectId: input.subjectId,
@@ -2254,24 +3172,23 @@ export class SessionRuntime {
           if (request.ref.systemId !== "message") {
             return null;
           }
-          const chatId =
-            typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+          const chatId = this.getMessageSourceChannelId(request.ref);
           const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
           return {
-            allow: message ? this.shouldActorLoadInboundMessage(message) : false,
-            reason: message ? `message.${message.attentionState}` : "message.missing",
+            allow: message !== undefined,
+            reason: message ? "message.available" : "message.missing",
           };
         },
         attentionCommitted: async ({ contextId, commit }) => {
-          const replyTarget = readAttentionReplyTarget(commit.meta.replyTarget);
-          if (!replyTarget || replyTarget.systemId !== "message") {
+          const replyTarget = readMessageReplyEgress(commit);
+          if (!replyTarget) {
             return {
               hookId: "builtin-message-bridge",
               systemId: "message",
               status: "ignored",
             };
           }
-          const chatId = replyTarget.channelId ?? replyTarget.subjectId ?? null;
+          const chatId = replyTarget.chatId ?? null;
           if (!chatId) {
             return {
               hookId: "builtin-message-bridge",
@@ -2309,10 +3226,24 @@ export class SessionRuntime {
                 },
               };
             }
-            const replyContent =
-              commit.change.type === "update" && commit.change.value.trim().length > 0
-                ? commit.change.value
-                : commit.summary;
+            const replyContent = resolveVisibleAttentionReplyContent(commit);
+            if (!replyContent) {
+              return {
+                hookId: "builtin-message-bridge",
+                systemId: "message",
+                status: "ignored",
+                target: {
+                  chatId,
+                  rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : null),
+                  to: replyTarget.to ?? null,
+                },
+                output: {
+                  reason: "no-visible-reply-body",
+                  attentionContextId: contextId,
+                  attentionCommitId: commit.commitId,
+                },
+              };
+            }
             const message = this.appendActorChannelReply({
               chatId,
               rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
@@ -2403,872 +3334,292 @@ export class SessionRuntime {
   }
 
   private deriveProjectionStageFromToolTrace(trace: readonly AgentToolTraceEntry[]): TaskStage {
-    if (trace.some((entry) => entry.tool === "attention_commit")) {
-      return "done";
-    }
-    if (
-      trace.some((entry) =>
-        [
-          "message_send",
-          "terminal_create",
-          "terminal_focus",
-          "terminal_kill",
-          "terminal_write",
-          "terminal_set_config",
-        ].includes(entry.tool),
-      )
-    ) {
+    if (trace.some((entry) => entry.tool === "root_workspace_bash")) {
       return "act";
     }
-    if (trace.some((entry) => entry.tool.startsWith("task_"))) {
-      return "act";
-    }
-    if (
-      trace.some((entry) =>
-        [
-          "message_channel_list",
-          "message_channel_get",
-          "terminal_list",
-          "terminal_read",
-          "terminal_snapshot",
-          "terminal_get_config",
-          "task_list",
-          "task_get",
-        ].includes(entry.tool),
-      )
-    ) {
+    if (trace.some((entry) => entry.tool === "root_workspace_list")) {
       return "observe";
     }
     return "decide";
   }
 
   private createAgentToolProviders(): AgentToolProvider[] {
-    return [this.createMessageToolProvider(), this.createTerminalToolProvider(), this.createTaskToolProvider()];
+    return [this.createRootWorkspaceToolProvider()];
   }
 
-  private buildSystemPromptSection(
-    context: AgentToolProviderPromptContext,
-    input: {
-      title: {
-        en: string;
-        zhHans: string;
-      };
-      bullets: {
-        en: string[];
-        zhHans: string[];
-      };
-    },
-  ): string {
-    const zhHans = context.runtimeText.locale === "zh-Hans";
-    const title = zhHans ? input.title.zhHans : input.title.en;
-    const bullets = zhHans ? input.bullets.zhHans : input.bullets.en;
-    return [`## ${title}`, ...bullets.map((line) => `- ${line}`)].join("\n");
+  private listRootWorkspaceToolCommands(): string[] {
+    return ["attention", "message", "workspace", "terminal", "ccski", "tool"];
   }
 
-  private createMessageToolProvider(): AgentToolProvider {
-    return {
-      name: "message",
-      buildSystemPromptSection: (context) =>
-        this.buildSystemPromptSection(context, {
-          title: {
-            en: "Message System",
-            zhHans: "消息系统",
-          },
-          bullets: {
-            en: [
-              "Treat message-system as an asynchronous communication network with multiple channels and roles, not as a generic chat transcript.",
-              "Work like a proactive assistant: acknowledge work in the origin room, keep the requester informed while it is in flight, and bring the result back there.",
-              "If you need another room, the first visible step still belongs in the origin room before you relay outward. For relay work, make that acknowledgement the first visible message.",
-              "Before sending, decide whether you are replying, relaying, asking, coordinating, judging, or notifying, and compose the message for that role instead of mechanically forwarding raw user text.",
-              "When another channel supplies the answer to an origin-room request, treat that reply as evidence and close the loop back in the origin room.",
-              "If a message needs external facts, verify them through terminal or other tools before you send the result.",
-            ],
-            zhHans: [
-              "把 message-system 视为异步、多频道、多角色的通信网络，而不是普通聊天记录。",
-              "像一个主动负责的超级助理那样工作：先在原始房间确认接手，等待时保持同步，拿到结果后再带回原始房间。",
-              "如果需要去另一个房间办事，第一条用户可见动作也必须先落在原始房间，再向外 relay。对于 relay，这条确认必须就是第一条用户可见消息。",
-              "发送前先判断自己的角色是回复、relay、追问、协调、裁决还是通知，并按照这个角色组织消息，不要机械转发用户原话。",
-              "当另一个频道给出了原始房间所需的答案时，要把它当成证据，先回到原始房间闭环。",
-              "如果消息依赖外部事实，先通过 terminal 或其它工具验证，再把结果发出去。",
-            ],
-          },
-        }),
-      createTools: ({ runtimeText, traceTool }) => {
-        const messageChannelSchema = z.object({
-          chatId: z.string(),
-          kind: z.enum(["direct", "room"]),
-          title: z.string(),
-          owner: z.string(),
-          contextId: z.string().optional(),
-          participants: z.array(
-            z.object({
-              id: z.string(),
-              label: z.string().optional(),
-            }),
-          ),
-          metadata: z.record(z.string(), z.unknown()).optional(),
-          focused: z.boolean(),
-          archivedAt: z.number().optional(),
-          archivedBy: z.string().optional(),
-        });
-
-        const listTool = toolDefinition({
-          name: "message_channel_list",
-          description: runtimeText.t("tool.message_channel_list.description"),
-          inputSchema: z.object({
-            includeArchived: z.boolean().optional(),
-          }),
-          outputSchema: z.object({
-            channels: z.array(messageChannelSchema),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              includeArchived: z.boolean().optional(),
-            })
-            .parse(rawInput);
-          return traceTool("message_channel_list", input, async () => ({
-            channels: this.listMessageChannelsForTooling(input),
-          }));
-        });
-
-        const getTool = toolDefinition({
-          name: "message_channel_get",
-          description: runtimeText.t("tool.message_channel_get.description"),
-          inputSchema: z.object({
-            chatId: z.string().min(1),
-            includeArchived: z.boolean().optional(),
-          }),
-          outputSchema: z.object({
-            channel: messageChannelSchema.nullable(),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              chatId: z.string().min(1),
-              includeArchived: z.boolean().optional(),
-            })
-            .parse(rawInput);
-          return traceTool("message_channel_get", input, async () => ({
-            channel: this.getMessageChannelForTooling(input),
-          }));
-        });
-
-        const sendTool = toolDefinition({
-          name: "message_send",
-          description: runtimeText.t("tool.message_send.description"),
-          inputSchema: z.object({
-            chatId: z.string().min(1),
-            content: z.string().min(1),
-            rootId: z.string().optional(),
-            from: z.string().optional(),
-            to: z.string().optional(),
-          }),
-          outputSchema: z.object({
-            ok: z.boolean(),
-            messageId: z.string(),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              chatId: z.string().min(1),
-              content: z.string().min(1),
-              rootId: z.string().optional(),
-              from: z.string().optional(),
-              to: z.string().optional(),
-            })
-            .parse(rawInput);
-          return traceTool(
-            "message_send",
-            input,
-            async () =>
-              await this.sendMessageTool({
-                ...input,
-                originAckFallback: runtimeText.t("tool.message_send.origin_ack_fallback"),
-              }),
-          );
-        });
-
-        return [listTool, getTool, sendTool];
-      },
-    };
+  private projectRuntimeWorkspaceList(): RuntimeWorkspaceSurface[] {
+    return this.listWorkspaceAuthorities().map((entry) => projectRuntimeWorkspaceSurface(entry));
   }
 
-  private createTerminalToolProvider(): AgentToolProvider {
-    return {
-      name: "terminal",
-      buildSystemPromptSection: (context) =>
-        this.buildSystemPromptSection(context, {
-          title: {
-            en: "Terminal System",
-            zhHans: "终端系统",
-          },
-          bullets: {
-            en: [
-              "Treat terminal as your professional operating-system workbench for Linux or Windows level problem solving.",
-              "For user-facing fact work, briefly acknowledge that you are checking, then use terminal to gather evidence before answering.",
-              "When work depends on external facts, files, processes, commands, source code, environment state, or network access, prefer terminal tools over memory or hallucination.",
-              "Work like a strong shell user: analyze the problem, decompose it, find tools, combine commands, and create temporary scripts when needed.",
-              "If terminal work is blocked by missing context, failed commands, or missing permissions, ask for what you need instead of inventing results.",
-            ],
-            zhHans: [
-              "把 terminal 视为你与操作系统交互的专业工作台，像熟练的 Linux 或 Windows 用户一样解决问题。",
-              "对于面向用户的事实查询，先简短确认你正在处理，再用 terminal 获取证据后再回答。",
-              "当任务依赖外部事实、文件、进程、命令、源码、环境状态或网络访问时，优先使用 terminal 工具，而不是凭记忆或幻觉回答。",
-              "要像强 shell 用户那样工作：分析问题、拆解步骤、寻址工具、组合命令，并在必要时发明临时脚本。",
-              "如果 terminal 因缺少上下文、命令失败或权限不足而受阻，就去追问需要的信息，不要编造结果。",
-            ],
-          },
-        }),
-      createTools: ({ runtimeText, traceTool }) => {
-        const terminalProcessProfileSchema = z.object({
-          command: z.array(z.string()).optional(),
-          cwd: z.string().optional(),
-          cols: z.number().optional(),
-          rows: z.number().optional(),
-          gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
-          logStyle: z.enum(["rich", "plain"]).optional(),
-          icon: z.string().optional(),
-          title: z.string().optional(),
-          shortcuts: z.record(z.string(), z.string()).optional(),
-        });
-
-        const terminalControlPlaneConfigPatchSchema = z.object({
-          defaults: terminalProcessProfileSchema.optional(),
-          processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-          terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-          transport: z
-            .object({
-              host: z.string().optional(),
-              port: z.number().nullable().optional(),
-              pathPrefix: z.string().optional(),
-            })
-            .optional(),
-        });
-
-        const listTool = toolDefinition({
-          name: "terminal_list",
-          description: runtimeText.t("tool.terminal_list.description"),
-          outputSchema: z.object({
-            terminals: z.array(
-              z.object({
-                terminalId: z.string(),
-                running: z.boolean(),
-                cwd: z.string().optional(),
-                cols: z.number(),
-                rows: z.number(),
-                focused: z.boolean().optional(),
-                dirty: z.boolean().optional(),
-                latestSeq: z.number().optional(),
-                icon: z.string().optional(),
-                title: z.string().optional(),
-                shortcuts: z.record(z.string(), z.string()).optional(),
-                transportUrl: z.string().optional(),
-              }),
-            ),
-          }),
-        }).server(async () =>
-          traceTool("terminal_list", {}, async () => {
-            const plane = this.requireTerminalControlPlane();
-            const actorEntries = plane.listForActor(this.terminalActorId);
-            const planeEntries = new Map(actorEntries.map((entry) => [entry.terminalId, entry] as const));
-            const configured = Object.values(this.config?.terminals ?? {}).map((terminal) => {
-              const entry = planeEntries.get(terminal.terminalId);
-              return {
-                terminalId: terminal.terminalId,
-                running: entry?.running ?? false,
-                cwd: entry?.cwd ?? terminal.cwd,
-                cols: entry ? plane.getSnapshot(terminal.terminalId).cols : 0,
-                rows: entry ? plane.getSnapshot(terminal.terminalId).rows : 0,
-                focused: this.focusedTerminalIds.includes(terminal.terminalId),
-                dirty: this.terminalDirtyState[terminal.terminalId] ?? false,
-                latestSeq: this.terminalLatestSeq[terminal.terminalId] ?? 0,
-                icon: entry?.icon,
-                title: entry?.title,
-                shortcuts: entry?.shortcuts,
-                transportUrl: entry?.transportUrl,
-              };
+  private async ensureRuntimeLocalApiStarted(): Promise<void> {
+    if (this.runtimeLocalApi || !this.options.avatarPrincipalId) {
+      return;
+    }
+    if (!this.options.avatarPrivateKey) {
+      throw new Error("runtime avatar private key missing");
+    }
+    this.runtimeLocalApi = await startRuntimeLocalApi({
+      expectedPrincipalId: this.options.avatarPrincipalId,
+      handlers: {
+        attentionList: () => this.attentionSystem.listContexts(),
+        attentionActive: () => this.attentionSystem.listActiveContexts().map(projectRuntimeAttentionActiveMatch),
+        attentionQuery: async (input) => (await this.queryAttention(input)).map(projectAttentionCommitMatchForModel),
+        attentionCommit: async (input) => {
+          const existing = this.attentionSystem.getContext(input.contextId);
+          if (!existing) {
+            this.attentionSystem.createContext({
+              contextId: input.contextId,
+              owner: input.meta?.author ?? this.getAvatarName(),
             });
-            const dynamic = actorEntries
-              .filter((entry) => !this.config?.terminals[entry.terminalId])
-              .map((entry) => ({
-                terminalId: entry.terminalId,
-                running: entry.running,
-                cwd: entry.cwd,
-                cols: plane.getSnapshot(entry.terminalId).cols,
-                rows: plane.getSnapshot(entry.terminalId).rows,
-                focused: this.focusedTerminalIds.includes(entry.terminalId),
-                dirty: this.terminalDirtyState[entry.terminalId] ?? false,
-                latestSeq: this.terminalLatestSeq[entry.terminalId] ?? 0,
-                icon: entry.icon,
-                title: entry.title,
-                shortcuts: entry.shortcuts,
-                transportUrl: entry.transportUrl,
-              }));
-            return {
-              terminals: [...configured, ...dynamic],
-            };
-          }),
+          }
+          const resolvedScores = input.done ? this.buildResolvedAttentionScoresForContext(input.contextId) : undefined;
+          const effectiveScores =
+            input.scores === undefined
+              ? resolvedScores
+              : resolvedScores
+                ? {
+                    ...resolvedScores,
+                    ...input.scores,
+                  }
+                : input.scores;
+          const { commit } = this.attentionSystem.commit(input.contextId, {
+            parentCommitIds: input.parentCommitIds,
+            meta: input.meta,
+            scores: effectiveScores,
+            summary: input.summary,
+            change: input.change,
+            egress: input.egress,
+          });
+          await this.persistAttentionSystem();
+          this.attentionFactsVersion += 1;
+          this.resetAttentionDebtBackoff();
+          this.markAttentionContextDirty(input.contextId);
+          this.emitAttentionState();
+          this.notifyInput("attention");
+          return commit;
+        },
+        messageList: (input) => this.listMessageChannelsForTooling(input),
+        messageRead: (input) => this.readMessageChannelForTooling(input),
+        messageSend: async (input) => await this.sendRuntimeMessage(input),
+        workspaceList: () => this.projectRuntimeWorkspaceList(),
+        terminalList: () => this.listRuntimeTerminals().map(projectRuntimeTerminal),
+        terminalCreate: async (input) => {
+          const result = await this.createRuntimeTerminal(input);
+          return result.terminal ? { ...result, terminal: projectRuntimeTerminal(result.terminal) } : result;
+        },
+        terminalRead: async (input) => await this.readRuntimeTerminal(input),
+        terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
+        terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
+        terminalKill: async (input) => await this.deleteRuntimeTerminal(input.terminalId),
+      },
+    });
+  }
+
+  private async execRootWorkspaceBash(input: {
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  }): Promise<RootWorkspaceBashExecResult> {
+    await this.ensureRuntimeLocalApiStarted();
+    this.maybeAutoAcknowledgeOriginRoomForToolWork(input.command);
+    if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
+      throw new Error("runtime local api unavailable");
+    }
+    return await executeRootWorkspaceBash({
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      command: input.command,
+      cwd: input.cwd,
+      env: {
+        HOME: this.getRootWorkspacePath(),
+        [RUNTIME_API_BASE_URL_ENV]: this.runtimeLocalApi.baseUrl,
+        [RUNTIME_HOME_DIR_ENV]: this.getHomeDir(),
+        [RUNTIME_PRINCIPAL_ID_ENV]: this.options.avatarPrincipalId ?? "",
+        [RUNTIME_PRIVATE_KEY_ENV]: this.options.avatarPrivateKey,
+        [RUNTIME_ROOT_WORKSPACE_ENV]: this.getRootWorkspacePath(),
+        ...(input.env ?? {}),
+      },
+      stdin: input.stdin,
+      mounts: [
+        ...this.getRootWorkspaceSkillMounts(),
+        ...this.listWorkspaceAuthorities().flatMap((entry) =>
+          entry.grants.map((grant) => ({
+            path: grant.absolutePath,
+            mode: grant.mode,
+          })),
+        ),
+      ],
+      customCommands: createRuntimeShellCommands({
+        baseUrl: this.runtimeLocalApi.baseUrl,
+        privateKey: this.options.avatarPrivateKey,
+        homeDir: this.getHomeDir(),
+        rootWorkspacePath: this.getRootWorkspacePath(),
+        principalId: this.options.avatarPrincipalId,
+      }),
+    });
+  }
+
+  private createRootWorkspaceToolProvider(): AgentToolProvider {
+    return {
+      name: "root-workspace",
+      createTools: ({ traceTool }) => {
+        const listTool = toolDefinition({
+          name: "root_workspace_list",
+          description: "List the fixed avatar root workspace, mounted workspaces, grants, and shell commands.",
+          outputSchema: z.record(z.string(), z.unknown()),
+        }).server(async () =>
+          traceTool("root_workspace_list", {}, async () => ({
+            rootWorkspace: {
+              path: this.getRootWorkspacePath(),
+              commandNames: this.listRootWorkspaceToolCommands(),
+              toolNames: this.getRootWorkspaceToolFiles(),
+              skillRoots: this.getRootWorkspaceSkillRoots(),
+            },
+            attentionApi: this.runtimeLocalApi
+              ? {
+                  baseUrl: this.runtimeLocalApi.baseUrl,
+                  principalId: this.options.avatarPrincipalId ?? null,
+                }
+              : null,
+            workspaces: this.projectRuntimeWorkspaceList(),
+          })),
         );
 
-        const createTool = toolDefinition({
-          name: "terminal_create",
-          description: runtimeText.t("tool.terminal_create.description"),
+        const bashTool = toolDefinition({
+          name: "root_workspace_bash",
+          description:
+            "Execute bash inside the fixed avatar root workspace with real absolute paths and in-shell CLI commands.",
           inputSchema: z.object({
-            terminalId: z.string().optional(),
-            processKind: z.string().optional(),
-            command: z.array(z.string()).optional(),
+            command: z.string(),
             cwd: z.string().optional(),
-            profile: terminalProcessProfileSchema.optional(),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string().optional(),
-              processKind: z.string().optional(),
-              command: z.array(z.string()).optional(),
-              cwd: z.string().optional(),
-              profile: terminalProcessProfileSchema.optional(),
-            })
-            .parse(rawInput);
-          return traceTool(
-            "terminal_create",
-            input,
-            async () =>
-              await this.createRuntimeTerminal({
-                terminalId: input.terminalId,
-                processKind: input.processKind,
-                command: input.command,
-                cwd: input.cwd,
-                profile: input.profile,
-                focus: false,
-              }),
-          );
-        });
-
-        const focusTool = toolDefinition({
-          name: "terminal_focus",
-          description: runtimeText.t("tool.terminal_focus.description"),
-          inputSchema: z.object({
-            op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-            terminalIds: z.array(z.string()).optional(),
+            env: z.record(z.string(), z.string()).optional(),
+            stdin: z.string().optional(),
           }),
           outputSchema: z.object({
-            ok: z.boolean(),
-            message: z.string(),
-            focusedTerminalIds: z.array(z.string()).optional(),
+            stdout: z.string(),
+            stderr: z.string(),
+            exitCode: z.number(),
+            cwd: z.string(),
           }),
         }).server(async (rawInput) => {
-          const input = z
+          const parsed = z
             .object({
-              op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-              terminalIds: z.array(z.string()).optional(),
+              command: z.string(),
+              cwd: z.string().optional(),
+              env: z.record(z.string(), z.string()).optional(),
+              stdin: z.string().optional(),
             })
             .parse(rawInput);
-          return traceTool("terminal_focus", input, async () =>
-            this.focusRuntimeTerminals({
-              op: input.op ?? "replace",
-              terminalIds: input.terminalIds ?? [],
-            }),
-          );
+          return traceTool("root_workspace_bash", parsed, async () => await this.execRootWorkspaceBash(parsed));
         });
 
-        const killTool = toolDefinition({
-          name: "terminal_kill",
-          description: runtimeText.t("tool.terminal_kill.description"),
-          inputSchema: z.object({ terminalId: z.string() }),
-          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
-        }).server(async (rawInput) => {
-          const input = z.object({ terminalId: z.string() }).parse(rawInput);
-          return traceTool("terminal_kill", input, async () => await this.deleteRuntimeTerminal(input.terminalId));
-        });
-
-        const writeTool = toolDefinition({
-          name: "terminal_write",
-          description: runtimeText.t("tool.terminal_write.description"),
-          inputSchema: z.object({
-            terminalId: z.string(),
-            text: z.string(),
-            submit: z.boolean().optional(),
-            submitKey: z.enum(["enter", "linefeed"]).optional(),
-          }),
-          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string(),
-              text: z.string(),
-              submit: z.boolean().optional(),
-              submitKey: z.enum(["enter", "linefeed"]).optional(),
-            })
-            .parse(rawInput);
-          return traceTool("terminal_write", input, async () => {
-            const controlPlane = this.requireTerminalControlPlane();
-            if (!controlPlane.has(input.terminalId)) {
-              return { ok: false, message: `unknown terminal: ${input.terminalId}` };
-            }
-            const submitGapMs = this.config?.terminals[input.terminalId]?.submitGapMs ?? 80;
-            try {
-              if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
-                controlPlane.start(input.terminalId);
-                await controlPlane.markDirty(input.terminalId);
-              }
-              const result = await controlPlane.write({
-                terminalId: input.terminalId,
-                text: input.text,
-                submit: input.submit,
-                submitKey: input.submitKey,
-                submitGapMs,
-                actorId: this.terminalActorId,
-              });
-              if (result.ok) {
-                this.appendTerminalActivity({
-                  terminalId: input.terminalId,
-                  kind: "terminal_write",
-                  cycleId: this.activeCycleId,
-                  title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
-                  content: result.eventId ? "" : input.text,
-                  detail: result.eventId
-                    ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_write")
-                    : {
-                        submit: input.submit,
-                        submitKey: input.submitKey ?? null,
-                      },
-                });
-              }
-              return { ok: result.ok, message: result.message };
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
-              return { ok: false, message };
-            }
-          });
-        });
-
-        const readTool = toolDefinition({
-          name: "terminal_read",
-          description: runtimeText.t("tool.terminal_read.description"),
-          inputSchema: z.object({
-            terminalId: z.string(),
-            mode: z.enum(["auto", "diff", "snapshot"]).optional(),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string(),
-              mode: z.enum(["auto", "diff", "snapshot"]).optional(),
-            })
-            .parse(rawInput);
-          return traceTool(
-            "terminal_read",
-            input,
-            async () =>
-              toToolRecord(
-                await this.readTerminalRepresentation(input.terminalId, {
-                  mode: input.mode ?? "auto",
-                  remark: false,
-                }),
-              ),
-          );
-        });
-
-        const snapshotTool = toolDefinition({
-          name: "terminal_snapshot",
-          description: runtimeText.t("tool.terminal_snapshot.description"),
-          inputSchema: z.object({ terminalId: z.string() }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ terminalId: z.string() }).parse(rawInput);
-          return traceTool(
-            "terminal_snapshot",
-            input,
-            async () =>
-              toToolRecord(
-                await this.readTerminalRepresentation(input.terminalId, {
-                  mode: "snapshot",
-                  remark: false,
-                }),
-              ),
-          );
-        });
-
-        const getConfigTool = toolDefinition({
-          name: "terminal_get_config",
-          description: runtimeText.t("tool.terminal_get_config.description"),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async () =>
-          traceTool("terminal_get_config", {}, async () =>
-            toToolRecord(await this.requireTerminalControlPlane().getConfig()),
-          ),
-        );
-
-        const setConfigTool = toolDefinition({
-          name: "terminal_set_config",
-          description: runtimeText.t("tool.terminal_set_config.description"),
-          inputSchema: z.object({
-            patch: terminalControlPlaneConfigPatchSchema,
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              patch: terminalControlPlaneConfigPatchSchema,
-            })
-            .parse(rawInput);
-          return traceTool(
-            "terminal_set_config",
-            input,
-            async () =>
-              toToolRecord(await this.updateTerminalControlPlaneConfig(input.patch as TerminalControlPlaneConfigPatch)),
-          );
-        });
-
-        return [
-          listTool,
-          createTool,
-          focusTool,
-          killTool,
-          writeTool,
-          readTool,
-          snapshotTool,
-          getConfigTool,
-          setConfigTool,
-        ];
+        return [listTool, bashTool];
       },
     };
   }
 
-  private createTaskToolProvider(): AgentToolProvider {
+  private isMessageAttentionContext(match: AttentionActiveContextMatch): boolean {
+    if (this.resolveMessageChatIdForContext(match.contextId)) {
+      return true;
+    }
+    return match.recentCommits.some((commit) => commit.meta.systemId === "message");
+  }
+
+  private isTerminalAttentionContext(match: AttentionActiveContextMatch): boolean {
+    return (
+      match.contextId.startsWith("ctx-terminal-") ||
+      match.recentCommits.some((commit) => commit.meta.systemId === "terminal")
+    );
+  }
+
+  private isTaskAttentionContext(match: AttentionActiveContextMatch): boolean {
+    return match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => commit.meta.systemId === "task");
+  }
+
+  private isWorkspaceAttentionContext(match: AttentionActiveContextMatch): boolean {
+    return (
+      match.contextId.startsWith("ctx-workspace-") ||
+      match.recentCommits.some((commit) => commit.meta.systemId === "workspace")
+    );
+  }
+
+  private resolveAttentionSourceSystemId(match: AttentionActiveContextMatch): string {
+    if (this.isMessageAttentionContext(match)) {
+      return "message";
+    }
+    if (this.isTerminalAttentionContext(match)) {
+      return "terminal";
+    }
+    if (this.isTaskAttentionContext(match)) {
+      return "task";
+    }
+    if (this.isWorkspaceAttentionContext(match)) {
+      return "workspace";
+    }
+    const latestSystemId = match.recentCommits.find((commit) => typeof commit.meta.systemId === "string")?.meta.systemId;
+    return latestSystemId ?? "attention";
+  }
+
+  private buildAttentionContextBootstrapInput(
+    active: readonly AttentionActiveContextMatch[],
+    selected: readonly AttentionActiveContextMatch[],
+  ): LoopBusInput | null {
+    const primary = selected[0];
+    if (!primary) {
+      return null;
+    }
+    const metadata = active.map((match) => ({
+      contextId: match.contextId,
+      source: this.resolveAttentionSourceSystemId(match),
+      focusState: match.context.focusState,
+      scoreSum: Object.values(match.context.scoreMap).reduce((sum, value) => sum + Math.max(0, value), 0),
+      headCommitId: match.context.headCommitId,
+      owner: match.context.owner,
+      updatedAt: match.context.updatedAt,
+    }));
+    const text = [
+      "## AttentionContexts.metadata",
+      "",
+      toYaml({
+        primaryContextId: primary.contextId,
+        selectedContextIds: selected.map((match) => match.contextId),
+        activeContextCount: active.length,
+        items: metadata,
+      }),
+    ].join("\n");
+
+    const channel = this.resolveMessageChannelForContext(primary.contextId);
+    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
+    const attentionContextIds = metadata.map((item) => item.contextId);
+
     return {
-      name: "task",
-      buildSystemPromptSection: (context) =>
-        this.buildSystemPromptSection(context, {
-          title: {
-            en: "Task System",
-            zhHans: "任务系统",
-          },
-          bullets: {
-            en: [
-              "Treat task-system as a durable obligation ledger, not as a user-visible reply channel.",
-              "Use task tools to record ongoing work, blockers, dependencies, triggers, and durable progress that must survive later cycles.",
-              "Task writes do not answer the user by themselves; use message-system for communication and terminal-system for execution or inspection.",
-              "When work is waiting on outside input or a later trigger, it is valid to keep the task pending while continuing unrelated attention elsewhere.",
-              "Avoid task noise: create or update tasks when durable obligation state changes, not for every transient thought.",
-            ],
-            zhHans: [
-              "把 task-system 视为持久义务账本，而不是用户可见的回复通道。",
-              "用 task 工具记录持续性工作、阻塞、依赖、触发条件和需要跨 cycle 保留的进度。",
-              "写入 task 本身不等于回复用户；对外沟通用 message-system，执行和探查用 terminal-system。",
-              "当工作在等待外部输入或未来触发时，可以让任务保持 pending，同时继续处理其它无关的 attention。",
-              "避免任务噪音：只有当持久义务状态真的变化时才创建或更新 task，而不是把每次瞬时思考都写成任务。",
-            ],
-          },
-        }),
-      createTools: ({ runtimeText, traceTool }) => {
-        const taskSourceSchema = z.string().min(1);
-        const taskIdSchema = z.string().min(1);
-        const taskRefSchema = z.object({
-          source: taskSourceSchema,
-          id: taskIdSchema,
-        });
-        const taskRefLikeSchema = z.union([z.string().min(1), taskRefSchema]);
-        const taskRelationshipTypeSchema = z.enum([
-          "blocks",
-          "blocked_by",
-          "relates_to",
-          "parent_of",
-          "child_of",
-          "duplicates",
-        ]);
-        const taskRelationshipSchema = z.object({
-          type: taskRelationshipTypeSchema,
-          target: taskRefLikeSchema,
-        });
-        const taskTriggerSchema = z.union([
-          z.object({ type: z.literal("manual") }),
-          z.object({ type: z.literal("event"), topic: z.string().min(1) }),
-          z.object({ type: z.literal("at"), at: z.string().min(1) }),
-          z.object({ type: z.literal("cron"), expr: z.string().min(1) }),
-        ]);
-        const taskStatusSchema = z.enum(["backlog", "pending", "ready", "running", "done", "failed", "canceled"]);
-        const taskCreateSchema = z.object({
-          source: taskSourceSchema,
-          id: taskIdSchema.optional(),
-          title: z.string().min(1),
-          body: z.string().optional(),
-          status: taskStatusSchema.optional(),
-          type: z.string().optional(),
-          assignees: z.array(z.string()).optional(),
-          labels: z.array(z.string()).optional(),
-          milestone: z.string().optional(),
-          projects: z.array(z.string()).optional(),
-          dependsOn: z.array(taskRefLikeSchema).optional(),
-          relationships: z.array(taskRelationshipSchema).optional(),
-          triggers: z.array(taskTriggerSchema).optional(),
-          sourceFile: z.string().optional(),
-        });
-        const taskPatchSchema = z.object({
-          title: z.string().optional(),
-          body: z.string().optional(),
-          status: taskStatusSchema.optional(),
-          type: z.string().optional(),
-          assignees: z.array(z.string()).optional(),
-          labels: z.array(z.string()).optional(),
-          milestone: z.string().optional(),
-          projects: z.array(z.string()).optional(),
-          dependsOn: z.array(taskRefLikeSchema).optional(),
-          relationships: z.array(taskRelationshipSchema).optional(),
-          triggers: z.array(taskTriggerSchema).optional(),
-        });
-        const taskUpdateSchema = z.object({
-          source: taskSourceSchema,
-          id: taskIdSchema,
-          patch: taskPatchSchema,
-        });
-        const taskImportTaskSchema = z.object({
-          id: taskIdSchema.optional(),
-          title: z.string().min(1),
-          body: z.string().optional(),
-          status: taskStatusSchema.optional(),
-          type: z.string().optional(),
-          assignees: z.array(z.string()).optional(),
-          labels: z.array(z.string()).optional(),
-          milestone: z.string().optional(),
-          projects: z.array(z.string()).optional(),
-          dependsOn: z.array(taskRefLikeSchema).optional(),
-          relationships: z.array(taskRelationshipSchema).optional(),
-          triggers: z.array(taskTriggerSchema).optional(),
-        });
-        const taskImportItemSchema = z.object({
-          source: taskSourceSchema,
-          file: z.string().min(1),
-          task: taskImportTaskSchema,
-        });
-
-        const taskListTool = toolDefinition({
-          name: "task_list",
-          description: runtimeText.t("tool.task_list.description"),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async () => traceTool("task_list", {}, async () => ({ tasks: this.taskEngine.list() })));
-
-        const taskGetTool = toolDefinition({
-          name: "task_get",
-          description: runtimeText.t("tool.task_get.description"),
-          inputSchema: z.object({
-            source: taskSourceSchema,
-            id: z.string().min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
-          return traceTool("task_get", input, async () => ({
-            task: this.taskEngine.get(input.source, input.id) ?? null,
-          }));
-        });
-
-        const taskImportTool = toolDefinition({
-          name: "task_import_markdown_batch",
-          description: runtimeText.t("tool.task_import.description"),
-          inputSchema: z.object({
-            items: z.array(taskImportItemSchema).min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ items: z.array(taskImportItemSchema).min(1) }).parse(rawInput);
-          return traceTool("task_import_markdown_batch", input, async () => {
-            const result = this.taskEngine.import(input.items as TaskImportItem[]);
-            for (const task of result.items) {
-              void this.persistTask(task).catch((error) => {
-                this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-              });
-              this.emit("taskUpdated", { task });
-            }
-            if (result.items.length > 0) {
-              this.notifyInput("task");
-            }
-            return toToolRecord(result);
-          });
-        });
-
-        const taskCreateTool = toolDefinition({
-          name: "task_create",
-          description: runtimeText.t("tool.task_create.description"),
-          inputSchema: taskCreateSchema,
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = taskCreateSchema.parse(rawInput) as TaskCreateInput;
-          return traceTool("task_create", input, async () => {
-            const task = this.taskEngine.create(input);
-            void this.persistTask(task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task });
-            this.notifyInput("task");
-            return toToolRecord(task);
-          });
-        });
-
-        const taskUpdateTool = toolDefinition({
-          name: "task_update",
-          description: runtimeText.t("tool.task_update.description"),
-          inputSchema: taskUpdateSchema,
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = taskUpdateSchema.parse(rawInput) as TaskUpdateInput;
-          return traceTool("task_update", input, async () => {
-            const task = this.taskEngine.update(input);
-            void this.persistTask(task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task });
-            this.notifyInput("task");
-            return toToolRecord(task);
-          });
-        });
-
-        const taskDoneTool = toolDefinition({
-          name: "task_done",
-          description: runtimeText.t("tool.task_done.description"),
-          inputSchema: z.object({
-            source: taskSourceSchema,
-            id: z.string().min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
-          return traceTool("task_done", input, async () => {
-            const result = this.taskEngine.done(input.source, input.id);
-            if (result.task) {
-              void this.persistTask(result.task).catch((error) => {
-                this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-              });
-              this.emit("taskUpdated", { task: result.task });
-            }
-            for (const task of result.affected) {
-              this.emit("taskUpdated", { task });
-            }
-            this.notifyInput("task");
-            return toToolRecord(result);
-          });
-        });
-
-        const taskAddDependencyTool = toolDefinition({
-          name: "task_add_dependency",
-          description: runtimeText.t("tool.task_add_dependency.description"),
-          inputSchema: z.object({
-            source: taskSourceSchema,
-            id: z.string().min(1),
-            target: z.string().min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
-            .parse(rawInput);
-          return traceTool("task_add_dependency", input, async () => {
-            const task = this.taskEngine.addDependency(input.source, input.id, input.target);
-            void this.persistTask(task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task });
-            this.notifyInput("task");
-            return toToolRecord(task);
-          });
-        });
-
-        const taskRemoveDependencyTool = toolDefinition({
-          name: "task_remove_dependency",
-          description: runtimeText.t("tool.task_remove_dependency.description"),
-          inputSchema: z.object({
-            source: taskSourceSchema,
-            id: z.string().min(1),
-            target: z.string().min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({ source: taskSourceSchema, id: z.string().min(1), target: z.string().min(1) })
-            .parse(rawInput);
-          return traceTool("task_remove_dependency", input, async () => {
-            const task = this.taskEngine.removeDependency(input.source, input.id, input.target);
-            void this.persistTask(task).catch((error) => {
-              this.emit("error", { message: error instanceof Error ? error.message : String(error) });
-            });
-            this.emit("taskUpdated", { task });
-            this.notifyInput("task");
-            return toToolRecord(task);
-          });
-        });
-
-        const taskTriggerManualTool = toolDefinition({
-          name: "task_trigger_manual",
-          description: runtimeText.t("tool.task_trigger_manual.description"),
-          inputSchema: z.object({
-            source: taskSourceSchema,
-            id: z.string().min(1),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ source: taskSourceSchema, id: z.string().min(1) }).parse(rawInput);
-          return traceTool("task_trigger_manual", input, async () => {
-            const task = this.taskEngine.triggerManual(input.source, input.id);
-            if (task) {
-              this.emit("taskUpdated", { task });
-              this.notifyInput("task");
-            }
-            return { task: task ?? null };
-          });
-        });
-
-        const taskEmitEventTool = toolDefinition({
-          name: "task_emit_event",
-          description: runtimeText.t("tool.task_emit_event.description"),
-          inputSchema: z.object({
-            topic: z.string().min(1),
-            payload: z.unknown().optional(),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ topic: z.string().min(1), payload: z.unknown().optional() }).parse(rawInput);
-          return traceTool("task_emit_event", input, async () => {
-            const result = this.taskEngine.emitEvent({
-              topic: input.topic,
-              payload: input.payload,
-              source: "tool",
-            } satisfies TaskEventInput);
-            if (result.affected.length > 0) {
-              this.emit("taskTriggered", result);
-              for (const task of result.affected) {
-                this.emit("taskUpdated", { task });
-              }
-              this.notifyInput("task");
-            }
-            return toToolRecord(result);
-          });
-        });
-
-        return [
-          taskListTool,
-          taskGetTool,
-          taskImportTool,
-          taskCreateTool,
-          taskUpdateTool,
-          taskDoneTool,
-          taskAddDependencyTool,
-          taskRemoveDependencyTool,
-          taskTriggerManualTool,
-          taskEmitEventTool,
-        ];
+      name: `AttentionContext-${primary.contextId}`,
+      role: "user",
+      type: "text",
+      source: "attention",
+      text,
+      meta: {
+        attentionContextId: primary.contextId,
+        attentionContextIds: serializeAttentionContextIds(attentionContextIds) ?? null,
+        attentionCommitRefs: null,
+        attentionHeadCommitId: primary.context.headCommitId,
+        owner: primary.context.owner,
+        createdAt: primary.context.updatedAt,
+        attentionProtocolKind: "context",
+        ...(channel ? { chatFocused: channel.focused } : {}),
+        ...(chatId ? { chatId } : {}),
       },
     };
   }
 
   private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
-    const chatId = typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+    const chatId = this.getMessageSourceChannelId(request.ref);
     const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
-    const content = message?.content ?? (typeof request.ref.meta?.content === "string" ? request.ref.meta.content : "");
+    const content = message?.content ?? "";
     const bytes = Buffer.byteLength(content, "utf8");
     return {
       kind: "snapshot",
@@ -3279,20 +3630,6 @@ export class SessionRuntime {
         typeof request.ref.versionHint === "string" || typeof request.ref.versionHint === "number"
           ? String(request.ref.versionHint)
           : null,
-      meta: {
-        ...(request.ref.meta ? { ...request.ref.meta } : {}),
-        ...(message
-          ? {
-              chatId: message.chatId,
-              messageId: message.messageId,
-              updatedAt: message.updatedAt,
-              visibleAt: message.visibleAt ?? null,
-              attentionState: message.attentionState,
-              attentionLoadedAt: message.attentionLoadedAt ?? null,
-              attachments: message.attachments ?? [],
-            }
-          : {}),
-      },
     };
   }
 
@@ -3300,65 +3637,78 @@ export class SessionRuntime {
     result: LoopSourceReadResult,
     request: LoopSourceReadRequest,
   ): Promise<AttentionDraft[]> {
-    const chatId = typeof request.ref.meta?.chatId === "string" ? request.ref.meta.chatId : this.getDefaultChatId();
+    const chatId = this.getMessageSourceChannelId(request.ref);
+    const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
     const actorRoom = this.getActorRoom(chatId, {
       includeArchived: true,
       touchPresence: false,
     });
-    if (actorRoom?.accessToken) {
-      this.messageSystem.markChannelReadAuthorized({
-        chatId,
-        accessToken: actorRoom.accessToken,
-        messageId: request.ref.subjectId,
-      });
-    }
-    const loadedMessage = this.messageSystem.markMessageAttentionLoaded({
-      chatId,
-      messageId: request.ref.subjectId,
-    });
     const channel = actorRoom ?? this.messageSystem.getChannel(chatId);
-    if (loadedMessage.content.trim().length === 0 || loadedMessage.content.trim() === "/compact") {
+    const content = message?.content ?? result.content;
+    if (content.trim().length === 0 || content.trim() === "/compact") {
       return [];
     }
+    const from =
+      message?.from ?? channel?.title ?? chatId;
+    const attachments =
+      message?.attachments?.map((attachment) => ({
+        assetId: attachment.assetId,
+        kind: attachment.kind,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        url: attachment.url,
+      })) ?? [];
+    const socialMeta =
+      message && channel
+        ? this.buildMessageLoopMeta(
+            message,
+            channel,
+            message.metadata && typeof message.metadata === "object"
+              ? (message.metadata as Record<string, string | number | boolean | null>)
+              : {},
+          )
+        : {};
+    const envelopeMeta = {
+      ...socialMeta,
+      chatId,
+      chatTitle: channel?.title ?? chatId,
+      chatKind: channel?.kind ?? "direct",
+      chatContextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
+      chatFocused: channel?.focused ?? false,
+      messageId: message?.messageId ?? request.ref.subjectId,
+      visibleAt: message?.visibleAt ?? message?.createdAt ?? null,
+    } satisfies Record<string, unknown>;
     return [
       {
         sourceRef: this.createMessageSourceRef({
-          chatId: loadedMessage.chatId,
-          messageId: loadedMessage.messageId,
-          rootId: loadedMessage.rootId,
-          from: loadedMessage.from,
-          to: loadedMessage.to,
-          content: loadedMessage.content,
-          attachments:
-            loadedMessage.attachments?.map((attachment) => ({
-              assetId: attachment.assetId,
-              kind: attachment.kind,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              url: attachment.url,
-            })) ?? [],
-          meta:
-            loadedMessage.metadata && typeof loadedMessage.metadata === "object"
-              ? (loadedMessage.metadata as Record<string, string | number | boolean | null>)
-              : undefined,
-        }),
-        content: loadedMessage.content,
-        from: loadedMessage.from || (channel?.title ?? chatId),
-        score: 100,
-        meta: {
-          ...(loadedMessage.metadata && typeof loadedMessage.metadata === "object"
-            ? (loadedMessage.metadata as Record<string, unknown>)
-            : {}),
-          source: "message",
           chatId,
-          chatTitle: channel?.title ?? chatId,
-          chatKind: channel?.kind ?? "direct",
-          chatContextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
-          chatFocused: channel?.focused ?? false,
-          messageId: loadedMessage.messageId,
-          visibleAt: loadedMessage.visibleAt ?? loadedMessage.createdAt,
+          messageId: message?.messageId ?? request.ref.subjectId,
+        }),
+        content,
+        from,
+        score: 100,
+        provenance: {
+          author: from,
+          source: "message",
+          systemId: "message",
+          channelId: chatId,
+          subjectId: message?.messageId ?? request.ref.subjectId,
+          createdAt:
+            typeof message?.updatedAt === "string"
+              ? message.updatedAt
+              : typeof message?.createdAt === "string"
+                ? message.createdAt
+                : undefined,
         },
+        presentation: {
+          summary: truncateAttentionTitle(content.trim()),
+          body: this.buildMessageModelEnvelope(content, envelopeMeta, attachments),
+          bodyFormat: "text/markdown",
+          changeType: "update",
+        },
+        versionHint:
+          typeof result.toHash === "string" ? result.toHash : message?.updatedAt ? String(message.updatedAt) : undefined,
       },
     ];
   }
@@ -3375,10 +3725,6 @@ export class SessionRuntime {
         bytes: 0,
         fromHash: null,
         toHash: null,
-        meta: {
-          terminalId: request.ref.subjectId,
-          reason: payload.reason,
-        },
       };
     }
     const kind = payload.kind === "terminal-diff" ? "diff" : "snapshot";
@@ -3394,12 +3740,6 @@ export class SessionRuntime {
           : null,
       semanticHash: this.terminalSemanticFingerprint[request.ref.subjectId] ?? null,
       viewHash: this.terminalViewFingerprint[request.ref.subjectId] ?? null,
-      meta: {
-        terminalId: request.ref.subjectId,
-        representation: kind,
-        semanticHash: this.terminalSemanticFingerprint[request.ref.subjectId] ?? null,
-        viewHash: this.terminalViewFingerprint[request.ref.subjectId] ?? null,
-      },
     };
   }
 
@@ -3410,16 +3750,28 @@ export class SessionRuntime {
     if (result.content.trim().length === 0 || !hasMeaningfulTerminalAttentionPayload(result.content)) {
       return [];
     }
+    const presentation = buildTerminalAttentionPresentation(result.content, request.ref.subjectId);
     return [
       {
         sourceRef: request.ref,
         content: result.content,
         from: `terminal:${request.ref.subjectId}`,
-        meta: {
-          terminalId: request.ref.subjectId,
-          representation: result.kind,
-          ...(result.meta ?? {}),
+        score: PASSIVE_TERMINAL_OBSERVATION_SCORE,
+        provenance: {
+          author: `terminal:${request.ref.subjectId}`,
+          source: "terminal",
+          systemId: request.ref.systemId,
+          subjectId: request.ref.subjectId,
+          createdAt: new Date().toISOString(),
         },
+        presentation: {
+          summary: presentation.title,
+          body: presentation.detailValue,
+          bodyFormat: presentation.detailFormat,
+          changeType: presentation.detailKind === "patch" ? "diff" : "update",
+        },
+        semanticHash: typeof result.semanticHash === "string" ? result.semanticHash : undefined,
+        versionHint: typeof result.toHash === "string" ? result.toHash : undefined,
         supersedeActive: {
           systemId: request.ref.systemId,
           subjectId: request.ref.subjectId,
@@ -3483,11 +3835,9 @@ export class SessionRuntime {
 
   private resolveAttentionContextId(draft: AttentionDraft): string {
     const explicitChatId =
-      typeof draft.meta?.chatId === "string"
-        ? draft.meta.chatId
-        : typeof draft.meta?.channelId === "string"
-          ? draft.meta.channelId
-          : null;
+      typeof draft.provenance?.channelId === "string"
+        ? draft.provenance.channelId
+        : null;
     if (explicitChatId) {
       return this.ensureAttentionContextForChannel(explicitChatId).contextId;
     }
@@ -3507,21 +3857,14 @@ export class SessionRuntime {
   }
 
   private buildAttentionMeta(draft: AttentionDraft): AttentionCommitMeta {
-    const input = draft.meta ?? {};
-    const source = typeof input.source === "string" ? input.source : draft.sourceRef.systemId;
-    const chatId =
-      typeof input.chatId === "string"
-        ? input.chatId
-        : typeof input.channelId === "string"
-          ? input.channelId
-          : undefined;
+    const input = draft.provenance ?? {};
     return {
-      ...input,
-      author: draft.from,
-      source,
+      author: typeof input.author === "string" && input.author.length > 0 ? input.author : draft.from,
+      source: typeof input.source === "string" && input.source.length > 0 ? input.source : draft.sourceRef.systemId,
       systemId: typeof input.systemId === "string" ? input.systemId : draft.sourceRef.systemId,
       subjectId: typeof input.subjectId === "string" ? input.subjectId : draft.sourceRef.subjectId,
-      channelId: chatId,
+      channelId: typeof input.channelId === "string" ? input.channelId : undefined,
+      tags: Array.isArray(input.tags) ? [...input.tags] : undefined,
       createdAt: typeof input.createdAt === "string" ? input.createdAt : new Date().toISOString(),
     };
   }
@@ -3543,9 +3886,16 @@ export class SessionRuntime {
   }
 
   private buildAttentionCommitInput(draft: AttentionDraft): AttentionCommitToolInput {
+    const contextId = this.resolveAttentionContextId(draft);
     const normalizedContent = draft.content.trim();
-    const presentation =
-      draft.sourceRef.systemId === "terminal"
+    const presentation = draft.presentation
+      ? {
+          summary: draft.presentation.summary,
+          content: draft.presentation.body,
+          format: draft.presentation.bodyFormat,
+          changeType: draft.presentation.changeType ?? ("update" as const),
+        }
+      : draft.sourceRef.systemId === "terminal"
         ? (() => {
             const terminalPresentation = buildTerminalAttentionPresentation(draft.content, draft.sourceRef.subjectId);
             return {
@@ -3568,12 +3918,14 @@ export class SessionRuntime {
           : {
               summary: truncateAttentionTitle(normalizedContent),
               content: draft.content,
-              format: draft.sourceRef.systemId === "message" ? "text/markdown" : "application/json",
+              format: "application/json",
               changeType: "update" as const,
             };
     return {
-      contextId: this.resolveAttentionContextId(draft),
+      contextId,
+      ingressType: this.resolveAttentionIngressType(contextId),
       meta: this.buildAttentionMeta(draft),
+      egress: draft.egress ? { ...draft.egress } : undefined,
       scores: this.buildAttentionScores(draft),
       summary: presentation.summary,
       change: {
@@ -3586,6 +3938,18 @@ export class SessionRuntime {
 
   private buildResolvedAttentionScores(scores: Record<string, number>): Record<string, number> {
     return Object.fromEntries(Object.keys(scores).map((key) => [key, 0]));
+  }
+
+  private buildResolvedAttentionScoresForContext(contextId: string): Record<string, number> {
+    const context = this.attentionSystem.getContext(contextId);
+    if (!context) {
+      return {};
+    }
+    const activeScores = Object.entries(context.getState().scoreMap).filter(([, value]) => value > 0);
+    if (activeScores.length === 0) {
+      return {};
+    }
+    return Object.fromEntries(activeScores.map(([key]) => [key, 0]));
   }
 
   private enqueueLifecycleAttentionCommit(input: Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0]): void {
@@ -3603,6 +3967,7 @@ export class SessionRuntime {
     summary: string;
     payload?: Record<string, unknown>;
     score?: number;
+    ingressType?: "commit" | "push";
   }): Promise<void> {
     const context = this.attentionSystem.getContext(input.contextId);
     if (!context) {
@@ -3631,13 +3996,14 @@ export class SessionRuntime {
       ...input.payload,
     });
     const commit = this.attentionSystem.commit(input.contextId, {
+      ingressType: input.ingressType ?? "commit",
       meta: {
         author: this.getAvatarName(),
         source: "lifecycle",
         systemId: input.systemId,
         subjectId: input.subjectId,
         channelId: input.systemId === "message" ? input.subjectId : undefined,
-        lifecycleEvent: input.event,
+        tags: ["lifecycle", input.event],
         createdAt: new Date().toISOString(),
       },
       scores: { [scoreToken]: score },
@@ -3690,8 +4056,7 @@ export class SessionRuntime {
           source: "attention",
           systemId: supersede.systemId,
           subjectId: supersede.subjectId,
-          supersededAt,
-          supersededReason: "source-refresh",
+          tags: ["supersede", "source-refresh", supersededAt],
         },
         scores: this.buildResolvedAttentionScores(commit.scores),
         summary: `Supersede ${commit.summary}`,
@@ -3705,18 +4070,21 @@ export class SessionRuntime {
     commit: AttentionCommit,
     input: { notifyLoop: boolean },
   ): Promise<void> {
-    this.markAttentionContextDirty(contextId);
+    const wakeableAttentionIngress = commit.ingressType === "commit";
+    if (wakeableAttentionIngress) {
+      this.markAttentionContextDirty(contextId);
+    }
     this.recordAttentionCommitTrace(contextId, commit, input);
     this.attentionFactsVersion += 1;
     const externalAttentionIngress = commit.meta.source !== "attention";
-    if (externalAttentionIngress) {
+    if (externalAttentionIngress && wakeableAttentionIngress) {
       this.clearAttentionContainment(contextId);
       this.resetAttentionDebtBackoff();
     }
     await this.persistAttentionSystem();
     this.markActiveCycleProducedCommitRef(contextId, commit.commitId);
     this.emitAttentionState();
-    if (input.notifyLoop && externalAttentionIngress) {
+    if (input.notifyLoop && externalAttentionIngress && wakeableAttentionIngress) {
       this.notifyInput("attention");
     }
     const contextState = this.attentionSystem.getContext(contextId)?.getState();
@@ -3808,12 +4176,12 @@ export class SessionRuntime {
       | (Omit<SessionDbLoopbusTraceRecord, "id" | "seq"> & { spanId: string })
       | (PendingTraceSpan & { cycleId?: never }),
   ): SessionDbLoopbusTraceRecord | null {
-    if (!this.sessionDb || typeof (input as { cycleId?: number }).cycleId !== "number") {
+    if (typeof (input as { cycleId?: number }).cycleId !== "number") {
       return null;
     }
     const nextInput = input as Omit<SessionDbLoopbusTraceRecord, "id" | "seq">;
     const existingRowId = this.traceRowIdBySpanId.get(nextInput.spanId);
-    const current = existingRowId === undefined ? null : this.sessionDb.getLoopTraceById(existingRowId);
+    const current = existingRowId === undefined ? null : this.loopTraceEntries.find((entry) => entry.id === existingRowId) ?? null;
     const mergedLinks =
       current === null
         ? nextInput.links
@@ -3851,32 +4219,46 @@ export class SessionRuntime {
     };
     const row =
       existingRowId === undefined
-        ? this.sessionDb.appendLoopTrace({
-            cycleId: mergedInput.cycleId,
-            traceId: mergedInput.traceId,
-            spanId: mergedInput.spanId,
-            parentSpanId: mergedInput.parentSpanId,
-            kind: mergedInput.kind,
-            name: mergedInput.name,
-            status: mergedInput.status,
-            startedAt: mergedInput.startedAt,
-            endedAt: mergedInput.endedAt,
-            refs: mergedInput.refs,
-            links: mergedInput.links,
-            events: mergedInput.events,
-            attributes: mergedInput.attributes,
-            outcome: mergedInput.outcome,
-          })
-        : this.sessionDb.updateLoopTrace(existingRowId, {
-            parentSpanId: mergedInput.parentSpanId,
-            status: mergedInput.status,
-            endedAt: mergedInput.endedAt,
-            refs: mergedInput.refs,
-            links: mergedInput.links,
-            events: mergedInput.events,
-            attributes: mergedInput.attributes,
-            outcome: mergedInput.outcome,
-          });
+        ? (() => {
+            const created: SessionDbLoopbusTraceRecord = {
+              id: ++this.loopTraceSeq,
+              seq: this.loopTraceSeq,
+              cycleId: mergedInput.cycleId,
+              traceId: mergedInput.traceId,
+              spanId: mergedInput.spanId,
+              parentSpanId: mergedInput.parentSpanId,
+              kind: mergedInput.kind,
+              name: mergedInput.name,
+              status: mergedInput.status,
+              startedAt: mergedInput.startedAt,
+              endedAt: mergedInput.endedAt,
+              refs: mergedInput.refs,
+              links: mergedInput.links,
+              events: mergedInput.events,
+              attributes: mergedInput.attributes,
+              outcome: mergedInput.outcome,
+            };
+            this.loopTraceEntries.push(created);
+            return created;
+          })()
+        : (() => {
+            const index = this.loopTraceEntries.findIndex((entry) => entry.id === existingRowId);
+            const updated: SessionDbLoopbusTraceRecord = {
+              ...(current as SessionDbLoopbusTraceRecord),
+              parentSpanId: mergedInput.parentSpanId,
+              status: mergedInput.status,
+              endedAt: mergedInput.endedAt,
+              refs: mergedInput.refs,
+              links: mergedInput.links,
+              events: mergedInput.events,
+              attributes: mergedInput.attributes,
+              outcome: mergedInput.outcome,
+            };
+            if (index >= 0) {
+              this.loopTraceEntries.splice(index, 1, updated);
+            }
+            return updated;
+          })();
     this.traceRowIdBySpanId.set(row.spanId, row.id);
     if (row.status === "running") {
       this.runningTraceRowsByName.set(row.name, row);
@@ -3906,7 +4288,6 @@ export class SessionRuntime {
       })),
       events: span.events.map((event) => ({
         ...event,
-        refs: event.refs ? mergeTraceRefs(event.refs) : undefined,
         attributes: event.attributes ? { ...event.attributes } : undefined,
       })),
       attributes: { ...span.attributes },
@@ -3950,7 +4331,7 @@ export class SessionRuntime {
         },
       }),
     ];
-    const channelId = typeof draft.meta?.chatId === "string" ? draft.meta.chatId : undefined;
+    const channelId = typeof draft.provenance?.channelId === "string" ? draft.provenance.channelId : undefined;
     if (channelId) {
       refs.push(toMessageChannelTraceRef(channelId));
     }
@@ -4065,10 +4446,7 @@ export class SessionRuntime {
   private restoreAttentionRuntimeHistory(limit = ATTENTION_RUNTIME_HISTORY_LIMIT): void {
     this.attentionCycleFrames.clear();
     this.recentAttentionHooks = [];
-    if (!this.sessionDb) {
-      return;
-    }
-    for (const cycle of this.sessionDb.listCurrentBranchCycles(limit)) {
+    for (const cycle of this.cycleRecords.slice(-limit)) {
       const frame = cycle.extendsRecord.attentionCycleFrame;
       if (frame && typeof frame === "object") {
         const next = cloneAttentionCycleFrame(frame as AttentionCycleFrame);
@@ -4091,23 +4469,19 @@ export class SessionRuntime {
   }
 
   private persistAttentionCycleState(cycleId: number): void {
-    if (!this.sessionDb) {
-      return;
-    }
-    const cycle = this.sessionDb.getCycleById(cycleId);
+    const cycle = this.cycleRecords.find((entry) => entry.id === cycleId);
     if (!cycle) {
       return;
     }
     const frame = this.attentionCycleFrames.get(cycleId);
     const hooks = this.recentAttentionHooks.filter((record) => record.cycleId === cycleId);
-    this.sessionDb.updateCycle(cycleId, {
-      extendsRecord: {
-        ...cycle.extendsRecord,
-        attention: this.attentionSystem.snapshot(),
-        attentionCycleFrame: frame ? cloneAttentionCycleFrame(frame) : undefined,
-        attentionHooks: hooks.map(cloneAttentionHookRecord),
-      },
-    });
+    cycle.extendsRecord = {
+      ...cycle.extendsRecord,
+      attention: this.attentionSystem.snapshot(),
+      attentionCycleFrame: frame ? cloneAttentionCycleFrame(frame) : undefined,
+      attentionHooks: hooks.map(cloneAttentionHookRecord),
+    };
+    cycle.updatedAt = Date.now();
   }
 
   private upsertAttentionCycleFrame(frame: AttentionCycleFrame): void {
@@ -4240,22 +4614,40 @@ export class SessionRuntime {
     return commits;
   }
 
-  private serializeAttentionItemsInput(contextId: string, commits: readonly AttentionCommit[]): string {
-    return mdFence(
-      "yaml+attention_items",
-      toYaml({
-        contextId,
-        commits: commits.map((commit) => ({
-          commitId: commit.commitId,
-          parentCommitIds: [...commit.parentCommitIds],
-          meta: { ...commit.meta },
-          scores: { ...commit.scores },
-          summary: commit.summary,
-          change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
-          createdAt: commit.createdAt,
-        })),
-      }),
-    );
+  private serializeAttentionItemsInput(
+    items: readonly {
+      contextId: string;
+      commit: AttentionCommit;
+    }[],
+  ): string {
+    return [
+      "## Attention Items",
+      ...items.map(({ contextId, commit }) =>
+        mdFence(
+          "yaml+attention-item",
+          toYaml({
+            contextId,
+            commitId: commit.commitId,
+            ingressType: commit.ingressType,
+            parentCommitIds: [...commit.parentCommitIds],
+            provenance: {
+              author: commit.meta.author,
+              source: commit.meta.source,
+              systemId: commit.meta.systemId,
+              subjectId: commit.meta.subjectId,
+              channelId: commit.meta.channelId,
+              tags: commit.meta.tags,
+              createdAt: commit.meta.createdAt,
+            },
+            egress: commit.egress ? { ...commit.egress } : undefined,
+            scores: { ...commit.scores },
+            summary: commit.summary,
+            change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
+            createdAt: commit.createdAt,
+          }),
+        ),
+      ),
+    ].join("\n\n");
   }
 
   private recordAttentionHook(
@@ -4444,8 +4836,9 @@ export class SessionRuntime {
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
+      homeDir: this.getHomeDir(),
     });
-    this.focusedTerminalIds = [...this.config.focusedTerminalIds];
+    this.focusedTerminalIds = this.requireTerminalControlPlane().getFocusedTerminalIds(this.terminalActorId);
     this.loopPluginRuntime = await this.createLoopPluginRuntime();
     await this.migrateLegacyAttentionStoreDir();
     const attentionRoot = join(this.options.sessionRoot, "attention-system");
@@ -4470,8 +4863,6 @@ export class SessionRuntime {
     if (this.terminalSystemCleanup.length === 0) {
       this.bindTerminalSystem();
     }
-    this.ensureDefaultChatChannel();
-    this.hydrateStartupInboundMessages();
     this.settingsEditor = new SettingsEditor(this.config.agentCwd, {
       agenterPath: this.config.prompt.agenterPath,
       agenterSystemPath: this.config.prompt.agenterSystemPath,
@@ -4479,11 +4870,6 @@ export class SessionRuntime {
       responseContractPath: this.config.prompt.responseContractPath,
     });
     await this.reloadSettingsLayers();
-
-    for (const [terminalId, terminalConfig] of Object.entries(this.config.terminals)) {
-      await this.createTerminal(terminalId, terminalConfig);
-    }
-    this.requireTerminalControlPlane().focusForActor(this.terminalActorId, "replace", this.focusedTerminalIds);
     try {
       await this.terminalControlPlane.startTransport({ port: 0 });
     } catch (error) {
@@ -4517,6 +4903,12 @@ export class SessionRuntime {
     });
 
     await promptStore.reload();
+    this.runtimeSkills = listRuntimeSkills({
+      homeDir: this.getHomeDir(),
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      principalId: this.options.avatarPrincipalId,
+    });
+    this.runtimeSkillsList = buildRuntimeSkillsList(this.runtimeSkills);
 
     const modelClient = new ModelClient({
       providerId: this.config.ai.providerId,
@@ -4537,7 +4929,7 @@ export class SessionRuntime {
     });
 
     this.taskSources = resolveTaskSources({
-      homeDir: homedir(),
+      homeDir: this.getHomeDir(),
       projectRoot: this.config.agentCwd,
       sources: this.config.tasks.sources,
     });
@@ -4557,52 +4949,47 @@ export class SessionRuntime {
     });
     this.sessionStore = sessionStore;
     this.sessionDb = new SessionDb(join(this.options.sessionRoot, "session.db"));
+    const currentPromptWindowState = this.ensurePromptWindowStateInitialized();
     this.restoreAttentionRuntimeHistory();
-    const restoredChat = this.sessionDb.listBlocksAfter(0, 200);
-    const restoredChatIds = new Map<number, string>();
-    const defaultChatId = this.getDefaultChatId();
-    const resolveRestoredChatId = (item: SessionDbChatMessageRecord): string => {
-      if (typeof item.chatId === "string" && item.chatId.trim().length > 0) {
-        return item.chatId;
-      }
-      if (item.cycleId === null) {
-        return defaultChatId;
-      }
-      const cached = restoredChatIds.get(item.cycleId);
-      if (cached) {
-        return cached;
-      }
-      const chatId = resolveSessionBlockChatId({
-        block: item,
-        getCycleById: (cycleId) => this.sessionDb?.getCycleById(cycleId) ?? null,
-        fallback: defaultChatId,
-      });
-      restoredChatIds.set(item.cycleId, chatId);
-      return chatId;
-    };
-    this.chatMessages = restoredChat.map((item) =>
-      projectPersistedBlockToChatMessage({
-        sessionId: this.options.sessionId,
-        block: item,
-        fallbackRoomId: resolveRestoredChatId(item),
-        lookupRoomMessage: (roomId, messageId) => this.messageSystem.getMessage(roomId, messageId),
-      }),
-    );
+    const restoredChat = this.sessionDb.listMessagesByScope("heartbeat", { limit: 400 });
+    this.chatMessages = restoredChat.map((item) => projectHeartbeatMessageToChatMessage(item));
     const head = this.sessionDb.getHead();
-    this.activeCycleId = head.headCycleId;
+    this.activeCycleId = head.currentRoundIndex;
     this.activeModelCallId = null;
     this.updateLoopKernelSnapshot({
       phase: "waiting_commits",
-      currentCycleId: head.headCycleId,
+      currentCycleId: head.currentRoundIndex,
       lastWakeSource: null,
       lastError: null,
     });
     this.emitAttentionState();
+    await this.ensureRuntimeLocalApiStarted();
 
     const agent = new AgenterAI({
       modelClient,
       promptStore,
-      sessionStore,
+      promptWindowStore: {
+        append: ({ createdAt, messages, setCurrent }) => {
+          if (!this.sessionDb) {
+            throw new Error("session db not initialized");
+          }
+          const shouldRotateRound = (setCurrent ?? true) && this.activeCycle?.kind === "compact";
+          const roundIndex = shouldRotateRound
+            ? this.sessionDb.bumpRound(createdAt).currentRoundIndex
+            : this.sessionDb.getHead().currentRoundIndex;
+          const record = this.sessionDb.savePromptWindow({
+            createdAt,
+            roundIndex,
+            messages,
+            setCurrent,
+          });
+          if (shouldRotateRound) {
+            this.sessionDb.pruneAiCallsBeforeRound(Math.max(0, roundIndex - 1));
+          }
+          return toAgentPromptWindowStateRecord(record);
+        },
+      },
+      initialPromptWindowState: currentPromptWindowState,
       avatarName: this.getAvatarName(),
       resolveImageAttachment: async (attachment) => this.readImageAttachmentSource(attachment.assetId),
       collectInterleavedInputs: async () => await this.collectInterleavedAgentInputs(),
@@ -4614,6 +5001,8 @@ export class SessionRuntime {
       },
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
+      skillsList: this.runtimeSkillsList,
+      builtinToolMode: "none",
       toolProviders: this.createAgentToolProviders(),
       attentionGateway: {
         listContexts: () => this.attentionSystem.listContexts(),
@@ -4810,6 +5199,10 @@ export class SessionRuntime {
     this.runtime = null;
     this.agent = null;
     this.loopPluginRuntime = null;
+    await this.runtimeLocalApi?.stop().catch(() => {});
+    this.runtimeLocalApi = null;
+    this.runtimeSkills = [];
+    this.runtimeSkillsList = "";
     this.messageSystem.setActorPresence(this.messageActorId, false);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
@@ -4818,6 +5211,10 @@ export class SessionRuntime {
     this.terminals.clear();
     this.taskAttentionDraftQueue.length = 0;
     this.inboundMessageQueue.length = 0;
+    this.pendingUnreadMessageIds.clear();
+    this.stagedUnreadReadAcks = [];
+    this.activeCycleUnreadReadAcks = [];
+    this.activeCycleUnreadReadCommitted = false;
     this.taskSourceMtime.clear();
     this.taskSources = [];
     for (const terminalId of Object.keys(this.terminalSnapshots)) {
@@ -4904,28 +5301,22 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listModelCallsAfter(afterId, limit);
+    return this.sessionDb.listAiCallsAfter(afterId, limit).map(projectAiCallToModelCall);
   }
 
   listModelCallsBefore(beforeId: number, limit = 200): Array<SessionModelCallRecord> {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listModelCallsBefore(beforeId, limit);
+    return this.sessionDb.listAiCallsBefore(beforeId, limit).map(projectAiCallToModelCall);
   }
 
   listCurrentBranchCycles(limit = 200) {
-    if (!this.sessionDb) {
-      return [];
-    }
-    return this.sessionDb.listCurrentBranchCycles(limit);
+    return this.cycleRecords.slice(-limit);
   }
 
   async rollbackToCycle(cycleId: number): Promise<{ ok: boolean; cycleId?: number; reason?: string }> {
-    if (!this.sessionDb) {
-      return { ok: false, reason: "session db not initialized" };
-    }
-    const cycle = this.sessionDb.getCycleById(cycleId);
+    const cycle = this.cycleRecords.find((item) => item.id === cycleId);
     if (!cycle) {
       return { ok: false, reason: `cycle not found: ${cycleId}` };
     }
@@ -4945,13 +5336,13 @@ export class SessionRuntime {
       }
     }
 
-    this.sessionDb.setHead(cycleId);
     this.activeCycleId = cycleId;
     this.activeModelCallId = null;
     this.pendingTraceSpans.length = 0;
     this.traceRowIdBySpanId.clear();
     this.runningTraceRowsByName.clear();
-    this.restoreAttentionRuntimeHistory();
+    this.attentionCycleFrames.clear();
+    this.recentAttentionHooks = [];
     this.emitFocusedTerminal();
     this.emitAttentionState();
     this.updateLoopKernelSnapshot({
@@ -4971,18 +5362,40 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listApiCallsAfter(afterId, limit);
+    return this.sessionDb.listAiCallsAfter(afterId, limit);
   }
 
   listApiCallsBefore(beforeId: number, limit = 200): Array<SessionDbApiCallRecord> {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listApiCallsBefore(beforeId, limit);
+    return this.sessionDb.listAiCallsBefore(beforeId, limit);
+  }
+
+  private ensurePromptWindowStateInitialized(): AgentPromptWindowStateRecord {
+    if (!this.sessionDb) {
+      throw new Error("session db not initialized");
+    }
+    const current = this.sessionDb.getCurrentPromptWindow();
+    if (current) {
+      return toAgentPromptWindowStateRecord(current);
+    }
+    return toAgentPromptWindowStateRecord(
+      this.sessionDb.savePromptWindow({
+        createdAt: Date.now(),
+        messages: [],
+        setCurrent: true,
+      }),
+    );
+  }
+
+  private readDurablePromptWindow(): ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"] {
+    return clonePromptWindowMessages(this.sessionDb?.getCurrentPromptWindow()?.messages);
   }
 
   inspectModelDebug(): SessionRuntimeModelDebug {
     const modelState = this.agent?.inspectDebugState();
+    const recentAiCalls = this.sessionDb?.listAiCalls(8) ?? [];
     return {
       config: this.config
         ? {
@@ -5003,11 +5416,11 @@ export class SessionRuntime {
             capabilities: resolveModelCapabilities(this.config.ai),
           }
         : null,
-      promptWindow: modelState?.promptWindow ?? [],
+      promptWindow: this.readDurablePromptWindow(),
       stats: modelState?.stats ?? null,
-      latestModelCall: this.sessionDb?.listModelCalls(1)[0] ?? null,
-      recentModelCalls: this.sessionDb?.listModelCalls(8) ?? [],
-      recentApiCalls: this.sessionDb?.listApiCallsAfter(0, 12) ?? [],
+      latestModelCall: recentAiCalls.at(-1) ? projectAiCallToModelCall(recentAiCalls.at(-1)!) : null,
+      recentModelCalls: recentAiCalls.map(projectAiCallToModelCall),
+      recentApiCalls: this.sessionDb?.listAiCalls(12) ?? [],
     };
   }
 
@@ -5015,7 +5428,10 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listBlocksAfter(afterId, limit);
+    return this.sessionDb
+      .listMessagesByScope("heartbeat", { limit: Math.max(limit * 4, limit) })
+      .filter((item) => item.id > afterId)
+      .slice(-limit);
   }
 
   pageChatMessages(input?: {
@@ -5025,84 +5441,137 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
-    return this.sessionDb.listBlocksPage(input);
+    return this.sessionDb.pageMessagesByScope("heartbeat", input);
   }
 
   listChatMessagesBefore(beforeId: number, limit = 200): Array<SessionDbChatMessageRecord> {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb.listBlocksBefore(beforeId, limit);
+    return this.sessionDb
+      .listMessagesByScope("heartbeat", { limit: Math.max(limit * 8, limit) })
+      .filter((item) => item.id < beforeId)
+      .slice(-limit);
   }
 
   listLoopbusStateLogs(afterId = 0, limit = 200): Array<SessionDbLoopbusStateLogRecord> {
-    if (!this.sessionDb) {
-      return [];
-    }
-    const page = this.sessionDb.listLoopStateLogsPage({ limit });
-    return page.items.filter((item) => item.id > afterId);
+    return this.loopStateLogEntries.filter((item) => item.id > afterId).slice(-limit);
   }
 
   listLoopbusStateLogsBefore(beforeId: number, limit = 200): Array<SessionDbLoopbusStateLogRecord> {
-    if (!this.sessionDb || beforeId <= 0) {
+    if (beforeId <= 0) {
       return [];
     }
-    const before = this.sessionDb.getLoopStateLogById(beforeId);
-    if (!before) {
-      return [];
-    }
-    return this.sessionDb.listLoopStateLogsPage({
-      before: {
-        beforeTimeMs: before.timestamp,
-        beforeId: before.id,
-      },
-      limit,
-    }).items;
+    return this.loopStateLogEntries.filter((item) => item.id < beforeId).slice(-limit);
   }
 
   pageLoopbusStateLogs(input?: {
     before?: SessionDbReverseTimeCursor;
     limit?: number;
   }): SessionDbReversePage<SessionDbLoopbusStateLogRecord> {
-    if (!this.sessionDb) {
-      return { items: [], nextBefore: null, hasMoreBefore: false };
-    }
-    return this.sessionDb.listLoopStateLogsPage(input);
+    return pageLocalRecords(this.loopStateLogEntries, input, (item) => item.timestamp);
   }
 
   listLoopbusTraces(afterId = 0, limit = 200): Array<SessionDbLoopbusTraceRecord> {
-    if (!this.sessionDb) {
-      return [];
-    }
-    return this.sessionDb.listLoopTracesAfter(afterId, limit);
+    return this.loopTraceEntries.filter((item) => item.id > afterId).slice(-limit);
   }
 
   listLoopbusTracesBefore(beforeId: number, limit = 200): Array<SessionDbLoopbusTraceRecord> {
-    if (!this.sessionDb) {
-      return [];
-    }
-    return this.sessionDb.listLoopTracesBefore(beforeId, limit);
+    return this.loopTraceEntries.filter((item) => item.id < beforeId).slice(-limit);
   }
 
   pageLoopbusTraces(input?: {
     before?: SessionDbReverseTimeCursor;
     limit?: number;
   }): SessionDbReversePage<SessionDbLoopbusTraceRecord> {
-    if (!this.sessionDb) {
-      return { items: [], nextBefore: null, hasMoreBefore: false };
-    }
-    return this.sessionDb.listLoopTracesPage(input);
+    return pageLocalRecords(this.loopTraceEntries, input, (item) => item.endedAt);
   }
 
   listLoopbusTracesByRef(ref: string, limit = 200): Array<SessionDbLoopbusTraceRecord> {
-    if (!this.sessionDb) {
-      return [];
-    }
-    return this.sessionDb.listLoopTracesByRef(ref, limit);
+    return this.loopTraceEntries.filter((item) => item.refs.some((entry) => entry.ref === ref)).slice(-limit);
   }
 
   inspectAttentionState(): SessionRuntimeAttentionState {
     return this.buildAttentionRuntimeState();
+  }
+
+  inspectNotificationState(): SessionNotificationSnapshot {
+    return projectSessionNotificationSnapshot({
+      sessionId: this.options.sessionId,
+      workspacePath: this.options.cwd,
+      sessionName: this.options.sessionName,
+      attention: this.attentionSystem.snapshot(),
+    });
+  }
+
+  async setChatVisibility(input: {
+    chatId?: string;
+    visible: boolean;
+    focused: boolean;
+  }): Promise<SessionNotificationSnapshot> {
+    const chatId = input.chatId ?? this.getDefaultChatId();
+    const contextId = this.ensureAttentionContextForChannel(chatId).contextId;
+    await this.applyAttentionFocusState(contextId, toAttentionFocusStateFromVisibility(input));
+    return this.inspectNotificationState();
+  }
+
+  async setTerminalVisibility(input: {
+    terminalId?: string;
+    visible: boolean;
+    focused: boolean;
+  }): Promise<SessionNotificationSnapshot> {
+    const terminalId = input.terminalId ?? this.focusedTerminalIds[0];
+    if (!terminalId) {
+      return this.inspectNotificationState();
+    }
+    await this.applyAttentionFocusState(
+      this.getTerminalAttentionContextId(terminalId),
+      toAttentionFocusStateFromVisibility(input),
+    );
+    return this.inspectNotificationState();
+  }
+
+  async consumeNotifications(input: {
+    chatId?: string;
+    terminalId?: string;
+    upToMessageId?: string | null;
+  }): Promise<SessionNotificationSnapshot> {
+    const contextIds = input.chatId
+      ? [this.ensureAttentionContextForChannel(input.chatId).contextId]
+      : input.terminalId
+        ? [this.getTerminalAttentionContextId(input.terminalId)]
+        : this.attentionSystem
+            .snapshot()
+            .contexts.filter((context) => this.attentionSystem.listPushCommits(context.contextId).length > 0)
+            .map((context) => context.contextId);
+    let changed = false;
+    for (const contextId of contextIds) {
+      const commits = this.attentionSystem.listPushCommits(contextId);
+      const selectedCommitIds =
+        input.chatId && input.upToMessageId
+          ? commits
+              .filter((commit) => {
+                const messageId =
+                  typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0
+                    ? Number(commit.meta.subjectId)
+                    : Number.NaN;
+                return Number.isFinite(messageId) && messageId <= Number(input.upToMessageId);
+              })
+              .map((commit) => commit.commitId)
+          : commits.map((commit) => commit.commitId);
+      if (selectedCommitIds.length === 0) {
+        continue;
+      }
+      if (this.attentionSystem.consumePushes(contextId, selectedCommitIds).length > 0) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.attentionFactsVersion += 1;
+      await this.persistAttentionSystem();
+      this.emitAttentionState();
+    }
+    return this.inspectNotificationState();
   }
 
   async queryAttention(input: AttentionSearchRequest): Promise<AttentionCommitMatch[]> {
@@ -5125,7 +5594,12 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
-    return this.sessionDb.listModelCallsPage(input);
+    const page = this.sessionDb.pageAiCalls(input);
+    return {
+      items: page.items.map(projectAiCallToModelCall),
+      nextBefore: page.nextBefore,
+      hasMoreBefore: page.hasMoreBefore,
+    };
   }
 
   pageApiCalls(input?: {
@@ -5135,17 +5609,14 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
-    return this.sessionDb.listApiCallsPage(input);
+    return this.sessionDb.pageAiCalls(input);
   }
 
   pageCurrentBranchCycles(input?: {
     before?: SessionDbReverseTimeCursor;
     limit?: number;
   }): SessionDbReversePage<SessionCycleRecord> {
-    if (!this.sessionDb) {
-      return { items: [], nextBefore: null, hasMoreBefore: false };
-    }
-    return this.sessionDb.listCurrentBranchCyclesPage(input);
+    return pageLocalRecords(this.cycleRecords, input, (item) => item.createdAt);
   }
 
   pageTerminalActivity(
@@ -5155,10 +5626,7 @@ export class SessionRuntime {
       limit?: number;
     },
   ): SessionDbReversePage<SessionDbTerminalActivityRecord> {
-    if (!this.sessionDb) {
-      return { items: [], nextBefore: null, hasMoreBefore: false };
-    }
-    return this.sessionDb.listTerminalActivityPage(terminalId, input);
+    return pageLocalRecords(this.terminalActivityByTerminalId.get(terminalId) ?? [], input, (item) => item.createdAt);
   }
 
   listEditableKinds(): EditableKind[] {
@@ -5332,6 +5800,36 @@ export class SessionRuntime {
     });
   }
 
+  private appendLocalUserChatMessage(input: {
+    chatId: string;
+    text: string;
+    assetIds?: string[];
+    clientMessageId?: string;
+  }): MessageRecord {
+    const channel = this.messageSystem.getChannel(input.chatId);
+    if (!channel) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    const attachments = this.resolveChatAttachments(input.assetIds ?? []);
+    return this.messageSystem.send({
+      chatId: input.chatId,
+      messageId: input.clientMessageId,
+      from: "User",
+      to: channel.owner,
+      kind: "text",
+      content: input.text,
+      attachments: attachments.map((attachment) => ({
+        assetId: attachment.assetId,
+        kind: attachment.kind,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        url: attachment.url,
+      })),
+      metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
+    });
+  }
+
   sendMessageChannelError(input: {
     chatId: string;
     accessToken: string;
@@ -5396,14 +5894,20 @@ export class SessionRuntime {
       this.queueCompactCycle("manual");
     }
 
-    const channel = this.ensureDefaultChatChannel();
-    this.sendMessageChannel({
+    const channel = this.requireDefaultChatChannel();
+    const message = this.appendLocalUserChatMessage({
       chatId: channel.chatId,
-      accessToken: channel.accessToken,
       text,
       assetIds,
       clientMessageId,
     });
+    if (!this.loopPluginRuntime || !this.isUnreadInboundMessage(message) || !channel.accessToken) {
+      return;
+    }
+    this.reserveUnreadMessages(channel, [message]);
+    if (!isCompactCommand) {
+      this.invalidatePluginForMessage(message);
+    }
   }
 
   triggerTaskManual(input: { source: TaskSourceName; id: string }): { ok: boolean } {
@@ -5432,48 +5936,29 @@ export class SessionRuntime {
     return { ok: true };
   }
 
-  focusTerminal(terminalId: string): boolean {
-    return this.focusRuntimeTerminals({ op: "add", terminalIds: [terminalId] }).ok;
+  async focusTerminal(terminalId: string): Promise<boolean> {
+    return (await this.focusRuntimeTerminals({ op: "add", terminalIds: [terminalId] })).ok;
   }
 
   snapshot(): SessionRuntimeSnapshot {
     const planeEntries = new Map(
       this.terminalControlPlane.listForActor(this.terminalActorId).map((entry) => [entry.terminalId, entry] as const),
     );
-    const configuredIds = new Set<string>();
-    const terminals = Object.values(this.config?.terminals ?? {}).map((terminal) => {
-      configuredIds.add(terminal.terminalId);
-      const managed = this.terminals.get(terminal.terminalId);
+    const terminals = [...planeEntries.values()].map((planeEntry) => {
+      const managed = this.terminals.get(planeEntry.terminalId);
       const snapshot = managed?.getSnapshot();
-      const planeEntry = planeEntries.get(terminal.terminalId);
       return {
-        terminalId: terminal.terminalId,
-        running: managed?.isRunning() ?? false,
-        status: managed?.getStatus() ?? "IDLE",
+        terminalId: planeEntry.terminalId,
+        running: managed?.isRunning() ?? planeEntry.running,
+        status: managed?.getStatus() ?? planeEntry.status,
         seq: snapshot?.seq ?? 0,
-        cwd: terminal.cwd,
+        cwd: planeEntry.cwd,
         icon: planeEntry?.icon,
         title: planeEntry?.title,
         shortcuts: planeEntry?.shortcuts,
         transportUrl: planeEntry?.transportUrl,
       };
     });
-    for (const entry of planeEntries.values()) {
-      if (configuredIds.has(entry.terminalId)) {
-        continue;
-      }
-      terminals.push({
-        terminalId: entry.terminalId,
-        running: entry.running,
-        status: entry.status,
-        seq: entry.seq,
-        cwd: entry.cwd,
-        icon: entry.icon,
-        title: entry.title,
-        shortcuts: entry.shortcuts,
-        transportUrl: entry.transportUrl,
-      });
-    }
 
     return {
       sessionId: this.options.sessionId,
@@ -5504,6 +5989,20 @@ export class SessionRuntime {
         enabled: this.apiCallRecordingRefCount > 0,
         refCount: this.apiCallRecordingRefCount,
       },
+      attentionApi: this.runtimeLocalApi
+        ? {
+            baseUrl: this.runtimeLocalApi.baseUrl,
+            principalId: this.options.avatarPrincipalId ?? "",
+          }
+        : null,
+      rootWorkspace: this.options.rootWorkspacePath
+        ? {
+            path: this.getRootWorkspacePath(),
+            commandNames: this.listRootWorkspaceToolCommands(),
+            toolNames: this.getRootWorkspaceToolFiles(),
+            skillRoots: this.getRootWorkspaceSkillRoots(),
+          }
+        : null,
       modelCapabilities: this.config
         ? resolveModelCapabilities(this.config.ai)
         : {
@@ -5616,27 +6115,46 @@ export class SessionRuntime {
     return payload;
   }
 
-  private async createTerminal(terminalId: string, config: SessionTerminalConfig): Promise<void> {
+  private async createTerminal(
+    terminalId: string,
+    config: SessionTerminalConfig,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    await this.ensureRuntimeLocalApiStarted();
+    if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
+      return { ok: false, message: "runtime local api unavailable" };
+    }
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(terminalId)) {
+      const cwdResolution = await this.resolveRuntimeTerminalCwd({ cwd: config.cwd });
+      if (!cwdResolution.ok) {
+        return cwdResolution;
+      }
       await controlPlane.createForActor(this.terminalActorId, {
         terminalId,
         command: config.command,
-        cwd: config.cwd,
+        cwd: cwdResolution.cwd,
         profile: {
           cols: 80,
           rows: 24,
           gitLog: config.gitLog,
           logStyle: "rich",
+          env: buildRuntimeTerminalEnvironment({
+            rootWorkspacePath: this.getRootWorkspacePath(),
+            homeDir: this.getHomeDir(),
+            apiBaseUrl: this.runtimeLocalApi.baseUrl,
+            privateKey: this.options.avatarPrivateKey,
+            principalId: this.options.avatarPrincipalId,
+          }),
         },
         start: false,
       });
     }
     const terminal = controlPlane.getManagedTerminal(terminalId);
     if (!terminal) {
-      return;
+      return { ok: true };
     }
     this.attachRuntimeTerminal(terminalId, terminal);
+    return { ok: true };
   }
 
   private attachRuntimeTerminal(terminalId: string, terminal: ManagedTerminal): void {
@@ -5667,7 +6185,24 @@ export class SessionRuntime {
     });
 
     terminal.onStatus((running, status) => {
+      const previous = this.terminalStatusById.get(terminalId);
+      this.terminalStatusById.set(terminalId, { running, status });
       this.emit("terminalStatus", { terminalId, running, status });
+      if (previous?.status === "BUSY" && status === "IDLE" && running && !this.focusedTerminalIds.includes(terminalId)) {
+        this.enqueueLifecycleAttentionCommit({
+          systemId: "terminal",
+          subjectId: terminalId,
+          contextId: this.getTerminalAttentionContextId(terminalId),
+          event: "terminal_idle_ready",
+          summary: `Terminal ${terminalId} is ready for your input.`,
+          ingressType: "push",
+          payload: {
+            running,
+            status,
+          },
+          score: 100,
+        });
+      }
     });
 
     this.terminals.set(terminalId, terminal);
@@ -5944,7 +6479,7 @@ export class SessionRuntime {
     if (this.hasPendingCompactCycle()) {
       return "ready_now";
     }
-    if (this.inboundMessageQueue.length > 0 || this.taskAttentionDraftQueue.length > 0) {
+    if (this.hasUnreadRoomWork() || this.inboundMessageQueue.length > 0 || this.taskAttentionDraftQueue.length > 0) {
       return "ready_now";
     }
     if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
@@ -5975,7 +6510,7 @@ export class SessionRuntime {
       this.loopKernelLastWakeCause = "attention_commit";
       return "attention";
     }
-    const loopPaused = this.runtime?.getLoopState().paused ?? false;
+    const loopPaused = this.isLoopPaused();
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
     const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
@@ -5986,6 +6521,11 @@ export class SessionRuntime {
       this.loopKernelLastWakeCause = "compact_cycle";
       this.resetAttentionDebtBackoff();
       return "attention";
+    }
+    if (!loopPaused && this.hasUnreadRoomWork()) {
+      this.loopKernelLastWakeCause = "user_input";
+      this.resetAttentionDebtBackoff();
+      return "user";
     }
     if (this.inboundMessageQueue.length > 0) {
       this.loopKernelLastWakeCause = "user_input";
@@ -6053,8 +6593,26 @@ export class SessionRuntime {
               handle: { promise: Promise<{ toHash: string | null }>; reject: (reason: unknown) => void };
             } => item !== null,
           );
+    const unreadHandle = loopPaused
+      ? null
+      : this.messageSystem.waitUnreadCommitted({
+          actorId: this.messageActorId,
+          fromVersion: this.messageSystem.getUnreadVersion(this.messageActorId),
+        });
 
     const promises: Array<Promise<{ kind: LoopInputKind }>> = [
+      ...(unreadHandle
+        ? [
+            unreadHandle.promise
+              .then(() => ({ kind: "user" as const }))
+              .catch((error) => {
+                if (error === IGNORE_WAIT) {
+                  return new Promise<{ kind: LoopInputKind }>(() => {});
+                }
+                throw error;
+              }),
+          ]
+        : []),
       ...terminalHandles.map((item) =>
         item.handle.promise
           .then(() => ({ kind: item.kind }))
@@ -6138,6 +6696,7 @@ export class SessionRuntime {
     for (const item of terminalHandles) {
       item.handle.reject(IGNORE_WAIT);
     }
+    unreadHandle?.reject(IGNORE_WAIT);
     for (const waiter of signalWaiters) {
       waiter.cancel();
     }
@@ -6147,6 +6706,7 @@ export class SessionRuntime {
   private async collectLoopInputs(): Promise<LoopBusInput[] | undefined> {
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
+    this.collectUnreadRoomIngress();
     await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
     if (triggered.affected.length > 0) {
@@ -6164,11 +6724,6 @@ export class SessionRuntime {
           affected: triggered.affected.map((task) => ({ key: task.key, status: task.status, progress: task.progress })),
         }),
         from: "task-system",
-        meta: {
-          triggerSource: triggered.source,
-          topic: triggered.topic,
-          affectedTaskKeys: triggered.affected.map((task) => task.key),
-        },
       });
       this.notifyInput("task");
     }
@@ -6193,15 +6748,23 @@ export class SessionRuntime {
               sourceRef: this.createMessageSourceRef({
                 chatId: this.getDefaultChatId(),
                 messageId: item.id ?? createId(),
-                from: item.name,
-                content: item.text,
-                attachments: item.attachments ?? [],
-                meta: item.meta,
               }),
               content: item.text,
               from: item.name,
               score: 100,
-              meta: item.meta ?? undefined,
+              provenance: {
+                author: item.name,
+                source: "message",
+                systemId: "message",
+                channelId: this.getDefaultChatId(),
+                subjectId: item.id ?? undefined,
+              },
+              presentation: {
+                summary: truncateAttentionTitle(item.text.trim()),
+                body: item.text,
+                bodyFormat: "text/plain",
+                changeType: "update",
+              },
             }),
           );
         await this.commitAttentionDrafts(drafts);
@@ -6246,6 +6809,7 @@ export class SessionRuntime {
   }
 
   private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
+    this.collectUnreadRoomIngress();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
     const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
@@ -6310,61 +6874,18 @@ export class SessionRuntime {
       ? this.selectAttentionDebtContexts(active)
       : this.selectDirtyAttentionContexts(active);
     if (selected.length === 0) {
-      if (this.attentionFactsVersion > this.attentionFactsSentVersion) {
-        this.attentionFactsSentVersion = this.attentionFactsVersion;
-      }
       return undefined;
     }
 
     for (const match of selected) {
       this.clearDirtyAttentionContext(match.contextId);
     }
-    if (this.attentionFactsVersion > this.attentionFactsSentVersion) {
-      this.attentionFactsSentVersion = this.attentionFactsVersion;
-    }
 
-    const protocolState = this.buildAttentionProtocolState();
     const outputs: LoopBusInput[] = [];
-    for (const match of selected) {
-      const protocol = protocolState.get(match.contextId) ?? { bootstrapped: false, lastSeenCommitId: null };
-      const commits = this.selectAttentionProtocolCommits(match, protocol.lastSeenCommitId);
-      const channel = this.resolveMessageChannelForContext(match.contextId);
-      const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(match.contextId);
-      const commonMeta = {
-        attentionContextId: match.contextId,
-        attentionHeadCommitId: match.context.headCommitId,
-        owner: match.context.owner,
-        createdAt: match.context.updatedAt,
-        ...(channel ? { chatFocused: channel.focused } : {}),
-        ...(chatId ? { chatId } : {}),
-      };
-      if (!protocol.bootstrapped) {
-        outputs.push({
-          name: `AttentionContext-${match.contextId}`,
-          role: "user",
-          type: "text",
-          source: "attention",
-          text: serializeAttentionActiveContext(match),
-          meta: {
-            ...commonMeta,
-            attentionProtocolKind: "context",
-          },
-        });
-      }
-      if (commits.length > 0) {
-        outputs.push({
-          name: `AttentionItems-${match.contextId}`,
-          role: "user",
-          type: "text",
-          source: "attention",
-          text: this.serializeAttentionItemsInput(match.contextId, commits),
-          meta: {
-            ...commonMeta,
-            attentionProtocolKind: "items",
-            attentionCommitIds: serializeAttentionCommitIds(commits.map((commit) => commit.commitId)) ?? null,
-          },
-        });
-      }
+    const bootstrapInput = this.buildAttentionContextBootstrapInput(active, selected);
+    if (bootstrapInput) {
+      outputs.push(bootstrapInput);
+      this.attentionFactsSentVersion = this.attentionFactsVersion;
     }
     return outputs.length > 0 ? outputs : undefined;
   }
@@ -6424,9 +6945,7 @@ export class SessionRuntime {
     }));
 
     return {
-      sourceRef: this.createTaskSourceRef("heartbeat", "task-heartbeat", {
-        activeCount: active.length,
-      }),
+      sourceRef: this.createTaskSourceRef("heartbeat", "task-heartbeat"),
       content: JSON.stringify({
         kind: "task-heartbeat",
         timestamp: new Date(now).toISOString(),
@@ -6434,10 +6953,28 @@ export class SessionRuntime {
         byStatus,
         top,
       }),
-      meta: {
+      provenance: {
+        author: "task-system",
         source: "task",
-        activeCount: active.length,
+        systemId: "task",
+        subjectId: "heartbeat",
+        createdAt: new Date(now).toISOString(),
       },
+      presentation: {
+        summary: `Task heartbeat: ${active.length} active`,
+        body: mdFence(
+          "yaml",
+          toYaml({
+            kind: "task-heartbeat",
+            activeCount: active.length,
+            byStatus,
+            top,
+          }),
+        ),
+        bodyFormat: "text/markdown",
+        changeType: "update",
+      },
+      semanticHash: digest,
       from: "task-system",
       supersedeActive: {
         systemId: "task",
@@ -6548,15 +7085,9 @@ export class SessionRuntime {
             file,
             source,
             markdown,
-          }),
-          from: `task-source:${item.name}`,
-          meta: {
-            sourceName: item.name,
-            sourcePath: item.path,
-            file,
-            taskSourceEvent: source,
-            semanticHash: createHash("sha256").update(markdown).digest("hex"),
-          },
+        }),
+        from: `task-source:${item.name}`,
+          semanticHash: createHash("sha256").update(markdown).digest("hex"),
         });
         this.notifyInput("task");
       }
@@ -6730,6 +7261,7 @@ export class SessionRuntime {
     if (!this.activeCycle) {
       return;
     }
+    this.clearActiveCycleUnreadReadAcks();
     this.setProjectionStage(status === "error" ? "error" : "idle");
     if (status === "error" && this.activeCycle.liveMessages.length > 0) {
       const cancelledAt = Date.now();
@@ -6782,7 +7314,7 @@ export class SessionRuntime {
   private recordChatMessage(
     message: ChatMessage,
     cycleId: number | null = this.activeCycleId,
-    channelOverride?: SessionDbChatMessageRecord["channel"],
+    channelOverride?: SessionDbTerminalActivityRecord["channel"],
   ): void {
     const nextMessage: ChatMessage = {
       ...message,
@@ -6809,48 +7341,16 @@ export class SessionRuntime {
     }
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
-    const roomProjection: SessionBlockProjection | undefined =
-      nextMessage.messageKind !== undefined &&
-      typeof nextMessage.chatId === "string" &&
-      nextMessage.chatId.trim().length > 0 &&
-      nextMessage.id.trim().length > 0
-        ? {
-            source: "room-message-ref",
-            roomId: nextMessage.chatId,
-            messageId: nextMessage.id,
-          }
-        : undefined;
-    const blockInput = {
-      cycleId: persistedCycleId,
-      createdAt: nextMessage.timestamp,
-      updatedAt: nextMessage.updatedAt ?? nextMessage.timestamp,
-      messageId: roomProjection?.messageId ?? (nextMessage.attentionState ? nextMessage.id : undefined),
-      projection: roomProjection,
-      visibleAt: nextMessage.visibleAt,
-      attentionState: nextMessage.attentionState,
-      attentionLoadedAt: nextMessage.attentionLoadedAt,
-      role: nextMessage.role,
-      channel,
-      chatId: nextMessage.chatId,
-      format: nextMessage.format ?? "markdown",
-      content: roomProjection ? "" : nextMessage.content,
-      tool: roomProjection ? undefined : nextMessage.tool,
-    } as const;
-    const block =
-      typeof blockInput.messageId === "string"
-        ? this.sessionDb.upsertMessageBlock({
-            ...blockInput,
-            messageId: blockInput.messageId,
-          })
-        : this.sessionDb.appendBlock(blockInput);
-    if (!roomProjection && nextMessage.attachments && nextMessage.attachments.length > 0) {
-      this.sessionDb.replaceBlockAssets(
-        block.id,
-        nextMessage.attachments.map((attachment) => attachment.assetId),
-      );
-    } else if (blockInput.messageId) {
-      this.sessionDb.replaceBlockAssets(block.id, []);
-    }
+    this.sessionDb.upsertMessage(
+      toHeartbeatMessageUpsertInput({
+        message: {
+          ...nextMessage,
+          channel: channel === "user_input" ? undefined : channel,
+        },
+        roundIndex: this.sessionDb.getHead().currentRoundIndex,
+        aiCallId: nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null,
+      }),
+    );
     this.appendTerminalActivityForMessage(nextMessage, persistedCycleId, channel);
     if (
       this.activeCycle &&
@@ -6876,16 +7376,29 @@ export class SessionRuntime {
     tool?: SessionDbTerminalActivityRecord["tool"];
     detail?: unknown;
   }): SessionDbTerminalActivityRecord | null {
-    if (!this.sessionDb) {
-      return null;
-    }
-    return this.sessionDb.appendTerminalActivity(input);
+    const entry: SessionDbTerminalActivityRecord = {
+      id: ++this.terminalActivitySeq,
+      terminalId: input.terminalId,
+      createdAt: input.createdAt ?? Date.now(),
+      kind: input.kind,
+      cycleId: input.cycleId ?? null,
+      role: input.role,
+      channel: input.channel,
+      title: input.title,
+      content: input.content,
+      tool: input.tool,
+      detail: input.detail,
+    };
+    const current = this.terminalActivityByTerminalId.get(input.terminalId) ?? [];
+    current.push(entry);
+    this.terminalActivityByTerminalId.set(input.terminalId, current);
+    return entry;
   }
 
   private appendTerminalActivityForMessage(
     message: ChatMessage,
     cycleId: number | null,
-    channel: SessionDbChatMessageRecord["channel"],
+    channel: RuntimeTerminalActivityRecord["channel"],
   ): void {
     const matches = extractKnownTerminalIds(message.content, this.terminals.keys());
     if (matches.length === 0) {
@@ -6938,7 +7451,7 @@ export class SessionRuntime {
       throw new Error("session db not initialized");
     }
 
-    const previousHead = this.sessionDb.getHead().headCycleId;
+    const previousHead = this.cycleRecords.at(-1)?.id ?? null;
     const collectedInputs: SessionCollectedInput[] = input.inputs.map((item) => ({
       source:
         item.source === "chat"
@@ -6973,8 +7486,13 @@ export class SessionRuntime {
       ...new Set(
         collectedInputs
           .filter((item) => item.source === "attention")
-          .map((item) => item.meta?.attentionContextId)
-          .filter((contextId): contextId is string => typeof contextId === "string"),
+          .flatMap((item) => {
+            const contextIds = parseAttentionContextIds(item.meta?.attentionContextIds);
+            if (contextIds.length > 0) {
+              return contextIds;
+            }
+            return typeof item.meta?.attentionContextId === "string" ? [item.meta.attentionContextId] : [];
+          }),
       ),
     ];
     const inputCommitRefs = dedupeAttentionCommitRefs(
@@ -6982,14 +7500,17 @@ export class SessionRuntime {
         if (item.source !== "attention") {
           return [];
         }
-        const contextId = typeof item.meta?.attentionContextId === "string" ? item.meta.attentionContextId : null;
-        if (!contextId) {
-          return [];
+        const refs = parseAttentionCommitRefs(item.meta?.attentionCommitRefs);
+        if (refs.length > 0) {
+          return refs;
         }
-        return parseAttentionCommitIds(item.meta?.attentionCommitIds).map((commitId) => ({
-          contextId,
-          commitId,
-        }));
+        const contextId = typeof item.meta?.attentionContextId === "string" ? item.meta.attentionContextId : null;
+        return contextId
+          ? parseAttentionCommitIds(item.meta?.attentionCommitIds).map((commitId) => ({
+              contextId,
+              commitId,
+            }))
+          : [];
       }),
     );
     const protocolMode: AttentionProtocolMode =
@@ -7005,7 +7526,11 @@ export class SessionRuntime {
             ? "delta"
             : "none";
 
-    const cycle = this.sessionDb.appendCycle({
+    const cycle: SessionCycleRecord = {
+      id: previousHead === null ? 1 : previousHead + 1,
+      seq: ++this.cycleSeq,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       prevCycleId: previousHead,
       wake: { source: input.wakeSource },
       collectedInputs,
@@ -7033,7 +7558,8 @@ export class SessionRuntime {
         kind: cycleKind,
         ...(cycleKind === "compact" && compactTrigger ? { compactTrigger } : {}),
       },
-    });
+    };
+    this.cycleRecords.push(cycle);
     const attentionCycleFrame: AttentionCycleFrame = {
       cycleId: cycle.id,
       seq: cycle.seq,
@@ -7048,6 +7574,8 @@ export class SessionRuntime {
       hookIds: [],
     };
     this.attentionCycleFrames.set(cycle.id, attentionCycleFrame);
+    this.activeCycleUnreadReadAcks = this.consumeStagedUnreadReadAcks();
+    this.activeCycleUnreadReadCommitted = false;
     this.flushPendingTraceSpans(cycle.id);
     this.persistAttentionCycleState(cycle.id);
     this.emitAttentionState();
@@ -7076,7 +7604,6 @@ export class SessionRuntime {
         },
       });
     }
-    this.sessionDb.setHead(cycle.id);
     this.activeCycleId = cycle.id;
     this.activeModelCallId = null;
     this.createActiveCycle({
@@ -7184,17 +7711,17 @@ export class SessionRuntime {
       stateHash: nextHash,
       state: next,
     };
-    const entry = this.sessionDb?.appendLoopStateLog({
+    const entry: SessionDbLoopbusStateLogRecord = {
+      id: ++this.loopStateLogSeq,
       timestamp: next.updatedAt,
       stateVersion: next.stateVersion,
       event: input.phase,
       prevHash: previousHash,
       stateHash: nextHash,
       patch,
-    });
-    if (entry) {
-      this.emit("schedulerLog", { entry });
-    }
+    };
+    this.loopStateLogEntries.push(entry);
+    this.emit("schedulerLog", { entry });
     this.emit("schedulerSnapshot", { snapshot: this.loopKernelSnapshot });
     if (input.lastWakeSource) {
       this.loopKernelLastWakeCause = null;
@@ -7231,12 +7758,204 @@ export class SessionRuntime {
     this.emit("modelCallDelta", { entry });
   }
 
+  private buildPersistedModelConfigPayload(): Record<string, unknown> | null {
+    if (!this.config) {
+      return null;
+    }
+    return {
+      providerId: this.config.ai.providerId,
+      apiStandard: this.config.ai.apiStandard,
+      vendor: this.config.ai.vendor ?? null,
+      profile: this.config.ai.profile ?? null,
+      extensions: this.config.ai.extensions ?? [],
+      model: this.config.ai.model,
+      baseUrl: this.config.ai.baseUrl ?? null,
+      headers: this.config.ai.headers ?? {},
+      temperature: this.config.ai.temperature,
+      maxRetries: this.config.ai.maxRetries,
+      maxToken: this.config.ai.maxToken ?? null,
+      compactThreshold: this.config.ai.compactThreshold ?? null,
+      lang: this.config.lang,
+    };
+  }
+
+  private normalizePersistedModelRequest(
+    request: Partial<AgentModelCallRecord["request"]> | undefined,
+  ): AgentModelCallRecord["request"] {
+    if (!this.sessionDb) {
+      return {
+        systemPrompt: typeof request?.systemPrompt === "string" ? request.systemPrompt : "",
+        promptWindowStateId:
+          typeof request?.promptWindowStateId === "string" ? request.promptWindowStateId : "",
+        roundIndex: typeof request?.roundIndex === "number" ? request.roundIndex : 0,
+        messages: structuredClone(request?.messages ?? []),
+        tools: structuredClone(request?.tools ?? []),
+        meta: request?.meta ? structuredClone(request.meta) : undefined,
+      };
+    }
+    const currentPromptWindow =
+      this.sessionDb.getCurrentPromptWindow() ??
+      this.sessionDb.savePromptWindow({
+        createdAt: Date.now(),
+        messages: [],
+        setCurrent: true,
+      });
+    return {
+      systemPrompt: typeof request?.systemPrompt === "string" ? request.systemPrompt : "",
+      promptWindowStateId:
+        typeof request?.promptWindowStateId === "string" && request.promptWindowStateId.length > 0
+          ? request.promptWindowStateId
+          : currentPromptWindow.promptWindowId,
+      roundIndex:
+        typeof request?.roundIndex === "number" && Number.isFinite(request.roundIndex)
+          ? request.roundIndex
+          : currentPromptWindow.roundIndex,
+      messages:
+        request?.messages !== undefined
+          ? structuredClone(request.messages)
+          : clonePromptWindowMessages(currentPromptWindow.messages),
+      tools: Array.isArray(request?.tools) ? structuredClone(request.tools) : [],
+      meta: request?.meta ? structuredClone(request.meta) : undefined,
+    };
+  }
+
+  private persistRequestAuxiliaryMessages(input: {
+    timestamp: number;
+    request: AgentModelCallRecord["request"];
+  }): string[] {
+    const sessionDb = this.sessionDb;
+    if (!sessionDb) {
+      return [];
+    }
+    const entries = [
+      {
+        partType: "systemPrompt",
+        role: "system" as const,
+        payload: input.request.systemPrompt,
+      },
+      {
+        partType: "tools",
+        role: "system" as const,
+        payload: structuredClone(input.request.tools),
+      },
+      {
+        partType: "config",
+        role: "config" as const,
+        payload: this.buildPersistedModelConfigPayload(),
+      },
+    ];
+
+    return entries.map((entry) => {
+      const latest = sessionDb.getLatestAuxiliaryMessage(entry.partType);
+      const latestPayload = latest?.parts[0]?.payload ?? null;
+      if (JSON.stringify(latestPayload) === JSON.stringify(entry.payload ?? null)) {
+        return latest?.messageId ?? "";
+      }
+      return sessionDb.upsertMessage({
+        messageId: `request_aux:${entry.partType}:${input.timestamp}:${createId()}`,
+        roundIndex: input.request.roundIndex,
+        scope: "request_aux",
+        role: entry.role,
+        createdAt: input.timestamp,
+        updatedAt: input.timestamp,
+        parts: [
+          {
+            partType: entry.partType,
+            payload: structuredClone(entry.payload),
+            isComplete: true,
+          },
+        ],
+      }).messageId;
+    }).filter((messageId) => messageId.length > 0);
+  }
+
+  private upsertActiveModelToolTrace(input: {
+    invocationId: string;
+    tool: string;
+    payload: Partial<{
+      input: unknown;
+      output: unknown;
+      error: string;
+      startedAt: number;
+      finishedAt: number;
+    }>;
+  }): void {
+    if (!this.activeModelResponseDraft) {
+      this.activeModelResponseDraft = { toolTrace: [] };
+    }
+    const existingIndex = this.activeModelResponseDraft.toolTrace.findIndex(
+      (entry) => entry.invocationId === input.invocationId,
+    );
+    const current =
+      existingIndex >= 0
+        ? this.activeModelResponseDraft.toolTrace[existingIndex]
+        : {
+            invocationId: input.invocationId,
+            tool: input.tool,
+            input: null,
+            startedAt: input.payload.startedAt ?? Date.now(),
+            finishedAt: input.payload.finishedAt ?? input.payload.startedAt ?? Date.now(),
+          };
+    const next = {
+      ...current,
+      tool: input.tool,
+      ...input.payload,
+      finishedAt: input.payload.finishedAt ?? current.finishedAt,
+    };
+    if (existingIndex >= 0) {
+      this.activeModelResponseDraft.toolTrace[existingIndex] = next;
+      return;
+    }
+    this.activeModelResponseDraft.toolTrace.push(next);
+  }
+
+  private buildActiveModelResponseEnvelope(): { response: Record<string, unknown>; outcome: null } {
+    const response: Record<string, unknown> = {};
+    if (this.activeModelResponseDraft?.assistant) {
+      response.assistant = { ...this.activeModelResponseDraft.assistant };
+    }
+    if (this.activeModelResponseDraft?.usage) {
+      response.usage = { ...this.activeModelResponseDraft.usage };
+    }
+    if ((this.activeModelResponseDraft?.toolTrace.length ?? 0) > 0) {
+      response.toolTrace = this.activeModelResponseDraft?.toolTrace.map((entry) => ({ ...entry })) ?? [];
+    }
+    return {
+      response,
+      outcome: null,
+    };
+  }
+
+  private persistActiveModelResponse(timestamp: number): void {
+    if (!this.sessionDb || this.activeModelCallId === null || !this.activeModelResponseDraft) {
+      return;
+    }
+    this.sessionDb.updateAiCall(this.activeModelCallId, {
+      responseBody: this.buildActiveModelResponseEnvelope(),
+      updatedAt: timestamp,
+      status: "running",
+      isComplete: false,
+    });
+  }
+
   private handleAssistantStreamUpdate(input: AssistantStreamUpdate): void {
     if (!this.activeCycle) {
       return;
     }
     switch (input.kind) {
       case "draft":
+        if (!this.activeModelResponseDraft) {
+          this.activeModelResponseDraft = { toolTrace: [] };
+        }
+        this.activeModelResponseDraft.assistant = {
+          ...(this.activeModelResponseDraft.assistant ?? {}),
+          text: input.content,
+          finishReason: input.finishReason ?? null,
+        };
+        if (input.usage) {
+          this.activeModelResponseDraft.usage = { ...input.usage };
+        }
+        this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("decide");
         this.updateActiveCycle({
           status: "streaming",
@@ -7255,6 +7974,17 @@ export class SessionRuntime {
         });
         return;
       case "run_finished":
+        if (!this.activeModelResponseDraft) {
+          this.activeModelResponseDraft = { toolTrace: [] };
+        }
+        this.activeModelResponseDraft.assistant = {
+          ...(this.activeModelResponseDraft.assistant ?? {}),
+          finishReason: input.finishReason ?? null,
+        };
+        if (input.usage) {
+          this.activeModelResponseDraft.usage = { ...input.usage };
+        }
+        this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("decide");
         this.updateActiveCycle({
           status: this.activeCycle.status === "error" ? "error" : "applying",
@@ -7269,6 +7999,16 @@ export class SessionRuntime {
         });
         return;
       case "tool_call": {
+        this.upsertActiveModelToolTrace({
+          invocationId: input.toolCallId,
+          tool: input.toolName,
+          payload: {
+            input: input.input ?? input.argsText,
+            startedAt: input.timestamp,
+            finishedAt: input.timestamp,
+          },
+        });
+        this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const callValue = input.input ?? input.argsText;
@@ -7312,6 +8052,17 @@ export class SessionRuntime {
         return;
       }
       case "tool_result": {
+        this.upsertActiveModelToolTrace({
+          invocationId: input.toolCallId,
+          tool: input.toolName,
+          payload: {
+            output: input.result,
+            error:
+              typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined,
+            finishedAt: input.timestamp,
+          },
+        });
+        this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const liveMessage = this.activeCycle.liveMessages.find((message) => message.id === `live-tool:${invocationId}`);
@@ -7380,6 +8131,10 @@ export class SessionRuntime {
   }
 
   private async handleModelCall(record: AgentModelCallRecord): Promise<void> {
+    if (record.status === "running") {
+      this.commitActiveCycleUnreadReadAcks();
+      this.activeModelResponseDraft = { toolTrace: [] };
+    }
     if (!this.sessionDb || this.activeCycleId === null) {
       return;
     }
@@ -7392,30 +8147,74 @@ export class SessionRuntime {
             spanId: traceRow.spanId,
             parentSpanId: traceRow.parentSpanId ?? null,
           };
-    const existingModelCallId =
-      this.activeModelCallId ?? this.sessionDb.getModelCallByCycleId(this.activeCycleId)?.id ?? null;
+    const normalizedRequest = this.normalizePersistedModelRequest(record.request);
+    const promptWindowMessages = this.sessionDb
+      .listMessagesByScope("prompt_window", {
+        windowId: normalizedRequest.promptWindowStateId,
+        limit: 400,
+      })
+      .map((message) => message.messageId);
+    const requestMeta = {
+      ...(normalizedRequest.meta ?? {}),
+      cycleId: this.activeCycleId,
+      wakeSource: this.activeCycle?.wakeSource ?? null,
+      collectedInputs: this.activeCycle ? structuredClone(this.activeCycle.inputs) : [],
+      trace: traceIdentity ?? null,
+    };
+    const requestBody = {
+      ...normalizedRequest,
+      messages: structuredClone(normalizedRequest.messages),
+      meta: requestMeta,
+      config: this.buildPersistedModelConfigPayload(),
+    };
+    const auxiliaryMessageIds = this.persistRequestAuxiliaryMessages({
+      timestamp: record.timestamp,
+      request: normalizedRequest,
+    });
+    const existingModelCallId = this.activeModelCallId ?? null;
     const modelCall =
       record.status === "running" || existingModelCallId === null
-        ? this.sessionDb.appendModelCall({
-            cycleId: this.activeCycleId,
+        ? this.sessionDb.appendAiCall({
+            roundIndex: normalizedRequest.roundIndex,
+            kind: this.activeCycle?.kind ?? "attention",
             createdAt: record.timestamp,
             status: record.status,
             completedAt: record.completedAt,
             provider: record.provider,
             model: record.model,
-            request: record.request,
-            response: record.response,
+            requestUrl: this.config?.ai.baseUrl ?? "",
+            requestBody,
+            responseBody: {
+              response: record.response ?? null,
+              outcome: record.outcome ?? null,
+            },
             error: record.error,
-            trace: traceIdentity,
             outcome: record.outcome,
+            requestMessageIds: promptWindowMessages,
+            responseMessageIds: [],
+            auxiliaryMessageIds,
+            isComplete: record.status !== "running",
+            updatedAt: record.timestamp,
           })
-        : this.sessionDb.updateModelCall(existingModelCallId, {
-            status: record.status,
-            completedAt: record.completedAt ?? null,
-            response: record.response,
+        : this.sessionDb.updateAiCall(existingModelCallId, {
+            roundIndex: normalizedRequest.roundIndex,
+            kind: this.activeCycle?.kind ?? "attention",
+            provider: record.provider,
+            model: record.model,
+            requestUrl: this.config?.ai.baseUrl ?? "",
+            requestBody,
+            responseBody: {
+              response: record.response ?? null,
+              outcome: record.outcome ?? null,
+            },
             error: record.error,
-            trace: traceIdentity,
             outcome: record.outcome,
+            completedAt: record.completedAt ?? null,
+            status: record.status,
+            requestMessageIds: promptWindowMessages,
+            auxiliaryMessageIds,
+            updatedAt: record.timestamp,
+            isComplete: true,
           });
     if (traceRow) {
       this.upsertTraceRow({
@@ -7498,7 +8297,7 @@ export class SessionRuntime {
     } else if (record.status === "done" && (this.loopKernelSnapshot?.state.lastError ?? null) !== null) {
       this.setLoopKernelLastError(null);
     }
-    this.emit("modelCall", { entry: modelCall });
+    this.emit("modelCall", { entry: projectAiCallToModelCall(modelCall) });
     if (record.response?.toolTrace && traceRow) {
       for (const tool of record.response.toolTrace) {
         this.upsertTraceRow({
@@ -7545,20 +8344,13 @@ export class SessionRuntime {
     }
     if (record.status !== "running") {
       this.activeModelCallId = null;
+      this.activeModelResponseDraft = null;
     }
-    if (!this.isApiCallRecordingEnabled()) {
-      return;
+    if (this.isApiCallRecordingEnabled()) {
+      this.emit("apiCall", {
+        entry: modelCall,
+      });
     }
-    const apiRow = this.sessionDb.appendApiCall({
-      modelCallId: modelCall.id,
-      createdAt: record.timestamp,
-      request: record.request,
-      response: record.response,
-      error: record.error,
-    });
-    this.emit("apiCall", {
-      entry: apiRow,
-    });
   }
 
   private setLoopKernelLastError(lastError: string | null): void {

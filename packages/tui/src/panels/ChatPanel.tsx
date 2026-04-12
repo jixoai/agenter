@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/react */
+
 import type { TextareaRenderable } from "@opentui/core";
 import type { RefObject } from "react";
 

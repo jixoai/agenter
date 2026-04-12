@@ -13,6 +13,7 @@ import {
   AgenterAI,
   type AgentModelCallRecord,
   type AgentPromptWindowCompactSummary,
+  type AgentPromptWindowStateRecord,
   type AgentToolProvider,
 } from "../src/agenter-ai";
 import { buildAttentionSearchDocument } from "../src/attention-search/documents";
@@ -41,6 +42,61 @@ const createLogger = (): AppServerLogger => ({
     // no-op in tests
   },
 });
+
+const createPromptWindowStoreSpy = (
+  initialMessages: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"] = [],
+): {
+  appendCalls: Array<{
+    createdAt?: number;
+    messages: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
+    setCurrent?: boolean;
+  }>;
+  initialState: AgentPromptWindowStateRecord;
+  states: AgentPromptWindowStateRecord[];
+  store: {
+    append: (input: {
+      createdAt?: number;
+      messages: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
+      setCurrent?: boolean;
+    }) => AgentPromptWindowStateRecord;
+  };
+} => {
+  let nextId = 1;
+  const appendCalls: Array<{
+    createdAt?: number;
+    messages: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
+    setCurrent?: boolean;
+  }> = [];
+  const initialState: AgentPromptWindowStateRecord = {
+    id: String(nextId),
+    createdAt: 0,
+    roundIndex: 0,
+    messages: structuredClone(initialMessages),
+  };
+  const states: AgentPromptWindowStateRecord[] = [initialState];
+  return {
+    appendCalls,
+    initialState,
+    states,
+    store: {
+      append: (input) => {
+        appendCalls.push({
+          createdAt: input.createdAt,
+          messages: structuredClone(input.messages),
+          setCurrent: input.setCurrent,
+        });
+        const record: AgentPromptWindowStateRecord = {
+          id: String(++nextId),
+          createdAt: input.createdAt ?? nextId,
+          roundIndex: states.at(-1)?.roundIndex ?? 0,
+          messages: structuredClone(input.messages),
+        };
+        states.push(record);
+        return record;
+      },
+    },
+  };
+};
 
 type ModelRespondInput = Parameters<ModelClient["respondWithMeta"]>[0];
 
@@ -483,12 +539,6 @@ const createToolProviders = (
   return providers.filter((provider): provider is AgentToolProvider => provider !== null);
 };
 
-const createGuideToolProvider = (input: { name: string; section: string }): AgentToolProvider => ({
-  name: input.name,
-  buildSystemPromptSection: () => input.section,
-  createTools: () => [],
-});
-
 const createAttentionGateway = () => {
   const system = new AttentionSystem();
   const defaultContextId = "ctx-main";
@@ -641,14 +691,23 @@ const createMessageGateway = () => {
   };
 };
 
-const createUserMessage = (text: string): LoopBusMessage => ({
-  id: "m-user",
-  timestamp: Date.now(),
-  name: "User",
+const createUserMessage = (
+  text: string,
+  input: {
+    id?: string;
+    timestamp?: number;
+    name?: string;
+    meta?: Record<string, string | number | boolean | null>;
+  } = {},
+): LoopBusMessage => ({
+  id: input.id ?? "m-user",
+  timestamp: input.timestamp ?? Date.now(),
+  name: input.name ?? "User",
   role: "user",
   type: "text",
   source: "chat",
   text,
+  meta: input.meta,
 });
 
 const createAttentionContextMessage = (
@@ -872,9 +931,11 @@ describe("Feature: AgenterAI behavior", () => {
     ]);
   });
 
-  test("Scenario: Given provider-owned system guides When the model call is assembled Then systemPrompt includes them without replay pollution", async () => {
+  test("Scenario: Given tool providers and a SYSTEMS_GUIDE slot When the model call is assembled Then systemPrompt stays provider-agnostic", async () => {
     const seenInputs: ModelRespondInput[] = [];
     const chat = createAttentionGateway();
+    const terminal = createTerminalGateway();
+    const message = createMessageGateway();
     const modelClient = createModelClient(async (input) => {
       seenInputs.push(input);
       return {
@@ -888,16 +949,10 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: [
-        createGuideToolProvider({
-          name: "terminal-guide",
-          section: ["## Terminal System", "- Use terminal before guessing."].join("\n"),
-        }),
-        createGuideToolProvider({
-          name: "message-guide",
-          section: ["## Message System", "- Use role-aware communication."].join("\n"),
-        }),
-      ],
+      toolProviders: createToolProviders({
+        terminalGateway: terminal.gateway,
+        messageGateway: message.gateway,
+      }),
       attentionGateway: chat.gateway,
     });
 
@@ -908,16 +963,14 @@ describe("Feature: AgenterAI behavior", () => {
     if (!captured) {
       return;
     }
-    expect(captured.systemPrompt).toContain("## Terminal System");
-    expect(captured.systemPrompt).toContain("Use terminal before guessing.");
-    expect(captured.systemPrompt).toContain("## Message System");
-    expect(captured.systemPrompt.indexOf("## Terminal System")).toBeLessThan(
-      captured.systemPrompt.indexOf("## Message System"),
-    );
+    expect(captured.systemPrompt).toContain("You are agenter-ai,");
+    expect(captured.systemPrompt).not.toContain("## Terminal System");
+    expect(captured.systemPrompt).not.toContain("## Message System");
+    expect(captured.systemPrompt).not.toContain("SYSTEMS_GUIDE");
 
     const replayText = [...extractUserReplay(captured), ...extractAssistantReplay(captured)].join("\n");
-    expect(replayText).not.toContain("Use terminal before guessing.");
-    expect(replayText).not.toContain("Use role-aware communication.");
+    expect(replayText).not.toContain("## Terminal System");
+    expect(replayText).not.toContain("## Message System");
   });
 
   test("Scenario: Given a runtime avatar name When the model call is assembled Then shared prompt docs render that avatar identity", async () => {
@@ -945,6 +998,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(capturedPrompt).toContain("You are jane,");
     expect(capturedPrompt).not.toContain("You are agenter-ai,");
     expect(capturedPrompt).not.toContain("AVATAR_NAME");
+    expect(capturedPrompt).toContain("treat them as literal acceptance criteria");
   });
 
   test("Scenario: Given no runtime avatar override When the model call is assembled Then shared prompt docs fall back to the default identity", async () => {
@@ -972,9 +1026,10 @@ describe("Feature: AgenterAI behavior", () => {
     expect(capturedPrompt).not.toContain("AVATAR_NAME");
   });
 
-  test("Scenario: Given a legacy system template When providers contribute guides Then fallback injection still reaches the model exactly once", async () => {
+  test("Scenario: Given a legacy system template When tool providers are present Then prompt assembly still works without provider-owned guide injection", async () => {
     let capturedPrompt = "";
     const chat = createAttentionGateway();
+    const terminal = createTerminalGateway();
     const modelClient = createModelClient(async (input) => {
       capturedPrompt = input.systemPrompt;
       return {
@@ -992,20 +1047,17 @@ describe("Feature: AgenterAI behavior", () => {
           legacySystemTemplate: true,
         }),
       }),
-      toolProviders: [
-        createGuideToolProvider({
-          name: "legacy-guide",
-          section: ["## Legacy Guide", "- Inject me once."].join("\n"),
-        }),
-      ],
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     await ai.send([createUserMessage("legacy template fallback")]);
 
-    expect(capturedPrompt).toContain("## Legacy Guide");
-    expect(countOccurrences(capturedPrompt, "## Legacy Guide")).toBe(1);
-    expect(countOccurrences(capturedPrompt, "Inject me once.")).toBe(1);
+    expect(capturedPrompt).toContain("You are agenter-ai,");
+    expect(countOccurrences(capturedPrompt, "You are agenter-ai,")).toBe(1);
+    expect(capturedPrompt).not.toContain("## Legacy Guide");
+    expect(capturedPrompt).not.toContain("## Terminal System");
+    expect(capturedPrompt).not.toContain("SYSTEMS_GUIDE");
   });
 
   test("Scenario: Given terminal help payload When raw terminal context reaches AgenterAI Then the core preserves the source payload without terminal-specific rendering", async () => {
@@ -1338,6 +1390,63 @@ describe("Feature: AgenterAI behavior", () => {
     expect(chat.engine.list()).toHaveLength(0);
     const commit = chat.system.getContext(chat.defaultContextId)?.listCommits().at(-1);
     expect(commit?.scores).toEqual(Object.fromEntries(Object.keys(tracked.scores).map((hash) => [hash, 0])));
+    expect(commit?.change).toEqual({ type: "clean" });
+  });
+
+  test("Scenario: Given attention_commit provides done with its own score map When the tool executes Then the tool clears existing debt and preserves the caller scores", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "需要闭环", from: "user", score: 100 });
+    const modelClient = createModelClient(async (input) => {
+      const tool = input.tools.find((item) => item.name === "attention_commit");
+      expect(tool).toBeDefined();
+      if (!tool || typeof tool.execute !== "function") {
+        throw new Error("attention_commit tool missing");
+      }
+
+      const result = (await tool.execute(
+        {
+          contextId: chat.defaultContextId,
+          parentCommitIds: [tracked.commitId],
+          summary: "已完成闭环",
+          done: true,
+          scores: {
+            delivery: 0,
+          },
+          stage: "done",
+        },
+        {
+          toolCallId: "call-attention-commit-done-with-scores",
+          emitCustomEvent: () => {},
+        },
+      )) as { ok: boolean; commitId: string };
+
+      expect(result.ok).toBeTrue();
+
+      return {
+        thinking: "Closed the active context.",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    const response = await ai.send([createUserMessage("继续处理")]);
+    expect(response).toBeUndefined();
+
+    expect(chat.engine.list()).toHaveLength(0);
+    const commit = chat.system.getContext(chat.defaultContextId)?.listCommits().at(-1);
+    expect(commit?.scores).toEqual({
+      ...Object.fromEntries(Object.keys(tracked.scores).map((hash) => [hash, 0])),
+      delivery: 0,
+    });
     expect(commit?.change).toEqual({ type: "clean" });
   });
 
@@ -1918,6 +2027,68 @@ describe("Feature: AgenterAI behavior", () => {
     expect(replay.join("\n\n")).not.toContain("### Tool activity");
   });
 
+  test("Scenario: Given a room chat carries social context When the model prompt is assembled Then the replay includes room presence and latest-message perspective", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const message = createMessageGateway();
+    const seenInputs: ModelRespondInput[] = [];
+
+    const modelClient = createModelClient(async (input) => {
+      seenInputs.push(input);
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ terminalGateway: terminal.gateway, messageGateway: message.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([
+      createUserMessage("我们先等等，看谁更适合回答。", {
+        name: "Jane",
+        meta: {
+          chatId: "room-team",
+          chatTitle: "Team room",
+          chatKind: "room",
+          chatAudience: "group",
+          chatParticipantCount: 3,
+          chatParticipantLabels: JSON.stringify(["kzf", "Jane", "JJ"]),
+          chatOtherParticipantLabels: JSON.stringify(["kzf", "JJ"]),
+          chatOnlineParticipantLabels: JSON.stringify(["kzf", "Jane"]),
+          chatOfflineParticipantLabels: JSON.stringify(["JJ"]),
+          chatFocusedParticipantLabels: JSON.stringify(["Jane"]),
+          chatSenderActorId: "session:jane",
+          chatSenderLabel: "Jane",
+          chatSelfActorId: "session:jj",
+          chatSelfLabel: "JJ",
+          chatMessagePerspective: "other",
+          chatTurnState: "waiting",
+          chatObligationKind: "self_update",
+        },
+      }),
+    ]);
+
+    const userReplay = extractUserReplay(seenInputs[0]);
+    expect(userReplay).toHaveLength(1);
+    expect(userReplay[0]).toContain("participantCount: 3");
+    expect(userReplay[0]).toContain("latestMessage: other");
+    expect(userReplay[0]).toContain("senderLabel: Jane");
+    expect(userReplay[0]).toContain("selfLabel: JJ");
+    expect(userReplay[0]).toContain("turnState: waiting");
+    expect(userReplay[0]).toContain("kind: self_update");
+    expect(userReplay[0]).toContain("settlesWhen: no_external_reply_needed");
+    expect(userReplay[0]).toContain("online:");
+    expect(userReplay[0]).toContain("offline:");
+    expect(userReplay[0]).toContain("我们先等等，看谁更适合回答。");
+  });
+
   test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed promptWindow preserves text plus tool invocation fences", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
@@ -2399,6 +2570,83 @@ describe("Feature: AgenterAI behavior", () => {
     expect(thirdRoundAssistantReplay.some((item) => item.includes("处理中-2"))).toBeTrue();
   });
 
+  test("Scenario: Given an attention round When a tool phase settles the active context Then AgenterAI stops without issuing a redundant follow-up call", async () => {
+    const chat = createAttentionGateway();
+    const seenInputs: ModelRespondInput[] = [];
+    const tracked = chat.engine.add({ content: "ctx-main unresolved", from: "user", score: 100 });
+
+    const modelClient = {
+      getMeta() {
+        return {
+          provider: "openai-compatible",
+          model: "deepseek-chat",
+          providerId: "default",
+          baseUrl: "https://api.deepseek.com/v1",
+        };
+      },
+      getCompactConfig() {
+        return {};
+      },
+      async respondWithMeta(input: ModelRespondInput) {
+        seenInputs.push(input);
+        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
+        expect(attentionCommit).toBeDefined();
+        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
+          throw new Error("attention_commit tool missing");
+        }
+
+        await attentionCommit.execute(
+          {
+            contextId: chat.defaultContextId,
+            parentCommitIds: [tracked.commitId],
+            meta: {
+              author: "assistant",
+              source: "test",
+            },
+            scores: Object.fromEntries(Object.keys(tracked.scores).map((key) => [key, 0])),
+            summary: "resolved",
+            change: {
+              type: "update",
+              value: "resolved",
+              format: "text/plain",
+            },
+            done: true,
+            stage: "done",
+          },
+          {
+            toolCallId: "call-attention-settle-without-followup",
+            emitCustomEvent: () => {},
+          },
+        );
+        expect(input.shouldYieldAfterToolPhase?.()).toBeFalse();
+        return {
+          thinking: "",
+          text: "",
+          finishReason: "tool_calls",
+          yieldedAfterToolPhase: false,
+        };
+      },
+    } as unknown as ModelClient;
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([
+      createAttentionItemsMessage("contextId: ctx-main\nsummary: ctx-main unresolved", {
+        contextId: chat.defaultContextId,
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+
+    expect(seenInputs).toHaveLength(1);
+    expect(chat.engine.list()).toHaveLength(0);
+  });
+
   test("Scenario: Given a compact summary with durable facts When follow-up attention arrives Then AgenterAI keeps the compact summary in prompt replay but still runs a fresh model round", async () => {
     const chat = createAttentionGateway();
     const seenInputs: ModelRespondInput[] = [];
@@ -2717,6 +2965,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.completedAt).toBeNumber();
     expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
     expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
+    expect(ai.consumePendingCompactRequest()).toBe("error");
     expect(response).toBeUndefined();
   });
 
@@ -2853,5 +3102,305 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.status).toBe("cancelled");
     expect(lifecycle[1]?.outcome?.code).toBe("stopped");
     expect(lifecycle[1]?.error?.details).toEqual({ canceled: true });
+  });
+
+  test("Scenario: Given prompt-window persistence When a normal round runs Then AgenterAI commits user and assistant replay states before referencing them in model-call facts", async () => {
+    const chat = createAttentionGateway();
+    const promptWindowStore = createPromptWindowStoreSpy();
+    const modelCalls: AgentModelCallRecord[] = [];
+
+    const modelClient = createModelClient(async (input) => {
+      expect(extractUserReplay(input).join("\n")).toContain("persist this turn");
+      return {
+        thinking: "",
+        text: "assistant persisted reply",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      promptWindowStore: promptWindowStore.store,
+      initialPromptWindowState: promptWindowStore.initialState,
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    await ai.send([createUserMessage("persist this turn")]);
+
+    expect(promptWindowStore.appendCalls).toHaveLength(2);
+    expect(promptWindowStore.appendCalls[0]?.setCurrent).toBeTrue();
+    expect(extractUserReplay(promptWindowStore.appendCalls[0]?.messages).join("\n")).toContain("persist this turn");
+    expect(promptWindowStore.appendCalls[1]?.setCurrent).toBeTrue();
+    expect(extractAssistantReplay(promptWindowStore.appendCalls[1]?.messages)).toContain("assistant persisted reply");
+
+    const runningRecord = modelCalls.find((record) => record.status === "running");
+    const doneRecord = modelCalls.find((record) => record.status === "done");
+    expect(runningRecord?.request.promptWindowStateId).toBe(promptWindowStore.states[1]?.id);
+    expect(runningRecord?.request.roundIndex).toBe(promptWindowStore.states[1]?.roundIndex);
+    expect(
+      doneRecord?.response &&
+        typeof doneRecord.response === "object" &&
+        "decision" in doneRecord.response &&
+        doneRecord.response.decision &&
+        typeof doneRecord.response.decision === "object" &&
+        "nextPromptWindowStateId" in doneRecord.response.decision
+        ? doneRecord.response.decision.nextPromptWindowStateId
+        : null,
+    ).toBe(promptWindowStore.states[2]?.id);
+    expect(ai.inspectDebugState().promptWindow).toEqual(promptWindowStore.states[2]?.messages);
+  });
+
+  test("Scenario: Given compact succeeds When the summary replaces history Then AgenterAI only switches current prompt window after the new compact state is committed", async () => {
+    const chat = createAttentionGateway();
+    const promptWindowStore = createPromptWindowStoreSpy([
+      {
+        role: "user",
+        content: "before compact",
+      },
+    ]);
+    const modelCalls: AgentModelCallRecord[] = [];
+
+    const modelClient = createModelClient(async (input) => {
+      expect(flattenModelMessageContent(input.messages[0])).toContain("before compact");
+      return {
+        thinking: "",
+        text: JSON.stringify({
+          overview: "compacted overview",
+          decisions: ["keep durable facts"],
+          keyFiles: [],
+          keyFacts: ["before compact"],
+          unresolvedWork: [],
+          nextSteps: ["continue"],
+        }),
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      promptWindowStore: promptWindowStore.store,
+      initialPromptWindowState: promptWindowStore.initialState,
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    await ai.runCompactCycle({ trigger: "manual" });
+
+    expect(promptWindowStore.appendCalls).toHaveLength(2);
+    expect(promptWindowStore.appendCalls[0]?.setCurrent).not.toBeTrue();
+    expect(promptWindowStore.appendCalls[1]?.setCurrent).toBeTrue();
+    expect(extractAssistantReplay(promptWindowStore.states[2]?.messages).join("\n")).toContain(
+      "yaml+prompt_window_compact",
+    );
+    const doneRecord = modelCalls.find((record) => record.status === "done");
+    expect(doneRecord?.request.promptWindowStateId).toBe(promptWindowStore.states[1]?.id);
+    expect(doneRecord?.request.roundIndex).toBe(promptWindowStore.states[1]?.roundIndex);
+    expect(
+      doneRecord?.response &&
+        typeof doneRecord.response === "object" &&
+        "decision" in doneRecord.response &&
+        doneRecord.response.decision &&
+        typeof doneRecord.response.decision === "object" &&
+        "nextPromptWindowStateId" in doneRecord.response.decision
+        ? doneRecord.response.decision.nextPromptWindowStateId
+        : null,
+    ).toBe(promptWindowStore.states[2]?.id);
+    expect(ai.inspectDebugState().promptWindow).toEqual(promptWindowStore.states[2]?.messages);
+  });
+
+  test("Scenario: Given compact omits a settled visible answer When the summary is committed Then AgenterAI preserves that answer for direct follow-up reuse", async () => {
+    const chat = createAttentionGateway();
+    const promptWindowStore = createPromptWindowStoreSpy([
+      {
+        role: "user",
+        content: "gaubee在吗？问他中午吃什么？",
+      },
+      {
+        role: "assistant",
+        content: "Understood. I'll handle it and report back.",
+      },
+      {
+        role: "assistant",
+        content: "gaubee说中午吃蛋炒饭。",
+      },
+    ]);
+
+    const modelClient = createModelClient(async () => ({
+      thinking: "",
+      text: JSON.stringify({
+        overview: "compacted overview",
+        decisions: [],
+        keyFiles: [],
+        keyFacts: [],
+        unresolvedWork: [],
+        nextSteps: [],
+      }),
+      finishReason: "stop",
+    }));
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      promptWindowStore: promptWindowStore.store,
+      initialPromptWindowState: promptWindowStore.initialState,
+    });
+
+    await ai.runCompactCycle({ trigger: "manual" });
+
+    const compactReplay = extractAssistantReplay(promptWindowStore.states[2]?.messages).join("\n");
+    expect(compactReplay).toContain("Settled user-visible answer: gaubee说中午吃蛋炒饭。");
+    expect(compactReplay).toContain("answer directly instead of reopening finished relay or lookup work");
+  });
+
+  test("Scenario: Given the settled answer only exists in message_send tool trace When compact runs Then AgenterAI still preserves the delivered origin-room answer", async () => {
+    const chat = createAttentionGateway();
+    const promptWindowStore = createPromptWindowStoreSpy([
+      {
+        role: "user",
+        content: "gaubee在吗？问他中午吃什么？",
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            content: [
+              "```yaml",
+              "invocationId: message_send:relay",
+              "tool: message_send",
+              "status: success",
+              "startedAt: 2026-04-12T00:00:00.000Z",
+              "finishedAt: 2026-04-12T00:00:01.000Z",
+              "input:",
+              '  chatId: "chat-gaubee"',
+              '  content: "gaubee，有人问你中午吃什么？"',
+              "output:",
+              "  ok: true",
+              '  messageId: "msg-relay"',
+              "error: null",
+              "```",
+            ].join("\n"),
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            content: [
+              "```yaml",
+              "invocationId: message_send:origin",
+              "tool: message_send",
+              "status: success",
+              "startedAt: 2026-04-12T00:00:02.000Z",
+              "finishedAt: 2026-04-12T00:00:03.000Z",
+              "input:",
+              '  chatId: "chat-main"',
+              '  content: "gaubee说中午吃蛋炒饭。"',
+              "output:",
+              "  ok: true",
+              '  messageId: "msg-origin"',
+              "error: null",
+              "```",
+            ].join("\n"),
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            content: [
+              "```yaml+attention_items",
+              "commits:",
+              "-",
+              "  contextId: ctx-chat-main",
+              "  commitId: commit-main",
+              "  done: true",
+              '  summary: "Delivered lunch answer back to origin room."',
+              "  scores:",
+              "    lunch: 0",
+              "```",
+            ].join("\n"),
+          },
+        ],
+      },
+    ]);
+
+    const modelClient = createModelClient(async () => ({
+      thinking: "",
+      text: JSON.stringify({
+        overview: "compacted overview",
+        decisions: [],
+        keyFiles: [],
+        keyFacts: [],
+        unresolvedWork: [],
+        nextSteps: [],
+      }),
+      finishReason: "stop",
+    }));
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      promptWindowStore: promptWindowStore.store,
+      initialPromptWindowState: promptWindowStore.initialState,
+    });
+
+    await ai.runCompactCycle({ trigger: "manual" });
+
+    const compactReplay = extractAssistantReplay(promptWindowStore.states[2]?.messages).join("\n");
+    expect(compactReplay).toContain("Settled user-visible answer: gaubee说中午吃蛋炒饭。");
+    expect(compactReplay).not.toContain("Settled user-visible answer: gaubee，有人问你中午吃什么？");
+  });
+
+  test("Scenario: Given compact fails When no model summary is produced Then AgenterAI falls back to an emergency compact snapshot", async () => {
+    const chat = createAttentionGateway();
+    const initialMessages = [
+      {
+        role: "user" as const,
+        content: "before failed compact",
+      },
+    ];
+    const promptWindowStore = createPromptWindowStoreSpy(initialMessages);
+
+    const modelClient = createModelClient(async () => {
+      throw new Error("compact failed");
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      promptWindowStore: promptWindowStore.store,
+      initialPromptWindowState: promptWindowStore.initialState,
+    });
+
+    await ai.runCompactCycle({ trigger: "manual" });
+
+    expect(promptWindowStore.appendCalls).toHaveLength(2);
+    expect(promptWindowStore.appendCalls[0]?.setCurrent).not.toBeTrue();
+    expect(promptWindowStore.appendCalls[1]?.setCurrent).toBeTrue();
+    expect(extractAssistantReplay(promptWindowStore.states[2]?.messages).join("\n")).toContain(
+      "yaml+prompt_window_compact",
+    );
+    expect(extractAssistantReplay(promptWindowStore.states[2]?.messages).join("\n")).toContain("Emergency compact");
+    expect(ai.inspectDebugState().promptWindow).toEqual(promptWindowStore.states[2]?.messages);
   });
 });

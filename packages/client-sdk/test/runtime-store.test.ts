@@ -1332,11 +1332,11 @@ const createMockClient = (input: {
                   avatar: {
                     nickname: payload.avatar,
                     defaultAvatar: payload.avatar === "default",
-                    sourceScope: "workspace",
+                    sourceScope: "global",
                     globalAvailable: true,
-                    workspaceAvailable: true,
+                    workspacePrivateSlotReady: true,
                     globalPath: "",
-                    workspacePath: "",
+                    workspacePrivatePath: "",
                     effectivePath: "",
                   },
                 },
@@ -1349,11 +1349,11 @@ const createMockClient = (input: {
                   avatar: {
                     nickname: payload.targetAvatar,
                     defaultAvatar: payload.targetAvatar === "default",
-                    sourceScope: "workspace",
+                    sourceScope: "global",
                     globalAvailable: false,
-                    workspaceAvailable: true,
+                    workspacePrivateSlotReady: true,
                     globalPath: "",
-                    workspacePath: "",
+                    workspacePrivatePath: "",
                     effectivePath: "",
                   },
                 },
@@ -5385,6 +5385,21 @@ describe("Feature: runtime store synchronization", () => {
         },
       ],
     };
+    const staleLatestVisibleMessage = {
+      rowId: 12,
+      messageId: "12",
+      chatId: room.chatId,
+      senderActorId: "session:ops-bot",
+      from: "ops-bot",
+      to: "Relay",
+      kind: "text" as const,
+      content: "hello ops",
+      createdAt: 12,
+      updatedAt: 12,
+      visibleAt: 12,
+      readActorIds: [],
+      unreadActorIds: ["session:relay", "auth:viewer"],
+    };
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -5408,6 +5423,13 @@ describe("Feature: runtime store synchronization", () => {
           unreadByChat: { "i-1": { "chat-main": 1 } },
           unreadByTerminal: {},
         }),
+        messageGlobalSnapshotQuery: async () => ({
+          channel: room,
+          items: [staleLatestVisibleMessage],
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "1",
+        }),
         messageGlobalMarkReadMutate: async (input) => {
           requests.markRead = input;
           return { channel: room };
@@ -5417,6 +5439,11 @@ describe("Feature: runtime store synchronization", () => {
 
     await store.connect();
     await waitFor(() => store.getState().unreadBySession["i-1"] === 1);
+    await store.hydrateGlobalRoomSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      force: true,
+    });
 
     const readChannel = await store.markGlobalRoomRead({
       chatId: room.chatId,
@@ -5439,9 +5466,60 @@ describe("Feature: runtime store synchronization", () => {
       trackedByLatestVisible: true,
       hasReadLatestVisible: true,
     });
+    expect(store.getState().globalRoomSnapshotsById[room.chatId]?.data?.items[0]).toMatchObject({
+      messageId: "12",
+      readActorIds: ["session:relay"],
+      unreadActorIds: ["auth:viewer"],
+    });
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
     expect(store.getState().notifications[0]?.messageId).toBe("9");
     store.disconnect();
+  });
+
+  test("Scenario: Given the same room read mutation is already in flight When markGlobalRoomRead is called again for the same target Then runtime-store reuses the first request instead of issuing a duplicate", async () => {
+    const room = {
+      chatId: "room-2",
+      kind: "room" as const,
+      title: "Relay room",
+      owner: "jane",
+      participants: [
+        { id: "auth:user", label: "User" },
+        { id: "session:relay", label: "relay" },
+      ],
+      createdAt: 1,
+      updatedAt: 2,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "token-room-2",
+    };
+    const deferred = createDeferred<{ channel: typeof room }>();
+    let requestCount = 0;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalMarkReadMutate: async () => {
+          requestCount += 1;
+          return await deferred.promise;
+        },
+      }),
+    );
+
+    const first = store.markGlobalRoomRead({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: "12",
+    });
+    const second = store.markGlobalRoomRead({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: "12",
+    });
+
+    expect(requestCount).toBe(1);
+    deferred.resolve({ channel: room });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([room, room]);
+    expect(requestCount).toBe(1);
   });
 
   test("Scenario: Given a loaded workspace avatar catalog When copy starts Then the optimistic workspace-local avatar appears before server reconciliation", async () => {
@@ -5451,20 +5529,20 @@ describe("Feature: runtime store synchronization", () => {
       defaultAvatar: false,
       sourceScope: "global",
       globalAvailable: true,
-      workspaceAvailable: false,
+      workspacePrivateSlotReady: false,
       globalPath: "/global/helper",
-      workspacePath: "/repo/demo/.agenter/avatar/helper",
+      workspacePrivatePath: "/repo/demo/.agenter/avatars/by-principal/helper",
       effectivePath: "/global/helper",
     };
     const copiedAvatar: WorkspaceAvatarCatalogEntry = {
       nickname: "helper-copy",
       defaultAvatar: false,
-      sourceScope: "workspace",
+      sourceScope: "global",
       globalAvailable: false,
-      workspaceAvailable: true,
+      workspacePrivateSlotReady: true,
       globalPath: "/global/helper-copy",
-      workspacePath: "/repo/demo/.agenter/avatar/helper-copy",
-      effectivePath: "/repo/demo/.agenter/avatar/helper-copy",
+      workspacePrivatePath: "/repo/demo/.agenter/avatars/by-principal/helper-copy",
+      effectivePath: "/repo/demo/.agenter/avatars/by-principal/helper-copy",
     };
     let catalog = [helperAvatar];
     const copyDeferred = createDeferred<{ avatar: WorkspaceAvatarCatalogEntry }>();
@@ -5492,8 +5570,10 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.find((entry) => entry.nickname === "helper-copy"))
       .toMatchObject({
         nickname: "helper-copy",
-        sourceScope: "workspace",
-        workspaceAvailable: true,
+        sourceScope: "global",
+        globalAvailable: false,
+        workspacePrivateSlotReady: true,
+        effectivePath: "",
       });
 
     catalog = [helperAvatar, copiedAvatar];
@@ -5524,9 +5604,9 @@ describe("Feature: runtime store synchronization", () => {
           defaultAvatar: false,
           sourceScope: "global",
           globalAvailable: true,
-          workspaceAvailable: false,
+          workspacePrivateSlotReady: false,
           globalPath: "/global/alpha",
-          workspacePath: "/repo/a/.agenter/avatar/alpha",
+          workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha",
           effectivePath: "/global/alpha",
         },
       ],
@@ -5536,9 +5616,9 @@ describe("Feature: runtime store synchronization", () => {
           defaultAvatar: false,
           sourceScope: "global",
           globalAvailable: true,
-          workspaceAvailable: false,
+          workspacePrivateSlotReady: false,
           globalPath: "/global/beta",
-          workspacePath: "/repo/b/.agenter/avatar/beta",
+          workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta",
           effectivePath: "/global/beta",
         },
       ],
@@ -5568,12 +5648,12 @@ describe("Feature: runtime store synchronization", () => {
       {
         nickname: "alpha-copy",
         defaultAvatar: false,
-        sourceScope: "workspace",
+        sourceScope: "global",
         globalAvailable: false,
-        workspaceAvailable: true,
+        workspacePrivateSlotReady: true,
         globalPath: "/global/alpha-copy",
-        workspacePath: "/repo/a/.agenter/avatar/alpha-copy",
-        effectivePath: "/repo/a/.agenter/avatar/alpha-copy",
+        workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha-copy",
+        effectivePath: "/repo/a/.agenter/avatars/by-principal/alpha-copy",
       },
     ];
 

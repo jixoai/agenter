@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/react */
+
 interface TaskItem {
   key: string;
   title: string;
