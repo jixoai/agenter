@@ -1,25 +1,4 @@
-## Purpose
-
-Define the real-AI semantic judge testing contract used by backend validation suites.
-
-## Requirements
-
-### Requirement: Real-AI semantic judge tests SHALL resolve a fixed provider from inherited settings
-
-Real-AI semantic test utilities SHALL resolve provider id `jixoai/agenter/test` from the existing inherited settings cascade, so project-local and user-home `.agenter/settings.json` can both supply the same provider contract.
-
-#### Scenario: Project or home settings provide the fixed semantic judge provider
-
-- **WHEN** the semantic test utilities load settings for a project root
-- **THEN** they resolve provider id `jixoai/agenter/test` from the inherited settings cascade instead of using a separate semantic-test config format
-- **THEN** the resolved provider preserves the canonical provider metadata needed by `ModelClient`
-
-#### Scenario: Missing fixed provider emits a warning precondition
-
-- **WHEN** the inherited settings cascade does not contain usable provider id `jixoai/agenter/test`
-- **THEN** semantic test availability resolves to "not configured"
-- **THEN** the warning states that the provider must be configured in `jixoai/agenter/.agenter/settings.json` or `~/.agenter/settings.json`
-- **THEN** the utility does not silently fall back to the active runtime provider
+## MODIFIED Requirements
 
 ### Requirement: Semantic judge core SHALL provide generic model-backed decision modes
 
