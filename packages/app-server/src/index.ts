@@ -1,11 +1,10 @@
 export {
   SessionDb,
-  type ApiCallRecord as SessionDbApiCallRecord,
-  type LoopbusStateLogRecord as SessionDbLoopbusStateLogRecord,
+  type SessionAiCallRecord as SessionDbAiCallRecord,
+  type SessionMessageRecord as SessionDbMessageRecord,
   type ReversePage as SessionDbReversePage,
   type ReverseTimeCursor as SessionDbReverseTimeCursor,
-  type SessionBlockRecord as SessionDbChatMessageRecord,
-  type TerminalActivityRecord as SessionDbTerminalActivityRecord,
+  type SessionPromptWindowRecord,
 } from "@agenter/session-system";
 export {
   TaskEngine,
@@ -40,16 +39,12 @@ export {
   type AgentPromptWindowCompactSummary,
   type AgentRuntimeStats,
   type AgentToolProvider,
-  type AgentToolProviderPromptContext,
   type AgentToolProviderContext,
 } from "./agenter-ai";
 export {
-  projectAuthActors,
-  type AuthActorProjection,
-} from "./auth-actor-catalog";
-export {
   AppKernel,
   type AppKernelOptions,
+  type RuntimeWorkspaceAssetRoots,
   type WorkspaceListItem,
   type WorkspaceSessionCounts,
   type WorkspaceSessionEntry,
@@ -57,6 +52,13 @@ export {
   type WorkspaceSessionPreview,
   type WorkspaceSessionTab,
 } from "./app-kernel";
+export { projectAuthActors, type AuthActorProjection } from "./auth-actor-catalog";
+export {
+  AuthServiceBridge,
+  type AuthServiceBridgeOptions,
+  type AuthServiceDescriptor,
+  type AuthServiceMedia,
+} from "./auth-service-bridge";
 export {
   collectClientMessageIds,
   detectChatCycleKind,
@@ -80,6 +82,18 @@ export {
   type LoopBusWakeSource,
 } from "./loop-bus";
 export {
+  applyLoopStatePatch,
+  createInitialLoopKernelState,
+  createLoopStatePatch,
+  hashLoopState,
+  stableStringify,
+  type LoopBusKernelSnapshot,
+  type LoopBusKernelState,
+  type LoopBusPatchOperation,
+  type LoopBusStateLogEntry,
+  type LoopBusTraceEntry,
+} from "./loopbus-kernel";
+export {
   LoopBusPluginRuntime,
   type AttentionCommittedHook,
   type AttentionDraft,
@@ -94,41 +108,17 @@ export {
   type LoopBusHookOrder,
   type LoopBusPlugin,
   type LoopBusPluginApi,
+  type LoopMessageSourceRef,
   type LoopSourceAdapter,
   type LoopSourceReadRequest,
   type LoopSourceReadResult,
   type LoopSourceRef,
+  type LoopTaskSourceRef,
+  type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
-export {
-  applyLoopStatePatch,
-  createInitialLoopKernelState,
-  createLoopStatePatch,
-  hashLoopState,
-  stableStringify,
-  type LoopBusKernelSnapshot,
-  type LoopBusKernelState,
-  type LoopBusPatchOperation,
-  type LoopBusStateLogEntry,
-  type LoopBusTraceEntry,
-} from "./loopbus-kernel";
 export { resolveModelCapabilities } from "./model-capabilities";
-export {
-  AuthServiceBridge,
-  type AuthServiceBridgeOptions,
-  type AuthServiceDescriptor,
-  type AuthServiceMedia,
-} from "./auth-service-bridge";
-export {
-  canCallModel as canCallConfiguredModel,
-  resolveApiEnvHint,
-  type ModelProviderConfig,
-} from "./model-provider";
-export {
-  ModelClient,
-  ModelDecisionError,
-  type AssistantStreamUpdate,
-  type TextOnlyModelMessage,
-} from "./model-client";
+export { ModelClient, ModelDecisionError, type AssistantStreamUpdate, type TextOnlyModelMessage } from "./model-client";
+export { canCallModel as canCallConfiguredModel, resolveApiEnvHint, type ModelProviderConfig } from "./model-provider";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 export {
   PROMPT_DOC_KEYS,
@@ -149,22 +139,36 @@ export {
   type RuntimeSnapshotPayload,
   type SettingsKind,
 } from "./realtime-types";
-export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
 export {
-  SessionNotificationRegistry,
+  SemanticJudge,
+  SemanticJudgeDecisionError,
+  createSemanticJudge,
+  type JudgeBooleanInput,
+  type JudgeCompletionInput,
+  type JudgeSpanInput,
+  type JudgeStructuredInput,
+  type SemanticJudgeModelClient,
+  type SemanticJudgeSpan,
+} from "./semantic-judge";
+export { hasUrlSignal, judgeContainsUrl, judgeUrlSpan } from "./semantic-judge-helpers";
+export { SessionCatalog, type SessionMeta, type SessionStatus } from "./session-catalog";
+export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
+export {
+  mergeSessionNotificationSnapshots,
+  projectSessionNotificationSnapshot,
+  toAttentionFocusStateFromVisibility,
   type SessionNotificationItem,
   type SessionNotificationSnapshot,
 } from "./session-notifications";
-export { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 export {
   SessionRuntime,
-  type SessionRuntimeAttentionState,
   type RuntimeEvent,
   type RuntimeEventMap,
+  type SessionRuntimeAttentionState,
   type SessionRuntimeModelDebug,
   type SessionRuntimeSnapshot,
 } from "./session-runtime";
-export { SessionStore, type SessionCallRecord } from "./session-store";
+export { SessionStore } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
 export {
   listScopedSettingsGraph,
@@ -175,6 +179,16 @@ export {
   type ScopedSettingsLayerSnapshot,
   type SettingsScope,
 } from "./settings-scope";
+export { createTrpcContext, type TrpcContext } from "./trpc/context";
+export { appRouter, type AppRouter } from "./trpc/router";
+export type {
+  AppServerLogger,
+  ChatMessage,
+  ChatSessionAsset,
+  ModelCapabilities,
+  RoomMediaAsset,
+  TaskStage,
+} from "./types";
 export {
   listWorkspaceSettingsLayers,
   readWorkspaceSettingsLayer,
@@ -183,14 +197,28 @@ export {
   type SettingsLayerSnapshot,
   type SettingsLayersResult,
 } from "./workspace-settings";
-export { createTrpcContext, type TrpcContext } from "./trpc/context";
-export { appRouter, type AppRouter } from "./trpc/router";
-export type {
-  AppServerLogger,
-  ChatSessionAsset,
-  ChatMessage,
-  ModelCapabilities,
-  RoomMediaAsset,
-  TaskStage,
-} from "./types";
+export {
+  WorkspaceSystemStore,
+  executeWorkspaceBash,
+  normalizeWorkspaceRuntimePath,
+  resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarPrivateRoot,
+  resolveWorkspaceAvatarSeatPath,
+  resolveWorkspacePrivateAvatarsRoot,
+  resolveWorkspacePublicAssetRoot,
+  resolveWorkspacePublicRoot,
+  resolveWorkspaceSystemRoot,
+  resolveWorkspaceToolCommandName,
+  type WorkspaceAssetKind,
+  type WorkspaceAssetRoots,
+  type WorkspaceBashExecInput,
+  type WorkspaceBashExecResult,
+  type WorkspaceExecProfileRecord,
+  type WorkspaceGrantInput,
+  type WorkspaceGrantMode,
+  type WorkspaceGrantRecord,
+  type WorkspaceMountRecord,
+  type WorkspaceRecord,
+  type WorkspaceSystemSnapshot,
+} from "./workspace-system";
 export { WorkspacesStore } from "./workspaces-store";

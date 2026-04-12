@@ -86,6 +86,8 @@ interface RespondInput {
   messages: TextOnlyModelMessage[];
   tools: Tool[];
   abortController?: AbortController;
+  temperature?: number;
+  maxTokens?: number;
   onUpdate?: (update: AssistantStreamUpdate) => void | Promise<void>;
   shouldYieldAfterToolPhase?: () => boolean;
 }
@@ -194,16 +196,14 @@ export class ModelClient {
           messages: input.messages,
           systemPrompts: [input.systemPrompt],
           tools: this.capabilities.tools ? input.tools : [],
-          temperature: this.config.temperature,
+          temperature: input.temperature ?? this.config.temperature,
+          maxTokens: input.maxTokens ?? this.config.maxToken,
           abortController: input.abortController,
           agentLoopStrategy: (state) => {
             if (!defaultLoopStrategy(state)) {
               return false;
             }
-            if (
-              state.finishReason === "tool_calls" &&
-              input.shouldYieldAfterToolPhase?.()
-            ) {
+            if (state.finishReason === "tool_calls" && input.shouldYieldAfterToolPhase?.()) {
               yieldedAfterToolPhase = true;
               return false;
             }
@@ -389,7 +389,8 @@ export class ModelClient {
     return new OpenAICompatChatTextAdapter(
       {
         apiKey: config.apiKey ?? "",
-        baseUrl: config.baseUrl ?? (isDeepseekVendor(config) ? "https://api.deepseek.com/v1" : "https://api.openai.com/v1"),
+        baseUrl:
+          config.baseUrl ?? (isDeepseekVendor(config) ? "https://api.deepseek.com/v1" : "https://api.openai.com/v1"),
         headers,
         name: config.vendor ?? "openai-chat-compatible",
       },
