@@ -45,7 +45,7 @@ export interface SessionPromptWindowRecord {
 
 export const PROMPT_WINDOW_STATE_PART_TYPE = "state";
 
-export type SessionMessageScope = "heartbeat" | "prompt_window" | "request_aux";
+export type SessionMessageScope = "heartbeat" | "heartbeat_part" | "prompt_window" | "request_aux";
 export type SessionMessageRole = "system" | "user" | "assistant" | "tool" | "config";
 
 export interface SessionMessagePartRecord {

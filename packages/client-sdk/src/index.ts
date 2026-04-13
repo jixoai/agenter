@@ -38,6 +38,8 @@ export type {
   GlobalTerminalGrantIssueOutput,
   GlobalTerminalGrantListOutput,
   GlobalTerminalListOutput,
+  HeartbeatPartItem,
+  HeartbeatPartsPageOutput,
   HistoryPageCursor,
   CachedResourceState,
   MessageChannelEntry,

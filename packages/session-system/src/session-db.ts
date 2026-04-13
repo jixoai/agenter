@@ -371,9 +371,16 @@ export class SessionDb {
     scope: SessionMessageScope,
     input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
   ): SessionMessageRecord[] {
+    return this.listMessagesByScopes([scope], input);
+  }
+
+  listMessagesByScopes(
+    scopes: readonly SessionMessageScope[],
+    input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
+  ): SessionMessageRecord[] {
     const limit = resolvePageLimit(input?.limit);
     const before = input?.before;
-    const rows = this.queryMessageEnvelopes(scope, input?.windowId ?? undefined);
+    const rows = this.queryMessageEnvelopesByScopes(scopes, input?.windowId ?? undefined);
     const filteredDescending = rows
       .sort((left, right) => (left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at))
       .filter((row) => isBeforeCursor({ createdAt: row.created_at, id: row.id }, before))
@@ -388,10 +395,17 @@ export class SessionDb {
     scope: SessionMessageScope,
     input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
   ): ReversePage<SessionMessageRecord> {
+    return this.pageMessagesByScopes([scope], input);
+  }
+
+  pageMessagesByScopes(
+    scopes: readonly SessionMessageScope[],
+    input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
     const limit = resolvePageLimit(input?.limit);
     const before = input?.before;
-    const envelopesDescending = this.queryMessageEnvelopes(scope, input?.windowId ?? undefined).sort((left, right) =>
-      left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at,
+    const envelopesDescending = this.queryMessageEnvelopesByScopes(scopes, input?.windowId ?? undefined).sort(
+      (left, right) => (left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at),
     );
     const filteredDescending = envelopesDescending.filter((row) =>
       isBeforeCursor({ createdAt: row.created_at, id: row.id }, before),
@@ -706,6 +720,17 @@ export class SessionDb {
   }
 
   private queryMessageEnvelopes(scope: SessionMessageScope, windowId?: string): StoredMessageEnvelope[] {
+    return this.queryMessageEnvelopesByScopes([scope], windowId);
+  }
+
+  private queryMessageEnvelopesByScopes(
+    scopes: readonly SessionMessageScope[],
+    windowId?: string,
+  ): StoredMessageEnvelope[] {
+    if (scopes.length === 0) {
+      return [];
+    }
+    const scopePlaceholders = scopes.map(() => "?").join(", ");
     const rows = this.db
       .query(
         `select min(part_id) as id,
@@ -718,11 +743,11 @@ export class SessionDb {
                 min(created_at) as created_at,
                 max(updated_at) as updated_at
          from message_part
-         where scope = ?
+         where scope in (${scopePlaceholders})
            and (? is null or window_id = ?)
          group by message_id, window_id, ai_call_id, round_index, scope, role`,
       )
-      .all(scope, windowId ?? null, windowId ?? null) as StoredMessageEnvelope[];
+      .all(...scopes, windowId ?? null, windowId ?? null) as StoredMessageEnvelope[];
     return rows;
   }
 

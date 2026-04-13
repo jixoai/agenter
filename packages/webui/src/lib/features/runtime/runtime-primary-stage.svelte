@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type {
-		ModelCallDeltaItem,
-		ModelCallItem,
+		HeartbeatPartItem,
 		MessageChannelEntry,
-		RequestAuxItem,
-		RuntimeChatMessage,
 		RuntimeSnapshotEntry,
 		SessionNotificationItem,
 		SessionEntry,
@@ -24,10 +21,7 @@
 		runtime: RuntimeSnapshotEntry | null;
 		channels: MessageChannelEntry[];
 		notifications: SessionNotificationItem[];
-		messages: RuntimeChatMessage[];
-		requestAux: RequestAuxItem[];
-		modelCalls: ModelCallItem[];
-		modelCallDeltas: ModelCallDeltaItem[];
+		heartbeatEntries: HeartbeatPartItem[];
 		onOpenRoom: (chatId: string) => void | Promise<void>;
 		onOpenTerminal: (terminalId: string) => void | Promise<void>;
 		onSetRoomVisibility: (chatId: string, focused: boolean) => void | Promise<void>;
@@ -46,10 +40,7 @@
 		runtime,
 		channels,
 		notifications,
-		messages,
-		requestAux,
-		modelCalls,
-		modelCallDeltas,
+		heartbeatEntries,
 		onOpenRoom,
 		onOpenTerminal,
 		onSetRoomVisibility,
@@ -85,7 +76,7 @@
 
 	<Scaffold.Body class="h-full p-4">
 		{#if tab === 'heartbeat'}
-			<RuntimeStageHeartbeat {messages} {requestAux} {modelCalls} {modelCallDeltas} onLoadOlder={onLoadOlderHeartbeat} />
+			<RuntimeStageHeartbeat entries={heartbeatEntries} onLoadOlder={onLoadOlderHeartbeat} />
 		{:else if tab === 'attention'}
 			<RuntimeStageAttention
 				sessionId={session.id}

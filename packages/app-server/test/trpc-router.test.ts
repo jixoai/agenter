@@ -6,7 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import type { MessageControlPlane } from "@agenter/message-system";
 import type { TerminalControlPlane } from "@agenter/terminal-system";
-import { AppKernel, appRouter, createTrpcContext } from "../src";
+import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
 
 const tempDirs: string[] = [];
 
@@ -961,6 +961,67 @@ describe("Feature: app-server trpc procedures", () => {
     await expect(caller.auth.superadminStatus()).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given durable Heartbeat message-parts When runtime heartbeatPartsPage is queried Then the router returns one merged stream", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const created = await caller.session.create({
+      cwd: root,
+      name: "heartbeat-parts",
+      autoStart: false,
+    });
+    const db = new SessionDb(join(created.session.sessionRoot, "session.db"));
+    try {
+      db.upsertMessage({
+        messageId: "request-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 100,
+        updatedAt: 100,
+        parts: [{ partType: "text", payload: { type: "text", content: "context" }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "config-1",
+        roundIndex: 0,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 110,
+        updatedAt: 110,
+        parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "response-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 120,
+        parts: [{ partType: "text", payload: { type: "text", content: "reply" }, isComplete: true }],
+      });
+    } finally {
+      db.close();
+    }
+
+    const page = await caller.runtime.heartbeatPartsPage({
+      sessionId: created.session.id,
+      limit: 20,
+    });
+
+    expect(page.items.map((row) => row.messageId)).toEqual(["request-1", "config-1", "response-1"]);
+    expect(page.items.map((row) => row.scope)).toEqual(["heartbeat_part", "request_aux", "heartbeat_part"]);
+    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "text"]);
 
     await kernel.stop();
   });

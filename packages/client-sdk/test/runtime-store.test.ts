@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
-import type { GlobalAvatarCatalogEntry, RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
+import type { GlobalAvatarCatalogEntry, HeartbeatPartItem, RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
 
 type ReversePageResult<T> = {
   items: T[];
@@ -37,6 +37,51 @@ const createTraceEntry = (input: {
   events: [],
   attributes: input.attributes ?? {},
   outcome: input.status === "running" ? undefined : { code: (input.status ?? "done") === "error" ? "error" : "done" },
+});
+
+const createHeartbeatEntry = (input: {
+  id: number;
+  messageId: string;
+  scope?: HeartbeatPartItem["scope"];
+  role?: HeartbeatPartItem["role"];
+  aiCallId?: number | null;
+  roundIndex?: number;
+  createdAt: number;
+  updatedAt?: number;
+  isComplete?: boolean;
+  partType?: string;
+  payload: unknown;
+  text?: string;
+}): HeartbeatPartItem => ({
+  id: input.id,
+  messageId: input.messageId,
+  windowId: null,
+  aiCallId: input.aiCallId ?? null,
+  roundIndex: input.roundIndex ?? 1,
+  scope: input.scope ?? "heartbeat_part",
+  role: input.role ?? "assistant",
+  createdAt: input.createdAt,
+  updatedAt: input.updatedAt ?? input.createdAt,
+  isComplete: input.isComplete ?? true,
+  text: input.text ?? (typeof input.payload === "string" ? input.payload : JSON.stringify(input.payload)),
+  parts: [
+    {
+      partId: input.id,
+      partIndex: 0,
+      messageId: input.messageId,
+      windowId: null,
+      aiCallId: input.aiCallId ?? null,
+      roundIndex: input.roundIndex ?? 1,
+      scope: input.scope ?? "heartbeat_part",
+      role: input.role ?? "assistant",
+      partType: input.partType ?? "text",
+      mimeType: null,
+      payload: input.payload,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt ?? input.createdAt,
+      isComplete: input.isComplete ?? true,
+    },
+  ],
 });
 
 const createSnapshot = (
@@ -689,6 +734,11 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  heartbeatPartsPageQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
 }): AgenterClient => {
   let authToken: string | null = null;
 
@@ -828,6 +878,16 @@ const createMockClient = (input: {
         },
         modelCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+        },
+        heartbeatPartsPage: {
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.heartbeatPartsPageQuery
+              ? await input.heartbeatPartsPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         requestAuxPage: {
           query: async (payload: {
@@ -2991,6 +3051,122 @@ describe("Feature: runtime store synchronization", () => {
     await waitFor(() => store.getState().requestAuxBySession["i-1"]?.some((item) => item.id === 4) === true);
     expect(store.getState().requestAuxBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3, 4]);
     expect(requestAuxCalls.length).toBeGreaterThanOrEqual(3);
+    store.disconnect();
+  });
+
+  test("Scenario: Given heartbeat-part pages and live heartbeat updates When the store hydrates and loads older rows Then the Heartbeat stream stays ordered and replaces streamed rows by id", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const heartbeatCalls: Array<{ before?: { beforeTimeMs: number; beforeId: number }; limit?: number }> = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(760),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      heartbeatPartsPageQuery: async (input) => {
+        heartbeatCalls.push({ before: input.before, limit: input.limit });
+        if (input.before) {
+          return {
+            items: [
+              createHeartbeatEntry({
+                id: 1,
+                messageId: "heartbeat-part:older",
+                role: "system",
+                scope: "request_aux",
+                partType: "systemPrompt",
+                createdAt: 100,
+                payload: "You are a Linux expert.",
+                text: "You are a Linux expert.",
+              }),
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        }
+        return {
+          items: [
+            createHeartbeatEntry({
+              id: 2,
+              messageId: "heartbeat-part:user",
+              role: "user",
+              createdAt: 120,
+              payload: { type: "text", content: 'scoreMap={"room":1}' },
+              text: 'scoreMap={"room":1}',
+            }),
+            createHeartbeatEntry({
+              id: 3,
+              messageId: "heartbeat-part:assistant",
+              role: "assistant",
+              createdAt: 140,
+              updatedAt: 145,
+              isComplete: false,
+              payload: { type: "text", content: "draft reply" },
+              text: "draft reply",
+            }),
+          ],
+          nextBefore: {
+            beforeTimeMs: 120,
+            beforeId: 2,
+          },
+          hasMoreBefore: true,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([2, 3]);
+
+    const older = await store.loadMoreHeartbeatInspection("i-1", 50);
+    expect(older.hasMore).toBe(false);
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3]);
+
+    expect(typeof onData).toBe("function");
+    onData?.({
+      version: 1,
+      eventId: 761,
+      timestamp: Date.now(),
+      type: "runtime.heartbeatPart",
+      sessionId: "i-1",
+      payload: {
+        entry: createHeartbeatEntry({
+          id: 3,
+          messageId: "heartbeat-part:assistant",
+          role: "assistant",
+          createdAt: 140,
+          updatedAt: 180,
+          isComplete: true,
+          payload: { type: "text", content: "final reply" },
+          text: "final reply",
+        }),
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 762,
+      timestamp: Date.now(),
+      type: "runtime.heartbeatPart",
+      sessionId: "i-1",
+      payload: {
+        entry: createHeartbeatEntry({
+          id: 4,
+          messageId: "heartbeat-part:compact",
+          role: "system",
+          partType: "compact",
+          createdAt: 190,
+          payload: {
+            type: "compact",
+            text: "Prompt window compacted.",
+          },
+          text: "Prompt window compacted.",
+        }),
+      },
+    });
+
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.id === 3)?.text).toBe("final reply");
+    expect(heartbeatCalls).toHaveLength(2);
     store.disconnect();
   });
 

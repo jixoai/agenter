@@ -157,4 +157,49 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       db.close();
     }
   });
+
+  test("Scenario: Given heartbeat-part and request-aux rows When paging multiple scopes together Then the merged page stays chronological", () => {
+    const db = createDb();
+    try {
+      db.upsertMessage({
+        messageId: "heartbeat-request-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 100,
+        updatedAt: 100,
+        parts: [{ partType: "text", payload: { type: "text", content: "context" }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "request-aux-config-1",
+        roundIndex: 0,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 110,
+        updatedAt: 110,
+        parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "heartbeat-response-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 120,
+        parts: [{ partType: "text", payload: { type: "text", content: "reply" }, isComplete: true }],
+      });
+
+      const page = db.pageMessagesByScopes(["heartbeat_part", "request_aux"], { limit: 10 });
+
+      expect(page.items.map((row) => row.messageId)).toEqual([
+        "heartbeat-request-1",
+        "request-aux-config-1",
+        "heartbeat-response-1",
+      ]);
+      expect(page.items.map((row) => row.scope)).toEqual(["heartbeat_part", "request_aux", "heartbeat_part"]);
+      expect(page.hasMoreBefore).toBeFalse();
+    } finally {
+      db.close();
+    }
+  });
 });

@@ -21,6 +21,7 @@ import type {
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
+  HeartbeatPartItem,
   HistoryPageCursor,
   MessageChannelEntry,
   MessageChannelGrantEntry,
@@ -94,6 +95,7 @@ const createInitialState = (): RuntimeClientState => ({
   schedulerLogsBySession: {},
   observabilityTracesBySession: {},
   apiCallsBySession: {},
+  heartbeatPartsBySession: {},
   modelCallsBySession: {},
   requestAuxBySession: {},
   modelCallDeltasBySession: {},
@@ -492,12 +494,14 @@ export class RuntimeStore {
   private readonly schedulerLogsAccessBySession = new Map<string, Map<number, number>>();
   private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
+  private readonly heartbeatPartsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly requestAuxAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallDeltasAccessBySession = new Map<string, Map<number, number>>();
   private readonly schedulerLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly observabilityTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly apiCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly heartbeatPartsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly modelCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly requestAuxBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly chatBeforeCursorBySession = new Map<string, HistoryCursorValue>();
@@ -2264,12 +2268,16 @@ export class RuntimeStore {
     this.schedulerLogsAccessBySession.clear();
     this.observabilityTracesAccessBySession.clear();
     this.apiCallsAccessBySession.clear();
+    this.heartbeatPartsAccessBySession.clear();
     this.modelCallsAccessBySession.clear();
+    this.requestAuxAccessBySession.clear();
     this.modelCallDeltasAccessBySession.clear();
     this.schedulerLogsBeforeCursorBySession.clear();
     this.observabilityTracesBeforeCursorBySession.clear();
     this.apiCallsBeforeCursorBySession.clear();
+    this.heartbeatPartsBeforeCursorBySession.clear();
     this.modelCallsBeforeCursorBySession.clear();
+    this.requestAuxBeforeCursorBySession.clear();
     this.chatBeforeCursorBySession.clear();
     this.chatCyclesBeforeCursorBySession.clear();
     this.terminalActivityBeforeCursorByKey.clear();
@@ -2390,6 +2398,12 @@ export class RuntimeStore {
         ),
         apiCallsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId]) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
+        ),
+        heartbeatPartsBySession: Object.fromEntries(
+          Object.entries(runtimes).map(([sessionId]) => [
+            sessionId,
+            previousState.heartbeatPartsBySession[sessionId] ?? [],
+          ]),
         ),
         modelCallsBySession: Object.fromEntries(
           Object.entries(runtimes).map(([sessionId]) => [
@@ -2613,19 +2627,25 @@ export class RuntimeStore {
     delete this.state.schedulerLogsBySession[sessionId];
     delete this.state.observabilityTracesBySession[sessionId];
     delete this.state.apiCallsBySession[sessionId];
+    delete this.state.heartbeatPartsBySession[sessionId];
     delete this.state.modelCallsBySession[sessionId];
+    delete this.state.requestAuxBySession[sessionId];
     delete this.state.modelCallDeltasBySession?.[sessionId];
     delete this.state.terminalActivityBySession[sessionId];
     delete this.state.apiCallRecordingBySession[sessionId];
     this.schedulerLogsAccessBySession.delete(sessionId);
     this.observabilityTracesAccessBySession.delete(sessionId);
     this.apiCallsAccessBySession.delete(sessionId);
+    this.heartbeatPartsAccessBySession.delete(sessionId);
     this.modelCallsAccessBySession.delete(sessionId);
+    this.requestAuxAccessBySession.delete(sessionId);
     this.modelCallDeltasAccessBySession.delete(sessionId);
     this.schedulerLogsBeforeCursorBySession.delete(sessionId);
     this.observabilityTracesBeforeCursorBySession.delete(sessionId);
     this.apiCallsBeforeCursorBySession.delete(sessionId);
+    this.heartbeatPartsBeforeCursorBySession.delete(sessionId);
     this.modelCallsBeforeCursorBySession.delete(sessionId);
+    this.requestAuxBeforeCursorBySession.delete(sessionId);
     this.chatBeforeCursorBySession.delete(sessionId);
     this.chatCyclesBeforeCursorBySession.delete(sessionId);
     for (const key of [...this.terminalActivityBeforeCursorByKey.keys()]) {
@@ -4677,6 +4697,49 @@ export class RuntimeStore {
     };
   }
 
+  async loadHeartbeatParts(sessionId: string, limit = 120): Promise<void> {
+    const output = await this.client.trpc.runtime.heartbeatPartsPage.query({ sessionId, limit });
+    const current = this.state.heartbeatPartsBySession[sessionId] ?? [];
+    this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
+      this.heartbeatPartsAccessBySession,
+      sessionId,
+      current,
+      output.items,
+      LOOPBUS_LRU_LIMIT,
+    );
+    this.updateBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, output.nextBefore);
+    this.emit();
+  }
+
+  async loadMoreHeartbeatParts(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
+    const current = this.state.heartbeatPartsBySession[sessionId] ?? [];
+    const before = this.resolveBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, current, (record) =>
+      this.toRecordHistoryCursor(record),
+    );
+    if (before === null) {
+      return { items: 0, hasMore: false };
+    }
+    const output = await this.client.trpc.runtime.heartbeatPartsPage.query({
+      sessionId,
+      before: before ?? undefined,
+      limit,
+    });
+    this.updateBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, output.nextBefore);
+    const next = this.applyLruEntries(
+      this.heartbeatPartsAccessBySession,
+      sessionId,
+      current,
+      output.items,
+      LOOPBUS_LRU_LIMIT,
+    );
+    this.state.heartbeatPartsBySession[sessionId] = next;
+    this.emit();
+    return {
+      items: Math.max(0, next.length - current.length),
+      hasMore: output.hasMoreBefore,
+    };
+  }
+
   async loadRequestAux(sessionId: string, limit = 120): Promise<void> {
     const output = await this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit });
     const current = this.state.requestAuxBySession[sessionId] ?? [];
@@ -4724,15 +4787,7 @@ export class RuntimeStore {
   }
 
   async loadMoreHeartbeatInspection(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
-    const [chat, requestAux, modelCalls] = await Promise.all([
-      this.loadMoreChatMessagesBefore(sessionId, limit),
-      this.loadMoreRequestAux(sessionId, limit),
-      this.loadMoreModelCalls(sessionId, limit),
-    ]);
-    return {
-      items: chat.items + requestAux.items + modelCalls.items,
-      hasMore: chat.hasMore || requestAux.hasMore || modelCalls.hasMore,
-    };
+    return await this.loadMoreHeartbeatParts(sessionId, limit);
   }
 
   async loadMoreApiCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
@@ -4953,11 +5008,14 @@ export class RuntimeStore {
       delete this.state.schedulerLogsBySession[payload.sessionId];
       delete this.state.observabilityTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
+      delete this.state.heartbeatPartsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
       delete this.state.requestAuxBySession[payload.sessionId];
       delete this.state.modelCallDeltasBySession?.[payload.sessionId];
       delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
+      this.heartbeatPartsAccessBySession.delete(payload.sessionId);
+      this.heartbeatPartsBeforeCursorBySession.delete(payload.sessionId);
       this.modelCallDeltasAccessBySession.delete(payload.sessionId);
       this.requestAuxAccessBySession.delete(payload.sessionId);
       this.requestAuxBeforeCursorBySession.delete(payload.sessionId);
@@ -5086,6 +5144,7 @@ export class RuntimeStore {
       event.type === "runtime.scheduler.log" ||
       event.type === "runtime.observability.trace" ||
       event.type === "runtime.scheduler.signal" ||
+      event.type === "runtime.heartbeatPart" ||
       event.type === "runtime.modelCall" ||
       event.type === "runtime.modelCall.delta" ||
       event.type === "runtime.apiCall" ||
@@ -5280,6 +5339,16 @@ export class RuntimeStore {
           [payload.entry],
           LOOPBUS_LRU_LIMIT,
         );
+      } else if (event.type === "runtime.heartbeatPart") {
+        const payload = event.payload as { entry: HeartbeatPartItem };
+        const current = this.state.heartbeatPartsBySession[sessionId] ?? [];
+        this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
+          this.heartbeatPartsAccessBySession,
+          sessionId,
+          current,
+          [payload.entry],
+          LOOPBUS_LRU_LIMIT,
+        );
       } else if (event.type === "runtime.modelCall") {
         const payload = event.payload as { entry: ModelCallItem };
         const current = this.state.modelCallsBySession[sessionId] ?? [];
@@ -5431,6 +5500,7 @@ export class RuntimeStore {
     this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
+    this.state.heartbeatPartsBySession[sessionId] = this.state.heartbeatPartsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.modelCallDeltasBySession ??= {};
@@ -5457,6 +5527,7 @@ export class RuntimeStore {
     this.state.attentionBySession[sessionId] =
       attention ?? this.state.attentionBySession[sessionId] ?? createEmptyAttentionState();
     this.state.tasksBySession[sessionId] = [];
+    this.state.heartbeatPartsBySession[sessionId] = [];
     this.state.apiCallRecordingBySession[sessionId] = {
       enabled: false,
       refCount: 0,
@@ -5574,6 +5645,7 @@ export class RuntimeStore {
     this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
+    this.state.heartbeatPartsBySession[sessionId] = this.state.heartbeatPartsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
     this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.apiCallRecordingBySession[sessionId] = runtime.apiCallRecording;
@@ -5584,9 +5656,10 @@ export class RuntimeStore {
 
   private async hydrateObservabilityArtifacts(sessionId: string): Promise<void> {
     try {
-      const [logs, traces, modelCalls, requestAux, apiCalls] = await Promise.all([
+      const [logs, traces, heartbeatParts, modelCalls, requestAux, apiCalls] = await Promise.all([
         this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.heartbeatPartsPage.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
@@ -5603,6 +5676,13 @@ export class RuntimeStore {
         sessionId,
         [],
         traces.items,
+        LOOPBUS_LRU_LIMIT,
+      );
+      this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
+        this.heartbeatPartsAccessBySession,
+        sessionId,
+        [],
+        heartbeatParts.items,
         LOOPBUS_LRU_LIMIT,
       );
       this.state.modelCallsBySession[sessionId] = this.applyLruEntries(
@@ -5628,6 +5708,7 @@ export class RuntimeStore {
       );
       this.updateBeforeCursor(this.schedulerLogsBeforeCursorBySession, sessionId, logs.nextBefore);
       this.updateBeforeCursor(this.observabilityTracesBeforeCursorBySession, sessionId, traces.nextBefore);
+      this.updateBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, heartbeatParts.nextBefore);
       this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, modelCalls.nextBefore);
       this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, requestAux.nextBefore);
       this.updateBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, apiCalls.nextBefore);

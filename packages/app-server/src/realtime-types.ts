@@ -38,6 +38,7 @@ export type RuntimeEventType =
   | "runtime.scheduler.log"
   | "runtime.observability.trace"
   | "runtime.scheduler.signal"
+  | "runtime.heartbeatPart"
   | "runtime.modelCall"
   | "runtime.modelCall.delta"
   | "runtime.apiCall"

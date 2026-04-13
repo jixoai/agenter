@@ -94,6 +94,13 @@ import {
   type ChatCycle,
   type ChatCycleStatus,
 } from "./chat-cycles";
+import {
+  HEARTBEAT_MESSAGE_PART_SCOPE,
+  buildHeartbeatResponseMessageId,
+  toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
+  toHeartbeatRequestMessageUpsertInputs,
+  toHeartbeatResponseMessageUpsertInput,
+} from "./heartbeat-message-parts";
 import type { LoopBusInput, LoopBusPhase, LoopBusWakeSource } from "./loop-bus";
 import type { LoopBusKernelSnapshot, LoopBusKernelState } from "./loopbus-kernel";
 import { createInitialLoopKernelState, createLoopStatePatch, hashLoopState } from "./loopbus-kernel";
@@ -1095,6 +1102,7 @@ export interface RuntimeEventMap {
   schedulerLog: { entry: SessionDbLoopbusStateLogRecord };
   observabilityTrace: { entry: SessionDbLoopbusTraceRecord };
   schedulerSignal: { kind: LoopInputKind; version: number; timestamp: number };
+  heartbeatPart: { entry: SessionMessageRecord };
   modelCall: { entry: SessionModelCallRecord };
   modelCallDelta: { entry: SessionModelCallDeltaRecord };
   apiCall: { entry: SessionDbApiCallRecord };
@@ -3636,6 +3644,54 @@ export class SessionRuntime {
     };
   }
 
+  private buildAttentionItemsInput(selected: readonly AttentionActiveContextMatch[]): LoopBusInput | null {
+    const primary = selected[0];
+    if (!primary) {
+      return null;
+    }
+    const protocolState = this.buildAttentionProtocolState();
+    const items = selected.flatMap((match) => {
+      const cursorCommitId = protocolState.get(match.contextId)?.lastSeenCommitId ?? null;
+      return this.selectAttentionProtocolCommits(match, cursorCommitId).map((commit) => ({
+        contextId: match.contextId,
+        commit,
+      }));
+    });
+    if (items.length === 0) {
+      return null;
+    }
+    const attentionContextIds = [...new Set(items.map((item) => item.contextId))];
+    const attentionCommitRefs = items.map((item) => ({
+      contextId: item.contextId,
+      commitId: item.commit.commitId,
+    }));
+    const channel = this.resolveMessageChannelForContext(primary.contextId);
+    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
+    const primaryUpdatedAt = Date.parse(primary.context.updatedAt);
+    const latestCreatedAt = items.reduce(
+      (maxCreatedAt, item) => Math.max(maxCreatedAt, Date.parse(item.commit.createdAt)),
+      Number.isFinite(primaryUpdatedAt) ? primaryUpdatedAt : 0,
+    );
+    return {
+      name: `AttentionItems-${primary.contextId}`,
+      role: "user",
+      type: "text",
+      source: "attention",
+      text: this.serializeAttentionItemsInput(items),
+      meta: {
+        attentionContextId: primary.contextId,
+        attentionContextIds: serializeAttentionContextIds(attentionContextIds) ?? null,
+        attentionCommitRefs: serializeAttentionCommitRefs(attentionCommitRefs) ?? null,
+        attentionHeadCommitId: primary.context.headCommitId,
+        owner: primary.context.owner,
+        createdAt: latestCreatedAt,
+        attentionProtocolKind: "items",
+        ...(channel ? { chatFocused: channel.focused } : {}),
+        ...(chatId ? { chatId } : {}),
+      },
+    };
+  }
+
   private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
     const chatId = this.getMessageSourceChannelId(request.ref);
     const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
@@ -5467,6 +5523,16 @@ export class SessionRuntime {
     return this.sessionDb.pageMessagesByScope("heartbeat", input);
   }
 
+  pageHeartbeatParts(input?: {
+    before?: SessionDbReverseTimeCursor;
+    limit?: number;
+  }): SessionDbReversePage<SessionMessageRecord> {
+    if (!this.sessionDb) {
+      return { items: [], nextBefore: null, hasMoreBefore: false };
+    }
+    return this.sessionDb.pageMessagesByScopes([HEARTBEAT_MESSAGE_PART_SCOPE, "request_aux"], input);
+  }
+
   listChatMessagesBefore(beforeId: number, limit = 200): Array<SessionDbChatMessageRecord> {
     if (!this.sessionDb) {
       return [];
@@ -6924,6 +6990,10 @@ export class SessionRuntime {
       outputs.push(bootstrapInput);
       this.attentionFactsSentVersion = this.attentionFactsVersion;
     }
+    const itemsInput = this.buildAttentionItemsInput(selected);
+    if (itemsInput) {
+      outputs.push(itemsInput);
+    }
     return outputs.length > 0 ? outputs : undefined;
   }
 
@@ -7437,6 +7507,15 @@ export class SessionRuntime {
         compactTrigger: compactTrigger ?? null,
       }),
     );
+    this.upsertHeartbeatPartMessage(
+      toHeartbeatPartCompactSeparatorUpsertInput({
+        aiCallId: modelCall.id,
+        timestamp: completedAt,
+        callRoundIndex: modelCall.roundIndex,
+        currentRoundIndex,
+        compactTrigger: compactTrigger ?? null,
+      }),
+    );
   }
 
   private appendTerminalActivity(input: {
@@ -7929,7 +8008,7 @@ export class SessionRuntime {
         if (JSON.stringify(latestPayload) === JSON.stringify(entry.payload ?? null)) {
           return latest?.messageId ?? "";
         }
-        return sessionDb.upsertMessage({
+        const record = sessionDb.upsertMessage({
           messageId: `request_aux:${entry.partType}:${input.timestamp}:${createId()}`,
           roundIndex: input.request.roundIndex,
           scope: "request_aux",
@@ -7943,9 +8022,70 @@ export class SessionRuntime {
               isComplete: true,
             },
           ],
-        }).messageId;
+        });
+        this.emitHeartbeatPart(record);
+        return record.messageId;
       })
       .filter((messageId) => messageId.length > 0);
+  }
+
+  private emitHeartbeatPart(entry: SessionMessageRecord): void {
+    this.emit("heartbeatPart", { entry });
+  }
+
+  private upsertHeartbeatPartMessage(input: SessionMessageUpsertInput): SessionMessageRecord | null {
+    if (!this.sessionDb) {
+      return null;
+    }
+    const record = this.sessionDb.upsertMessage(input);
+    this.emitHeartbeatPart(record);
+    return record;
+  }
+
+  private persistHeartbeatRequestMessages(input: {
+    aiCallId: number;
+    timestamp: number;
+    request: AgentModelCallRecord["request"];
+  }): string[] {
+    const entries = toHeartbeatRequestMessageUpsertInputs({
+      aiCallId: input.aiCallId,
+      roundIndex: input.request.roundIndex,
+      createdAt: input.timestamp,
+      messages: input.request.messages,
+    });
+    for (const entry of entries) {
+      this.upsertHeartbeatPartMessage(entry);
+    }
+    return entries.map((entry) => entry.messageId);
+  }
+
+  private persistHeartbeatResponseMessage(input: {
+    aiCallId: number;
+    timestamp: number;
+    roundIndex: number;
+    isComplete: boolean;
+  }): string[] {
+    if (!this.activeModelResponseDraft || !this.sessionDb) {
+      return [];
+    }
+    const messageId = buildHeartbeatResponseMessageId(input.aiCallId);
+    const existing = this.sessionDb.getMessageById(messageId);
+    const upsertInput = toHeartbeatResponseMessageUpsertInput({
+      aiCallId: input.aiCallId,
+      roundIndex: input.roundIndex,
+      createdAt: existing?.createdAt ?? input.timestamp,
+      updatedAt: input.timestamp,
+      isComplete: input.isComplete,
+      response: {
+        assistant: this.activeModelResponseDraft.assistant ? { ...this.activeModelResponseDraft.assistant } : undefined,
+        toolTrace: this.activeModelResponseDraft.toolTrace.map((entry) => ({ ...entry })),
+      },
+    });
+    if (!upsertInput) {
+      return [];
+    }
+    const record = this.upsertHeartbeatPartMessage(upsertInput);
+    return record ? [record.messageId] : [];
   }
 
   private upsertActiveModelToolTrace(input: {
@@ -8015,6 +8155,18 @@ export class SessionRuntime {
       status: "running",
       isComplete: false,
     });
+    const responseMessageIds = this.persistHeartbeatResponseMessage({
+      aiCallId: this.activeModelCallId,
+      timestamp,
+      roundIndex: this.sessionDb.getHead().currentRoundIndex,
+      isComplete: false,
+    });
+    if (responseMessageIds.length > 0) {
+      this.sessionDb.updateAiCall(this.activeModelCallId, {
+        responseMessageIds,
+        updatedAt: timestamp,
+      });
+    }
   }
 
   private handleAssistantStreamUpdate(input: AssistantStreamUpdate): void {
@@ -8226,13 +8378,6 @@ export class SessionRuntime {
             parentSpanId: traceRow.parentSpanId ?? null,
           };
     const normalizedRequest = this.normalizePersistedModelRequest(record.request);
-    const promptWindowMessages = this.sessionDb
-      .listMessagesByScope("prompt_window", {
-        windowId: normalizedRequest.promptWindowStateId,
-        limit: 400,
-      })
-      .filter((message) => message.parts[0]?.partType !== PROMPT_WINDOW_STATE_PART_TYPE)
-      .map((message) => message.messageId);
     const requestMeta = {
       ...(normalizedRequest.meta ?? {}),
       cycleId: this.activeCycleId,
@@ -8250,6 +8395,21 @@ export class SessionRuntime {
       timestamp: record.timestamp,
       request: normalizedRequest,
     });
+    if (record.status !== "running" && record.response) {
+      this.activeModelResponseDraft ??= { toolTrace: [] };
+      if (record.response.assistant) {
+        this.activeModelResponseDraft.assistant = {
+          ...(this.activeModelResponseDraft.assistant ?? {}),
+          ...record.response.assistant,
+        };
+      }
+      if (record.response.usage) {
+        this.activeModelResponseDraft.usage = { ...record.response.usage };
+      }
+      if (record.response.toolTrace) {
+        this.activeModelResponseDraft.toolTrace = record.response.toolTrace.map((entry) => ({ ...entry }));
+      }
+    }
     const existingModelCallId = this.activeModelCallId ?? null;
     const modelCall =
       record.status === "running" || existingModelCallId === null
@@ -8269,7 +8429,7 @@ export class SessionRuntime {
             },
             error: record.error,
             outcome: record.outcome,
-            requestMessageIds: promptWindowMessages,
+            requestMessageIds: [],
             responseMessageIds: [],
             auxiliaryMessageIds,
             isComplete: record.status !== "running",
@@ -8290,11 +8450,40 @@ export class SessionRuntime {
             outcome: record.outcome,
             completedAt: record.completedAt ?? null,
             status: record.status,
-            requestMessageIds: promptWindowMessages,
             auxiliaryMessageIds,
             updatedAt: record.timestamp,
             isComplete: true,
           });
+    const requestMessageIds =
+      record.status === "running" || modelCall.requestMessageIds.length === 0
+        ? this.persistHeartbeatRequestMessages({
+            aiCallId: modelCall.id,
+            timestamp: modelCall.createdAt,
+            request: normalizedRequest,
+          })
+        : modelCall.requestMessageIds;
+    const responseMessageIds =
+      record.status === "running"
+        ? modelCall.responseMessageIds
+        : this.persistHeartbeatResponseMessage({
+            aiCallId: modelCall.id,
+            timestamp: record.completedAt ?? record.timestamp,
+            roundIndex: normalizedRequest.roundIndex,
+            isComplete: true,
+          });
+    const linkedModelCall = this.sessionDb.updateAiCall(modelCall.id, {
+      requestMessageIds,
+      responseMessageIds,
+      auxiliaryMessageIds,
+      updatedAt: record.timestamp,
+      ...(record.status === "running"
+        ? {}
+        : {
+            status: record.status,
+            completedAt: record.completedAt ?? null,
+            isComplete: true,
+          }),
+    });
     if (traceRow) {
       this.upsertTraceRow({
         cycleId: traceRow.cycleId,
@@ -8306,22 +8495,23 @@ export class SessionRuntime {
         status: traceRow.status,
         startedAt: traceRow.startedAt,
         endedAt: traceRow.endedAt,
-        refs: mergeTraceRefs(traceRow.refs, [toModelCallTraceRef(modelCall.id)]),
+        refs: mergeTraceRefs(traceRow.refs, [toModelCallTraceRef(linkedModelCall.id)]),
         links: traceRow.links,
         events: traceRow.events,
         attributes: {
           ...traceRow.attributes,
-          provider: modelCall.provider,
-          model: modelCall.model,
+          provider: linkedModelCall.provider,
+          model: linkedModelCall.model,
         },
         outcome: record.outcome ?? traceRow.outcome,
       });
     }
-    this.activeModelCallId = record.status === "running" ? modelCall.id : (this.activeModelCallId ?? modelCall.id);
+    this.activeModelCallId =
+      record.status === "running" ? linkedModelCall.id : (this.activeModelCallId ?? linkedModelCall.id);
     if (this.activeCycleId !== null) {
       const frame = this.attentionCycleFrames.get(this.activeCycleId);
-      if (frame && !frame.modelCallIds.includes(modelCall.id)) {
-        frame.modelCallIds = [...frame.modelCallIds, modelCall.id];
+      if (frame && !frame.modelCallIds.includes(linkedModelCall.id)) {
+        frame.modelCallIds = [...frame.modelCallIds, linkedModelCall.id];
         frame.activeContextIds = this.collectActiveAttentionContextIds();
         this.upsertAttentionCycleFrame(frame);
       }
@@ -8361,11 +8551,11 @@ export class SessionRuntime {
       }
     }
     this.updateActiveCycle({
-      modelCallId: modelCall.id,
-      status: modelCall.status === "error" ? "error" : this.activeCycle?.status,
+      modelCallId: linkedModelCall.id,
+      status: linkedModelCall.status === "error" ? "error" : this.activeCycle?.status,
     });
     if (record.status === "done") {
-      this.recordHeartbeatCompactBoundary(modelCall);
+      this.recordHeartbeatCompactBoundary(linkedModelCall);
     }
     if (record.status === "error") {
       this.setProjectionStage("error");
@@ -8379,7 +8569,7 @@ export class SessionRuntime {
     } else if (record.status === "done" && (this.loopKernelSnapshot?.state.lastError ?? null) !== null) {
       this.setLoopKernelLastError(null);
     }
-    this.emit("modelCall", { entry: projectAiCallToModelCall(modelCall) });
+    this.emit("modelCall", { entry: projectAiCallToModelCall(linkedModelCall) });
     if (record.response?.toolTrace && traceRow) {
       for (const tool of record.response.toolTrace) {
         this.upsertTraceRow({
@@ -8392,7 +8582,7 @@ export class SessionRuntime {
           status: tool.error ? "error" : "done",
           startedAt: Number.isFinite(tool.startedAt) ? tool.startedAt : record.timestamp,
           endedAt: Number.isFinite(tool.finishedAt) ? tool.finishedAt : record.timestamp,
-          refs: mergeTraceRefs(this.buildCycleTraceRefs(this.activeCycleId), [toModelCallTraceRef(modelCall.id)]),
+          refs: mergeTraceRefs(this.buildCycleTraceRefs(this.activeCycleId), [toModelCallTraceRef(linkedModelCall.id)]),
           links: [
             {
               kind: "child_of",

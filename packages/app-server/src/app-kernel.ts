@@ -70,6 +70,7 @@ import {
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
+import { HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import {
   buildWorkspaceAvatarCatalogEntry,
   copyAvatarIntoWorkspace,
@@ -1896,6 +1897,18 @@ export class AppKernel {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
     return this.readChatMessagesPageFromDb(session.sessionRoot, sessionId, input);
+  }
+
+  pageHeartbeatParts(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return emptyReversePage();
+    }
+    return this.readHeartbeatPartsPageFromDb(session.sessionRoot, input);
   }
 
   pageRequestAuxMessages(
@@ -4300,6 +4313,22 @@ export class AppKernel {
     }
   }
 
+  private readHeartbeatPartsPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return emptyReversePage();
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.pageMessagesByScopes([HEARTBEAT_MESSAGE_PART_SCOPE, "request_aux"], input);
+    } finally {
+      db.close();
+    }
+  }
+
   private readApiCallsPageFromDb(
     sessionRoot: string,
     input?: { before?: ReverseTimeCursor; limit?: number },
@@ -4390,6 +4419,9 @@ export class AppKernel {
         return;
       case "schedulerSignal":
         this.emit("runtime.scheduler.signal", event.payload, sessionId, event.timestamp);
+        return;
+      case "heartbeatPart":
+        this.emit("runtime.heartbeatPart", event.payload, sessionId, event.timestamp);
         return;
       case "modelCall":
         this.emit("runtime.modelCall", event.payload, sessionId, event.timestamp);

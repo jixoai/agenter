@@ -35,9 +35,7 @@
 
 	const controller = getAppControllerContext();
 	const pendingCycleLoads = new SvelteSet<string>();
-	const pendingMessageLoads = new SvelteSet<string>();
 	const attemptedCycleLoads = new SvelteSet<string>();
-	const attemptedMessageLoads = new SvelteSet<string>();
 	let shellHydrationVersion = 0;
 	let shellHydrating = $state(true);
 	let shellHydrationError = $state<string | null>(null);
@@ -48,10 +46,7 @@
 	const channels = $derived(
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
-	const messages = $derived(controller.runtimeState.chatsBySession[sessionId] ?? runtime?.chatMessages ?? []);
-	const requestAux = $derived(controller.runtimeState.requestAuxBySession[sessionId] ?? []);
-	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
-	const modelCallDeltas = $derived(controller.runtimeState.modelCallDeltasBySession?.[sessionId] ?? []);
+	const heartbeatEntries = $derived(controller.runtimeState.heartbeatPartsBySession[sessionId] ?? []);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
 	const notifications = $derived(
 		controller.runtimeState.notifications.filter((notification) => notification.sessionId === sessionId),
@@ -126,14 +121,6 @@
 		if (!session) {
 			return;
 		}
-		if (attemptedMessageLoads.has(session.id) || pendingMessageLoads.has(session.id)) {
-			return;
-		}
-		attemptedMessageLoads.add(session.id);
-		pendingMessageLoads.add(session.id);
-		void controller.runtimeStore.loadChatMessages(session.id, 160).finally(() => {
-			pendingMessageLoads.delete(session.id);
-		});
 	});
 </script>
 
@@ -211,10 +198,7 @@
 				{runtime}
 				{channels}
 				{notifications}
-				{messages}
-				{requestAux}
-				{modelCalls}
-				{modelCallDeltas}
+				{heartbeatEntries}
 				onOpenRoom={(chatId) => void openRoom(chatId)}
 				onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
 				onSetRoomVisibility={async (chatId, focused) => {

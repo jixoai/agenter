@@ -74,6 +74,7 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   globalTerminalActivityById: {},
   schedulerLogsBySession: {},
   observabilityTracesBySession: {},
+  heartbeatPartsBySession: {},
   modelCallsBySession: {},
   requestAuxBySession: {},
   modelCallDeltasBySession: {},

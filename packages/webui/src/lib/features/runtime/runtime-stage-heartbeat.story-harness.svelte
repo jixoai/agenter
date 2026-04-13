@@ -1,51 +1,31 @@
 <script lang="ts">
-	import type { ModelCallDeltaItem, ModelCallItem, RequestAuxItem, RuntimeChatMessage } from '@agenter/client-sdk';
+	import type { HeartbeatPartItem } from '@agenter/client-sdk';
 
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 
 	let {
-		initialMessages,
-		initialRequestAux = [],
-		initialModelCalls = [],
-		modelCallDeltas = [],
-		olderMessages = [],
-		olderRequestAux = [],
-		olderModelCalls = [],
+		initialEntries,
+		olderEntries = [],
 	}: {
-		initialMessages: RuntimeChatMessage[];
-		initialRequestAux?: RequestAuxItem[];
-		initialModelCalls?: ModelCallItem[];
-		modelCallDeltas?: ModelCallDeltaItem[];
-		olderMessages?: RuntimeChatMessage[];
-		olderRequestAux?: RequestAuxItem[];
-		olderModelCalls?: ModelCallItem[];
+		initialEntries: HeartbeatPartItem[];
+		olderEntries?: HeartbeatPartItem[];
 	} = $props();
 
-	let messages = $state<RuntimeChatMessage[]>([]);
-	let requestAux = $state<RequestAuxItem[]>([]);
-	let modelCalls = $state<ModelCallItem[]>([]);
+	let entries = $state<HeartbeatPartItem[]>([]);
 	let olderLoaded = $state(false);
 
 	$effect(() => {
-		messages = [...initialMessages];
-		requestAux = [...initialRequestAux];
-		modelCalls = [...initialModelCalls];
+		entries = [...initialEntries];
 		olderLoaded = false;
 	});
 
 	const handleLoadOlder = async (): Promise<{ items: number; hasMore: boolean }> => {
-		if (olderLoaded) {
+		if (olderLoaded || olderEntries.length === 0) {
 			return { items: 0, hasMore: false };
 		}
-		const addedItems = olderMessages.length + olderRequestAux.length + olderModelCalls.length;
-		if (addedItems === 0) {
-			return { items: 0, hasMore: false };
-		}
-		messages = [...olderMessages, ...messages];
-		requestAux = [...olderRequestAux, ...requestAux];
-		modelCalls = [...olderModelCalls, ...modelCalls];
+		entries = [...olderEntries, ...entries];
 		olderLoaded = true;
-		return { items: addedItems, hasMore: false };
+		return { items: olderEntries.length, hasMore: false };
 	};
 </script>
 
@@ -53,5 +33,5 @@
 	class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-story"
 >
-	<RuntimeStageHeartbeat {messages} {requestAux} {modelCalls} {modelCallDeltas} onLoadOlder={handleLoadOlder} />
+	<RuntimeStageHeartbeat {entries} onLoadOlder={handleLoadOlder} />
 </div>
