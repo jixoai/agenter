@@ -102,6 +102,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 - 默认工程实践是 BDD-first；TDD 是落地手段，不是替代行为描述。
 - 关键链路改动必须有 integration 或 e2e 证据；WebUI 复杂交互优先 Storybook DOM contract。
+- `@agenter/webui` 的 Storybook DOM contract 与 `storybook:build` 属于同一条工具链合同；静态 Storybook 构建不得在 DOM tests 仍然通过时继续处于崩溃状态。
 - 真实流程优先于主观推断；对模型、终端、runtime 的判断必须先跑证据链。
 - durable 行为变化的完成标准包含：实现、测试、SPEC/AGENTS 同步，而不是只看代码通过。
 
