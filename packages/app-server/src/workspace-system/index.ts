@@ -1,10 +1,14 @@
 export { executeWorkspaceBash, type WorkspaceBashExecInput, type WorkspaceBashExecResult } from "./exec";
+export { GrantedWorkspaceFs, type GrantedWorkspaceFsOptions } from "./granted-fs";
 export {
-  executeRootWorkspaceBash,
-  type RootWorkspaceBashExecInput,
-  type RootWorkspaceBashExecResult,
-  type RootWorkspaceMountInput,
-} from "./root-exec";
+  compileWorkspaceGrantRules,
+  hasWorkspaceGrantRootAccess,
+  normalizeWorkspaceGrantPattern,
+  normalizeWorkspaceGrantSubjectPath,
+  resolveWorkspaceGrantMode,
+  resolveWorkspaceGrantModeFromAbsolutePath,
+  sortWorkspaceGrantRecords,
+} from "./grants";
 export {
   normalizeWorkspaceRuntimePath,
   resolveWorkspaceAvatarAliasRoot,
@@ -19,10 +23,16 @@ export {
   resolveWorkspaceSystemRoot,
   resolveWorkspaceToolCommandName,
 } from "./paths";
+export {
+  executeRootWorkspaceBash,
+  type RootWorkspaceBashExecInput,
+  type RootWorkspaceBashExecResult,
+  type RootWorkspaceMountInput,
+} from "./root-exec";
 export { WorkspaceSystemStore, type WorkspaceSystemStoreOptions } from "./store";
 export type {
-  WorkspaceAssetRoots,
   WorkspaceAssetKind,
+  WorkspaceAssetRoots,
   WorkspaceExecProfileRecord,
   WorkspaceGrantInput,
   WorkspaceGrantMode,

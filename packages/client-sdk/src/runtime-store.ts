@@ -1,13 +1,14 @@
 import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
+  ApiCallItem,
+  AttentionQueryItem,
   AuthServiceInfoOutput,
   AuthSessionOutput,
-  AttentionQueryItem,
-  ApiCallItem,
   CachedResourceState,
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
+  GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomAssetEntry,
   GlobalRoomEntry,
@@ -15,9 +16,8 @@ import type {
   GlobalRoomGrantIssueOutput,
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
-  GlobalAvatarCatalogEntry,
-  GlobalTerminalApprovalRequest,
   GlobalTerminalActorId,
+  GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
@@ -30,24 +30,23 @@ import type {
   RuntimeChatCycle,
   RuntimeChatMessage,
   RuntimeClientState,
+  RuntimeEvent,
+  RuntimeSchedulerContainmentState,
+  RuntimeSnapshotEntry,
   RuntimeWorkspaceAssetRootsOutput,
   RuntimeWorkspaceExecOutput,
   RuntimeWorkspaceGrantEntry,
   RuntimeWorkspaceMountEntry,
-  TerminalActivityItem,
-  ProfileServiceInfoOutput,
-  RuntimeEvent,
-  RuntimeSchedulerContainmentState,
-  RuntimeSnapshotEntry,
   SessionEntry,
+  TerminalActivityItem,
   UploadedSessionAsset,
-  WorkspacePathSearchOutput,
   WorkspaceAvatarCatalogEntry,
-  WorkspaceWorkbenchPreviewOutput,
-  WorkspaceWorkbenchTreeOutput,
+  WorkspacePathSearchOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
+  WorkspaceWorkbenchPreviewOutput,
+  WorkspaceWorkbenchTreeOutput,
 } from "./types";
 
 const createInitialState = (): RuntimeClientState => ({
@@ -264,11 +263,8 @@ const mergeTerminalSnapshot = (
 const normalizeOptionalAccessToken = (value: string | null | undefined): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
-const buildGlobalRoomReadInflightKey = (input: {
-  chatId: string;
-  accessToken?: string;
-  messageId?: string;
-}): string => [input.chatId, input.accessToken ?? "", input.messageId ?? ""].join("\u0000");
+const buildGlobalRoomReadInflightKey = (input: { chatId: string; accessToken?: string; messageId?: string }): string =>
+  [input.chatId, input.accessToken ?? "", input.messageId ?? ""].join("\u0000");
 
 const sameActorIdSet = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean => {
   if ((left?.length ?? 0) !== (right?.length ?? 0)) {
@@ -305,12 +301,12 @@ const mergeGlobalTerminalEntry = (
 const isTrpcErrorCode = (error: unknown, code: string): boolean =>
   Boolean(
     error &&
-      typeof error === "object" &&
-      "data" in error &&
-      error.data &&
-      typeof error.data === "object" &&
-      "code" in error.data &&
-      error.data.code === code,
+    typeof error === "object" &&
+    "data" in error &&
+    error.data &&
+    typeof error.data === "object" &&
+    "code" in error.data &&
+    error.data.code === code,
   );
 
 const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
@@ -784,9 +780,7 @@ export class RuntimeStore {
   private reconcileGlobalAvatarCatalogEntry(entry: GlobalAvatarCatalogEntry): void {
     this.setGlobalAvatarCatalogState((resource) => {
       const nextData = resource.data.filter(
-        (candidate) =>
-          candidate.avatarPrincipalId !== entry.avatarPrincipalId &&
-          candidate.nickname !== entry.nickname,
+        (candidate) => candidate.avatarPrincipalId !== entry.avatarPrincipalId && candidate.nickname !== entry.nickname,
       );
       nextData.push(entry);
       return {
@@ -856,7 +850,10 @@ export class RuntimeStore {
   }
 
   private ensureWorkspaceAvatarCatalogState(workspacePath: string): CachedResourceState<WorkspaceAvatarCatalogEntry[]> {
-    return this.state.workspaceAvatarCatalogByPath[workspacePath] ?? createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
+    return (
+      this.state.workspaceAvatarCatalogByPath[workspacePath] ??
+      createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([])
+    );
   }
 
   private setWorkspaceAvatarCatalogState(
@@ -907,18 +904,18 @@ export class RuntimeStore {
       return { applied: false, optimisticNickname };
     }
 
-	    const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
-	    const sameNicknameCopy = input.sourceAvatar === optimisticNickname;
-	    const optimisticEntry: WorkspaceAvatarCatalogEntry = {
-	      avatarPrincipalId: sameNicknameCopy ? (sourceEntry?.avatarPrincipalId ?? null) : null,
-	      runtimeId: sameNicknameCopy ? (sourceEntry?.runtimeId ?? optimisticNickname) : optimisticNickname,
-	      nickname: optimisticNickname,
-	      displayName: sameNicknameCopy ? (sourceEntry?.displayName ?? null) : null,
-	      classify: sameNicknameCopy ? (sourceEntry?.classify ?? null) : null,
-	      iconUrl: sameNicknameCopy ? (sourceEntry?.iconUrl ?? null) : null,
-	      defaultAvatar: optimisticNickname === "default",
-	      sourceScope: "global",
-	      globalAvailable: sameNicknameCopy ? (sourceEntry?.globalAvailable ?? true) : false,
+    const sourceEntry = resource.data.find((entry) => entry.nickname === input.sourceAvatar);
+    const sameNicknameCopy = input.sourceAvatar === optimisticNickname;
+    const optimisticEntry: WorkspaceAvatarCatalogEntry = {
+      avatarPrincipalId: sameNicknameCopy ? (sourceEntry?.avatarPrincipalId ?? null) : null,
+      runtimeId: sameNicknameCopy ? (sourceEntry?.runtimeId ?? optimisticNickname) : optimisticNickname,
+      nickname: optimisticNickname,
+      displayName: sameNicknameCopy ? (sourceEntry?.displayName ?? null) : null,
+      classify: sameNicknameCopy ? (sourceEntry?.classify ?? null) : null,
+      iconUrl: sameNicknameCopy ? (sourceEntry?.iconUrl ?? null) : null,
+      defaultAvatar: optimisticNickname === "default",
+      sourceScope: "global",
+      globalAvailable: sameNicknameCopy ? (sourceEntry?.globalAvailable ?? true) : false,
       workspacePrivateSlotReady: true,
       globalPath: sameNicknameCopy ? (sourceEntry?.globalPath ?? "") : "",
       workspacePrivatePath: "",
@@ -1019,7 +1016,9 @@ export class RuntimeStore {
   }
 
   private ensureGlobalRoomSnapshotState(chatId: string): CachedResourceState<GlobalRoomSnapshotOutput | null> {
-    return this.state.globalRoomSnapshotsById[chatId] ?? createCachedResourceState<GlobalRoomSnapshotOutput | null>(null);
+    return (
+      this.state.globalRoomSnapshotsById[chatId] ?? createCachedResourceState<GlobalRoomSnapshotOutput | null>(null)
+    );
   }
 
   private setGlobalRoomSnapshotState(
@@ -1063,7 +1062,9 @@ export class RuntimeStore {
     return this.state.globalRooms.data.find((room) => room.chatId === chatId) ?? null;
   }
 
-  private reconcileLatestVisibleRoomMessageReadState(entry: Pick<GlobalRoomEntry, "chatId" | "readProgress" | "readStates">): void {
+  private reconcileLatestVisibleRoomMessageReadState(
+    entry: Pick<GlobalRoomEntry, "chatId" | "readProgress" | "readStates">,
+  ): void {
     const latestVisibleMessageId = entry.readProgress?.latestVisibleMessageId;
     const latestVisibleMessageRowId = entry.readProgress?.latestVisibleMessageRowId ?? 0;
     const trackedStates = (entry.readStates ?? []).filter((state) => state.trackedByLatestVisible);
@@ -1165,9 +1166,9 @@ export class RuntimeStore {
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
       accessToken:
-        normalizeOptionalAccessToken(input.accessToken)
-        ?? normalizeOptionalAccessToken(previous.accessToken)
-        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
+        normalizeOptionalAccessToken(input.accessToken) ??
+        normalizeOptionalAccessToken(previous.accessToken) ??
+        normalizeOptionalAccessToken(fromCatalog?.accessToken),
       limit: input.limit ?? previous.limit ?? 120,
     };
     this.globalRoomSnapshotQueryById.set(chatId, next);
@@ -1196,33 +1197,27 @@ export class RuntimeStore {
     return left.accessToken === right.accessToken && left.limit === right.limit;
   }
 
-  private resolveGlobalRoomGrantQuery(
-    chatId: string,
-    input: { accessToken?: string } = {},
-  ): { accessToken?: string } {
+  private resolveGlobalRoomGrantQuery(chatId: string, input: { accessToken?: string } = {}): { accessToken?: string } {
     const previous = this.globalRoomGrantQueryById.get(chatId) ?? {};
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
       accessToken:
-        normalizeOptionalAccessToken(input.accessToken)
-        ?? normalizeOptionalAccessToken(previous.accessToken)
-        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
+        normalizeOptionalAccessToken(input.accessToken) ??
+        normalizeOptionalAccessToken(previous.accessToken) ??
+        normalizeOptionalAccessToken(fromCatalog?.accessToken),
     };
     this.globalRoomGrantQueryById.set(chatId, next);
     return next;
   }
 
-  private resolveGlobalRoomAssetQuery(
-    chatId: string,
-    input: { accessToken?: string } = {},
-  ): { accessToken?: string } {
+  private resolveGlobalRoomAssetQuery(chatId: string, input: { accessToken?: string } = {}): { accessToken?: string } {
     const previous = this.globalRoomAssetQueryById.get(chatId) ?? {};
     const fromCatalog = this.resolveGlobalRoomEntry(chatId);
     const next = {
       accessToken:
-        normalizeOptionalAccessToken(input.accessToken)
-        ?? normalizeOptionalAccessToken(previous.accessToken)
-        ?? normalizeOptionalAccessToken(fromCatalog?.accessToken),
+        normalizeOptionalAccessToken(input.accessToken) ??
+        normalizeOptionalAccessToken(previous.accessToken) ??
+        normalizeOptionalAccessToken(fromCatalog?.accessToken),
     };
     this.globalRoomAssetQueryById.set(chatId, next);
     return next;
@@ -1495,9 +1490,7 @@ export class RuntimeStore {
     return next;
   }
 
-  private ensureGlobalTerminalApprovalsState(
-    terminalId: string,
-  ): CachedResourceState<GlobalTerminalApprovalRequest[]> {
+  private ensureGlobalTerminalApprovalsState(terminalId: string): CachedResourceState<GlobalTerminalApprovalRequest[]> {
     return (
       this.state.globalTerminalApprovalsById[terminalId] ??
       createCachedResourceState<GlobalTerminalApprovalRequest[]>([])
@@ -1521,9 +1514,7 @@ export class RuntimeStore {
 
   private setGlobalTerminalActivityState(
     terminalId: string,
-    updater: (
-      current: CachedResourceState<TerminalActivityItem[]>,
-    ) => CachedResourceState<TerminalActivityItem[]>,
+    updater: (current: CachedResourceState<TerminalActivityItem[]>) => CachedResourceState<TerminalActivityItem[]>,
   ): CachedResourceState<TerminalActivityItem[]> {
     const next = updater(this.ensureGlobalTerminalActivityState(terminalId));
     this.state.globalTerminalActivityById[terminalId] = next;
@@ -2707,7 +2698,8 @@ export class RuntimeStore {
       (this.workspaceAvatarCatalogWatchCountByPath.get(workspacePath) ?? 0) + 1,
     );
     this.state.workspaceAvatarCatalogByPath[workspacePath] =
-      this.state.workspaceAvatarCatalogByPath[workspacePath] ?? createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
+      this.state.workspaceAvatarCatalogByPath[workspacePath] ??
+      createCachedResourceState<WorkspaceAvatarCatalogEntry[]>([]);
     return () => {
       const current = this.workspaceAvatarCatalogWatchCountByPath.get(workspacePath) ?? 0;
       if (current <= 1) {
@@ -2737,11 +2729,7 @@ export class RuntimeStore {
     return output.avatar;
   }
 
-  async copyWorkspaceAvatar(input: {
-    workspacePath: string;
-    sourceAvatar: string;
-    targetAvatar: string;
-  }) {
+  async copyWorkspaceAvatar(input: { workspacePath: string; sourceAvatar: string; targetAvatar: string }) {
     const optimistic = this.insertOptimisticWorkspaceAvatarCopy(input);
     try {
       const output = await this.client.trpc.workspace.copyAvatar.mutate(input);
@@ -2778,7 +2766,7 @@ export class RuntimeStore {
   async grantRuntimeWorkspace(input: {
     runtimeId: string;
     workspacePath: string;
-    grants: Array<{ relativePath: string; mode: "ro" | "rw" }>;
+    grants: Array<{ pattern: string; mode: "ro" | "rw" }>;
   }): Promise<RuntimeWorkspaceGrantEntry[]> {
     const output = await this.client.trpc.workspace.grantRuntime.mutate(input);
     return output.items;
@@ -2910,11 +2898,7 @@ export class RuntimeStore {
     }));
   }
 
-  async uploadRoomAssets(
-    chatId: string,
-    accessToken: string,
-    files: File[],
-  ): Promise<GlobalRoomAssetEntry[]> {
+  async uploadRoomAssets(chatId: string, accessToken: string, files: File[]): Promise<GlobalRoomAssetEntry[]> {
     const form = new FormData();
     for (const file of files) {
       form.append("files", file, file.name);
@@ -2965,13 +2949,16 @@ export class RuntimeStore {
   }
 
   async uploadSessionIcon(sessionId: string, file: File): Promise<{ ok: boolean; url?: string; error?: string }> {
-    const response = await fetch(await this.resolveProfileServiceUrl(`/sessions/${encodeURIComponent(sessionId)}/icon`), {
-      method: "POST",
-      headers: {
-        "content-type": file.type || "application/octet-stream",
+    const response = await fetch(
+      await this.resolveProfileServiceUrl(`/sessions/${encodeURIComponent(sessionId)}/icon`),
+      {
+        method: "POST",
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+        },
+        body: file,
       },
-      body: file,
-    });
+    );
     const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error ?? `session icon upload failed (${response.status})`);
@@ -3013,14 +3000,17 @@ export class RuntimeStore {
     if (!authorizationToken) {
       throw new Error("auth token required");
     }
-    const response = await fetch(await this.resolveProfileServiceUrl(`/profiles/${encodeURIComponent(reference)}/icon`), {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${authorizationToken}`,
-        "content-type": file.type || "application/octet-stream",
+    const response = await fetch(
+      await this.resolveProfileServiceUrl(`/profiles/${encodeURIComponent(reference)}/icon`),
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${authorizationToken}`,
+          "content-type": file.type || "application/octet-stream",
+        },
+        body: file,
       },
-      body: file,
-    });
+    );
     const payload = (await response.json()) as { ok: boolean; url?: string; iconUrl?: string; error?: string };
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error ?? `profile icon upload failed (${response.status})`);
@@ -3364,10 +3354,7 @@ export class RuntimeStore {
     return await this.refreshGlobalRoomAssetsInternal(input.chatId, input);
   }
 
-  async listGlobalRoomAssets(input: {
-    chatId: string;
-    accessToken?: string;
-  }): Promise<GlobalRoomAssetEntry[]> {
+  async listGlobalRoomAssets(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomAssetEntry[]> {
     return await this.refreshGlobalRoomAssetsInternal(input.chatId, {
       accessToken: input.accessToken,
       force: true,
@@ -3564,10 +3551,7 @@ export class RuntimeStore {
     return output.channel;
   }
 
-  async deleteGlobalRoom(input: {
-    chatId: string;
-    accessToken?: string;
-  }): Promise<GlobalRoomEntry> {
+  async deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry> {
     const output = await this.client.trpc.message.globalDelete.mutate({
       ...input,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
@@ -3632,10 +3616,7 @@ export class RuntimeStore {
     return await this.refreshGlobalRoomGrantsInternal(input.chatId, input);
   }
 
-  async listGlobalRoomGrants(input: {
-    chatId: string;
-    accessToken?: string;
-  }): Promise<GlobalRoomGrantEntry[]> {
+  async listGlobalRoomGrants(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomGrantEntry[]> {
     return await this.refreshGlobalRoomGrantsInternal(input.chatId, {
       accessToken: normalizeOptionalAccessToken(input.accessToken),
       force: true,
@@ -3657,9 +3638,7 @@ export class RuntimeStore {
     });
     this.setGlobalRoomGrantsState(input.chatId, (resource) => ({
       ...resource,
-      data: resource.data
-        .filter((grant) => grant.grantId !== output.grant.grantId)
-        .concat(output.grant),
+      data: resource.data.filter((grant) => grant.grantId !== output.grant.grantId).concat(output.grant),
       loaded: true,
       loading: false,
       refreshing: false,
@@ -3870,16 +3849,16 @@ export class RuntimeStore {
     const readFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
         ? ({
-        id: output.eventId,
-        terminalId: output.terminalId,
-        createdAt: Date.now(),
-        kind: "terminal_read",
-        cycleId: null,
-        actorId: undefined,
-        title: "Terminal read",
-        content: JSON.stringify(output),
-        detail: output,
-      } satisfies TerminalActivityItem)
+            id: output.eventId,
+            terminalId: output.terminalId,
+            createdAt: Date.now(),
+            kind: "terminal_read",
+            cycleId: null,
+            actorId: undefined,
+            title: "Terminal read",
+            content: JSON.stringify(output),
+            detail: output,
+          } satisfies TerminalActivityItem)
         : null;
     if (readFact) {
       this.projectTerminalActivityFact(readFact);
@@ -3917,19 +3896,19 @@ export class RuntimeStore {
     const writeFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
         ? ({
-        id: output.eventId,
-        terminalId: input.terminalId,
-        createdAt: Date.now(),
-        kind: "terminal_write",
-        cycleId: null,
-        actorId: undefined,
-        title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
-        content: input.text,
-        detail: {
-          submit: input.submit,
-          submitKey: input.submitKey ?? null,
-        },
-      } satisfies TerminalActivityItem)
+            id: output.eventId,
+            terminalId: input.terminalId,
+            createdAt: Date.now(),
+            kind: "terminal_write",
+            cycleId: null,
+            actorId: undefined,
+            title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+            content: input.text,
+            detail: {
+              submit: input.submit,
+              submitKey: input.submitKey ?? null,
+            },
+          } satisfies TerminalActivityItem)
         : null;
     const readFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) &&
@@ -3937,16 +3916,16 @@ export class RuntimeStore {
       typeof output.read === "object" &&
       typeof output.read.eventId === "number"
         ? ({
-        id: output.read.eventId,
-        terminalId: output.read.terminalId,
-        createdAt: Date.now(),
-        kind: "terminal_read",
-        cycleId: null,
-        actorId: undefined,
-        title: "Terminal read",
-        content: JSON.stringify(output.read),
-        detail: output.read,
-      } satisfies TerminalActivityItem)
+            id: output.read.eventId,
+            terminalId: output.read.terminalId,
+            createdAt: Date.now(),
+            kind: "terminal_read",
+            cycleId: null,
+            actorId: undefined,
+            title: "Terminal read",
+            content: JSON.stringify(output.read),
+            detail: output.read,
+          } satisfies TerminalActivityItem)
         : null;
     if (writeFact) {
       this.projectTerminalActivityFact(writeFact);
@@ -4000,8 +3979,7 @@ export class RuntimeStore {
       (this.globalTerminalGrantWatchCountById.get(terminalId) ?? 0) + 1,
     );
     this.state.globalTerminalGrantsById[terminalId] =
-      this.state.globalTerminalGrantsById[terminalId] ??
-      createCachedResourceState<GlobalTerminalGrantEntry[]>([]);
+      this.state.globalTerminalGrantsById[terminalId] ?? createCachedResourceState<GlobalTerminalGrantEntry[]>([]);
     return () => {
       const current = this.globalTerminalGrantWatchCountById.get(terminalId) ?? 0;
       if (current <= 1) {
@@ -4030,14 +4008,12 @@ export class RuntimeStore {
     const output = await this.client.trpc.terminal.issueGrant.mutate(input);
     this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
       ...resource,
-      data: resource.data
-        .filter((grant) => grant.grantId !== output.grant.grantId)
-        .concat(output.grant),
+      data: resource.data.filter((grant) => grant.grantId !== output.grant.grantId).concat(output.grant),
       loaded: true,
       loading: false,
       refreshing: false,
       error: null,
-        refreshedAt: Date.now(),
+      refreshedAt: Date.now(),
     }));
     this.emit();
     const refreshes: Array<Promise<unknown>> = [];
@@ -4061,10 +4037,7 @@ export class RuntimeStore {
     return output.grant;
   }
 
-  async revokeGlobalTerminalGrant(input: {
-    terminalId: string;
-    grantId: string;
-  }): Promise<{ ok: boolean }> {
+  async revokeGlobalTerminalGrant(input: { terminalId: string; grantId: string }): Promise<{ ok: boolean }> {
     const output = await this.client.trpc.terminal.revokeGrant.mutate(input);
     this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
       ...resource,
@@ -4073,7 +4046,7 @@ export class RuntimeStore {
       loading: false,
       refreshing: false,
       error: null,
-        refreshedAt: Date.now(),
+      refreshedAt: Date.now(),
     }));
     this.emit();
     const refreshes: Array<Promise<unknown>> = [];
@@ -4136,11 +4109,7 @@ export class RuntimeStore {
     return await this.refreshGlobalTerminalApprovalsInternal(input.terminalId, input);
   }
 
-  async approveGlobalTerminalRequest(input: {
-    terminalId: string;
-    requestId: string;
-    durationMs: number;
-  }) {
+  async approveGlobalTerminalRequest(input: { terminalId: string; requestId: string; durationMs: number }) {
     const output = await this.client.trpc.terminal.approveRequest.mutate(input);
     this.projectGlobalTerminalLeaseFact({
       terminalId: input.terminalId,
@@ -4229,8 +4198,7 @@ export class RuntimeStore {
       (this.globalTerminalActivityWatchCountById.get(terminalId) ?? 0) + 1,
     );
     this.state.globalTerminalActivityById[terminalId] =
-      this.state.globalTerminalActivityById[terminalId] ??
-      createCachedResourceState<TerminalActivityItem[]>([]);
+      this.state.globalTerminalActivityById[terminalId] ?? createCachedResourceState<TerminalActivityItem[]>([]);
     return () => {
       const current = this.globalTerminalActivityWatchCountById.get(terminalId) ?? 0;
       if (current <= 1) {
@@ -4958,7 +4926,10 @@ export class RuntimeStore {
     if (event.type === "workspace.avatarCatalog.updated") {
       const payload = event.payload as { workspacePaths?: string[] };
       for (const workspacePath of payload.workspacePaths ?? []) {
-        if (workspacePath === "~/" && (this.globalAvatarCatalogWatchCount > 0 || this.state.globalAvatarCatalog.loaded)) {
+        if (
+          workspacePath === "~/" &&
+          (this.globalAvatarCatalogWatchCount > 0 || this.state.globalAvatarCatalog.loaded)
+        ) {
           void this.hydrateGlobalAvatarCatalog({ force: true });
         }
         const resource = this.state.workspaceAvatarCatalogByPath[workspacePath];

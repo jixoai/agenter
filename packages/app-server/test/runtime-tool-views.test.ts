@@ -188,8 +188,8 @@ describe("Feature: runtime tool public views", () => {
           grantId: "grant-1",
           mountId: "mount-1",
           workspacePath: "/tmp/workspace",
-          relativePath: "/",
-          absolutePath: "/tmp/workspace",
+          pattern: "/",
+          ruleIndex: 0,
           mode: "rw",
           createdAt: "2026-04-11T00:00:00.000Z",
         },
@@ -217,7 +217,8 @@ describe("Feature: runtime tool public views", () => {
 
     expect(projectedWorkspace.mount.workspacePath).toBe("/tmp/workspace");
     expect(projectedWorkspace.mount.kind).toBe("workspace");
-    expect(projectedWorkspace.grants[0]?.absolutePath).toBe("/tmp/workspace");
+    expect(projectedWorkspace.grants[0]?.pattern).toBe("/");
+    expect(projectedWorkspace.grants[0]?.ruleIndex).toBe(0);
     expect(Object.prototype.hasOwnProperty.call(projectedWorkspace.mount, "mountId")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedWorkspace.grants[0] ?? {}, "grantId")).toBeFalse();
   });

@@ -3,17 +3,17 @@ import {
   AttentionSystem,
   type AttentionActiveContextMatch,
   type AttentionCommit,
-  type AttentionCommitEgress,
   type AttentionCommitChange,
+  type AttentionCommitEgress,
   type AttentionCommitMatch,
   type AttentionCommitMeta,
   type AttentionCommitRef,
   type AttentionCommitToolInput,
   type AttentionContextDescriptor,
-  type AttentionContextState,
-  type AttentionFocusState,
   type AttentionContextRef,
+  type AttentionContextState,
   type AttentionCycleFrame,
+  type AttentionFocusState,
   type AttentionHookRecord,
   type AttentionProtocolMode,
   type AttentionSystemSnapshot,
@@ -58,8 +58,8 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
-  type TerminalActorId,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
+  type TerminalActorId,
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
@@ -77,8 +77,8 @@ import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-
 import { AgentRuntime } from "./agent-runtime";
 import {
   AgenterAI,
-  type AgentPromptWindowStateRecord,
   type AgentModelCallRecord,
+  type AgentPromptWindowStateRecord,
   type AgentRuntimeStats,
   type AgentToolProvider,
   type AgentToolTraceEntry,
@@ -113,59 +113,55 @@ import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
 import { createRuntimeShellCommands } from "./runtime-cli";
-import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
-import { buildRuntimeTerminalEnvironment } from "./runtime-shell-bin";
-import {
-  projectRuntimeAttentionActiveMatch,
-  projectRuntimeMessageChannel,
-  projectRuntimeMessageSnapshot,
-  projectRuntimeTerminal,
-  projectRuntimeWorkspaceSurface,
-  type RuntimeReachableParticipantView,
-  type RuntimeMessageChannelView,
-  type RuntimeMessageSnapshotView,
-  type RuntimeVisibleMessageRoomView,
-  type RuntimeWorkspaceSurface,
-} from "./runtime-tool-views";
-import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
-import {
-  buildRuntimeSkillsList,
-  listRuntimeSkillMountRoots,
-  listRuntimeSkills,
-  RUNTIME_API_BASE_URL_ENV,
-  RUNTIME_HOME_DIR_ENV,
-  RUNTIME_PRINCIPAL_ID_ENV,
-  RUNTIME_PRIVATE_KEY_ENV,
-  RUNTIME_ROOT_WORKSPACE_ENV,
-  type RuntimeSkillRecord,
-} from "./runtime-skills";
-import { listRuntimeToolFiles } from "./runtime-tools";
-import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
-import {
-  projectAiCallToChatCycle,
-  projectAiCallToModelCall,
-  projectHeartbeatMessageToChatMessage,
-  toHeartbeatMessageUpsertInput,
-  type RuntimeModelCallRecord,
-} from "./session-ledger-view";
-import {
-  DEFAULT_MESSAGE_CHAT_ID,
-  resolveSessionRoomActorId,
-} from "./session-chat-projection";
 import type {
   RuntimeCycleRecord,
   RuntimeLoopStateLogRecord,
   RuntimeLoopTraceRecord,
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
+import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
+import { buildRuntimeTerminalEnvironment } from "./runtime-shell-bin";
+import {
+  RUNTIME_API_BASE_URL_ENV,
+  RUNTIME_HOME_DIR_ENV,
+  RUNTIME_PRINCIPAL_ID_ENV,
+  RUNTIME_PRIVATE_KEY_ENV,
+  RUNTIME_ROOT_WORKSPACE_ENV,
+  buildRuntimeSkillsList,
+  listRuntimeSkillMountRoots,
+  listRuntimeSkills,
+  type RuntimeSkillRecord,
+} from "./runtime-skills";
+import {
+  projectRuntimeAttentionActiveMatch,
+  projectRuntimeMessageChannel,
+  projectRuntimeMessageSnapshot,
+  projectRuntimeTerminal,
+  projectRuntimeWorkspaceSurface,
+  type RuntimeMessageChannelView,
+  type RuntimeMessageSnapshotView,
+  type RuntimeReachableParticipantView,
+  type RuntimeVisibleMessageRoomView,
+  type RuntimeWorkspaceSurface,
+} from "./runtime-tool-views";
+import { listRuntimeToolFiles } from "./runtime-tools";
+import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
+import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
+import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
-import { SessionStore } from "./session-store";
-import { SettingsEditor, type EditableKind } from "./settings-editor";
+import {
+  projectAiCallToModelCall,
+  projectHeartbeatMessageToChatMessage,
+  toHeartbeatMessageUpsertInput,
+  type RuntimeModelCallRecord,
+} from "./session-ledger-view";
 import {
   projectSessionNotificationSnapshot,
   toAttentionFocusStateFromVisibility,
   type SessionNotificationSnapshot,
 } from "./session-notifications";
+import { SessionStore } from "./session-store";
+import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from "./types";
 import {
@@ -191,9 +187,7 @@ const clonePromptWindowMessages = (
 ): ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"] =>
   structuredClone((messages ?? []) as ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"]);
 
-const toAgentPromptWindowStateRecord = (
-  record: SessionPromptWindowRecord,
-): AgentPromptWindowStateRecord => ({
+const toAgentPromptWindowStateRecord = (record: SessionPromptWindowRecord): AgentPromptWindowStateRecord => ({
   id: record.promptWindowId,
   createdAt: record.createdAt,
   roundIndex: record.roundIndex,
@@ -710,9 +704,7 @@ const truncateAttentionTitle = (value: string): string => {
 const serializeAttentionCommitMatch = (match: AttentionCommitMatch): string =>
   mdFence("yaml+attention_commit", toYaml(projectAttentionCommitMatchForModel(match)));
 
-const projectBackgroundAttentionContextForModel = (
-  match: AttentionActiveContextMatch,
-): Record<string, unknown> => ({
+const projectBackgroundAttentionContextForModel = (match: AttentionActiveContextMatch): Record<string, unknown> => ({
   contextId: match.contextId,
   owner: match.context.owner,
   focusState: match.context.focusState,
@@ -775,10 +767,7 @@ const serializeFocusedAttentionContexts = (matches: readonly AttentionActiveCont
   );
 
 const serializeBackgroundAttentionContext = (match: AttentionActiveContextMatch): string =>
-  mdFence(
-    "yaml+background-attention-context",
-    toYaml(projectBackgroundAttentionContextForModel(match)),
-  );
+  mdFence("yaml+background-attention-context", toYaml(projectBackgroundAttentionContextForModel(match)));
 
 const serializeBackgroundAttentionContexts = (matches: readonly AttentionActiveContextMatch[]): string =>
   mdFence(
@@ -1275,29 +1264,27 @@ export class SessionRuntime {
   private loopKernelSnapshot: LoopBusKernelSnapshot | null = null;
   private activeCycleId: number | null = null;
   private activeModelCallId: number | null = null;
-  private activeModelResponseDraft:
-    | {
-        assistant?: {
-          thinking?: string;
-          text?: string;
-          finishReason?: string | null;
-        };
-        usage?: {
-          promptTokens?: number;
-          completionTokens?: number;
-          totalTokens?: number;
-        };
-        toolTrace: Array<{
-          invocationId: string;
-          tool: string;
-          input: unknown;
-          output?: unknown;
-          error?: string;
-          startedAt: number;
-          finishedAt: number;
-        }>;
-      }
-    | null = null;
+  private activeModelResponseDraft: {
+    assistant?: {
+      thinking?: string;
+      text?: string;
+      finishReason?: string | null;
+    };
+    usage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
+    toolTrace: Array<{
+      invocationId: string;
+      tool: string;
+      input: unknown;
+      output?: unknown;
+      error?: string;
+      startedAt: number;
+      finishedAt: number;
+    }>;
+  } | null = null;
   private modelCallDeltaSeq = 0;
   private cycleSeq = 0;
   private loopStateLogSeq = 0;
@@ -1427,10 +1414,7 @@ export class SessionRuntime {
       }));
   }
 
-  private createMessageSourceRef(input: {
-    chatId: string;
-    messageId: string;
-  }): LoopMessageSourceRef {
+  private createMessageSourceRef(input: { chatId: string; messageId: string }): LoopMessageSourceRef {
     return {
       systemId: "message",
       subjectId: input.messageId,
@@ -1454,7 +1438,9 @@ export class SessionRuntime {
     return this.config?.avatar?.nickname ?? this.options.avatar ?? DEFAULT_CHAT_OWNER;
   }
 
-  private listActorRooms(input: { includeArchived?: boolean; touchPresence?: boolean } = {}): MessageControlPlaneEntry[] {
+  private listActorRooms(
+    input: { includeArchived?: boolean; touchPresence?: boolean } = {},
+  ): MessageControlPlaneEntry[] {
     return this.messageSystem.listChannelsForActor(this.messageActorId, input);
   }
 
@@ -1477,16 +1463,21 @@ export class SessionRuntime {
     return "ctx-terminal-control-plane";
   }
 
-  private ensureAttentionContext(contextId: string, focusState: AttentionFocusState = "focused"): AttentionContextState {
+  private ensureAttentionContext(
+    contextId: string,
+    focusState: AttentionFocusState = "focused",
+  ): AttentionContextState {
     const existing = this.attentionSystem.getContext(contextId);
     if (existing) {
       return existing.getState();
     }
-    return this.attentionSystem.createContext({
-      contextId,
-      owner: this.getAvatarName(),
-      focusState,
-    }).getState();
+    return this.attentionSystem
+      .createContext({
+        contextId,
+        owner: this.getAvatarName(),
+        focusState,
+      })
+      .getState();
   }
 
   private resolveAttentionFocusState(contextId: string): AttentionFocusState {
@@ -1638,9 +1629,9 @@ export class SessionRuntime {
           ? channel.focused
             ? "focused"
             : "background"
-        : chatId === this.getDefaultChatId()
-          ? "focused"
-          : "background",
+          : chatId === this.getDefaultChatId()
+            ? "focused"
+            : "background",
     });
     const state = created.getState();
     return {
@@ -1738,7 +1729,10 @@ export class SessionRuntime {
     );
   }
 
-  private getMessageChannelForTooling(input: { chatId: string; includeArchived?: boolean }): RuntimeMessageChannelView | null {
+  private getMessageChannelForTooling(input: {
+    chatId: string;
+    includeArchived?: boolean;
+  }): RuntimeMessageChannelView | null {
     if (input.chatId === this.getDefaultChatId()) {
       this.requireDefaultChatChannel();
     }
@@ -1935,9 +1929,7 @@ export class SessionRuntime {
     }
   }
 
-  private parseMessageMetaRoomSummaries(
-    value: unknown,
-  ): Array<{
+  private parseMessageMetaRoomSummaries(value: unknown): Array<{
     chatId: string;
     title: string;
     participantLabels: string[];
@@ -1962,7 +1954,9 @@ export class SessionRuntime {
           return [];
         }
         const participantLabels = Array.isArray(record.participantLabels)
-          ? record.participantLabels.filter((label): label is string => typeof label === "string" && label.trim().length > 0)
+          ? record.participantLabels.filter(
+              (label): label is string => typeof label === "string" && label.trim().length > 0,
+            )
           : [];
         return [
           {
@@ -2223,7 +2217,7 @@ export class SessionRuntime {
     const avatar = this.getAvatarName();
     const chatId = await this.allocateMessageChannelId(input.kind, input.title);
     const context = this.ensureAttentionContextForChannel(chatId);
-    await this.applyAttentionFocusState(context.contextId, input.focus ?? true ? "focused" : "background");
+    await this.applyAttentionFocusState(context.contextId, (input.focus ?? true) ? "focused" : "background");
     const channel = this.messageSystem.createChannel({
       chatId,
       kind: "room",
@@ -2337,7 +2331,9 @@ export class SessionRuntime {
   }
 
   archiveMessageChannel(input: { chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
-    const channel = this.getActorRoom(input.chatId, { includeArchived: true }) ?? this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+    const channel =
+      this.getActorRoom(input.chatId, { includeArchived: true }) ??
+      this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -2368,11 +2364,14 @@ export class SessionRuntime {
 
   deleteMessageChannel(input: { chatId: string; accessToken: string }): MessageControlPlaneEntry {
     const channel =
-      this.getActorRoom(input.chatId, { includeArchived: true }) ?? this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+      this.getActorRoom(input.chatId, { includeArchived: true }) ??
+      this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
-    const builtIn = Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
+    const builtIn = Boolean(
+      channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true,
+    );
     if (channel.chatId === this.getDefaultChatId() || builtIn) {
       throw new Error("built-in room is protected and cannot be deleted");
     }
@@ -2441,10 +2440,7 @@ export class SessionRuntime {
     return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
   }
 
-  async readRuntimeTerminal(input: {
-    terminalId: string;
-    mode?: TerminalReadMode;
-  }): Promise<TerminalReadPayload> {
+  async readRuntimeTerminal(input: { terminalId: string; mode?: TerminalReadMode }): Promise<TerminalReadPayload> {
     return await this.readTerminalRepresentation(input.terminalId, {
       mode: input.mode ?? "auto",
       remark: false,
@@ -2557,7 +2553,7 @@ export class SessionRuntime {
 
       await this.applyAttentionFocusState(
         this.getTerminalAttentionContextId(createdTerminalId),
-        input.focus ?? true ? "focused" : "background",
+        (input.focus ?? true) ? "focused" : "background",
       );
 
       this.enqueueLifecycleAttentionCommit({
@@ -2581,7 +2577,9 @@ export class SessionRuntime {
         });
       }
 
-      const terminal = controlPlane.listForActor(this.terminalActorId).find((item) => item.terminalId === createdTerminalId);
+      const terminal = controlPlane
+        .listForActor(this.terminalActorId)
+        .find((item) => item.terminalId === createdTerminalId);
       if (!terminal) {
         return {
           ok: false,
@@ -2999,9 +2997,7 @@ export class SessionRuntime {
         }
       }),
     );
-    this.messageSystemCleanup.push(
-      this.messageSystem.onFocus(() => {}),
-    );
+    this.messageSystemCleanup.push(this.messageSystem.onFocus(() => {}));
   }
 
   private bindTerminalSystem(): void {
@@ -3074,11 +3070,7 @@ export class SessionRuntime {
     };
   }
 
-  private createTaskSourceRef(
-    subjectId: string,
-    reason: string,
-    versionHint?: string | number,
-  ): LoopTaskSourceRef {
+  private createTaskSourceRef(subjectId: string, reason: string, versionHint?: string | number): LoopTaskSourceRef {
     return {
       systemId: "task",
       subjectId,
@@ -3460,12 +3452,14 @@ export class SessionRuntime {
       stdin: input.stdin,
       mounts: [
         ...this.getRootWorkspaceSkillMounts(),
-        ...this.listWorkspaceAuthorities().flatMap((entry) =>
-          entry.grants.map((grant) => ({
-            path: grant.absolutePath,
-            mode: grant.mode,
-          })),
-        ),
+        ...this.listWorkspaceAuthorities().map((entry) => {
+          const mode: RootWorkspaceMountInput["mode"] = entry.grants.some((grant) => grant.mode === "rw") ? "rw" : "ro";
+          return {
+            path: entry.mount.workspacePath,
+            mode,
+            grants: entry.grants,
+          };
+        }),
       ],
       customCommands: createRuntimeShellCommands({
         baseUrl: this.runtimeLocalApi.baseUrl,
@@ -3551,7 +3545,9 @@ export class SessionRuntime {
   }
 
   private isTaskAttentionContext(match: AttentionActiveContextMatch): boolean {
-    return match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => commit.meta.systemId === "task");
+    return (
+      match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => commit.meta.systemId === "task")
+    );
   }
 
   private isWorkspaceAttentionContext(match: AttentionActiveContextMatch): boolean {
@@ -3574,7 +3570,8 @@ export class SessionRuntime {
     if (this.isWorkspaceAttentionContext(match)) {
       return "workspace";
     }
-    const latestSystemId = match.recentCommits.find((commit) => typeof commit.meta.systemId === "string")?.meta.systemId;
+    const latestSystemId = match.recentCommits.find((commit) => typeof commit.meta.systemId === "string")?.meta
+      .systemId;
     return latestSystemId ?? "attention";
   }
 
@@ -3662,8 +3659,7 @@ export class SessionRuntime {
     if (content.trim().length === 0 || content.trim() === "/compact") {
       return [];
     }
-    const from =
-      message?.from ?? channel?.title ?? chatId;
+    const from = message?.from ?? channel?.title ?? chatId;
     const attachments =
       message?.attachments?.map((attachment) => ({
         assetId: attachment.assetId,
@@ -3722,7 +3718,11 @@ export class SessionRuntime {
           changeType: "update",
         },
         versionHint:
-          typeof result.toHash === "string" ? result.toHash : message?.updatedAt ? String(message.updatedAt) : undefined,
+          typeof result.toHash === "string"
+            ? result.toHash
+            : message?.updatedAt
+              ? String(message.updatedAt)
+              : undefined,
       },
     ];
   }
@@ -3802,7 +3802,9 @@ export class SessionRuntime {
   }
 
   private normalizeFocusedTerminalIds(input: Iterable<string>): string[] {
-    const visibleIds = new Set(this.terminalControlPlane.listForActor(this.terminalActorId).map((terminal) => terminal.terminalId));
+    const visibleIds = new Set(
+      this.terminalControlPlane.listForActor(this.terminalActorId).map((terminal) => terminal.terminalId),
+    );
     const deduped = new Set<string>();
     for (const terminalId of input) {
       if (!visibleIds.has(terminalId) || deduped.has(terminalId)) {
@@ -3848,10 +3850,7 @@ export class SessionRuntime {
   }
 
   private resolveAttentionContextId(draft: AttentionDraft): string {
-    const explicitChatId =
-      typeof draft.provenance?.channelId === "string"
-        ? draft.provenance.channelId
-        : null;
+    const explicitChatId = typeof draft.provenance?.channelId === "string" ? draft.provenance.channelId : null;
     if (explicitChatId) {
       return this.ensureAttentionContextForChannel(explicitChatId).contextId;
     }
@@ -4195,7 +4194,8 @@ export class SessionRuntime {
     }
     const nextInput = input as Omit<SessionDbLoopbusTraceRecord, "id" | "seq">;
     const existingRowId = this.traceRowIdBySpanId.get(nextInput.spanId);
-    const current = existingRowId === undefined ? null : this.loopTraceEntries.find((entry) => entry.id === existingRowId) ?? null;
+    const current =
+      existingRowId === undefined ? null : (this.loopTraceEntries.find((entry) => entry.id === existingRowId) ?? null);
     const mergedLinks =
       current === null
         ? nextInput.links
@@ -6124,7 +6124,9 @@ export class SessionRuntime {
       cycleId: this.activeCycleId,
       title: "Terminal read",
       content: payload.eventId ? "" : JSON.stringify(payload),
-      detail: payload.eventId ? this.createTerminalActivityRefDetail(terminalId, payload.eventId, "terminal_read") : payload,
+      detail: payload.eventId
+        ? this.createTerminalActivityRefDetail(terminalId, payload.eventId, "terminal_read")
+        : payload,
     });
     return payload;
   }
@@ -6202,7 +6204,12 @@ export class SessionRuntime {
       const previous = this.terminalStatusById.get(terminalId);
       this.terminalStatusById.set(terminalId, { running, status });
       this.emit("terminalStatus", { terminalId, running, status });
-      if (previous?.status === "BUSY" && status === "IDLE" && running && !this.focusedTerminalIds.includes(terminalId)) {
+      if (
+        previous?.status === "BUSY" &&
+        status === "IDLE" &&
+        running &&
+        !this.focusedTerminalIds.includes(terminalId)
+      ) {
         this.enqueueLifecycleAttentionCommit({
           systemId: "terminal",
           subjectId: terminalId,
@@ -7099,8 +7106,8 @@ export class SessionRuntime {
             file,
             source,
             markdown,
-        }),
-        from: `task-source:${item.name}`,
+          }),
+          from: `task-source:${item.name}`,
           semanticHash: createHash("sha256").update(markdown).digest("hex"),
         });
         this.notifyInput("task");
@@ -7799,8 +7806,7 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return {
         systemPrompt: typeof request?.systemPrompt === "string" ? request.systemPrompt : "",
-        promptWindowStateId:
-          typeof request?.promptWindowStateId === "string" ? request.promptWindowStateId : "",
+        promptWindowStateId: typeof request?.promptWindowStateId === "string" ? request.promptWindowStateId : "",
         roundIndex: typeof request?.roundIndex === "number" ? request.roundIndex : 0,
         messages: structuredClone(request?.messages ?? []),
         tools: structuredClone(request?.tools ?? []),
@@ -7859,28 +7865,30 @@ export class SessionRuntime {
       },
     ];
 
-    return entries.map((entry) => {
-      const latest = sessionDb.getLatestAuxiliaryMessage(entry.partType);
-      const latestPayload = latest?.parts[0]?.payload ?? null;
-      if (JSON.stringify(latestPayload) === JSON.stringify(entry.payload ?? null)) {
-        return latest?.messageId ?? "";
-      }
-      return sessionDb.upsertMessage({
-        messageId: `request_aux:${entry.partType}:${input.timestamp}:${createId()}`,
-        roundIndex: input.request.roundIndex,
-        scope: "request_aux",
-        role: entry.role,
-        createdAt: input.timestamp,
-        updatedAt: input.timestamp,
-        parts: [
-          {
-            partType: entry.partType,
-            payload: structuredClone(entry.payload),
-            isComplete: true,
-          },
-        ],
-      }).messageId;
-    }).filter((messageId) => messageId.length > 0);
+    return entries
+      .map((entry) => {
+        const latest = sessionDb.getLatestAuxiliaryMessage(entry.partType);
+        const latestPayload = latest?.parts[0]?.payload ?? null;
+        if (JSON.stringify(latestPayload) === JSON.stringify(entry.payload ?? null)) {
+          return latest?.messageId ?? "";
+        }
+        return sessionDb.upsertMessage({
+          messageId: `request_aux:${entry.partType}:${input.timestamp}:${createId()}`,
+          roundIndex: input.request.roundIndex,
+          scope: "request_aux",
+          role: entry.role,
+          createdAt: input.timestamp,
+          updatedAt: input.timestamp,
+          parts: [
+            {
+              partType: entry.partType,
+              payload: structuredClone(entry.payload),
+              isComplete: true,
+            },
+          ],
+        }).messageId;
+      })
+      .filter((messageId) => messageId.length > 0);
   }
 
   private upsertActiveModelToolTrace(input: {
@@ -8071,8 +8079,7 @@ export class SessionRuntime {
           tool: input.toolName,
           payload: {
             output: input.result,
-            error:
-              typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined,
+            error: typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : undefined,
             finishedAt: input.timestamp,
           },
         });

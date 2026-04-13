@@ -283,12 +283,12 @@ describe("Feature: app-server trpc procedures", () => {
     const grantedWorkspaceA = await caller.workspace.grantRuntime({
       runtimeId: first.session.id,
       workspacePath: workspaceA,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
     expect(grantedWorkspaceA.items).toEqual([
       expect.objectContaining({
         workspacePath: workspaceA,
-        relativePath: "/",
+        pattern: "/",
         mode: "rw",
       }),
     ]);
@@ -296,7 +296,7 @@ describe("Feature: app-server trpc procedures", () => {
     await caller.workspace.grantRuntime({
       runtimeId: first.session.id,
       workspacePath: workspaceB,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const mounts = await caller.workspace.runtimeMounts({
@@ -311,7 +311,7 @@ describe("Feature: app-server trpc procedures", () => {
     expect(initialGrants.items).toEqual([
       expect.objectContaining({
         workspacePath: workspaceA,
-        relativePath: "/",
+        pattern: "/",
         mode: "rw",
       }),
     ]);
@@ -322,21 +322,17 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(assetRoots.workspacePath).toBe(workspaceA);
     expect(assetRoots.avatar).toBe("architect");
-    writeFileSync(
-      join(assetRoots.publicRoots.tools, "hello.sh"),
-      "#!/usr/bin/env bash\necho tool-ok\n",
-      "utf8",
-    );
+    writeFileSync(join(assetRoots.publicRoots.tools, "hello.sh"), "#!/usr/bin/env bash\necho tool-ok\n", "utf8");
 
     const granted = await caller.workspace.grantRuntime({
       runtimeId: first.session.id,
       workspacePath: workspaceA,
-      grants: [{ relativePath: "/sandbox", mode: "rw" }],
+      grants: [{ pattern: "/sandbox", mode: "rw" }],
     });
     expect(granted.items).toEqual([
       expect.objectContaining({
         workspacePath: workspaceA,
-        relativePath: "/sandbox",
+        pattern: "/sandbox",
         mode: "rw",
       }),
     ]);
@@ -345,7 +341,8 @@ describe("Feature: app-server trpc procedures", () => {
       runtimeId: first.session.id,
       workspacePath: workspaceA,
       avatar: "architect",
-      command: "mkdir -p /workspace/sandbox && printf workspace-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
+      command:
+        "mkdir -p /workspace/sandbox && printf workspace-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
     });
     expect(execOk.exitCode).toBe(0);
     expect(execOk.stdout).toContain("tool-ok");
@@ -610,7 +607,9 @@ describe("Feature: app-server trpc procedures", () => {
       archivedBy: "ops-admin",
     });
     expect(archived.channel.archivedBy).toBe("ops-admin");
-    expect((await caller.message.globalList({ includeArchived: false })).items.some((item) => item.chatId === room.chatId)).toBeFalse();
+    expect(
+      (await caller.message.globalList({ includeArchived: false })).items.some((item) => item.chatId === room.chatId),
+    ).toBeFalse();
 
     const disposable = await caller.message.globalCreate({
       title: "Disposable room",
@@ -620,7 +619,11 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: disposable.channel.accessToken,
     });
     expect(deleted.channel.chatId).toBe(disposable.channel.chatId);
-    expect((await caller.message.globalList({ includeArchived: true })).items.some((item) => item.chatId === disposable.channel.chatId)).toBeFalse();
+    expect(
+      (await caller.message.globalList({ includeArchived: true })).items.some(
+        (item) => item.chatId === disposable.channel.chatId,
+      ),
+    ).toBeFalse();
 
     await kernel.stop();
   });
@@ -720,7 +723,9 @@ describe("Feature: app-server trpc procedures", () => {
       messageId: latestMessageId,
     });
     expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
-    expect(superadminRead.channel.readStates?.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`)).toBeFalse();
+    expect(
+      superadminRead.channel.readStates?.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
+    ).toBeFalse();
 
     const viewerRead = await caller.message.globalMarkRead({
       chatId: room.chatId,
@@ -890,7 +895,9 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
     expect(activity.items.some((item) => item.kind === "terminal_write")).toBeTrue();
-    expect(activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair")).toBeTrue();
+    expect(
+      activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair"),
+    ).toBeTrue();
 
     const focused = await caller.terminal.globalFocus({
       op: "clear",

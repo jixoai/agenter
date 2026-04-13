@@ -1,14 +1,17 @@
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { accessSync, constants as fsConstants, mkdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs, defineCommand } from "just-bash";
 
+import { GrantedWorkspaceFs } from "./granted-fs";
 import { getOneShotShellProcessViolation } from "./one-shot-shell-guard";
 import { createTruthfulRootWorkspaceFetch } from "./root-fetch";
+import type { WorkspaceGrantRecord } from "./types";
 
 export interface RootWorkspaceMountInput {
   path: string;
   mode: "ro" | "rw";
+  grants?: WorkspaceGrantRecord[];
 }
 
 export interface RootWorkspaceBashExecInput {
@@ -65,12 +68,17 @@ const createRootWorkspaceFs = (input: RootWorkspaceBashExecInput): MountableFs =
     mkdirSync(mount.path, { recursive: true });
     fs.mount(
       mount.path,
-      mount.mode === "rw"
-        ? new ReadWriteFs({ root: mount.path })
-        : new OverlayFs({
-            root: mount.path,
-            readOnly: true,
-          }),
+      mount.grants
+        ? new GrantedWorkspaceFs({
+            workspacePath: mount.path,
+            grants: mount.grants,
+          })
+        : mount.mode === "rw"
+          ? new ReadWriteFs({ root: mount.path })
+          : new OverlayFs({
+              root: mount.path,
+              readOnly: true,
+            }),
     );
   }
   return fs;

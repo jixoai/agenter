@@ -151,10 +151,10 @@ export {
   type SemanticJudgeSpan,
 } from "./semantic-judge";
 export {
-  judgeConceptChecklist,
-  judgeContainsAllConcepts,
   hasUrlSignal,
   judgeAvoidsForbiddenMentions,
+  judgeConceptChecklist,
+  judgeContainsAllConcepts,
   judgeContainsUrl,
   judgeMentionsConcept,
   judgeUrlSpan,
@@ -209,10 +209,15 @@ export {
 export {
   WorkspaceSystemStore,
   executeWorkspaceBash,
+  hasWorkspaceGrantRootAccess,
+  normalizeWorkspaceGrantPattern,
+  normalizeWorkspaceGrantSubjectPath,
   normalizeWorkspaceRuntimePath,
   resolveWorkspaceAvatarAssetRoot,
   resolveWorkspaceAvatarPrivateRoot,
   resolveWorkspaceAvatarSeatPath,
+  resolveWorkspaceGrantMode,
+  resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePrivateAvatarsRoot,
   resolveWorkspacePublicAssetRoot,
   resolveWorkspacePublicRoot,

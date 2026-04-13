@@ -7,8 +7,8 @@ import { dirname, join } from "node:path";
 import type { AttentionSystem } from "@agenter/attention-system";
 
 import { AppKernel } from "../src";
-import { waitForRealValue } from "../test-support/real-kernel-harness";
 import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
+import { waitForRealValue } from "../test-support/real-kernel-harness";
 
 const getRuntime = (kernel: AppKernel, sessionId: string) => {
   const runtimes = Reflect.get(kernel, "runtimes") as Map<string, unknown>;
@@ -88,18 +88,21 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: first.id,
       workspacePath: workspaceB,
-      grants: [{ relativePath: "/shared", mode: "rw" }],
+      grants: [{ pattern: "/shared", mode: "rw" }],
     });
     expect(kernel.listRuntimeWorkspaceMounts(first.id).map((item) => item.workspacePath)).toEqual([workspaceB]);
 
     const grants = kernel.grantRuntimeWorkspace({
       runtimeId: first.id,
       workspacePath: workspaceA,
-      grants: [{ relativePath: "/sandbox", mode: "rw" }],
+      grants: [{ pattern: "/sandbox", mode: "rw" }],
     });
-    expect(kernel.listRuntimeWorkspaceMounts(first.id).map((item) => item.workspacePath).sort()).toEqual(
-      [workspaceA, workspaceB].sort(),
-    );
+    expect(
+      kernel
+        .listRuntimeWorkspaceMounts(first.id)
+        .map((item) => item.workspacePath)
+        .sort(),
+    ).toEqual([workspaceA, workspaceB].sort());
 
     const assetRoots = kernel.getRuntimeWorkspaceAssetRoots({
       workspacePath: workspaceA,
@@ -107,16 +110,12 @@ describe("Feature: workspace system kernel integration", () => {
     });
     expect(assetRoots.privateRoots.tools).toContain(join(".agenter", "avatars", "by-principal"));
     expect(assetRoots.privateRoots.tools).not.toContain(join(".agenter", "avatars", "by-nickname"));
-    writeFileSync(
-      join(assetRoots.publicRoots.tools, "hello.sh"),
-      "#!/usr/bin/env bash\necho tool-ok\n",
-      "utf8",
-    );
+    writeFileSync(join(assetRoots.publicRoots.tools, "hello.sh"), "#!/usr/bin/env bash\necho tool-ok\n", "utf8");
 
     expect(grants).toEqual([
       expect.objectContaining({
         workspacePath: workspaceA,
-        relativePath: "/sandbox",
+        pattern: "/sandbox",
         mode: "rw",
       }),
     ]);
@@ -125,7 +124,8 @@ describe("Feature: workspace system kernel integration", () => {
       runtimeId: first.id,
       workspacePath: workspaceA,
       avatar: "architect",
-      command: "mkdir -p /workspace/sandbox && printf kernel-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
+      command:
+        "mkdir -p /workspace/sandbox && printf kernel-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
     });
     expect(execOk.exitCode).toBe(0);
     expect(execOk.stdout).toContain("tool-ok");
@@ -140,6 +140,106 @@ describe("Feature: workspace system kernel integration", () => {
     });
     expect(execDenied.exitCode).not.toBe(0);
     expect(existsSync(join(workspaceA, "blocked.txt"))).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given ordered glob workspace rules When shell and explorer inspect the workspace Then later rules override earlier ones and ungranted paths stay hidden", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(join(workspace, "src", "generated"), { recursive: true });
+    mkdirSync(join(workspace, "src", "manual"), { recursive: true });
+    mkdirSync(join(workspace, "docs"), { recursive: true });
+    writeFileSync(join(workspace, "docs", "roadmap.md"), "secret-plan\n", "utf8");
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "architect",
+      autoStart: false,
+    });
+
+    const grants = kernel.grantRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      grants: [
+        { pattern: "/src", mode: "ro" },
+        { pattern: "/src/generated", mode: "rw" },
+      ],
+    });
+    expect(grants.map((grant) => ({ pattern: grant.pattern, ruleIndex: grant.ruleIndex, mode: grant.mode }))).toEqual([
+      { pattern: "/src", ruleIndex: 0, mode: "ro" },
+      { pattern: "/src/generated", ruleIndex: 1, mode: "rw" },
+    ]);
+
+    const writeGenerated = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "architect",
+      command: "printf override-ok > /workspace/src/generated/out.txt",
+    });
+    expect(writeGenerated.exitCode).toBe(0);
+    expect(readFileSync(join(workspace, "src", "generated", "out.txt"), "utf8")).toBe("override-ok");
+
+    const writeManual = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "architect",
+      command: "printf blocked > /workspace/src/manual/out.txt",
+    });
+    expect(writeManual.exitCode).not.toBe(0);
+    expect(existsSync(join(workspace, "src", "manual", "out.txt"))).toBeFalse();
+
+    const readDocs = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "architect",
+      command: "cat /workspace/docs/roadmap.md",
+    });
+    expect(readDocs.exitCode).not.toBe(0);
+    expect(readDocs.stdout).not.toContain("secret-plan");
+
+    const listedRoot = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "architect",
+      command: "ls /workspace",
+    });
+    expect(listedRoot.exitCode).toBe(0);
+    expect(listedRoot.stdout).toContain("src");
+    expect(listedRoot.stdout).not.toContain("docs");
+
+    const explorerTree = kernel.listWorkspaceWorkbenchTree({
+      workspacePath: workspace,
+      avatar: "architect",
+      mode: "explorer",
+      path: "/",
+    });
+    expect(explorerTree.items.map((item) => item.path)).toEqual(["/src"]);
+
+    expect(() =>
+      kernel.readWorkspaceWorkbenchPreview({
+        workspacePath: workspace,
+        avatar: "architect",
+        mode: "explorer",
+        path: "/docs/roadmap.md",
+      }),
+    ).toThrow("workspace preview denied by grants");
+
+    const allowedPreview = kernel.readWorkspaceWorkbenchPreview({
+      workspacePath: workspace,
+      avatar: "architect",
+      mode: "explorer",
+      path: "/src/generated/out.txt",
+    });
+    expect(allowedPreview.textContent).toContain("override-ok");
 
     await kernel.stop();
   });
@@ -178,7 +278,7 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspaceA,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const ambiguousRoot = await kernel.createTerminal({
@@ -210,7 +310,7 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspaceB,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const ambiguous = await kernel.createTerminal({
@@ -255,7 +355,7 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const created = await execRootWorkspaceBash(kernel, session.id, {
@@ -380,8 +480,8 @@ describe("Feature: workspace system kernel integration", () => {
           runtimeId?: unknown;
         };
         grants: Array<{
-          relativePath: string;
-          absolutePath: string;
+          pattern: string;
+          ruleIndex: number;
           mode: "ro" | "rw";
           grantId?: unknown;
         }>;
@@ -391,17 +491,20 @@ describe("Feature: workspace system kernel integration", () => {
     expect(mountedWorkspace?.mount.kind).toBe("workspace");
     expect(mountedWorkspace?.mount.mountId).toBeUndefined();
     expect(mountedWorkspace?.mount.runtimeId).toBeUndefined();
+    expect(mountedWorkspace?.grants[0]?.pattern).toBe("/");
+    expect(mountedWorkspace?.grants[0]?.ruleIndex).toBe(0);
     expect(mountedWorkspace?.grants[0]?.grantId).toBeUndefined();
 
     const roomMessages = kernel
       .listMessageChannels(session.id)
-      .flatMap((channel) => channel.chatId === primaryRoom.chatId ? [channel.chatId] : [])
-      .flatMap((chatId) =>
-        (
-          Reflect.get(kernel, "messageControlPlane") as {
-            snapshot: (inputChatId: string, limit: number) => { items: Array<{ content: string }> };
-          }
-        ).snapshot(chatId, 20).items,
+      .flatMap((channel) => (channel.chatId === primaryRoom.chatId ? [channel.chatId] : []))
+      .flatMap(
+        (chatId) =>
+          (
+            Reflect.get(kernel, "messageControlPlane") as {
+              snapshot: (inputChatId: string, limit: number) => { items: Array<{ content: string }> };
+            }
+          ).snapshot(chatId, 20).items,
       );
     expect(roomMessages.some((item) => item.content === "通过 stdin 发送房间消息")).toBeTrue();
 
@@ -507,7 +610,7 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const created = await execRootWorkspaceBash(kernel, session.id, {
@@ -570,16 +673,14 @@ describe("Feature: workspace system kernel integration", () => {
           const readResult = payload.result;
           const content =
             readResult?.kind === "terminal-diff"
-              ? readResult.diff ?? ""
+              ? (readResult.diff ?? "")
               : readResult?.kind === "terminal-snapshot"
-                ? readResult.tail ?? ""
+                ? (readResult.tail ?? "")
                 : "";
           if (content.length > 0) {
             observedOutput = `${observedOutput}\n${content}`.trim();
           }
-          return observedOutput.includes("tool") && observedOutput.includes("ccski")
-            ? observedOutput
-            : null;
+          return observedOutput.includes("tool") && observedOutput.includes("ccski") ? observedOutput : null;
         },
         {
           label: "runtime terminal cli surface",
@@ -659,7 +760,9 @@ describe("Feature: workspace system kernel integration", () => {
 
     const after = await kernel.inspectAttentionState(session.id);
     expect(after.active.some((item) => item.contextId === "ctx-chat-main")).toBeFalse();
-    expect(after.snapshot.contexts.find((context) => context.contextId === "ctx-chat-main")?.scoreMap["delivery-hash"]).toBe(0);
+    expect(
+      after.snapshot.contexts.find((context) => context.contextId === "ctx-chat-main")?.scoreMap["delivery-hash"],
+    ).toBe(0);
 
     await kernel.stop();
   });
@@ -748,7 +851,7 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     const rootResponse = await executeRootWorkspaceBash({
@@ -845,11 +948,13 @@ describe("Feature: workspace system kernel integration", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
 
     await kernel.stopSession(session.id);
-    expect(kernel.detachRuntimeWorkspace({ runtimeId: session.id, workspacePath: workspace })).toEqual({ detached: true });
+    expect(kernel.detachRuntimeWorkspace({ runtimeId: session.id, workspacePath: workspace })).toEqual({
+      detached: true,
+    });
 
     await kernel.startSession(session.id);
 

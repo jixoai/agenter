@@ -36,7 +36,7 @@
 		collectWorkspaceTreeMatchPaths,
 		normalizeWorkspaceMode,
 		serializeRuleDrafts,
-		toGrantRelativePath,
+		toGrantPattern,
 		type WorkspaceMode,
 		type WorkspaceRuleDraft,
 		type WorkspaceTreePages,
@@ -134,7 +134,7 @@
 	const selectedRule = $derived(rules.find((rule) => rule.id === selectedRuleId) ?? rules[0] ?? null);
 	const selectedRuleIndex = $derived(selectedRule ? rules.findIndex((rule) => rule.id === selectedRule.id) : -1);
 	const selectedQuickRule = $derived(
-		selectedExplorerPath ? rules.find((rule) => rule.relativePath === toGrantRelativePath(selectedExplorerPath)) ?? null : null,
+		selectedExplorerPath ? rules.find((rule) => rule.pattern === toGrantPattern(selectedExplorerPath)) ?? null : null,
 	);
 	const matchedRuleIdSet = $derived(new Set(collectWorkspaceRuleMatchIds(rules, searchQuery)));
 
@@ -297,7 +297,7 @@
 			return;
 		}
 		rulesSaving = true;
-		const currentSelectedRelativePath = selectedRule?.relativePath ?? null;
+		const currentSelectedPattern = selectedRule?.pattern ?? null;
 		try {
 			const nextGrants = await controller.runtimeStore.grantRuntimeWorkspace({
 				runtimeId,
@@ -307,8 +307,8 @@
 			const nextRules = buildRuleDrafts(nextGrants);
 			rules = nextRules;
 			selectedRuleId =
-				(currentSelectedRelativePath
-					? nextRules.find((rule) => rule.relativePath === currentSelectedRelativePath)?.id
+				(currentSelectedPattern
+					? nextRules.find((rule) => rule.pattern === currentSelectedPattern)?.id
 					: null) ??
 				nextRules[0]?.id ??
 				null;
@@ -322,7 +322,7 @@
 	const addRule = (): void => {
 		const nextRule: WorkspaceRuleDraft = {
 			id: `draft-${crypto.randomUUID()}`,
-			relativePath: selectedRule?.relativePath ?? selectedExplorerPath ?? '/',
+			pattern: selectedRule?.pattern ?? selectedExplorerPath ?? '/',
 			mode: selectedRule?.mode ?? quickRuleMode,
 			enabled: true,
 		};
@@ -335,22 +335,22 @@
 		if (!selectedExplorerPath) {
 			return;
 		}
-		const targetPath = toGrantRelativePath(selectedExplorerPath);
-		const nextRules = rules.some((rule) => rule.relativePath === targetPath)
+		const targetPath = toGrantPattern(selectedExplorerPath);
+		const nextRules = rules.some((rule) => rule.pattern === targetPath)
 			? rules.map((rule) =>
-					rule.relativePath === targetPath ? { ...rule, mode: quickRuleMode, enabled: true } : rule,
+					rule.pattern === targetPath ? { ...rule, mode: quickRuleMode, enabled: true } : rule,
 				)
 			: [
 					...rules,
 					{
 						id: `draft-${crypto.randomUUID()}`,
-						relativePath: targetPath,
+						pattern: targetPath,
 						mode: quickRuleMode,
 						enabled: true,
 					},
 				];
 		rules = nextRules;
-		selectedRuleId = nextRules.find((rule) => rule.relativePath === targetPath)?.id ?? nextRules[0]?.id ?? null;
+		selectedRuleId = nextRules.find((rule) => rule.pattern === targetPath)?.id ?? nextRules[0]?.id ?? null;
 		rulesDirty = true;
 	};
 
@@ -361,7 +361,7 @@
 		const nextRule: WorkspaceRuleDraft = {
 			...selectedRule,
 			id: `draft-${crypto.randomUUID()}`,
-			relativePath: `${selectedRule.relativePath}-copy`,
+			pattern: `${selectedRule.pattern}-copy`,
 			enabled: false,
 		};
 		rules = [
@@ -634,7 +634,7 @@
 										}}
 									>
 										<div class="min-w-0">
-											<div class="truncate text-sm font-semibold">{rule.relativePath}</div>
+											<div class="truncate text-sm font-semibold">{rule.pattern}</div>
 											<div class="text-[11px] text-muted-foreground">Priority {index + 1}</div>
 										</div>
 										<div class="flex items-center gap-2">
@@ -685,13 +685,13 @@
 					{#if mode === 'rules'}
 						<div class="grid gap-3 md:grid-cols-3">
 							<Input
-								value={selectedRule?.relativePath ?? '/'}
+								value={selectedRule?.pattern ?? '/'}
 								oninput={(event) => {
 									const value = (event.currentTarget as HTMLInputElement).value;
 									if (!selectedRule) {
 										return;
 									}
-									rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, relativePath: value } : rule));
+									rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, pattern: value } : rule));
 									rulesDirty = true;
 								}}
 							/>
@@ -825,7 +825,7 @@
 				{#if mode === 'rules'}
 					<div class="rounded-xl border px-4 py-4 text-sm">
 						{#if selectedRule}
-							<div class="font-semibold">{selectedRule.relativePath}</div>
+							<div class="font-semibold">{selectedRule.pattern}</div>
 							<div class="mt-2 text-muted-foreground">
 								{selectedRule.enabled ? 'Enabled' : 'Disabled'} · {selectedRule.mode}
 							</div>

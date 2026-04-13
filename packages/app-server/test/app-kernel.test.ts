@@ -5,8 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { AppKernel, SessionDb } from "../src";
 import { MessageDb } from "../../message-system/src/message-db";
+import { AppKernel } from "../src";
 
 const tempDirs: string[] = [];
 
@@ -176,7 +176,7 @@ describe("Feature: app kernel event replay", () => {
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
       workspacePath: workspace,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
     const terminalResult = await kernel.createTerminal({
       sessionId: session.id,
@@ -308,11 +308,13 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(sent.ok).toBeTrue();
 
-    const before = kernel.pageGlobalRoomMessages({
-      chatId: room.chatId,
-      accessToken: room.accessToken,
-      limit: 4,
-    }).items.find((message) => message.content === "hello before jane starts");
+    const before = kernel
+      .pageGlobalRoomMessages({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        limit: 4,
+      })
+      .items.find((message) => message.content === "hello before jane starts");
     expect(before?.unreadActorIds).toContain(session.avatarPrincipalId as `0x${string}`);
 
     await kernel.startSession(session.id);
@@ -320,13 +322,14 @@ describe("Feature: app kernel event replay", () => {
     const deadline = Date.now() + 5_000;
     let loaded = before ?? null;
     while (Date.now() < deadline) {
-      loaded = kernel
-        .pageGlobalRoomMessages({
-          chatId: room.chatId,
-          accessToken: room.accessToken,
-          limit: 4,
-        })
-        .items.find((message) => message.content === "hello before jane starts") ?? null;
+      loaded =
+        kernel
+          .pageGlobalRoomMessages({
+            chatId: room.chatId,
+            accessToken: room.accessToken,
+            limit: 4,
+          })
+          .items.find((message) => message.content === "hello before jane starts") ?? null;
       if (
         loaded &&
         loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
@@ -393,17 +396,21 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(sent.ok).toBeTrue();
 
-    const before = kernel.pageGlobalRoomMessages({
-      chatId: room.chatId,
-      accessToken: room.accessToken,
-      limit: 4,
-    }).items.find((message) => message.content === "hello legacy jane");
+    const before = kernel
+      .pageGlobalRoomMessages({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        limit: 4,
+      })
+      .items.find((message) => message.content === "hello legacy jane");
     expect(before?.unreadActorIds).toContain(legacyActorId);
     expect(before?.unreadActorIds).not.toContain(session.avatarPrincipalId as `0x${string}`);
     expect(
-      kernel.listGlobalRooms({
-        actorId: session.avatarPrincipalId as `0x${string}`,
-      }).some((entry) => entry.chatId === room.chatId),
+      kernel
+        .listGlobalRooms({
+          actorId: session.avatarPrincipalId as `0x${string}`,
+        })
+        .some((entry) => entry.chatId === room.chatId),
     ).toBeFalse();
 
     await kernel.startSession(session.id);
@@ -414,24 +421,29 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(grants.some((grant) => grant.participantId === legacyActorId)).toBeFalse();
     expect(
-      grants.some((grant) => grant.participantId === (session.avatarPrincipalId as `0x${string}`) && grant.role === "member"),
+      grants.some(
+        (grant) => grant.participantId === (session.avatarPrincipalId as `0x${string}`) && grant.role === "member",
+      ),
     ).toBeTrue();
     expect(
-      kernel.listGlobalRooms({
-        actorId: session.avatarPrincipalId as `0x${string}`,
-      }).some((entry) => entry.chatId === room.chatId),
+      kernel
+        .listGlobalRooms({
+          actorId: session.avatarPrincipalId as `0x${string}`,
+        })
+        .some((entry) => entry.chatId === room.chatId),
     ).toBeTrue();
 
     const deadline = Date.now() + 5_000;
     let loaded = before ?? null;
     while (Date.now() < deadline) {
-      loaded = kernel
-        .pageGlobalRoomMessages({
-          chatId: room.chatId,
-          accessToken: room.accessToken,
-          limit: 4,
-        })
-        .items.find((message) => message.content === "hello legacy jane") ?? null;
+      loaded =
+        kernel
+          .pageGlobalRoomMessages({
+            chatId: room.chatId,
+            accessToken: room.accessToken,
+            limit: 4,
+          })
+          .items.find((message) => message.content === "hello legacy jane") ?? null;
       if (
         loaded &&
         loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
@@ -467,7 +479,6 @@ describe("Feature: app kernel event replay", () => {
     expect(debug.latestModelCall).toBeNull();
     expect(debug.recentApiCalls).toEqual([]);
   });
-
 
   test("Scenario: Given a stopped session When retaining the Devtools API stream Then the kernel stays stopped and reports recording disabled", async () => {
     const kernel = createKernel();
@@ -521,7 +532,11 @@ describe("Feature: app kernel event replay", () => {
     const kernel = createKernel();
     await kernel.start();
 
-    const session = await kernel.createSession({ cwd: process.cwd(), name: "stopped-persisted-notification", autoStart: true });
+    const session = await kernel.createSession({
+      cwd: process.cwd(),
+      name: "stopped-persisted-notification",
+      autoStart: true,
+    });
     await kernel.stopSession(session.id);
 
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
@@ -944,7 +959,9 @@ describe("Feature: app kernel event replay", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await restarted.start();
-    const restartedRoom = restarted.listGlobalRooms({ includeArchived: true }).find((item) => item.chatId === room.chatId);
+    const restartedRoom = restarted
+      .listGlobalRooms({ includeArchived: true })
+      .find((item) => item.chatId === room.chatId);
     if (!restartedRoom?.accessToken) {
       throw new Error("expected restarted room projection");
     }
@@ -960,7 +977,6 @@ describe("Feature: app kernel event replay", () => {
 
     await restarted.stop();
   });
-
 
   test("Scenario: Given a room created by a session When that session is deleted Then the global room truth remains in .message", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
@@ -1077,7 +1093,9 @@ describe("Feature: app kernel event replay", () => {
       limit: 20,
     });
     expect(page.items.some((item) => item.content === "global hello")).toBeTrue();
-    expect(page.items.find((item) => item.content === "pair operator hello")?.senderActorId).toBe("session:avatar-pair");
+    expect(page.items.find((item) => item.content === "pair operator hello")?.senderActorId).toBe(
+      "session:avatar-pair",
+    );
 
     const superadminSendAs = kernel.sendGlobalRoomMessage({
       chatId: room.chatId,
@@ -1088,11 +1106,13 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(superadminSendAs.ok).toBeTrue();
     expect(
-      kernel.snapshotGlobalRoom({
-        chatId: room.chatId,
-        accessToken: room.accessToken,
-        limit: 20,
-      }).items.find((item) => item.content === "superadmin as pair")?.senderActorId,
+      kernel
+        .snapshotGlobalRoom({
+          chatId: room.chatId,
+          accessToken: room.accessToken,
+          limit: 20,
+        })
+        .items.find((item) => item.content === "superadmin as pair")?.senderActorId,
     ).toBe("session:avatar-pair");
 
     const invalidSendAs = kernel.sendGlobalRoomMessage({
@@ -1140,7 +1160,9 @@ describe("Feature: app kernel event replay", () => {
       accessToken: disposable.accessToken,
     });
     expect(deleted.chatId).toBe(disposable.chatId);
-    expect(kernel.listGlobalRooms({ includeArchived: true }).some((item) => item.chatId === disposable.chatId)).toBeFalse();
+    expect(
+      kernel.listGlobalRooms({ includeArchived: true }).some((item) => item.chatId === disposable.chatId),
+    ).toBeFalse();
 
     await kernel.stop();
   });
@@ -1246,14 +1268,18 @@ describe("Feature: app kernel event replay", () => {
     expect(grants.some((grant) => grant.participantId === "auth:jane")).toBeTrue();
     expect(grants.some((grant) => grant.participantId === "session:jj")).toBeFalse();
     expect(
-      kernel.listGlobalRooms({
-        actorId: "auth:jane",
-      }).some((entry) => entry.chatId === room.chatId && entry.focused),
+      kernel
+        .listGlobalRooms({
+          actorId: "auth:jane",
+        })
+        .some((entry) => entry.chatId === room.chatId && entry.focused),
     ).toBeTrue();
     expect(
-      kernel.listGlobalRooms({
-        actorId: "session:jj",
-      }).some((entry) => entry.chatId === room.chatId),
+      kernel
+        .listGlobalRooms({
+          actorId: "session:jj",
+        })
+        .some((entry) => entry.chatId === room.chatId),
     ).toBeFalse();
 
     await kernel.stop();
@@ -1283,10 +1309,7 @@ describe("Feature: app kernel event replay", () => {
       ],
     });
 
-    expect(room.participants).toEqual([
-      { id: "auth:creator" },
-      { id: "session:jj", label: "JJ" },
-    ]);
+    expect(room.participants).toEqual([{ id: "auth:creator" }, { id: "session:jj", label: "JJ" }]);
     const grants = kernel.listGlobalRoomGrants({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -1304,9 +1327,11 @@ describe("Feature: app kernel event replay", () => {
       ]),
     );
     expect(
-      kernel.listGlobalRooms({
-        actorId: "auth:creator",
-      }).some((entry) => entry.chatId === room.chatId && entry.accessRole === "admin" && entry.focused === false),
+      kernel
+        .listGlobalRooms({
+          actorId: "auth:creator",
+        })
+        .some((entry) => entry.chatId === room.chatId && entry.accessRole === "admin" && entry.focused === false),
     ).toBeTrue();
 
     await kernel.stop();
@@ -1358,5 +1383,4 @@ describe("Feature: app kernel event replay", () => {
 
     await kernel.stop();
   });
-
 });

@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "n
 import { extname, join, relative, resolve } from "node:path";
 
 import type { WorkspaceGrantMode, WorkspaceGrantRecord } from "./workspace-system";
-import { resolveWorkspaceAvatarPrivateRoot } from "./workspace-system";
+import { resolveWorkspaceAvatarPrivateRoot, resolveWorkspaceGrantModeFromAbsolutePath } from "./workspace-system";
 import { toWorkspaceCwd } from "./workspace-target";
 
 export type WorkspaceWorkbenchMode = "explorer" | "private";
@@ -108,7 +108,8 @@ const resolveWorkbenchRoot = (input: {
   return toWorkspaceCwd(input.workspacePath);
 };
 
-const compareDirectoryEntryName = (left: string, right: string): number => left.localeCompare(right, undefined, { numeric: true });
+const compareDirectoryEntryName = (left: string, right: string): number =>
+  left.localeCompare(right, undefined, { numeric: true });
 
 const resolvePreviewKind = (absolutePath: string, isDirectory: boolean): WorkspaceWorkbenchPreviewKind => {
   if (isDirectory) {
@@ -159,18 +160,19 @@ const resolveMimeType = (previewKind: WorkspaceWorkbenchPreviewKind, absolutePat
   return null;
 };
 
-const resolveAccessMode = (absolutePath: string, grants: readonly WorkspaceGrantRecord[]): WorkspaceGrantMode | "none" => {
-  let mode: WorkspaceGrantMode | "none" = "none";
-  for (const grant of grants) {
-    const relation = relative(grant.absolutePath, absolutePath);
-    if (relation === "" || (!relation.startsWith("..") && !relation.startsWith("../") && relation !== "..")) {
-      if (grant.mode === "rw") {
-        return "rw";
-      }
-      mode = "ro";
-    }
-  }
-  return mode;
+const resolveAccessMode = (
+  absolutePath: string,
+  isDirectory: boolean,
+  grants: readonly WorkspaceGrantRecord[],
+): WorkspaceGrantMode | "none" => {
+  return grants.length === 0
+    ? "none"
+    : resolveWorkspaceGrantModeFromAbsolutePath({
+        workspaceRoot: grants[0]!.workspacePath,
+        absolutePath,
+        grants,
+        partial: isDirectory,
+      });
 };
 
 export const listWorkspaceWorkbenchTree = (input: {
@@ -195,31 +197,39 @@ export const listWorkspaceWorkbenchTree = (input: {
     }
     return compareDirectoryEntryName(left.name, right.name);
   });
-  const offset = Math.max(0, input.offset ?? 0);
-  const limit = Math.max(1, Math.min(DEFAULT_TREE_LIMIT, input.limit ?? DEFAULT_TREE_LIMIT));
-  const pagedEntries = entries.slice(offset, offset + limit);
   const grants = input.grants ?? [];
-  return {
-    rootPath: relativePath,
-    items: pagedEntries.map((entry) => {
-      const childRelativePath = toRelativePath(
-        relativePath === "/" ? entry.name : join(relativePath.slice(1), entry.name),
-      );
-      const childAbsolutePath = ensureInsideRoot(rootPath, childRelativePath);
-      const childStat = statSync(childAbsolutePath);
-      const kind = childStat.isDirectory() ? "directory" : "file";
-      return {
+  const projectedEntries = entries.flatMap((entry) => {
+    const childRelativePath = toRelativePath(
+      relativePath === "/" ? entry.name : join(relativePath.slice(1), entry.name),
+    );
+    const childAbsolutePath = ensureInsideRoot(rootPath, childRelativePath);
+    const childStat = statSync(childAbsolutePath);
+    const kind = childStat.isDirectory() ? "directory" : "file";
+    const accessMode =
+      input.mode === "explorer" ? resolveAccessMode(childAbsolutePath, kind === "directory", grants) : undefined;
+    if (input.mode === "explorer" && accessMode === "none") {
+      return [];
+    }
+    return [
+      {
         path: childRelativePath,
         name: entry.name,
         kind,
         sizeBytes: kind === "file" ? childStat.size : null,
         modifiedAtMs: childStat.mtimeMs,
         previewKind: resolvePreviewKind(childAbsolutePath, kind === "directory"),
-        accessMode: input.mode === "explorer" ? resolveAccessMode(childAbsolutePath, grants) : undefined,
-      } satisfies WorkspaceWorkbenchTreeEntry;
-    }),
-    total: entries.length,
-    nextOffset: offset + pagedEntries.length < entries.length ? offset + pagedEntries.length : null,
+        accessMode,
+      } satisfies WorkspaceWorkbenchTreeEntry,
+    ];
+  });
+  const offset = Math.max(0, input.offset ?? 0);
+  const limit = Math.max(1, Math.min(DEFAULT_TREE_LIMIT, input.limit ?? DEFAULT_TREE_LIMIT));
+  const pagedEntries = projectedEntries.slice(offset, offset + limit);
+  return {
+    rootPath: relativePath,
+    items: pagedEntries,
+    total: projectedEntries.length,
+    nextOffset: offset + pagedEntries.length < projectedEntries.length ? offset + pagedEntries.length : null,
   };
 };
 
@@ -229,11 +239,24 @@ export const readWorkspaceWorkbenchPreview = (input: {
   mode: WorkspaceWorkbenchMode;
   path: string;
   maxBytes?: number;
+  grants?: readonly WorkspaceGrantRecord[];
 }): WorkspaceWorkbenchPreview => {
   const rootPath = resolveWorkbenchRoot(input);
   const relativePath = toRelativePath(input.path);
   const absolutePath = ensureInsideRoot(rootPath, relativePath);
   const targetStat = statSync(absolutePath);
+  if (
+    input.mode === "explorer" &&
+    (input.grants?.length ?? 0) > 0 &&
+    resolveWorkspaceGrantModeFromAbsolutePath({
+      workspaceRoot: rootPath,
+      absolutePath,
+      grants: input.grants ?? [],
+      partial: targetStat.isDirectory(),
+    }) === "none"
+  ) {
+    throw new Error(`workspace preview denied by grants: ${relativePath}`);
+  }
   const kind = targetStat.isDirectory() ? "directory" : "file";
   const previewKind = resolvePreviewKind(absolutePath, kind === "directory");
   const mimeType = resolveMimeType(previewKind, absolutePath);
@@ -241,7 +264,7 @@ export const readWorkspaceWorkbenchPreview = (input: {
   if (kind === "directory") {
     return {
       path: relativePath,
-      name: relativePath === "/" ? "/" : relativePath.split("/").at(-1) ?? relativePath,
+      name: relativePath === "/" ? "/" : (relativePath.split("/").at(-1) ?? relativePath),
       kind,
       sizeBytes: 0,
       modifiedAtMs: targetStat.mtimeMs,
@@ -321,9 +344,7 @@ export const createWorkspacePrivateAsset = (input: {
   const parentPath = toRelativePath(input.parentPath ?? "/");
   const parentAbsolutePath = ensureInsideRoot(rootPath, parentPath);
   mkdirSync(parentAbsolutePath, { recursive: true });
-  const targetRelativePath = toRelativePath(
-    parentPath === "/" ? input.name : join(parentPath.slice(1), input.name),
-  );
+  const targetRelativePath = toRelativePath(parentPath === "/" ? input.name : join(parentPath.slice(1), input.name));
   const targetAbsolutePath = ensureInsideRoot(rootPath, targetRelativePath);
   if (input.kind === "directory") {
     mkdirSync(targetAbsolutePath, { recursive: true });

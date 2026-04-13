@@ -11,13 +11,32 @@ import {
   type FSWatcher,
 } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
-  defaultAvatarNickname,
-  normalizeAvatarNickname,
-  resolveGlobalAvatarCanonicalRoot,
-} from "@agenter/avatar";
+  AttentionStore,
+  AttentionSystem,
+  type AttentionCommitMatch,
+  type AttentionCycleFrame,
+  type AttentionHookRecord,
+} from "@agenter/attention-system";
+import { defaultAvatarNickname, normalizeAvatarNickname, resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
+import {
+  MessageControlPlane,
+  type MessageActorId,
+  type MessageChannelAccessRole,
+  type MessageChannelGrantRecord,
+  type MessageChannelKind,
+  type MessageChannelPatchInput,
+  type MessageControlPlaneEntry,
+  type MessageFocusOp,
+  type MessageIssuedGrant,
+  type MessageIssueGrantInput,
+  type MessageRecord,
+  type MessageSnapshot,
+} from "@agenter/message-system";
+import { isPrincipalId } from "@agenter/principal-crypto";
+import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 import {
   buildAvatarIconUrl,
   formatAvatarDisplayName,
@@ -28,28 +47,13 @@ import {
   type AvatarPrincipalMetadata,
   type PrincipalProjection,
 } from "@agenter/profile-service";
-import { isPrincipalId } from "@agenter/principal-crypto";
 import {
-  AttentionStore,
-  AttentionSystem,
-  type AttentionCommitMatch,
-  type AttentionCycleFrame,
-  type AttentionHookRecord,
-} from "@agenter/attention-system";
-import {
-  MessageControlPlane,
-  type MessageActorId,
-  type MessageChannelAccessRole,
-  type MessageChannelGrantRecord,
-  type MessageChannelKind,
-  type MessageChannelPatchInput,
-  type MessageControlPlaneEntry,
-  type MessageFocusOp,
-  type MessageIssueGrantInput,
-  type MessageIssuedGrant,
-  type MessageRecord,
-  type MessageSnapshot,
-} from "@agenter/message-system";
+  SessionDb,
+  type ReversePage,
+  type ReverseTimeCursor,
+  type SessionAiCallRecord,
+  type SessionMessageRecord,
+} from "@agenter/session-system";
 import {
   TerminalControlPlane,
   type TerminalActorId,
@@ -63,15 +67,9 @@ import {
   type TerminalReadResult,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
-import {
-  SessionDb,
-  type ReversePage,
-  type ReverseTimeCursor,
-  type SessionAiCallRecord,
-  type SessionMessageRecord,
-} from "@agenter/session-system";
-import { type ChatCycle } from "./chat-cycles";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
+import { projectAuthActors } from "./auth-actor-catalog";
+import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import {
   buildWorkspaceAvatarCatalogEntry,
   copyAvatarIntoWorkspace,
@@ -89,17 +87,10 @@ import {
   saveAvatarTerminalSeatCredential,
   type AvatarSeatState,
 } from "./avatar-seat-store";
+import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
-import { resolveModelCapabilities } from "./model-capabilities";
-import {
-  createWorkspacePrivateAsset,
-  listWorkspaceWorkbenchTree,
-  readWorkspaceWorkbenchPreview,
-  type WorkspaceWorkbenchMode,
-} from "./workspace-workbench";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
-import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
-import { projectAuthActors } from "./auth-actor-catalog";
+import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -107,30 +98,28 @@ import {
   type RuntimeEventType,
   type RuntimeSnapshotPayload,
 } from "./realtime-types";
+import { RoomAssetStore, toChatRoomAsset, type RoomAssetRecord } from "./room-assets";
+import type {
+  RuntimeCycleRecord,
+  RuntimeLoopStateLogRecord,
+  RuntimeTerminalActivityRecord,
+} from "./runtime-history-records";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
-import { resolveWorkspaceAvatarSessionId } from "./session-identity";
-import {
-  mergeSessionNotificationSnapshots,
-  projectSessionNotificationSnapshot,
-  toAttentionFocusStateFromVisibility,
-  type SessionNotificationSnapshot,
-} from "./session-notifications";
-import {
-  resolveSessionRoomActorId,
-} from "./session-chat-projection";
+import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
+import { resolveWorkspaceAvatarSessionId } from "./session-identity";
 import {
   projectAiCallToChatCycle,
   projectAiCallToModelCall,
   projectHeartbeatMessageToChatMessage,
   type RuntimeModelCallRecord,
 } from "./session-ledger-view";
-import type {
-  RuntimeCycleRecord,
-  RuntimeLoopStateLogRecord,
-  RuntimeTerminalActivityRecord,
-} from "./runtime-history-records";
-import { RoomAssetStore, type RoomAssetRecord, toChatRoomAsset } from "./room-assets";
+import {
+  mergeSessionNotificationSnapshots,
+  projectSessionNotificationSnapshot,
+  toAttentionFocusStateFromVisibility,
+  type SessionNotificationSnapshot,
+} from "./session-notifications";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import {
   listScopedSettingsGraph,
@@ -141,23 +130,30 @@ import {
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, RoomMediaAsset } from "./types";
 import { WorkspacePathSearchIndex } from "./workspace-path-search";
 import {
-  WorkspaceSystemStore,
+  listWorkspaceSettingsLayers,
+  readWorkspaceSettingsLayer,
+  saveWorkspaceSettingsLayer,
+} from "./workspace-settings";
+import {
   executeWorkspaceBash,
+  hasWorkspaceGrantRootAccess,
   resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
+  WorkspaceSystemStore,
   type WorkspaceAssetRoots,
   type WorkspaceGrantInput,
   type WorkspaceGrantRecord,
   type WorkspaceMountRecord,
 } from "./workspace-system";
-import {
-  listWorkspaceSettingsLayers,
-  readWorkspaceSettingsLayer,
-  saveWorkspaceSettingsLayer,
-} from "./workspace-settings";
 import { GLOBAL_WORKSPACE_PATH, isGlobalWorkspacePath, toWorkspaceCwd, toWorkspacePath } from "./workspace-target";
+import {
+  createWorkspacePrivateAsset,
+  listWorkspaceWorkbenchTree,
+  readWorkspaceWorkbenchPreview,
+  type WorkspaceWorkbenchMode,
+} from "./workspace-workbench";
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
-import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 
 const now = (): number => Date.now();
 const clonePromptWindowMessages = (
@@ -168,10 +164,6 @@ const clonePromptWindowMessages = (
 const DEFAULT_MESSAGE_CHAT_TITLE = "Room";
 const AVATAR_CATALOG_INVALIDATION_DEBOUNCE_MS = 120;
 const MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS = 80;
-const isPathInsideRoot = (root: string, target: string): boolean => {
-  const relation = relative(root, target);
-  return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
-};
 const TERMINAL_SURFACE_INVALIDATION_DEBOUNCE_MS = 80;
 const INTERNAL_FAILURE_PREFIXES = ["agenter-ai call failed:", "agenter-ai 调用失败:", "agenter-ai 调用失败："];
 
@@ -183,7 +175,8 @@ const hashNumericLabel = (value: string): string => {
   return String(hash).padStart(2, "0");
 };
 
-const buildSessionIconLabel = (sessionId: string): string => sessionId.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(sessionId);
+const buildSessionIconLabel = (sessionId: string): string =>
+  sessionId.replaceAll(/[^0-9]/g, "").slice(-2) || hashNumericLabel(sessionId);
 
 const parseGitOwnerFromUrl = (raw: string): string | null => {
   const value = raw.trim().replace(/\.git$/, "");
@@ -205,7 +198,8 @@ const parseGitOwnerFromUrl = (raw: string): string | null => {
 const isInternalFailurePreviewText = (content: string): boolean =>
   INTERNAL_FAILURE_PREFIXES.some((prefix) => content.trim().startsWith(prefix));
 
-const isBuiltInMessageRoomMetadata = (metadata: Record<string, unknown> | undefined): boolean => metadata?.builtIn === true;
+const isBuiltInMessageRoomMetadata = (metadata: Record<string, unknown> | undefined): boolean =>
+  metadata?.builtIn === true;
 
 const isStandaloneMessageRoomEntry = (channel: { metadata?: Record<string, unknown> } | undefined): boolean =>
   !isBuiltInMessageRoomMetadata(channel?.metadata);
@@ -573,7 +567,8 @@ export class AppKernel {
     });
     this.workspaces = new WorkspacesStore({ filePath: options.workspacesPath });
     this.workspaceSystem = new WorkspaceSystemStore({
-      filePath: options.workspaceSystemStatePath ?? join(this.sessions.getGlobalRoot(), "..", "workspace-system", "state.json"),
+      filePath:
+        options.workspaceSystemStatePath ?? join(this.sessions.getGlobalRoot(), "..", "workspace-system", "state.json"),
     });
     this.messageControlPlane = new MessageControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".message", "message.db"),
@@ -602,7 +597,9 @@ export class AppKernel {
 
   private resolveAvatarCatalogWatchPath(workspacePath: string): string | null {
     const homeDir = this.getHomeDir();
-    const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir) ? GLOBAL_WORKSPACE_PATH : workspacePath;
+    const normalizedWorkspacePath = isGlobalWorkspacePath(workspacePath, homeDir)
+      ? GLOBAL_WORKSPACE_PATH
+      : workspacePath;
     const workspaceCwd = toWorkspaceCwd(normalizedWorkspacePath, homeDir);
     if (!existsSync(workspaceCwd)) {
       return null;
@@ -641,7 +638,10 @@ export class AppKernel {
     }
 
     for (const workspacePath of [...this.avatarCatalogWatchers.keys()]) {
-      if (!desired.has(workspacePath) || desired.get(workspacePath) !== this.avatarCatalogWatchPaths.get(workspacePath)) {
+      if (
+        !desired.has(workspacePath) ||
+        desired.get(workspacePath) !== this.avatarCatalogWatchPaths.get(workspacePath)
+      ) {
         this.closeAvatarCatalogWatcher(workspacePath);
       }
     }
@@ -660,7 +660,9 @@ export class AppKernel {
             this.syncAvatarCatalogWatchers();
           }
           this.queueAvatarCatalogInvalidation(
-            workspacePath === GLOBAL_WORKSPACE_PATH ? [GLOBAL_WORKSPACE_PATH, ...this.workspaces.list()] : [workspacePath],
+            workspacePath === GLOBAL_WORKSPACE_PATH
+              ? [GLOBAL_WORKSPACE_PATH, ...this.workspaces.list()]
+              : [workspacePath],
           );
         });
         this.avatarCatalogWatchers.set(workspacePath, watcher);
@@ -883,7 +885,9 @@ export class AppKernel {
     }
     this.ensureSessionCatalogLoaded();
     const boundSessions = await Promise.all(
-      this.sessions.list().map(async (session) => this.bindSessionPrimaryRoomId(this.bindSessionAvatarPrincipal(session))),
+      this.sessions
+        .list()
+        .map(async (session) => this.bindSessionPrimaryRoomId(this.bindSessionAvatarPrincipal(session))),
     );
     this.repairLegacySessionMessageActors(boundSessions);
     this.syncAvatarCatalogWatchers();
@@ -1480,7 +1484,15 @@ export class AppKernel {
     const authorities = this.listRuntimeWorkspaceAuthorities(input.runtimeId);
     if (typeof input.cwd === "string" && input.cwd.trim().length > 0) {
       const cwd = resolve(input.cwd);
-      const allowed = authorities.some((entry) => entry.grants.some((grant) => isPathInsideRoot(grant.absolutePath, cwd)));
+      const allowed = authorities.some(
+        (entry) =>
+          resolveWorkspaceGrantModeFromAbsolutePath({
+            workspaceRoot: entry.workspaceRoot,
+            absolutePath: cwd,
+            grants: entry.grants,
+            partial: true,
+          }) !== "none",
+      );
       if (!allowed) {
         return {
           ok: false,
@@ -1492,9 +1504,7 @@ export class AppKernel {
 
     const rootCandidates = [
       ...new Set(
-        authorities
-          .filter((entry) => entry.grants.some((grant) => grant.absolutePath === entry.workspaceRoot))
-          .map((entry) => entry.workspaceRoot),
+        authorities.filter((entry) => hasWorkspaceGrantRootAccess(entry.grants)).map((entry) => entry.workspaceRoot),
       ),
     ];
     if (rootCandidates.length === 1) {
@@ -1574,12 +1584,23 @@ export class AppKernel {
     path: string;
     maxBytes?: number;
   }) {
+    const workspacePath = toWorkspacePath(input.workspacePath);
+    const avatar = normalizeAvatarNickname(input.avatar);
+    const runtimeId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
+    const grants =
+      input.mode === "explorer"
+        ? this.workspaceSystem.listRuntimeWorkspaceGrants({
+            runtimeId,
+            workspacePath,
+          })
+        : [];
     return readWorkspaceWorkbenchPreview({
-      workspacePath: toWorkspacePath(input.workspacePath),
-      avatar: normalizeAvatarNickname(input.avatar),
+      workspacePath,
+      avatar,
       mode: input.mode,
       path: input.path,
       maxBytes: input.maxBytes,
+      grants,
     });
   }
 
@@ -1636,7 +1657,8 @@ export class AppKernel {
     });
     this.queueAvatarCatalogInvalidation([workspacePath]);
     return (
-      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ?? projected
+      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ??
+      projected
     );
   }
 
@@ -1654,7 +1676,8 @@ export class AppKernel {
     });
     this.queueAvatarCatalogInvalidation([workspacePath]);
     return (
-      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ?? projected
+      (await this.listWorkspaceAvatarCatalog(workspacePath)).find((entry) => entry.nickname === projected.nickname) ??
+      projected
     );
   }
 
@@ -1687,9 +1710,11 @@ export class AppKernel {
         .map((channel) => channel.chatId),
     );
     const accessibleTerminalIds = new Set(
-      this.terminalControlPlane.listForActor(sessionTerminalActorId, {
-        touchPresence: false,
-      }).map((terminal) => terminal.terminalId),
+      this.terminalControlPlane
+        .listForActor(sessionTerminalActorId, {
+          touchPresence: false,
+        })
+        .map((terminal) => terminal.terminalId),
     );
 
     const rooms = this.listGlobalRooms({
@@ -1759,10 +1784,7 @@ export class AppKernel {
     return { ok: true };
   }
 
-  private ensureRuntimeAvatarRootWorkspace(input: {
-    runtimeId: string;
-    avatarPrincipalId: string;
-  }): string {
+  private ensureRuntimeAvatarRootWorkspace(input: { runtimeId: string; avatarPrincipalId: string }): string {
     const rootWorkspacePath = resolveGlobalAvatarCanonicalRoot(input.avatarPrincipalId, this.getHomeDir());
     mkdirSync(rootWorkspacePath, { recursive: true });
     for (const directory of ["skills", "memories", "tools", "tmp"]) {
@@ -1782,7 +1804,7 @@ export class AppKernel {
         runtimeId: input.runtimeId,
         workspacePath: rootWorkspacePath,
         kind: "avatar-root",
-        grants: [{ relativePath: "/", mode: "rw" }],
+        grants: [{ pattern: "/", mode: "rw" }],
       });
     }
     return rootWorkspacePath;
@@ -1854,11 +1876,7 @@ export class AppKernel {
     return { removed };
   }
 
-  listChatMessages(
-    sessionId: string,
-    afterId = 0,
-    limit = 200,
-  ): PersistedChatMessage[] {
+  listChatMessages(sessionId: string, afterId = 0, limit = 200): PersistedChatMessage[] {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -1879,11 +1897,7 @@ export class AppKernel {
     return this.readChatMessagesPageFromDb(session.sessionRoot, sessionId, input);
   }
 
-  listChatMessagesBefore(
-    sessionId: string,
-    beforeId: number,
-    limit = 200,
-  ): PersistedChatMessage[] {
+  listChatMessagesBefore(sessionId: string, beforeId: number, limit = 200): PersistedChatMessage[] {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -1901,10 +1915,7 @@ export class AppKernel {
     return this.readChatCyclesFromDb(session.sessionRoot, sessionId, limit);
   }
 
-  pageChatCycles(
-    sessionId: string,
-    input?: { before?: ReverseTimeCursor; limit?: number },
-  ): ReversePage<ChatCycle> {
+  pageChatCycles(sessionId: string, input?: { before?: ReverseTimeCursor; limit?: number }): ReversePage<ChatCycle> {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -1969,7 +1980,7 @@ export class AppKernel {
       this.workspaceSystem.setRuntimeWorkspaceGrants({
         runtimeId,
         workspacePath,
-        grants: [{ relativePath: "/", mode: "rw" }],
+        grants: [{ pattern: "/", mode: "rw" }],
       });
     }
   }
@@ -2351,7 +2362,12 @@ export class AppKernel {
     });
   }
 
-  archiveMessageChannel(input: { sessionId: string; chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
+  archiveMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    archivedBy?: string;
+  }): MessageControlPlaneEntry {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       throw new Error("session runtime is not active");
@@ -2374,7 +2390,11 @@ export class AppKernel {
     });
   }
 
-  listMessageChannelGrants(input: { sessionId: string; chatId: string; accessToken: string }): MessageChannelGrantRecord[] {
+  listMessageChannelGrants(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+  }): MessageChannelGrantRecord[] {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       throw new Error("session runtime is not active");
@@ -2402,7 +2422,9 @@ export class AppKernel {
     });
   }
 
-  revokeMessageChannelGrant(input: { sessionId: string; chatId: string; accessToken: string; grantId: string }): { ok: boolean } {
+  revokeMessageChannelGrant(input: { sessionId: string; chatId: string; accessToken: string; grantId: string }): {
+    ok: boolean;
+  } {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       throw new Error("session runtime is not active");
@@ -2414,11 +2436,13 @@ export class AppKernel {
     });
   }
 
-  listGlobalRooms(input: {
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
-    includeArchived?: boolean;
-  } = {}): MessageControlPlaneEntry[] {
+  listGlobalRooms(
+    input: {
+      actorId?: MessageActorId;
+      superadminActorId?: MessageActorId;
+      includeArchived?: boolean;
+    } = {},
+  ): MessageControlPlaneEntry[] {
     if (input.actorId && !input.superadminActorId) {
       return this.messageControlPlane
         .listChannelsForActor(input.actorId, {
@@ -2427,9 +2451,11 @@ export class AppKernel {
         })
         .filter(isStandaloneMessageRoomEntry);
     }
-    return this.messageControlPlane.listChannels({
-      includeArchived: input.includeArchived,
-    }).filter(isStandaloneMessageRoomEntry);
+    return this.messageControlPlane
+      .listChannels({
+        includeArchived: input.includeArchived,
+      })
+      .filter(isStandaloneMessageRoomEntry);
   }
 
   async createGlobalRoom(input: {
@@ -2505,7 +2531,8 @@ export class AppKernel {
     superadminActorId?: MessageActorId;
   }): { ok: boolean; message: string; focusedChatIds: string[] } {
     const focusedChatIds =
-      input.channels.length > 0 && input.channels.every((channel) => typeof channel.accessToken === "string" && channel.accessToken.length > 0)
+      input.channels.length > 0 &&
+      input.channels.every((channel) => typeof channel.accessToken === "string" && channel.accessToken.length > 0)
         ? this.messageControlPlane.focusAuthorized(
             input.op,
             input.channels.map((channel) => ({
@@ -2519,10 +2546,10 @@ export class AppKernel {
               input.op,
               input.channels.map((channel) => channel.chatId),
             )
-        : this.messageControlPlane.focus(
-            input.op,
-            input.channels.map((channel) => channel.chatId),
-          );
+          : this.messageControlPlane.focus(
+              input.op,
+              input.channels.map((channel) => channel.chatId),
+            );
     return {
       ok: true,
       message: `focus ${input.op}`,
@@ -2708,10 +2735,12 @@ export class AppKernel {
     });
   }
 
-  listGlobalTerminals(input: {
-    actorId?: TerminalActorId;
-    superadminActorId?: TerminalActorId;
-  } = {}): TerminalControlPlaneEntry[] {
+  listGlobalTerminals(
+    input: {
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } = {},
+  ): TerminalControlPlaneEntry[] {
     if (input.superadminActorId || !input.actorId) {
       return this.terminalControlPlane.list();
     }
@@ -2859,15 +2888,13 @@ export class AppKernel {
     return this.terminalControlPlane.denyRequestAuthorized(input);
   }
 
-  pageGlobalTerminalActivity(
-    input: {
-      terminalId: string;
-      before?: ReverseTimeCursor;
-      limit?: number;
-      actorId?: TerminalActorId;
-      superadminActorId?: TerminalActorId;
-    },
-  ): ReversePage<RuntimeTerminalActivityRecord> {
+  pageGlobalTerminalActivity(input: {
+    terminalId: string;
+    before?: ReverseTimeCursor;
+    limit?: number;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): ReversePage<RuntimeTerminalActivityRecord> {
     const page = this.terminalControlPlane.pageEventsAuthorized(input);
     return {
       items: page.items.map(projectTerminalEventToActivityRecord),
@@ -3214,7 +3241,11 @@ export class AppKernel {
       chatId: input.chatId,
       accessToken: access.room.accessToken,
     });
-    return grants.find((grant) => grant.accessToken === targetToken)?.participantId ?? input.superadminActorId ?? input.actorId;
+    return (
+      grants.find((grant) => grant.accessToken === targetToken)?.participantId ??
+      input.superadminActorId ??
+      input.actorId
+    );
   }
 
   async uploadGlobalRoomAssets(input: {
@@ -3305,7 +3336,10 @@ export class AppKernel {
     };
   }
 
-  async uploadSessionIcon(sessionId: string, file: { bytes: Uint8Array; name: string; mimeType: string }): Promise<{ ok: true; url: string }> {
+  async uploadSessionIcon(
+    sessionId: string,
+    file: { bytes: Uint8Array; name: string; mimeType: string },
+  ): Promise<{ ok: true; url: string }> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`session not found: ${sessionId}`);
@@ -3604,10 +3638,7 @@ export class AppKernel {
     return await this.readPersistedAttentionState(session);
   }
 
-  async queryAttention(
-    sessionId: string,
-    input: AttentionSearchRequest,
-  ): Promise<AttentionCommitMatch[]> {
+  async queryAttention(sessionId: string, input: AttentionSearchRequest): Promise<AttentionCommitMatch[]> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
       return await runtime.queryAttention(input);
@@ -3682,11 +3713,7 @@ export class AppKernel {
     return await listWorkspaceSettingsLayers({ workspacePath });
   }
 
-  async listSettingsScope(input: {
-    scope: SettingsScope;
-    workspacePath?: string;
-    avatar?: string;
-  }) {
+  async listSettingsScope(input: { scope: SettingsScope; workspacePath?: string; avatar?: string }) {
     return await listScopedSettingsGraph(input);
   }
 
@@ -3698,10 +3725,7 @@ export class AppKernel {
     return await saveGlobalSettingsFile(input);
   }
 
-  async readSettingsLayer(input: {
-    workspacePath: string;
-    layerId: string;
-  }) {
+  async readSettingsLayer(input: { workspacePath: string; layerId: string }) {
     return await readWorkspaceSettingsLayer(input);
   }
 
@@ -3714,12 +3738,7 @@ export class AppKernel {
     return await readScopedSettingsLayer(input);
   }
 
-  async saveSettingsLayer(input: {
-    workspacePath: string;
-    layerId: string;
-    content: string;
-    baseMtimeMs: number;
-  }) {
+  async saveSettingsLayer(input: { workspacePath: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await saveWorkspaceSettingsLayer(input);
   }
 
@@ -3820,8 +3839,7 @@ export class AppKernel {
       const firstUser = messages.find((item) => item.role === "user");
       const latestMessages = messages
         .filter(
-          (item) =>
-            (item.role === "user" || item.channel === "to_user") && !isInternalFailurePreviewText(item.content),
+          (item) => (item.role === "user" || item.channel === "to_user") && !isInternalFailurePreviewText(item.content),
         )
         .slice(-3)
         .map((item) => item.content.trim())
@@ -3923,7 +3941,9 @@ export class AppKernel {
 
   private async buildNotificationSnapshot(): Promise<SessionNotificationSnapshot> {
     return mergeSessionNotificationSnapshots(
-      await Promise.all(this.sessions.list().map(async (session) => await this.buildSessionNotificationSnapshot(session))),
+      await Promise.all(
+        this.sessions.list().map(async (session) => await this.buildSessionNotificationSnapshot(session)),
+      ),
     );
   }
 
@@ -4036,7 +4056,9 @@ export class AppKernel {
     return await this.buildSessionNotificationSnapshot(session);
   }
 
-  private async readPersistedModelDebug(session: SessionMeta): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
+  private async readPersistedModelDebug(
+    session: SessionMeta,
+  ): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
     const resolved = await resolveSessionConfig(session.cwd, {
       avatar: session.avatar,
       homeDir: this.getHomeDir(),
@@ -4133,9 +4155,7 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       const messageById = new Map(readAllHeartbeatMessages(db).map((message) => [message.messageId, message]));
-      return db
-        .listAiCalls(limit)
-        .map((call) => projectAiCallToChatCycle({ call, messageById }));
+      return db.listAiCalls(limit).map((call) => projectAiCallToChatCycle({ call, messageById }));
     } finally {
       db.close();
     }

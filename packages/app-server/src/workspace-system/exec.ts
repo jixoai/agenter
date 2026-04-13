@@ -1,12 +1,18 @@
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { accessSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 
-import { Bash, MountableFs, OverlayFs, ReadWriteFs, defineCommand } from "just-bash";
+import { Bash, defineCommand, InMemoryFs, MountableFs } from "just-bash";
 
 import { buildRuntimeToolExecCommand } from "../runtime-tool-exec";
+import { GrantedWorkspaceFs } from "./granted-fs";
+import { normalizeWorkspaceGrantPattern } from "./grants";
 import { getOneShotShellProcessViolation } from "./one-shot-shell-guard";
-import { resolveWorkspaceAvatarAssetRoot, resolveWorkspacePublicAssetRoot, resolveWorkspaceToolCommandName } from "./paths";
-import type { WorkspaceGrantRecord } from "./types";
+import {
+  resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspacePublicAssetRoot,
+  resolveWorkspaceToolCommandName,
+} from "./paths";
+import type { WorkspaceAssetKind, WorkspaceGrantRecord } from "./types";
 
 export interface WorkspaceBashExecInput {
   workspacePath: string;
@@ -32,6 +38,7 @@ interface WorkspaceToolBinding {
 }
 
 const VIRTUAL_WORKSPACE_ROOT = "/workspace";
+const WORKSPACE_SYSTEM_GRANT_KINDS: WorkspaceAssetKind[] = ["skills", "memory", "tools", "archive"];
 
 const ensureReadableDirectory = (path: string): boolean => {
   try {
@@ -42,10 +49,7 @@ const ensureReadableDirectory = (path: string): boolean => {
   }
 };
 
-const scanToolBindings = (input: {
-  workspacePath: string;
-  avatar: string;
-}): WorkspaceToolBinding[] => {
+const scanToolBindings = (input: { workspacePath: string; avatar: string }): WorkspaceToolBinding[] => {
   const roots = [
     resolveWorkspacePublicAssetRoot(input.workspacePath, "tools"),
     resolveWorkspaceAvatarAssetRoot(input.workspacePath, input.avatar, "tools"),
@@ -78,30 +82,35 @@ const scanToolBindings = (input: {
   return bindings;
 };
 
-const createBashFs = (input: {
-  workspacePath: string;
-  grants: WorkspaceGrantRecord[];
-}) => {
-  const fs = new MountableFs({
-    base: new OverlayFs({
-      root: input.workspacePath,
-      mountPoint: VIRTUAL_WORKSPACE_ROOT,
-      readOnly: true,
-    }),
+const createBashFs = (input: { workspacePath: string; avatar: string; grants: WorkspaceGrantRecord[] }) => {
+  mkdirSync(input.workspacePath, { recursive: true });
+  const systemGrantPatterns = WORKSPACE_SYSTEM_GRANT_KINDS.flatMap((kind) => {
+    const roots = [
+      resolveWorkspacePublicAssetRoot(input.workspacePath, kind),
+      resolveWorkspaceAvatarAssetRoot(input.workspacePath, input.avatar, kind),
+    ];
+    return roots.flatMap((rootPath) => {
+      const relation = relative(input.workspacePath, rootPath);
+      if (relation.startsWith("..")) {
+        return [];
+      }
+      return [
+        {
+          pattern: normalizeWorkspaceGrantPattern(relation),
+          mode: "rw" as const,
+        },
+      ];
+    });
   });
-  for (const grant of input.grants) {
-    if (grant.mode !== "rw") {
-      continue;
-    }
-    mkdirSync(grant.absolutePath, { recursive: true });
-    const mountPoint = join(VIRTUAL_WORKSPACE_ROOT, grant.relativePath === "/" ? "" : grant.relativePath);
-    fs.mount(
-      mountPoint,
-      new ReadWriteFs({
-        root: grant.absolutePath,
-      }),
-    );
-  }
+  const fs = new MountableFs({ base: new InMemoryFs() });
+  fs.mount(
+    VIRTUAL_WORKSPACE_ROOT,
+    new GrantedWorkspaceFs({
+      workspacePath: input.workspacePath,
+      grants: input.grants,
+      systemGrantPatterns,
+    }),
+  );
   return fs;
 };
 
@@ -119,6 +128,7 @@ export const executeWorkspaceBash = async (input: WorkspaceBashExecInput): Promi
   }
   const fs = createBashFs({
     workspacePath,
+    avatar: input.avatar,
     grants: input.grants,
   });
   const toolBindings = scanToolBindings({

@@ -2,9 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
-import { AVATAR_CLASSIFY_VALUES } from "@agenter/profile-service";
-import { isPrincipalId } from "@agenter/principal-crypto";
 import type { MessageActorId } from "@agenter/message-system";
+import { isPrincipalId } from "@agenter/principal-crypto";
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/profile-service";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
@@ -51,7 +51,7 @@ const terminalProcessProfileSchema = z.object({
   shortcuts: z.record(z.string(), z.string().min(1)).optional(),
 });
 const workspaceGrantInputSchema = z.object({
-  relativePath: z.string().trim().min(1),
+  pattern: z.string().trim().min(1),
   mode: z.enum(["ro", "rw"]),
 });
 const messageErrorPayloadSchema = z.object({
@@ -147,7 +147,10 @@ export const appRouter = t.router({
     bootstrapManagedKey: t.procedure.mutation(async ({ ctx }) => await ctx.kernel.revealManagedRootAuthPrivateKey()),
     challengeVerify: t.procedure
       .input(authChallengeVerifyInput)
-      .mutation(async ({ ctx, input }) => await ctx.kernel.verifyAuthChallenge({ ...input, token: ctx.auth?.token ?? undefined })),
+      .mutation(
+        async ({ ctx, input }) =>
+          await ctx.kernel.verifyAuthChallenge({ ...input, token: ctx.auth?.token ?? undefined }),
+      ),
     session: requireAuth.query(({ ctx }) => ctx.auth),
     superadminStatus: requireSuperadmin.query(({ ctx }) => ({
       ok: true,
@@ -261,10 +264,14 @@ export const appRouter = t.router({
       ),
     list: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     cycles: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 }),
+      ),
   }),
   message: t.router({
     listChannels: t.procedure
@@ -274,7 +281,9 @@ export const appRouter = t.router({
           includeArchived: z.boolean().optional(),
         }),
       )
-      .query(({ ctx, input }) => ({ items: ctx.kernel.listMessageChannels(input.sessionId, { includeArchived: input.includeArchived }) })),
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listMessageChannels(input.sessionId, { includeArchived: input.includeArchived }),
+      })),
     createChannel: t.procedure
       .input(
         z.object({
@@ -801,11 +810,12 @@ export const appRouter = t.router({
           terminalId: z.string().min(1),
         }),
       )
-      .mutation(async ({ ctx, input }) =>
-        await ctx.kernel.deleteGlobalTerminal({
-          ...input,
-          ...resolveTerminalCallerScope(ctx.auth),
-        }),
+      .mutation(
+        async ({ ctx, input }) =>
+          await ctx.kernel.deleteGlobalTerminal({
+            ...input,
+            ...resolveTerminalCallerScope(ctx.auth),
+          }),
       ),
     activityPage: t.procedure
       .input(
@@ -860,11 +870,12 @@ export const appRouter = t.router({
             .optional(),
         }),
       )
-      .mutation(async ({ ctx, input }) =>
-        await ctx.kernel.writeGlobalTerminal({
-          ...input,
-          ...resolveTerminalCallerScope(ctx.auth),
-        }),
+      .mutation(
+        async ({ ctx, input }) =>
+          await ctx.kernel.writeGlobalTerminal({
+            ...input,
+            ...resolveTerminalCallerScope(ctx.auth),
+          }),
       ),
     listGrants: t.procedure
       .input(
@@ -1077,12 +1088,13 @@ export const appRouter = t.router({
           patch: profileMetadataPatchSchema,
         }),
       )
-      .mutation(async ({ ctx, input }) =>
-        await ctx.kernel.updateProfile({
-          reference: input.reference,
-          token: ctx.auth.token,
-          patch: input.patch,
-        }),
+      .mutation(
+        async ({ ctx, input }) =>
+          await ctx.kernel.updateProfile({
+            reference: input.reference,
+            token: ctx.auth.token,
+            patch: input.patch,
+          }),
       ),
     auth: t.router({
       emailStart: t.procedure
@@ -1096,7 +1108,10 @@ export const appRouter = t.router({
         .input(
           z.object({
             email: z.string().email(),
-            code: z.string().trim().regex(/^\d{6}$/),
+            code: z
+              .string()
+              .trim()
+              .regex(/^\d{6}$/),
             token: z.string().trim().min(1).optional(),
           }),
         )
@@ -1127,15 +1142,17 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.kernel.setTerminalVisibility(input)),
     consume: t.procedure
       .input(
-        z.object({
-          sessionId: z.string().min(1),
-          chatId: z.string().min(1).optional(),
-          terminalId: z.string().min(1).optional(),
-          upToMessageId: z.string().min(1).optional(),
-        }).refine((value) => !(value.chatId && value.terminalId), {
-          message: "chatId and terminalId cannot be used together",
-          path: ["terminalId"],
-        }),
+        z
+          .object({
+            sessionId: z.string().min(1),
+            chatId: z.string().min(1).optional(),
+            terminalId: z.string().min(1).optional(),
+            upToMessageId: z.string().min(1).optional(),
+          })
+          .refine((value) => !(value.chatId && value.terminalId), {
+            message: "chatId and terminalId cannot be used together",
+            path: ["terminalId"],
+          }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.consumeNotifications(input)),
   }),
@@ -1200,10 +1217,14 @@ export const appRouter = t.router({
       })),
     schedulerLogs: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageSchedulerLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageSchedulerLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     observabilityTraces: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageObservabilityTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageObservabilityTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     observabilityTraceLookup: t.procedure
       .input(
         z.object({
@@ -1217,10 +1238,14 @@ export const appRouter = t.router({
       })),
     modelCallsPage: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     apiCallsPage: t.procedure
       .input(reversePageInput)
-      .query(({ ctx, input }) => ctx.kernel.pageApiCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 })),
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageApiCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     terminalActivityPage: t.procedure
       .input(
         reversePageInput.extend({
@@ -1505,7 +1530,12 @@ export const appRouter = t.router({
           avatar: z.string().min(1),
           mode: z.enum(["explorer", "private"]),
           path: z.string().min(1),
-          maxBytes: z.number().int().positive().max(512 * 1024).optional(),
+          maxBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(512 * 1024)
+            .optional(),
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.readWorkspaceWorkbenchPreview(input)),

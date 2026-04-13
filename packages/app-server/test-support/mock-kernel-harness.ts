@@ -6,7 +6,7 @@ import { AppKernel, type AppKernelOptions, type SessionMeta } from "../src";
 import { startMockModelServer, type MockModelServerHandle } from "./mock-model-server";
 
 const DEFAULT_POLL_MS = 50;
-const FULL_WORKSPACE_GRANT = [{ relativePath: "/", mode: "rw" }] as const;
+const FULL_WORKSPACE_GRANT = [{ pattern: "/", mode: "rw" }] as const;
 
 const sleep = async (ms: number): Promise<void> => {
   await new Promise<void>((resolveReady) => setTimeout(resolveReady, ms));
@@ -114,7 +114,9 @@ export const createMockKernelHarness = async (
     if (!startedSession.primaryRoomId) {
       throw new Error(`mock harness missing primary room after explicit attach: ${startedSession.id}`);
     }
-    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)) {
+    if (
+      !kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)
+    ) {
       throw new Error(`mock harness failed to restore attached primary room: ${startedSession.id}`);
     }
     return {

@@ -24,8 +24,8 @@ export interface WorkspaceGrantRecord {
   grantId: string;
   mountId: string;
   workspacePath: string;
-  relativePath: string;
-  absolutePath: string;
+  pattern: string;
+  ruleIndex: number;
   mode: WorkspaceGrantMode;
   createdAt: string;
   revokedAt?: string;
@@ -41,7 +41,7 @@ export interface WorkspaceExecProfileRecord {
 }
 
 export interface WorkspaceGrantInput {
-  relativePath: string;
+  pattern: string;
   mode: WorkspaceGrantMode;
 }
 
@@ -53,7 +53,7 @@ export interface WorkspaceAssetRoots {
 }
 
 export interface WorkspaceSystemSnapshot {
-  version: 1;
+  version: 2;
   workspaces: WorkspaceRecord[];
   mounts: WorkspaceMountRecord[];
   grants: WorkspaceGrantRecord[];

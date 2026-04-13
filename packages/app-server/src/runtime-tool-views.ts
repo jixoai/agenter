@@ -1,5 +1,10 @@
 import type { AttentionActiveContextMatch } from "@agenter/attention-system";
-import type { MessageAttachment, MessageControlPlaneEntry, MessagePayload, MessageSnapshot } from "@agenter/message-system";
+import type {
+  MessageAttachment,
+  MessageControlPlaneEntry,
+  MessagePayload,
+  MessageSnapshot,
+} from "@agenter/message-system";
 import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
 
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
@@ -65,8 +70,8 @@ export interface RuntimeWorkspaceSurface {
     kind: WorkspaceMountRecord["kind"];
   };
   grants: Array<{
-    relativePath: string;
-    absolutePath: string;
+    pattern: string;
+    ruleIndex: number;
     mode: WorkspaceGrantRecord["mode"];
   }>;
 }
@@ -194,8 +199,8 @@ export const projectRuntimeWorkspaceSurface = (input: {
     kind: input.mount.kind,
   },
   grants: input.grants.map((grant) => ({
-    relativePath: grant.relativePath,
-    absolutePath: grant.absolutePath,
+    pattern: grant.pattern,
+    ruleIndex: grant.ruleIndex,
     mode: grant.mode,
   })),
 });

@@ -1,10 +1,14 @@
-import type { RuntimeWorkspaceGrantEntry, WorkspaceWorkbenchTreeEntry, WorkspaceWorkbenchTreeOutput } from "@agenter/client-sdk";
+import type {
+  RuntimeWorkspaceGrantEntry,
+  WorkspaceWorkbenchTreeEntry,
+  WorkspaceWorkbenchTreeOutput,
+} from "@agenter/client-sdk";
 
 export type WorkspaceMode = "explorer" | "rules" | "private";
 
 export interface WorkspaceRuleDraft {
   id: string;
-  relativePath: string;
+  pattern: string;
   mode: "ro" | "rw";
   enabled: boolean;
 }
@@ -42,7 +46,10 @@ const entryMatchesQuery = (entry: WorkspaceWorkbenchTreeEntry, query: string): b
   if (!normalizedQuery) {
     return true;
   }
-  return [entry.name, entry.path, entry.previewKind, entry.accessMode ?? ""].join("\n").toLowerCase().includes(normalizedQuery);
+  return [entry.name, entry.path, entry.previewKind, entry.accessMode ?? ""]
+    .join("\n")
+    .toLowerCase()
+    .includes(normalizedQuery);
 };
 
 const ruleMatchesQuery = (rule: WorkspaceRuleDraft, query: string): boolean => {
@@ -50,7 +57,10 @@ const ruleMatchesQuery = (rule: WorkspaceRuleDraft, query: string): boolean => {
   if (!normalizedQuery) {
     return true;
   }
-  return [rule.relativePath, rule.mode, rule.enabled ? "enabled" : "disabled"].join("\n").toLowerCase().includes(normalizedQuery);
+  return [rule.pattern, rule.mode, rule.enabled ? "enabled" : "disabled"]
+    .join("\n")
+    .toLowerCase()
+    .includes(normalizedQuery);
 };
 
 const ancestorPaths = (path: string): string[] => {
@@ -66,7 +76,8 @@ const ancestorPaths = (path: string): string[] => {
   return paths;
 };
 
-const resolveDepth = (path: string): number => Math.max(0, normalizeRelativePath(path).split("/").filter(Boolean).length - 1);
+const resolveDepth = (path: string): number =>
+  Math.max(0, normalizeRelativePath(path).split("/").filter(Boolean).length - 1);
 
 export const normalizeWorkspaceMode = (value: string | null | undefined): WorkspaceMode => {
   if (value === "rules" || value === "private") {
@@ -75,23 +86,23 @@ export const normalizeWorkspaceMode = (value: string | null | undefined): Worksp
   return "explorer";
 };
 
-export const toGrantRelativePath = (value: string | null | undefined): string => normalizeRelativePath(value);
+export const toGrantPattern = (value: string | null | undefined): string => normalizeRelativePath(value);
 
 export const buildRuleDrafts = (grants: readonly RuntimeWorkspaceGrantEntry[]): WorkspaceRuleDraft[] =>
   grants.map((grant, index) => ({
     id: grant.grantId || `grant-${index}`,
-    relativePath: toGrantRelativePath(grant.relativePath),
+    pattern: toGrantPattern(grant.pattern),
     mode: grant.mode,
     enabled: true,
   }));
 
 export const serializeRuleDrafts = (
   drafts: readonly WorkspaceRuleDraft[],
-): Array<{ relativePath: string; mode: "ro" | "rw" }> =>
+): Array<{ pattern: string; mode: "ro" | "rw" }> =>
   drafts
     .filter((draft) => draft.enabled)
     .map((draft) => ({
-      relativePath: toGrantRelativePath(draft.relativePath),
+      pattern: toGrantPattern(draft.pattern),
       mode: draft.mode,
     }));
 
@@ -151,10 +162,7 @@ export const buildWorkspaceTreeRows = (input: {
   return rows;
 };
 
-export const collectWorkspaceTreeMatchPaths = (
-  pages: WorkspaceTreePages,
-  searchQuery: string,
-): string[] => {
+export const collectWorkspaceTreeMatchPaths = (pages: WorkspaceTreePages, searchQuery: string): string[] => {
   const query = normalizeSearchQuery(searchQuery);
   if (!query) {
     return [];
@@ -165,10 +173,7 @@ export const collectWorkspaceTreeMatchPaths = (
     .map((entry) => entry.path);
 };
 
-export const collectWorkspaceRuleMatchIds = (
-  rules: readonly WorkspaceRuleDraft[],
-  searchQuery: string,
-): string[] => {
+export const collectWorkspaceRuleMatchIds = (rules: readonly WorkspaceRuleDraft[], searchQuery: string): string[] => {
   const query = normalizeSearchQuery(searchQuery);
   if (!query) {
     return [];

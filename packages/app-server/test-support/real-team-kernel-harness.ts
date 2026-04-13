@@ -16,7 +16,7 @@ import {
 
 export const REAL_TEAM_PROJECT_ROOT = resolve(import.meta.dir, "../../..");
 export type RealTeamParticipant = "backend" | "frontend";
-const FULL_WORKSPACE_GRANT = [{ relativePath: "/", mode: "rw" }] as const;
+const FULL_WORKSPACE_GRANT = [{ pattern: "/", mode: "rw" }] as const;
 
 export interface RealTeamProjectRoom {
   room: MessageControlPlaneEntry;
@@ -38,7 +38,9 @@ const allocatePort = async (): Promise<number> => {
   });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise<void>((resolveClose, rejectClose) => server.close((error) => (error ? rejectClose(error) : resolveClose())));
+  await new Promise<void>((resolveClose, rejectClose) =>
+    server.close((error) => (error ? rejectClose(error) : resolveClose())),
+  );
   if (!port) {
     throw new Error("failed to allocate ephemeral port");
   }
@@ -57,24 +59,19 @@ export interface RealTeamKernelHarness {
   backendActorId: MessageActorId;
   frontendActorId: MessageActorId;
   userActorId: `auth:${string}`;
-  createProjectRoom: (input?: {
-    title?: string;
-    metadata?: Record<string, unknown>;
-  }) => Promise<RealTeamProjectRoom>;
+  createProjectRoom: (input?: { title?: string; metadata?: Record<string, unknown> }) => Promise<RealTeamProjectRoom>;
   focusProjectRoom: (room: RealTeamProjectRoom, participants?: RealTeamParticipant[]) => Promise<void>;
   blurProjectRoom: (room: RealTeamProjectRoom, participants?: RealTeamParticipant[]) => Promise<void>;
   sendPrivatePrimer: (participant: RealTeamParticipant, text: string) => Promise<{ ok: boolean; reason?: string }>;
   listProjectRoomMessages: (room: Pick<RealTeamProjectRoom, "room">, limit?: number) => MessageRecord[];
   listProjectRoomAssets: (room: Pick<RealTeamProjectRoom, "room">) => RoomMediaAsset[];
-  bridgeWorkspaceFileToProjectRoomAttachment: (
-    input: {
-      room: Pick<RealTeamProjectRoom, "room">;
-      participant: RealTeamParticipant;
-      relativePath: string;
-      mimeType: string;
-      messageText: string;
-    },
-  ) => Promise<RealTeamAttachmentBridgeResult>;
+  bridgeWorkspaceFileToProjectRoomAttachment: (input: {
+    room: Pick<RealTeamProjectRoom, "room">;
+    participant: RealTeamParticipant;
+    relativePath: string;
+    mimeType: string;
+    messageText: string;
+  }) => Promise<RealTeamAttachmentBridgeResult>;
   stop: () => Promise<void>;
 }
 
@@ -147,8 +144,7 @@ export const createRealTeamKernelHarness = async (
     const createParticipantSession = async (participant: RealTeamParticipant): Promise<SessionMeta> => {
       const session = await kernel.createSession({
         cwd: workspacePath,
-        avatar:
-          participant === "backend" ? (input.backendAvatar ?? "backend") : (input.frontendAvatar ?? "frontend"),
+        avatar: participant === "backend" ? (input.backendAvatar ?? "backend") : (input.frontendAvatar ?? "frontend"),
         name: participant === "backend" ? "real-team-backend" : "real-team-frontend",
         autoStart: false,
       });
@@ -165,7 +161,9 @@ export const createRealTeamKernelHarness = async (
       if (!kernel.listMessageChannels(started.id).some((channel) => channel.chatId === started.primaryRoomId)) {
         throw new Error(`real team ${participant} primary room was not restored at boot`);
       }
-      if (!kernel.listRuntimeWorkspaceMounts(started.id).some((mount) => mount.workspacePath === resolve(workspacePath))) {
+      if (
+        !kernel.listRuntimeWorkspaceMounts(started.id).some((mount) => mount.workspacePath === resolve(workspacePath))
+      ) {
         throw new Error(`real team ${participant} missing explicit workspace mount`);
       }
       if (kernel.listTerminals(started.id).length > 0) {
@@ -204,7 +202,9 @@ export const createRealTeamKernelHarness = async (
       }
     };
     const requireProjection = (chatId: string, actorId: MessageActorId): MessageControlPlaneEntry => {
-      const projection = kernel.listGlobalRooms({ actorId, includeArchived: true }).find((item) => item.chatId === chatId);
+      const projection = kernel
+        .listGlobalRooms({ actorId, includeArchived: true })
+        .find((item) => item.chatId === chatId);
       if (!projection) {
         throw new Error(`missing room projection for ${actorId} in room ${chatId}`);
       }

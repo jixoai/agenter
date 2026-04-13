@@ -14,7 +14,7 @@ import {
 
 const DEFAULT_POLL_MS = 250;
 export const REAL_MODEL_PROJECT_ROOT = resolve(import.meta.dir, "../../..");
-const FULL_WORKSPACE_GRANT = [{ relativePath: "/", mode: "rw" }] as const;
+const FULL_WORKSPACE_GRANT = [{ pattern: "/", mode: "rw" }] as const;
 
 const allocatePort = async (): Promise<number> => {
   const server = createNetServer();
@@ -24,7 +24,9 @@ const allocatePort = async (): Promise<number> => {
   });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise<void>((resolveClose, rejectClose) => server.close((error) => (error ? rejectClose(error) : resolveClose())));
+  await new Promise<void>((resolveClose, rejectClose) =>
+    server.close((error) => (error ? rejectClose(error) : resolveClose())),
+  );
   if (!port) {
     throw new Error("failed to allocate ephemeral port");
   }
@@ -149,7 +151,9 @@ export const createRealKernelHarness = async (
     if (!startedSession.primaryRoomId) {
       throw new Error(`real harness missing primary room after explicit attach: ${startedSession.id}`);
     }
-    if (!kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)) {
+    if (
+      !kernel.listMessageChannels(startedSession.id).some((channel) => channel.chatId === startedSession.primaryRoomId)
+    ) {
       throw new Error(`real harness failed to restore attached primary room: ${startedSession.id}`);
     }
     if (

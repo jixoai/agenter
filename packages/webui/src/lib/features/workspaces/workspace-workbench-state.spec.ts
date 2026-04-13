@@ -24,8 +24,8 @@ describe("Feature: Workspace workbench state primitives", () => {
         grantId: "grant-root",
         mountId: "mount-alpha",
         workspacePath: "/repo/app",
-        relativePath: ".",
-        absolutePath: "/repo/app",
+        pattern: ".",
+        ruleIndex: 0,
         mode: "rw",
         createdAt: "2026-04-12T00:00:00.000Z",
       },
@@ -33,15 +33,15 @@ describe("Feature: Workspace workbench state primitives", () => {
         grantId: "grant-src",
         mountId: "mount-alpha",
         workspacePath: "/repo/app",
-        relativePath: "src/",
-        absolutePath: "/repo/app/src",
+        pattern: "src/",
+        ruleIndex: 1,
         mode: "ro",
         createdAt: "2026-04-12T00:00:01.000Z",
       },
     ]);
     drafts[1]!.enabled = false;
 
-    expect(serializeRuleDrafts(drafts)).toEqual([{ relativePath: "/", mode: "rw" }]);
+    expect(serializeRuleDrafts(drafts)).toEqual([{ pattern: "/", mode: "rw" }]);
   });
 
   test("Scenario: Given a searched tree with expanded ancestors and a paged directory When building rows Then ancestors stay visible and load-more remains scoped to its folder", () => {
@@ -122,13 +122,13 @@ describe("Feature: Workspace workbench state primitives", () => {
         [
           {
             id: "rule-root",
-            relativePath: "/",
+            pattern: "/",
             mode: "rw",
             enabled: true,
           },
           {
             id: "rule-src",
-            relativePath: "/src/**",
+            pattern: "/src/**",
             mode: "ro",
             enabled: false,
           },

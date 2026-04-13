@@ -57,15 +57,18 @@ const main = async (): Promise<void> => {
     kernel.grantRuntimeWorkspace({
       runtimeId,
       workspacePath: workspaceA,
-      grants: [{ relativePath: "/sandbox", mode: "rw" }],
+      grants: [{ pattern: "/sandbox", mode: "rw" }],
     });
     kernel.grantRuntimeWorkspace({
       runtimeId,
       workspacePath: workspaceB,
-      grants: [{ relativePath: "/", mode: "rw" }],
+      grants: [{ pattern: "/", mode: "rw" }],
     });
     await kernel.startSession(runtimeId);
-    assertCondition(kernel.listTerminals(runtimeId).length === 0, "expected no implicit terminals after explicit runtime boot");
+    assertCondition(
+      kernel.listTerminals(runtimeId).length === 0,
+      "expected no implicit terminals after explicit runtime boot",
+    );
 
     const mounts = await caller.workspace.runtimeMounts({ runtimeId });
     assertCondition(mounts.items.length === 2, "expected runtime to keep both workspace mounts");
@@ -74,17 +77,16 @@ const main = async (): Promise<void> => {
       workspacePath: workspaceA,
       avatar: "architect",
     });
-    writeFileSync(
-      join(assetRoots.publicRoots.tools, "hello.sh"),
-      "#!/usr/bin/env bash\necho tool-ok\n",
-      "utf8",
-    );
+    writeFileSync(join(assetRoots.publicRoots.tools, "hello.sh"), "#!/usr/bin/env bash\necho tool-ok\n", "utf8");
 
     const grants = await caller.workspace.runtimeGrants({
       runtimeId,
       workspacePath: workspaceA,
     });
-    assertCondition(grants.items.length === 1 && grants.items[0]?.relativePath === "/sandbox", "expected narrowed sandbox grant");
+    assertCondition(
+      grants.items.length === 1 && grants.items[0]?.pattern === "/sandbox",
+      "expected narrowed sandbox grant",
+    );
 
     const execSuccess = await caller.workspace.exec({
       runtimeId,
@@ -106,7 +108,10 @@ const main = async (): Promise<void> => {
     const stopped = await caller.session.stop({
       sessionId: first.session.id,
     });
-    assertCondition(stopped.session.status === "stopped", "expected runtime to stop before persisted attention verification");
+    assertCondition(
+      stopped.session.status === "stopped",
+      "expected runtime to stop before persisted attention verification",
+    );
 
     const sessionMeta = kernel.getSession(first.session.id);
     assertCondition(sessionMeta?.primaryRoomId, "expected persisted session metadata with primary room id");

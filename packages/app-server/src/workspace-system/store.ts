@@ -1,9 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
-import { toWorkspaceCwd, toWorkspacePath } from "../workspace-target";
+import { toWorkspacePath } from "../workspace-target";
+import { normalizeWorkspaceGrantPattern, sortWorkspaceGrantRecords } from "./grants";
 import type {
   WorkspaceExecProfileRecord,
   WorkspaceGrantInput,
@@ -16,8 +17,27 @@ import type {
 
 const nowIso = (): string => new Date().toISOString();
 
+interface LegacyWorkspaceGrantRecord {
+  grantId: string;
+  mountId: string;
+  workspacePath: string;
+  relativePath: string;
+  absolutePath: string;
+  mode: "ro" | "rw";
+  createdAt: string;
+  revokedAt?: string;
+}
+
+interface LegacyWorkspaceSystemSnapshot {
+  version: 1;
+  workspaces: WorkspaceRecord[];
+  mounts: WorkspaceMountRecord[];
+  grants: LegacyWorkspaceGrantRecord[];
+  execProfiles: WorkspaceExecProfileRecord[];
+}
+
 const EMPTY_SNAPSHOT: WorkspaceSystemSnapshot = {
-  version: 1,
+  version: 2,
   workspaces: [],
   mounts: [],
   grants: [],
@@ -26,15 +46,6 @@ const EMPTY_SNAPSHOT: WorkspaceSystemSnapshot = {
 
 const resolveWorkspaceId = (workspacePath: string): string =>
   createHash("sha1").update(`workspace:${workspacePath}`).digest("hex").slice(0, 24);
-
-const normalizeRelativeGrantPath = (value: string): string => {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === ".") {
-    return "/";
-  }
-  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return normalized.replace(/\/+$/, "") || "/";
-};
 
 export interface WorkspaceSystemStoreOptions {
   filePath?: string;
@@ -55,7 +66,7 @@ export class WorkspaceSystemStore {
 
   snapshotState(): WorkspaceSystemSnapshot {
     return {
-      version: 1,
+      version: 2,
       workspaces: this.snapshot.workspaces.map((item) => ({ ...item })),
       mounts: this.snapshot.mounts.map((item) => ({ ...item })),
       grants: this.snapshot.grants.map((item) => ({ ...item })),
@@ -150,21 +161,13 @@ export class WorkspaceSystemStore {
         current.revokedAt = appliedAt;
       }
     }
-
-    const workspaceRoot = toWorkspaceCwd(mount.workspacePath);
-    const next = input.grants.map((grant) => {
-      const relativePath = normalizeRelativeGrantPath(grant.relativePath);
-      const absolutePath = resolve(workspaceRoot, `.${relativePath}`);
-      const relativeToRoot = relative(workspaceRoot, absolutePath);
-      if (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
-        throw new Error(`workspace grant escapes root: ${grant.relativePath}`);
-      }
+    const next = input.grants.map((grant, ruleIndex) => {
       const record: WorkspaceGrantRecord = {
         grantId: `grant-${randomUUID()}`,
         mountId: mount.mountId,
         workspacePath: mount.workspacePath,
-        relativePath,
-        absolutePath,
+        pattern: normalizeWorkspaceGrantPattern(grant.pattern),
+        ruleIndex,
         mode: grant.mode,
         createdAt: appliedAt,
       };
@@ -184,7 +187,9 @@ export class WorkspaceSystemStore {
     if (!mount) {
       return [];
     }
-    return this.snapshot.grants.filter((item) => item.mountId === mount.mountId && typeof item.revokedAt !== "string");
+    return sortWorkspaceGrantRecords(
+      this.snapshot.grants.filter((item) => item.mountId === mount.mountId && typeof item.revokedAt !== "string"),
+    );
   }
 
   upsertExecProfile(input: {
@@ -222,16 +227,52 @@ export class WorkspaceSystemStore {
 
   private readSnapshot(): WorkspaceSystemSnapshot {
     try {
-      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as WorkspaceSystemSnapshot;
-      if (parsed.version === 1) {
+      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as
+        | WorkspaceSystemSnapshot
+        | LegacyWorkspaceSystemSnapshot;
+      if (parsed.version === 2) {
         return {
-          version: 1,
+          version: 2,
           workspaces: parsed.workspaces ?? [],
           mounts: (parsed.mounts ?? []).map((mount) => ({
             ...mount,
             kind: mount.kind ?? "workspace",
           })),
-          grants: parsed.grants ?? [],
+          grants: sortWorkspaceGrantRecords(
+            (parsed.grants ?? []).map((grant, index) => ({
+              ...grant,
+              pattern: normalizeWorkspaceGrantPattern(grant.pattern),
+              ruleIndex: grant.ruleIndex ?? index,
+            })),
+          ),
+          execProfiles: parsed.execProfiles ?? [],
+        };
+      }
+      if (parsed.version === 1) {
+        const nextRuleIndexByMount = new Map<string, number>();
+        return {
+          version: 2,
+          workspaces: parsed.workspaces ?? [],
+          mounts: (parsed.mounts ?? []).map((mount) => ({
+            ...mount,
+            kind: mount.kind ?? "workspace",
+          })),
+          grants: sortWorkspaceGrantRecords(
+            (parsed.grants ?? []).map((grant) => {
+              const ruleIndex = nextRuleIndexByMount.get(grant.mountId) ?? 0;
+              nextRuleIndexByMount.set(grant.mountId, ruleIndex + 1);
+              return {
+                grantId: grant.grantId,
+                mountId: grant.mountId,
+                workspacePath: grant.workspacePath,
+                pattern: normalizeWorkspaceGrantPattern(grant.relativePath),
+                ruleIndex,
+                mode: grant.mode,
+                createdAt: grant.createdAt,
+                revokedAt: grant.revokedAt,
+              } satisfies WorkspaceGrantRecord;
+            }),
+          ),
           execProfiles: parsed.execProfiles ?? [],
         };
       }
