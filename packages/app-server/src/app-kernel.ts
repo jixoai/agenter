@@ -1898,6 +1898,18 @@ export class AppKernel {
     return this.readChatMessagesPageFromDb(session.sessionRoot, sessionId, input);
   }
 
+  pageRequestAuxMessages(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return emptyReversePage();
+    }
+    return this.readRequestAuxPageFromDb(session.sessionRoot, input);
+  }
+
   listChatMessagesBefore(sessionId: string, beforeId: number, limit = 200): PersistedChatMessage[] {
     this.ensureSessionCatalogLoaded();
     const session = this.sessions.get(sessionId);
@@ -4267,6 +4279,22 @@ export class AppKernel {
         nextBefore: page.nextBefore,
         hasMoreBefore: page.hasMoreBefore,
       };
+    } finally {
+      db.close();
+    }
+  }
+
+  private readRequestAuxPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<SessionMessageRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return emptyReversePage();
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      return db.pageMessagesByScope("request_aux", input);
     } finally {
       db.close();
     }

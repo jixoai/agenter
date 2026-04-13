@@ -45,23 +45,6 @@ const isBeforeCursor = (
   input.createdAt < before.beforeTimeMs ||
   (input.createdAt === before.beforeTimeMs && input.id < before.beforeId);
 
-const buildNextCursor = <T extends { createdAt: number; id: number }>(
-  itemsDescending: T[],
-  hasMoreBefore: boolean,
-): ReverseTimeCursor | null => {
-  if (!hasMoreBefore || itemsDescending.length === 0) {
-    return null;
-  }
-  const oldest = itemsDescending.at(-1);
-  if (!oldest) {
-    return null;
-  }
-  return {
-    beforeTimeMs: oldest.createdAt,
-    beforeId: oldest.id,
-  };
-};
-
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 interface StoredMessageEnvelope {
@@ -418,9 +401,16 @@ export class SessionDb {
       .map((row) => this.getMessageById(row.message_id))
       .filter((row): row is SessionMessageRecord => row !== null)
       .reverse();
+    const nextCursorSource =
+      filteredDescending.length > pageDescending.length ? pageDescending.at(-1) ?? null : null;
     return {
       items: itemsDescending,
-      nextBefore: buildNextCursor(itemsDescending, filteredDescending.length > pageDescending.length),
+      nextBefore: nextCursorSource
+        ? {
+            beforeTimeMs: nextCursorSource.created_at,
+            beforeId: nextCursorSource.id,
+          }
+        : null,
       hasMoreBefore: filteredDescending.length > pageDescending.length,
     };
   }
@@ -627,9 +617,15 @@ export class SessionDb {
       .map((row) => this.getAiCallById(row.id))
       .filter((row): row is SessionAiCallRecord => row !== null)
       .reverse();
+    const nextCursorSource = rowsDescending.length > pageDescending.length ? pageDescending.at(-1) ?? null : null;
     return {
       items: itemsDescending,
-      nextBefore: buildNextCursor(itemsDescending, rowsDescending.length > pageDescending.length),
+      nextBefore: nextCursorSource
+        ? {
+            beforeTimeMs: nextCursorSource.created_at,
+            beforeId: nextCursorSource.id,
+          }
+        : null,
       hasMoreBefore: rowsDescending.length > pageDescending.length,
     };
   }

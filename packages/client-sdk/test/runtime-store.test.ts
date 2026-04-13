@@ -55,6 +55,7 @@ const createSnapshot = (
       id: "i-1",
       name: "workspace",
       cwd: process.cwd(),
+      workspacePath: process.cwd(),
       avatar: "tester-bot",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -382,6 +383,67 @@ const createMockClient = (input: {
       }
     | { ok: false; reason: "readonly"; message: string }
   >;
+  listScopedSettingsQuery?: (input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    avatar?: string;
+  }) => Promise<{
+    scope: "workspace" | "global";
+    effective: {
+      content: string;
+      value?: Record<string, unknown>;
+      schema?: Record<string, unknown>;
+      provenance?: Record<string, unknown>;
+    };
+    layers: Array<{
+      layerId: string;
+      sourceId: string;
+      kind: "file" | "avatar";
+      path: string;
+      exists: boolean;
+      editable: boolean;
+      readonlyReason?: string;
+    }>;
+  }>;
+  readScopedSettingsLayerQuery?: (input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    layerId: string;
+    avatar?: string;
+  }) => Promise<{
+    layer: {
+      layerId: string;
+      sourceId: string;
+      kind: "file" | "avatar";
+      path: string;
+      exists: boolean;
+      editable: boolean;
+      readonlyReason?: string;
+    };
+    path: string;
+    content: string;
+    mtimeMs: number;
+  }>;
+  saveScopedSettingsLayerMutate?: (input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    layerId: string;
+    content: string;
+    baseMtimeMs: number;
+    avatar?: string;
+  }) => Promise<
+    | {
+        ok: true;
+        file: { path: string; content: string; mtimeMs: number };
+        effective: { content: string };
+      }
+    | {
+        ok: false;
+        reason: "conflict";
+        latest: { path: string; content: string; mtimeMs: number };
+      }
+    | { ok: false; reason: "readonly"; message: string }
+  >;
   chatSendMutate?: (input: {
     sessionId: string;
     text: string;
@@ -622,6 +684,11 @@ const createMockClient = (input: {
     offset?: number;
     limit?: number;
   }) => Promise<{ items: unknown[] }>;
+  requestAuxPageQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
 }): AgenterClient => {
   let authToken: string | null = null;
 
@@ -761,6 +828,16 @@ const createMockClient = (input: {
         },
         modelCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+        },
+        requestAuxPage: {
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.requestAuxPageQuery
+              ? await input.requestAuxPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         apiCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
@@ -1233,6 +1310,79 @@ const createMockClient = (input: {
                     ok: true as const,
                     file: {
                       path: `${payload.workspacePath}/.agenter/settings.json`,
+                      content: payload.content,
+                      mtimeMs: payload.baseMtimeMs + 1,
+                    },
+                    effective: {
+                      content: payload.content,
+                    },
+                  },
+          },
+        },
+        scope: {
+          list: {
+            query: async (payload: {
+              scope: "workspace" | "global";
+              workspacePath?: string;
+              avatar?: string;
+            }) =>
+              input.listScopedSettingsQuery
+                ? await input.listScopedSettingsQuery(payload)
+                : {
+                    scope: payload.scope,
+                    effective: {
+                      content: "{}",
+                      value: {},
+                      schema: { type: "object" },
+                      provenance: {},
+                    },
+                    layers: [],
+                  },
+          },
+          read: {
+            query: async (payload: {
+              scope: "workspace" | "global";
+              workspacePath?: string;
+              layerId: string;
+              avatar?: string;
+            }) =>
+              input.readScopedSettingsLayerQuery
+                ? await input.readScopedSettingsLayerQuery(payload)
+                : {
+                    layer: {
+                      layerId: payload.layerId,
+                      sourceId: "project",
+                      kind: "file" as const,
+                      path: payload.workspacePath
+                        ? `${payload.workspacePath}/.agenter/settings.json`
+                        : "~/.agenter/settings.json",
+                      exists: true,
+                      editable: true,
+                    },
+                    path: payload.workspacePath
+                      ? `${payload.workspacePath}/.agenter/settings.json`
+                      : "~/.agenter/settings.json",
+                    content: "{}",
+                    mtimeMs: Date.now(),
+                  },
+          },
+          save: {
+            mutate: async (payload: {
+              scope: "workspace" | "global";
+              workspacePath?: string;
+              layerId: string;
+              content: string;
+              baseMtimeMs: number;
+              avatar?: string;
+            }) =>
+              input.saveScopedSettingsLayerMutate
+                ? await input.saveScopedSettingsLayerMutate(payload)
+                : {
+                    ok: true as const,
+                    file: {
+                      path: payload.workspacePath
+                        ? `${payload.workspacePath}/.agenter/settings.json`
+                        : "~/.agenter/settings.json",
                       content: payload.content,
                       mtimeMs: payload.baseMtimeMs + 1,
                     },
@@ -2520,6 +2670,327 @@ describe("Feature: runtime store synchronization", () => {
         baseMtimeMs: 7,
       },
     ]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given a runtime session When loading scoped settings through the runtime helpers Then the store resolves workspace/global scope from the session instead of a caller-provided path", async () => {
+    const scopedListCalls: Array<{ scope: "workspace" | "global"; workspacePath?: string; avatar?: string }> = [];
+    const scopedReadCalls: Array<{ scope: "workspace" | "global"; workspacePath?: string; layerId: string; avatar?: string }> =
+      [];
+    const scopedSaveCalls: Array<{
+      scope: "workspace" | "global";
+      workspacePath?: string;
+      layerId: string;
+      content: string;
+      baseMtimeMs: number;
+      avatar?: string;
+    }> = [];
+    const workspaceSnapshot = createSnapshot(710);
+    workspaceSnapshot.sessions = [
+      {
+        ...workspaceSnapshot.sessions[0]!,
+        workspacePath: "/repo/runtime",
+        avatar: "runtime-planner",
+      },
+    ];
+    const client = createMockClient({
+      snapshotQuery: async () => workspaceSnapshot,
+      listScopedSettingsQuery: async (input) => {
+        scopedListCalls.push(input);
+        return {
+          scope: input.scope,
+          effective: {
+            content: '{"mode":"workspace"}',
+            value: { mode: "workspace" },
+            schema: { type: "object" },
+            provenance: {},
+          },
+          layers: [
+            {
+              layerId: "workspace-layer",
+              sourceId: "workspace",
+              kind: "file",
+              path: `${input.workspacePath}/.agenter/settings.json`,
+              exists: true,
+              editable: true,
+            },
+          ],
+        };
+      },
+      readScopedSettingsLayerQuery: async (input) => {
+        scopedReadCalls.push(input);
+        return {
+          layer: {
+            layerId: input.layerId,
+            sourceId: "workspace",
+            kind: "file",
+            path: `${input.workspacePath}/.agenter/settings.json`,
+            exists: true,
+            editable: true,
+          },
+          path: `${input.workspacePath}/.agenter/settings.json`,
+          content: '{"mode":"workspace"}',
+          mtimeMs: 11,
+        };
+      },
+      saveScopedSettingsLayerMutate: async (input) => {
+        scopedSaveCalls.push(input);
+        return {
+          ok: true,
+          file: {
+            path: `${input.workspacePath}/.agenter/settings.json`,
+            content: input.content,
+            mtimeMs: input.baseMtimeMs + 1,
+          },
+          effective: {
+            content: input.content,
+          },
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    const workspaceScope = await store.listRuntimeSettingsScope("i-1");
+    const workspaceLayer = await store.readRuntimeSettingsLayer("i-1", "workspace-layer");
+    const workspaceSave = await store.saveRuntimeSettingsLayer({
+      sessionId: "i-1",
+      layerId: "workspace-layer",
+      content: '{"mode":"workspace-next"}',
+      baseMtimeMs: 11,
+    });
+
+    expect(workspaceScope.layers[0]?.layerId).toBe("workspace-layer");
+    expect(workspaceLayer.path).toBe("/repo/runtime/.agenter/settings.json");
+    expect(workspaceSave.ok).toBe(true);
+    expect(scopedListCalls).toEqual([
+      {
+        scope: "workspace",
+        workspacePath: "/repo/runtime",
+        avatar: "runtime-planner",
+      },
+    ]);
+    expect(scopedReadCalls).toEqual([
+      {
+        scope: "workspace",
+        workspacePath: "/repo/runtime",
+        layerId: "workspace-layer",
+        avatar: "runtime-planner",
+      },
+    ]);
+    expect(scopedSaveCalls).toEqual([
+      {
+        scope: "workspace",
+        workspacePath: "/repo/runtime",
+        layerId: "workspace-layer",
+        content: '{"mode":"workspace-next"}',
+        baseMtimeMs: 11,
+        avatar: "runtime-planner",
+      },
+    ]);
+
+    const globalSnapshot = createSnapshot(711);
+    globalSnapshot.sessions = [
+      {
+        ...globalSnapshot.sessions[0]!,
+        workspacePath: "~/",
+        avatar: "global-planner",
+      },
+    ];
+    const globalCalls: Array<{ scope: "workspace" | "global"; workspacePath?: string; avatar?: string }> = [];
+    const globalStore = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => globalSnapshot,
+        listScopedSettingsQuery: async (input) => {
+          globalCalls.push(input);
+          return {
+            scope: input.scope,
+            effective: {
+              content: '{"mode":"global"}',
+              value: { mode: "global" },
+              schema: { type: "object" },
+              provenance: {},
+            },
+            layers: [],
+          };
+        },
+      }),
+    );
+
+    await globalStore.connect();
+    await globalStore.listRuntimeSettingsScope("i-1");
+
+    expect(globalCalls).toEqual([
+      {
+        scope: "global",
+        avatar: "global-planner",
+      },
+    ]);
+    globalStore.disconnect();
+    store.disconnect();
+  });
+
+  test("Scenario: Given request-aux pages and live model-call refreshes When the store hydrates and loads older inspection facts Then durable rows merge without dropping older or newer entries", async () => {
+    let latestMode: "initial" | "refreshed" = "initial";
+    let onData: ((event: unknown) => void) | undefined;
+    const requestAuxCalls: Array<{ before?: { beforeTimeMs: number; beforeId: number }; limit?: number }> = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(720),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      requestAuxPageQuery: async (input) => {
+        requestAuxCalls.push({ before: input.before, limit: input.limit });
+        if (input.before) {
+          return {
+            items: [
+              {
+                id: 1,
+                messageId: "aux-system",
+                windowId: null,
+                aiCallId: 4,
+                roundIndex: 1,
+                scope: "request_aux",
+                role: "system",
+                createdAt: 100,
+                updatedAt: 100,
+                isComplete: true,
+                text: "system prompt",
+                parts: [{ partId: 1, partIndex: 0, messageId: "aux-system", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "system", partType: "systemPrompt", mimeType: null, payload: "You are a Linux expert.", createdAt: 100, updatedAt: 100, isComplete: true }],
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        }
+        return {
+          items:
+            latestMode === "initial"
+              ? [
+                  {
+                    id: 2,
+                    messageId: "aux-tools",
+                    windowId: null,
+                    aiCallId: 4,
+                    roundIndex: 1,
+                    scope: "request_aux",
+                    role: "config",
+                    createdAt: 120,
+                    updatedAt: 120,
+                    isComplete: true,
+                    text: '[{"name":"workspace.bash"}]',
+                    parts: [{ partId: 2, partIndex: 0, messageId: "aux-tools", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "tools", mimeType: null, payload: [{ name: "workspace.bash" }], createdAt: 120, updatedAt: 120, isComplete: true }],
+                  },
+                  {
+                    id: 3,
+                    messageId: "aux-config",
+                    windowId: null,
+                    aiCallId: 4,
+                    roundIndex: 1,
+                    scope: "request_aux",
+                    role: "config",
+                    createdAt: 140,
+                    updatedAt: 140,
+                    isComplete: true,
+                    text: '{"temperature":0.2}',
+                    parts: [{ partId: 3, partIndex: 0, messageId: "aux-config", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "config", mimeType: null, payload: { temperature: 0.2 }, createdAt: 140, updatedAt: 140, isComplete: true }],
+                  },
+                ]
+              : [
+                  {
+                    id: 2,
+                    messageId: "aux-tools",
+                    windowId: null,
+                    aiCallId: 4,
+                    roundIndex: 1,
+                    scope: "request_aux",
+                    role: "config",
+                    createdAt: 120,
+                    updatedAt: 120,
+                    isComplete: true,
+                    text: '[{"name":"workspace.bash"}]',
+                    parts: [{ partId: 2, partIndex: 0, messageId: "aux-tools", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "tools", mimeType: null, payload: [{ name: "workspace.bash" }], createdAt: 120, updatedAt: 120, isComplete: true }],
+                  },
+                  {
+                    id: 3,
+                    messageId: "aux-config",
+                    windowId: null,
+                    aiCallId: 4,
+                    roundIndex: 1,
+                    scope: "request_aux",
+                    role: "config",
+                    createdAt: 140,
+                    updatedAt: 140,
+                    isComplete: true,
+                    text: '{"temperature":0.2}',
+                    parts: [{ partId: 3, partIndex: 0, messageId: "aux-config", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "config", mimeType: null, payload: { temperature: 0.2 }, createdAt: 140, updatedAt: 140, isComplete: true }],
+                  },
+                  {
+                    id: 4,
+                    messageId: "aux-system-next",
+                    windowId: null,
+                    aiCallId: 5,
+                    roundIndex: 2,
+                    scope: "request_aux",
+                    role: "system",
+                    createdAt: 160,
+                    updatedAt: 160,
+                    isComplete: true,
+                    text: "system prompt refreshed",
+                    parts: [{ partId: 4, partIndex: 0, messageId: "aux-system-next", windowId: null, aiCallId: 5, roundIndex: 2, scope: "request_aux", role: "system", partType: "systemPrompt", mimeType: null, payload: "Use bash and skills first.", createdAt: 160, updatedAt: 160, isComplete: true }],
+                  },
+                ],
+          nextBefore: {
+            beforeTimeMs: 120,
+            beforeId: 2,
+          },
+          hasMoreBefore: true,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    expect(store.getState().requestAuxBySession["i-1"]?.map((item) => item.id)).toEqual([2, 3]);
+
+    const older = await store.loadMoreRequestAux("i-1", 50);
+    expect(older.hasMore).toBe(false);
+    expect(store.getState().requestAuxBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3]);
+
+    latestMode = "refreshed";
+    onData?.({
+      version: 1,
+      eventId: 721,
+      timestamp: Date.now(),
+      type: "runtime.modelCall",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 5,
+          cycleId: 5,
+          roundIndex: 2,
+          kind: "attention",
+          status: "running",
+          provider: "openai-compatible",
+          model: "test-model",
+          requestUrl: "https://example.test/v1/chat/completions",
+          request: {},
+          response: null,
+          error: null,
+          outcome: null,
+          createdAt: 160,
+          updatedAt: 160,
+          completedAt: null,
+          isComplete: false,
+        },
+      },
+    });
+
+    await waitFor(() => store.getState().requestAuxBySession["i-1"]?.some((item) => item.id === 4) === true);
+    expect(store.getState().requestAuxBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    expect(requestAuxCalls.length).toBeGreaterThanOrEqual(3);
     store.disconnect();
   });
 

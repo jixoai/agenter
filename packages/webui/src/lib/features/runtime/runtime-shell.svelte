@@ -49,6 +49,9 @@
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
 	const messages = $derived(controller.runtimeState.chatsBySession[sessionId] ?? runtime?.chatMessages ?? []);
+	const requestAux = $derived(controller.runtimeState.requestAuxBySession[sessionId] ?? []);
+	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
+	const modelCallDeltas = $derived(controller.runtimeState.modelCallDeltasBySession?.[sessionId] ?? []);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
 	const notifications = $derived(
 		controller.runtimeState.notifications.filter((notification) => notification.sessionId === sessionId),
@@ -209,6 +212,9 @@
 				{channels}
 				{notifications}
 				{messages}
+				{requestAux}
+				{modelCalls}
+				{modelCallDeltas}
 				onOpenRoom={(chatId) => void openRoom(chatId)}
 				onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
 				onSetRoomVisibility={async (chatId, focused) => {
@@ -235,7 +241,7 @@
 						upToMessageId: input.upToMessageId ?? null,
 					});
 				}}
-				onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreChatMessagesBefore(session.id, 120)}
+				onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id, 120)}
 			/>
 		</Scaffold.Body>
 	</Scaffold.Root>

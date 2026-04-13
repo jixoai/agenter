@@ -256,4 +256,64 @@ describe("Feature: app kernel ledger projections", () => {
 
     await kernel.stop();
   });
+
+  test("Scenario: Given durable request-aux rows When paging runtime heartbeat inspection facts Then systemPrompt, tools, and config remain ordered with full part metadata", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const session = await kernel.createSession({ cwd: process.cwd(), name: "ledger-request-aux", autoStart: false });
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      db.upsertMessage({
+        messageId: "aux-system",
+        aiCallId: 7,
+        roundIndex: 2,
+        scope: "request_aux",
+        role: "system",
+        createdAt: 100,
+        updatedAt: 100,
+        parts: [{ partType: "systemPrompt", payload: "You are a Linux expert.", isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "aux-tools",
+        aiCallId: 7,
+        roundIndex: 2,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 120,
+        updatedAt: 125,
+        parts: [{ partType: "tools", payload: [{ name: "workspace.bash" }], isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "aux-config",
+        aiCallId: 7,
+        roundIndex: 2,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 140,
+        updatedAt: 145,
+        parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
+      });
+    } finally {
+      db.close();
+    }
+
+    const latestPage = kernel.pageRequestAuxMessages(session.id, { limit: 2 });
+    expect(latestPage.items.map((item) => item.messageId)).toEqual(["aux-tools", "aux-config"]);
+    expect(latestPage.items.map((item) => item.parts[0]?.partType)).toEqual(["tools", "config"]);
+    expect(latestPage.items[0]?.aiCallId).toBe(7);
+    expect(latestPage.items[0]?.parts[0]?.payload).toEqual([{ name: "workspace.bash" }]);
+    expect(latestPage.hasMoreBefore).toBe(true);
+
+    const olderPage = kernel.pageRequestAuxMessages(session.id, {
+      before: latestPage.nextBefore ?? undefined,
+      limit: 2,
+    });
+    expect(olderPage.items.map((item) => item.messageId)).toEqual(["aux-system"]);
+    expect(olderPage.items[0]?.parts[0]?.partType).toBe("systemPrompt");
+    expect(olderPage.items[0]?.parts[0]?.payload).toBe("You are a Linux expert.");
+    expect(olderPage.items[0]?.roundIndex).toBe(2);
+
+    await kernel.stop();
+  });
 });

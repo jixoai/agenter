@@ -35,7 +35,18 @@ const codemirrorDedupe = [
   '@codemirror/view'
 ];
 
-const optimizeDepsInclude = [...codemirrorDedupe, '@tanstack/svelte-virtual', 'lit/static-html.js'];
+const optimizeDepsInclude = [
+  ...codemirrorDedupe,
+  '@tanstack/svelte-virtual',
+  'highlight.js',
+  'idb-keyval',
+  'lit',
+  'lit/directives/style-map.js',
+  'lit/directives/unsafe-html.js',
+  'lit/static-html.js',
+  'markdown-it',
+  'yaml'
+];
 
 const appSvelteDependencyExcludes = [
   '@agenter/svelte-components',

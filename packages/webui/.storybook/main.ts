@@ -32,7 +32,14 @@ const appSveltePackages = [
 const optimizeDepsInclude = [
 	...codemirrorDedupe,
 	'@tanstack/svelte-virtual',
+	'highlight.js',
+	'idb-keyval',
+	'lit',
+	'lit/directives/style-map.js',
+	'lit/directives/unsafe-html.js',
 	'lit/static-html.js',
+	'markdown-it',
+	'yaml',
 ];
 
 const reorderSvelteCsfPlugin = (plugins: PluginOption[] | undefined) => {

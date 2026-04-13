@@ -26,6 +26,7 @@ import type {
   MessageChannelGrantEntry,
   ModelCallItem,
   NotificationSnapshotOutput,
+  RequestAuxItem,
   RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,
@@ -94,6 +95,7 @@ const createInitialState = (): RuntimeClientState => ({
   observabilityTracesBySession: {},
   apiCallsBySession: {},
   modelCallsBySession: {},
+  requestAuxBySession: {},
   modelCallDeltasBySession: {},
   terminalActivityBySession: {},
   apiCallRecordingBySession: {},
@@ -491,11 +493,13 @@ export class RuntimeStore {
   private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
+  private readonly requestAuxAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallDeltasAccessBySession = new Map<string, Map<number, number>>();
   private readonly schedulerLogsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly observabilityTracesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly apiCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly modelCallsBeforeCursorBySession = new Map<string, HistoryCursorValue>();
+  private readonly requestAuxBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly chatBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly chatCyclesBeforeCursorBySession = new Map<string, HistoryCursorValue>();
   private readonly terminalActivityBeforeCursorByKey = new Map<string, HistoryCursorValue>();
@@ -4246,6 +4250,31 @@ export class RuntimeStore {
     return await this.client.trpc.settings.scope.list.query(input);
   }
 
+  private resolveRuntimeSettingsScope(sessionId: string): {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    avatar?: string;
+  } {
+    const session = this.state.sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    return session.workspacePath === "~/"
+      ? {
+          scope: "global",
+          avatar: session.avatar,
+        }
+      : {
+          scope: "workspace",
+          workspacePath: session.workspacePath,
+          avatar: session.avatar,
+        };
+  }
+
+  async listRuntimeSettingsScope(sessionId: string) {
+    return await this.listScopedSettings(this.resolveRuntimeSettingsScope(sessionId));
+  }
+
   async readGlobalSettings() {
     return await this.client.trpc.settings.global.read.query();
   }
@@ -4307,6 +4336,13 @@ export class RuntimeStore {
     return await this.client.trpc.settings.scope.read.query(input);
   }
 
+  async readRuntimeSettingsLayer(sessionId: string, layerId: string) {
+    return await this.readScopedSettingsLayer({
+      ...this.resolveRuntimeSettingsScope(sessionId),
+      layerId,
+    });
+  }
+
   async saveSettingsLayer(input: { workspacePath: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await this.client.trpc.settings.layers.save.mutate(input);
   }
@@ -4320,6 +4356,20 @@ export class RuntimeStore {
     avatar?: string;
   }) {
     return await this.client.trpc.settings.scope.save.mutate(input);
+  }
+
+  async saveRuntimeSettingsLayer(input: {
+    sessionId: string;
+    layerId: string;
+    content: string;
+    baseMtimeMs: number;
+  }) {
+    return await this.saveScopedSettingsLayer({
+      ...this.resolveRuntimeSettingsScope(input.sessionId),
+      layerId: input.layerId,
+      content: input.content,
+      baseMtimeMs: input.baseMtimeMs,
+    });
   }
 
   async setChatVisibility(input: { sessionId: string; chatId?: string; visible: boolean; focused: boolean }) {
@@ -4627,6 +4677,64 @@ export class RuntimeStore {
     };
   }
 
+  async loadRequestAux(sessionId: string, limit = 120): Promise<void> {
+    const output = await this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit });
+    const current = this.state.requestAuxBySession[sessionId] ?? [];
+    const next = this.mergeAscendingByCursor(
+      current,
+      output.items,
+      (item) => item.id,
+      (item) => this.toRecordHistoryCursor(item),
+    );
+    this.state.requestAuxBySession[sessionId] = next;
+    this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, output.nextBefore);
+    this.emit();
+  }
+
+  async loadMoreRequestAux(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
+    const current = this.state.requestAuxBySession[sessionId] ?? [];
+    const before = this.resolveBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, current, (item) =>
+      this.toRecordHistoryCursor(item),
+    );
+    if (before === null) {
+      return { items: 0, hasMore: false };
+    }
+    const output = await this.client.trpc.runtime.requestAuxPage.query({
+      sessionId,
+      before: before ?? undefined,
+      limit,
+    });
+    if (output.items.length === 0) {
+      this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, null);
+      return { items: 0, hasMore: false };
+    }
+    const next = this.mergeAscendingByCursor(
+      current,
+      output.items,
+      (item) => item.id,
+      (item) => this.toRecordHistoryCursor(item),
+    );
+    this.state.requestAuxBySession[sessionId] = next;
+    this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, output.nextBefore);
+    this.emit();
+    return {
+      items: Math.max(0, next.length - current.length),
+      hasMore: output.hasMoreBefore,
+    };
+  }
+
+  async loadMoreHeartbeatInspection(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
+    const [chat, requestAux, modelCalls] = await Promise.all([
+      this.loadMoreChatMessagesBefore(sessionId, limit),
+      this.loadMoreRequestAux(sessionId, limit),
+      this.loadMoreModelCalls(sessionId, limit),
+    ]);
+    return {
+      items: chat.items + requestAux.items + modelCalls.items,
+      hasMore: chat.hasMore || requestAux.hasMore || modelCalls.hasMore,
+    };
+  }
+
   async loadMoreApiCalls(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
     const current = this.state.apiCallsBySession[sessionId] ?? [];
     const before = this.resolveBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, current, (record) =>
@@ -4846,10 +4954,13 @@ export class RuntimeStore {
       delete this.state.observabilityTracesBySession[payload.sessionId];
       delete this.state.apiCallsBySession[payload.sessionId];
       delete this.state.modelCallsBySession[payload.sessionId];
+      delete this.state.requestAuxBySession[payload.sessionId];
       delete this.state.modelCallDeltasBySession?.[payload.sessionId];
       delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
       this.modelCallDeltasAccessBySession.delete(payload.sessionId);
+      this.requestAuxAccessBySession.delete(payload.sessionId);
+      this.requestAuxBeforeCursorBySession.delete(payload.sessionId);
       this.releaseSessionResourceHandle(payload.sessionId);
       void this.listAllWorkspaces();
       return;
@@ -5179,6 +5290,7 @@ export class RuntimeStore {
           [payload.entry],
           LOOPBUS_LRU_LIMIT,
         );
+        void this.loadRequestAux(sessionId, 40).catch(() => undefined);
       } else if (event.type === "runtime.modelCall.delta") {
         const payload = event.payload as {
           entry: {
@@ -5320,6 +5432,7 @@ export class RuntimeStore {
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
+    this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.modelCallDeltasBySession ??= {};
     this.state.modelCallDeltasBySession[sessionId] = this.state.modelCallDeltasBySession[sessionId] ?? [];
     this.state.terminalActivityBySession[sessionId] = this.state.terminalActivityBySession[sessionId] ?? {};
@@ -5462,6 +5575,7 @@ export class RuntimeStore {
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
     this.state.apiCallsBySession[sessionId] = this.state.apiCallsBySession[sessionId] ?? [];
     this.state.modelCallsBySession[sessionId] = this.state.modelCallsBySession[sessionId] ?? [];
+    this.state.requestAuxBySession[sessionId] = this.state.requestAuxBySession[sessionId] ?? [];
     this.state.apiCallRecordingBySession[sessionId] = runtime.apiCallRecording;
     this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
     this.emit();
@@ -5470,10 +5584,11 @@ export class RuntimeStore {
 
   private async hydrateObservabilityArtifacts(sessionId: string): Promise<void> {
     try {
-      const [logs, traces, modelCalls, apiCalls] = await Promise.all([
+      const [logs, traces, modelCalls, requestAux, apiCalls] = await Promise.all([
         this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: 200 }),
+        this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
         this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
       ]);
       this.state.schedulerLogsBySession[sessionId] = this.applyLruEntries(
@@ -5497,6 +5612,13 @@ export class RuntimeStore {
         modelCalls.items,
         LOOPBUS_LRU_LIMIT,
       );
+      this.state.requestAuxBySession[sessionId] = this.applyLruEntries(
+        this.requestAuxAccessBySession,
+        sessionId,
+        [],
+        requestAux.items,
+        LOOPBUS_LRU_LIMIT,
+      );
       this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
         this.apiCallsAccessBySession,
         sessionId,
@@ -5507,6 +5629,7 @@ export class RuntimeStore {
       this.updateBeforeCursor(this.schedulerLogsBeforeCursorBySession, sessionId, logs.nextBefore);
       this.updateBeforeCursor(this.observabilityTracesBeforeCursorBySession, sessionId, traces.nextBefore);
       this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, modelCalls.nextBefore);
+      this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, requestAux.nextBefore);
       this.updateBeforeCursor(this.apiCallsBeforeCursorBySession, sessionId, apiCalls.nextBefore);
       this.emit();
     } catch {

@@ -75,6 +75,7 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   schedulerLogsBySession: {},
   observabilityTracesBySession: {},
   modelCallsBySession: {},
+  requestAuxBySession: {},
   modelCallDeltasBySession: {},
   apiCallsBySession: {},
   terminalActivityBySession: {},

@@ -56,6 +56,8 @@ export type {
   ProfileListOutput,
   ProfileProjectionOutput,
   ProfileServiceInfoOutput,
+  RequestAuxItem,
+  RequestAuxPageOutput,
   RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,

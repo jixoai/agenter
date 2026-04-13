@@ -1241,6 +1241,11 @@ export const appRouter = t.router({
       .query(({ ctx, input }) =>
         ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
+    requestAuxPage: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageRequestAuxMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
+      ),
     apiCallsPage: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
