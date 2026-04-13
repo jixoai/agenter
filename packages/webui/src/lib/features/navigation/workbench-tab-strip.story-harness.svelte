@@ -5,6 +5,7 @@
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import WorkbenchTabStrip, {
 		type WorkbenchTabItem,
 		type WorkbenchTabMenuItem,
@@ -34,8 +35,10 @@
 
 	let {
 		initialValue = 'session-reviewer',
+		frameClassName = 'w-full max-w-4xl p-4',
 	}: {
 		initialValue?: string;
+		frameClassName?: string;
 	} = $props();
 
 	let activeTabId = $state('');
@@ -140,35 +143,39 @@
 	</WorkbenchToolbar>
 {/snippet}
 
-<div class="grid gap-3">
-	<div class="grid gap-0">
-		<WorkbenchTabStrip
-			ariaLabel="Workbench tabs story"
-			value={activeTabId}
-			{tabs}
-			fusedBelow
-			onValueChange={(nextValue) => {
-				activeTabId = nextValue;
-				eventLog = `select:${nextValue}`;
-			}}
-		/>
+<Tooltip.Provider delayDuration={0}>
+	<div class={frameClassName}>
+		<div class="grid gap-3">
+			<div class="grid gap-0">
+				<WorkbenchTabStrip
+					ariaLabel="Workbench tabs story"
+					value={activeTabId}
+					{tabs}
+					fusedBelow
+					onValueChange={(nextValue) => {
+						activeTabId = nextValue;
+						eventLog = `select:${nextValue}`;
+					}}
+				/>
 
-		<div
-			class="h-12 rounded-b-[1.35rem] border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
-			data-workbench-page-toolbar
-		>
-			{@render toolbar()}
+				<div
+					class="h-12 rounded-b-[1.35rem] border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
+					data-workbench-page-toolbar
+				>
+					{@render toolbar()}
+				</div>
+			</div>
+
+			<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+				<div class="rounded-full border px-2 py-1">
+					Active:
+					<span class="font-medium text-foreground" data-testid="workbench-tab-state">{activeTabId}</span>
+				</div>
+				<div class="rounded-full border px-2 py-1">
+					Event:
+					<span class="font-medium text-foreground" data-testid="workbench-tab-event-log">{eventLog}</span>
+				</div>
+			</div>
 		</div>
 	</div>
-
-	<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-		<div class="rounded-full border px-2 py-1">
-			Active:
-			<span class="font-medium text-foreground" data-testid="workbench-tab-state">{activeTabId}</span>
-		</div>
-		<div class="rounded-full border px-2 py-1">
-			Event:
-			<span class="font-medium text-foreground" data-testid="workbench-tab-event-log">{eventLog}</span>
-		</div>
-	</div>
-</div>
+</Tooltip.Provider>

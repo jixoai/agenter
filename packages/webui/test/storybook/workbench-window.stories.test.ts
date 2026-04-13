@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 
-import * as stories from '../../src/lib/features/navigation/workbench-window.stories.svelte';
+import * as stories from '../../src/lib/features/navigation/workbench-window.stories';
 import { getPortableStory } from './portable-stories';
 
 const ChromeFusesIntoBodySurface = getPortableStory(stories, 'ChromeFusesIntoBodySurface');

@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 
-import * as stories from '../../src/lib/features/workspaces/workspace-shell.stories.svelte';
+import * as stories from '../../src/lib/features/workspaces/workspace-shell.stories';
 import { getPortableStory } from './portable-stories';
 
 const ModeSwitchingKeepsSharedShell = getPortableStory(stories, 'ModeSwitchingKeepsSharedShell');

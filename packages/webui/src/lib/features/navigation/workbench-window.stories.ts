@@ -1,24 +1,23 @@
-<script module lang="ts">
-	import { defineMeta } from '@storybook/addon-svelte-csf';
+import type { Meta, StoryObj } from '@storybook/sveltekit';
+import { expect, within } from 'storybook/test';
 
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import Harness from './workbench-window.story-harness.svelte';
+import Harness from './workbench-window.story-harness.svelte';
 
-	const { Story } = defineMeta({
-		title: 'Features/Navigation/WorkbenchWindow',
-		component: Harness,
-	});
-</script>
+const meta = {
+	title: 'Features/Navigation/WorkbenchWindow',
+	component: Harness,
+	render: () => ({
+		Component: Harness,
+	}),
+} satisfies Meta<typeof Harness>;
 
-<script lang="ts">
-	import { expect, within } from 'storybook/test';
-</script>
+export default meta;
 
-<Story
-	name="Scenario: Given a switched workbench window When chrome and body render Then the body remains fused to the same surface"
-	exportName="ChromeFusesIntoBodySurface"
-	asChild
-	play={async ({ canvasElement }) => {
+type Story = StoryObj<typeof meta>;
+
+export const ChromeFusesIntoBodySurface = {
+	name: 'Scenario: Given a switched workbench window When chrome and body render Then the body remains fused to the same surface',
+	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await expect(canvas.getByText('Window shell')).toBeInTheDocument();
 		await expect(canvas.getByText('Body Surface')).toBeInTheDocument();
@@ -37,11 +36,5 @@
 		const toolbarHeight = toolbar?.getBoundingClientRect().height ?? 0;
 		expect(Math.round(toolbarHeight)).toBe(48);
 		expect(Math.abs(bodyTop - toolbarBottom)).toBeLessThanOrEqual(1);
-	}}
->
-	<Tooltip.Provider delayDuration={0}>
-		<div class="h-[42rem] w-full max-w-5xl p-4">
-			<Harness />
-		</div>
-	</Tooltip.Provider>
-</Story>
+	},
+} satisfies Story;

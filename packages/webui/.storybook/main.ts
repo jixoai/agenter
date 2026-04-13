@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import type { StorybookConfig } from '@storybook/sveltekit';
 import { mergeConfig, type PluginOption } from 'vite';
+import { bitsUiVirtualStylePlugin } from '../vite.bits-ui-style-plugin.ts';
 
 const codemirrorDedupe = [
 	'@codemirror/autocomplete',
@@ -13,21 +14,24 @@ const codemirrorDedupe = [
 
 const storybookSveltePackages = [
 	'@storybook/addon-svelte-csf',
+	'@storybook/addon-svelte-csf/internal/create-runtime-stories',
 	'@storybook/svelte',
 	'@storybook/sveltekit',
 ];
 
+const appSveltePackages = [
+	'@agenter/svelte-components',
+	'@agenter/terminal-view',
+	'@agenter/web-chat-view',
+	'@agenter/web-components',
+	'@lucide/svelte',
+	'bits-ui',
+	'shadcn-svelte',
+];
+
 const optimizeDepsInclude = [
-	'@lucide/svelte/icons/message-square-more',
-	'@lucide/svelte/icons/circle-ellipsis',
-	'@lucide/svelte/icons/loader-circle',
-	'@lucide/svelte/icons/chevron-right',
-	'@lucide/svelte/icons/help-circle',
-	'@lucide/svelte/icons/folder-kanban',
-	'@lucide/svelte/icons/history',
-	'@lucide/svelte/icons/user-round',
-	'@lucide/svelte/icons/users',
 	...codemirrorDedupe,
+	'@tanstack/svelte-virtual',
 	'lit/static-html.js',
 ];
 
@@ -72,13 +76,18 @@ const config: StorybookConfig = {
 	framework: '@storybook/sveltekit',
 	async viteFinal(config) {
 		const mergedConfig = mergeConfig(config, {
-			plugins: [tailwindcss()],
+			plugins: [bitsUiVirtualStylePlugin(), tailwindcss()],
 			resolve: {
 				dedupe: codemirrorDedupe,
 			},
 			optimizeDeps: {
 				include: optimizeDepsInclude,
-				exclude: storybookSveltePackages,
+				// Let Vite's Svelte pipeline transform packages that ship `.svelte` entrypoints.
+				exclude: [...appSveltePackages, ...storybookSveltePackages],
+			},
+			build: {
+				minify: false,
+				cssMinify: false,
 			},
 			ssr: {
 				noExternal: storybookSveltePackages,

@@ -4,6 +4,7 @@
 	import type { Component } from 'svelte';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import WorkbenchScaffold from './workbench-scaffold.svelte';
 	import WorkbenchToolbar from './workbench-toolbar.svelte';
 	import WorkbenchWindow from './workbench-window.svelte';
@@ -54,23 +55,27 @@
 	</WorkbenchToolbar>
 {/snippet}
 
-<WorkbenchWindow ariaLabel="Workbench window story" value={activeTabId} {tabs} {toolbar}>
-	<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
-		{#snippet header()}
-			<div class="grid gap-1">
-				<h2 class="text-sm font-semibold text-foreground">Body Surface</h2>
-				<p class="text-sm text-muted-foreground">
-					This body lives inside the same shared window surface as the tabs and toolbar.
-				</p>
-			</div>
-		{/snippet}
+<Tooltip.Provider delayDuration={0}>
+	<div class="h-[42rem] w-full max-w-5xl p-4">
+		<WorkbenchWindow ariaLabel="Workbench window story" value={activeTabId} {tabs} {toolbar}>
+			<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
+				{#snippet header()}
+					<div class="grid gap-1">
+						<h2 class="text-sm font-semibold text-foreground">Body Surface</h2>
+						<p class="text-sm text-muted-foreground">
+							This body lives inside the same shared window surface as the tabs and toolbar.
+						</p>
+					</div>
+				{/snippet}
 
-		<div class="grid h-full place-items-center px-5 py-6 md:px-7">
-			<div class="w-full max-w-3xl rounded-[1rem] border border-dashed border-border/70 bg-background/55 p-5">
-				<p class="text-sm text-muted-foreground">
-					The route shell is integrated into the window instead of creating a second detached card.
-				</p>
-			</div>
-		</div>
-	</WorkbenchScaffold>
-</WorkbenchWindow>
+				<div class="grid h-full place-items-center px-5 py-6 md:px-7">
+					<div class="w-full max-w-3xl rounded-[1rem] border border-dashed border-border/70 bg-background/55 p-5">
+						<p class="text-sm text-muted-foreground">
+							The route shell is integrated into the window instead of creating a second detached card.
+						</p>
+					</div>
+				</div>
+			</WorkbenchScaffold>
+		</WorkbenchWindow>
+	</div>
+	</Tooltip.Provider>

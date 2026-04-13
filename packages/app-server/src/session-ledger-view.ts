@@ -15,6 +15,10 @@ interface HeartbeatMessagePayload {
   chatId?: string;
   format?: ChatMessage["format"];
   channel?: ChatMessage["channel"];
+  heartbeatKind?: ChatMessage["heartbeatKind"];
+  compactTrigger?: ChatMessage["compactTrigger"];
+  callRoundIndex?: number;
+  currentRoundIndex?: number;
   visibleAt?: number;
   updatedAt?: number;
   messageKind?: MessageKind;
@@ -54,15 +58,29 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return value as Record<string, unknown>;
 };
 
+const normalizeCompactTrigger = (value: unknown): ChatCycleCompactTrigger | null => {
+  return value === "manual" || value === "threshold" || value === "error" || value === "attention_retry" ? value : null;
+};
+
+const buildCompactSeparatorText = (trigger: ChatCycleCompactTrigger | null): string => {
+  if (!trigger) {
+    return "Prompt window compacted. Later Heartbeat rows continue from the rebuilt context.";
+  }
+  return `Prompt window compacted (${trigger}). Later Heartbeat rows continue from the rebuilt context.`;
+};
+
 const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMessagePayload => {
   if (message.parts.length === 0) {
     return { text: message.text };
   }
-  const payload = message.parts[0]?.payload;
+  const firstPart = message.parts[0];
+  const payload = firstPart?.payload;
   const record = asRecord(payload);
   if (!record) {
     return { text: message.text };
   }
+  const heartbeatKind =
+    record.heartbeatKind === "compact_separator" || firstPart?.partType === "compact" ? "compact_separator" : "message";
   return {
     text: typeof record.text === "string" ? record.text : message.text,
     chatId: typeof record.chatId === "string" ? record.chatId : undefined,
@@ -71,6 +89,10 @@ const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMe
       record.channel === "to_user" || record.channel === "self_talk" || record.channel === "tool"
         ? record.channel
         : undefined,
+    heartbeatKind,
+    compactTrigger: normalizeCompactTrigger(record.compactTrigger),
+    callRoundIndex: typeof record.callRoundIndex === "number" ? record.callRoundIndex : undefined,
+    currentRoundIndex: typeof record.currentRoundIndex === "number" ? record.currentRoundIndex : undefined,
     visibleAt: typeof record.visibleAt === "number" ? record.visibleAt : undefined,
     updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : undefined,
     messageKind: typeof record.messageKind === "string" ? (record.messageKind as MessageKind) : undefined,
@@ -85,14 +107,17 @@ export const toHeartbeatMessageUpsertInput = (input: {
   roundIndex: number;
   aiCallId?: number | null;
 }): SessionMessageUpsertInput => {
+  const heartbeatKind = input.message.heartbeatKind ?? "message";
   const parts: SessionMessagePartInput[] = [
     {
-      partType: "message",
+      partType: heartbeatKind === "compact_separator" ? "compact" : "message",
       payload: {
         text: input.message.content,
         chatId: input.message.chatId,
         format: input.message.format ?? "markdown",
         channel: input.message.channel,
+        heartbeatKind,
+        compactTrigger: input.message.compactTrigger ?? null,
         visibleAt: input.message.visibleAt,
         updatedAt: input.message.updatedAt,
         messageKind: input.message.messageKind,
@@ -115,12 +140,42 @@ export const toHeartbeatMessageUpsertInput = (input: {
   };
 };
 
+export const toHeartbeatCompactSeparatorUpsertInput = (input: {
+  aiCallId: number;
+  timestamp: number;
+  callRoundIndex: number;
+  currentRoundIndex: number;
+  compactTrigger: ChatCycleCompactTrigger | null;
+}): SessionMessageUpsertInput => ({
+  messageId: `heartbeat:compact:${input.aiCallId}`,
+  aiCallId: input.aiCallId,
+  roundIndex: input.currentRoundIndex,
+  scope: "heartbeat",
+  role: "system",
+  createdAt: input.timestamp,
+  updatedAt: input.timestamp,
+  parts: [
+    {
+      partType: "compact",
+      payload: {
+        text: buildCompactSeparatorText(input.compactTrigger),
+        format: "plain",
+        heartbeatKind: "compact_separator",
+        compactTrigger: input.compactTrigger,
+        callRoundIndex: input.callRoundIndex,
+        currentRoundIndex: input.currentRoundIndex,
+      } satisfies HeartbeatMessagePayload,
+      isComplete: true,
+    },
+  ],
+});
+
 export const projectHeartbeatMessageToChatMessage = (message: SessionMessageRecord): ChatMessage => {
   const payload = readHeartbeatMessagePayload(message);
   return {
     id: message.messageId,
     chatId: payload.chatId,
-    role: message.role === "assistant" ? "assistant" : "user",
+    role: message.role === "assistant" ? "assistant" : message.role === "system" ? "system" : "user",
     content: payload.text ?? message.text,
     messageKind: payload.messageKind,
     messagePayload: payload.messagePayload,
@@ -130,6 +185,8 @@ export const projectHeartbeatMessageToChatMessage = (message: SessionMessageReco
     cycleId: message.aiCallId ?? null,
     channel: payload.channel,
     format: payload.format ?? "markdown",
+    heartbeatKind: payload.heartbeatKind,
+    compactTrigger: payload.compactTrigger,
     attachments: payload.attachments?.map((attachment) => ({ ...attachment })),
     tool: payload.tool ? structuredClone(payload.tool) : undefined,
   };
@@ -185,12 +242,7 @@ const readCompactTrigger = (call: SessionAiCallRecord): ChatCycleCompactTrigger 
   }
   const request = asRecord(call.requestBody);
   const meta = asRecord(request?.meta);
-  return meta?.compactTrigger === "manual" ||
-    meta?.compactTrigger === "threshold" ||
-    meta?.compactTrigger === "error" ||
-    meta?.compactTrigger === "attention_retry"
-    ? (meta.compactTrigger as ChatCycleCompactTrigger)
-    : null;
+  return normalizeCompactTrigger(meta?.compactTrigger);
 };
 
 export const projectAiCallToModelCall = (call: SessionAiCallRecord): RuntimeModelCallRecord => {

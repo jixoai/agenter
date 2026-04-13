@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 
-import * as stories from '../../src/lib/features/runtime/runtime-heartbeat-message.stories.svelte';
+import * as stories from '../../src/lib/features/runtime/runtime-heartbeat-message.stories';
 import { getPortableStory } from './portable-stories';
 
 const AssistantHeartbeatMessageShowsAttachmentsAndToolState = getPortableStory(

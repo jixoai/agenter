@@ -36,6 +36,8 @@ export interface ModelCapabilities {
 }
 
 export type ChatToolInvocationStatus = "waiting" | "running" | "success" | "failed" | "cancelled";
+export type ChatMessageRole = "user" | "assistant" | "system";
+export type ChatMessageHeartbeatKind = "message" | "compact_separator";
 
 export interface ChatToolInvocationPayload {
   value: unknown;
@@ -56,7 +58,7 @@ export interface ChatToolInvocation {
 export interface ChatMessage {
   id: string;
   chatId?: string;
-  role: "user" | "assistant";
+  role: ChatMessageRole;
   content: string;
   messageKind?: MessageKind;
   messagePayload?: MessagePayload;
@@ -66,6 +68,8 @@ export interface ChatMessage {
   cycleId?: number | null;
   channel?: "to_user" | "self_talk" | "tool";
   format?: "plain" | "markdown";
+  heartbeatKind?: ChatMessageHeartbeatKind;
+  compactTrigger?: "manual" | "threshold" | "error" | "attention_retry" | null;
   tool?: ChatToolInvocation;
   attachments?: ChatSessionAsset[];
 }

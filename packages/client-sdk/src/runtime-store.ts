@@ -403,6 +403,8 @@ const sameChatMessageRecord = (left: RuntimeChatMessage, right: RuntimeChatMessa
   const rightFormat = right.format ?? "markdown";
   return (
     left.chatId === right.chatId &&
+    (left.heartbeatKind ?? "message") === (right.heartbeatKind ?? "message") &&
+    (left.compactTrigger ?? null) === (right.compactTrigger ?? null) &&
     left.role === right.role &&
     (left.visibleAt ?? null) === (right.visibleAt ?? null) &&
     (left.cycleId ?? null) === (right.cycleId ?? null) &&
@@ -639,6 +641,8 @@ export class RuntimeStore {
       cycleId: item.cycleId ?? null,
       channel: normalizeChatChannel(item.channel as RuntimeChatMessage["channel"] | "user_input" | null | undefined),
       format: item.format,
+      heartbeatKind: item.heartbeatKind,
+      compactTrigger: item.compactTrigger,
       tool: item.tool,
       attachments: item.attachments?.map((attachment) => ({
         ...attachment,

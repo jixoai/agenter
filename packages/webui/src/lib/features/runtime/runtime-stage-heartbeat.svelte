@@ -5,6 +5,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 
 	import type { RuntimeChatMessage } from '@agenter/client-sdk';
+	import RuntimeHeartbeatCompactSeparator from './runtime-heartbeat-compact-separator.svelte';
 	import RuntimeHeartbeatMessage from './runtime-heartbeat-message.svelte';
 
 	let {
@@ -43,7 +44,7 @@
 		<div class="grid gap-1">
 			<div class="text-sm font-semibold">AI-call ledger</div>
 			<div class="text-xs text-muted-foreground">
-				Heartbeat projects persisted user and assistant messages out of the runtime ledger.
+				Heartbeat projects persisted user, assistant, and compact-boundary rows out of the runtime ledger.
 			</div>
 		</div>
 		<Button variant="outline" disabled={loadingOlder || !hasMoreOlder} onclick={() => void loadOlder()}>
@@ -57,14 +58,19 @@
 				class="h-full"
 				virtual={{
 					items: sortedMessages,
-					estimateSize: (_, message) => (message.content.length > 240 ? 196 : 132),
+					estimateSize: (_, message) =>
+						message.heartbeatKind === 'compact_separator' ? 108 : message.content.length > 240 ? 196 : 132,
 					getItemKey: (_, message) => message.id,
 					measureElement: true,
 					overscan: 6,
 				}}
 			>
 				{#snippet item(message)}
-					<RuntimeHeartbeatMessage {message} />
+					{#if message.heartbeatKind === 'compact_separator'}
+						<RuntimeHeartbeatCompactSeparator {message} />
+					{:else}
+						<RuntimeHeartbeatMessage {message} />
+					{/if}
 				{/snippet}
 			</ScrollView>
 		</Card.Content>

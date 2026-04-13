@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 
-import * as stories from '../../src/lib/features/navigation/workbench-tab-strip.stories.svelte';
+import * as stories from '../../src/lib/features/navigation/workbench-tab-strip.stories';
 import { getPortableStory } from './portable-stories';
 
 const HoveringRuntimeTabShowsTooltip = getPortableStory(stories, 'HoveringRuntimeTabShowsTooltip');

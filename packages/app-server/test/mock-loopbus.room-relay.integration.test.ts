@@ -71,6 +71,15 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         expect(followUp.followUpReply.content).toBe(MOCK_FINAL_ANSWER);
         expect(followUp.relayPromptCountAfter).toBe(followUp.relayPromptCountBefore);
         expect(followUp.settledAttention.active).toHaveLength(0);
+        const heartbeat = harness.kernel.listChatMessages(harness.session.id, 0, 200);
+        const compactSeparators = heartbeat.filter((message) => message.heartbeatKind === "compact_separator");
+        expect(compactSeparators.length).toBeGreaterThan(0);
+        expect(
+          compactSeparators.some(
+            (message) =>
+              message.role === "system" && message.compactTrigger === followUp.compactCycle.compactTrigger,
+          ),
+        ).toBeTrue();
       } finally {
         await harness.stop();
       }

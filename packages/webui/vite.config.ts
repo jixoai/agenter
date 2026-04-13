@@ -1,12 +1,12 @@
 /// <reference types="vitest/config" />
 import tailwindcss from '@tailwindcss/vite';
-import { viteFinal as svelteCsfViteFinal } from '@storybook/addon-svelte-csf/preset';
 import { sveltekit } from '@sveltejs/kit/vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { playwright } from '@vitest/browser-playwright';
 import type { InlineConfig } from 'vitest/node';
 import type { UserConfig } from 'vite';
+import { bitsUiVirtualStylePlugin } from './vite.bits-ui-style-plugin';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 const resolveTrpcProxyTarget = (): string => {
@@ -35,7 +35,7 @@ const codemirrorDedupe = [
   '@codemirror/view'
 ];
 
-const optimizeDepsInclude = [...codemirrorDedupe, 'lit/static-html.js'];
+const optimizeDepsInclude = [...codemirrorDedupe, '@tanstack/svelte-virtual', 'lit/static-html.js'];
 
 const appSvelteDependencyExcludes = [
   '@agenter/svelte-components',
@@ -53,17 +53,8 @@ const storybookSvelteDependencyExcludes = [
 ];
 
 const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
-  const shouldEnableVitestSvelteCsf = Boolean(process.env.VITEST);
-  const svelteCsfConfig = shouldEnableVitestSvelteCsf && svelteCsfViteFinal
-    ? await svelteCsfViteFinal(
-        {},
-        // The preset only reads `legacyTemplate`; Storybook runtime options are irrelevant in Vitest.
-        { legacyTemplate: false } as never
-      )
-    : {};
-
   return {
-    plugins: [tailwindcss(), sveltekit(), ...(svelteCsfConfig.plugins ?? [])],
+    plugins: [bitsUiVirtualStylePlugin(), tailwindcss(), sveltekit()],
     resolve: {
       dedupe: codemirrorDedupe
     },
@@ -86,9 +77,8 @@ const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
     },
     optimizeDeps: {
       include: optimizeDepsInclude,
-      exclude: shouldEnableVitestSvelteCsf
-        ? storybookSvelteDependencyExcludes
-        : [...appSvelteDependencyExcludes, ...storybookSvelteDependencyExcludes]
+      // Storybook DOM tests must let Vite's Svelte pipeline own Svelte dependencies.
+      exclude: [...appSvelteDependencyExcludes, ...storybookSvelteDependencyExcludes]
     },
     test: {
       expect: {

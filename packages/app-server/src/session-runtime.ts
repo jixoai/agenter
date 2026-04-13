@@ -40,6 +40,7 @@ import {
   type SessionAssetRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
+  type SessionMessageUpsertInput,
   type ReversePage as SessionDbReversePage,
   type ReverseTimeCursor as SessionDbReverseTimeCursor,
   type SessionMessageRecord,
@@ -152,6 +153,7 @@ import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalC
 import {
   projectAiCallToModelCall,
   projectHeartbeatMessageToChatMessage,
+  toHeartbeatCompactSeparatorUpsertInput,
   toHeartbeatMessageUpsertInput,
   type RuntimeModelCallRecord,
 } from "./session-ledger-view";
@@ -7336,6 +7338,8 @@ export class SessionRuntime {
     message: ChatMessage,
     cycleId: number | null = this.activeCycleId,
     channelOverride?: SessionDbTerminalActivityRecord["channel"],
+    aiCallIdOverride?: number | null,
+    persistInputOverride?: SessionMessageUpsertInput,
   ): void {
     const nextMessage: ChatMessage = {
       ...message,
@@ -7363,14 +7367,16 @@ export class SessionRuntime {
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
     this.sessionDb.upsertMessage(
-      toHeartbeatMessageUpsertInput({
-        message: {
-          ...nextMessage,
-          channel: channel === "user_input" ? undefined : channel,
-        },
-        roundIndex: this.sessionDb.getHead().currentRoundIndex,
-        aiCallId: nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null,
-      }),
+      persistInputOverride ??
+        toHeartbeatMessageUpsertInput({
+          message: {
+            ...nextMessage,
+            channel: channel === "user_input" ? undefined : channel,
+          },
+          roundIndex: this.sessionDb.getHead().currentRoundIndex,
+          aiCallId:
+            aiCallIdOverride ?? (nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null),
+        }),
     );
     this.appendTerminalActivityForMessage(nextMessage, persistedCycleId, channel);
     if (
@@ -7383,6 +7389,40 @@ export class SessionRuntime {
         appendOutput: nextMessage,
       });
     }
+  }
+
+  private recordHeartbeatCompactBoundary(modelCall: SessionAiCallRecord): void {
+    if (!this.sessionDb || this.activeCycle?.kind !== "compact" || modelCall.status !== "done") {
+      return;
+    }
+    const completedAt = modelCall.completedAt ?? modelCall.updatedAt ?? Date.now();
+    const currentRoundIndex = this.sessionDb.getHead().currentRoundIndex;
+    const compactTrigger = this.activeCycle.compactTrigger ?? null;
+    this.recordChatMessage(
+      {
+        id: `heartbeat:compact:${modelCall.id}`,
+        role: "system",
+        content:
+          compactTrigger === null
+            ? "Prompt window compacted. Later Heartbeat rows continue from the rebuilt context."
+            : `Prompt window compacted (${compactTrigger}). Later Heartbeat rows continue from the rebuilt context.`,
+        timestamp: completedAt,
+        updatedAt: completedAt,
+        format: "plain",
+        heartbeatKind: "compact_separator",
+        compactTrigger: compactTrigger ?? null,
+      },
+      this.activeCycleId,
+      "self_talk",
+      modelCall.id,
+      toHeartbeatCompactSeparatorUpsertInput({
+        aiCallId: modelCall.id,
+        timestamp: completedAt,
+        callRoundIndex: modelCall.roundIndex,
+        currentRoundIndex,
+        compactTrigger: compactTrigger ?? null,
+      }),
+    );
   }
 
   private appendTerminalActivity(input: {
@@ -7421,6 +7461,9 @@ export class SessionRuntime {
     cycleId: number | null,
     channel: RuntimeTerminalActivityRecord["channel"],
   ): void {
+    if (message.heartbeatKind === "compact_separator") {
+      return;
+    }
     const matches = extractKnownTerminalIds(message.content, this.terminals.keys());
     if (matches.length === 0) {
       return;
@@ -8306,6 +8349,9 @@ export class SessionRuntime {
       modelCallId: modelCall.id,
       status: modelCall.status === "error" ? "error" : this.activeCycle?.status,
     });
+    if (record.status === "done") {
+      this.recordHeartbeatCompactBoundary(modelCall);
+    }
     if (record.status === "error") {
       this.setProjectionStage("error");
     } else if (record.status === "done") {

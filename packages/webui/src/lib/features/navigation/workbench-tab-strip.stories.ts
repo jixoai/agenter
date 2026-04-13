@@ -1,25 +1,24 @@
-<script module lang="ts">
-	import { defineMeta } from '@storybook/addon-svelte-csf';
+import type { Meta, StoryObj } from '@storybook/sveltekit';
+import { expect, screen, waitFor, within } from 'storybook/test';
 
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+import Harness from './workbench-tab-strip.story-harness.svelte';
 
-	import Harness from './workbench-tab-strip.story-harness.svelte';
+const meta = {
+	title: 'Features/Navigation/WorkbenchTabStrip',
+	component: Harness,
+	render: (args) => ({
+		Component: Harness,
+		props: args,
+	}),
+} satisfies Meta<typeof Harness>;
 
-	const { Story } = defineMeta({
-		title: 'Features/Navigation/WorkbenchTabStrip',
-		component: Harness,
-	});
-</script>
+export default meta;
 
-<script lang="ts">
-	import { expect, screen, waitFor, within } from 'storybook/test';
-</script>
+type Story = StoryObj<typeof meta>;
 
-<Story
-	name="Scenario: Given a chrome-style runtime tab When hovering it Then tooltip detail and fused status indicators stay visible"
-	exportName="HoveringRuntimeTabShowsTooltip"
-	asChild
-	play={async ({ canvasElement, userEvent }) => {
+export const HoveringRuntimeTabShowsTooltip = {
+	name: 'Scenario: Given a chrome-style runtime tab When hovering it Then tooltip detail and fused status indicators stay visible',
+	play: async ({ canvasElement, userEvent }) => {
 		const canvas = within(canvasElement);
 		const runtimeTab = canvas.getByRole('tab', { name: /reviewer/u });
 		await userEvent.hover(runtimeTab);
@@ -32,22 +31,16 @@
 		).toBeInTheDocument();
 		await expect(canvas.getByText('2')).toBeInTheDocument();
 		await waitFor(() => {
-			expect(canvasElement.querySelector('[data-workbench-tab="session-reviewer"] .animate-spin')).not.toBeNull();
+			expect(
+				canvasElement.querySelector('[data-workbench-tab="session-reviewer"] .animate-spin'),
+			).not.toBeNull();
 		});
-	}}
->
-	<Tooltip.Provider delayDuration={0}>
-		<div class="w-full max-w-4xl p-4">
-			<Harness />
-		</div>
-	</Tooltip.Provider>
-</Story>
+	},
+} satisfies Story;
 
-<Story
-	name="Scenario: Given a running workbench tab When opening its context menu and closing it Then menu actions dispatch and selection falls back"
-	exportName="ContextMenuCloseFallsBackSelection"
-	asChild
-	play={async ({ canvasElement, userEvent }) => {
+export const ContextMenuCloseFallsBackSelection = {
+	name: 'Scenario: Given a running workbench tab When opening its context menu and closing it Then menu actions dispatch and selection falls back',
+	play: async ({ canvasElement, userEvent }) => {
 		const canvas = within(canvasElement);
 		const runtimeTab = canvas.getByRole('tab', { name: /reviewer/u });
 		runtimeTab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
@@ -64,22 +57,19 @@
 		await waitFor(() => {
 			expect(canvas.queryByRole('tab', { name: /reviewer/u })).toBeNull();
 		});
-		await expect(canvas.getByTestId('workbench-tab-event-log')).toHaveTextContent('close:session-reviewer');
+		await expect(canvas.getByTestId('workbench-tab-event-log')).toHaveTextContent(
+			'close:session-reviewer',
+		);
 		await expect(canvas.getByTestId('workbench-tab-state')).toHaveTextContent('history');
-	}}
->
-	<Tooltip.Provider delayDuration={0}>
-		<div class="w-full max-w-4xl p-4">
-			<Harness />
-		</div>
-	</Tooltip.Provider>
-</Story>
+	},
+} satisfies Story;
 
-<Story
-	name="Scenario: Given a narrow workbench chrome When toolbar content reflows Then metadata stays visible and hover actions collapse without horizontal overflow"
-	exportName="NarrowToolbarStaysSingleSurface"
-	asChild
-	play={async ({ canvasElement }) => {
+export const NarrowToolbarStaysSingleSurface = {
+	name: 'Scenario: Given a narrow workbench chrome When toolbar content reflows Then metadata stays visible and hover actions collapse without horizontal overflow',
+	args: {
+		frameClassName: 'w-full max-w-[24.375rem] p-4',
+	},
+	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await expect(canvas.getByText('Avatar workbench')).toBeInTheDocument();
 		await expect(canvas.getByRole('button', { name: 'Inspect state' })).toBeVisible();
@@ -100,11 +90,5 @@
 		expect(Math.round(toolbarSlot?.getBoundingClientRect().height ?? 0)).toBe(48);
 		expect(runtimeTab.getBoundingClientRect().width).toBeLessThanOrEqual(193);
 		expect(getComputedStyle(closeButton!).display).toBe('none');
-	}}
->
-	<Tooltip.Provider delayDuration={0}>
-		<div class="w-full max-w-[24.375rem] p-4">
-			<Harness />
-		</div>
-	</Tooltip.Provider>
-</Story>
+	},
+} satisfies Story;
