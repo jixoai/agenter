@@ -21,6 +21,7 @@
   - shared public asset roots
   - avatar-private asset roots
   - non-interactive workspace exec
+- root workspace bash 与 workspace bash 必须共享同一套 overlay-rule filesystem authority；ordered glob grants、dynamic rule refresh 与 avatar-private sibling isolation 都在这层执行，不能由上层 route 或 shell surface 各自猜测。
 - Workspace asset roots 分为：
   - public: `<workspace>/.agenter/workspace/{skills,memory,tools,archive}`
   - private: `<workspace>/.agenter/avatars/by-principal/<principalId>/{skills,memory,tools,archive}`
