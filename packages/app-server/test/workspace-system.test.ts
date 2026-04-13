@@ -2,12 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { AttentionSystem } from "@agenter/attention-system";
 
 import { AppKernel } from "../src";
 import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
+import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system/paths";
 import { waitForRealValue } from "../test-support/real-kernel-harness";
 
 const getRuntime = (kernel: AppKernel, sessionId: string) => {
@@ -240,6 +241,80 @@ describe("Feature: workspace system kernel integration", () => {
       path: "/src/generated/out.txt",
     });
     expect(allowedPreview.textContent).toContain("override-ok");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given one avatar mounts a workspace root When private drawers exist for another avatar Then workspace bash and root workspace bash hide the sibling drawer the same way", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "alice",
+      autoStart: true,
+    });
+    const aliceAssetRoots = kernel.getRuntimeWorkspaceAssetRoots({
+      workspacePath: workspace,
+      avatar: "alice",
+    });
+    const aliceMemoryRoot = aliceAssetRoots.privateRoots.memory;
+    const alicePrincipalId = basename(dirname(aliceMemoryRoot));
+    const bobMemoryRoot = join(resolveWorkspaceAvatarCanonicalRoot(workspace, "bob"), "memory");
+    mkdirSync(aliceMemoryRoot, { recursive: true });
+    mkdirSync(bobMemoryRoot, { recursive: true });
+    writeFileSync(join(aliceMemoryRoot, "todo.txt"), "alice-only\n", "utf8");
+    writeFileSync(join(bobMemoryRoot, "todo.txt"), "bob-only\n", "utf8");
+    kernel.grantRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      grants: [{ pattern: "/", mode: "rw" }],
+    });
+
+    const workspaceList = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "alice",
+      command: "ls /workspace/.agenter/avatars/by-principal && ls /workspace/.agenter/avatars",
+    });
+    expect(workspaceList.exitCode).toBe(0);
+    expect(workspaceList.stdout).toContain(alicePrincipalId);
+    expect(workspaceList.stdout).not.toContain("bob");
+    expect(workspaceList.stdout).not.toContain("by-nickname");
+
+    const workspaceRead = await kernel.execRuntimeWorkspace({
+      runtimeId: session.id,
+      workspacePath: workspace,
+      avatar: "alice",
+      command: "cat /workspace/.agenter/avatars/by-principal/bob/memory/todo.txt",
+    });
+    expect(workspaceRead.exitCode).not.toBe(0);
+    expect(workspaceRead.stdout).not.toContain("bob-only");
+
+    const rootList = await execRootWorkspaceBash(kernel, session.id, {
+      command: `ls ${JSON.stringify(join(workspace, ".agenter", "avatars", "by-principal"))} && ls ${JSON.stringify(
+        join(workspace, ".agenter", "avatars"),
+      )}`,
+    });
+    expect(rootList.exitCode).toBe(0);
+    expect(rootList.stdout).toContain(alicePrincipalId);
+    expect(rootList.stdout).not.toContain("bob");
+    expect(rootList.stdout).not.toContain("by-nickname");
+
+    const rootRead = await execRootWorkspaceBash(kernel, session.id, {
+      command: `cat ${JSON.stringify(join(workspace, ".agenter", "avatars", "by-principal", "bob", "memory", "todo.txt"))}`,
+    });
+    expect(rootRead.exitCode).not.toBe(0);
+    expect(rootRead.stdout).not.toContain("bob-only");
 
     await kernel.stop();
   });

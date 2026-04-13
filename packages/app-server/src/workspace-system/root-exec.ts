@@ -1,9 +1,9 @@
-import { accessSync, constants as fsConstants, mkdirSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { OverlayRuleFs } from "@agenter/just-bash-overlay-rule-fs";
 import { Bash, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs, defineCommand } from "just-bash";
 
-import { GrantedWorkspaceFs } from "./granted-fs";
 import { getOneShotShellProcessViolation } from "./one-shot-shell-guard";
 import { createTruthfulRootWorkspaceFetch } from "./root-fetch";
 import type { WorkspaceGrantRecord } from "./types";
@@ -12,6 +12,7 @@ export interface RootWorkspaceMountInput {
   path: string;
   mode: "ro" | "rw";
   grants?: WorkspaceGrantRecord[];
+  hiddenPaths?: string[];
 }
 
 export interface RootWorkspaceBashExecInput {
@@ -40,28 +41,28 @@ const ensureMountParentDirs = (fs: InMemoryFs, absolutePath: string): void => {
   }
 };
 
-const ensureReadableDirectory = (path: string): boolean => {
-  try {
-    accessSync(path, fsConstants.R_OK);
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-};
+const mergeRootWorkspaceMount = (
+  current: RootWorkspaceMountInput | undefined,
+  next: RootWorkspaceMountInput,
+): RootWorkspaceMountInput => ({
+  path: resolve(next.path),
+  mode: current?.mode === "rw" || next.mode === "rw" ? "rw" : "ro",
+  grants: next.grants ?? current?.grants,
+  hiddenPaths: next.hiddenPaths ?? current?.hiddenPaths,
+});
 
 const createRootWorkspaceFs = (input: RootWorkspaceBashExecInput): MountableFs => {
   const base = new InMemoryFs();
   const fs = new MountableFs({ base });
   const uniqueMounts = new Map<string, RootWorkspaceMountInput>();
-  uniqueMounts.set(resolve(input.rootWorkspacePath), {
+  const rootWorkspacePath = resolve(input.rootWorkspacePath);
+  uniqueMounts.set(rootWorkspacePath, {
     path: resolve(input.rootWorkspacePath),
     mode: "rw",
   });
   for (const mount of input.mounts) {
-    uniqueMounts.set(resolve(mount.path), {
-      path: resolve(mount.path),
-      mode: mount.mode,
-    });
+    const resolvedPath = resolve(mount.path);
+    uniqueMounts.set(resolvedPath, mergeRootWorkspaceMount(uniqueMounts.get(resolvedPath), mount));
   }
   for (const mount of uniqueMounts.values()) {
     ensureMountParentDirs(base, mount.path);
@@ -69,9 +70,12 @@ const createRootWorkspaceFs = (input: RootWorkspaceBashExecInput): MountableFs =
     fs.mount(
       mount.path,
       mount.grants
-        ? new GrantedWorkspaceFs({
-            workspacePath: mount.path,
-            grants: mount.grants,
+        ? new OverlayRuleFs({
+            root: mount.path,
+            config: {
+              rules: mount.grants,
+              hiddenPaths: mount.hiddenPaths,
+            },
           })
         : mount.mode === "rw"
           ? new ReadWriteFs({ root: mount.path })

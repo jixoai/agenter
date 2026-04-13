@@ -1,12 +1,12 @@
 ## 1. Overlay rule filesystem package
 
-- [ ] 1.1 Create the `@agenter/just-bash-overlay-rule-fs` package and move the reusable workspace rule filesystem logic into it.
-- [ ] 1.2 Add unit coverage for ordered glob rules, directory visibility filtering, avatar-private isolation, and dynamic rule updates.
+- [x] 1.1 Create the `@agenter/just-bash-overlay-rule-fs` package and move the reusable workspace rule filesystem logic into it.
+- [x] 1.2 Add unit coverage for ordered glob rules, directory visibility filtering, avatar-private isolation, and dynamic rule updates.
 
 ## 2. App-server integration
 
-- [ ] 2.1 Replace the app-server private granted-fs usage in root workspace bash and workspace bash with the new overlay-rule-fs package.
-- [ ] 2.2 Update app-server integration tests so both shell surfaces prove they share the same rule enforcement behavior.
+- [x] 2.1 Replace the app-server private granted-fs usage in root workspace bash and workspace bash with the new overlay-rule-fs package.
+- [x] 2.2 Update app-server integration tests so both shell surfaces prove they share the same rule enforcement behavior.
 
 ## 3. Workspace management surface
 

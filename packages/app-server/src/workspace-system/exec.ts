@@ -1,10 +1,10 @@
 import { accessSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+import { OverlayRuleFs } from "@agenter/just-bash-overlay-rule-fs";
 import { Bash, defineCommand, InMemoryFs, MountableFs } from "just-bash";
 
 import { buildRuntimeToolExecCommand } from "../runtime-tool-exec";
-import { GrantedWorkspaceFs } from "./granted-fs";
 import { normalizeWorkspaceGrantPattern } from "./grants";
 import { getOneShotShellProcessViolation } from "./one-shot-shell-guard";
 import {
@@ -12,6 +12,7 @@ import {
   resolveWorkspacePublicAssetRoot,
   resolveWorkspaceToolCommandName,
 } from "./paths";
+import { listWorkspaceHiddenPrivatePaths } from "./private-isolation";
 import type { WorkspaceAssetKind, WorkspaceGrantRecord } from "./types";
 
 export interface WorkspaceBashExecInput {
@@ -105,10 +106,16 @@ const createBashFs = (input: { workspacePath: string; avatar: string; grants: Wo
   const fs = new MountableFs({ base: new InMemoryFs() });
   fs.mount(
     VIRTUAL_WORKSPACE_ROOT,
-    new GrantedWorkspaceFs({
-      workspacePath: input.workspacePath,
-      grants: input.grants,
-      systemGrantPatterns,
+    new OverlayRuleFs({
+      root: input.workspacePath,
+      config: {
+        rules: input.grants,
+        extraRules: systemGrantPatterns,
+        hiddenPaths: listWorkspaceHiddenPrivatePaths({
+          workspacePath: input.workspacePath,
+          avatar: input.avatar,
+        }),
+      },
     }),
   );
   return fs;

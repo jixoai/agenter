@@ -180,6 +180,7 @@ import {
   type WorkspaceGrantRecord,
   type WorkspaceMountRecord,
 } from "./workspace-system";
+import { listWorkspaceHiddenPrivatePaths } from "./workspace-system/private-isolation";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
@@ -3460,6 +3461,10 @@ export class SessionRuntime {
             path: entry.mount.workspacePath,
             mode,
             grants: entry.grants,
+            hiddenPaths: listWorkspaceHiddenPrivatePaths({
+              workspacePath: entry.mount.workspacePath,
+              avatar: this.options.avatar,
+            }),
           };
         }),
       ],

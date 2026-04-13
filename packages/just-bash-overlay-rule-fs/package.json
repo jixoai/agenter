@@ -1,0 +1,16 @@
+{
+  "name": "@agenter/just-bash-overlay-rule-fs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "just-bash": "^2.14.0",
+    "minimatch": "^10.2.5"
+  }
+}
