@@ -95,8 +95,12 @@ describe("Feature: runtime built-in skills", () => {
 
     const terminalContent = readRuntimeSkillContent(terminal!);
     expect(terminalContent).toContain("A runtime does not start with a terminal by default.");
-    expect(terminalContent).toContain("If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence");
-    expect(terminalContent).toContain("If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable");
+    expect(terminalContent).toContain(
+      "If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence",
+    );
+    expect(terminalContent).toContain(
+      "If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable",
+    );
     expect(terminalContent).toContain("do not prove the promised URL or API path actually responds");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
@@ -107,6 +111,8 @@ describe("Feature: runtime built-in skills", () => {
     expect(runtimeContent).toContain("root_workspace_list");
     expect(runtimeContent).toContain("ccski info <skill>");
     expect(runtimeContent).toContain("~/tools");
+    expect(runtimeContent).toContain("outbound network access");
+    expect(runtimeContent).toContain("objective verification of current or external facts");
     expect(runtimeContent).toContain("A local delivery URL may be verified from `root_workspace_bash`");
     expect(runtimeContent).toContain("not enough to prove a local delivery URL is ready");
     expect(runtimeContent).toContain("scheme, host, port, and path are all part of the delivery contract");
@@ -114,19 +120,29 @@ describe("Feature: runtime built-in skills", () => {
     expect(runtimeContent).toContain("references/shell-surface.md");
     expect(runtimeContent).toContain("references/toolbox.md");
 
-    const terminalLifecycleReference = readFileSync(join(dirname(terminal!.path), "references", "terminal-lifecycle.md"), "utf8");
+    const terminalLifecycleReference = readFileSync(
+      join(dirname(terminal!.path), "references", "terminal-lifecycle.md"),
+      "utf8",
+    );
     expect(terminalLifecycleReference).toContain("anything that binds a port or serves HTTP belongs in a terminal");
     expect(terminalLifecycleReference).toContain("ad-hoc listener experiments such as `python -m http.server`");
     expect(terminalLifecycleReference).toContain("do not replace that HTTP verification");
 
     const runtimeShellReference = readFileSync(join(dirname(runtime!.path), "references", "shell-surface.md"), "utf8");
+    expect(runtimeShellReference).toContain("outbound-network verification of current or external facts");
+    expect(runtimeShellReference).toContain("prefer one-shot shell verification over guessing from memory");
     expect(runtimeShellReference).toContain("verify an already-running URL with one-shot commands such as `curl`");
     expect(runtimeShellReference).toContain("are not that HTTP proof");
     expect(runtimeShellReference).toContain("the next move is usually the required durable reply");
-    expect(runtimeShellReference).toContain("`http://127.0.0.1:54230/` and `http://127.0.0.1:54230/index.html` are different contracts");
+    expect(runtimeShellReference).toContain(
+      "`http://127.0.0.1:54230/` and `http://127.0.0.1:54230/index.html` are different contracts",
+    );
     expect(runtimeShellReference).toContain("Do not use one-shot bash to launch ad-hoc socket or HTTP listeners");
 
-    const messageAttentionReference = readFileSync(join(dirname(message!.path), "references", "chat-attention-items.md"), "utf8");
+    const messageAttentionReference = readFileSync(
+      join(dirname(message!.path), "references", "chat-attention-items.md"),
+      "utf8",
+    );
     expect(messageAttentionReference).toContain("send the acknowledgement before you disappear into file writes");
     expect(messageAttentionReference).toContain("does not satisfy the origin room's final reply obligation");
     expect(messageAttentionReference).toContain("send the answer back to the origin room");

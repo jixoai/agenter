@@ -4,22 +4,31 @@ import { judgeAvoidsForbiddenMentions, judgeMentionsConcept } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
   runRealCompactFollowUpScenario,
+  runRealExternalFactThroughShellScenario,
   runRealInterleavedCanInputScenario,
   runRealJudgeRelayScenario,
   runRealLunchRelayScenario,
   runRealSimpleReplyScenario,
-  runRealWeatherThroughTerminalScenario,
 } from "../test-support/real-loopbus-scenarios";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import {
   judgeAcknowledgesWorkAndPromisesFollowUp,
-  judgeAnswersWeatherForecastRequest,
+  judgeAnswersPackageLatestVersion,
 } from "../test-support/real-semantic-assertions";
 import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-judge";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
 const realTest = hasRealModel ? test : test.skip;
+const REAL_EXTERNAL_FACT_TEST_AVATAR = "test-shell-facts";
+const REAL_EXTERNAL_FACT_TEST_AGENTER_PROMPT = [
+  "Test Avatar working preferences:",
+  "",
+  "- Treat current or external facts like a careful Linux engineer would.",
+  "- Acknowledge briefly, then verify through shell or other observable tools before replying.",
+  "- If the fact can change, do not answer from memory when the runtime can check it objectively.",
+  "",
+].join("\n");
 
 describe("Feature: real AI loopbus convergence", () => {
   realTest(
@@ -163,9 +172,13 @@ describe("Feature: real AI loopbus convergence", () => {
   );
 
   realTest(
-    "Scenario: Given a real provider When the user asks weather that requires external facts Then the assistant uses root workspace shell before replying",
+    "Scenario: Given a real provider When the user asks for an external fact Then the assistant uses root workspace shell before replying with the verified result",
     async () => {
-      const harness = await createRealKernelHarness({ sessionName: "real-weather-terminal" });
+      const harness = await createRealKernelHarness({
+        sessionName: "real-shell-external-fact",
+        avatarNickname: REAL_EXTERNAL_FACT_TEST_AVATAR,
+        agenterPromptContent: REAL_EXTERNAL_FACT_TEST_AGENTER_PROMPT,
+      });
       if (!harness) {
         throw new Error("expected real kernel harness");
       }
@@ -175,18 +188,28 @@ describe("Feature: real AI loopbus convergence", () => {
         if (!primaryRoomId) {
           throw new Error("expected session primaryRoomId");
         }
-        const result = await runRealWeatherThroughTerminalScenario(harness);
+        const result = await runRealExternalFactThroughShellScenario(harness);
         const semanticJudge = await loadRequiredRealSemanticJudge({
           projectRoot: REAL_MODEL_PROJECT_ROOT,
         });
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(
+          true,
+        );
         expect(result.reply.chatId).toBe(primaryRoomId);
-        expect(await judgeAnswersWeatherForecastRequest(semanticJudge, result.reply.content)).toBe(true);
+        expect(
+          await judgeAnswersPackageLatestVersion(semanticJudge, {
+            content: result.reply.content,
+            packageName: result.packageName,
+            expectedVersion: result.expectedVersion,
+          }),
+        ).toBe(true);
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(harness.avatarNickname).toBe(REAL_EXTERNAL_FACT_TEST_AVATAR);
+        expect(harness.avatarPromptPath).toBeTruthy();
       } finally {
         await harness.stop();
       }
@@ -213,7 +236,9 @@ describe("Feature: real AI loopbus convergence", () => {
         });
 
         expect(result.acknowledgement.chatId).toBe(primaryRoomId);
-        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(true);
+        expect(await judgeAcknowledgesWorkAndPromisesFollowUp(semanticJudge, result.acknowledgement.content)).toBe(
+          true,
+        );
         expect(result.finalReply.chatId).toBe(primaryRoomId);
         expect(result.finalReply.content).toContain("TOOL-PHASE-DONE");
         expect(result.finalReply.content).toContain("SECOND-CLAUSE");

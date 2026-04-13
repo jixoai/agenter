@@ -3,7 +3,7 @@ import { judgeContainsAllConcepts, type SemanticJudge } from "../src";
 const ACK_SIGNAL_PATTERN = /(收到|明白|开始|处理中|稍后|汇报|会处理|Understood|handle|report back|working on it)/iu;
 const DELIVERY_SIGNAL_PATTERN =
   /(已上线|可访问|可以打开|请打开|链接|已完成|交付|已更新|新版|ready|available|open|visit|updated)/iu;
-const WEATHER_SIGNAL_PATTERN = /(厦门|天气|预报|气温|降雨|forecast|weather)/iu;
+const PACKAGE_VERSION_SIGNAL_PATTERN = /(版本|version|latest|npm)/iu;
 
 export const judgeAcknowledgesWorkAndPromisesFollowUp = async (
   judge: SemanticJudge,
@@ -21,18 +21,25 @@ export const judgeAcknowledgesWorkAndPromisesFollowUp = async (
   });
 };
 
-export const judgeAnswersWeatherForecastRequest = async (
+export const judgeAnswersPackageLatestVersion = async (
   judge: SemanticJudge,
-  content: string,
+  input: {
+    content: string;
+    packageName: string;
+    expectedVersion: string;
+  },
   signal?: AbortSignal,
 ): Promise<boolean> => {
-  if (!WEATHER_SIGNAL_PATTERN.test(content)) {
+  if (
+    !PACKAGE_VERSION_SIGNAL_PATTERN.test(input.content) ||
+    !input.content.includes(input.packageName) ||
+    !input.content.includes(input.expectedVersion)
+  ) {
     return false;
   }
   return judge.judgeBoolean({
-    instruction:
-      "判断这段 assistant 回复是否在回答厦门未来 15 天天气或天气预报，并给出了查询后的结果摘要。不要要求固定格式或固定前缀。",
-    content,
+    instruction: `判断这段 assistant 回复是否在告诉用户 npm 包 ${input.packageName} 的 latest 版本号是 ${input.expectedVersion}，并把它当作查证后的结果回复。不要要求固定格式或固定前缀。`,
+    content: input.content,
     signal,
     maxTokens: 1,
   });

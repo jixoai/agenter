@@ -16,8 +16,9 @@ Use shell CLI commands inside `root_workspace_bash` for system work:
 
 Boundary:
 
-- One-shot checks, inspection, and short scripts belong in `root_workspace_bash`.
+- One-shot checks, inspection, short scripts, and outbound-network verification of current or external facts belong in `root_workspace_bash`.
 - Durable processes and interactive recovery belong in `terminal`.
+- If the answer depends on a changing external fact, prefer one-shot shell verification over guessing from memory.
 - `root_workspace_bash` can verify an already-running URL with one-shot commands such as `curl`, but it does not own the listener behind that URL.
 - A target URL mentioned in the request or room is still just a target until that exact root URL or required path actually responds. Do not repeat it back as "ready" before the durable process is up and the one-shot HTTP check succeeds.
 - `terminal read` snapshots, "the process is still running", and successful `terminal write` calls are not that HTTP proof; use the one-shot shell to hit the exact promised URL or path directly.

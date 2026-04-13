@@ -61,8 +61,11 @@
 - runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `ccski info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
 - runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；全局 prompt 与 `skills.list` 必须把 `skills.list -> ccski info <skill> -> 只读所需 reference file` 作为 canonical discovery path。
+- 外部事实型任务的人格偏好必须落在 `AGENTER.mdx`：当事实依赖当前世界或外部网络且可能变化时，Avatar 先做简短确认，再通过 shell 或其它可观察工具查证，最后只回复查证后的结果；这里表达的是 general shell-first bias，不得把某个天气/搜索 recipe 写成唯一 workflow。
+- runtime shell guidance 必须把 `root_workspace_bash` 的 outbound network verification 明确成客观能力边界，而不是在 runtime skills 里塞满固定查询脚本。
 - system-owned skill 必须只解释本 system 的义务语义与操作风格，尤其是如何理解和处理该 system 提交的 attention items；例如 message skill 应该教 AI 何时确认、何时回复、何时不要刷屏，而不是代替 terminal / workspace / network 系统承载底层可靠性细节。
 - `ccski list/info/search` 必须把 built-in catalog 视为最低优先级 baseline，再叠加 `~/.agents/skills`、`~/.agenter/skills`、`<rootWorkspace>/skills` 的 on-disk skills；同名时由 on-disk skill 覆盖 built-in。
+- real-provider 的外部事实验收必须使用测试专用 Avatar + 专用 `AGENTER.mdx`，并在失败时输出 durable diagnostics：room truth、recent model calls、tool trace，以及 Avatar / prompt source identity。
 
 ## 5. Reactive Contract
 

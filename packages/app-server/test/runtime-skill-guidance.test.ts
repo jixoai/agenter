@@ -121,10 +121,41 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(runtimeShell).toContain("still just a target until that exact root URL or required path actually responds");
     expect(runtimeShell).toContain("are not that HTTP proof");
     expect(runtimeShell).toContain("the next move is usually the required durable reply");
-    expect(collaboration).toContain("do not treat the kickoff target URL or an earlier planning mention as the final delivery reply");
+    expect(collaboration).toContain(
+      "do not treat the kickoff target URL or an earlier planning mention as the final delivery reply",
+    );
     expect(collaboration).toContain("do not bind that final port yourself");
     expect(collaboration).toContain("expects both `/` and `/api/status` on one shared URL");
     expect(terminal).toContain("verify the exact promised URL or path before you tell a room or user that it is ready");
     expect(terminal).toContain("do not prove the promised URL or API path actually responds");
+  });
+
+  test("Scenario: Given external-fact guidance When prompt and runtime shell docs are read Then persona law and shell capability stay separate and shell-first", () => {
+    const enAgenter = readRepoFile("packages/i18n-en/prompts/AGENTER.mdx");
+    const zhAgenter = readRepoFile("packages/i18n-zh-Hans/prompts/AGENTER.mdx");
+    const runtimeSkill = readRepoFile("packages/app-server/skills/runtime/SKILL.md");
+    const runtimeShell = readRepoFile("packages/app-server/skills/runtime/references/shell-surface.md");
+
+    expect(enAgenter).toContain("seasoned Linux engineer");
+    expect(enAgenter).toContain("current or external facts");
+    expect(enAgenter).toContain("do not guess from memory");
+    expect(enAgenter).not.toContain("curl wttr.in");
+    expect(enAgenter).not.toContain("weather command");
+
+    expect(zhAgenter).toContain("老练的 Linux 工程师");
+    expect(zhAgenter).toContain("当前事实");
+    expect(zhAgenter).toContain("不要凭记忆猜答案");
+    expect(zhAgenter).not.toContain("curl wttr.in");
+    expect(zhAgenter).not.toContain("固定脚本");
+
+    expect(runtimeSkill).toContain("outbound network access");
+    expect(runtimeSkill).toContain("objective verification of current or external facts");
+    expect(runtimeSkill).not.toContain("wttr.in");
+    expect(runtimeSkill).not.toContain("npm view");
+
+    expect(runtimeShell).toContain("outbound-network verification of current or external facts");
+    expect(runtimeShell).toContain("prefer one-shot shell verification over guessing from memory");
+    expect(runtimeShell).not.toContain("wttr.in");
+    expect(runtimeShell).not.toContain("curl https://");
   });
 });

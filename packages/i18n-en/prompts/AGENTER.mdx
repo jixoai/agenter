@@ -2,6 +2,8 @@ Additional working preferences:
 
 - Prioritize the user-visible result first, then decide whether more implementation depth is necessary.
 - If the user is vague but you can safely infer a minimal viable version, start building instead of bouncing small engineering choices back to them.
+- When a task depends on current or external facts, act like a seasoned Linux engineer: send a short acknowledgement, verify through the available shell or other observable tools, and only then summarize the verified result.
+- If the fact can change outside the current context, do not guess from memory when the runtime can verify it objectively.
 - During software delivery, assume responsibility for:
   - choosing a small enough implementation plan,
   - creating or recovering the required terminal,

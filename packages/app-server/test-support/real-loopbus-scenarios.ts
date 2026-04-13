@@ -30,13 +30,14 @@ const toChatMessage = (harness: RealKernelHarness, message: MessageRecord): Chat
 const listRoomTruthMessages = (harness: RealKernelHarness): ChatMessage[] =>
   harness.kernel
     .listMessageChannels(harness.session.id)
-    .flatMap((channel) => getMessageControlPlane(harness).snapshot(channel.chatId, 50).items.map((item) => toChatMessage(harness, item)))
+    .flatMap((channel) =>
+      getMessageControlPlane(harness)
+        .snapshot(channel.chatId, 50)
+        .items.map((item) => toChatMessage(harness, item)),
+    )
     .sort((left, right) => left.timestamp - right.timestamp);
 
-const getAssistantMessages = (
-  messages: ChatMessage[],
-  predicate: (message: ChatMessage) => boolean,
-): ChatMessage[] =>
+const getAssistantMessages = (messages: ChatMessage[], predicate: (message: ChatMessage) => boolean): ChatMessage[] =>
   messages.filter((message) => message.role === "assistant" && predicate(message));
 
 const getUserMessages = (messages: ChatMessage[], predicate: (message: ChatMessage) => boolean): ChatMessage[] =>
@@ -56,7 +57,10 @@ const waitForNextAssistantMessageInChat = async (
 ): Promise<ChatMessage> =>
   await waitForRealValue(
     () => {
-      const messages = getAssistantMessages(listRoomTruthMessages(harness), (message) => message.chatId === input.chatId);
+      const messages = getAssistantMessages(
+        listRoomTruthMessages(harness),
+        (message) => message.chatId === input.chatId,
+      );
       return messages.length > input.afterCount ? (messages[input.afterCount] ?? null) : null;
     },
     {
@@ -118,10 +122,7 @@ const waitForCompactCycle = async (
     },
   );
 
-const waitForPromptWindowCompactApplied = async (
-  harness: RealKernelHarness,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-) =>
+const waitForPromptWindowCompactApplied = async (harness: RealKernelHarness, timeoutMs = DEFAULT_TIMEOUT_MS) =>
   await waitForRealValue(
     async () => {
       const debug = await harness.kernel.inspectModelDebug(harness.session.id);
@@ -196,7 +197,9 @@ const extractToolTraceTools = (call: { response?: unknown }): string[] => {
     return [];
   }
   return response.toolTrace.flatMap((entry) =>
-    typeof entry === "object" && entry !== null && "tool" in entry && typeof entry.tool === "string" ? [entry.tool] : [],
+    typeof entry === "object" && entry !== null && "tool" in entry && typeof entry.tool === "string"
+      ? [entry.tool]
+      : [],
   );
 };
 
@@ -209,10 +212,7 @@ const extractModelDecision = (call: { response?: unknown }): Record<string, unkn
   return decision && typeof decision === "object" ? (decision as Record<string, unknown>) : null;
 };
 
-const waitForLatestModelCallCompletion = async (
-  harness: RealKernelHarness,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-) =>
+const waitForLatestModelCallCompletion = async (harness: RealKernelHarness, timeoutMs = DEFAULT_TIMEOUT_MS) =>
   await waitForRealValue(
     async () => {
       const calls = await listRecentModelCalls(harness);
@@ -227,6 +227,53 @@ const waitForLatestModelCallCompletion = async (
       timeoutMs,
     },
   );
+
+const fetchNpmLatestVersion = async (packageName: string): Promise<string> => {
+  const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+    headers: {
+      accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `failed to fetch npm latest metadata for ${packageName}: ${response.status} ${response.statusText}`,
+    );
+  }
+  const payload = (await response.json()) as { version?: unknown };
+  if (typeof payload.version !== "string" || payload.version.trim().length === 0) {
+    throw new Error(`npm latest metadata missing version for ${packageName}`);
+  }
+  return payload.version.trim();
+};
+
+const buildRealScenarioDiagnosticError = async (
+  harness: RealKernelHarness,
+  input: {
+    label: string;
+    error: unknown;
+    extra?: Record<string, unknown>;
+  },
+): Promise<Error> => {
+  const cause = input.error instanceof Error ? input.error : new Error(String(input.error));
+  const diagnostics = await harness.collectDiagnostics({
+    label: input.label,
+  });
+  return new Error(
+    [
+      `${input.label} failed: ${cause.message}`,
+      "diagnostics:",
+      JSON.stringify(
+        {
+          ...diagnostics,
+          ...(input.extra ? { extra: input.extra } : {}),
+        },
+        null,
+        2,
+      ),
+    ].join("\n"),
+    { cause },
+  );
+};
 
 export interface RealSimpleReplyScenarioResult {
   reply: ChatMessage;
@@ -282,9 +329,7 @@ export interface RealLunchRelayScenarioResult {
   }>;
 }
 
-export const runRealLunchRelayScenario = async (
-  harness: RealKernelHarness,
-): Promise<RealLunchRelayScenarioResult> => {
+export const runRealLunchRelayScenario = async (harness: RealKernelHarness): Promise<RealLunchRelayScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
   const roomMessagesBefore = listRoomTruthMessages(harness);
   const originAssistantCountBefore = countAssistantMessages(roomMessagesBefore, primaryRoomId);
@@ -340,10 +385,12 @@ export const runRealLunchRelayScenario = async (
 
   const relayParticipantReply = await waitForRealValue(
     () => {
-      return getUserMessages(
-        listRoomTruthMessages(harness),
-        (message) => message.chatId === relayChannel.chatId && message.content.trim() === "中午吃蛋炒饭。",
-      ).at(-1) ?? null;
+      return (
+        getUserMessages(
+          listRoomTruthMessages(harness),
+          (message) => message.chatId === relayChannel.chatId && message.content.trim() === "中午吃蛋炒饭。",
+        ).at(-1) ?? null
+      );
     },
     {
       label: "user reply on secondary chat",
@@ -435,7 +482,9 @@ export const runRealCompactFollowUpScenario = async (
   };
 };
 
-export interface RealWeatherTerminalScenarioResult {
+export interface RealExternalFactShellScenarioResult {
+  packageName: string;
+  expectedVersion: string;
   acknowledgement: ChatMessage;
   reply: ChatMessage;
   settledAttention: SessionRuntimeAttentionState;
@@ -448,58 +497,79 @@ export interface RealWeatherTerminalScenarioResult {
   toolTraceTools: string[];
 }
 
-export const runRealWeatherThroughTerminalScenario = async (
+export const runRealExternalFactThroughShellScenario = async (
   harness: RealKernelHarness,
-): Promise<RealWeatherTerminalScenarioResult> => {
+): Promise<RealExternalFactShellScenarioResult> => {
   const timeoutMs = 420_000;
   const primaryRoomId = getPrimaryRoomId(harness);
   const originAssistantCountBefore = countAssistantMessages(listRoomTruthMessages(harness), primaryRoomId);
-  const startAt = Date.now();
-  const prompt = [
-    "用户问：厦门天气如何？天气预报未来 15 天天气。",
-    `先在 ${primaryRoomId} 发一条简短确认消息，表示你会查询后再回复。`,
-    `最终在 ${primaryRoomId} 再发送一条简短中文结果消息，概括厦门未来 15 天天气预报，禁止凭记忆回答。`,
-    "完成后把 attention 收敛到 0。",
-  ].join("\n");
-  const sent = await harness.kernel.sendChat(harness.session.id, prompt);
-  if (!sent.ok) {
-    throw new Error(`failed to send weather prompt: ${sent.reason ?? "unknown"}`);
+  const packageName = "ccski";
+  const expectedVersion = await fetchNpmLatestVersion(packageName);
+
+  try {
+    const startAt = Date.now();
+    const prompt = [
+      `用户问：请联网确认 npm 上 ${packageName} 的 latest 版本号是多少。`,
+      `先在 ${primaryRoomId} 发一条简短确认消息，表示你会查证后再回复。`,
+      "必须通过可观察的 shell 或其它客观工具查证，禁止凭记忆猜测。",
+      `最终在 ${primaryRoomId} 再发送一条简短中文结果消息，明确写出 ${packageName} 的 latest 版本号。`,
+      "完成后把 attention 收敛到 0。",
+    ].join("\n");
+    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    if (!sent.ok) {
+      throw new Error(`failed to send external fact prompt: ${sent.reason ?? "unknown"}`);
+    }
+
+    const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
+      chatId: primaryRoomId,
+      afterCount: originAssistantCountBefore,
+      label: "external fact acknowledgement on primary room",
+      timeoutMs,
+    });
+
+    const reply = await waitForAssistantMessage(harness, {
+      label: "external fact result on primary room",
+      predicate: (message) =>
+        message.chatId === primaryRoomId &&
+        message.timestamp > acknowledgement.timestamp &&
+        message.content.includes(expectedVersion),
+      timeoutMs,
+    });
+
+    const modelCallRecords = await waitForModelCallsAfter(harness, {
+      afterTimestamp: startAt,
+      label: "external fact model call completion",
+      timeoutMs,
+    });
+    const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
+
+    return {
+      packageName,
+      expectedVersion,
+      acknowledgement,
+      reply,
+      settledAttention,
+      recentModelCalls: modelCallRecords.map((call) => ({
+        id: call.id,
+        cycleId: call.cycleId,
+        status: call.status,
+        outcome: readModelOutcomeCode(call),
+      })),
+      toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+    };
+  } catch (error) {
+    throw await buildRealScenarioDiagnosticError(harness, {
+      label: "real-external-fact-shell-scenario",
+      error,
+      extra: {
+        packageName,
+        expectedVersion,
+      },
+    });
   }
-
-  const acknowledgement = await waitForNextAssistantMessageInChat(harness, {
-    chatId: primaryRoomId,
-    afterCount: originAssistantCountBefore,
-    label: "weather acknowledgement on primary room",
-    timeoutMs,
-  });
-
-  const reply = await waitForNextAssistantMessageInChat(harness, {
-    chatId: primaryRoomId,
-    afterCount: originAssistantCountBefore + 1,
-    label: "weather result on primary room",
-    timeoutMs,
-  });
-
-  const modelCallRecords = await waitForModelCallsAfter(harness, {
-    afterTimestamp: startAt,
-    label: "weather model call completion",
-    timeoutMs,
-  });
-  const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
-
-  return {
-    acknowledgement,
-    reply,
-    settledAttention,
-    recentModelCalls: modelCallRecords.map((call) => ({
-      id: call.id,
-      cycleId: call.cycleId,
-      status: call.status,
-      outcome: readModelOutcomeCode(call),
-    })),
-    toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
-  };
 };
+
+export const runRealWeatherThroughTerminalScenario = runRealExternalFactThroughShellScenario;
 
 export interface RealInterleavedCanInputScenarioResult {
   acknowledgement: ChatMessage;
@@ -589,9 +659,7 @@ export interface RealJudgeRelayScenarioResult {
   toolTraceTools: string[];
 }
 
-export const runRealJudgeRelayScenario = async (
-  harness: RealKernelHarness,
-): Promise<RealJudgeRelayScenarioResult> => {
+export const runRealJudgeRelayScenario = async (harness: RealKernelHarness): Promise<RealJudgeRelayScenarioResult> => {
   const primaryRoomId = getPrimaryRoomId(harness);
   const relayChannel = await harness.kernel.createMessageChannel({
     sessionId: harness.session.id,
@@ -641,12 +709,12 @@ export const runRealJudgeRelayScenario = async (
     relayChannel,
     relayPromptMessage,
     activeAfterRelay,
-      recentModelCalls: modelCallRecords.map((call) => ({
-        id: call.id,
-        cycleId: call.cycleId,
-        status: call.status,
-        outcome: readModelOutcomeCode(call),
-      })),
+    recentModelCalls: modelCallRecords.map((call) => ({
+      id: call.id,
+      cycleId: call.cycleId,
+      status: call.status,
+      outcome: readModelOutcomeCode(call),
+    })),
     toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
   };
 };

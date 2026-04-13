@@ -3,6 +3,8 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import type { MessageControlPlane, MessageRecord } from "@agenter/message-system";
+
 import { AppKernel, type AppKernelOptions, type SessionMeta } from "../src";
 import {
   canProxyRealModelConfig,
@@ -15,6 +17,143 @@ import {
 const DEFAULT_POLL_MS = 250;
 export const REAL_MODEL_PROJECT_ROOT = resolve(import.meta.dir, "../../..");
 const FULL_WORKSPACE_GRANT = [{ pattern: "/", mode: "rw" }] as const;
+const DEFAULT_DIAGNOSTIC_MESSAGE_LIMIT = 24;
+const DEFAULT_DIAGNOSTIC_PROMPT_WINDOW_LIMIT = 12;
+
+const clipText = (value: string | undefined, maxChars = 1_200): string | undefined => {
+  if (value === undefined || value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars)}\n...<clipped ${value.length - maxChars} chars>`;
+};
+
+const readModelOutcomeCode = (outcome: unknown): string | null => {
+  if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) {
+    return typeof outcome === "string" ? outcome : null;
+  }
+  return typeof (outcome as { code?: unknown }).code === "string" ? (outcome as { code: string }).code : null;
+};
+
+const extractToolTraceTools = (response: unknown): string[] => {
+  if (!response || typeof response !== "object" || !("toolTrace" in response) || !Array.isArray(response.toolTrace)) {
+    return [];
+  }
+  return response.toolTrace.flatMap((entry) =>
+    typeof entry === "object" && entry !== null && "tool" in entry && typeof entry.tool === "string"
+      ? [entry.tool]
+      : [],
+  );
+};
+
+const projectToolTrace = (
+  response: unknown,
+): Array<{
+  tool: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string | null;
+}> => {
+  if (!response || typeof response !== "object" || !("toolTrace" in response) || !Array.isArray(response.toolTrace)) {
+    return [];
+  }
+  return response.toolTrace.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || typeof entry.tool !== "string") {
+      return [];
+    }
+    const output =
+      entry.output && typeof entry.output === "object" && !Array.isArray(entry.output)
+        ? {
+            ...(entry.output as Record<string, unknown>),
+            ...(typeof (entry.output as { stdout?: unknown }).stdout === "string"
+              ? { stdout: clipText((entry.output as { stdout: string }).stdout) }
+              : {}),
+            ...(typeof (entry.output as { stderr?: unknown }).stderr === "string"
+              ? { stderr: clipText((entry.output as { stderr: string }).stderr) }
+              : {}),
+          }
+        : entry.output;
+    return [
+      {
+        tool: entry.tool,
+        ...("input" in entry ? { input: entry.input } : {}),
+        ...(output !== undefined ? { output } : {}),
+        error: typeof entry.error === "string" ? entry.error : null,
+      },
+    ];
+  });
+};
+
+const projectPromptWindowEntry = (message: unknown): Record<string, unknown> => {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return { raw: message };
+  }
+  const role =
+    typeof (message as { role?: unknown }).role === "string" ? (message as { role: string }).role : undefined;
+  const content =
+    typeof (message as { content?: unknown }).content === "string"
+      ? clipText((message as { content: string }).content)
+      : undefined;
+  return {
+    ...(role ? { role } : {}),
+    ...(content ? { content } : {}),
+    ...(role || content ? {} : { raw: message }),
+  };
+};
+
+const toRoomDiagnosticMessage = (
+  record: MessageRecord,
+  assistantNickname: string,
+): {
+  chatId: string;
+  role: "assistant" | "user";
+  content: string;
+  timestamp: number;
+  updatedAt: number;
+} => ({
+  chatId: record.chatId,
+  role: record.from === assistantNickname ? "assistant" : "user",
+  content: clipText(record.content) ?? "",
+  timestamp: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const getMessageControlPlane = (kernel: AppKernel): MessageControlPlane =>
+  Reflect.get(kernel, "messageControlPlane") as MessageControlPlane;
+
+export interface RealKernelHarnessDiagnostics {
+  label?: string;
+  avatar: {
+    nickname: string;
+    principalId: string;
+    promptPath: string | null;
+  };
+  session: {
+    id: string;
+    primaryRoomId: string | null;
+  };
+  roomTruth: Array<{
+    chatId: string;
+    role: "assistant" | "user";
+    content: string;
+    timestamp: number;
+    updatedAt: number;
+  }>;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number | null;
+    createdAt: number;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+    toolTraceTools: string[];
+    toolTrace: Array<{
+      tool: string;
+      input?: unknown;
+      output?: unknown;
+      error?: string | null;
+    }>;
+  }>;
+  promptWindow: Array<Record<string, unknown>>;
+}
 
 const allocatePort = async (): Promise<number> => {
   const server = createNetServer();
@@ -62,10 +201,17 @@ export interface RealKernelHarness {
   rootDir: string;
   homeDir: string;
   workspacePath: string;
+  avatarNickname: string;
+  avatarPromptPath: string | null;
   kernel: AppKernel;
   config: RealModelConfig;
   proxy: CachedModelProxyHandle | null;
   session: SessionMeta;
+  collectDiagnostics: (input?: {
+    label?: string;
+    messageLimit?: number;
+    promptWindowLimit?: number;
+  }) => Promise<RealKernelHarnessDiagnostics>;
   restartKernel: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -73,6 +219,8 @@ export interface RealKernelHarness {
 export const createRealKernelHarness = async (
   input: {
     sessionName?: string;
+    avatarNickname?: string;
+    agenterPromptContent?: string;
     logger?: AppKernelOptions["logger"];
   } = {},
 ): Promise<RealKernelHarness | null> => {
@@ -85,8 +233,17 @@ export const createRealKernelHarness = async (
   const rootDir = await mkdtemp(join(tmpdir(), "agenter-real-kernel-"));
   const homeDir = join(rootDir, "home");
   const workspacePath = join(rootDir, "workspace");
+  const avatarNickname = input.avatarNickname ?? "default";
+  const agenterPromptContent = input.agenterPromptContent?.trim();
   await mkdir(homeDir, { recursive: true });
   await mkdir(join(workspacePath, ".agenter"), { recursive: true });
+  const avatarPromptPath = agenterPromptContent
+    ? join(homeDir, ".agenter", "avatars", "by-nickname", avatarNickname, "AGENTER.mdx")
+    : null;
+  if (avatarPromptPath && agenterPromptContent) {
+    await mkdir(join(homeDir, ".agenter", "avatars", "by-nickname", avatarNickname), { recursive: true });
+    await writeFile(avatarPromptPath, agenterPromptContent, "utf8");
+  }
 
   let proxy: CachedModelProxyHandle | null = null;
   let providerBaseUrl = config.baseUrl;
@@ -138,6 +295,7 @@ export const createRealKernelHarness = async (
     await kernel.start();
     const session = await kernel.createSession({
       cwd: workspacePath,
+      avatar: avatarNickname,
       name: input.sessionName ?? "real-loopbus",
       autoStart: false,
     });
@@ -170,10 +328,48 @@ export const createRealKernelHarness = async (
       rootDir,
       homeDir,
       workspacePath,
+      avatarNickname,
+      avatarPromptPath,
       kernel,
       config,
       proxy,
       session: startedSession,
+      collectDiagnostics: async (diagnosticInput = {}) => {
+        const debug = await harness.kernel.inspectModelDebug(harness.session.id);
+        const channels = harness.kernel.listMessageChannels(harness.session.id);
+        const roomTruth = channels
+          .flatMap((channel) =>
+            getMessageControlPlane(harness.kernel)
+              .snapshot(channel.chatId, diagnosticInput.messageLimit ?? DEFAULT_DIAGNOSTIC_MESSAGE_LIMIT)
+              .items.map((item) => toRoomDiagnosticMessage(item, harness.session.avatar)),
+          )
+          .sort((left, right) => left.timestamp - right.timestamp);
+        return {
+          ...(diagnosticInput.label ? { label: diagnosticInput.label } : {}),
+          avatar: {
+            nickname: harness.session.avatar,
+            principalId: harness.session.avatarPrincipalId ?? "",
+            promptPath: harness.avatarPromptPath,
+          },
+          session: {
+            id: harness.session.id,
+            primaryRoomId: harness.session.primaryRoomId ?? null,
+          },
+          roomTruth,
+          recentModelCalls: debug.recentModelCalls.map((call) => ({
+            id: call.id,
+            cycleId: call.cycleId,
+            createdAt: call.createdAt,
+            status: call.status,
+            outcome: readModelOutcomeCode(call.outcome),
+            toolTraceTools: extractToolTraceTools(call.response),
+            toolTrace: projectToolTrace(call.response),
+          })),
+          promptWindow: debug.promptWindow
+            .slice(-(diagnosticInput.promptWindowLimit ?? DEFAULT_DIAGNOSTIC_PROMPT_WINDOW_LIMIT))
+            .map(projectPromptWindowEntry),
+        };
+      },
       restartKernel: async () => {
         await harness.kernel.stop();
         const nextKernel = new AppKernel(kernelOptions);
