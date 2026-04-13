@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { judgeUrlSpan } from "../src";
+import { REAL_ROOM_TERMINAL_AVATAR_PROFILE } from "../test-support/real-ai-test-personas";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import {
@@ -18,7 +19,11 @@ describe("Feature: real AI room terminal delivery", () => {
   realTest(
     "Scenario: Given a real provider When one avatar builds and serves a tiny app through the room Then the user can open the URL, give feedback, and receive the updated delivery",
     async () => {
-      const harness = await createRealKernelHarness({ sessionName: "real-room-terminal-delivery" });
+      const harness = await createRealKernelHarness({
+        sessionName: "real-room-terminal-delivery",
+        avatarNickname: REAL_ROOM_TERMINAL_AVATAR_PROFILE.nickname,
+        agenterPromptContent: REAL_ROOM_TERMINAL_AVATAR_PROFILE.prompt,
+      });
       if (!harness) {
         throw new Error("expected real kernel harness");
       }

@@ -305,8 +305,10 @@ export interface RealRoomTerminalDeliveryDiagnostics {
 }
 
 export interface RealRoomTerminalDeliveryScenarioResult {
+  startedAt: number;
   acknowledgement: ChatMessage;
   deliveryMessage: ChatMessage;
+  feedbackSentAt: number;
   updateMessage: ChatMessage;
   deliveryUrl: string;
   initialBody: string;
@@ -376,15 +378,18 @@ export const runRealRoomTerminalDeliveryScenario = async (
       `你只能在房间 ${primaryRoomId} 与用户沟通。`,
       "这条用户消息已经给出完整任务全文，不存在截断。",
       "如果任何工具输出里出现 `...<clipped ...>`，那只是工具预览被截断，不代表任务缺失。",
+      "不要先打开任何 `.runtime-skills/*/SKILL.md`，也不要先用 ccski info 浏览技能说明；先做直接命令。",
+      "所有用户可见消息都必须使用简短中文，不要回英文。",
       "禁止为了重新确认任务全文而执行 attention list/query、message list/read 或其它上下文读取命令；直接按这条消息执行。",
       "第 1 步：立刻发送一条简短中文消息，确认你开始构建。",
+      `当前房间 chatId 已经明确给出，就是 ${primaryRoomId}；发确认或交付时直接用这个 chatId，不要先跑 message list/read。`,
       "第 2 步：你现在只有 root_workspace_list 和 root_workspace_bash 这两个直接工具。",
       `共享项目工作目录的绝对路径固定为：${harness.workspacePath}`,
       `推荐最小实现：只写一个 index.html，然后在 terminal 里运行 python3 -m http.server ${port} --bind 127.0.0.1。`,
       "这是纯静态网页任务，不要创建 API，不要创建 /api/status，不要使用 READY-API 这类其它测试场景的标记。",
       "先用 root_workspace_list 看清已挂载路径，再用 root_workspace_bash 进入 shell。",
       `如果当前没有 terminal，就先执行 terminal create --help，然后使用 JSON 形式创建，例如 terminal create '{"cwd":"${harness.workspacePath}","focus":true}'；如果已有 terminal，就先 terminal list / terminal read 恢复它。`,
-      "如果你忘了 terminal CLI 的格式，先在 shell 里执行 ccski info agenter-terminal。长期服务放在 terminal 里跑，一次性检查放在 root_workspace_bash 里做；验证 URL 时优先用 curl。",
+      "如果你忘了 terminal CLI 的格式，先执行 terminal create --help；只有在连 terminal 命令族本身都不清楚时，才允许再看 ccski info agenter-terminal。长期服务放在 terminal 里跑，一次性检查放在 root_workspace_bash 里做；验证 URL 时优先用 curl。",
       "如需发房间消息，直接使用 message send；不要为了确认房间上下文先跑 message list/read。",
       "如果 terminal write 的 text 里还要包含 JSON、很多引号或 heredoc，优先用 JSON stdin 形式调用 terminal write，不要手写多层转义的单个 argv。",
       "然后只在这个目录里创建一个最小静态网页应用。",
@@ -481,8 +486,10 @@ export const runRealRoomTerminalDeliveryScenario = async (
     });
 
     return {
+      startedAt: startAt,
       acknowledgement,
       deliveryMessage,
+      feedbackSentAt,
       updateMessage,
       deliveryUrl: url,
       initialBody: initialFetch.body,

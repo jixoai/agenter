@@ -263,3 +263,55 @@ export const runCompactFollowUpScenario = async (
     settledAttention,
   };
 };
+
+export interface SettledFollowUpScenarioResult {
+  followUpReply: ChatMessage;
+  relayPromptCountBefore: number;
+  relayPromptCountAfter: number;
+  settledAttention: SessionRuntimeAttentionState;
+}
+
+export const runSettledFollowUpScenario = async (
+  harness: MockKernelHarness,
+  input: {
+    relayChannel: MessageControlPlaneEntry;
+    afterReplyTimestamp: number;
+  },
+): Promise<SettledFollowUpScenarioResult> => {
+  const primaryRoomId = getPrimaryRoomId(harness);
+  const relayPromptCountBefore = countRelayPrompts(harness, input.relayChannel.chatId);
+
+  await waitForMockValue(
+    () => {
+      const runtime = harness.kernel.getSnapshot().runtimes[harness.session.id];
+      return runtime?.schedulerPhase === "waiting_commits" && runtime.stage === "idle" ? runtime : null;
+    },
+    {
+      label: "settled runtime idle",
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+    },
+  );
+
+  const followUpSent = await harness.kernel.sendChat(harness.session.id, "中午吃什么");
+  if (!followUpSent.ok) {
+    throw new Error(`failed to send settled follow-up: ${followUpSent.reason ?? "unknown"}`);
+  }
+
+  const followUpReply = await waitForAssistantMessage(harness, {
+    label: "settled follow-up answer",
+    predicate: (message) =>
+      message.chatId === primaryRoomId &&
+      message.content.trim() === MOCK_FINAL_ANSWER &&
+      message.timestamp > input.afterReplyTimestamp,
+  });
+
+  const relayPromptCountAfter = countRelayPrompts(harness, input.relayChannel.chatId);
+  const settledAttention = await waitForAttentionSettled(harness);
+
+  return {
+    followUpReply,
+    relayPromptCountBefore,
+    relayPromptCountAfter,
+    settledAttention,
+  };
+};

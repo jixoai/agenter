@@ -73,11 +73,16 @@ describe("Feature: runtime built-in skills", () => {
     expect(attentionContent).toContain("origin room already received the final answer");
     expect(attentionContent).toContain('attention commit \'{"contextId":"ctx-..."');
     expect(attentionContent).toContain("references/settlement.md");
+    expect(attentionContent).toContain("do that real work before browsing attention");
     expect(attentionContent).not.toContain("AttentionContexts.metadata");
 
     const messageContent = readRuntimeSkillContent(message!);
     expect(messageContent).toContain("Room messages are durable shared truth.");
     expect(messageContent).toContain("chat-related attention item");
+    expect(messageContent).toContain("do not reread the room first");
+    expect(messageContent).toContain("task already shows the exact room `chatId`");
+    expect(messageContent).toContain("Run `message list` once only when you truly need a `chatId`");
+    expect(messageContent).toContain("literal room id is enough");
     expect(messageContent).toContain("necessary room reply has been sent");
     expect(messageContent).toContain("send one short acknowledgement before the deeper tool work starts");
     expect(messageContent).toContain("preserve that fact exactly instead of silently normalizing it");
@@ -102,6 +107,7 @@ describe("Feature: runtime built-in skills", () => {
       "If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable",
     );
     expect(terminalContent).toContain("do not prove the promised URL or API path actually responds");
+    expect(terminalContent).toContain("the normal next move is to create or recover the terminal");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
     expect(terminalContent).toContain("references/file-writing.md");
@@ -110,6 +116,7 @@ describe("Feature: runtime built-in skills", () => {
     const runtimeContent = readRuntimeSkillContent(runtime!);
     expect(runtimeContent).toContain("root_workspace_list");
     expect(runtimeContent).toContain("ccski info <skill>");
+    expect(runtimeContent).toContain("make one real command for that target before browsing deeper docs");
     expect(runtimeContent).toContain("~/tools");
     expect(runtimeContent).toContain("outbound network access");
     expect(runtimeContent).toContain("objective verification of current or external facts");

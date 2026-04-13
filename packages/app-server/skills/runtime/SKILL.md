@@ -10,9 +10,10 @@ Use this skill when you need to understand the runtime surface before choosing a
 Quick start:
 
 1. Run `root_workspace_list`.
-2. Run `ccski list`.
-3. Run `ccski info <skill>`.
-4. If a shell command rejects your arguments, run `<command> --help`.
+2. If the task already names an exact room, path, URL, file, or terminal target, make one real command for that target before browsing deeper docs.
+3. Run `ccski list` only when you truly need a more specific skill family.
+4. Run `ccski info <skill>` only after the direct command path is still unclear.
+5. If a shell command rejects your arguments, run `<command> --help`.
 
 Key laws:
 
@@ -23,6 +24,7 @@ Key laws:
 - A local delivery URL may be verified from `root_workspace_bash`, but the process that owns that URL still belongs in `terminal`.
 - A `terminal read` snapshot or a still-running process is not enough to prove a local delivery URL is ready; use a fresh exact-path HTTP check from the one-shot shell.
 - When a room or user names a concrete local URL, scheme, host, port, and path are all part of the delivery contract.
+- If the latest room message already contains the full task, do not pause the first real action just to reread the room or browse `SKILL.md`.
 - `ccski info` returns the real filesystem path to the skill's `SKILL.md`.
 - Runtime-owned helper scripts are optional. Only inspect `~/tools` when `root_workspace_list` or the shell shows they actually exist.
 - Helper scripts must not replace core work such as writing required workspace files or owning application network behavior.

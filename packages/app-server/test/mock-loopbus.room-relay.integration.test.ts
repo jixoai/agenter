@@ -86,4 +86,5 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
     },
     { timeout: 30_000 },
   );
+
 });

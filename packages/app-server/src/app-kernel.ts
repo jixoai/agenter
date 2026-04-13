@@ -121,6 +121,7 @@ import {
   type SessionNotificationSnapshot,
 } from "./session-notifications";
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
+import { SettingsEditor } from "./settings-editor";
 import {
   listScopedSettingsGraph,
   readScopedSettingsLayer,
@@ -3704,9 +3705,13 @@ export class AppKernel {
     sessionId: string;
     kind: unknown;
   }): Promise<{ path: string; content: string; mtimeMs: number }> {
-    const runtime = await this.ensureRuntime(input.sessionId);
     const kind = settingsKindSchema.parse(input.kind);
-    return runtime.readEditable(kind);
+    const runtime = this.runtimes.get(input.sessionId);
+    if (runtime) {
+      return runtime.readEditable(kind);
+    }
+    const editor = await this.createPersistedSettingsEditor(input.sessionId);
+    return await editor.read(kind);
   }
 
   async listSettingsLayers(workspacePath: string) {
@@ -3809,9 +3814,13 @@ export class AppKernel {
     | { ok: true; file: { path: string; content: string; mtimeMs: number } }
     | { ok: false; reason: "conflict"; latest: { path: string; content: string; mtimeMs: number } }
   > {
-    const runtime = await this.ensureRuntime(input.sessionId);
     const kind = settingsKindSchema.parse(input.kind);
-    return runtime.saveEditable(kind, input.content, input.baseMtimeMs);
+    const runtime = this.runtimes.get(input.sessionId);
+    if (runtime) {
+      return runtime.saveEditable(kind, input.content, input.baseMtimeMs);
+    }
+    const editor = await this.createPersistedSettingsEditor(input.sessionId);
+    return await editor.save(kind, input.content, input.baseMtimeMs);
   }
 
   private async ensureRuntime(sessionId: string): Promise<SessionRuntime> {
@@ -3824,6 +3833,24 @@ export class AppKernel {
       throw new Error(`runtime not found for session ${sessionId}`);
     }
     return runtime;
+  }
+
+  private getSessionMetaOrThrow(sessionId: string): SessionMeta {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    return session;
+  }
+
+  private async createPersistedSettingsEditor(sessionId: string): Promise<SettingsEditor> {
+    const session = this.getSessionMetaOrThrow(sessionId);
+    const config = await resolveSessionConfig(session.cwd, {
+      avatar: session.avatar,
+      homeDir: this.getHomeDir(),
+    });
+    return new SettingsEditor(session.cwd, config.prompt);
   }
 
   private readSessionPreview(session: SessionMeta): WorkspaceSessionPreview {

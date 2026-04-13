@@ -56,6 +56,8 @@ export interface RealTeamKernelHarness {
   proxy: CachedModelProxyHandle | null;
   backendSession: SessionMeta;
   frontendSession: SessionMeta;
+  backendAvatarPromptPath: string | null;
+  frontendAvatarPromptPath: string | null;
   backendActorId: MessageActorId;
   frontendActorId: MessageActorId;
   userActorId: `auth:${string}`;
@@ -79,6 +81,8 @@ export const createRealTeamKernelHarness = async (
   input: {
     backendAvatar?: string;
     frontendAvatar?: string;
+    backendPromptContent?: string;
+    frontendPromptContent?: string;
     userActorId?: `auth:${string}`;
     logger?: AppKernelOptions["logger"];
   } = {},
@@ -93,6 +97,24 @@ export const createRealTeamKernelHarness = async (
   const workspacePath = join(rootDir, "workspace");
   await mkdir(homeDir, { recursive: true });
   await mkdir(join(workspacePath, ".agenter"), { recursive: true });
+  const backendAvatar = input.backendAvatar ?? "backend";
+  const frontendAvatar = input.frontendAvatar ?? "frontend";
+  const backendPromptContent = input.backendPromptContent?.trim();
+  const frontendPromptContent = input.frontendPromptContent?.trim();
+  const backendAvatarPromptPath = backendPromptContent
+    ? join(homeDir, ".agenter", "avatars", "by-nickname", backendAvatar, "AGENTER.mdx")
+    : null;
+  const frontendAvatarPromptPath = frontendPromptContent
+    ? join(homeDir, ".agenter", "avatars", "by-nickname", frontendAvatar, "AGENTER.mdx")
+    : null;
+  if (backendAvatarPromptPath && backendPromptContent) {
+    await mkdir(join(homeDir, ".agenter", "avatars", "by-nickname", backendAvatar), { recursive: true });
+    await writeFile(backendAvatarPromptPath, backendPromptContent, "utf8");
+  }
+  if (frontendAvatarPromptPath && frontendPromptContent) {
+    await mkdir(join(homeDir, ".agenter", "avatars", "by-nickname", frontendAvatar), { recursive: true });
+    await writeFile(frontendAvatarPromptPath, frontendPromptContent, "utf8");
+  }
 
   let proxy: CachedModelProxyHandle | null = null;
   let providerBaseUrl = config.baseUrl;
@@ -144,7 +166,7 @@ export const createRealTeamKernelHarness = async (
     const createParticipantSession = async (participant: RealTeamParticipant): Promise<SessionMeta> => {
       const session = await kernel.createSession({
         cwd: workspacePath,
-        avatar: participant === "backend" ? (input.backendAvatar ?? "backend") : (input.frontendAvatar ?? "frontend"),
+        avatar: participant === "backend" ? backendAvatar : frontendAvatar,
         name: participant === "backend" ? "real-team-backend" : "real-team-frontend",
         autoStart: false,
       });
@@ -220,6 +242,8 @@ export const createRealTeamKernelHarness = async (
       proxy,
       backendSession,
       frontendSession,
+      backendAvatarPromptPath,
+      frontendAvatarPromptPath,
       backendActorId,
       frontendActorId,
       userActorId: input.userActorId ?? "auth:kzf",

@@ -3,6 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { judgeAvoidsForbiddenMentions, judgeMentionsConcept } from "../src";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import {
+  REAL_EXTERNAL_FACT_AVATAR_PROFILE,
+  REAL_RELAY_AVATAR_PROFILE,
+} from "../test-support/real-ai-test-personas";
+import {
   runRealCompactFollowUpScenario,
   runRealExternalFactThroughShellScenario,
   runRealInterleavedCanInputScenario,
@@ -20,15 +24,6 @@ import { loadRequiredRealSemanticJudge } from "../test-support/real-semantic-jud
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
 const realTest = hasRealModel ? test : test.skip;
-const REAL_EXTERNAL_FACT_TEST_AVATAR = "test-shell-facts";
-const REAL_EXTERNAL_FACT_TEST_AGENTER_PROMPT = [
-  "Test Avatar working preferences:",
-  "",
-  "- Treat current or external facts like a careful Linux engineer would.",
-  "- Acknowledge briefly, then verify through shell or other observable tools before replying.",
-  "- If the fact can change, do not answer from memory when the runtime can check it objectively.",
-  "",
-].join("\n");
 
 describe("Feature: real AI loopbus convergence", () => {
   realTest(
@@ -61,7 +56,11 @@ describe("Feature: real AI loopbus convergence", () => {
   realTest(
     "Scenario: Given a real provider When the user asks the assistant to ask gaubee about lunch Then the assistant acknowledges in chat-main before relaying and brings the answer back",
     async () => {
-      const harness = await createRealKernelHarness({ sessionName: "real-lunch-relay-ack" });
+      const harness = await createRealKernelHarness({
+        sessionName: "real-lunch-relay-ack",
+        avatarNickname: REAL_RELAY_AVATAR_PROFILE.nickname,
+        agenterPromptContent: REAL_RELAY_AVATAR_PROFILE.prompt,
+      });
       if (!harness) {
         throw new Error("expected real kernel harness");
       }
@@ -108,7 +107,11 @@ describe("Feature: real AI loopbus convergence", () => {
   realTest(
     "Scenario: Given a real provider When kzf asks gaubee about lunch and manual compact follows Then the answer returns to chat-main and remains available after compact",
     async () => {
-      const harness = await createRealKernelHarness({ sessionName: "real-lunch-relay" });
+      const harness = await createRealKernelHarness({
+        sessionName: "real-lunch-relay",
+        avatarNickname: REAL_RELAY_AVATAR_PROFILE.nickname,
+        agenterPromptContent: REAL_RELAY_AVATAR_PROFILE.prompt,
+      });
       if (!harness) {
         throw new Error("expected real kernel harness");
       }
@@ -176,8 +179,8 @@ describe("Feature: real AI loopbus convergence", () => {
     async () => {
       const harness = await createRealKernelHarness({
         sessionName: "real-shell-external-fact",
-        avatarNickname: REAL_EXTERNAL_FACT_TEST_AVATAR,
-        agenterPromptContent: REAL_EXTERNAL_FACT_TEST_AGENTER_PROMPT,
+        avatarNickname: REAL_EXTERNAL_FACT_AVATAR_PROFILE.nickname,
+        agenterPromptContent: REAL_EXTERNAL_FACT_AVATAR_PROFILE.prompt,
       });
       if (!harness) {
         throw new Error("expected real kernel harness");
@@ -208,7 +211,7 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.toolTraceTools).toContain("root_workspace_bash");
-        expect(harness.avatarNickname).toBe(REAL_EXTERNAL_FACT_TEST_AVATAR);
+        expect(harness.avatarNickname).toBe(REAL_EXTERNAL_FACT_AVATAR_PROFILE.nickname);
         expect(harness.avatarPromptPath).toBeTruthy();
       } finally {
         await harness.stop();

@@ -14,5 +14,9 @@ Strict contract:
 12. Internal progress belongs in tool calls and attention commits, not in assistant plain text.
 13. Do not invent legacy response envelopes such as `toUser`, `toTerminal`, `toTools`, or task-stage wrappers.
 14. Compact is a separate tool-less cycle that only rewrites the bounded `promptWindow`; do not emulate it inside a normal work round.
-15. If a CLI or shell command rejects your arguments, do not speculate about alternate syntax. Inspect `<command> --help` or `ccski info <skill>` and follow the current contract.
-16. If `ccski info <skill>` reveals a real skill path and that skill lists sibling `references/*.md` files, read only the specific reference files you need via shell.
+15. Default user-visible durable replies to the requester's language unless the task explicitly requires another language.
+16. If the task already names the exact room, path, URL, file, or terminal target, prefer one direct command for that target before browsing skills.
+17. If the task already names the exact room, path, URL, file, or terminal target, do not open any `SKILL.md` before your first direct command for that target.
+18. If the task already gives the exact room `chatId`, use that literal `chatId` directly for `message send` or `message read` instead of running `message list` to rediscover the same room.
+19. If a CLI or shell command rejects your arguments, do not speculate about alternate syntax. Inspect `<command> --help` first, and use `ccski info <skill>` only when the command family itself is still unclear.
+20. If `ccski info <skill>` reveals a real skill path and that skill lists sibling `references/*.md` files, read only the specific reference files you need via shell.

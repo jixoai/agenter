@@ -8,10 +8,10 @@ description: Create, recover, and drive durable terminal sessions. Use this when
 Use this skill when work needs a durable process, an interactive shell, or recoverable terminal context.
 
 Quick start:
-1. Run `terminal list`.
-2. Run `terminal create`.
+1. Run `terminal list` when you need to recover or reuse an existing process owner.
+2. Run `terminal create` when no suitable terminal exists yet.
 3. Run `terminal write`.
-4. Run `terminal read`.
+4. Run `terminal read` only to inspect or recover terminal state.
 
 Key laws:
 - A runtime does not start with a terminal by default.
@@ -20,6 +20,7 @@ Key laws:
 - `terminal write` means the input was delivered, not that the process succeeded.
 - After starting a listener in `terminal`, inspect its real state and verify the exact promised URL or path before you tell a room or user that it is ready.
 - `terminal read` snapshots and "the process is still running" only describe terminal state; they do not prove the promised URL or API path actually responds.
+- When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
 - If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable, stop and switch to `terminal`.
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
 - `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. If you forget the shape, run `--help`.

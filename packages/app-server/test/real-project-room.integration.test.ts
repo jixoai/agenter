@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { judgeUrlSpan } from "../src";
+import {
+  REAL_TEAM_BACKEND_AVATAR_PROFILE,
+  REAL_TEAM_FRONTEND_AVATAR_PROFILE,
+} from "../test-support/real-ai-test-personas";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
 import { runRealProjectRoomCollaborationScenario } from "../test-support/real-project-room-collaboration-scenario";
 import { judgeMarkupExpressesConcepts } from "../test-support/real-semantic-assertions";
@@ -15,7 +19,12 @@ describe("Feature: real AI multi-avatar project room collaboration", () => {
   realTest(
     "Scenario: Given a real provider When two avatars collaborate in one shared project room Then the room keeps negotiation, attachment handoff, delivery, and final acceptance as durable truth",
     async () => {
-      const harness = await createRealTeamKernelHarness();
+      const harness = await createRealTeamKernelHarness({
+        backendAvatar: REAL_TEAM_BACKEND_AVATAR_PROFILE.nickname,
+        backendPromptContent: REAL_TEAM_BACKEND_AVATAR_PROFILE.prompt,
+        frontendAvatar: REAL_TEAM_FRONTEND_AVATAR_PROFILE.nickname,
+        frontendPromptContent: REAL_TEAM_FRONTEND_AVATAR_PROFILE.prompt,
+      });
       if (!harness) {
         throw new Error("expected real team kernel harness");
       }

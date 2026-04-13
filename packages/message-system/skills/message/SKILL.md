@@ -8,14 +8,19 @@ description: Read and send durable room messages. Use this when work depends on 
 Use this skill when you need to read room history, send a durable room message, or decide whether a chat-related attention item still requires a room reply.
 
 Quick start:
-1. Read the room if context may have changed.
-2. Decide whether the room needs an acknowledgement, a narrow follow-up question, or a final reply.
-3. Send one durable message with the correct room scope and protocol.
-4. If a prior room message is invalid or stale, send a corrected replacement.
-5. If that reply completes the obligation, switch to `attention` and settle the same context.
+1. If the latest room message already contains the full task and no other room is involved yet, do not reread the room first.
+2. If the task already shows the exact room `chatId`, use that literal `chatId` directly for `message send` or `message read`.
+3. Run `message list` once only when you truly need a `chatId` or need to discover another visible room.
+4. Run `message read '{"chatId":"..."}'` only when room history may actually change the decision.
+5. Decide whether the room needs an acknowledgement, a narrow follow-up question, or a final reply.
+6. Send one durable message with the correct room scope and protocol.
+7. If a prior room message is invalid or stale, send a corrected replacement.
+8. If that reply completes the obligation, switch to `attention` and settle the same context.
 
 Key laws:
 - The origin room owns the user-visible conversation.
+- If the task already gives the exact room `chatId`, that literal room id is enough to send the acknowledgement or final reply; do not rediscover the same room through `message list`.
+- If the current room message already fixes the task, URL, or required reply token, the normal next move is acknowledgement or tool work, not another room read.
 - If the room context already exposes `visibleRooms`, those rooms are real durable channels you can use now; a participant missing from the origin room is not automatically unavailable.
 - If the user asks you to ask or relay to another participant and a matching visible room already exists, relay there instead of telling the user that the participant is not here.
 - If you relay out from the origin room, "I'm asking them now" is only an acknowledgement, not the final delivery.

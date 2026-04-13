@@ -14,5 +14,9 @@
 12. 内部推进应写入工具调用和 attention commit，不要写进 assistant 普通文本。
 13. 不要再发明 `toUser`、`toTerminal`、`toTools` 这类 legacy 响应数组，也不要输出 task-stage 包装层。
 14. compact 是独立的无工具 cycle，只重写有界 `promptWindow`；不要在普通轮次里模拟 compact。
-15. 如果某个 CLI 或 shell 命令拒绝了你的参数，不要猜测还有别的写法；直接查看 `<command> --help` 或 `ccski info <skill>`，按照当前 contract 继续。
-16. 如果 `ccski info <skill>` 给出了真实的 skill 路径，而这个 skill 又列出了同目录的 `references/*.md`，就通过 shell 只读取你当前需要的那几个 reference 文件。
+15. 默认让用户可见的耐久回复跟随请求方所使用的语言；只有任务明确要求另一种语言时才切换。
+16. 如果当前任务已经明确给出了具体房间、路径、URL、文件或 terminal 目标，优先先对那个目标执行一次直接命令，再考虑展开 skill。
+17. 如果任务已经明确给出了具体房间、路径、URL、文件或 terminal 目标，那么在你对这个目标执行第一条直接命令之前，不要先打开任何 `SKILL.md`。
+18. 如果任务里已经给出了精确的房间 `chatId`，就直接把这个字面量 `chatId` 用在 `message send` 或 `message read` 上，不要再跑 `message list` 去重新发现同一个房间。
+19. 如果某个 CLI 或 shell 命令拒绝了你的参数，不要猜测还有别的写法；先直接查看 `<command> --help`，只有在连命令族本身都不清楚时才去看 `ccski info <skill>`。
+20. 如果 `ccski info <skill>` 给出了真实的 skill 路径，而这个 skill 又列出了同目录的 `references/*.md`，就通过 shell 只读取你当前需要的那几个 reference 文件。

@@ -54,26 +54,38 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
 
     expect(enSystem).toContain("skills.list");
     expect(enSystem).toContain("ccski info <skill>");
+    expect(enSystem).toContain("take one real command for that target first");
     expect(enSystem).toContain("real filesystem path");
     expect(enSystem).toContain("references/*.md");
     expect(enSystem).toContain("one file at a time");
     expect(enSystem).toContain("your next action must be that delivery step");
+    expect(enSystem).toContain("Match the requester's language");
+    expect(enSystem).toContain("exact room `chatId`");
+    expect(enSystem).toContain("do not open any `SKILL.md`");
     expect(enSystem).not.toContain("message-system");
     expect(enSystem).not.toContain("terminal-system");
     expect(enSystem).not.toContain("terminal create /absolute/project/path");
 
     expect(zhSystem).toContain("skills.list");
     expect(zhSystem).toContain("ccski info <skill>");
+    expect(zhSystem).toContain("先对那个目标执行一次真实命令");
     expect(zhSystem).toContain("真实 `SKILL.md` 文件路径");
     expect(zhSystem).toContain("references/*.md");
     expect(zhSystem).toContain("一次只读一个需要的文件");
     expect(zhSystem).toContain("你的下一步动作就必须是执行那次交付");
+    expect(zhSystem).toContain("跟随请求方所使用的语言");
+    expect(zhSystem).toContain("精确的房间 `chatId`");
+    expect(zhSystem).toContain("不要先打开任何 `SKILL.md`");
     expect(zhSystem).not.toContain("message-system");
     expect(zhSystem).not.toContain("terminal-system");
     expect(zhSystem).not.toContain("terminal create /绝对项目路径");
 
     expect(enResponse).toContain("<command> --help");
     expect(enResponse).toContain("ccski info <skill>");
+    expect(enResponse).toContain("prefer one direct command for that target before browsing skills");
+    expect(enResponse).toContain("Default user-visible durable replies");
+    expect(enResponse).toContain("do not open any `SKILL.md`");
+    expect(enResponse).toContain("use that literal `chatId` directly");
     expect(enResponse).toContain("read only the specific reference files you need");
     expect(enResponse).toContain("the environment's durable delivery action");
     expect(enResponse).not.toContain("message CLI");
@@ -81,6 +93,10 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
 
     expect(zhResponse).toContain("<command> --help");
     expect(zhResponse).toContain("ccski info <skill>");
+    expect(zhResponse).toContain("优先先对那个目标执行一次直接命令");
+    expect(zhResponse).toContain("跟随请求方所使用的语言");
+    expect(zhResponse).toContain("不要先打开任何 `SKILL.md`");
+    expect(zhResponse).toContain("直接把这个字面量 `chatId` 用在 `message send`");
     expect(zhResponse).toContain("只读取你当前需要的那几个 reference 文件");
     expect(zhResponse).toContain("当前环境里的耐久交付动作");
     expect(zhResponse).not.toContain("message` CLI");

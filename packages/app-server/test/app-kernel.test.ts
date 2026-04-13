@@ -138,6 +138,55 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given a stopped session When runtime settings sources are read or saved Then the kernel uses durable files without booting the runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(join(workspace, ".agenter"), { recursive: true });
+    writeFileSync(join(workspace, ".agenter", "AGENTER.mdx"), "# Persisted prompt\n", "utf8");
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "persisted-editor",
+      name: "persisted-editor",
+      autoStart: false,
+    });
+
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+
+    const original = await kernel.readSettings({ sessionId: session.id, kind: "agenter" });
+    expect(original.path).toBe(resolve(workspace, ".agenter", "AGENTER.mdx"));
+    expect(original.content).toBe("# Persisted prompt\n");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+
+    const saved = await kernel.saveSettings({
+      sessionId: session.id,
+      kind: "agenter",
+      content: "# Updated prompt\n",
+      baseMtimeMs: original.mtimeMs,
+    });
+    expect(saved).toEqual({
+      ok: true,
+      file: {
+        path: resolve(workspace, ".agenter", "AGENTER.mdx"),
+        content: "# Updated prompt\n",
+        mtimeMs: expect.any(Number),
+      },
+    });
+    expect(readFileSync(resolve(workspace, ".agenter", "AGENTER.mdx"), "utf8")).toBe("# Updated prompt\n");
+    expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given a running session without an attached primary room When sendChat is called Then the kernel rejects the chat instead of synthesizing a hidden room", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);

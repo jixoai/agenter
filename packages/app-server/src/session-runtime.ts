@@ -5924,13 +5924,20 @@ export class SessionRuntime {
       assetIds,
       clientMessageId,
     });
-    if (!this.loopPluginRuntime || !this.isUnreadInboundMessage(message) || !channel.accessToken) {
+    if (!this.isUnreadInboundMessage(message) || !channel.accessToken) {
       return;
     }
-    this.reserveUnreadMessages(channel, [message]);
-    if (!isCompactCommand) {
-      this.invalidatePluginForMessage(message);
+
+    if (isCompactCommand) {
+      this.reserveUnreadMessages(channel, [message]);
+      return;
     }
+
+    // Let the normal unread collection path observe the new room message.
+    // Pre-reserving it here can hide follow-up input that lands while the
+    // previous cycle is still settling, because the next wait phase sees no
+    // unread delta left to consume.
+    this.notifyInput("user");
   }
 
   triggerTaskManual(input: { source: TaskSourceName; id: string }): { ok: boolean } {
