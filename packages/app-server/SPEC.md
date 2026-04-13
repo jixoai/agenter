@@ -42,6 +42,7 @@
 ## 4. LoopBus 与 Prompt Assembly Contract
 
 - stopped / cold session 的模型检查、Heartbeat 历史和 prompt reconstruction，必须从 `@agenter/session-system` 的 `message_parts + ai_call` ledger 重建；session-db 不再拥有独立 `session_cycle` / telemetry durable truth。
+- runtime Heartbeat inspection 固定读取一条 merged message-parts stream：`scope=heartbeat_part` 持久化 AI-visible request/response 与 compact boundary，`scope=request_aux` 持久化去重后的 `systemPrompt / tools / config`；app-server 必须通过统一 page API 与 realtime event 发布这条流，不能要求客户端再拼 chat / request-aux / model-call 三套时间线。
 - fresh session 的空 prompt window 也必须在 ledger 中拥有可解析的 durable fact；不能只在 `session_head.current_prompt_window_id` 中留下一个没有对应 `message_part` 实体的悬空 id。
 - LoopBus transport metadata 只允许表达调度、协议、refs、compact/wake/debug 之类 orchestration facts，不得成为 AI-visible payload 的隐藏通道。
 - built-in LoopBus source ref/read result contract 必须保持 typed：message 用 `channelId + messageId`，terminal/task 只保留最小寻址字段；不得重新引入 `LoopSourceRef.meta` 或 `LoopSourceReadResult.meta` 这类开放逃逸口。

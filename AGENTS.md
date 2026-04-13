@@ -173,10 +173,36 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - `openspec/specs/*` 用于 capability 级规格沉淀；当其内容已经成为仓库长期法则时，项目级或包级 `SPEC.md` 仍需补齐最小摘要，不允许只留在 archive/change 里。
 - `TASKS.md` 不再是项目真源；活跃任务看 `openspec/changes/*`，长期法则看 `SPEC.md` / `packages/*/SPEC.md`。
 
+## 5.2) Design 治理纪律
+
+- `DESIGN.md` 是仓库级的视觉法则、信息架构法则与设计最佳实践真源。
+- `DESIGN.md` 只记录 **原则性的、可复用的、durable 的设计规则**，例如布局法则、导航法则、toolbar/page-content 契约、视觉收口纪律、设计过程纪律。
+- 具体业务页面的字段、实体、临时 IA、阶段性草图结论，不应直接写进 `DESIGN.md`；这些内容应进入 `openspec/changes/*`、相关 `spec.md`、Pencil 稿或实现文档。
+- 使用 Pencil 讨论设计时，必须同步推进对应的 `openspec/changes/*` 文档更新；不能只改设计稿、不改 OpenSpec。
+- 开始多轮 Pencil 设计前，必须优先打开仓库内可持久化的 `.pen` 文件；不要把关键设计状态只放在 `/pencil-new.pen` 之类临时文档里。
+- 共享设计壳层一旦稳定，应优先抽成中等粒度组件（如 `sidebar / tabs / toolbar / shared header / drawer`），避免继续整屏复制。
+- 优先把设计事实同时落在两个地方：
+  - Pencil 稿：表达结构、密度、视觉层级、交互入口
+  - OpenSpec：表达页面职责、模式切换、持久化/权限/能力边界、未决问题
+- 如果 Pencil 允许，应在设计稿中用轻量注释标出关键交互或约束；如果 Pencil 不适合承载这些说明，必须立即把它们写进当前 change 的 `design.md` 或相关 spec，而不是只留在对话里。
+- 任何一轮重要设计收敛，至少要同步更新以下之一：
+  - 当前 change 的 `design.md`
+  - 当前 change 的 `tasks.md`
+  - 当前 change 下相关 capability 的 `spec.md`
+- 只有两种情况允许在 `DESIGN.md` 出现业务内容：
+  - 作为说明原则的简短例子
+  - 该业务约束已经稳定到足以成为长期设计法则
+- 任何影响长期设计原则的讨论一旦收敛，必须同步更新 `DESIGN.md`，而不是只停留在对话、截图或设计稿里。
+- 当 `AGENTS.md`、`SPEC.md`、`DESIGN.md` 三者出现边界重叠时：
+  - `AGENTS.md` 管工程协作与执行纪律
+  - `SPEC.md` 管平台能力与系统契约
+  - `DESIGN.md` 管视觉结构、信息架构与设计最佳实践
+
 ## 6) 用户协作方法论（必须遵守）
 
 - **先证据后结论**：先跑真实流程（CLI/TUI/WebUI/Browser），再下判断；不凭主观猜测解释问题。
 - **保持客观展示**：AI 输出不做“语义篡改/清洗/特化”；UI 只做结构化呈现。
+- **前端联调顺序固定**：先验证后端接口与 durable contract，再验证 store / 界面绑定，最后做真实浏览器走查；不要反过来靠 UI 盲测接口。
 - **国际化单一真源**：业务层不硬编码文案；统一通过 i18n 包与配置加载。
 - **配置优先于硬编码**：模型、终端入口、提示词路径、策略等一律走 settings/prompt sources。
 - **架构做减法，算法做加法**：先保证路径直觉、最小可用，再增强算法与可观测性。
@@ -361,3 +387,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **索引排除优先于结果过滤**: 被 ignore 的文件不要先进内存索引再做展示层过滤；性能和正确性都要求在索引阶段直接排除。
 - **Ignored 路径的直接寻址例外**: `.gitignore` 只排除全量模糊索引，不排除基于当前已输入路径做的 on-demand startsWith 补全；像 `@node_`、`@node_modules/re` 这类逐步寻址必须仍然可达。
 - **Storybook DOM 依赖预热**: 新引入会在浏览器端动态加载的 UI 子包（尤其 `@base-ui-components/react/*`）时，要同步加入 `vitest.config.ts -> optimizeDeps.include`，避免测试中途触发 Vite re-optimize 导致 DOM 用例 flaky。
+
+## 11) 树状数据结构的开发协同纪律 (Tree Virtualization & Pagination)
+- **后端物理边界必须在前端节点级体现**：当请求工作区等存在嵌套的树形结构时，API 的分层机制（如 `deep=1`）和最大返回限制（如 `max=100`），**必须直接反映在前端 UI 的该层节点上**。前端绝对禁止使用“全局加载更多”去掩盖具体子文件夹的内容溢出。
+- **搜索即过滤（Search as Filter）**：在处理树状（Workspace）内容的搜索时，必须复用原生的 Tree Component，将其视为一种基于 `gitignore` 语法的**遮罩/过滤器**。匹配的节点被高亮或保留，不匹配的节点被折叠或隐藏。严禁为了搜索而硬编码一套全新的、脱离了树形上下文的平铺（Flat List）页面。

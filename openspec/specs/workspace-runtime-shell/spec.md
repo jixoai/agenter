@@ -50,21 +50,22 @@ The runtime shell SHALL expose a canonical runtime destination for each avatar s
 - **THEN** the shell hydrates persisted or live heartbeat history, attention/notification state, and runtime settings sources from backend APIs
 - **AND** the first render does not depend on a prior websocket event or on visiting another page first
 
-### Requirement: Heartbeat SHALL render one continuous AI-call runtime stream
+### Requirement: Heartbeat SHALL render one continuous message-parts runtime stream
 
-The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime inspection surface backed by durable ledger facts and model-call facts. It SHALL present user/assistant messages, compact boundaries, request-side auxiliary changes, and model-call execution cards without collapsing all runtime behavior into plain chat bubbles.
+The `Heartbeat` tab SHALL render one continuous runtime surface backed by durable `message-parts` truth. It SHALL show request-side auxiliary rows, AI-visible request/response rows, and compact boundaries in chronological order without rebuilding the primary story from mixed chat rows, request-aux cards, and model-call cards.
 
-#### Scenario: Heartbeat shows durable request-side auxiliary facts
+#### Scenario: Heartbeat opens with folded auxiliary facts and durable AI-visible rows
 
-- **WHEN** the operator opens `Heartbeat` for a session whose runtime changed `systemPrompt`, `tools`, or `config`
-- **THEN** the stage renders those durable request-side auxiliary facts in timeline order
-- **AND** the operator can inspect the payload without leaving the Heartbeat surface
+- **WHEN** the operator opens `Heartbeat` for a session that already recorded `systemPrompt`, `tools`, `config`, request rows, response rows, or compact boundaries
+- **THEN** the stage renders those rows from the durable Heartbeat `message-parts` stream in chronological order
+- **AND** `systemPrompt`, `tools`, `config`, and `compact` rows are visually subordinate and collapsed by default
+- **AND** AI-visible request/response rows remain readable as the primary stream content
 
-#### Scenario: Heartbeat shows model-call execution context
+#### Scenario: Heartbeat updates live without mixed inspection cards
 
-- **WHEN** the operator opens `Heartbeat`
-- **THEN** the stage renders model-call cards with provider/model/status plus persisted assistant response details such as text, thinking, or tool trace when available
-- **AND** the stage can augment the currently running model call with live delta facts while the runtime is active
+- **WHEN** the runtime records a streamed assistant update or a new Heartbeat request row while the operator is watching the tab
+- **THEN** the stage updates the affected durable Heartbeat row in place
+- **AND** the operator does not need a separate model-call card to understand the live Heartbeat state
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
 The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.
@@ -154,4 +155,3 @@ Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page 
 - **THEN** the left navigation can collapse into a compact shell
 - **AND** the drawer can become a stacked sheet below the `bottom-area`
 - **AND** the same runtime tabs and page actions remain reachable
-

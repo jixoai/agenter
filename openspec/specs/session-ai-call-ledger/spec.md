@@ -4,7 +4,7 @@ Define the minimal session durable ledger around grouped AI-visible message part
 ## Requirements
 ### Requirement: Session DB SHALL persist AI-visible traffic as grouped message parts
 
-The session durable store SHALL persist AI-visible request and response traffic in a `message_parts` ledger. Each row SHALL belong to one logical `message_id`, SHALL record append order, role, part type, timestamps, completion state, and serialized part payload, and SHALL support streamed updates to the same logical part until it is complete. Compact cycles SHALL also persist a dedicated `scope=heartbeat` boundary message with `partType=compact` so Heartbeat can reconstruct prompt-window restart boundaries from durable facts.
+The session durable store SHALL persist AI-visible request and response traffic in a `message_parts` ledger. Each row SHALL belong to one logical `message_id`, SHALL record append order, role, part type, timestamps, completion state, and serialized part payload, and SHALL support streamed updates to the same logical part until it is complete. Compact cycles SHALL also persist a dedicated `scope=heartbeat_part` boundary message with `partType=compact` so Heartbeat can reconstruct prompt-window restart boundaries from durable facts.
 
 #### Scenario: Streamed assistant text updates one logical part
 - **WHEN** an assistant response streams text into an existing logical message
@@ -18,8 +18,14 @@ The session durable store SHALL persist AI-visible request and response traffic 
 
 #### Scenario: Compact cycle persists a heartbeat boundary fact
 - **WHEN** a compact cycle completes and rotates the bounded prompt-window round
-- **THEN** the runtime appends a `scope=heartbeat`, `role=system`, `partType=compact` message-part record linked to that compact AI-call
+- **THEN** the runtime appends a `scope=heartbeat_part`, `role=system`, `partType=compact` message-part record linked to that compact AI-call
 - **THEN** later Heartbeat reconstruction can show the compaction boundary without inferring it from assistant prose or cycle UI state
+
+#### Scenario: AI-call links point at durable Heartbeat rows
+- **WHEN** the runtime persists an AI-call request or response
+- **THEN** `requestMessageIds` reference the durable Heartbeat request message ids for that call
+- **THEN** `responseMessageIds` reference the durable Heartbeat response message ids for that call
+- **THEN** `auxiliaryMessageIds` reference the deduplicated `scope=request_aux` rows used by that call
 
 ### Requirement: Request-side auxiliary model payloads SHALL remain inspectable as durable ledger facts
 
@@ -89,3 +95,12 @@ Stopped-session reconstruction SHALL use `message_parts`, retained `ai_call` row
 - **THEN** the runtime rebuilds its bounded model context from `message_parts` plus retained `ai_call` rows
 - **THEN** restart does not depend on any legacy cycle or prompt-window table being present
 
+### Requirement: Heartbeat inspection SHALL page one merged message-parts stream
+
+Runtime inspection SHALL expose one paged Heartbeat stream composed from durable `message_parts` rows instead of requiring the client to query chat rows, request-side auxiliary rows, and model-call rows separately.
+
+#### Scenario: Heartbeat page merges auxiliary and heartbeat scopes
+- **WHEN** a runtime inspection client pages Heartbeat rows for one session
+- **THEN** it receives one chronological stream containing `scope=heartbeat_part` rows and deduplicated `scope=request_aux` rows
+- **THEN** each row preserves `messageId`, `role`, `partType`, payload, timestamps, completion state, and related AI-call identity
+- **THEN** the client does not need to open `session.db` directly or merge multiple backend pages to reconstruct Heartbeat
