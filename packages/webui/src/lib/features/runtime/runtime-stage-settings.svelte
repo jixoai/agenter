@@ -152,6 +152,15 @@
 							<Badge variant="secondary">{session.status}</Badge>
 						</div>
 						<div class="text-sm text-muted-foreground">{currentMeta.detail}</div>
+						<div class="rounded-xl border bg-muted/20 px-4 py-3 text-xs" data-testid="runtime-settings-source">
+							<div class="font-medium uppercase tracking-[0.14em] text-muted-foreground">Current source</div>
+							<div class="mt-1 break-all font-mono text-foreground">
+								{filePath || (loading ? `Loading ${selectedKind} source…` : 'Source path unavailable.')}
+							</div>
+							<div class="mt-1 text-muted-foreground">
+								Last modified {fileMtimeMs > 0 ? new Date(fileMtimeMs).toLocaleString() : 'unknown'}
+							</div>
+						</div>
 					</div>
 
 					<div class="flex flex-wrap gap-2">

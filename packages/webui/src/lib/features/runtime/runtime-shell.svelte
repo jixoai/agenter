@@ -36,6 +36,11 @@
 	const controller = getAppControllerContext();
 	const pendingCycleLoads = new SvelteSet<string>();
 	const pendingMessageLoads = new SvelteSet<string>();
+	const attemptedCycleLoads = new SvelteSet<string>();
+	const attemptedMessageLoads = new SvelteSet<string>();
+	let shellHydrationVersion = 0;
+	let shellHydrating = $state(true);
+	let shellHydrationError = $state<string | null>(null);
 
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
@@ -55,6 +60,11 @@
 	const sessionIconUrl = $derived(session ? controller.runtimeStore.sessionIconUrl(session.id) : null);
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
+	const runtimeLoading = $derived(
+		shellHydrating ||
+			controller.runtimeState.connectionStatus === 'connecting' ||
+			controller.runtimeState.connectionStatus === 'reconnecting',
+	);
 
 	const openRoom = async (chatId: string): Promise<void> => {
 		await goto(buildMessageRoomHref({ chatId, sessionId }));
@@ -76,12 +86,33 @@
 	};
 
 	$effect(() => {
+		const requestedSessionId = sessionId;
+		const version = ++shellHydrationVersion;
+		shellHydrating = true;
+		shellHydrationError = null;
+		void controller.runtimeStore
+			.hydrateSessionArtifacts(requestedSessionId)
+			.catch((error) => {
+				if (version !== shellHydrationVersion) {
+					return;
+				}
+				shellHydrationError = error instanceof Error ? error.message : 'Unable to hydrate runtime facts.';
+			})
+			.finally(() => {
+				if (version === shellHydrationVersion) {
+					shellHydrating = false;
+				}
+			});
+	});
+
+	$effect(() => {
 		if (!session) {
 			return;
 		}
-		if (controller.runtimeState.chatCyclesBySession[session.id] || pendingCycleLoads.has(session.id)) {
+		if (attemptedCycleLoads.has(session.id) || pendingCycleLoads.has(session.id)) {
 			return;
 		}
+		attemptedCycleLoads.add(session.id);
 		pendingCycleLoads.add(session.id);
 		void controller.runtimeStore.loadChatCycles(session.id).finally(() => {
 			pendingCycleLoads.delete(session.id);
@@ -92,9 +123,10 @@
 		if (!session) {
 			return;
 		}
-		if ((controller.runtimeState.chatsBySession[session.id]?.length ?? 0) > 0 || pendingMessageLoads.has(session.id)) {
+		if (attemptedMessageLoads.has(session.id) || pendingMessageLoads.has(session.id)) {
 			return;
 		}
+		attemptedMessageLoads.add(session.id);
 		pendingMessageLoads.add(session.id);
 		void controller.runtimeStore.loadChatMessages(session.id, 160).finally(() => {
 			pendingMessageLoads.delete(session.id);
@@ -106,9 +138,20 @@
 	<div class="flex h-full items-center justify-center p-6">
 		<Card.Root class="max-w-lg">
 			<Card.Header>
-				<Card.Title>Runtime unavailable</Card.Title>
-				<Card.Description>The selected AvatarSession no longer exists in the global runtime snapshot.</Card.Description>
+				<Card.Title>{runtimeLoading ? 'Hydrating runtime facts' : 'Runtime unavailable'}</Card.Title>
+				<Card.Description>
+					{#if runtimeLoading}
+						Loading persisted Heartbeat, Attention, and Settings facts for this AvatarSession.
+					{:else}
+						The selected AvatarSession no longer exists in the global runtime snapshot.
+					{/if}
+				</Card.Description>
 			</Card.Header>
+			{#if shellHydrationError}
+				<Card.Content class="pt-0 text-sm text-muted-foreground">
+					{shellHydrationError}
+				</Card.Content>
+			{/if}
 		</Card.Root>
 	</div>
 {:else}

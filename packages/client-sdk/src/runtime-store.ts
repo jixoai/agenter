@@ -2101,6 +2101,13 @@ export class RuntimeStore {
     this.state.unreadByTerminal = snapshot.unreadByTerminal;
   }
 
+  private async refreshNotifications(): Promise<NotificationSnapshotOutput> {
+    const snapshot = await this.client.trpc.notification.snapshot.query();
+    this.applyNotificationSnapshot(snapshot);
+    this.emit();
+    return snapshot;
+  }
+
   private setConnectionStatus(status: RuntimeClientState["connectionStatus"]): void {
     this.state = {
       ...this.state,
@@ -2508,14 +2515,11 @@ export class RuntimeStore {
       });
 
       scheduleSecondaryChrome(() => {
-        void this.client.trpc.notification.snapshot
-          .query()
-          .then((notifications) => {
+        void this.refreshNotifications()
+          .then(() => {
             if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
               return;
             }
-            this.applyNotificationSnapshot(notifications);
-            this.emit();
           })
           .catch(() => {
             // Keep the last known notification snapshot until the next refresh succeeds.
@@ -4458,6 +4462,15 @@ export class RuntimeStore {
 
   async hydrateSessionArtifacts(sessionId: string): Promise<void> {
     await this.hydrateRuntime(sessionId);
+    const session = this.state.sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+    await Promise.all([
+      this.hydrateSessionHistory(sessionId),
+      this.ensureMessageChannels(sessionId),
+      this.refreshNotifications(),
+    ]);
   }
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
@@ -5409,7 +5422,15 @@ export class RuntimeStore {
 
   private async hydrateRuntime(sessionId: string): Promise<void> {
     const snapshot = await this.client.trpc.runtime.snapshot.query();
+    const sessionsById = new Map(this.state.sessions.map((session) => [session.id, session]));
+    for (const session of snapshot.sessions) {
+      sessionsById.set(session.id, session);
+    }
+    this.state.sessions = sortSessions([...sessionsById.values()]);
     this.state.attentionBySession ??= {};
+    for (const session of snapshot.sessions) {
+      this.ensureRuntimeScaffold(session.id, session.status);
+    }
     const runtime = snapshot.runtimes[sessionId];
     if (!runtime) {
       const session = this.state.sessions.find((item) => item.id === sessionId);

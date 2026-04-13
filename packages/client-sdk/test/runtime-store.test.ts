@@ -3308,6 +3308,152 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given a deep-linked stopped session When hydrateSessionArtifacts runs Then persisted Heartbeat Attention channels and notifications hydrate on first load", async () => {
+    let snapshotCalls = 0;
+    const stoppedSession = {
+      ...createSnapshot(0).sessions[0],
+      id: "i-2",
+      name: "persisted-shell",
+      status: "stopped" as const,
+      sessionRoot: "/tmp/sessions/i-2",
+    };
+    const persistedAttention = {
+      snapshot: {
+        contexts: [
+          {
+            contextId: "ctx-room-main",
+            owner: "avatar:persisted-shell",
+            content: "deliver URL update",
+            contentFormat: "markdown",
+            scoreMap: { delivery: 100 },
+            headCommitId: "commit-1",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            commitCount: 1,
+            commitsTruncated: false,
+            commits: [
+              {
+                commitId: "commit-1",
+                contextId: "ctx-room-main",
+                parentCommitIds: [],
+                meta: { author: "user:kzf", source: "message", createdAt: new Date().toISOString() },
+                scores: { delivery: 100 },
+                summary: "Deliver the ready URL back to the room",
+                change: { type: "update", value: "pending room delivery", format: "markdown" },
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
+        ],
+      },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
+    };
+    const channel = {
+      chatId: "room-main",
+      kind: "room" as const,
+      title: "Main room",
+      owner: "persisted-shell",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_admin",
+      transportUrl: "ws://127.0.0.1:7777/room/room-main?token=msgtok_admin",
+    };
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 1) {
+          return {
+            ...createSnapshot(900),
+            sessions: [],
+            runtimes: {},
+          };
+        }
+        return {
+          ...createSnapshot(901),
+          sessions: [stoppedSession],
+          runtimes: {},
+        };
+      },
+      attentionStateQuery: async () => persistedAttention,
+      chatListQuery: async () => ({
+        items: [
+          {
+            id: 21,
+            sessionId: "i-2",
+            messageId: "msg-21",
+            role: "assistant",
+            channel: "to_user",
+            content: "persisted ready url",
+            timestamp: 21,
+            cycleId: 2,
+            format: "markdown",
+            tool: null,
+            attachments: [],
+          },
+        ],
+        nextBefore: null,
+        hasMoreBefore: false,
+      }),
+      chatCyclesQuery: async () => ({
+        items: [],
+        nextBefore: null,
+        hasMoreBefore: false,
+      }),
+      messageListChannelsQuery: async () => ({ items: [channel] }),
+      notificationSnapshotQuery: async () => ({
+        items: [
+          {
+            id: "push-1",
+            sessionId: "i-2",
+            sourceType: "chat" as const,
+            sourceId: "room-main",
+            chatId: "room-main",
+            workspacePath: stoppedSession.cwd,
+            sessionName: stoppedSession.name,
+            messageId: "msg-21",
+            messageSeq: 21,
+            content: "persisted unread room message",
+            timestamp: 21,
+          },
+        ],
+        unreadBySession: { "i-2": 1 },
+        unreadByChat: { "i-2": { "room-main": 1 } },
+        unreadByTerminal: {},
+      }),
+    });
+
+    const store = new RuntimeStore(client);
+    await store.connect();
+
+    expect(store.getState().sessions).toEqual([]);
+
+    await store.hydrateSessionArtifacts("i-2");
+
+    expect(store.getState().sessions.map((session) => session.id)).toEqual(["i-2"]);
+    expect(store.getState().runtimes["i-2"]?.started).toBe(false);
+    expect(store.getState().attentionBySession["i-2"]).toEqual(persistedAttention);
+    expect(store.getState().chatsBySession["i-2"]?.map((message) => message.content)).toEqual([
+      "persisted ready url",
+    ]);
+    expect(store.getState().messageChannelsBySession["i-2"]).toEqual({
+      data: [channel],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: expect.any(Number),
+    });
+    expect(store.getState().notifications.map((item) => item.id)).toEqual(["push-1"]);
+    expect(store.getState().unreadBySession["i-2"]).toBe(1);
+
+    store.disconnect();
+  });
+
   test("Scenario: Given reverse-time chat pages When loading older history Then the store uses explicit cursors and prepends without duplicates", async () => {
     const chatRequests: Array<{ before?: { beforeTimeMs: number; beforeId: number } }> = [];
     const store = new RuntimeStore(

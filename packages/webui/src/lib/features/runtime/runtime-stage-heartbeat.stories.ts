@@ -126,3 +126,26 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
 		await expect(canvas.getByRole('button', { name: 'History loaded' })).toBeDisabled();
 	},
 } satisfies Story;
+
+export const EmptyLedgerShowsExplicitState = {
+	name: 'Scenario: Given no persisted heartbeat rows When the stage opens Then the operator sees an explicit empty ledger state instead of a blank panel',
+	args: {
+		initialMessages: [],
+		olderMessages: [],
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const stage = canvas.getByTestId('runtime-heartbeat-stage');
+
+		await expect(stage).toBeInTheDocument();
+		await waitFor(() => {
+			expect(canvas.getByTestId('runtime-heartbeat-empty')).toBeInTheDocument();
+		});
+		await expect(canvas.getByText('No Heartbeat rows yet')).toBeInTheDocument();
+		await expect(
+			canvas.getByText(
+				'Persisted AI-call ledger rows will appear here after the runtime records user, assistant, or compact-boundary facts.',
+			),
+		).toBeInTheDocument();
+	},
+} satisfies Story;
