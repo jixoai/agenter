@@ -30,6 +30,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
+- Workspace path grant 的 durable law 是“workspace-root-relative ordered glob rules”: 规则默认拒绝、last-match-wins、共享同一 evaluator 驱动 workspace bash、root workspace bash、terminal cwd 校验与 workbench explorer/preview。
 - Avatar private runtime home 是固定原语：每个 runtime 都必须拥有一个按 principal address 定位的 root workspace，dynamic workspace mounts 只是在此基础上的额外授权。
 - AttentionContext 拥有 durable focus state（`focused | background | muted`）与 ingress semantics（`commit | push`）；`focused` 与 `background` 的未清 score 都可以继续激活 LoopBus，`muted` 默认不激活，notification-class push 可以忽略 focus 抑制强制唤醒；notification 仍然只是 attention push 的投影，不得再引入第二套 unread truth。
 - Attention durable fact 必须显式分层为 provenance / body / egress 三个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容，外部路由意图走 typed `egress`；不得再把 reply target、私有 blob、快捷动作塞回 metadata。

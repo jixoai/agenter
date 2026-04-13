@@ -6,7 +6,7 @@ Define WorkspaceSystem mounts, grants, asset roots, and non-interactive exec.
 ## Requirements
 
 ### Requirement: WorkspaceSystem SHALL manage dynamic mounts and path grants independent of Avatar definitions
-The system SHALL model workspaces as independently mountable resources, while also attaching one fixed avatar root workspace for every runtime. Avatar runtimes SHALL receive project workspace access only through explicit workspace mounts and path-level grants, and the fixed avatar root workspace SHALL exist in addition to those dynamic mounts.
+The system SHALL model workspaces as independently mountable resources, while also attaching one fixed avatar root workspace for every runtime. Avatar runtimes SHALL receive project workspace access only through explicit workspace mounts and ordered grant rules, and the fixed avatar root workspace SHALL exist in addition to those dynamic mounts.
 
 #### Scenario: Runtime always includes one fixed avatar root workspace
 - **WHEN** an avatar runtime starts
@@ -21,7 +21,13 @@ The system SHALL model workspaces as independently mountable resources, while al
 #### Scenario: One Avatar runtime mounts multiple workspaces concurrently
 - **WHEN** one Avatar runtime mounts two different workspaces at the same time
 - **THEN** both mounts remain attached to the same runtime identity
-- **AND** each mount keeps its own grant set and workspace metadata
+- **AND** each mount keeps its own ordered grant rule set and workspace metadata
+
+#### Scenario: Ordered grant rules are evaluated last-match-wins
+- **GIVEN** a workspace mount applies `/src` as `ro` and later applies `/src/generated` as `rw`
+- **WHEN** workspace bash writes under `/src/generated`
+- **THEN** the later `rw` rule wins and the write succeeds
+- **AND** writes under `/src/manual` still fail because the broader `ro` rule remains in effect there
 
 #### Scenario: Path grants enforce read-only and writable boundaries
 - **GIVEN** a workspace mount grants `/src` as read-only and `/tmp` as writable
@@ -43,7 +49,7 @@ Each mounted workspace SHALL expose one shared public asset root and one avatar-
 - **AND** the artifact remains addressable through the owning avatar's private workspace slot only
 
 ### Requirement: WorkspaceSystem SHALL provide sandboxed bash execution
-WorkspaceSystem SHALL expose non-interactive sandboxed bash execution backed by the fixed avatar root workspace plus any currently granted dynamic workspaces. The shell SHALL use real absolute path semantics for mounted roots while still restricting access to mounted authorities only. Each execution SHALL start with isolated shell session state while preserving filesystem side effects across executions.
+WorkspaceSystem SHALL expose non-interactive sandboxed bash execution backed by the fixed avatar root workspace plus any currently granted dynamic workspaces. Dynamic workspace grants SHALL be evaluated as workspace-root-relative ordered glob patterns with default-deny and last-match-wins semantics. The shell SHALL use real absolute path semantics for mounted roots while still restricting access to mounted authorities only. Each execution SHALL start with isolated shell session state while preserving filesystem side effects across executions.
 
 #### Scenario: Root workspace bash uses real mounted paths
 - **WHEN** the AI runs `pwd` or `ls` in root workspace bash
@@ -54,6 +60,12 @@ WorkspaceSystem SHALL expose non-interactive sandboxed bash execution backed by 
 - **WHEN** root workspace bash tries to access a filesystem path that is not the fixed avatar root workspace and is not under a currently granted workspace mount
 - **THEN** the execution is rejected or the path is not found inside the shell sandbox
 - **AND** the runtime does not silently widen filesystem authority
+
+#### Scenario: Ungranted paths stay unreadable
+- **GIVEN** a workspace mount grants `/src/**/*.ts` as read-only
+- **WHEN** workspace bash or root workspace bash attempts to read `/docs/roadmap.md`
+- **THEN** the read is rejected because no rule grants that path
+- **AND** directory listings only expose paths that remain readable or traversable under the same rule set
 
 #### Scenario: One-shot bash can verify loopback URLs like a terminal
 - **WHEN** the runtime starts a local HTTP service on `127.0.0.1` through a granted terminal
