@@ -40,12 +40,17 @@ The Avatar detail shell SHALL expose flat runtime-specific peer tabs named `Hear
 - **AND** the current runtime heartbeat is visible without an extra tab switch
 
 ### Requirement: Runtime shell routes land on the canonical heartbeat tab
-The runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to `Heartbeat` without requiring feature-level navigation glue.
+The runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to `Heartbeat` without requiring feature-level navigation glue. Opening that route SHALL also trigger the data hydration needed for `Heartbeat`, `Attention`, and `Settings`, even when the shell starts from a cold browser state.
 
 #### Scenario: Runtime rail links land on heartbeat by default
 - **WHEN** the operator opens a session from the runtime rail or a direct runtime entry URL without a tab segment
 - **THEN** the browser lands on `/avatars/runtime/{sessionId}/heartbeat`
 - **AND** the runtime shell renders without an intermediate error page
+
+#### Scenario: Direct runtime entry hydrates backend facts on first load
+- **WHEN** the operator opens `/avatars/runtime/{sessionId}/heartbeat` directly from a cold browser state
+- **THEN** the shell hydrates persisted or live heartbeat history, attention/notification state, and runtime settings sources from backend APIs
+- **AND** the first render does not depend on a prior websocket event or on visiting another page first
 
 ### Requirement: Heartbeat SHALL render one continuous AI-call runtime stream
 The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime message surface backed by the session AI-call ledger. It SHALL present role-user and role-assistant messages as the dominant stream, SHALL include compact-boundary separator rows when prompt-window compaction restarts the bounded context, and SHALL treat virtualization as a list concern separate from message rendering primitives.
@@ -65,6 +70,11 @@ The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime
 - **WHEN** the operator opens `Heartbeat`
 - **THEN** the runtime stream shows a dedicated compact separator row at the compaction boundary
 - **AND** the separator is rendered as a boundary marker rather than a normal user or assistant message bubble
+
+#### Scenario: Persisted heartbeat is visible on first route entry
+- **WHEN** the operator opens `Heartbeat` for a session that already has durable heartbeat rows
+- **THEN** the stage renders those persisted rows immediately after the initial backend hydration completes
+- **AND** the operator is not left with an empty runtime pane while the durable ledger already contains messages
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
 The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.
@@ -93,6 +103,11 @@ The `Attention` tab `main-area` SHALL remain a continuous runtime surface rather
 - **THEN** it appears inside the push inbox as a compact queued row
 - **AND** the operator can resolve it with `bottom-area` quick actions
 - **AND** it does not replace the current `AttentionContext` until explicitly promoted
+
+#### Scenario: Attention shows persisted or explicit empty state on first load
+- **WHEN** the operator opens `Attention` from a direct runtime route
+- **THEN** the stage renders current runtime attention facts when available, or a clear empty-state explanation when none exist
+- **AND** the operator does not see a blank shell caused only by missing initial client hydration
 
 ### Requirement: Attention drawer SHALL use light sectional inspection
 The `Attention` tab `right-drawer` SHALL prefer section headings plus simple dividers over stacked metadata cards. Runtime inspection sections such as selection facts, delivery contract, suggested response, and linked runtime sources SHALL remain readable without turning the drawer into another dashboard. Low-priority summary facts SHALL stay docked at the bottom of the drawer.
@@ -132,6 +147,11 @@ The `Settings` tab SHALL preserve avatar-runtime configuration as a dedicated su
 - **WHEN** the operator changes settings inside the runtime shell
 - **THEN** save/reset/restart-style actions remain in the `bottom-area`
 - **AND** passive metadata such as runtime status or export flags remains secondary in the detail sheet or drawer
+
+#### Scenario: Runtime settings expose prompt-source identity
+- **WHEN** the operator opens `Settings`
+- **THEN** the stage shows the selected runtime-scoped editable source together with its file path and modification identity
+- **AND** runtime prompt sources such as `agenter`, `system`, `template`, or `contract` remain inspectable without leaving the runtime shell
 
 ### Requirement: Avatar runtime pages SHALL preserve the same capability path across desktop and compact breakpoints
 Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page responsibilities even when the geometry changes. `Tablet landscape` MAY keep a visible left sidebar and persistent drawer longer, while `tablet portrait` and `phone` MAY collapse navigation into a compact shell and stack the detail surface below the `bottom-area`.
