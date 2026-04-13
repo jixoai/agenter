@@ -3457,13 +3457,14 @@ export class SessionRuntime {
         ...this.getRootWorkspaceSkillMounts(),
         ...this.listWorkspaceAuthorities().map((entry) => {
           const mode: RootWorkspaceMountInput["mode"] = entry.grants.some((grant) => grant.mode === "rw") ? "rw" : "ro";
+          const avatar = this.options.avatar ?? this.config?.avatar.nickname ?? "default";
           return {
             path: entry.mount.workspacePath,
             mode,
             grants: entry.grants,
             hiddenPaths: listWorkspaceHiddenPrivatePaths({
               workspacePath: entry.mount.workspacePath,
-              avatar: this.options.avatar,
+              avatar,
             }),
           };
         }),

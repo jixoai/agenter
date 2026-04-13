@@ -21,8 +21,10 @@
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import { cn } from '$lib/utils.js';
+	import WorkspaceManageDialog from '$lib/features/workspaces/workspace-manage-dialog.svelte';
 	import WorkspaceTree from '$lib/features/workspaces/workspace-tree.svelte';
 	import WorkspaceContentHeader from '$lib/features/workspaces/workspace-content-header.svelte';
+	import type { WorkspaceManageAvatarRow } from '$lib/features/workspaces/workspace-manage-dialog.types';
 	import {
 		buildWorkspaceDetailHref,
 		buildWorkspaceIndexHref,
@@ -54,6 +56,12 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
+	type RuntimeWorkspaceMountEntry = Awaited<
+		ReturnType<typeof controller.runtimeStore.listRuntimeWorkspaceMounts>
+	>[number];
+	type RuntimeWorkspaceGrantEntry = Awaited<
+		ReturnType<typeof controller.runtimeStore.listRuntimeWorkspaceGrants>
+	>[number];
 
 	let selectedAvatar = $state(readWorkspaceAvatar(page.url.searchParams) ?? 'default');
 	let mode = $state<WorkspaceMode>(normalizeWorkspaceMode(page.url.searchParams.get('mode')));
@@ -78,6 +86,11 @@
 	let privateAssetName = $state('');
 	let privateAssetKind = $state<'file' | 'directory'>('file');
 	let privateAssetBusy = $state(false);
+	let manageDialogOpen = $state(false);
+	let manageDialogLoading = $state(false);
+	let manageDialogError = $state<string | null>(null);
+	let manageRows = $state<WorkspaceManageAvatarRow[]>([]);
+	let manageRequestVersion = 0;
 
 	const sortedWorkspaces = $derived(
 		sortWorkspacesForCatalog(controller.runtimeState.workspaces, controller.runtimeState.recentWorkspaces),
@@ -137,6 +150,31 @@
 		selectedExplorerPath ? rules.find((rule) => rule.pattern === toGrantPattern(selectedExplorerPath)) ?? null : null,
 	);
 	const matchedRuleIdSet = $derived(new Set(collectWorkspaceRuleMatchIds(rules, searchQuery)));
+	const manageCatalogSignature = $derived(avatarOptions.map((entry) => entry.runtimeId).join('|'));
+
+	const describeWorkspaceMountAccess = (
+		mount: RuntimeWorkspaceMountEntry | null,
+		grants: RuntimeWorkspaceGrantEntry[],
+	): string => {
+		if (!mount) {
+			return 'Not mounted yet';
+		}
+		if (mount.kind === 'avatar-root') {
+			return 'Fixed root workspace';
+		}
+		if (grants.length === 0) {
+			return 'Mounted without rules yet';
+		}
+		const hasRootGrant = grants.some((grant) => grant.pattern === '/');
+		const hasWriteGrant = grants.some((grant) => grant.mode === 'rw');
+		if (hasRootGrant && hasWriteGrant) {
+			return `${grants.length} rules · root writable access`;
+		}
+		if (hasRootGrant) {
+			return `${grants.length} rules · root read only access`;
+		}
+		return `${grants.length} rules · ${hasWriteGrant ? 'scoped writable paths' : 'read only paths'}`;
+	};
 
 	const listAncestorPaths = (path: string): string[] => {
 		if (path === '/') {
@@ -290,6 +328,101 @@
 		selectedPrivatePath = '/';
 		await Promise.all([loadTree('explorer', '/'), loadTree('private', '/')]);
 		await loadPreview('explorer', '/');
+	};
+
+	const loadManageRows = async (): Promise<void> => {
+		if (!selectedWorkspace) {
+			manageRows = [];
+			manageDialogError = null;
+			return;
+		}
+		const currentWorkspacePath = selectedWorkspace.path;
+		const currentAvatars = [...avatarOptions];
+		const requestVersion = ++manageRequestVersion;
+		manageDialogLoading = true;
+		manageDialogError = null;
+		try {
+			const nextRows = await Promise.all(
+				currentAvatars.map(async (entry) => {
+					const mounts = await controller.runtimeStore.listRuntimeWorkspaceMounts(entry.runtimeId);
+					const mount =
+						mounts.find((item) => item.workspacePath === currentWorkspacePath && item.kind === 'workspace') ??
+						mounts.find((item) => item.workspacePath === currentWorkspacePath) ??
+						null;
+					const grants =
+						mount?.kind === 'workspace'
+							? await controller.runtimeStore.listRuntimeWorkspaceGrants({
+									runtimeId: entry.runtimeId,
+									workspacePath: currentWorkspacePath,
+								})
+							: [];
+					return {
+						nickname: entry.nickname,
+						runtimeId: entry.runtimeId,
+						mountKind: mount?.kind ?? null,
+						grantCount: grants.length,
+						accessSummary: describeWorkspaceMountAccess(mount, grants),
+					} satisfies WorkspaceManageAvatarRow;
+				}),
+			);
+			if (requestVersion !== manageRequestVersion) {
+				return;
+			}
+			manageRows = nextRows.sort((left, right) => {
+				const leftMounted = left.mountKind ? 1 : 0;
+				const rightMounted = right.mountKind ? 1 : 0;
+				return rightMounted - leftMounted || left.nickname.localeCompare(right.nickname);
+			});
+		} catch (error) {
+			if (requestVersion !== manageRequestVersion) {
+				return;
+			}
+			manageDialogError = error instanceof Error ? error.message : String(error);
+		} finally {
+			if (requestVersion === manageRequestVersion) {
+				manageDialogLoading = false;
+			}
+		}
+	};
+
+	const openManageDialog = async (): Promise<void> => {
+		manageDialogOpen = true;
+		await loadManageRows();
+	};
+
+	const mountWorkspaceForAvatar = async (row: WorkspaceManageAvatarRow): Promise<void> => {
+		if (!selectedWorkspace) {
+			return;
+		}
+		await controller.runtimeStore.grantRuntimeWorkspace({
+			runtimeId: row.runtimeId,
+			workspacePath: selectedWorkspace.path,
+			grants: [],
+		});
+		await loadManageRows();
+		if (row.nickname === selectedAvatar) {
+			await refreshWorkbenchContext();
+		}
+	};
+
+	const unmountWorkspaceForAvatar = async (row: WorkspaceManageAvatarRow): Promise<void> => {
+		if (!selectedWorkspace || row.mountKind !== 'workspace') {
+			return;
+		}
+		await controller.runtimeStore.detachRuntimeWorkspace({
+			runtimeId: row.runtimeId,
+			workspacePath: selectedWorkspace.path,
+		});
+		await loadManageRows();
+		if (row.nickname === selectedAvatar) {
+			await refreshWorkbenchContext();
+		}
+	};
+
+	const openRulesForAvatar = (nickname: string): void => {
+		selectedAvatar = nickname;
+		mode = 'rules';
+		manageDialogOpen = false;
 	};
 
 	const persistRules = async (): Promise<void> => {
@@ -476,6 +609,15 @@
 	});
 
 	$effect(() => {
+		if (!manageDialogOpen) {
+			return;
+		}
+		selectedWorkspace?.path;
+		manageCatalogSignature;
+		void loadManageRows();
+	});
+
+	$effect(() => {
 		if (selectedQuickRule) {
 			quickRuleMode = selectedQuickRule.mode;
 		}
@@ -505,6 +647,15 @@
 		<div class="hidden min-w-0 flex-1 md:block">
 			<div class="truncate text-sm font-semibold">{selectedWorkspace ? describeCompactWorkspace(selectedWorkspace.path) : 'Workspaces'}</div>
 		</div>
+		<Button
+			variant="outline"
+			size="sm"
+			class="rounded-full"
+			data-testid="workspace-manage-trigger"
+			onclick={() => void openManageDialog()}
+		>
+			Manage
+		</Button>
 		<div class="flex items-center gap-1 rounded-full border bg-background/70 p-1">
 			{#each ['explorer', 'rules', 'private'] as modeOption}
 				<button
@@ -592,6 +743,17 @@
 		onAvatarChange={(avatar) => {
 			selectedAvatar = avatar;
 		}}
+	/>
+	<WorkspaceManageDialog
+		bind:open={manageDialogOpen}
+		workspacePath={selectedWorkspace.path}
+		{selectedAvatar}
+		rows={manageRows}
+		loading={manageDialogLoading}
+		error={manageDialogError}
+		onMountAvatar={mountWorkspaceForAvatar}
+		onUnmountAvatar={unmountWorkspaceForAvatar}
+		onOpenAvatar={openRulesForAvatar}
 	/>
 
 	<WorkbenchPageContent>

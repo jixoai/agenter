@@ -10,8 +10,8 @@
 
 ## 3. Workspace management surface
 
-- [ ] 3.1 Add a workspace `ManagementDialog` in WebUI that lists avatar mount state for the current workspace and supports mount / unmount actions.
-- [ ] 3.2 Keep `Explorer / Rules / Private` as the file workflows after management actions, and add focused UI tests or DOM coverage for the dialog behavior.
+- [x] 3.1 Add a workspace `ManagementDialog` in WebUI that lists avatar mount state for the current workspace and supports mount / unmount actions.
+- [x] 3.2 Keep `Explorer / Rules / Private` as the file workflows after management actions, and add focused UI tests or DOM coverage for the dialog behavior.
 
 ## 4. Verification and closeout
 

@@ -40,8 +40,6 @@ export interface OverlayRuleFsOptions<TRule extends OverlayRuleRecordLike = Over
   maxFileReadSize?: number;
 }
 
-type EffectiveOverlayRule<TRule extends OverlayRuleRecordLike> = TRule | (TRule & { grantId: string });
-
 const joinChildPath = (parentPath: string, name: string): string =>
   normalizeOverlayRuleSubjectPath(parentPath === "/" ? `/${name}` : posix.join(parentPath, name));
 
@@ -91,7 +89,7 @@ export class OverlayRuleFs<TRule extends OverlayRuleRecordLike = OverlayRuleReco
     return normalizeOverlayRulePattern(path);
   }
 
-  private getEffectiveRules(): EffectiveOverlayRule<TRule>[] {
+  private getEffectiveRules(): OverlayRuleRecordLike[] {
     const extraRules =
       this.config.extraRules?.map((rule, index) => ({
         grantId: `overlay-rule-extra-${index}`,
