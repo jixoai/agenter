@@ -128,6 +128,97 @@ const openWorkspaceDetailFromStartPage = async (page: Page): Promise<void> => {
   await expect(page.getByTestId("workspaces-route")).toBeVisible({ timeout: 15_000 });
 };
 
+const openManageWorkspaceDialog = async (page: Page): Promise<Locator> => {
+  const manageDialog = page.getByRole("dialog", { name: "Manage workspace" });
+  await activateUntil(page.getByTestId("workspace-manage-trigger"), async () => {
+    return await manageDialog.isVisible().catch(() => false);
+  });
+  await expect(manageDialog).toBeVisible({ timeout: 15_000 });
+  return manageDialog;
+};
+
+const findWorkspaceManageActionRow = async (manageDialog: Locator): Promise<Locator> => {
+  const rows = manageDialog.locator('[data-testid^="workspace-manage-row-"]');
+  let actionableIndex = -1;
+  await expect
+    .poll(
+      async () => {
+        const count = await rows.count().catch(() => 0);
+        for (let index = 0; index < count; index += 1) {
+          const row = rows.nth(index);
+          const mountVisible = await row
+            .getByRole("button", { name: "Mount", exact: true })
+            .isVisible()
+            .catch(() => false);
+          if (mountVisible) {
+            actionableIndex = index;
+            return true;
+          }
+        }
+        for (let index = 0; index < count; index += 1) {
+          const row = rows.nth(index);
+          const unmountVisible = await row
+            .getByRole("button", { name: "Unmount", exact: true })
+            .isVisible()
+            .catch(() => false);
+          if (unmountVisible) {
+            actionableIndex = index;
+            return true;
+          }
+        }
+        return false;
+      },
+      { timeout: 15_000 },
+    )
+    .toBeTruthy();
+  return rows.nth(actionableIndex);
+};
+
+const readWorkspaceManageRowState = async (
+  row: Locator,
+): Promise<"detached" | "mounted" | "pending"> => {
+  const mountVisible = await row
+    .getByRole("button", { name: "Mount", exact: true })
+    .isVisible()
+    .catch(() => false);
+  if (mountVisible) {
+    return "detached";
+  }
+
+  const unmountVisible = await row
+    .getByRole("button", { name: "Unmount", exact: true })
+    .isVisible()
+    .catch(() => false);
+  if (unmountVisible) {
+    return "mounted";
+  }
+
+  return "pending";
+};
+
+const waitForWorkspaceManageRowState = async (
+  row: Locator,
+  targetState: "detached" | "mounted",
+): Promise<void> => {
+  await expect
+    .poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 })
+    .toBe(targetState);
+};
+
+const resolveWorkspaceManageRowState = async (
+  row: Locator,
+): Promise<"detached" | "mounted"> => {
+  await expect
+    .poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 })
+    .not.toBe("pending");
+
+  const state = await readWorkspaceManageRowState(row);
+  if (state === "pending") {
+    throw new Error("workspace management row did not settle");
+  }
+  return state;
+};
+
 const expectPageContentLayout = async (root: Locator, mobile: boolean): Promise<void> => {
   const main = root.locator('[data-workbench-page-content-region="main"]').first();
   const bottom = root.locator('[data-workbench-page-content-region="bottom"]').first();
@@ -230,6 +321,49 @@ test.describe("Feature: Workspace and runtime shells", () => {
     });
 
     await expectPageContentLayout(page.getByTestId("workspaces-route"), mobile);
+  });
+
+  test("Scenario: Given workspace management is opened When one avatar mount is toggled and rules are reopened Then the dialog closes and the workbench returns to Rules intact", async ({
+    page,
+  }) => {
+    await navigateToSystem(page, "Workspaces");
+    await openWorkspaceDetailFromStartPage(page);
+
+    const manageDialog = await openManageWorkspaceDialog(page);
+    const initialActionRow = await findWorkspaceManageActionRow(manageDialog);
+    const rowTestId = await initialActionRow.getAttribute("data-testid");
+    if (!rowTestId) {
+      throw new Error("workspace management row is missing data-testid");
+    }
+    const actionRow = manageDialog.getByTestId(rowTestId);
+    const nickname = rowTestId.replace("workspace-manage-row-", "");
+    const mountButton = actionRow.getByTestId(`workspace-manage-mount-${nickname}`);
+    const unmountButton = actionRow.getByTestId(`workspace-manage-unmount-${nickname}`);
+    const rowState = await resolveWorkspaceManageRowState(actionRow);
+
+    if (rowState === "detached") {
+      await clickStable(mountButton);
+      await waitForWorkspaceManageRowState(actionRow, "mounted");
+      await expect(actionRow).toContainText("Mounted", { timeout: 15_000 });
+      await expect(unmountButton).toBeVisible({ timeout: 15_000 });
+    } else {
+      await clickStable(unmountButton);
+      await waitForWorkspaceManageRowState(actionRow, "detached");
+      await expect(actionRow).toContainText("Detached", { timeout: 15_000 });
+      await expect(mountButton).toBeVisible({ timeout: 15_000 });
+      await clickStable(mountButton);
+      await waitForWorkspaceManageRowState(actionRow, "mounted");
+      await expect(actionRow).toContainText("Mounted", { timeout: 15_000 });
+    }
+
+    await clickStable(actionRow.getByTestId(`workspace-manage-open-${nickname}`));
+    await expect(manageDialog).toBeHidden({ timeout: 15_000 });
+    await expect(
+      page.getByText("Rule order maps directly to runtime grant priority for the selected avatar lens."),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("workspaces-route")).toBeVisible({ timeout: 15_000 });
   });
 
   test("Scenario: Given runtime launch is backend-blocked When opening the avatars catalog Then launch actions stay disabled and the blocker notice remains visible", async ({

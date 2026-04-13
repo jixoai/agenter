@@ -15,5 +15,5 @@
 
 ## 4. Verification and closeout
 
-- [ ] 4.1 Run the required command-line real-AI validation for the workspace/runtime path first and record or fix any failures.
-- [ ] 4.2 Run browser walkthroughs after the CLI validation, covering the workspace management flow and confirming the workbench stays usable.
+- [x] 4.1 Run the required command-line real-AI validation for the workspace/runtime path first and record or fix any failures.
+- [x] 4.2 Run browser walkthroughs after the CLI validation, covering the workspace management flow and confirming the workbench stays usable.
