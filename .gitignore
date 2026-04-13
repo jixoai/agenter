@@ -5,8 +5,13 @@ dist/
 bundle/
 build/
 coverage/
+.tmp/
+.screenshot/
+.worktree/
 logs/
 .DS_Store
+codedb.snapshot
+design/
 
 # demo runtime artifacts
 demo/logs/
@@ -27,6 +32,7 @@ CHAT.md
 easy-spec/
 .agenter
 .chat/
+.playwright/
 
 # generated webui bundle from cli package
 packages/cli/assets/webui/

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import LayoutListIcon from '@lucide/svelte/icons/layout-list';
 	import { ScrollView } from '@agenter/svelte-components';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -27,6 +28,7 @@
 
 	let searchQuery = $state('');
 	let selectedWorkspacePath = $state('');
+	let compactMode = $state(false);
 
 	const requestedAvatar = $derived(readWorkspaceAvatar(page.url.searchParams));
 	const sortedWorkspaces = $derived(
@@ -73,6 +75,16 @@
 			}),
 		);
 	};
+
+	const handleSearchKeyDown = (e: KeyboardEvent): void => {
+		if (e.key === 'Enter') {
+			if (filteredWorkspaces.length === 1) {
+				void openWorkspace(filteredWorkspaces[0].path);
+			} else if (selectedWorkspace) {
+				void openWorkspace(selectedWorkspace.path);
+			}
+		}
+	};
 </script>
 
 <WorkbenchPageToolbar>
@@ -84,8 +96,25 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
+			<Button
+				variant="ghost"
+				size="icon"
+				class={cn('size-8', compactMode && 'bg-accent text-accent-foreground')}
+				onclick={() => {
+					compactMode = !compactMode;
+				}}
+				title={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
+			>
+				<LayoutListIcon class="size-4" />
+			</Button>
+			<div class="h-4 w-px bg-border/60"></div>
 			<SearchIcon class="size-4 text-muted-foreground" />
-			<Input bind:value={searchQuery} class="h-8 w-44 bg-background/70 md:w-56" placeholder="Search roots" />
+			<Input
+				bind:value={searchQuery}
+				onkeydown={handleSearchKeyDown}
+				class="h-8 w-44 bg-background/70 md:w-56"
+				placeholder="Search roots"
+			/>
 		</div>
 	</div>
 </WorkbenchPageToolbar>
@@ -107,8 +136,19 @@
 				<Card.Content class="p-0" style="min-block-size: 0;">
 					<ScrollView class="h-full" contentClass="grid gap-2 p-3">
 						{#if filteredWorkspaces.length === 0}
-							<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-								No workspace roots matched this search.
+							<div class="flex flex-col items-center justify-center rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+								<div>No workspace roots matched this search.</div>
+								{#if searchQuery}
+									<Button
+										variant="link"
+										class="mt-2 h-auto p-0"
+										onclick={() => {
+											searchQuery = '';
+										}}
+									>
+										Clear search
+									</Button>
+								{/if}
 							</div>
 						{:else}
 							{#each filteredWorkspaces as workspace (workspace.path)}
@@ -116,6 +156,7 @@
 									class={cn(
 										'grid gap-3 rounded-2xl border px-4 py-3 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_auto] md:items-center',
 										selectedWorkspace?.path === workspace.path ? 'border-primary bg-primary/5' : 'bg-card/70',
+										compactMode && 'gap-2 rounded-xl px-3 py-1.5',
 									)}
 								>
 									<button
@@ -125,25 +166,39 @@
 										onclick={() => {
 											selectedWorkspacePath = workspace.path;
 										}}
+										ondblclick={() => void openWorkspace(workspace.path)}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') {
+												void openWorkspace(workspace.path);
+											}
+										}}
 									>
 										<div class="flex items-start justify-between gap-3">
 											<div class="min-w-0">
 												<div class="flex flex-wrap items-center gap-2">
-													<div class="truncate text-sm font-semibold">{describeCompactWorkspace(workspace.path)}</div>
-													{#if workspace.favorite}
-														<Badge variant="secondary">Favorite</Badge>
-													{/if}
-													{#if workspace.path === '~/'}
-														<Badge variant="outline">Global</Badge>
+													<div class={cn('truncate text-sm font-semibold', compactMode && 'text-[13px]')}>
+														{describeCompactWorkspace(workspace.path)}
+													</div>
+													{#if !compactMode}
+														{#if workspace.favorite}
+															<Badge variant="secondary">Favorite</Badge>
+														{/if}
+														{#if workspace.path === '~/'}
+															<Badge variant="outline">Global</Badge>
+														{/if}
 													{/if}
 												</div>
-												<div class="mt-1 truncate text-xs text-muted-foreground">
-													{resolveObjectiveWorkspacePath(workspace, sortedWorkspaces)}
+												{#if !compactMode}
+													<div class="mt-1 truncate text-xs text-muted-foreground">
+														{resolveObjectiveWorkspacePath(workspace, sortedWorkspaces)}
+													</div>
+												{/if}
+											</div>
+											{#if !compactMode}
+												<div class="rounded-full border px-2 py-1 text-[11px]">
+													{workspace.lastSessionActivityAt ?? 'Never started'}
 												</div>
-											</div>
-											<div class="rounded-full border px-2 py-1 text-[11px]">
-												{workspace.lastSessionActivityAt ?? 'Never started'}
-											</div>
+											{/if}
 										</div>
 									</button>
 									<a
@@ -157,6 +212,7 @@
 												size: 'sm',
 											}),
 											'justify-self-start md:justify-self-end',
+											compactMode && 'h-7 px-2 text-[11px]',
 										)}
 										data-workspace-start-open={workspace.path}
 										aria-label={`Open ${describeCompactWorkspace(workspace.path)}`}
