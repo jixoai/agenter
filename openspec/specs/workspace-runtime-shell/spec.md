@@ -48,7 +48,7 @@ The runtime shell SHALL expose a canonical runtime destination for each avatar s
 - **AND** the runtime shell renders without an intermediate error page
 
 ### Requirement: Heartbeat SHALL render one continuous AI-call runtime stream
-The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime message surface backed by the session AI-call ledger. It SHALL present role-user and role-assistant messages as the dominant stream and SHALL treat virtualization as a list concern separate from message rendering primitives.
+The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime message surface backed by the session AI-call ledger. It SHALL present role-user and role-assistant messages as the dominant stream, SHALL include compact-boundary separator rows when prompt-window compaction restarts the bounded context, and SHALL treat virtualization as a list concern separate from message rendering primitives.
 
 #### Scenario: Heartbeat shows the runtime message stream
 - **WHEN** the operator opens `Heartbeat`
@@ -59,6 +59,12 @@ The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime
 - **WHEN** the session contains a long heartbeat history
 - **THEN** the page can virtualize the list without changing the message rendering contract
 - **AND** the runtime shell does not hard-couple one message UI library to the list controller
+
+#### Scenario: Heartbeat shows compact boundaries between message spans
+- **GIVEN** a session performs a manual or automatic compact cycle between two normal model replies
+- **WHEN** the operator opens `Heartbeat`
+- **THEN** the runtime stream shows a dedicated compact separator row at the compaction boundary
+- **AND** the separator is rendered as a boundary marker rather than a normal user or assistant message bubble
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
 The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.

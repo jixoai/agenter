@@ -23,6 +23,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `*System` 必须面向 Attention 编程：当系统观察到新的事实、未完成义务、或 AI 行为方式不符合预期时，优先通过 attention commit 把这些事实与 obligation 显式化，而不是把“下一步该怎么做”硬编码进内核分支。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
+- Heartbeat compact boundary 是 durable ledger fact：prompt-window compaction 发生时，session ledger 必须追加 `scope=heartbeat` 的 `partType=compact` 边界消息，UI 不得再从 cycles 或 assistant prose 猜测上下文重开位置。
 - AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
@@ -84,6 +85,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Avatar durable storage root 必须按 principal address 建模；`nickname` 只是 discoverability alias，不得再成为 canonical folder name。
 - `Quick Start` 是 Avatar 启动编排器，而不是“发第一条消息”的快捷页；它持有 workspace、avatar 与未来可扩展的全局系统引用，并在用户 detour 到 `Messages` / `Terminals` 后继续保留当前草稿。
 - 运行中的 avatar discoverability 统一通过 `Avatars` 顶部的动态 runtime tabs 表达，不再保留单独的 `Running Avatars` 次级导航卡片。进入单个 avatar 后，默认页固定为 `Heartbeat`，runtime tabs 为 `Heartbeat / Attention / Settings`。
+- `Heartbeat` 是运行时主时间线；它除了 user / assistant message 之外，还必须展示 compact boundary separator 这类 durable runtime boundary，而不是把 prompt-window 重开事实藏在 cycle inspector 里。
 - Avatar 是 durable active-session identity；再次启动同一 Avatar 时必须复用同一个稳定 runtime/session id，额外 workspace 通过 mount 追加，而不是创建第二个 `workspace + avatar` pair runtime。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。

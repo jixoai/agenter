@@ -6,7 +6,7 @@ Define the minimal session durable ledger around grouped AI-visible message part
 
 ### Requirement: Session DB SHALL persist AI-visible traffic as grouped message parts
 
-The session durable store SHALL persist AI-visible request and response traffic in a `message_parts` ledger. Each row SHALL belong to one logical `message_id`, SHALL record append order, role, part type, timestamps, completion state, and serialized part payload, and SHALL support streamed updates to the same logical part until it is complete.
+The session durable store SHALL persist AI-visible request and response traffic in a `message_parts` ledger. Each row SHALL belong to one logical `message_id`, SHALL record append order, role, part type, timestamps, completion state, and serialized part payload, and SHALL support streamed updates to the same logical part until it is complete. Compact cycles SHALL also persist a dedicated `scope=heartbeat` boundary message with `partType=compact` so Heartbeat can reconstruct prompt-window restart boundaries from durable facts.
 
 #### Scenario: Streamed assistant text updates one logical part
 - **WHEN** an assistant response streams text into an existing logical message
@@ -17,6 +17,11 @@ The session durable store SHALL persist AI-visible request and response traffic 
 - **WHEN** one request or response message contains multiple provider parts
 - **THEN** those parts are stored as separate `message_parts` rows sharing the same `message_id`
 - **THEN** later reconstruction can recover the logical message by grouping rows on `message_id`
+
+#### Scenario: Compact cycle persists a heartbeat boundary fact
+- **WHEN** a compact cycle completes and rotates the bounded prompt-window round
+- **THEN** the runtime appends a `scope=heartbeat`, `role=system`, `partType=compact` message-part record linked to that compact AI-call
+- **THEN** later Heartbeat reconstruction can show the compaction boundary without inferring it from assistant prose or cycle UI state
 
 ### Requirement: Session DB SHALL persist request-side auxiliary payloads as special message parts
 
