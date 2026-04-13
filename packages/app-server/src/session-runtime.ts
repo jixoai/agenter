@@ -35,6 +35,7 @@ import {
   type ReverseTimeCursor,
 } from "@agenter/message-system";
 import {
+  PROMPT_WINDOW_STATE_PART_TYPE,
   SessionDb,
   type SessionAiCallRecord,
   type SessionAssetRecord,
@@ -8223,6 +8224,7 @@ export class SessionRuntime {
         windowId: normalizedRequest.promptWindowStateId,
         limit: 400,
       })
+      .filter((message) => message.parts[0]?.partType !== PROMPT_WINDOW_STATE_PART_TYPE)
       .map((message) => message.messageId);
     const requestMeta = {
       ...(normalizedRequest.meta ?? {}),

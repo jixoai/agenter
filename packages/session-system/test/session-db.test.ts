@@ -77,6 +77,26 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given an empty prompt window When it is saved as current Then the ledger keeps an explicit bootstrap state row while reconstruction stays empty", () => {
+    const db = createDb();
+    try {
+      const current = db.savePromptWindow({
+        createdAt: 100,
+        messages: [],
+        setCurrent: true,
+      });
+
+      const rows = db.listMessagesByScope("prompt_window", { windowId: current.promptWindowId });
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.parts[0]?.partType).toBe("state");
+      expect(db.getHead().currentPromptWindowId).toBe(current.promptWindowId);
+      expect(db.getCurrentPromptWindow()?.messages).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given bootstrap payload changes When request-side auxiliary parts are stored Then unchanged payloads are not required for every call", () => {
     const db = createDb();
     try {

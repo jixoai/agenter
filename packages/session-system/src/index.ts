@@ -1,4 +1,5 @@
 export { SessionDb } from "./session-db";
+export { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 export type {
   SessionTerminalOutcome,
   SessionTerminalOutcomeCode,

@@ -43,6 +43,8 @@ export interface SessionPromptWindowRecord {
   messages: unknown[];
 }
 
+export const PROMPT_WINDOW_STATE_PART_TYPE = "state";
+
 export type SessionMessageScope = "heartbeat" | "prompt_window" | "request_aux";
 export type SessionMessageRole = "system" | "user" | "assistant" | "tool" | "config";
 

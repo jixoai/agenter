@@ -1,5 +1,6 @@
 import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
 import { MessageControlPlane } from "@agenter/message-system";
+import { SessionDb } from "@agenter/session-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -119,6 +120,20 @@ describe("Feature: app kernel event replay", () => {
     expect(kernel.listMessageChannels(session.id)).toEqual([]);
     expect(runtime?.terminals ?? []).toEqual([]);
     expect(runtime?.focusedTerminalIds ?? []).toEqual([]);
+
+    const db = new SessionDb(join(session.sessionRoot, "session.db"));
+    try {
+      const currentPromptWindow = db.getCurrentPromptWindow();
+      const promptWindowRows = currentPromptWindow
+        ? db.listMessagesByScope("prompt_window", { windowId: currentPromptWindow.promptWindowId })
+        : [];
+
+      expect(currentPromptWindow?.messages).toEqual([]);
+      expect(promptWindowRows).toHaveLength(1);
+      expect(promptWindowRows[0]?.parts[0]?.partType).toBe("state");
+    } finally {
+      db.close();
+    }
 
     await kernel.stop();
   });

@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
 
+import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 import type {
   ReversePage,
   ReverseTimeCursor,
@@ -139,34 +140,55 @@ export class SessionDb {
     const createdAt = input.createdAt ?? Date.now();
     const promptWindowId = createId();
     const roundIndex = input.roundIndex ?? this.getHead().currentRoundIndex;
-    input.messages.forEach((message, index) => {
-      const normalized =
-        message && typeof message === "object"
-          ? (message as { role?: string; content?: unknown })
-          : { role: undefined, content: message };
-      const role =
-        normalized.role === "assistant" || normalized.role === "system" || normalized.role === "tool"
-          ? normalized.role
-          : "user";
+    if (input.messages.length === 0) {
       this.upsertMessage({
-        messageId: `${promptWindowId}:message:${index}`,
+        messageId: `${promptWindowId}:state`,
         windowId: promptWindowId,
         roundIndex,
         scope: "prompt_window",
-        role,
+        role: "system",
         createdAt,
         updatedAt: createdAt,
         parts: [
           {
-            partType: "message",
+            partType: PROMPT_WINDOW_STATE_PART_TYPE,
             payload: {
-              content: normalized.content ?? "",
+              messages: [],
             },
             isComplete: true,
           },
         ],
       });
-    });
+    } else {
+      input.messages.forEach((message, index) => {
+        const normalized =
+          message && typeof message === "object"
+            ? (message as { role?: string; content?: unknown })
+            : { role: undefined, content: message };
+        const role =
+          normalized.role === "assistant" || normalized.role === "system" || normalized.role === "tool"
+            ? normalized.role
+            : "user";
+        this.upsertMessage({
+          messageId: `${promptWindowId}:message:${index}`,
+          windowId: promptWindowId,
+          roundIndex,
+          scope: "prompt_window",
+          role,
+          createdAt,
+          updatedAt: createdAt,
+          parts: [
+            {
+              partType: "message",
+              payload: {
+                content: normalized.content ?? "",
+              },
+              isComplete: true,
+            },
+          ],
+        });
+      });
+    }
     if (input.setCurrent ?? true) {
       this.setCurrentPromptWindow(promptWindowId, createdAt);
     }
@@ -183,11 +205,12 @@ export class SessionDb {
     if (messages.length === 0) {
       return null;
     }
+    const promptMessages = messages.filter((message) => !this.isPromptWindowStateMessage(message));
     return {
       promptWindowId,
       roundIndex: messages[0]!.roundIndex,
       createdAt: messages[0]!.createdAt,
-      messages: messages.map((message) => ({
+      messages: promptMessages.map((message) => ({
         role: message.role,
         content: this.messageToPromptContent(message),
       })),
@@ -731,6 +754,10 @@ export class SessionDb {
       return structuredClone(payload);
     }
     return message.parts.map((part) => structuredClone(part.payload));
+  }
+
+  private isPromptWindowStateMessage(message: SessionMessageRecord): boolean {
+    return message.parts.length === 1 && message.parts[0]?.partType === PROMPT_WINDOW_STATE_PART_TYPE;
   }
 
   private ensureHeadRow(): void {
