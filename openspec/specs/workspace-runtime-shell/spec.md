@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the durable Avatar detail shell that sits behind the global `Avatars` workbench and runtime entry actions.
-
 ## Requirements
-
 ### Requirement: Running-avatar detail SHALL be a secondary runtime surface
 The WebUI SHALL expose running-avatar detail through dynamic session tabs inside the global `Avatars` workbench and through explicit runtime-entry actions, rather than through workspace-local embedded avatar pages or a separate secondary `Running Avatars` detail rail. In the active Svelte WebUI this shell SHALL remain addressable through dedicated runtime routes and SHALL preserve reload-safe deep linking.
 
@@ -53,28 +51,20 @@ The runtime shell SHALL expose a canonical runtime destination for each avatar s
 - **AND** the first render does not depend on a prior websocket event or on visiting another page first
 
 ### Requirement: Heartbeat SHALL render one continuous AI-call runtime stream
-The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime message surface backed by the session AI-call ledger. It SHALL present role-user and role-assistant messages as the dominant stream, SHALL include compact-boundary separator rows when prompt-window compaction restarts the bounded context, and SHALL treat virtualization as a list concern separate from message rendering primitives.
 
-#### Scenario: Heartbeat shows the runtime message stream
+The `Heartbeat` tab SHALL render the session heartbeat as one continuous runtime inspection surface backed by durable ledger facts and model-call facts. It SHALL present user/assistant messages, compact boundaries, request-side auxiliary changes, and model-call execution cards without collapsing all runtime behavior into plain chat bubbles.
+
+#### Scenario: Heartbeat shows durable request-side auxiliary facts
+
+- **WHEN** the operator opens `Heartbeat` for a session whose runtime changed `systemPrompt`, `tools`, or `config`
+- **THEN** the stage renders those durable request-side auxiliary facts in timeline order
+- **AND** the operator can inspect the payload without leaving the Heartbeat surface
+
+#### Scenario: Heartbeat shows model-call execution context
+
 - **WHEN** the operator opens `Heartbeat`
-- **THEN** the `main-area` renders the current session heartbeat as one ordered user/assistant stream
-- **AND** that stream is hydrated from persisted or live AI-call and message-part facts instead of old cycle cards
-
-#### Scenario: Long heartbeat history remains renderable
-- **WHEN** the session contains a long heartbeat history
-- **THEN** the page can virtualize the list without changing the message rendering contract
-- **AND** the runtime shell does not hard-couple one message UI library to the list controller
-
-#### Scenario: Heartbeat shows compact boundaries between message spans
-- **GIVEN** a session performs a manual or automatic compact cycle between two normal model replies
-- **WHEN** the operator opens `Heartbeat`
-- **THEN** the runtime stream shows a dedicated compact separator row at the compaction boundary
-- **AND** the separator is rendered as a boundary marker rather than a normal user or assistant message bubble
-
-#### Scenario: Persisted heartbeat is visible on first route entry
-- **WHEN** the operator opens `Heartbeat` for a session that already has durable heartbeat rows
-- **THEN** the stage renders those persisted rows immediately after the initial backend hydration completes
-- **AND** the operator is not left with an empty runtime pane while the durable ledger already contains messages
+- **THEN** the stage renders model-call cards with provider/model/status plus persisted assistant response details such as text, thinking, or tool trace when available
+- **AND** the stage can augment the currently running model call with live delta facts while the runtime is active
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
 The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.
@@ -136,22 +126,20 @@ The Avatar detail shell SHALL focus on runtime concerns and SHALL NOT restore wo
 - **AND** Avatar detail remains a runtime workbench rather than a nested all-systems dashboard
 
 ### Requirement: Settings SHALL remain runtime-scoped and separate from workspace rules
-The `Settings` tab SHALL preserve avatar-runtime configuration as a dedicated surface. Its `main-area` SHALL present runtime-scoped settings, its `bottom-area` SHALL expose save/reset/restart-style actions, and its detail sheet or drawer SHALL surface passive runtime metadata without taking over the page.
 
-#### Scenario: Edit avatar runtime settings
-- **WHEN** the operator opens `Settings`
-- **THEN** the main surface shows avatar-runtime settings such as attention defaults, notification policy, quick replies, or linked-system preferences
-- **AND** the page does not masquerade as a workspace-rule editor
+The `Settings` tab SHALL preserve avatar-runtime configuration as a dedicated runtime-scoped settings graph surface. It SHALL explain effective values, source layers, and provenance jumps for the current runtime scope instead of degrading into a single-file editor.
 
-#### Scenario: Save or revert runtime configuration
-- **WHEN** the operator changes settings inside the runtime shell
-- **THEN** save/reset/restart-style actions remain in the `bottom-area`
-- **AND** passive metadata such as runtime status or export flags remains secondary in the detail sheet or drawer
+#### Scenario: Runtime Settings flatten workspace scope with avatar scope
 
-#### Scenario: Runtime settings expose prompt-source identity
-- **WHEN** the operator opens `Settings`
-- **THEN** the stage shows the selected runtime-scoped editable source together with its file path and modification identity
-- **AND** runtime prompt sources such as `agenter`, `system`, `template`, or `contract` remain inspectable without leaving the runtime shell
+- **WHEN** the operator opens `Settings` for a running avatar session
+- **THEN** the stage resolves scoped settings using the runtime workspace plus the current avatar nickname
+- **AND** the effective view reflects avatar-specific overrides on top of workspace or global layers
+
+#### Scenario: Runtime Settings jump from effective value to source layer
+
+- **WHEN** the operator selects a provenance source from the effective settings view
+- **THEN** the stage jumps to the matching source layer
+- **AND** the layer editor focuses the mapped pointer instead of leaving the operator in a disconnected single-file editor
 
 ### Requirement: Avatar runtime pages SHALL preserve the same capability path across desktop and compact breakpoints
 Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page responsibilities even when the geometry changes. `Tablet landscape` MAY keep a visible left sidebar and persistent drawer longer, while `tablet portrait` and `phone` MAY collapse navigation into a compact shell and stack the detail surface below the `bottom-area`.
@@ -166,3 +154,4 @@ Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page 
 - **THEN** the left navigation can collapse into a compact shell
 - **AND** the drawer can become a stacked sheet below the `bottom-area`
 - **AND** the same runtime tabs and page actions remain reachable
+

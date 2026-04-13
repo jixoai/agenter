@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the minimal session durable ledger around grouped AI-visible message parts and bounded AI-call envelopes.
-
 ## Requirements
-
 ### Requirement: Session DB SHALL persist AI-visible traffic as grouped message parts
 
 The session durable store SHALL persist AI-visible request and response traffic in a `message_parts` ledger. Each row SHALL belong to one logical `message_id`, SHALL record append order, role, part type, timestamps, completion state, and serialized part payload, and SHALL support streamed updates to the same logical part until it is complete. Compact cycles SHALL also persist a dedicated `scope=heartbeat` boundary message with `partType=compact` so Heartbeat can reconstruct prompt-window restart boundaries from durable facts.
@@ -23,19 +21,16 @@ The session durable store SHALL persist AI-visible request and response traffic 
 - **THEN** the runtime appends a `scope=heartbeat`, `role=system`, `partType=compact` message-part record linked to that compact AI-call
 - **THEN** later Heartbeat reconstruction can show the compaction boundary without inferring it from assistant prose or cycle UI state
 
-### Requirement: Session DB SHALL persist request-side auxiliary payloads as special message parts
+### Requirement: Request-side auxiliary model payloads SHALL remain inspectable as durable ledger facts
 
-Request-side payloads that are siblings of `messages` in the model request body, including `systemPrompt`, `tools`, and `config`, SHALL be persisted in `message_parts` as special part types when their content changes.
+Request-side payloads that are siblings of `messages` in the model request body, including `systemPrompt`, `tools`, and `config`, SHALL remain queryable through runtime inspection contracts in addition to being persisted in `message_parts`.
 
-#### Scenario: First model call stores bootstrap payloads
-- **WHEN** the runtime prepares the first model request for a session
-- **THEN** it persists the effective `systemPrompt`, `tools`, and `config` payloads as special message parts
-- **THEN** later inspection can reconstruct which bootstrap payloads were active for that request window
+#### Scenario: Runtime inspection pages request auxiliary rows
 
-#### Scenario: Unchanged bootstrap payload does not duplicate rows
-- **WHEN** a later model call uses the same effective `systemPrompt`, `tools`, or `config` as the latest stored value
-- **THEN** the runtime does not append a duplicate special message part row for that unchanged payload
-- **THEN** the ledger only records bootstrap changes, not per-call repetition
+- **WHEN** a runtime inspection client pages request-side auxiliary facts for one session
+- **THEN** it receives durable rows derived from `scope=request_aux`
+- **AND** each row preserves `partType`, payload, timestamps, round identity, and related model-call identity
+- **AND** the projection does not require the client to open `session.db` directly
 
 ### Requirement: Empty prompt-window bootstrap state SHALL persist as a durable ledger fact
 
@@ -93,3 +88,4 @@ Stopped-session reconstruction SHALL use `message_parts`, retained `ai_call` row
 - **WHEN** a stopped session starts again after the process has lost in-memory state
 - **THEN** the runtime rebuilds its bounded model context from `message_parts` plus retained `ai_call` rows
 - **THEN** restart does not depend on any legacy cycle or prompt-window table being present
+
