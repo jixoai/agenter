@@ -21,6 +21,8 @@
 		notifications: SessionNotificationItem[];
 		heartbeatEntries: HeartbeatPartItem[];
 		modelCalls: ModelCallItem[];
+		sessionIconUrl?: string | null;
+		avatarLabel?: string;
 		onOpenRoom: (chatId: string) => void | Promise<void>;
 		onOpenTerminal: (terminalId: string) => void | Promise<void>;
 		onSetRoomVisibility: (chatId: string, focused: boolean) => void | Promise<void>;
@@ -41,6 +43,8 @@
 		notifications,
 		heartbeatEntries,
 		modelCalls,
+		sessionIconUrl = null,
+		avatarLabel = session.avatar || session.name,
 		onOpenRoom,
 		onOpenTerminal,
 		onSetRoomVisibility,
@@ -56,6 +60,8 @@
 			entries={heartbeatEntries}
 			modelCalls={modelCalls}
 			attention={runtime?.attention ?? null}
+			{sessionIconUrl}
+			{avatarLabel}
 			onLoadOlder={onLoadOlderHeartbeat}
 		/>
 	{:else if tab === 'attention'}

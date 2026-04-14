@@ -19,11 +19,15 @@
 		modelCalls = [],
 		attention = null,
 		onLoadOlder,
+		sessionIconUrl = null,
+		avatarLabel = 'Avatar',
 	}: {
 		entries: HeartbeatPartItem[];
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
 		onLoadOlder: () => Promise<{ items: number; hasMore: boolean }>;
+		sessionIconUrl?: string | null;
+		avatarLabel?: string;
 	} = $props();
 
 	let loadingOlder = $state(false);
@@ -69,7 +73,7 @@
 		>
 			{#snippet renderItem(entry)}
 				<div data-testid={`runtime-heartbeat-row-${entry.id}`}>
-					<RuntimeHeartbeatEntry {entry} />
+					<RuntimeHeartbeatEntry {entry} {sessionIconUrl} {avatarLabel} />
 				</div>
 			{/snippet}
 

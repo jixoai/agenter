@@ -10,7 +10,7 @@
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 
-	import { formatHeartbeatPartTypeLabel, readHeartbeatPartText, toHeartbeatPartRawText } from './runtime-heartbeat-parts';
+	import { readHeartbeatPartText, toHeartbeatPartRawText } from './runtime-heartbeat-parts';
 
 	let {
 		part,
@@ -19,18 +19,20 @@
 	} = $props();
 
 	const text = $derived(readHeartbeatPartText(part));
+	const showMetaRow = $derived((part.mimeType ?? '').length > 0 || !part.isComplete);
 </script>
 
 <section class="grid gap-2 rounded-2xl border border-border/60 bg-background/80 px-3 py-3">
-	<div class="flex flex-wrap items-center gap-2">
-		<Badge variant="outline">{formatHeartbeatPartTypeLabel(part.partType)}</Badge>
-		{#if part.mimeType}
-			<Badge variant="secondary">{part.mimeType}</Badge>
-		{/if}
-		{#if !part.isComplete}
-			<Badge variant="secondary">streaming</Badge>
-		{/if}
-	</div>
+	{#if showMetaRow}
+		<div class="flex flex-wrap items-center gap-2">
+			{#if part.mimeType}
+				<Badge variant="secondary">{part.mimeType}</Badge>
+			{/if}
+			{#if !part.isComplete}
+				<Badge variant="secondary">streaming</Badge>
+			{/if}
+		</div>
+	{/if}
 
 	{#if part.partType === 'thinking'}
 		<Reasoning isStreaming={!part.isComplete} defaultOpen={!part.isComplete}>

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { HeartbeatPartItem } from "@agenter/client-sdk";
 
-import { buildHeartbeatDisplayBlocks } from "./runtime-heartbeat-parts";
+import { buildHeartbeatDisplayBlocks, getHeartbeatRowMeta } from "./runtime-heartbeat-parts";
 
 const baseEntry: HeartbeatPartItem = {
   id: 1,
@@ -173,5 +173,17 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
         part: entry.parts[0],
       },
     ]);
+  });
+
+  test("Scenario: Given a row with call metadata and roundIndex zero When header metadata is built Then only high-signal facts stay visible", () => {
+    const entry = {
+      ...baseEntry,
+      role: "user",
+      roundIndex: 0,
+      isComplete: true,
+      aiCallId: 51,
+    } satisfies HeartbeatPartItem;
+
+    expect(getHeartbeatRowMeta(entry)).toEqual(["call #51"]);
   });
 });

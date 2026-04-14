@@ -23,6 +23,7 @@
 		JSON_VIEWER_MODE_OPTIONS,
 		getGlobalJsonViewerModeSnapshot,
 		getJsonViewerModeLabel,
+		normalizeJsonViewerMode,
 		resolveJsonViewerMode,
 		setGlobalJsonViewerMode,
 		subscribeGlobalJsonViewerMode,
@@ -99,6 +100,7 @@
 	];
 
 	let menuOpen = $state(false);
+	let rootRef = $state<HTMLDivElement | null>(null);
 	let hostRef = $state<HTMLDivElement | null>(null);
 	let editorView = $state<EditorView | null>(null);
 	let renderFallback = $state(
@@ -141,6 +143,13 @@
 
 	onMount(() => {
 		globalMode = getGlobalJsonViewerModeSnapshot();
+		if (rootRef) {
+			const localModeFromDataset = rootRef.dataset.jsonViewerLocalMode;
+			localMode =
+				localModeFromDataset && localModeFromDataset.length > 0
+					? normalizeJsonViewerMode(localModeFromDataset)
+					: null;
+		}
 		const unsubscribe = subscribeGlobalJsonViewerMode(() => {
 			globalMode = getGlobalJsonViewerModeSnapshot();
 		});
@@ -183,9 +192,24 @@
 		}
 		syncViewerDocument(view, viewerDocument);
 	});
+
+	$effect(() => {
+		const root = rootRef;
+		if (!root) {
+			return;
+		}
+		root.dataset.jsonViewerMode = activeMode;
+		root.dataset.jsonViewerGlobalMode = globalMode;
+		if (localMode) {
+			root.dataset.jsonViewerLocalMode = localMode;
+		} else {
+			delete root.dataset.jsonViewerLocalMode;
+		}
+	});
 </script>
 
 <div
+	bind:this={rootRef}
 	class={cn(
 		'structured-value-viewer grid min-w-0 gap-2 rounded-xl border border-border/60 bg-background/80 px-3 py-3 text-foreground',
 		className,

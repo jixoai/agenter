@@ -92,7 +92,6 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
   if (entry.aiCallId !== null) {
     meta.push(`call #${entry.aiCallId}`);
   }
-  meta.push(`round ${entry.roundIndex}`);
   if (!entry.isComplete) {
     meta.push("streaming");
   }

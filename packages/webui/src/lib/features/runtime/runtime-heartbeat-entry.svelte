@@ -14,7 +14,6 @@
 	import {
 		buildHeartbeatDisplayBlocks,
 		buildHeartbeatEntryClipboardText,
-		getHeartbeatActorLabel,
 		getHeartbeatMessageFrom,
 		getHeartbeatRowLabel,
 		getHeartbeatRowMeta,
@@ -26,8 +25,12 @@
 
 	let {
 		entry,
+		sessionIconUrl = null,
+		avatarLabel = 'Avatar',
 	}: {
 		entry: HeartbeatPartItem;
+		sessionIconUrl?: string | null;
+		avatarLabel?: string;
 	} = $props();
 
 	const compactRow = $derived(isHeartbeatCompactRow(entry));
@@ -35,7 +38,6 @@
 	const summary = $derived(getHeartbeatRowPreviewLine(entry));
 	const meta = $derived(getHeartbeatRowMeta(entry));
 	const messageFrom = $derived(getHeartbeatMessageFrom(entry));
-	const actorLabel = $derived(getHeartbeatActorLabel(entry));
 	const displayBlocks = $derived(buildHeartbeatDisplayBlocks(entry));
 
 	const copyEntry = async (): Promise<void> => {
@@ -50,13 +52,12 @@
 	<div class="py-1" data-testid={`runtime-heartbeat-entry-${entry.id}`}>
 		<Checkpoint class="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-2">
 			<CheckpointIcon />
-			<div class="grid min-w-0 gap-1">
-				<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-					<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-					<Badge variant="secondary">{entry.role}</Badge>
-					{#each meta as item (item)}
-						<Badge variant="secondary">{item}</Badge>
-					{/each}
+				<div class="grid min-w-0 gap-1">
+					<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+						<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
+						{#each meta as item (item)}
+							<Badge variant="secondary">{item}</Badge>
+						{/each}
 					<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
 				</div>
 				<div class="text-sm leading-6 text-muted-foreground">{summary}</div>
@@ -76,18 +77,14 @@
 	>
 		<summary class="cursor-pointer list-none">
 			<Message from={messageFrom}>
-				<MessageAvatar name={actorLabel} />
+				<MessageAvatar name={avatarLabel} src={sessionIconUrl} />
 				<MessageContent
-					variant={messageFrom === 'user' ? 'contained' : 'flat'}
-					from={messageFrom}
-					class="gap-2"
+					variant="flat"
+					from="assistant"
+					class="gap-2 bg-card/95"
 				>
 					<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
 						<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-						<Badge variant="secondary">{entry.role}</Badge>
-						{#if entry.scope !== 'heartbeat_part'}
-							<Badge variant="secondary">{entry.scope}</Badge>
-						{/if}
 						{#each meta as item (item)}
 							<Badge variant="secondary">{item}</Badge>
 						{/each}
@@ -118,18 +115,13 @@
 {:else}
 	<div data-testid={`runtime-heartbeat-entry-${entry.id}`}>
 		<Message from={messageFrom}>
-			<MessageAvatar name={actorLabel} />
+			<MessageAvatar name={avatarLabel} src={sessionIconUrl} />
 			<MessageContent
-				variant={messageFrom === 'user' ? 'contained' : 'flat'}
-				from={messageFrom}
-				class="gap-3"
+				variant="flat"
+				from="assistant"
+				class="gap-3 bg-card/95"
 			>
 				<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-					<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-					<Badge variant="secondary">{entry.role}</Badge>
-					{#if entry.scope !== 'heartbeat_part'}
-						<Badge variant="secondary">{entry.scope}</Badge>
-					{/if}
 					{#each meta as item (item)}
 						<Badge variant="secondary">{item}</Badge>
 					{/each}

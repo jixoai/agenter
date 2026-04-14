@@ -31,7 +31,9 @@ const appSveltePackages = [
 
 const optimizeDepsInclude = [
 	...codemirrorDedupe,
+	'@lezer/highlight',
 	'@tanstack/svelte-virtual',
+	'clsx',
 	'highlight.js',
 	'idb-keyval',
 	'lit',
@@ -39,6 +41,8 @@ const optimizeDepsInclude = [
 	'lit/directives/unsafe-html.js',
 	'lit/static-html.js',
 	'markdown-it',
+	'tailwind-merge',
+	'tailwind-variants',
 	'yaml',
 ];
 

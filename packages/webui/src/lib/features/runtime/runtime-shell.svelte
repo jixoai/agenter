@@ -157,6 +157,8 @@
 			{notifications}
 			{heartbeatEntries}
 			{modelCalls}
+			{sessionIconUrl}
+			avatarLabel={session.avatar || session.name}
 			onOpenRoom={(chatId) => void openRoom(chatId)}
 			onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
 			onSetRoomVisibility={async (chatId, focused) => {

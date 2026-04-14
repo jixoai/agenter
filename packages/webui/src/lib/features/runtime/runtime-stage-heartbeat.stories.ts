@@ -75,7 +75,7 @@ const initialEntries = [
     messageId: "heartbeat-part:ai-call:41:request:0",
     windowId: null,
     aiCallId: 41,
-    roundIndex: 7,
+    roundIndex: 0,
     scope: "heartbeat_part",
     role: "user",
     createdAt: baseTimestamp + 15_000,
@@ -451,17 +451,45 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     const stage = canvas.getByTestId("runtime-heartbeat-stage");
     const systemPromptEntry = canvas.getByTestId("runtime-heartbeat-entry-21");
     const userEntry = canvas.getByTestId("runtime-heartbeat-entry-23");
+    const assistantEntry = canvas.getByTestId("runtime-heartbeat-entry-25");
     const compactEntry = canvas.getByTestId("runtime-heartbeat-entry-24");
 
     await expect(stage).toBeInTheDocument();
     await waitFor(() => {
-      expect(userEntry.textContent).toContain('scoreMap={"message:room-main":1} commit=在吗？');
+      const userMarkdown = userEntry.querySelector("agenter-markdown-document") as
+        | (HTMLElement & { value?: string })
+        | null;
+      expect(userMarkdown?.value).toContain('scoreMap={"message:room-main":1} commit=在吗？');
     });
     await waitFor(() => {
       expect(compactEntry.textContent).toContain(
         "Prompt window compacted (manual). Later Heartbeat rows continue from the rebuilt context.",
       );
     });
+    const userBadges = [...userEntry.querySelectorAll('[data-slot="badge"]')].map((badge) =>
+      badge.textContent?.trim(),
+    );
+    expect(userBadges).toEqual(["call #41"]);
+    expect(userEntry.textContent).not.toContain("round 0");
+    expect(userEntry.textContent).not.toContain("Text");
+    expect(assistantEntry.textContent).not.toContain("Text");
+
+    const userMessage = userEntry.querySelector('[data-message-from="user"]');
+    if (!(userMessage instanceof HTMLElement)) {
+      throw new Error("User heartbeat message is missing.");
+    }
+    const userSurface = userMessage.children.item(1);
+    if (!(userSurface instanceof HTMLElement)) {
+      throw new Error("User heartbeat content surface is missing.");
+    }
+    expect(userSurface.className).toContain("bg-card/95");
+    expect(userSurface.className).not.toContain("bg-primary");
+
+    const userAvatarImage = userEntry.querySelector('img[alt="Default Avatar"]');
+    await expect(userAvatarImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("avatar-default.webp"),
+    );
 
     const systemPromptSummary = systemPromptEntry.querySelector("summary");
     if (!(systemPromptSummary instanceof HTMLElement)) {
@@ -480,7 +508,10 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     await userEvent.click(canvas.getByRole("button", { name: "Load older" }));
     const olderAssistantEntry = canvas.getByTestId("runtime-heartbeat-entry-20");
     await waitFor(() => {
-      expect(olderAssistantEntry.textContent).toContain("Checkpoint restored.");
+      const olderAssistantMarkdown = olderAssistantEntry.querySelector("agenter-markdown-document") as
+        | (HTMLElement & { value?: string })
+        | null;
+      expect(olderAssistantMarkdown?.value).toContain("Checkpoint restored.");
     });
     await expect(canvas.getByRole("button", { name: "History loaded" })).toBeDisabled();
   },

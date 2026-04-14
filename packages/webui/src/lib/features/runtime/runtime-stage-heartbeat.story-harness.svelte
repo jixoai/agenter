@@ -8,11 +8,15 @@
 		olderEntries = [],
 		modelCalls = [],
 		attention = null,
+		sessionIconUrl = 'https://example.test/avatar-default.webp',
+		avatarLabel = 'Default Avatar',
 	}: {
 		initialEntries: HeartbeatPartItem[];
 		olderEntries?: HeartbeatPartItem[];
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
+		sessionIconUrl?: string | null;
+		avatarLabel?: string;
 	} = $props();
 
 	let entries = $state<HeartbeatPartItem[]>([]);
@@ -37,5 +41,5 @@
 	class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-story"
 >
-	<RuntimeStageHeartbeat {entries} {modelCalls} {attention} onLoadOlder={handleLoadOlder} />
+	<RuntimeStageHeartbeat {entries} {modelCalls} {attention} {sessionIconUrl} {avatarLabel} onLoadOlder={handleLoadOlder} />
 </div>
