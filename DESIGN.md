@@ -96,6 +96,10 @@ Workspaces
 - 不要在 page-content 里再套一层“整页大卡片”。
 - 不要为了制造层次而额外堆大量 border、padding、background。
 - 外层窗口感由 `chrome-window` 承担，内容区内部只表达真实工作内容的结构。
+- **外层 framing 必须单一归属（single ownership of framing）**：一旦 `chrome-window` / `page-content` 已经承担页面外层边框、圆角、背景和外边距，route-local surface 不得再重复创建第二层外框。
+- **避免冗余包裹（redundant framing）**：高密度工作区中的主阅读面、主检查面、主消息流，默认应直接复用外层内容表面，而不是再包一层 `card + rounded + border + shadow`。
+- **优先保留内容密度预算（density budget）**：route-local padding 只有在确实承担新的分组语义时才成立；如果只是把主体内容再向内缩一圈，应视为浪费垂直与水平预算。
+- **主 inspection surface 默认 edge-to-edge**：像 transcript、heartbeat、timeline、inspector 这类页面主表面，应尽量贴合共享内容区展开；除非需要表达新的层级，否则不要再人为制造“页面里的页面”。
 - 当存在 `main-area + bottom-area + right-drawer` 时，`page-content` 应显式拥有这一横向装配权。
 - `content-stack` 负责吃掉剩余宽度，`right-drawer` 和 `drawer-handle` 负责固定宽度。
 - 禁止用固定总宽度、隐式绝对定位或“刚好拼满”的方式把内容区撑出来；否则窗口一旦变化就会出现裁切。
