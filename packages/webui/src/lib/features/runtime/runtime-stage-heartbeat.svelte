@@ -1,23 +1,36 @@
 <script lang="ts">
-	import { ScrollView } from '@agenter/svelte-components';
+	import type { HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from '@agenter/client-sdk';
 
-	import type { HeartbeatPartItem } from '@agenter/client-sdk';
-
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
+	import {
+		ConversationEmptyState,
+		VirtualConversation,
+	} from '$lib/components/ai-elements/conversation/index.js';
 
 	import RuntimeHeartbeatEntry from './runtime-heartbeat-entry.svelte';
+	import RuntimeHeartbeatStatusbar from './runtime-heartbeat-statusbar.svelte';
+	import {
+		buildHeartbeatAttentionFocusSummary,
+		buildHeartbeatContextState,
+	} from './runtime-heartbeat-statusbar-state';
+	import { estimateHeartbeatEntrySize } from './runtime-heartbeat-parts';
 
 	let {
 		entries,
+		modelCalls = [],
+		attention = null,
 		onLoadOlder,
 	}: {
 		entries: HeartbeatPartItem[];
+		modelCalls?: ModelCallItem[];
+		attention?: RuntimeAttentionState | null;
 		onLoadOlder: () => Promise<{ items: number; hasMore: boolean }>;
 	} = $props();
 
 	let loadingOlder = $state(false);
 	let hasMoreOlder = $state(true);
+
+	const contextState = $derived(buildHeartbeatContextState(modelCalls));
+	const shimmerSummary = $derived(buildHeartbeatAttentionFocusSummary(attention, modelCalls));
 
 	const loadOlder = async (): Promise<void> => {
 		if (loadingOlder || !hasMoreOlder) {
@@ -34,43 +47,49 @@
 </script>
 
 <div
-	class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-4"
-	style="min-block-size: 0;"
+	class="grid h-full min-h-0 rounded-[1.15rem] border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)] shadow-[0_28px_52px_-44px_color-mix(in_srgb,var(--foreground),transparent_18%)]"
 	data-testid="runtime-heartbeat-stage"
 >
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="grid gap-1">
-			<div class="text-sm font-semibold">Heartbeat message-parts</div>
-			<div class="text-xs text-muted-foreground">
-				This stream now follows durable Heartbeat rows directly: folded bootstrap facts, compact boundaries, and AI-visible request/response parts.
-			</div>
-		</div>
-		<Button variant="outline" disabled={loadingOlder || !hasMoreOlder} onclick={() => void loadOlder()}>
-			{loadingOlder ? 'Loading older…' : hasMoreOlder ? 'Load older' : 'History loaded'}
-		</Button>
-	</div>
-
-	<Card.Root style="min-block-size: 0;">
-		<Card.Content class="p-0" style="min-block-size: 0;">
-			{#if entries.length === 0}
-				<div
-					class="grid h-full place-items-center px-6 py-12 text-center"
-					data-testid="runtime-heartbeat-empty"
-				>
-					<div class="grid max-w-md gap-2">
-						<div class="text-sm font-semibold">No Heartbeat rows yet</div>
-						<div class="text-sm text-muted-foreground">
-							Persisted Heartbeat message-parts will appear here as soon as the runtime records prompt facts, attention inputs, or assistant output.
-						</div>
-					</div>
+	<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+		<VirtualConversation
+			class="h-full"
+			contentClass="px-3"
+			viewportTestId="runtime-heartbeat-viewport"
+			items={entries}
+			virtual={{
+				estimateSize: (_, entry) => estimateHeartbeatEntrySize(entry),
+				getItemKey: (_, entry) => entry.id,
+				measureElement: true,
+				overscan: 10,
+				gap: 12,
+				paddingStart: 12,
+				paddingEnd: 12,
+				useAnimationFrameWithResizeObserver: true,
+			}}
+		>
+			{#snippet renderItem(entry)}
+				<div data-testid={`runtime-heartbeat-row-${entry.id}`}>
+					<RuntimeHeartbeatEntry {entry} />
 				</div>
-			{:else}
-				<ScrollView class="h-full" contentClass="grid gap-3 p-3">
-					{#each entries as entry (entry.id)}
-						<RuntimeHeartbeatEntry {entry} />
-					{/each}
-				</ScrollView>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+			{/snippet}
+
+			{#snippet renderEmpty()}
+				<ConversationEmptyState
+					class="px-6 py-12"
+					data-testid="runtime-heartbeat-empty"
+					title="No Heartbeat rows yet"
+					description="Persisted Heartbeat message-parts will appear here as soon as the runtime records prompt facts, attention inputs, or assistant output."
+				/>
+			{/snippet}
+		</VirtualConversation>
+
+		<RuntimeHeartbeatStatusbar
+			{contextState}
+			{shimmerSummary}
+			entryCount={entries.length}
+			{loadingOlder}
+			{hasMoreOlder}
+			onLoadOlder={loadOlder}
+		/>
+	</div>
 </div>

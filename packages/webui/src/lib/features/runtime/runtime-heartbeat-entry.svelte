@@ -1,11 +1,21 @@
 <script lang="ts">
+	import Copy from '@lucide/svelte/icons/copy';
+
 	import type { HeartbeatPartItem } from '@agenter/client-sdk';
 
+	import { Action, Actions } from '$lib/components/ai-elements/action/index.js';
+	import { Checkpoint, CheckpointIcon } from '$lib/components/ai-elements/checkpoint/index.js';
+	import { Message, MessageAvatar, MessageContent } from '$lib/components/ai-elements/message/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { cn } from '$lib/utils.js';
 
 	import RuntimeHeartbeatPartContent from './runtime-heartbeat-part-content.svelte';
+	import RuntimeHeartbeatToolBlock from './runtime-heartbeat-tool-block.svelte';
 	import {
+		buildHeartbeatDisplayBlocks,
+		buildHeartbeatEntryClipboardText,
+		getHeartbeatActorLabel,
+		getHeartbeatMessageFrom,
 		getHeartbeatRowLabel,
 		getHeartbeatRowMeta,
 		getHeartbeatRowPreviewLine,
@@ -24,47 +34,122 @@
 	const foldedByDefault = $derived(isHeartbeatRowFoldedByDefault(entry));
 	const summary = $derived(getHeartbeatRowPreviewLine(entry));
 	const meta = $derived(getHeartbeatRowMeta(entry));
+	const messageFrom = $derived(getHeartbeatMessageFrom(entry));
+	const actorLabel = $derived(getHeartbeatActorLabel(entry));
+	const displayBlocks = $derived(buildHeartbeatDisplayBlocks(entry));
+
+	const copyEntry = async (): Promise<void> => {
+		if (typeof navigator === 'undefined' || !navigator.clipboard) {
+			return;
+		}
+		await navigator.clipboard.writeText(buildHeartbeatEntryClipboardText(entry));
+	};
 </script>
 
-<details
-	open={!foldedByDefault}
-	class={cn(
-		'group rounded-3xl border border-border/70 bg-card shadow-sm',
-		compactRow ? 'border-dashed bg-muted/30' : '',
-	)}
-	data-testid={`runtime-heartbeat-entry-${entry.id}`}
->
-	<summary
-		class={cn(
-			'grid cursor-pointer gap-3 px-4 py-3 list-none',
-			entry.role === 'assistant' ? 'md:justify-items-start' : 'md:justify-items-end',
-		)}
-	>
-		<div class="flex max-w-[min(58rem,100%)] flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-			<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-			<Badge variant="secondary">{entry.role}</Badge>
-			{#if entry.scope !== 'heartbeat_part'}
-				<Badge variant="secondary">{entry.scope}</Badge>
-			{/if}
-			{#each meta as item (item)}
-				<Badge variant="secondary">{item}</Badge>
-			{/each}
-			<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
-		</div>
-
-		<div
-			class={cn(
-				'max-w-[min(58rem,100%)] text-sm leading-6',
-				compactRow ? 'text-muted-foreground' : 'text-foreground',
-			)}
-		>
-			{summary}
-		</div>
-	</summary>
-
-	<div class="grid gap-3 border-t border-border/60 px-4 py-4">
-		{#each entry.parts as part (`${entry.id}:${part.partId}`)}
-			<RuntimeHeartbeatPartContent {part} />
-		{/each}
+{#if compactRow}
+	<div class="py-1" data-testid={`runtime-heartbeat-entry-${entry.id}`}>
+		<Checkpoint class="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-2">
+			<CheckpointIcon />
+			<div class="grid min-w-0 gap-1">
+				<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+					<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
+					<Badge variant="secondary">{entry.role}</Badge>
+					{#each meta as item (item)}
+						<Badge variant="secondary">{item}</Badge>
+					{/each}
+					<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
+				</div>
+				<div class="text-sm leading-6 text-muted-foreground">{summary}</div>
+			</div>
+			<Actions class="shrink-0">
+				<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
+					<Copy class="size-4" />
+				</Action>
+			</Actions>
+		</Checkpoint>
 	</div>
-</details>
+{:else if foldedByDefault}
+	<details
+		open={false}
+		class="group rounded-[1.6rem]"
+		data-testid={`runtime-heartbeat-entry-${entry.id}`}
+	>
+		<summary class="cursor-pointer list-none">
+			<Message from={messageFrom}>
+				<MessageAvatar name={actorLabel} />
+				<MessageContent
+					variant={messageFrom === 'user' ? 'contained' : 'flat'}
+					from={messageFrom}
+					class="gap-2"
+				>
+					<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+						<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
+						<Badge variant="secondary">{entry.role}</Badge>
+						{#if entry.scope !== 'heartbeat_part'}
+							<Badge variant="secondary">{entry.scope}</Badge>
+						{/if}
+						{#each meta as item (item)}
+							<Badge variant="secondary">{item}</Badge>
+						{/each}
+						<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
+					</div>
+					<div class="text-sm leading-6 text-foreground">{summary}</div>
+				</MessageContent>
+			</Message>
+		</summary>
+
+		<div class={cn('grid gap-3 px-11 pb-3', messageFrom === 'user' ? 'justify-items-end pr-11 pl-3' : 'pl-11 pr-3')}>
+			<div class="grid w-full max-w-[min(58rem,100%)] gap-3">
+				{#each displayBlocks as block (`${entry.id}:${block.kind}:${block.kind === 'tool' ? block.key : block.part.partId}`)}
+					{#if block.kind === 'tool'}
+						<RuntimeHeartbeatToolBlock {block} />
+					{:else}
+						<RuntimeHeartbeatPartContent part={block.part} />
+					{/if}
+				{/each}
+				<Actions>
+					<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
+						<Copy class="size-4" />
+					</Action>
+				</Actions>
+			</div>
+		</div>
+	</details>
+{:else}
+	<div data-testid={`runtime-heartbeat-entry-${entry.id}`}>
+		<Message from={messageFrom}>
+			<MessageAvatar name={actorLabel} />
+			<MessageContent
+				variant={messageFrom === 'user' ? 'contained' : 'flat'}
+				from={messageFrom}
+				class="gap-3"
+			>
+				<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+					<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
+					<Badge variant="secondary">{entry.role}</Badge>
+					{#if entry.scope !== 'heartbeat_part'}
+						<Badge variant="secondary">{entry.scope}</Badge>
+					{/if}
+					{#each meta as item (item)}
+						<Badge variant="secondary">{item}</Badge>
+					{/each}
+					<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
+				</div>
+
+				{#each displayBlocks as block (`${entry.id}:${block.kind}:${block.kind === 'tool' ? block.key : block.part.partId}`)}
+					{#if block.kind === 'tool'}
+						<RuntimeHeartbeatToolBlock {block} />
+					{:else}
+						<RuntimeHeartbeatPartContent part={block.part} />
+					{/if}
+				{/each}
+
+				<Actions>
+					<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
+						<Copy class="size-4" />
+					</Action>
+				</Actions>
+			</MessageContent>
+		</Message>
+	</div>
+{/if}

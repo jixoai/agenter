@@ -1,14 +1,18 @@
 <script lang="ts">
-	import type { HeartbeatPartItem } from '@agenter/client-sdk';
+	import type { HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from '@agenter/client-sdk';
 
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 
 	let {
 		initialEntries,
 		olderEntries = [],
+		modelCalls = [],
+		attention = null,
 	}: {
 		initialEntries: HeartbeatPartItem[];
 		olderEntries?: HeartbeatPartItem[];
+		modelCalls?: ModelCallItem[];
+		attention?: RuntimeAttentionState | null;
 	} = $props();
 
 	let entries = $state<HeartbeatPartItem[]>([]);
@@ -33,5 +37,5 @@
 	class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-story"
 >
-	<RuntimeStageHeartbeat {entries} onLoadOlder={handleLoadOlder} />
+	<RuntimeStageHeartbeat {entries} {modelCalls} {attention} onLoadOlder={handleLoadOlder} />
 </div>

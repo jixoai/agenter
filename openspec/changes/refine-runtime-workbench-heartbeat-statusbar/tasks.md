@@ -1,0 +1,5 @@
+- [x] 1. Rebuild the runtime route shell on `WorkbenchWindow + WorkbenchPageToolbar`, moving title, status, start/stop, and runtime-tab chrome out of the body header.
+- [x] 2. Upgrade Heartbeat to a virtualized conversation surface with a fixed footer statusbar and reusable selectors for latest context usage plus focused/background/muted counts.
+- [x] 3. Keep Heartbeat row semantics aligned with local ai-elements primitives, including `Checkpoint` for compact, `Reasoning` for thinking, and `Tool` for tool call/result blocks.
+- [x] 4. Add or update selector, Storybook DOM, and runtime-shell regression coverage for toolbar composition, footer status visibility, and long-list Heartbeat rendering.
+- [x] 5. Run targeted verification (`typecheck` plus runtime Heartbeat Storybook/browser-facing tests) and prepare the change for commit.

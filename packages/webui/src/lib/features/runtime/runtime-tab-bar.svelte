@@ -10,11 +10,17 @@
 		sessionId,
 		activeTab,
 		tabs,
+		class: className = '',
+		listClass = '',
+		triggerClass = '',
 		onNavigate,
 	}: {
 		sessionId: string;
 		activeTab: RuntimeTabId;
 		tabs: RuntimeTabItem[];
+		class?: string;
+		listClass?: string;
+		triggerClass?: string;
 		onNavigate?: (tab: RuntimeTabId) => void | Promise<void>;
 	} = $props();
 </script>
@@ -33,10 +39,10 @@
 		});
 	}}
 >
-	<ScrollView class="w-full" orientation="horizontal" contentClass="min-w-max">
-		<Tabs.List class="w-max min-w-full">
+	<ScrollView class={cn('w-full', className)} orientation="horizontal" contentClass="min-w-max">
+		<Tabs.List class={cn('w-max min-w-full', listClass)}>
 			{#each tabs as tab (tab.id)}
-				<Tabs.Trigger value={tab.id} class="gap-2" data-runtime-tab={tab.id}>
+				<Tabs.Trigger value={tab.id} class={cn('gap-2', triggerClass)} data-runtime-tab={tab.id}>
 					<span>{tab.label}</span>
 					{#if tab.badgeLabel}
 						<span

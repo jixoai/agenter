@@ -1,6 +1,19 @@
+import type { MessageFrom } from "$lib/components/ai-elements/message/index.js";
+import type { ToolUiState } from "$lib/components/ai-elements/tool/ToolHeader.svelte";
 import type { HeartbeatPartItem } from "@agenter/client-sdk";
 
 type HeartbeatPart = HeartbeatPartItem["parts"][number];
+type ToolCallPayload = {
+  invocationId?: string;
+  tool?: string;
+  input?: unknown;
+};
+type ToolResultPayload = {
+  invocationId?: string;
+  tool?: string;
+  output?: unknown;
+  error?: string | null;
+};
 
 const foldedPartTypes = new Set(["systemPrompt", "tools", "config", "compact"]);
 
@@ -83,4 +96,113 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
     meta.push("streaming");
   }
   return meta;
+};
+
+export const getHeartbeatMessageFrom = (entry: HeartbeatPartItem): MessageFrom =>
+  entry.role === "user" ? "user" : "assistant";
+
+export const getHeartbeatActorLabel = (entry: HeartbeatPartItem): string => {
+  switch (entry.role) {
+    case "assistant":
+      return "AI";
+    case "user":
+      return "You";
+    case "config":
+      return "CFG";
+    case "tool":
+      return "TL";
+    default:
+      return "SYS";
+  }
+};
+
+export const estimateHeartbeatEntrySize = (entry: HeartbeatPartItem): number => {
+  if (isHeartbeatCompactRow(entry)) {
+    return 92;
+  }
+  if (isHeartbeatRowFoldedByDefault(entry)) {
+    return 112;
+  }
+  const visibleBlockCount = buildHeartbeatDisplayBlocks(entry).length;
+  return 96 + visibleBlockCount * 88;
+};
+
+export type HeartbeatDisplayBlock =
+  | { kind: "part"; part: HeartbeatPart }
+  | {
+      kind: "tool";
+      key: string;
+      tool: string;
+      state: ToolUiState;
+      input: unknown;
+      output?: unknown;
+      errorText?: string | null;
+    };
+
+const getToolInvocationId = (part: HeartbeatPart): string | null => {
+  const payload = part.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  return typeof record.invocationId === "string" ? record.invocationId : null;
+};
+
+export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] => {
+  const blocks: HeartbeatDisplayBlock[] = [];
+  const consumedInvocationIds = new Set<string>();
+  for (const part of entry.parts) {
+    if (part.partType === "tool_result") {
+      const invocationId = getToolInvocationId(part);
+      if (invocationId && consumedInvocationIds.has(invocationId)) {
+        continue;
+      }
+    }
+    if (part.partType !== "tool_call") {
+      blocks.push({ kind: "part", part });
+      continue;
+    }
+    const callPayload = (part.payload ?? {}) as ToolCallPayload;
+    const invocationId = typeof callPayload.invocationId === "string" ? callPayload.invocationId : null;
+    const resultPart =
+      invocationId === null
+        ? undefined
+        : entry.parts.find(
+            (candidate) => candidate.partType === "tool_result" && getToolInvocationId(candidate) === invocationId,
+          );
+    if (invocationId) {
+      consumedInvocationIds.add(invocationId);
+    }
+    const resultPayload = (resultPart?.payload ?? {}) as ToolResultPayload;
+    const state: ToolUiState =
+      resultPart === undefined
+        ? part.isComplete
+          ? "input-available"
+          : "input-streaming"
+        : resultPayload.error
+          ? "output-error"
+          : "output-available";
+    blocks.push({
+      kind: "tool",
+      key: invocationId ?? `${entry.id}:${part.partId}`,
+      tool: callPayload.tool ?? "tool",
+      state,
+      input: callPayload.input ?? null,
+      output: resultPayload.output,
+      errorText: resultPayload.error ?? null,
+    });
+  }
+  return blocks;
+};
+
+export const buildHeartbeatEntryClipboardText = (entry: HeartbeatPartItem): string => {
+  const lines = [
+    `role=${entry.role}`,
+    `scope=${entry.scope}`,
+    `round=${entry.roundIndex}`,
+    ...getHeartbeatRowMeta(entry),
+    "",
+    ...entry.parts.map((part) => `[${formatHeartbeatPartTypeLabel(part.partType)}]\n${toHeartbeatPartRawText(part)}`),
+  ];
+  return lines.join("\n");
 };

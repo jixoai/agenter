@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { HeartbeatPartItem } from '@agenter/client-sdk';
 
+	import {
+		Reasoning,
+		ReasoningContent,
+		ReasoningTrigger,
+	} from '$lib/components/ai-elements/reasoning/index.js';
+	import MarkdownDocument from '$lib/components/web-components/markdown-document.svelte';
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 
@@ -26,8 +32,21 @@
 		{/if}
 	</div>
 
-	{#if text !== null}
-		<div class="rounded-xl border border-border/60 bg-background px-3 py-3 font-mono text-xs leading-6 whitespace-pre-wrap break-words">
+	{#if part.partType === 'thinking'}
+		<Reasoning isStreaming={!part.isComplete} defaultOpen={!part.isComplete}>
+			<ReasoningTrigger />
+			<ReasoningContent>
+				<MarkdownDocument
+					value={text ?? ''}
+					mode="preview"
+					usage="chat"
+					padding="compact"
+					class="rounded-xl border border-border/60 bg-background px-3 py-3"
+				/>
+			</ReasoningContent>
+		</Reasoning>
+	{:else if text !== null}
+		<div class="rounded-xl border border-border/60 bg-background px-3 py-3 text-sm leading-6 whitespace-pre-wrap break-words">
 			{text}
 		</div>
 	{:else}
