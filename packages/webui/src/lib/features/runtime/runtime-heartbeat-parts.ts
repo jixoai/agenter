@@ -31,6 +31,13 @@ const partTypeLabels: Record<string, string> = {
 
 const stringifyJson = (value: unknown): string => JSON.stringify(value, null, 2);
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
 export const formatHeartbeatPartTypeLabel = (partType: string): string => {
   return partTypeLabels[partType] ?? partType.replaceAll("_", " ");
 };
@@ -96,6 +103,54 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
     meta.push("streaming");
   }
   return meta;
+};
+
+const tokenizeCommand = (input: string): string[] => input.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+
+const summarizeCommandPreview = (command: string): string => {
+  const tokens = tokenizeCommand(command.trim());
+  if (tokens.length === 0) {
+    return "";
+  }
+  const previewTokens: string[] = [];
+  for (const token of tokens) {
+    if (previewTokens.length >= 2) {
+      break;
+    }
+    if (previewTokens.length > 0 && (/^['"{[]/u.test(token) || token.startsWith("--"))) {
+      break;
+    }
+    previewTokens.push(token);
+  }
+  const preview = previewTokens.join(" ").trim();
+  return preview.length > 0 ? preview : command.trim();
+};
+
+const shortenPreview = (value: string): string => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+};
+
+export const getHeartbeatToolPreview = (input: unknown): string | null => {
+  if (typeof input === "string") {
+    const summary = summarizeCommandPreview(input);
+    return summary.length > 0 ? shortenPreview(summary) : null;
+  }
+  const record = asRecord(input);
+  if (!record) {
+    return null;
+  }
+  const commandCandidate = typeof record.command === "string" ? record.command : typeof record.cmd === "string" ? record.cmd : null;
+  if (commandCandidate) {
+    const summary = summarizeCommandPreview(commandCandidate);
+    return summary.length > 0 ? shortenPreview(summary) : null;
+  }
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return shortenPreview(`${key}: ${value}`);
+    }
+  }
+  return null;
 };
 
 export const getHeartbeatMessageFrom = (entry: HeartbeatPartItem): MessageFrom =>

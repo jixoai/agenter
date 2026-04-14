@@ -14,10 +14,12 @@
 	let {
 		type,
 		state,
+		preview = null,
 		class: className = '',
 	}: {
 		type: string;
 		state: ToolUiState;
+		preview?: string | null;
 		class?: string;
 	} = $props();
 
@@ -36,21 +38,26 @@
 </script>
 
 <summary class={cn('flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 text-left', className)}>
-	<div class="flex min-w-0 items-center gap-2">
-		<Wrench class="size-4 shrink-0 text-muted-foreground" />
-		<span class="truncate text-sm font-medium">{type}</span>
-		<Badge class="gap-1.5 rounded-full text-[11px]" variant="secondary">
-			{@const StatusIcon = status.icon}
-			<StatusIcon
-				class={cn(
-					'size-3.5',
-					state === 'input-available' ? 'animate-pulse' : '',
-					state === 'output-available' ? 'text-emerald-600' : '',
-					state === 'output-error' ? 'text-destructive' : '',
-				)}
-			/>
-			{status.label}
-		</Badge>
+	<div class="grid min-w-0 gap-1">
+		<div class="flex min-w-0 items-center gap-2">
+			<Wrench class="size-4 shrink-0 text-muted-foreground" />
+			<span class="truncate text-sm font-medium">{type}</span>
+			<Badge class="gap-1.5 rounded-full text-[11px]" variant="secondary">
+				{@const StatusIcon = status.icon}
+				<StatusIcon
+					class={cn(
+						'size-3.5',
+						state === 'input-available' ? 'animate-pulse' : '',
+						state === 'output-available' ? 'text-emerald-600' : '',
+						state === 'output-error' ? 'text-destructive' : '',
+					)}
+				/>
+				{status.label}
+			</Badge>
+		</div>
+		{#if preview}
+			<div class="truncate font-mono text-xs text-muted-foreground">{preview}</div>
+		{/if}
 	</div>
 	<ChevronDown class="size-4 shrink-0 text-muted-foreground" />
 </summary>

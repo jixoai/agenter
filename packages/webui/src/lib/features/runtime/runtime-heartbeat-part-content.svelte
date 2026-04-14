@@ -22,7 +22,7 @@
 	const showMetaRow = $derived((part.mimeType ?? '').length > 0 || !part.isComplete);
 </script>
 
-<section class="grid gap-2 rounded-2xl border border-border/60 bg-background/80 px-3 py-3">
+<section class="grid gap-2">
 	{#if showMetaRow}
 		<div class="flex flex-wrap items-center gap-2">
 			{#if part.mimeType}

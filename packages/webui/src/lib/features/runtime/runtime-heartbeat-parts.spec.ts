@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { HeartbeatPartItem } from "@agenter/client-sdk";
 
-import { buildHeartbeatDisplayBlocks, getHeartbeatRowMeta } from "./runtime-heartbeat-parts";
+import { buildHeartbeatDisplayBlocks, getHeartbeatRowMeta, getHeartbeatToolPreview } from "./runtime-heartbeat-parts";
 
 const baseEntry: HeartbeatPartItem = {
   id: 1,
@@ -185,5 +185,14 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     } satisfies HeartbeatPartItem;
 
     expect(getHeartbeatRowMeta(entry)).toEqual(["call #51"]);
+  });
+
+  test("Scenario: Given a shell-style tool input with long serialized arguments When the collapsed preview is built Then the header keeps only the leading command intent", () => {
+    expect(
+      getHeartbeatToolPreview({
+        command:
+          "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-abc\"],\"done\":true}'",
+      }),
+    ).toBe("attention commit");
   });
 });

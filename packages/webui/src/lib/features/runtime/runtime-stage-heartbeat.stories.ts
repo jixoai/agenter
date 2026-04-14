@@ -188,8 +188,11 @@ const initialEntries = [
         mimeType: null,
         payload: {
           invocationId: "tool-call-1",
-          tool: "workspace.bash",
-          input: { command: "ccski list --no-color" },
+          tool: "root_workspace_bash",
+          input: {
+            command:
+              "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-ca846a55-7bb0-402f-a85f-89e14ca618c7\"],\"egress\":{\"kind\":\"room_reply_sent\",\"chatId\":\"0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"done\":true}}'",
+          },
           startedAt: baseTimestamp + 46_000,
         },
         createdAt: baseTimestamp + 46_000,
@@ -473,6 +476,7 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     expect(userEntry.textContent).not.toContain("round 0");
     expect(userEntry.textContent).not.toContain("Text");
     expect(assistantEntry.textContent).not.toContain("Text");
+    expect(assistantEntry.textContent).toContain("attention commit");
 
     const userMessage = userEntry.querySelector('[data-message-from="user"]');
     if (!(userMessage instanceof HTMLElement)) {
@@ -490,6 +494,12 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
       "src",
       expect.stringContaining("avatar-default.webp"),
     );
+    const textDocuments = assistantEntry.querySelectorAll("agenter-markdown-document");
+    const latestTextDocument = textDocuments.item(textDocuments.length - 1);
+    if (!(latestTextDocument instanceof HTMLElement)) {
+      throw new Error("Assistant text payload is missing.");
+    }
+    expect(latestTextDocument.parentElement?.className ?? "").not.toContain("border");
 
     const systemPromptSummary = systemPromptEntry.querySelector("summary");
     if (!(systemPromptSummary instanceof HTMLElement)) {
