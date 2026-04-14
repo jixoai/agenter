@@ -28,7 +28,9 @@ const proxyTarget = resolveTrpcProxyTarget();
 
 const codemirrorDedupe = [
   '@codemirror/autocomplete',
+  '@codemirror/lang-json',
   '@codemirror/lang-markdown',
+  '@codemirror/lang-yaml',
   '@codemirror/language',
   '@codemirror/language-data',
   '@codemirror/state',
