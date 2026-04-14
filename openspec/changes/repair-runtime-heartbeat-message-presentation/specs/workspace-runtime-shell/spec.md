@@ -33,3 +33,17 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **WHEN** a Heartbeat row contains a tool block with shell-style input such as `command` or `cmd`
 - **THEN** the collapsed tool header shows a concise preview derived from that input
 - **AND** the preview favors the leading command intent, such as `attention commit`, before long serialized arguments
+
+#### Scenario: Virtualized Heartbeat stays attached to the latest rows until the operator scrolls away
+
+- **WHEN** the Heartbeat stage renders inside the virtualized conversation surface
+- **THEN** the scroll viewport initially sticks to the latest durable rows at the bottom of the stream
+- **AND** new rows keep the viewport attached only while the operator remains near the bottom
+- **AND** once the operator scrolls away from the bottom, the stage shows a `ConversationScrollButton` affordance that returns the viewport to the latest rows
+
+#### Scenario: User-scoped Heartbeat rows align to inline-end
+
+- **WHEN** a Heartbeat row has `role=user`
+- **THEN** the row surface itself aligns to `inline-end`
+- **AND** the user row does not occupy the entire available width unless its content actually requires that width
+- **AND** the request-side row still keeps inspection-first neutral surfaces instead of chat-primary bubble styling

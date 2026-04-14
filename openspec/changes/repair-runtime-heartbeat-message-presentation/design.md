@@ -18,6 +18,8 @@ The new structured-value viewer also needs one additional contract correction: a
 - Ensure structured payload content stays readable against inspection surfaces.
 - Avoid double-chrome payload cards for plain text Heartbeat parts.
 - Expose a concise collapsed tool preview so operators can scan intent before opening a tool block.
+- Restore sticky-bottom conversation behavior for the virtualized Heartbeat stream, including a visible affordance to jump back to the latest rows after manual scroll.
+- Make `role=user` Heartbeat rows own `inline-end` alignment at the row level, not just via internal reversed flex order.
 - Bind Heartbeat row avatars to the AvatarSession icon already used elsewhere in the runtime shell.
 - Keep `JsonViewer` local overrides ephemeral and global changes live.
 - Record the ai-elements-svelte LLM docs URL in durable repo guidance.
@@ -88,9 +90,32 @@ Rationale:
 - Operators often need to scan several tool rows before deciding which one to open.
 - The full JSON payload remains available after expansion, so the collapsed preview should prioritize recognition speed.
 
+### 7. VirtualConversation must obey the same sticky-bottom contract as Conversation
+
+Decision:
+The ai-elements `VirtualConversation` primitive will own a stick-to-bottom context, bind it to the `ScrollView` viewport, and render `ConversationScrollButton` as an overlay affordance. The non-virtual `Conversation` + `ConversationContent` path will share the same context contract so both primitives stay behaviorally aligned.
+
+Rationale:
+- A virtualized conversation surface is still a conversation surface; operators should not lose bottom-stick behavior just because the list is virtualized.
+- The scroll button is not page-specific chrome. It is part of the reusable conversation primitive.
+
+Alternative considered:
+- Handle bottom sticking only inside `runtime-stage-heartbeat.svelte`.
+  Rejected because that would hardcode conversation behavior into one route and leave the ai-elements primitive incomplete.
+
+### 8. `role=user` alignment belongs to the outer row, not just the inner flex order
+
+Decision:
+Heartbeat user rows will align to `inline-end` at the outer row/container level, and the user-side message content will stop occupying full row width by default. Internal `flex-row-reverse` remains responsible for avatar/content ordering, but outer alignment becomes an explicit row contract.
+
+Rationale:
+- Reversing the internal children alone does not create a true right-aligned row when the content surface still spans the full available width.
+- Heartbeat should make request-side rows visually read as request-side facts at scan speed.
+
 ## Risks / Trade-offs
 
 - [Heartbeat rows become less obviously "chat-like"] → This is intentional; the route is an inspection surface, and metadata plus alignment still preserve chronology.
 - [Using the session icon for all Heartbeat rows may blur actor distinctions] → Alignment and row content still distinguish request-side versus assistant-side facts, while the avatar now correctly anchors the runtime identity.
 - [Removing `round` or `Text` chips could hide debugging data] → Those facts remain available in durable payload content or clipboard export; they no longer consume the default visual scan path.
 - [Tool previews may overfit one payload shape] → Preview extraction is deliberately heuristic but constrained to stable top-level scalars; the expanded payload remains the durable truth.
+- [Sticky-bottom behavior may fight intentional history inspection] → The shared stick context only auto-follows while the operator remains near the bottom; once the operator scrolls away, the scroll button appears and auto-follow stops.
