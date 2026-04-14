@@ -82,6 +82,9 @@ export const buildHeartbeatRequestMessageId = (aiCallId: number, index: number):
 export const buildHeartbeatResponseMessageId = (aiCallId: number): string =>
   `heartbeat-part:ai-call:${aiCallId}:response:assistant`;
 
+export const buildHeartbeatToolInvocationMessageId = (aiCallId: number, invocationId: string): string =>
+  `heartbeat-part:ai-call:${aiCallId}:tool:${invocationId}`;
+
 export const buildHeartbeatCompactSeparatorMessageId = (aiCallId: number): string =>
   `heartbeat-part:ai-call:${aiCallId}:compact`;
 
@@ -157,15 +160,6 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
       text?: string;
       textStartedAt?: number;
     };
-    toolTrace?: Array<{
-      invocationId: string;
-      tool: string;
-      input: unknown;
-      output?: unknown;
-      error?: string;
-      startedAt: number;
-      finishedAt: number;
-    }>;
   };
 }): SessionMessageUpsertInput | null => {
   const orderedParts: Array<{ orderAt: number; insertionIndex: number; part: SessionMessagePartInput }> = [];
@@ -198,31 +192,6 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
       isComplete: input.isComplete,
     });
   }
-  for (const trace of input.response.toolTrace ?? []) {
-    pushOrderedPart(trace.startedAt, {
-      partType: "tool_call",
-      payload: {
-        invocationId: trace.invocationId,
-        tool: trace.tool,
-        input: trace.input,
-        startedAt: trace.startedAt,
-      },
-      isComplete: true,
-    });
-    if (trace.output !== undefined || trace.error !== undefined) {
-      pushOrderedPart(trace.finishedAt, {
-        partType: "tool_result",
-        payload: {
-          invocationId: trace.invocationId,
-          tool: trace.tool,
-          output: trace.output,
-          error: trace.error ?? null,
-          finishedAt: trace.finishedAt,
-        },
-        isComplete: true,
-      });
-    }
-  }
   const parts = orderedParts
     .sort((left, right) => left.orderAt - right.orderAt || left.insertionIndex - right.insertionIndex)
     .map((entry) => entry.part);
@@ -236,6 +205,58 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
     scope: HEARTBEAT_MESSAGE_PART_SCOPE,
     role: "assistant",
     createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+    parts,
+  };
+};
+
+export const toHeartbeatToolInvocationMessageUpsertInput = (input: {
+  aiCallId: number;
+  roundIndex: number;
+  updatedAt: number;
+  invocation: {
+    invocationId: string;
+    tool: string;
+    input: unknown;
+    output?: unknown;
+    error?: string;
+    startedAt: number;
+    finishedAt: number;
+  };
+}): SessionMessageUpsertInput => {
+  const hasResult = input.invocation.output !== undefined || input.invocation.error !== undefined;
+  const parts: SessionMessagePartInput[] = [
+    {
+      partType: "tool_call",
+      payload: {
+        invocationId: input.invocation.invocationId,
+        tool: input.invocation.tool,
+        input: input.invocation.input,
+        startedAt: input.invocation.startedAt,
+      },
+      isComplete: hasResult,
+    },
+  ];
+  if (hasResult) {
+    parts.push({
+      partType: "tool_result",
+      payload: {
+        invocationId: input.invocation.invocationId,
+        tool: input.invocation.tool,
+        output: input.invocation.output,
+        error: input.invocation.error ?? null,
+        finishedAt: input.invocation.finishedAt,
+      },
+      isComplete: true,
+    });
+  }
+  return {
+    messageId: buildHeartbeatToolInvocationMessageId(input.aiCallId, input.invocation.invocationId),
+    aiCallId: input.aiCallId,
+    roundIndex: input.roundIndex,
+    scope: HEARTBEAT_MESSAGE_PART_SCOPE,
+    role: "assistant",
+    createdAt: input.invocation.startedAt,
     updatedAt: input.updatedAt,
     parts,
   };

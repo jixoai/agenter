@@ -97,10 +97,12 @@ import {
   HEARTBEAT_INSPECTION_SCOPES,
   HEARTBEAT_MESSAGE_PART_SCOPE,
   buildHeartbeatResponseMessageId,
+  buildHeartbeatToolInvocationMessageId,
   toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
   toHeartbeatEventMessageUpsertInput,
   toHeartbeatRequestMessageUpsertInputs,
   toHeartbeatResponseMessageUpsertInput,
+  toHeartbeatToolInvocationMessageUpsertInput,
 } from "./heartbeat-message-parts";
 import type { LoopBusInput, LoopBusPhase, LoopBusWakeSource } from "./loop-bus";
 import type { LoopBusKernelSnapshot, LoopBusKernelState } from "./loopbus-kernel";
@@ -8110,12 +8112,39 @@ export class SessionRuntime {
       isComplete: input.isComplete,
       response: {
         assistant: this.activeModelResponseDraft.assistant ? { ...this.activeModelResponseDraft.assistant } : undefined,
-        toolTrace: this.activeModelResponseDraft.toolTrace.map((entry) => ({ ...entry })),
       },
     });
     if (!upsertInput) {
       return [];
     }
+    const record = this.upsertHeartbeatPartMessage(upsertInput);
+    return record ? [record.messageId] : [];
+  }
+
+  private persistHeartbeatToolInvocationMessage(input: {
+    aiCallId: number;
+    roundIndex: number;
+    invocationId: string;
+    timestamp: number;
+  }): string[] {
+    if (!this.activeModelResponseDraft || !this.sessionDb) {
+      return [];
+    }
+    const invocation = this.activeModelResponseDraft.toolTrace.find((entry) => entry.invocationId === input.invocationId);
+    if (!invocation) {
+      return [];
+    }
+    const messageId = buildHeartbeatToolInvocationMessageId(input.aiCallId, input.invocationId);
+    const existing = this.sessionDb.getMessageById(messageId);
+    const upsertInput = toHeartbeatToolInvocationMessageUpsertInput({
+      aiCallId: input.aiCallId,
+      roundIndex: input.roundIndex,
+      updatedAt: input.timestamp,
+      invocation: {
+        ...invocation,
+        startedAt: existing?.createdAt ?? invocation.startedAt,
+      },
+    });
     const record = this.upsertHeartbeatPartMessage(upsertInput);
     return record ? [record.messageId] : [];
   }
@@ -8146,11 +8175,15 @@ export class SessionRuntime {
             input: null,
             startedAt: input.payload.startedAt ?? Date.now(),
             finishedAt: input.payload.finishedAt ?? input.payload.startedAt ?? Date.now(),
-          };
+        };
     const next = {
       ...current,
       tool: input.tool,
       ...input.payload,
+      startedAt:
+        input.payload.startedAt === undefined
+          ? current.startedAt
+          : Math.min(current.startedAt, input.payload.startedAt),
       finishedAt: input.payload.finishedAt ?? current.finishedAt,
     };
     if (existingIndex >= 0) {
@@ -8275,6 +8308,14 @@ export class SessionRuntime {
           },
         });
         this.persistActiveModelResponse(input.timestamp);
+        if (this.activeModelCallId !== null) {
+          this.persistHeartbeatToolInvocationMessage({
+            aiCallId: this.activeModelCallId,
+            roundIndex: this.sessionDb?.getHead().currentRoundIndex ?? 0,
+            invocationId: input.toolCallId,
+            timestamp: input.timestamp,
+          });
+        }
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const callValue = input.input ?? input.argsText;
@@ -8328,6 +8369,14 @@ export class SessionRuntime {
           },
         });
         this.persistActiveModelResponse(input.timestamp);
+        if (this.activeModelCallId !== null) {
+          this.persistHeartbeatToolInvocationMessage({
+            aiCallId: this.activeModelCallId,
+            roundIndex: this.sessionDb?.getHead().currentRoundIndex ?? 0,
+            invocationId: input.toolCallId,
+            timestamp: input.timestamp,
+          });
+        }
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const liveMessage = this.activeCycle.liveMessages.find((message) => message.id === `live-tool:${invocationId}`);

@@ -7,6 +7,49 @@ import { TerminalControlPlane } from "@agenter/terminal-system";
 import { SessionRuntime } from "../src/session-runtime";
 
 interface RuntimeInternals {
+  sessionDb: {
+    appendAiCall: (input: {
+      roundIndex: number;
+      kind: string;
+      provider: string;
+      model: string;
+      requestUrl: string;
+      requestBody: unknown;
+      responseBody?: unknown;
+      requestMessageIds?: string[];
+      responseMessageIds?: string[];
+      auxiliaryMessageIds?: string[];
+      status?: "running" | "done" | "error" | "cancelled";
+      isComplete?: boolean;
+      createdAt?: number;
+      updatedAt?: number;
+      completedAt?: number | null;
+    }) => { id: number };
+    listMessagesByScope: (scope: "heartbeat_part", options?: { limit?: number }) => Array<{
+      messageId: string;
+      parts: Array<{
+        partId: number;
+        partType: string;
+        payload: unknown;
+        isComplete: boolean;
+      }>;
+    }>;
+  };
+  activeModelCallId: number | null;
+  activeModelResponseDraft:
+    | {
+        toolTrace: Array<{
+          invocationId: string;
+          tool: string;
+          input: unknown;
+          output?: unknown;
+          error?: string;
+          startedAt: number;
+          finishedAt: number;
+        }>;
+      }
+    | null;
+  promptWindowRoundIndex: number;
   createActiveCycle: (input: {
     cycleId: number;
     seq: number;
@@ -110,5 +153,152 @@ describe("Feature: session runtime live cycle projection", () => {
     expect(activeCycle?.liveMessages[0]?.channel).toBe("tool");
     expect(activeCycle?.liveMessages[0]?.tool?.status).toBe("success");
     expect(activeCycle?.status).toBe("streaming");
+  });
+
+  test("Scenario: Given a tool invocation hydrates arguments before completion When heartbeat rows are persisted Then the same invocation row upgrades in place before the result arrives", async () => {
+    const runtime = createRuntime();
+    try {
+      await runtime.start();
+      const internal = runtime as unknown as RuntimeInternals;
+
+      internal.createActiveCycle({
+        cycleId: 21,
+        seq: 21,
+        createdAt: 21,
+        wakeSource: "user",
+        inputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "check the latest DeepSeek news" }],
+            meta: { clientMessageId: "client-21" },
+          },
+        ],
+      });
+
+      const call = internal.sessionDb.appendAiCall({
+        roundIndex: 0,
+        kind: "attention",
+        provider: "test-provider",
+        model: "test-model",
+        requestUrl: "",
+        requestBody: { messages: [] },
+        status: "running",
+        isComplete: false,
+        createdAt: 21,
+        updatedAt: 21,
+      });
+      internal.activeModelCallId = call.id;
+      internal.activeModelResponseDraft = { toolTrace: [] };
+      internal.promptWindowRoundIndex = 0;
+
+      internal.handleAssistantStreamUpdate({
+        kind: "tool_call",
+        toolCallId: "tool-bash-21",
+        toolName: "root_workspace_bash",
+        argsText: "",
+        timestamp: 22,
+      });
+
+      const pending = internal.sessionDb
+        .listMessagesByScope("heartbeat_part", { limit: 20 })
+        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`);
+
+      expect(pending?.parts).toHaveLength(1);
+      expect(pending?.parts[0]).toMatchObject({
+        partId: pending?.parts[0]?.partId ?? -1,
+        partType: "tool_call",
+        payload: {
+          invocationId: "tool-bash-21",
+          tool: "root_workspace_bash",
+          input: "",
+          startedAt: 22,
+        },
+        isComplete: false,
+      });
+
+      const firstPartId = pending?.parts[0]?.partId;
+
+      internal.handleAssistantStreamUpdate({
+        kind: "tool_call",
+        toolCallId: "tool-bash-21",
+        toolName: "root_workspace_bash",
+        argsText: "{\"command\":\"curl -s https://news.ycombinator.com/\"}",
+        input: {
+          command: "curl -s https://news.ycombinator.com/",
+        },
+        timestamp: 23,
+      });
+
+      const hydrated = internal.sessionDb
+        .listMessagesByScope("heartbeat_part", { limit: 20 })
+        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`);
+
+      expect(hydrated?.parts).toHaveLength(1);
+      expect(hydrated?.parts[0]).toMatchObject({
+        partId: firstPartId ?? -1,
+        partType: "tool_call",
+        payload: {
+          invocationId: "tool-bash-21",
+          tool: "root_workspace_bash",
+          input: {
+            command: "curl -s https://news.ycombinator.com/",
+          },
+          startedAt: 22,
+        },
+        isComplete: false,
+      });
+
+      internal.handleAssistantStreamUpdate({
+        kind: "tool_result",
+        toolCallId: "tool-bash-21",
+        toolName: "root_workspace_bash",
+        ok: true,
+        result: {
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+        },
+        timestamp: 24,
+      });
+
+      const completed = internal.sessionDb
+        .listMessagesByScope("heartbeat_part", { limit: 20 })
+        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`);
+
+      expect(completed?.parts).toHaveLength(2);
+      expect(completed?.parts[0]).toMatchObject({
+        partId: firstPartId ?? -1,
+        partType: "tool_call",
+        payload: {
+          invocationId: "tool-bash-21",
+          tool: "root_workspace_bash",
+          input: {
+            command: "curl -s https://news.ycombinator.com/",
+          },
+          startedAt: 22,
+        },
+        isComplete: true,
+      });
+      expect(completed?.parts[1]).toMatchObject({
+        partId: completed?.parts[1]?.partId ?? -1,
+        partType: "tool_result",
+        payload: {
+          invocationId: "tool-bash-21",
+          tool: "root_workspace_bash",
+          output: {
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+          },
+          error: null,
+          finishedAt: 24,
+        },
+        isComplete: true,
+      });
+    } finally {
+      await runtime.stop();
+    }
   });
 });
