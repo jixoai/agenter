@@ -6,6 +6,7 @@ import { getPortableStory } from "./portable-stories";
 const LoadingOlderKeepsHeartbeatRowsStable = getPortableStory(stories, "LoadingOlderKeepsHeartbeatRowsStable");
 const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
+const StreamingToolCallRemainsVisible = getPortableStory(stories, "StreamingToolCallRemainsVisible");
 const EmptyLedgerShowsExplicitState = getPortableStory(stories, "EmptyLedgerShowsExplicitState");
 
 describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
@@ -19,6 +20,10 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given a running AI call without usage When the Heartbeat footer renders Then the shimmer stays active and context falls back to disabled", async () => {
     await RunningFooterShowsShimmerWithoutUsage.run();
+  });
+
+  test("Scenario: Given a running Heartbeat tool call without a result When the stage renders Then the tool row remains visible without empty parameter chrome", async () => {
+    await StreamingToolCallRemainsVisible.run();
   });
 
   test("Scenario: Given no persisted Heartbeat rows When the stage opens Then the operator sees an explicit empty state instead of a blank panel", async () => {

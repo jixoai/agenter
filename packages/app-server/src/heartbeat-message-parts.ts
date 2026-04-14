@@ -92,7 +92,9 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
   response: {
     assistant?: {
       thinking?: string;
+      thinkingStartedAt?: number;
       text?: string;
+      textStartedAt?: number;
     };
     toolTrace?: Array<{
       invocationId: string;
@@ -105,9 +107,18 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
     }>;
   };
 }): SessionMessageUpsertInput | null => {
-  const parts: SessionMessagePartInput[] = [];
+  const orderedParts: Array<{ orderAt: number; insertionIndex: number; part: SessionMessagePartInput }> = [];
+  let insertionIndex = 0;
+  const pushOrderedPart = (orderAt: number, part: SessionMessagePartInput): void => {
+    orderedParts.push({
+      orderAt,
+      insertionIndex,
+      part,
+    });
+    insertionIndex += 1;
+  };
   if (typeof input.response.assistant?.thinking === "string" && input.response.assistant.thinking.length > 0) {
-    parts.push({
+    pushOrderedPart(input.response.assistant.thinkingStartedAt ?? input.createdAt, {
       partType: "thinking",
       payload: {
         type: "thinking",
@@ -117,7 +128,7 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
     });
   }
   if (typeof input.response.assistant?.text === "string") {
-    parts.push({
+    pushOrderedPart(input.response.assistant.textStartedAt ?? input.updatedAt, {
       partType: "text",
       payload: {
         type: "text",
@@ -127,7 +138,7 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
     });
   }
   for (const trace of input.response.toolTrace ?? []) {
-    parts.push({
+    pushOrderedPart(trace.startedAt, {
       partType: "tool_call",
       payload: {
         invocationId: trace.invocationId,
@@ -138,7 +149,7 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
       isComplete: true,
     });
     if (trace.output !== undefined || trace.error !== undefined) {
-      parts.push({
+      pushOrderedPart(trace.finishedAt, {
         partType: "tool_result",
         payload: {
           invocationId: trace.invocationId,
@@ -151,6 +162,9 @@ export const toHeartbeatResponseMessageUpsertInput = (input: {
       });
     }
   }
+  const parts = orderedParts
+    .sort((left, right) => left.orderAt - right.orderAt || left.insertionIndex - right.insertionIndex)
+    .map((entry) => entry.part);
   if (parts.length === 0) {
     return null;
   }

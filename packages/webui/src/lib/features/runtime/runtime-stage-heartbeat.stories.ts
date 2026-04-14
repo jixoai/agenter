@@ -335,6 +335,42 @@ const longStreamEntries = Array.from({ length: 18 }, (_, index) =>
   cloneHeartbeatEntry(index % 2 === 0 ? initialEntries[2] : initialEntries[4], index + 1),
 ).sort((left, right) => left.createdAt - right.createdAt);
 
+const streamingToolEntries = [
+  {
+    ...initialEntries[4],
+    id: 26,
+    messageId: "heartbeat-part:ai-call:42:response:assistant",
+    aiCallId: 42,
+    createdAt: baseTimestamp + 55_000,
+    updatedAt: baseTimestamp + 56_000,
+    isComplete: false,
+    text: "",
+    parts: [
+      {
+        partId: 29,
+        partIndex: 0,
+        messageId: "heartbeat-part:ai-call:42:response:assistant",
+        windowId: null,
+        aiCallId: 42,
+        roundIndex: 9,
+        scope: "heartbeat_part",
+        role: "assistant",
+        partType: "tool_call",
+        mimeType: null,
+        payload: {
+          invocationId: "tool-call-streaming",
+          tool: "root_workspace_bash",
+          input: "",
+          startedAt: baseTimestamp + 55_000,
+        },
+        createdAt: baseTimestamp + 55_000,
+        updatedAt: baseTimestamp + 56_000,
+        isComplete: false,
+      },
+    ],
+  },
+] satisfies HeartbeatPartItem[];
+
 const settledModelCalls = [
   {
     id: 41,
@@ -606,6 +642,25 @@ export const RunningFooterShowsShimmerWithoutUsage = {
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent("Waiting for AI call");
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveAttribute("data-context-state", "unavailable");
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("Latest usage unavailable");
+  },
+} satisfies Story;
+
+export const StreamingToolCallRemainsVisible = {
+  name: "Scenario: Given a running Heartbeat tool call has no result yet When the stage renders Then the tool row stays visible without empty-string parameter chrome",
+  args: {
+    initialEntries: streamingToolEntries,
+    olderEntries: [],
+    modelCalls: streamingModelCalls,
+    attention: attentionState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const entry = canvas.getByTestId("runtime-heartbeat-entry-26");
+    await expect(entry).toBeInTheDocument();
+    await expect(entry).toHaveTextContent("root_workspace_bash");
+    await expect(entry).toHaveTextContent("Pending");
+    expect(entry.textContent).not.toContain("Completed");
+    expect(entry.textContent).not.toContain("Parameters");
   },
 } satisfies Story;
 

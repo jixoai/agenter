@@ -195,4 +195,138 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
       }),
     ).toBe("attention commit");
   });
+
+  test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the later result does not get pulled upward ahead of that text part", () => {
+    const entry = {
+      ...baseEntry,
+      parts: [
+        {
+          partId: 201,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-2",
+            tool: "workspace.bash",
+            input: { command: "pwd" },
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+        {
+          partId: 202,
+          partIndex: 1,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "text",
+          mimeType: null,
+          payload: {
+            type: "text",
+            content: "Assistant narrative between tool phases",
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+        {
+          partId: 203,
+          partIndex: 2,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_result",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-2",
+            tool: "workspace.bash",
+            output: { stdout: "/repo/agenter\n", exitCode: 0 },
+            error: null,
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "workspace-bash-2",
+        tool: "workspace.bash",
+        state: "input-available",
+        input: { command: "pwd" },
+        output: undefined,
+        errorText: null,
+      },
+      {
+        kind: "part",
+        part: entry.parts[1],
+      },
+      {
+        kind: "tool",
+        key: "workspace-bash-2",
+        tool: "workspace.bash",
+        state: "output-available",
+        input: null,
+        output: { stdout: "/repo/agenter\n", exitCode: 0 },
+        errorText: null,
+      },
+    ]);
+  });
+
+  test("Scenario: Given a running tool call has not produced args or a result yet When display blocks are built Then the tool block still remains visible in streaming state", () => {
+    const entry = {
+      ...baseEntry,
+      isComplete: false,
+      parts: [
+        {
+          partId: 301,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-3",
+            tool: "workspace.bash",
+            input: "",
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: false,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "workspace-bash-3",
+        tool: "workspace.bash",
+        state: "input-streaming",
+        input: "",
+        output: undefined,
+        errorText: null,
+      },
+    ]);
+  });
 });

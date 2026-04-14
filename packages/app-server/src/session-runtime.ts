@@ -1279,7 +1279,9 @@ export class SessionRuntime {
   private activeModelResponseDraft: {
     assistant?: {
       thinking?: string;
+      thinkingStartedAt?: number;
       text?: string;
+      textStartedAt?: number;
       finishReason?: string | null;
     };
     usage?: {
@@ -8180,6 +8182,9 @@ export class SessionRuntime {
         }
         this.activeModelResponseDraft.assistant = {
           ...(this.activeModelResponseDraft.assistant ?? {}),
+          textStartedAt:
+            this.activeModelResponseDraft.assistant?.textStartedAt ??
+            (input.content.length > 0 ? input.timestamp : undefined),
           text: input.content,
           finishReason: input.finishReason ?? null,
         };

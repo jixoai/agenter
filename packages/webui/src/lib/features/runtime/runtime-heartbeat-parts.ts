@@ -310,52 +310,62 @@ const getToolInvocationId = (part: HeartbeatPart): string | null => {
 
 export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] => {
   const blocks: HeartbeatDisplayBlock[] = [];
-  const consumedInvocationIds = new Set<string>();
-  for (const part of entry.parts) {
+  for (let index = 0; index < entry.parts.length; index += 1) {
+    const part = entry.parts[index]!;
     const parsedToolTrace = parseHeartbeatToolTracePart(part);
     if (parsedToolTrace) {
       blocks.push(parsedToolTrace);
       continue;
     }
-    if (part.partType === "tool_result") {
-      const invocationId = getToolInvocationId(part);
-      if (invocationId && consumedInvocationIds.has(invocationId)) {
-        continue;
+    if (part.partType === "tool_call") {
+      const callPayload = (part.payload ?? {}) as ToolCallPayload;
+      const invocationId = typeof callPayload.invocationId === "string" ? callPayload.invocationId : null;
+      const nextPart = entry.parts[index + 1];
+      const nextInvocationId = nextPart ? getToolInvocationId(nextPart) : null;
+      const pairedResultPart =
+        nextPart && nextPart.partType === "tool_result" && invocationId !== null && invocationId === nextInvocationId
+          ? nextPart
+          : undefined;
+      const resultPayload = (pairedResultPart?.payload ?? {}) as ToolResultPayload;
+      const state: ToolUiState =
+        pairedResultPart === undefined
+          ? part.isComplete
+            ? "input-available"
+            : "input-streaming"
+          : resultPayload.error
+            ? "output-error"
+            : "output-available";
+      blocks.push({
+        kind: "tool",
+        key: invocationId ?? `${entry.id}:${part.partId}`,
+        tool: callPayload.tool ?? "tool",
+        state,
+        input: callPayload.input ?? null,
+        output: resultPayload.output,
+        errorText: resultPayload.error ?? null,
+      });
+      if (pairedResultPart) {
+        index += 1;
       }
+      continue;
+    }
+    if (part.partType === "tool_result") {
+      const resultPayload = (part.payload ?? {}) as ToolResultPayload;
+      blocks.push({
+        kind: "tool",
+        key: getToolInvocationId(part) ?? `${entry.id}:${part.partId}`,
+        tool: resultPayload.tool ?? "tool",
+        state: resultPayload.error ? "output-error" : "output-available",
+        input: null,
+        output: resultPayload.output,
+        errorText: resultPayload.error ?? null,
+      });
+      continue;
     }
     if (part.partType !== "tool_call") {
       blocks.push({ kind: "part", part });
       continue;
     }
-    const callPayload = (part.payload ?? {}) as ToolCallPayload;
-    const invocationId = typeof callPayload.invocationId === "string" ? callPayload.invocationId : null;
-    const resultPart =
-      invocationId === null
-        ? undefined
-        : entry.parts.find(
-            (candidate) => candidate.partType === "tool_result" && getToolInvocationId(candidate) === invocationId,
-          );
-    if (invocationId) {
-      consumedInvocationIds.add(invocationId);
-    }
-    const resultPayload = (resultPart?.payload ?? {}) as ToolResultPayload;
-    const state: ToolUiState =
-      resultPart === undefined
-        ? part.isComplete
-          ? "input-available"
-          : "input-streaming"
-        : resultPayload.error
-          ? "output-error"
-          : "output-available";
-    blocks.push({
-      kind: "tool",
-      key: invocationId ?? `${entry.id}:${part.partId}`,
-      tool: callPayload.tool ?? "tool",
-      state,
-      input: callPayload.input ?? null,
-      output: resultPayload.output,
-      errorText: resultPayload.error ?? null,
-    });
   }
   return blocks;
 };
