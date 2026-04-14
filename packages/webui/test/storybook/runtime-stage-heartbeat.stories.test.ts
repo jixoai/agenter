@@ -4,12 +4,17 @@ import * as stories from "../../src/lib/features/runtime/runtime-stage-heartbeat
 import { getPortableStory } from "./portable-stories";
 
 const LoadingOlderKeepsHeartbeatRowsStable = getPortableStory(stories, "LoadingOlderKeepsHeartbeatRowsStable");
+const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
 const EmptyLedgerShowsExplicitState = getPortableStory(stories, "EmptyLedgerShowsExplicitState");
 
 describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
   test("Scenario: Given a compact boundary in the Heartbeat stream When the stage renders and older rows are loaded Then the separator stays in the ordered virtualized list", async () => {
     await LoadingOlderKeepsHeartbeatRowsStable.run();
+  });
+
+  test("Scenario: Given a long virtualized Heartbeat stream When the operator scrolls away Then Scroll to latest returns the viewport to the newest rows", async () => {
+    await StickyBottomKeepsLatestRowsReachable.run();
   });
 
   test("Scenario: Given a running AI call without usage When the Heartbeat footer renders Then the shimmer stays active and context falls back to disabled", async () => {

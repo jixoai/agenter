@@ -32,7 +32,7 @@ class StickToBottomContext {
 		this.#resize = options.resize ?? this.#resize;
 	}
 
-	setElement(element: HTMLElement) {
+	setElement(element: HTMLElement | null) {
 		if (this.#element === element) {
 			return;
 		}

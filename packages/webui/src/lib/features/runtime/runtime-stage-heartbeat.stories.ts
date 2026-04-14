@@ -312,6 +312,29 @@ const olderEntries = [
   },
 ] satisfies HeartbeatPartItem[];
 
+const cloneHeartbeatEntry = (entry: HeartbeatPartItem, cloneIndex: number): HeartbeatPartItem => {
+  const offsetMs = cloneIndex * 75_000;
+  return {
+    ...entry,
+    id: entry.id + cloneIndex * 100,
+    messageId: `${entry.messageId}:clone:${cloneIndex}`,
+    createdAt: entry.createdAt + offsetMs,
+    updatedAt: entry.updatedAt + offsetMs,
+    parts: entry.parts.map((part, partIndex) => ({
+      ...part,
+      partId: part.partId + cloneIndex * 1_000 + partIndex,
+      messageId: `${part.messageId}:clone:${cloneIndex}`,
+      createdAt: part.createdAt + offsetMs,
+      updatedAt: part.updatedAt + offsetMs,
+      payload: structuredClone(part.payload),
+    })),
+  };
+};
+
+const longStreamEntries = Array.from({ length: 18 }, (_, index) =>
+  cloneHeartbeatEntry(index % 2 === 0 ? initialEntries[2] : initialEntries[4], index + 1),
+).sort((left, right) => left.createdAt - right.createdAt);
+
 const settledModelCalls = [
   {
     id: 41,
@@ -488,6 +511,8 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     }
     expect(userSurface.className).toContain("bg-card/95");
     expect(userSurface.className).not.toContain("bg-primary");
+    expect(userEntry.className).toContain("justify-items-end");
+    expect(userSurface.className).not.toContain("w-full");
 
     const userAvatarImage = userEntry.querySelector('img[alt="Default Avatar"]');
     await expect(userAvatarImage).toHaveAttribute(
@@ -524,6 +549,46 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
       expect(olderAssistantMarkdown?.value).toContain("Checkpoint restored.");
     });
     await expect(canvas.getByRole("button", { name: "History loaded" })).toBeDisabled();
+  },
+} satisfies Story;
+
+export const StickyBottomKeepsLatestRowsReachable = {
+  name: "Scenario: Given a long virtualized Heartbeat stream When the operator scrolls away Then the stage exposes Scroll to latest and returns to the newest rows",
+  args: {
+    initialEntries: longStreamEntries,
+    olderEntries: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const firstEntry = longStreamEntries[0];
+    const lastEntry = longStreamEntries[longStreamEntries.length - 1];
+    if (!firstEntry || !lastEntry) {
+      throw new Error("Long stream fixtures are missing.");
+    }
+
+    await waitFor(() => {
+      expect(canvas.queryByTestId(`runtime-heartbeat-entry-${lastEntry.id}`)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(canvas.queryByTestId(`runtime-heartbeat-entry-${firstEntry.id}`)).not.toBeInTheDocument();
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(canvas.getByRole("button", { name: "Scroll to latest" })).toBeInTheDocument();
+      expect(canvas.getByTestId(`runtime-heartbeat-entry-${firstEntry.id}`)).toBeInTheDocument();
+    });
+
+    await userEvent.click(canvas.getByRole("button", { name: "Scroll to latest" }));
+
+    await waitFor(() => {
+      expect(canvas.queryByTestId(`runtime-heartbeat-entry-${lastEntry.id}`)).toBeInTheDocument();
+    });
   },
 } satisfies Story;
 

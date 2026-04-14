@@ -9,12 +9,23 @@
 </script>
 
 <script lang="ts">
+	import { getStickToBottomContext } from './stick-to-bottom-context.svelte.js';
+
 	let {
 		class: className = '',
 		children,
 		ref = $bindable<HTMLDivElement | null>(null),
 		...restProps
 	}: ConversationContentProps = $props();
+
+	const context = getStickToBottomContext();
+
+	$effect(() => {
+		context.setElement(ref);
+		return () => {
+			context.setElement(null);
+		};
+	});
 </script>
 
 <div

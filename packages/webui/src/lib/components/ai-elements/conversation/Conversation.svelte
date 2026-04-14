@@ -11,6 +11,8 @@
 </script>
 
 <script lang="ts">
+	import { setStickToBottomContext } from './stick-to-bottom-context.svelte.js';
+
 	let {
 		class: className = '',
 		children,
@@ -19,6 +21,12 @@
 		ref = $bindable(null),
 		...restProps
 	}: ConversationProps = $props();
+
+	const context = setStickToBottomContext();
+
+	$effect(() => {
+		context.configure({ initial, resize });
+	});
 </script>
 
 <div
