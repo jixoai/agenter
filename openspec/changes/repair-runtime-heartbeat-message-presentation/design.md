@@ -20,6 +20,8 @@ The new structured-value viewer also needs one additional contract correction: a
 - Expose a concise collapsed tool preview so operators can scan intent before opening a tool block.
 - Restore sticky-bottom conversation behavior for the virtualized Heartbeat stream, including a visible affordance to jump back to the latest rows after manual scroll.
 - Make `role=user` Heartbeat rows own `inline-end` alignment at the row level, not just via internal reversed flex order.
+- Preserve Heartbeat `message-parts` in objective stream order so tool activity does not jump around when later updates arrive.
+- Keep running tool rows visible and suppress meaningless empty-string parameter payload chrome while arguments are still streaming.
 - Bind Heartbeat row avatars to the AvatarSession icon already used elsewhere in the runtime shell.
 - Keep `JsonViewer` local overrides ephemeral and global changes live.
 - Record the ai-elements-svelte LLM docs URL in durable repo guidance.
@@ -112,6 +114,24 @@ Rationale:
 - Reversing the internal children alone does not create a true right-aligned row when the content surface still spans the full available width.
 - Heartbeat should make request-side rows visually read as request-side facts at scan speed.
 
+### 9. Heartbeat response parts must preserve stable identity and objective order
+
+Decision:
+The backend heartbeat response builder will derive part order from stable event timing facts already known at runtime, rather than re-synthesizing response rows into a fixed type order. The frontend block builder will only fuse adjacent canonical `tool_call -> tool_result` pairs; it will not search ahead and reorder later parts into earlier positions.
+
+Rationale:
+- Reordering parts by type causes `upsertMessage(messageId)` to rewrite earlier `part_index` rows into different semantic types during streaming.
+- That breaks the user's ability to reason about Heartbeat as a durable event ledger.
+
+### 10. Running tool rows must degrade gracefully before arguments are complete
+
+Decision:
+When a tool invocation is visible but its args are still empty or incomplete, Heartbeat will still render the tool row in a running state. The parameters section must not render an empty-string structured viewer as though it were meaningful content.
+
+Rationale:
+- Operators need to see that a tool is running even before its full parameters are available.
+- Empty JSON/string chrome creates false precision and wastes vertical space.
+
 ## Risks / Trade-offs
 
 - [Heartbeat rows become less obviously "chat-like"] → This is intentional; the route is an inspection surface, and metadata plus alignment still preserve chronology.
@@ -119,3 +139,4 @@ Rationale:
 - [Removing `round` or `Text` chips could hide debugging data] → Those facts remain available in durable payload content or clipboard export; they no longer consume the default visual scan path.
 - [Tool previews may overfit one payload shape] → Preview extraction is deliberately heuristic but constrained to stable top-level scalars; the expanded payload remains the durable truth.
 - [Sticky-bottom behavior may fight intentional history inspection] → The shared stick context only auto-follows while the operator remains near the bottom; once the operator scrolls away, the scroll button appears and auto-follow stops.
+- [Ordering by first-seen timestamps is not a perfect replay of every token-level mutation] → This is acceptable because Heartbeat models durable part emergence, not every intermediate token diff; preserving stable semantic order is more important than replaying every micro-update.

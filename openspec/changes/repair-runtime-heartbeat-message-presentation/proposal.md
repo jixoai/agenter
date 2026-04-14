@@ -13,6 +13,8 @@ We need to correct this now because Heartbeat is an operator inspection surface,
 - Add high-signal collapsed previews to Tool rows so operators can identify commands such as `attention commit` before expanding the payload.
 - Make the virtualized Heartbeat conversation obey the same stick-to-bottom contract as ai-elements conversation surfaces, including an explicit `ConversationScrollButton`.
 - Align `role=user` Heartbeat rows to `inline-end` at the row level instead of only reversing the internal avatar/content order.
+- Preserve durable `message-parts` order instead of re-synthesizing assistant response rows into a hardcoded `thinking -> text -> tool_call -> tool_result` sequence.
+- Keep running tool calls visible even before a matching `tool_result` arrives, and avoid rendering empty-string params chrome as if it were a meaningful payload.
 - Fix structured-value viewer mode behavior so global mode changes immediately update any viewer without a local override, while local overrides stay DOM-local and reset on remount.
 - Record the official ai-elements-svelte LLM docs entry in the repository's durable engineering guidance.
 
@@ -24,7 +26,7 @@ We need to correct this now because Heartbeat is an operator inspection surface,
 
 ### Modified Capabilities
 
-- `workspace-runtime-shell`: Heartbeat rows now render as inspection-first runtime entries with reduced metadata noise, single-layer readable content surfaces, collapsed tool previews, AvatarSession-backed avatars, sticky-bottom virtual conversation behavior, and correct `role=user` inline-end alignment.
+- `workspace-runtime-shell`: Heartbeat rows now render as inspection-first runtime entries with reduced metadata noise, single-layer readable content surfaces, collapsed tool previews, AvatarSession-backed avatars, sticky-bottom virtual conversation behavior, correct `role=user` inline-end alignment, and objective `message-parts` ordering for streaming tool activity.
 - `structured-value-preview`: global viewer mode changes now immediately update non-overridden viewers, while local overrides remain ephemeral per mounted DOM instance.
 
 ## Impact

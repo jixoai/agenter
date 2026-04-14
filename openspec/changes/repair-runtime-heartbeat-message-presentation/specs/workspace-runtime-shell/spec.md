@@ -47,3 +47,17 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **THEN** the row surface itself aligns to `inline-end`
 - **AND** the user row does not occupy the entire available width unless its content actually requires that width
 - **AND** the request-side row still keeps inspection-first neutral surfaces instead of chat-primary bubble styling
+
+#### Scenario: Heartbeat preserves objective part order while a response is still streaming
+
+- **WHEN** a durable Heartbeat response row is updated repeatedly during one AI call
+- **THEN** previously emitted `message-parts` keep a stable semantic identity instead of being rewritten into a different type at the same `part_index`
+- **AND** the rendered row follows the objective order in which parts first became visible to the runtime
+- **AND** the frontend does not pull a later `tool_result` upward ahead of unrelated parts just because it shares an invocation id with an earlier `tool_call`
+
+#### Scenario: Running tool rows remain visible before results arrive
+
+- **WHEN** a Heartbeat response row contains a `tool_call` without a matching `tool_result`
+- **THEN** the Heartbeat stage renders that tool row in a running state
+- **AND** the operator can still inspect the invocation shell even if the tool args are incomplete
+- **AND** empty-string parameters are not rendered as if they were a meaningful structured payload

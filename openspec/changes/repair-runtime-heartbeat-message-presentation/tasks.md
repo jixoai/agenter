@@ -12,6 +12,8 @@
 - [x] 2.5 Add collapsed high-signal previews for Heartbeat tool rows.
 - [x] 2.6 Restore sticky-bottom + `ConversationScrollButton` behavior for the virtualized Heartbeat conversation surface.
 - [x] 2.7 Align `role=user` Heartbeat rows to `inline-end` at the row level instead of only reversing internal layout.
+- [ ] 2.8 Preserve objective Heartbeat `message-parts` order across streaming response updates instead of rebuilding rows in a fixed type order.
+- [ ] 2.9 Keep running Heartbeat tool rows visible without rendering empty-string parameter chrome as meaningful payload.
 
 ## 3. Structured viewer behavior and verification
 
@@ -19,3 +21,4 @@
 - [x] 3.2 Add or update regression coverage for Heartbeat row presentation and structured viewer mode behavior.
 - [x] 3.3 Run typecheck/tests and verify the repaired Heartbeat UI in the browser.
 - [x] 3.4 Add regression coverage for virtual conversation stick-to-bottom behavior and `role=user` row alignment.
+- [ ] 3.5 Add regression coverage for objective `message-parts` order and in-progress tool-call rendering.
