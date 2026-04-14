@@ -53,7 +53,8 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **WHEN** a durable Heartbeat response row is updated repeatedly during one AI call
 - **THEN** previously emitted `message-parts` keep a stable semantic identity instead of being rewritten into a different type at the same `part_index`
 - **AND** the rendered row follows the objective order in which parts first became visible to the runtime
-- **AND** the frontend does not pull a later `tool_result` upward ahead of unrelated parts just because it shares an invocation id with an earlier `tool_call`
+- **AND** the first `tool_call` for an `invocationId` keeps ownership of that tool block position even if the matching `tool_result` lands later in the same message
+- **AND** the operator does not see separate Heartbeat Tool blocks for the same `invocationId`
 
 #### Scenario: Running tool rows remain visible before results arrive
 
@@ -61,3 +62,10 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **THEN** the Heartbeat stage renders that tool row in a running state
 - **AND** the operator can still inspect the invocation shell even if the tool args are incomplete
 - **AND** empty-string parameters are not rendered as if they were a meaningful structured payload
+
+#### Scenario: Streamed tool calls and final persisted tool traces share one invocation identity
+
+- **WHEN** the runtime first streams a `tool_call` and later persists the final `toolTrace` for that same tool execution
+- **THEN** both updates reuse the same `invocationId`
+- **AND** the matching Heartbeat Tool block updates in place instead of being replaced by a second logical invocation
+- **AND** once the runtime knows the parsed tool input at execution start, Heartbeat can surface those parameters before the final result arrives

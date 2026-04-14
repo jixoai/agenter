@@ -14,6 +14,8 @@
 - [x] 2.7 Align `role=user` Heartbeat rows to `inline-end` at the row level instead of only reversing internal layout.
 - [x] 2.8 Preserve objective Heartbeat `message-parts` order across streaming response updates instead of rebuilding rows in a fixed type order.
 - [x] 2.9 Keep running Heartbeat tool rows visible without rendering empty-string parameter chrome as meaningful payload.
+- [ ] 2.10 Preserve a single stable tool invocation identity from streamed `tool_call` updates through final persisted Heartbeat `toolTrace`.
+- [ ] 2.11 Keep one Heartbeat Tool block per `invocationId` even when the matching `tool_result` is not adjacent in the same durable message.
 
 ## 3. Structured viewer behavior and verification
 
@@ -22,3 +24,5 @@
 - [x] 3.3 Run typecheck/tests and verify the repaired Heartbeat UI in the browser.
 - [x] 3.4 Add regression coverage for virtual conversation stick-to-bottom behavior and `role=user` row alignment.
 - [x] 3.5 Add regression coverage for objective `message-parts` order and in-progress tool-call rendering.
+- [ ] 3.6 Add regression coverage for stable streamed-to-final tool invocation identity and running parameter hydration.
+- [ ] 3.7 Add regression coverage for non-adjacent `tool_call` / `tool_result` pairing in Heartbeat rendering.

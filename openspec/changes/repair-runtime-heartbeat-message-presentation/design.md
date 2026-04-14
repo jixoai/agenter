@@ -20,8 +20,9 @@ The new structured-value viewer also needs one additional contract correction: a
 - Expose a concise collapsed tool preview so operators can scan intent before opening a tool block.
 - Restore sticky-bottom conversation behavior for the virtualized Heartbeat stream, including a visible affordance to jump back to the latest rows after manual scroll.
 - Make `role=user` Heartbeat rows own `inline-end` alignment at the row level, not just via internal reversed flex order.
-- Preserve Heartbeat `message-parts` in objective stream order so tool activity does not jump around when later updates arrive.
+- Preserve Heartbeat `message-parts` in objective stream order while keeping one stable UI block per logical tool invocation.
 - Keep running tool rows visible and suppress meaningless empty-string parameter payload chrome while arguments are still streaming.
+- Keep streamed `tool_call` identity aligned with the final persisted `toolTrace` identity so one invocation evolves in place instead of being reintroduced as a second block.
 - Bind Heartbeat row avatars to the AvatarSession icon already used elsewhere in the runtime shell.
 - Keep `JsonViewer` local overrides ephemeral and global changes live.
 - Record the ai-elements-svelte LLM docs URL in durable repo guidance.
@@ -117,11 +118,12 @@ Rationale:
 ### 9. Heartbeat response parts must preserve stable identity and objective order
 
 Decision:
-The backend heartbeat response builder will derive part order from stable event timing facts already known at runtime, rather than re-synthesizing response rows into a fixed type order. The frontend block builder will only fuse adjacent canonical `tool_call -> tool_result` pairs; it will not search ahead and reorder later parts into earlier positions.
+The backend heartbeat response builder will derive part order from stable event timing facts already known at runtime, rather than re-synthesizing response rows into a fixed type order. The frontend block builder will treat `invocationId` as the stable tool atom inside one message: the first `tool_call` owns the block position, later updates for the same invocation mutate that block in place, and standalone `tool_result` parts only render when no matching call exists in the same message.
 
 Rationale:
 - Reordering parts by type causes `upsertMessage(messageId)` to rewrite earlier `part_index` rows into different semantic types during streaming.
 - That breaks the user's ability to reason about Heartbeat as a durable event ledger.
+- Treating call/result as unrelated siblings breaks the operator's mental model of one tool invocation evolving over time.
 
 ### 10. Running tool rows must degrade gracefully before arguments are complete
 
@@ -131,6 +133,15 @@ When a tool invocation is visible but its args are still empty or incomplete, He
 Rationale:
 - Operators need to see that a tool is running even before its full parameters are available.
 - Empty JSON/string chrome creates false precision and wastes vertical space.
+
+### 11. Tool invocation identity must stay stable from stream to persistence
+
+Decision:
+When the model exposes a `toolCallId`, the runtime trace layer will reuse that same identifier for the durable `toolTrace` entry and for any later heartbeat updates emitted after the real tool starts executing. The runtime must not generate a second unrelated invocation id for the same logical tool call.
+
+Rationale:
+- If streaming updates and final persisted trace rows use different ids, Heartbeat cannot evolve one tool block in place.
+- Stable identity lets the runtime attach real parsed parameters as soon as tool execution begins, instead of only after the final response record lands.
 
 ## Risks / Trade-offs
 
