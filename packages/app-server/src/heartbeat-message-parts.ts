@@ -1,9 +1,29 @@
-import type { SessionMessagePartInput, SessionMessageRole, SessionMessageScope, SessionMessageUpsertInput } from "@agenter/session-system";
+import type {
+  SessionMessagePartInput,
+  SessionMessageRecord,
+  SessionMessageRole,
+  SessionMessageScope,
+  SessionMessageUpsertInput,
+} from "@agenter/session-system";
 
 import type { ChatCycleCompactTrigger } from "./chat-cycles";
 import type { TextOnlyModelMessage } from "./model-client";
 
 export const HEARTBEAT_MESSAGE_PART_SCOPE = "heartbeat_part" satisfies SessionMessageScope;
+export const LEGACY_HEARTBEAT_MESSAGE_SCOPE = "heartbeat" satisfies SessionMessageScope;
+export const HEARTBEAT_AUXILIARY_SCOPE = "request_aux" satisfies SessionMessageScope;
+export const HEARTBEAT_INSPECTION_SCOPES = [
+  HEARTBEAT_MESSAGE_PART_SCOPE,
+  LEGACY_HEARTBEAT_MESSAGE_SCOPE,
+  HEARTBEAT_AUXILIARY_SCOPE,
+] as const satisfies readonly SessionMessageScope[];
+
+export const shouldProjectLegacyHeartbeatIngress = (
+  entry: Pick<SessionMessageRecord, "scope" | "aiCallId" | "parts">,
+): boolean =>
+  entry.scope === LEGACY_HEARTBEAT_MESSAGE_SCOPE &&
+  entry.aiCallId === null &&
+  entry.parts.every((part) => part.partType !== "compact");
 
 const normalizeRole = (role: string | undefined): SessionMessageRole => {
   if (role === "assistant" || role === "system" || role === "tool" || role === "config") {

@@ -965,7 +965,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given durable Heartbeat message-parts When runtime heartbeatPartsPage is queried Then the router returns one merged stream", async () => {
+  test("Scenario: Given durable Heartbeat rows across legacy and structured scopes When runtime heartbeatPartsPage is queried Then the router returns one merged stream", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -1002,6 +1002,25 @@ describe("Feature: app-server trpc procedures", () => {
         parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
       });
       db.upsertMessage({
+        messageId: "legacy-room-ingress",
+        roundIndex: 0,
+        scope: "heartbeat",
+        role: "assistant",
+        createdAt: 115,
+        updatedAt: 115,
+        parts: [
+          {
+            partType: "message",
+            payload: {
+              text: "weather?",
+              format: "markdown",
+              messageKind: "room_message",
+            },
+            isComplete: true,
+          },
+        ],
+      });
+      db.upsertMessage({
         messageId: "response-1",
         roundIndex: 0,
         scope: "heartbeat_part",
@@ -1019,9 +1038,19 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
 
-    expect(page.items.map((row) => row.messageId)).toEqual(["request-1", "config-1", "response-1"]);
-    expect(page.items.map((row) => row.scope)).toEqual(["heartbeat_part", "request_aux", "heartbeat_part"]);
-    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "text"]);
+    expect(page.items.map((row) => row.messageId)).toEqual([
+      "request-1",
+      "config-1",
+      "legacy-room-ingress",
+      "response-1",
+    ]);
+    expect(page.items.map((row) => row.scope)).toEqual([
+      "heartbeat_part",
+      "request_aux",
+      "heartbeat",
+      "heartbeat_part",
+    ]);
+    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "message", "text"]);
 
     await kernel.stop();
   });

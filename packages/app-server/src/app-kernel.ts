@@ -70,7 +70,6 @@ import {
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
-import { HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import {
   buildWorkspaceAvatarCatalogEntry,
   copyAvatarIntoWorkspace,
@@ -90,6 +89,7 @@ import {
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
+import { HEARTBEAT_INSPECTION_SCOPES } from "./heartbeat-message-parts";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -4323,7 +4323,7 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      return db.pageMessagesByScopes([HEARTBEAT_MESSAGE_PART_SCOPE, "request_aux"], input);
+      return db.pageMessagesByScopes(HEARTBEAT_INSPECTION_SCOPES, input);
     } finally {
       db.close();
     }

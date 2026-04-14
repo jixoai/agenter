@@ -35,16 +35,15 @@ import {
   type ReverseTimeCursor,
 } from "@agenter/message-system";
 import {
-  PROMPT_WINDOW_STATE_PART_TYPE,
   SessionDb,
   type SessionAiCallRecord,
   type SessionAssetRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
-  type SessionMessageUpsertInput,
   type ReversePage as SessionDbReversePage,
   type ReverseTimeCursor as SessionDbReverseTimeCursor,
   type SessionMessageRecord,
+  type SessionMessageUpsertInput,
   type SessionPromptWindowRecord,
   type SessionTerminalOutcome,
   type SessionTraceRef,
@@ -95,8 +94,9 @@ import {
   type ChatCycleStatus,
 } from "./chat-cycles";
 import {
-  HEARTBEAT_MESSAGE_PART_SCOPE,
+  HEARTBEAT_INSPECTION_SCOPES,
   buildHeartbeatResponseMessageId,
+  shouldProjectLegacyHeartbeatIngress,
   toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
   toHeartbeatRequestMessageUpsertInputs,
   toHeartbeatResponseMessageUpsertInput,
@@ -3499,8 +3499,7 @@ export class SessionRuntime {
           input: TInput,
           handler: () => Promise<TOutput>,
           context?: { toolCallId?: string },
-        ): Promise<TOutput> =>
-          traceTool(toolName, input, handler, { invocationId: context?.toolCallId });
+        ): Promise<TOutput> => traceTool(toolName, input, handler, { invocationId: context?.toolCallId });
 
         const listTool = toolDefinition({
           name: "root_workspace_list",
@@ -3554,7 +3553,12 @@ export class SessionRuntime {
               stdin: z.string().optional(),
             })
             .parse(rawInput);
-          return traceWithContext("root_workspace_bash", parsed, async () => await this.execRootWorkspaceBash(parsed), context);
+          return traceWithContext(
+            "root_workspace_bash",
+            parsed,
+            async () => await this.execRootWorkspaceBash(parsed),
+            context,
+          );
         });
 
         return [listTool, bashTool];
@@ -5545,7 +5549,7 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
-    return this.sessionDb.pageMessagesByScopes([HEARTBEAT_MESSAGE_PART_SCOPE, "request_aux"], input);
+    return this.sessionDb.pageMessagesByScopes(HEARTBEAT_INSPECTION_SCOPES, input);
   }
 
   listChatMessagesBefore(beforeId: number, limit = 200): Array<SessionDbChatMessageRecord> {
@@ -7465,7 +7469,7 @@ export class SessionRuntime {
     }
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
-    this.sessionDb.upsertMessage(
+    const persistedRecord = this.sessionDb.upsertMessage(
       persistInputOverride ??
         toHeartbeatMessageUpsertInput({
           message: {
@@ -7473,10 +7477,12 @@ export class SessionRuntime {
             channel: channel === "user_input" ? undefined : channel,
           },
           roundIndex: this.sessionDb.getHead().currentRoundIndex,
-          aiCallId:
-            aiCallIdOverride ?? (nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null),
+          aiCallId: aiCallIdOverride ?? (nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null),
         }),
     );
+    if (shouldProjectLegacyHeartbeatIngress(persistedRecord)) {
+      this.emitHeartbeatPart(persistedRecord);
+    }
     this.appendTerminalActivityForMessage(nextMessage, persistedCycleId, channel);
     if (
       this.activeCycle &&

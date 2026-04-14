@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
-import type { GlobalAvatarCatalogEntry, HeartbeatPartItem, RuntimeSnapshot, WorkspaceAvatarCatalogEntry } from "../src/types";
+import type {
+  GlobalAvatarCatalogEntry,
+  HeartbeatPartItem,
+  RuntimeSnapshot,
+  WorkspaceAvatarCatalogEntry,
+} from "../src/types";
 
 type ReversePageResult<T> = {
   items: T[];
@@ -180,7 +185,8 @@ const createAvatarCatalogEntry = (
   overrides: Partial<WorkspaceAvatarCatalogEntry> = {},
 ): WorkspaceAvatarCatalogEntry => {
   const normalized = nickname.trim().toLowerCase() || "default";
-  const workspacePrivatePath = overrides.workspacePrivatePath ?? `/workspace/.agenter/avatars/by-principal/${normalized}`;
+  const workspacePrivatePath =
+    overrides.workspacePrivatePath ?? `/workspace/.agenter/avatars/by-principal/${normalized}`;
   const workspacePrivateSlotReady = overrides.workspacePrivateSlotReady ?? false;
   return {
     avatarPrincipalId: overrides.avatarPrincipalId ?? `avatar-${normalized}`,
@@ -195,7 +201,8 @@ const createAvatarCatalogEntry = (
     workspacePrivateSlotReady,
     globalPath: overrides.globalPath ?? `/global/${normalized}`,
     workspacePrivatePath,
-    effectivePath: overrides.effectivePath ?? (workspacePrivateSlotReady ? workspacePrivatePath : `/global/${normalized}`),
+    effectivePath:
+      overrides.effectivePath ?? (workspacePrivateSlotReady ? workspacePrivatePath : `/global/${normalized}`),
   };
 };
 
@@ -221,9 +228,7 @@ const createMockClient = (input: {
       lastSessionActivityAt?: string;
     }>;
   }>;
-  workspaceAvatarCatalogQuery?: (input: {
-    workspacePath: string;
-  }) => Promise<{ items: WorkspaceAvatarCatalogEntry[] }>;
+  workspaceAvatarCatalogQuery?: (input: { workspacePath: string }) => Promise<{ items: WorkspaceAvatarCatalogEntry[] }>;
   globalAvatarCatalogQuery?: () => Promise<{ items: GlobalAvatarCatalogEntry[] }>;
   globalAvatarCreateMutate?: (input: {
     nickname: string;
@@ -274,11 +279,7 @@ const createMockClient = (input: {
     unreadByChat: Record<string, Record<string, number>>;
     unreadByTerminal: Record<string, Record<string, number>>;
   }>;
-  messageGlobalMarkReadMutate?: (input: {
-    chatId: string;
-    accessToken?: string;
-    messageId?: string;
-  }) => Promise<{
+  messageGlobalMarkReadMutate?: (input: { chatId: string; accessToken?: string; messageId?: string }) => Promise<{
     channel: {
       chatId: string;
       kind: "room";
@@ -579,11 +580,7 @@ const createMockClient = (input: {
     op: "add" | "remove" | "replace" | "clear";
     channels: Array<{ chatId: string; accessToken?: string }>;
   }) => Promise<{ ok: boolean; message: string; focusedChatIds: string[] }>;
-  messageGlobalSnapshotQuery?: (input: {
-    chatId: string;
-    accessToken?: string;
-    limit?: number;
-  }) => Promise<{
+  messageGlobalSnapshotQuery?: (input: { chatId: string; accessToken?: string; limit?: number }) => Promise<{
     channel: unknown;
     items: unknown[];
     nextBefore: { beforeTimeMs: number; beforeId: number } | null;
@@ -613,14 +610,8 @@ const createMockClient = (input: {
       adminGroupCandidateIds?: string[];
     };
   }) => Promise<{ channel: unknown }>;
-  messageGlobalListGrantsQuery?: (input: {
-    chatId: string;
-    accessToken?: string;
-  }) => Promise<{ items: unknown[] }>;
-  messageGlobalListAssetsQuery?: (input: {
-    chatId: string;
-    accessToken?: string;
-  }) => Promise<{ items: unknown[] }>;
+  messageGlobalListGrantsQuery?: (input: { chatId: string; accessToken?: string }) => Promise<{ items: unknown[] }>;
+  messageGlobalListAssetsQuery?: (input: { chatId: string; accessToken?: string }) => Promise<{ items: unknown[] }>;
   messageGlobalIssueGrantMutate?: (input: {
     chatId: string;
     accessToken?: string;
@@ -639,10 +630,7 @@ const createMockClient = (input: {
     accessToken?: string;
     archivedBy?: string;
   }) => Promise<{ channel: unknown }>;
-  messageGlobalDeleteMutate?: (input: {
-    chatId: string;
-    accessToken?: string;
-  }) => Promise<{ channel: unknown }>;
+  messageGlobalDeleteMutate?: (input: { chatId: string; accessToken?: string }) => Promise<{ channel: unknown }>;
   terminalListQuery?: (input: { sessionId: string }) => Promise<{ items: unknown[] }>;
   terminalCreateMutate?: (input: {
     sessionId: string;
@@ -658,7 +646,10 @@ const createMockClient = (input: {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
-  terminalDeleteMutate?: (input: { sessionId: string; terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  terminalDeleteMutate?: (input: {
+    sessionId: string;
+    terminalId: string;
+  }) => Promise<{ ok: boolean; message: string }>;
   terminalGlobalListQuery?: (input?: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
   terminalGlobalCreateMutate?: (input: {
     terminalId?: string;
@@ -700,10 +691,7 @@ const createMockClient = (input: {
     accessTokenHint?: string;
     adminCandidateRank?: number | null;
   }) => Promise<{ grant: unknown }>;
-  terminalRevokeGrantMutate?: (input: {
-    terminalId: string;
-    grantId: string;
-  }) => Promise<{ ok: boolean }>;
+  terminalRevokeGrantMutate?: (input: { terminalId: string; grantId: string }) => Promise<{ ok: boolean }>;
   terminalListApprovalRequestsQuery?: (input: {
     terminalId: string;
     assignedAdminId?: string;
@@ -852,12 +840,8 @@ const createMockClient = (input: {
               : { snapshot: { contexts: [] }, active: [], cycleFrames: [], egress: [] },
         },
         attentionQuery: {
-          query: async (payload: {
-            sessionId: string;
-            query?: string;
-            offset?: number;
-            limit?: number;
-          }) => (input.attentionQueryQuery ? await input.attentionQueryQuery(payload) : { items: [] }),
+          query: async (payload: { sessionId: string; query?: string; offset?: number; limit?: number }) =>
+            input.attentionQueryQuery ? await input.attentionQueryQuery(payload) : { items: [] },
         },
         events: {
           subscribe: (_payload: unknown, handlers: { onData?: (event: unknown) => void; onError?: () => void }) => {
@@ -1070,9 +1054,7 @@ const createMockClient = (input: {
         },
         globalMarkRead: {
           mutate: async (payload: { chatId: string; accessToken?: string; messageId?: string }) =>
-            input.messageGlobalMarkReadMutate
-              ? await input.messageGlobalMarkReadMutate(payload)
-              : { channel: null },
+            input.messageGlobalMarkReadMutate ? await input.messageGlobalMarkReadMutate(payload) : { channel: null },
         },
         globalPage: {
           query: async (payload: {
@@ -1123,9 +1105,7 @@ const createMockClient = (input: {
             label?: string;
             accessTokenHint?: string;
           }) =>
-            input.messageGlobalIssueGrantMutate
-              ? await input.messageGlobalIssueGrantMutate(payload)
-              : { grant: null },
+            input.messageGlobalIssueGrantMutate ? await input.messageGlobalIssueGrantMutate(payload) : { grant: null },
         },
         globalRevokeGrant: {
           mutate: async (payload: { chatId: string; accessToken?: string; grantId: string }) =>
@@ -1154,7 +1134,10 @@ const createMockClient = (input: {
             cwd?: string;
             profile?: unknown;
             focus?: boolean;
-          }) => (input.terminalCreateMutate ? await input.terminalCreateMutate(payload) : { result: { ok: true, message: "ok" } }),
+          }) =>
+            input.terminalCreateMutate
+              ? await input.terminalCreateMutate(payload)
+              : { result: { ok: true, message: "ok" } },
         },
         focus: {
           mutate: async (payload: {
@@ -1264,10 +1247,7 @@ const createMockClient = (input: {
             label?: string;
             accessTokenHint?: string;
             adminCandidateRank?: number | null;
-          }) =>
-            input.terminalIssueGrantMutate
-              ? await input.terminalIssueGrantMutate(payload)
-              : { grant: null },
+          }) => (input.terminalIssueGrantMutate ? await input.terminalIssueGrantMutate(payload) : { grant: null }),
         },
         revokeGrant: {
           mutate: async (payload: { terminalId: string; grantId: string }) =>
@@ -1292,7 +1272,9 @@ const createMockClient = (input: {
         },
         denyRequest: {
           mutate: async (payload: { terminalId: string; requestId: string }) =>
-            input.terminalDenyRequestMutate ? await input.terminalDenyRequestMutate(payload) : { ok: true, message: "denied" },
+            input.terminalDenyRequestMutate
+              ? await input.terminalDenyRequestMutate(payload)
+              : { ok: true, message: "denied" },
         },
       },
       draft: {
@@ -1381,11 +1363,7 @@ const createMockClient = (input: {
         },
         scope: {
           list: {
-            query: async (payload: {
-              scope: "workspace" | "global";
-              workspacePath?: string;
-              avatar?: string;
-            }) =>
+            query: async (payload: { scope: "workspace" | "global"; workspacePath?: string; avatar?: string }) =>
               input.listScopedSettingsQuery
                 ? await input.listScopedSettingsQuery(payload)
                 : {
@@ -1486,10 +1464,7 @@ const createMockClient = (input: {
           }),
         },
         update: {
-          mutate: async (payload: {
-            reference: string;
-            patch: Record<string, unknown>;
-          }) => ({
+          mutate: async (payload: { reference: string; patch: Record<string, unknown> }) => ({
             profileId: payload.reference,
             identifiers: [],
             metadata: payload.patch,
@@ -1545,15 +1520,11 @@ const createMockClient = (input: {
       notification: {
         snapshot: {
           query: async () =>
-            input.notificationSnapshotQuery
-              ? await input.notificationSnapshotQuery()
-              : emptyNotificationSnapshot(),
+            input.notificationSnapshotQuery ? await input.notificationSnapshotQuery() : emptyNotificationSnapshot(),
         },
         setChatVisibility: {
           mutate: async (payload: { sessionId: string; visible: boolean; focused: boolean }) =>
-            input.setChatVisibilityMutate
-              ? await input.setChatVisibilityMutate(payload)
-              : emptyNotificationSnapshot(),
+            input.setChatVisibilityMutate ? await input.setChatVisibilityMutate(payload) : emptyNotificationSnapshot(),
         },
         setTerminalVisibility: {
           mutate: async (payload: { sessionId: string; terminalId?: string; visible: boolean; focused: boolean }) =>
@@ -1562,7 +1533,12 @@ const createMockClient = (input: {
               : emptyNotificationSnapshot(),
         },
         consume: {
-          mutate: async (payload: { sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }) =>
+          mutate: async (payload: {
+            sessionId: string;
+            chatId?: string;
+            terminalId?: string;
+            upToMessageId?: string;
+          }) =>
             input.consumeNotificationsMutate
               ? await input.consumeNotificationsMutate(payload)
               : emptyNotificationSnapshot(),
@@ -2735,8 +2711,12 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given a runtime session When loading scoped settings through the runtime helpers Then the store resolves workspace/global scope from the session instead of a caller-provided path", async () => {
     const scopedListCalls: Array<{ scope: "workspace" | "global"; workspacePath?: string; avatar?: string }> = [];
-    const scopedReadCalls: Array<{ scope: "workspace" | "global"; workspacePath?: string; layerId: string; avatar?: string }> =
-      [];
+    const scopedReadCalls: Array<{
+      scope: "workspace" | "global";
+      workspacePath?: string;
+      layerId: string;
+      avatar?: string;
+    }> = [];
     const scopedSaveCalls: Array<{
       scope: "workspace" | "global";
       workspacePath?: string;
@@ -2916,7 +2896,24 @@ describe("Feature: runtime store synchronization", () => {
                 updatedAt: 100,
                 isComplete: true,
                 text: "system prompt",
-                parts: [{ partId: 1, partIndex: 0, messageId: "aux-system", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "system", partType: "systemPrompt", mimeType: null, payload: "You are a Linux expert.", createdAt: 100, updatedAt: 100, isComplete: true }],
+                parts: [
+                  {
+                    partId: 1,
+                    partIndex: 0,
+                    messageId: "aux-system",
+                    windowId: null,
+                    aiCallId: 4,
+                    roundIndex: 1,
+                    scope: "request_aux",
+                    role: "system",
+                    partType: "systemPrompt",
+                    mimeType: null,
+                    payload: "You are a Linux expert.",
+                    createdAt: 100,
+                    updatedAt: 100,
+                    isComplete: true,
+                  },
+                ],
               },
             ],
             nextBefore: null,
@@ -2939,7 +2936,24 @@ describe("Feature: runtime store synchronization", () => {
                     updatedAt: 120,
                     isComplete: true,
                     text: '[{"name":"workspace.bash"}]',
-                    parts: [{ partId: 2, partIndex: 0, messageId: "aux-tools", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "tools", mimeType: null, payload: [{ name: "workspace.bash" }], createdAt: 120, updatedAt: 120, isComplete: true }],
+                    parts: [
+                      {
+                        partId: 2,
+                        partIndex: 0,
+                        messageId: "aux-tools",
+                        windowId: null,
+                        aiCallId: 4,
+                        roundIndex: 1,
+                        scope: "request_aux",
+                        role: "config",
+                        partType: "tools",
+                        mimeType: null,
+                        payload: [{ name: "workspace.bash" }],
+                        createdAt: 120,
+                        updatedAt: 120,
+                        isComplete: true,
+                      },
+                    ],
                   },
                   {
                     id: 3,
@@ -2953,7 +2967,24 @@ describe("Feature: runtime store synchronization", () => {
                     updatedAt: 140,
                     isComplete: true,
                     text: '{"temperature":0.2}',
-                    parts: [{ partId: 3, partIndex: 0, messageId: "aux-config", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "config", mimeType: null, payload: { temperature: 0.2 }, createdAt: 140, updatedAt: 140, isComplete: true }],
+                    parts: [
+                      {
+                        partId: 3,
+                        partIndex: 0,
+                        messageId: "aux-config",
+                        windowId: null,
+                        aiCallId: 4,
+                        roundIndex: 1,
+                        scope: "request_aux",
+                        role: "config",
+                        partType: "config",
+                        mimeType: null,
+                        payload: { temperature: 0.2 },
+                        createdAt: 140,
+                        updatedAt: 140,
+                        isComplete: true,
+                      },
+                    ],
                   },
                 ]
               : [
@@ -2969,7 +3000,24 @@ describe("Feature: runtime store synchronization", () => {
                     updatedAt: 120,
                     isComplete: true,
                     text: '[{"name":"workspace.bash"}]',
-                    parts: [{ partId: 2, partIndex: 0, messageId: "aux-tools", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "tools", mimeType: null, payload: [{ name: "workspace.bash" }], createdAt: 120, updatedAt: 120, isComplete: true }],
+                    parts: [
+                      {
+                        partId: 2,
+                        partIndex: 0,
+                        messageId: "aux-tools",
+                        windowId: null,
+                        aiCallId: 4,
+                        roundIndex: 1,
+                        scope: "request_aux",
+                        role: "config",
+                        partType: "tools",
+                        mimeType: null,
+                        payload: [{ name: "workspace.bash" }],
+                        createdAt: 120,
+                        updatedAt: 120,
+                        isComplete: true,
+                      },
+                    ],
                   },
                   {
                     id: 3,
@@ -2983,7 +3031,24 @@ describe("Feature: runtime store synchronization", () => {
                     updatedAt: 140,
                     isComplete: true,
                     text: '{"temperature":0.2}',
-                    parts: [{ partId: 3, partIndex: 0, messageId: "aux-config", windowId: null, aiCallId: 4, roundIndex: 1, scope: "request_aux", role: "config", partType: "config", mimeType: null, payload: { temperature: 0.2 }, createdAt: 140, updatedAt: 140, isComplete: true }],
+                    parts: [
+                      {
+                        partId: 3,
+                        partIndex: 0,
+                        messageId: "aux-config",
+                        windowId: null,
+                        aiCallId: 4,
+                        roundIndex: 1,
+                        scope: "request_aux",
+                        role: "config",
+                        partType: "config",
+                        mimeType: null,
+                        payload: { temperature: 0.2 },
+                        createdAt: 140,
+                        updatedAt: 140,
+                        isComplete: true,
+                      },
+                    ],
                   },
                   {
                     id: 4,
@@ -2997,7 +3062,24 @@ describe("Feature: runtime store synchronization", () => {
                     updatedAt: 160,
                     isComplete: true,
                     text: "system prompt refreshed",
-                    parts: [{ partId: 4, partIndex: 0, messageId: "aux-system-next", windowId: null, aiCallId: 5, roundIndex: 2, scope: "request_aux", role: "system", partType: "systemPrompt", mimeType: null, payload: "Use bash and skills first.", createdAt: 160, updatedAt: 160, isComplete: true }],
+                    parts: [
+                      {
+                        partId: 4,
+                        partIndex: 0,
+                        messageId: "aux-system-next",
+                        windowId: null,
+                        aiCallId: 5,
+                        roundIndex: 2,
+                        scope: "request_aux",
+                        role: "system",
+                        partType: "systemPrompt",
+                        mimeType: null,
+                        payload: "Use bash and skills first.",
+                        createdAt: 160,
+                        updatedAt: 160,
+                        isComplete: true,
+                      },
+                    ],
                   },
                 ],
           nextBefore: {
@@ -3054,7 +3136,7 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given heartbeat-part pages and live heartbeat updates When the store hydrates and loads older rows Then the Heartbeat stream stays ordered and replaces streamed rows by id", async () => {
+  test("Scenario: Given unified Heartbeat pages and live legacy ingress updates When the store hydrates and loads older rows Then the Heartbeat stream stays ordered and replaces streamed rows by id", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const heartbeatCalls: Array<{ before?: { beforeTimeMs: number; beforeId: number }; limit?: number }> = [];
     const client = createMockClient({
@@ -3151,6 +3233,28 @@ describe("Feature: runtime store synchronization", () => {
       payload: {
         entry: createHeartbeatEntry({
           id: 4,
+          messageId: "legacy-room-ingress",
+          scope: "heartbeat",
+          role: "assistant",
+          partType: "message",
+          createdAt: 130,
+          payload: {
+            text: 'scoreMap={"room":1}',
+            messageKind: "room_message",
+          },
+          text: 'scoreMap={"room":1}',
+        }),
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 763,
+      timestamp: Date.now(),
+      type: "runtime.heartbeatPart",
+      sessionId: "i-1",
+      payload: {
+        entry: createHeartbeatEntry({
+          id: 5,
           messageId: "heartbeat-part:compact",
           role: "system",
           partType: "compact",
@@ -3164,8 +3268,11 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
 
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 4, 3, 5]);
     expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.id === 3)?.text).toBe("final reply");
+    expect(
+      store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.messageId === "legacy-room-ingress"),
+    ).toEqual(expect.objectContaining({ scope: "heartbeat" }));
     expect(heartbeatCalls).toHaveLength(2);
     store.disconnect();
   });
@@ -3233,7 +3340,8 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];
-    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }> = [];
+    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }> =
+      [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(800),
       notificationSnapshotQuery: async () => ({
@@ -3710,7 +3818,9 @@ describe("Feature: runtime store synchronization", () => {
 
     expect(store.sessionIconUrl("i-1")).toBe("http://127.0.0.1:4591/media/sessions/i-1/icon");
     expect(store.profileIconUrl("gaubee")).toBe("http://127.0.0.1:4591/media/profiles/gaubee/icon");
-    expect(store.webauthnRegistrationUrl("ticket-1")).toBe("http://127.0.0.1:4591/auth/webauthn/register?ticket=ticket-1");
+    expect(store.webauthnRegistrationUrl("ticket-1")).toBe(
+      "http://127.0.0.1:4591/auth/webauthn/register?ticket=ticket-1",
+    );
     expect(store.webauthnAuthenticationUrl("profile-1")).toBe(
       "http://127.0.0.1:4591/auth/webauthn/authenticate?reference=profile-1",
     );
@@ -4144,9 +4254,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().sessions.map((session) => session.id)).toEqual(["i-2"]);
     expect(store.getState().runtimes["i-2"]?.started).toBe(false);
     expect(store.getState().attentionBySession["i-2"]).toEqual(persistedAttention);
-    expect(store.getState().chatsBySession["i-2"]?.map((message) => message.content)).toEqual([
-      "persisted ready url",
-    ]);
+    expect(store.getState().chatsBySession["i-2"]?.map((message) => message.content)).toEqual(["persisted ready url"]);
     expect(store.getState().messageChannelsBySession["i-2"]).toEqual({
       data: [channel],
       loaded: true,
@@ -5143,8 +5251,7 @@ describe("Feature: runtime store synchronization", () => {
     });
 
     await waitFor(
-      () =>
-        snapshotCounts[roomA.chatId] === 2 && grantCounts[roomA.chatId] === 2 && assetCounts[roomA.chatId] === 2,
+      () => snapshotCounts[roomA.chatId] === 2 && grantCounts[roomA.chatId] === 2 && assetCounts[roomA.chatId] === 2,
     );
     expect(snapshotCounts[roomB.chatId]).toBe(0);
     expect(grantCounts[roomB.chatId]).toBe(0);
@@ -5626,7 +5733,7 @@ describe("Feature: runtime store synchronization", () => {
                 cycleId: null,
                 actorId: "auth:reviewer",
                 title: "Terminal read",
-                content: "{\"kind\":\"terminal-snapshot\"}",
+                content: '{"kind":"terminal-snapshot"}',
                 detail: { representation: "snapshot" },
               },
             ],
@@ -5708,7 +5815,10 @@ describe("Feature: runtime store synchronization", () => {
 
     const releaseApprovals = store.retainGlobalTerminalApprovals(terminal.terminalId);
     await store.hydrateGlobalTerminalApprovals({ terminalId: terminal.terminalId });
-    expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([pendingApproval, deniedApproval]);
+    expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([
+      pendingApproval,
+      deniedApproval,
+    ]);
     await store.approveGlobalTerminalRequest({
       terminalId: terminal.terminalId,
       requestId: pendingApproval.requestId,
@@ -5736,9 +5846,9 @@ describe("Feature: runtime store synchronization", () => {
       grantId: "grant-requester",
     });
     expect(revoked).toEqual({ ok: true });
-    expect(
-      store.getState().globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId),
-    ).toEqual(["grant-reviewer"]);
+    expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId)).toEqual([
+      "grant-reviewer",
+    ]);
 
     const releaseActivity = store.retainGlobalTerminalActivity(terminal.terminalId);
     await store.hydrateGlobalTerminalActivity({ terminalId: terminal.terminalId, limit: 20 });
@@ -5843,7 +5953,7 @@ describe("Feature: runtime store synchronization", () => {
       cycleId: null,
       actorId: "system:trusted-terminal-bootstrap",
       title: "Terminal read",
-      content: "{\"kind\":\"terminal-snapshot\"}",
+      content: '{"kind":"terminal-snapshot"}',
       detail: { representation: "snapshot" },
     };
     const store = new RuntimeStore(
@@ -5972,7 +6082,7 @@ describe("Feature: runtime store synchronization", () => {
       cycleId: null,
       actorId: "system:trusted-terminal-bootstrap",
       title: "Terminal read",
-      content: "{\"kind\":\"terminal-snapshot\"}",
+      content: '{"kind":"terminal-snapshot"}',
       detail: { representation: "snapshot" },
     };
     const store = new RuntimeStore(
@@ -6070,7 +6180,7 @@ describe("Feature: runtime store synchronization", () => {
       cycleId: null,
       actorId: "system:trusted-terminal-bootstrap",
       title: "Terminal read",
-      content: "{\"kind\":\"terminal-snapshot\"}",
+      content: '{"kind":"terminal-snapshot"}',
       detail: { representation: "snapshot" },
     };
     const store = new RuntimeStore(
@@ -6500,25 +6610,32 @@ describe("Feature: runtime store synchronization", () => {
     });
 
     await waitFor(() =>
-      store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.some((entry) => entry.nickname === "helper-copy"),
+      store
+        .getState()
+        .workspaceAvatarCatalogByPath[workspacePath]?.data.some((entry) => entry.nickname === "helper-copy"),
     );
-    expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.find((entry) => entry.nickname === "helper-copy"))
-      .toMatchObject({
-        nickname: "helper-copy",
-        avatarPrincipalId: null,
-        sourceScope: "global",
-        globalAvailable: false,
-        workspacePrivateSlotReady: true,
-        effectivePath: "",
-      });
+    expect(
+      store
+        .getState()
+        .workspaceAvatarCatalogByPath[workspacePath]?.data.find((entry) => entry.nickname === "helper-copy"),
+    ).toMatchObject({
+      nickname: "helper-copy",
+      avatarPrincipalId: null,
+      sourceScope: "global",
+      globalAvailable: false,
+      workspacePrivateSlotReady: true,
+      effectivePath: "",
+    });
 
     catalog = [helperAvatar, copiedAvatar];
     copyDeferred.resolve({ avatar: copiedAvatar });
     await expect(copyPromise).resolves.toEqual(copiedAvatar);
     await waitFor(() =>
-      store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data.some(
-        (entry) => entry.nickname === "helper-copy" && entry.effectivePath === copiedAvatar.effectivePath,
-      ),
+      store
+        .getState()
+        .workspaceAvatarCatalogByPath[
+          workspacePath
+        ]?.data.some((entry) => entry.nickname === "helper-copy" && entry.effectivePath === copiedAvatar.effectivePath),
     );
     expect(store.getState().workspaceAvatarCatalogByPath[workspacePath]?.data).toEqual([helperAvatar, copiedAvatar]);
 
@@ -6534,8 +6651,12 @@ describe("Feature: runtime store synchronization", () => {
       [workspaceB]: 0,
     };
     const catalogByWorkspace: Record<string, WorkspaceAvatarCatalogEntry[]> = {
-      [workspaceA]: [createAvatarCatalogEntry("alpha", { workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha" })],
-      [workspaceB]: [createAvatarCatalogEntry("beta", { workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta" })],
+      [workspaceA]: [
+        createAvatarCatalogEntry("alpha", { workspacePrivatePath: "/repo/a/.agenter/avatars/by-principal/alpha" }),
+      ],
+      [workspaceB]: [
+        createAvatarCatalogEntry("beta", { workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta" }),
+      ],
     };
     let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
     const store = new RuntimeStore(
@@ -6581,9 +6702,9 @@ describe("Feature: runtime store synchronization", () => {
 
     await waitFor(
       () =>
-        store.getState().workspaceAvatarCatalogByPath[workspaceA]?.data.some(
-          (entry) => entry.nickname === "alpha-copy",
-        ) ?? false,
+        store
+          .getState()
+          .workspaceAvatarCatalogByPath[workspaceA]?.data.some((entry) => entry.nickname === "alpha-copy") ?? false,
     );
     expect(queryCounts[workspaceB]).toBe(1);
     expect(store.getState().workspaceAvatarCatalogByPath[workspaceA]?.data.map((entry) => entry.nickname)).toEqual([
