@@ -341,6 +341,11 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **官方 LLM 入口**：`https://ui.shadcn.com/llms.txt`
 - **执行约束**：涉及 WebUI 组件设计/实现时，先以该入口文档作为 shadcn/ui 的首要技能参考源。
 
+## 11.1) ai-elements-svelte Skill 入口
+
+- **官方 LLM 入口**：`https://svelte-ai-elements.vercel.app/ai-elements/llms.txt`
+- **执行约束**：涉及 `ai-elements-svelte` 组件选择、结构装配、样式纠偏或行为契约时，优先以该入口文档作为官方参考源。
+
 ## 12) shadcn/ui 组件实现约束
 
 - **优先 Base UI**：在本项目中，shadcn/ui 相关组件封装默认基于 `@base-ui-components/react`，不再新增 Radix 依赖。
