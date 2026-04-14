@@ -148,7 +148,7 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="grid h-full min-h-0 p-4 md:p-5" data-testid="runtime-shell">
+	<div class="grid h-full min-h-0" data-testid="runtime-shell">
 		<RuntimePrimaryStage
 			tab={activeTab}
 			{session}

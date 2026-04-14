@@ -47,7 +47,7 @@
 </script>
 
 <div
-	class="grid h-full min-h-0 rounded-[1.15rem] border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)] shadow-[0_28px_52px_-44px_color-mix(in_srgb,var(--foreground),transparent_18%)]"
+	class="grid h-full min-h-0 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
 	data-testid="runtime-heartbeat-stage"
 >
 	<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
