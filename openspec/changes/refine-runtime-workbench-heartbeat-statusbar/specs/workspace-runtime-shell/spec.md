@@ -58,3 +58,9 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **WHEN** the durable Heartbeat stream contains a long message-part history
 - **THEN** the stage virtualizes row mounting through its conversation container
 - **AND** compact boundaries still render as boundary markers, tool activity still renders through the tool presentation, and thinking rows still render through reasoning presentation
+
+#### Scenario: Heartbeat reuses the outer runtime surface instead of nesting another frame
+
+- **WHEN** the operator opens the `Heartbeat` tab
+- **THEN** the runtime body content sits flush inside the shared workbench body without route-local outer padding
+- **AND** the Heartbeat stage does not add its own outer rounded border around the transcript surface

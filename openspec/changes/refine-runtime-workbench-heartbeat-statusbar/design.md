@@ -104,6 +104,16 @@ Why:
 - It avoids forcing fake footer content into secondary tabs.
 - It leaves a durable extension point for later runtime chrome refinement.
 
+### 5. Runtime body does not add a second padded card around Heartbeat
+
+The `WorkbenchWindow` body already owns the runtime route's rounded border and outer padding contract. `runtime-shell` therefore stays edge-to-edge inside that body, and `Heartbeat` does not wrap itself in another rounded bordered card.
+
+Why:
+
+- A second shell layer wastes vertical space in the highest-density runtime inspection view.
+- Double borders and nested radii make the operator think the transcript is a card inside another card instead of the primary page surface.
+- The Heartbeat stage should own transcript flow and footer signals, not re-implement the outer frame.
+
 ## Risks / Trade-offs
 
 - [Virtual row measurement can regress Storybook browser tests] → Reuse the repository's existing `ScrollView virtual` pattern and keep Storybook DOM coverage focused on observable row rendering, footer visibility, and toolbar composition.
