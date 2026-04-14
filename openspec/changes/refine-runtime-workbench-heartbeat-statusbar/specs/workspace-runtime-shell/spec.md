@@ -22,6 +22,12 @@ The runtime detail route SHALL derive its chrome from the shared `WorkbenchWindo
 - **THEN** the avatar catalog meta toolbar does not consume a second toolbar row above the runtime page
 - **AND** the runtime page-toolbar remains the single durable toolbar row between the avatar tab strip and the detail body
 
+#### Scenario: Shared page-toolbar never expands into multiple rows
+
+- **WHEN** a workbench layout-level toolbar and a route-local `WorkbenchPageToolbar` both exist
+- **THEN** the shared page-toolbar keeps its fixed single-row height
+- **AND** the route-local portal content overrides the layout toolbar instead of stacking a second row
+
 ## MODIFIED Requirements
 
 ### Requirement: Heartbeat SHALL render one continuous message-parts runtime stream

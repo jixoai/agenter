@@ -51,6 +51,16 @@ Alternative considered:
 - Keep the avatar catalog toolbar visible on every avatar tab.
 - Rejected because it leaves runtime with two chrome rows and fails the "free vertical room for content" goal in real browser inspection.
 
+### 1.2. `WorkbenchPageToolbar` remains a single fixed-height row
+
+`WorkbenchWindow` owns exactly one `48px` page-toolbar row. If both the layout-level toolbar snippet and the route-level `WorkbenchPageToolbar` portal are present, the portal host wins and the layout toolbar content yields instead of creating a second stacked row.
+
+Why:
+
+- The operator explicitly constrained this chrome to one row to prevent low-value metadata from pushing content downward.
+- A hidden "row multiplier" makes the layout law meaningless because any feature can silently break the vertical budget.
+- Host precedence preserves one durable extension point without adding more layout special cases.
+
 ### 2. Heartbeat virtualization is implemented as a local ai-elements adapter
 
 Add a virtualized conversation adapter under the local ai-elements namespace and back it with `ScrollView virtual`. `Message`, `Checkpoint`, `Tool`, and `Reasoning` remain leaf presentation primitives; virtualization stays a list concern.
