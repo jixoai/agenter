@@ -241,7 +241,6 @@
 
 	const activeTabValue = $derived(activeDraftId ? `new:${activeDraftId}` : activeSessionId ?? 'catalog');
 	const nextToolbarDraftHref = $derived(buildAvatarNewHref({ draftId: nextToolbarDraftId }));
-	const showWorkbenchToolbar = $derived(activeTabValue === 'catalog');
 </script>
 
 {#snippet avatarsToolbarMeta(_toolbarState: WorkbenchToolbarRenderState)}
@@ -269,7 +268,7 @@
 		ariaLabel="Avatar workbench tabs"
 		value={activeTabValue}
 		{tabs}
-		toolbar={showWorkbenchToolbar ? avatarsToolbar : undefined}
+		toolbar={avatarsToolbar}
 	>
 		<div class="h-full">{@render children?.()}</div>
 	</WorkbenchWindow>

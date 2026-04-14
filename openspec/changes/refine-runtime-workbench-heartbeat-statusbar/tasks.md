@@ -5,3 +5,4 @@
 - [x] 5. Run targeted verification (`typecheck` plus runtime Heartbeat Storybook/browser-facing tests) and prepare the change for commit.
 - [x] 6. Collapse the avatars catalog toolbar on runtime/avatar-detail tabs so the runtime page-toolbar owns the only persistent chrome row above the body content.
 - [x] 7. Rebuild runtime page-toolbar content on the shared `WorkbenchToolbar` contract and extend regression coverage for collapsed parent chrome plus canonical `tool_call/tool_result` Tool rows.
+- [x] 8. Remove the hidden multi-row `WorkbenchPageToolbar` loophole by enforcing a fixed single-row host in `WorkbenchWindow`, with portal-host precedence over layout-level toolbar content.

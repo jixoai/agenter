@@ -50,7 +50,9 @@
 		data-has-local-toolbar={toolbar ? 'true' : 'false'}
 	>
 		{#if toolbar}
-			{@render toolbar()}
+			<div class="workbench-page-toolbar-local">
+				{@render toolbar()}
+			</div>
 		{/if}
 		<div bind:this={pageToolbarRegistry.host} class="workbench-page-toolbar-host"></div>
 	</section>
@@ -85,10 +87,8 @@
 	}
 
 	.workbench-page-toolbar {
-		--workbench-page-toolbar-rows: 1;
-		block-size: calc(var(--workbench-page-toolbar-rows) * 48px);
+		block-size: 48px;
 		display: grid;
-		grid-auto-rows: minmax(0, 1fr);
 		container-type: inline-size;
 		container-name: workbench-page-toolbar;
 		overflow: clip;
@@ -96,18 +96,18 @@
 		z-index: 1;
 	}
 
-	.workbench-page-toolbar[data-has-local-toolbar='true']:has(.workbench-page-toolbar-host:not(:empty)) {
-		--workbench-page-toolbar-rows: 2;
+	.workbench-page-toolbar-local,
+	.workbench-page-toolbar-host {
+		block-size: 100%;
+		min-inline-size: 0;
 	}
 
 	.workbench-page-toolbar[data-has-local-toolbar='false']:has(.workbench-page-toolbar-host:empty) {
 		display: none;
 	}
 
-	.workbench-page-toolbar-host {
-		display: block;
-		block-size: 100%;
-		min-inline-size: 0;
+	.workbench-page-toolbar:has(.workbench-page-toolbar-host:not(:empty)) .workbench-page-toolbar-local {
+		display: none;
 	}
 
 	.workbench-page-toolbar-host:empty {
