@@ -3494,26 +3494,39 @@ export class SessionRuntime {
     return {
       name: "root-workspace",
       createTools: ({ traceTool }) => {
+        const traceWithContext = <TInput, TOutput>(
+          toolName: string,
+          input: TInput,
+          handler: () => Promise<TOutput>,
+          context?: { toolCallId?: string },
+        ): Promise<TOutput> =>
+          traceTool(toolName, input, handler, { invocationId: context?.toolCallId });
+
         const listTool = toolDefinition({
           name: "root_workspace_list",
           description: "List the fixed avatar root workspace, mounted workspaces, grants, and shell commands.",
           outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async () =>
-          traceTool("root_workspace_list", {}, async () => ({
-            rootWorkspace: {
-              path: this.getRootWorkspacePath(),
-              commandNames: this.listRootWorkspaceToolCommands(),
-              toolNames: this.getRootWorkspaceToolFiles(),
-              skillRoots: this.getRootWorkspaceSkillRoots(),
-            },
-            attentionApi: this.runtimeLocalApi
-              ? {
-                  baseUrl: this.runtimeLocalApi.baseUrl,
-                  principalId: this.options.avatarPrincipalId ?? null,
-                }
-              : null,
-            workspaces: this.projectRuntimeWorkspaceList(),
-          })),
+        }).server(async (_rawInput, context) =>
+          traceWithContext(
+            "root_workspace_list",
+            {},
+            async () => ({
+              rootWorkspace: {
+                path: this.getRootWorkspacePath(),
+                commandNames: this.listRootWorkspaceToolCommands(),
+                toolNames: this.getRootWorkspaceToolFiles(),
+                skillRoots: this.getRootWorkspaceSkillRoots(),
+              },
+              attentionApi: this.runtimeLocalApi
+                ? {
+                    baseUrl: this.runtimeLocalApi.baseUrl,
+                    principalId: this.options.avatarPrincipalId ?? null,
+                  }
+                : null,
+              workspaces: this.projectRuntimeWorkspaceList(),
+            }),
+            context,
+          ),
         );
 
         const bashTool = toolDefinition({
@@ -3532,7 +3545,7 @@ export class SessionRuntime {
             exitCode: z.number(),
             cwd: z.string(),
           }),
-        }).server(async (rawInput) => {
+        }).server(async (rawInput, context) => {
           const parsed = z
             .object({
               command: z.string(),
@@ -3541,7 +3554,7 @@ export class SessionRuntime {
               stdin: z.string().optional(),
             })
             .parse(rawInput);
-          return traceTool("root_workspace_bash", parsed, async () => await this.execRootWorkspaceBash(parsed));
+          return traceWithContext("root_workspace_bash", parsed, async () => await this.execRootWorkspaceBash(parsed), context);
         });
 
         return [listTool, bashTool];

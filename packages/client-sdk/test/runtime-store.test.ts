@@ -3170,6 +3170,66 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given the same Heartbeat message is re-emitted with a different row id When the store merges it Then messageId remains the durable identity", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(900),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      heartbeatPartsPageQuery: async () => ({
+        items: [
+          createHeartbeatEntry({
+            id: 30,
+            messageId: "heartbeat-part:assistant:stable",
+            role: "assistant",
+            createdAt: 200,
+            updatedAt: 210,
+            isComplete: false,
+            payload: { type: "text", content: "draft" },
+            text: "draft",
+          }),
+        ],
+        nextBefore: null,
+        hasMoreBefore: false,
+      }),
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    onData?.({
+      version: 1,
+      eventId: 901,
+      timestamp: Date.now(),
+      type: "runtime.heartbeatPart",
+      sessionId: "i-1",
+      payload: {
+        entry: createHeartbeatEntry({
+          id: 44,
+          messageId: "heartbeat-part:assistant:stable",
+          role: "assistant",
+          createdAt: 200,
+          updatedAt: 260,
+          isComplete: true,
+          payload: { type: "text", content: "final" },
+          text: "final",
+        }),
+      },
+    });
+
+    expect(store.getState().heartbeatPartsBySession["i-1"]).toEqual([
+      expect.objectContaining({
+        id: 44,
+        messageId: "heartbeat-part:assistant:stable",
+        text: "final",
+        isComplete: true,
+      }),
+    ]);
+    store.disconnect();
+  });
+
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];

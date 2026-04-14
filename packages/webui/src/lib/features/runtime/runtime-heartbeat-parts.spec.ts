@@ -196,7 +196,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     ).toBe("attention commit");
   });
 
-  test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the later result does not get pulled upward ahead of that text part", () => {
+  test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the invocation still renders as one stable tool block anchored at the original tool call", () => {
     const entry = {
       ...baseEntry,
       parts: [
@@ -268,23 +268,14 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
         kind: "tool",
         key: "workspace-bash-2",
         tool: "workspace.bash",
-        state: "input-available",
+        state: "output-available",
         input: { command: "pwd" },
-        output: undefined,
+        output: { stdout: "/repo/agenter\n", exitCode: 0 },
         errorText: null,
       },
       {
         kind: "part",
         part: entry.parts[1],
-      },
-      {
-        kind: "tool",
-        key: "workspace-bash-2",
-        tool: "workspace.bash",
-        state: "output-available",
-        input: null,
-        output: { stdout: "/repo/agenter\n", exitCode: 0 },
-        errorText: null,
       },
     ]);
   });

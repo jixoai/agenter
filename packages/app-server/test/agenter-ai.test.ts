@@ -1784,6 +1784,98 @@ describe("Feature: AgenterAI behavior", () => {
     expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
+  test("Scenario: Given a streamed tool call starts without parsed args When the real tool begins execution Then AgenterAI reuses the same toolCallId and emits a hydrated running update", async () => {
+    const chat = createAttentionGateway();
+    const streamedUpdates: Array<{
+      kind: string;
+      toolCallId?: string;
+      toolName?: string;
+      argsText?: string;
+      input?: unknown;
+    }> = [];
+    const modelCalls: AgentModelCallRecord[] = [];
+
+    const ai = new AgenterAI({
+      modelClient: createModelClient(async (input) => {
+        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
+        expect(attentionCommit).toBeDefined();
+        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
+          throw new Error("attention_commit tool missing");
+        }
+
+        await input.onUpdate?.({
+          kind: "tool_call",
+          toolCallId: "call-attention-commit-stable",
+          toolName: "attention_commit",
+          argsText: "",
+          timestamp: Date.now(),
+        });
+
+        await attentionCommit.execute(
+          {
+            contextId: chat.defaultContextId,
+            summary: "mark handled",
+            parentCommitIds: [],
+            done: true,
+          },
+          {
+            toolCallId: "call-attention-commit-stable",
+            emitCustomEvent: () => {},
+          },
+        );
+
+        return {
+          thinking: "",
+          text: "",
+          finishReason: "stop",
+        };
+      }),
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      onAssistantStream: async (update) => {
+        streamedUpdates.push({
+          kind: update.kind,
+          toolCallId: "toolCallId" in update ? update.toolCallId : undefined,
+          toolName: "toolName" in update ? update.toolName : undefined,
+          argsText: "argsText" in update ? update.argsText : undefined,
+          input: "input" in update ? update.input : undefined,
+        });
+      },
+      onModelCall: async (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    await ai.send([createUserMessage("处理当前 attention")]);
+
+    const hydratedCallUpdate = streamedUpdates.find(
+      (update) =>
+        update.kind === "tool_call" &&
+        update.toolCallId === "call-attention-commit-stable" &&
+        typeof update.argsText === "string" &&
+        update.argsText.length > 0,
+    );
+    expect(hydratedCallUpdate?.input).toMatchObject({
+      contextId: chat.defaultContextId,
+      summary: "mark handled",
+      change: {
+        type: "clean",
+      },
+    });
+
+    const finalRecord = modelCalls.find((record) => record.status === "done");
+    expect(finalRecord?.response?.toolTrace).toHaveLength(1);
+    expect(finalRecord?.response?.toolTrace?.[0]?.invocationId).toBe("call-attention-commit-stable");
+    expect(finalRecord?.response?.toolTrace?.[0]?.input).toMatchObject({
+      contextId: chat.defaultContextId,
+      summary: "mark handled",
+      change: {
+        type: "clean",
+      },
+    });
+  });
+
   test("Scenario: Given an attention-only round When the first model response is a no-op Then the next runtime-managed cycle can still drive a real attention mutation", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();

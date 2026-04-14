@@ -341,6 +341,16 @@ const mergeTerminalActivityItems = (
   return merged.length > limit ? merged.slice(-limit) : merged;
 };
 
+const pickNewerHeartbeatEntry = (current: HeartbeatPartItem, incoming: HeartbeatPartItem): HeartbeatPartItem => {
+  if (incoming.updatedAt !== current.updatedAt) {
+    return incoming.updatedAt > current.updatedAt ? incoming : current;
+  }
+  if (incoming.id !== current.id) {
+    return incoming.id > current.id ? incoming : current;
+  }
+  return incoming;
+};
+
 const sameChatAttachmentSet = (
   left: RuntimeChatMessage["attachments"],
   right: RuntimeChatMessage["attachments"],
@@ -494,7 +504,6 @@ export class RuntimeStore {
   private readonly schedulerLogsAccessBySession = new Map<string, Map<number, number>>();
   private readonly observabilityTracesAccessBySession = new Map<string, Map<number, number>>();
   private readonly apiCallsAccessBySession = new Map<string, Map<number, number>>();
-  private readonly heartbeatPartsAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallsAccessBySession = new Map<string, Map<number, number>>();
   private readonly requestAuxAccessBySession = new Map<string, Map<number, number>>();
   private readonly modelCallDeltasAccessBySession = new Map<string, Map<number, number>>();
@@ -2045,6 +2054,29 @@ export class RuntimeStore {
     });
   }
 
+  private mergeHeartbeatEntries(
+    current: HeartbeatPartItem[],
+    incoming: HeartbeatPartItem[],
+    limit: number,
+  ): HeartbeatPartItem[] {
+    const entries = new Map<string, HeartbeatPartItem>();
+    for (const item of current) {
+      entries.set(item.messageId, item);
+    }
+    for (const item of incoming) {
+      const existing = entries.get(item.messageId);
+      entries.set(item.messageId, existing ? pickNewerHeartbeatEntry(existing, item) : item);
+    }
+    const merged = [...entries.values()].sort((left, right) => {
+      const byCursor = compareHistoryCursor(this.toRecordHistoryCursor(left), this.toRecordHistoryCursor(right));
+      if (byCursor !== 0) {
+        return byCursor;
+      }
+      return left.messageId.localeCompare(right.messageId);
+    });
+    return merged.length > limit ? merged.slice(-limit) : merged;
+  }
+
   private createOptimisticCycle(input: {
     text: string;
     clientMessageId: string;
@@ -2268,7 +2300,6 @@ export class RuntimeStore {
     this.schedulerLogsAccessBySession.clear();
     this.observabilityTracesAccessBySession.clear();
     this.apiCallsAccessBySession.clear();
-    this.heartbeatPartsAccessBySession.clear();
     this.modelCallsAccessBySession.clear();
     this.requestAuxAccessBySession.clear();
     this.modelCallDeltasAccessBySession.clear();
@@ -2636,7 +2667,6 @@ export class RuntimeStore {
     this.schedulerLogsAccessBySession.delete(sessionId);
     this.observabilityTracesAccessBySession.delete(sessionId);
     this.apiCallsAccessBySession.delete(sessionId);
-    this.heartbeatPartsAccessBySession.delete(sessionId);
     this.modelCallsAccessBySession.delete(sessionId);
     this.requestAuxAccessBySession.delete(sessionId);
     this.modelCallDeltasAccessBySession.delete(sessionId);
@@ -4700,13 +4730,7 @@ export class RuntimeStore {
   async loadHeartbeatParts(sessionId: string, limit = 120): Promise<void> {
     const output = await this.client.trpc.runtime.heartbeatPartsPage.query({ sessionId, limit });
     const current = this.state.heartbeatPartsBySession[sessionId] ?? [];
-    this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
-      this.heartbeatPartsAccessBySession,
-      sessionId,
-      current,
-      output.items,
-      LOOPBUS_LRU_LIMIT,
-    );
+    this.state.heartbeatPartsBySession[sessionId] = this.mergeHeartbeatEntries(current, output.items, LOOPBUS_LRU_LIMIT);
     this.updateBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, output.nextBefore);
     this.emit();
   }
@@ -4725,13 +4749,7 @@ export class RuntimeStore {
       limit,
     });
     this.updateBeforeCursor(this.heartbeatPartsBeforeCursorBySession, sessionId, output.nextBefore);
-    const next = this.applyLruEntries(
-      this.heartbeatPartsAccessBySession,
-      sessionId,
-      current,
-      output.items,
-      LOOPBUS_LRU_LIMIT,
-    );
+    const next = this.mergeHeartbeatEntries(current, output.items, LOOPBUS_LRU_LIMIT);
     this.state.heartbeatPartsBySession[sessionId] = next;
     this.emit();
     return {
@@ -5014,7 +5032,6 @@ export class RuntimeStore {
       delete this.state.modelCallDeltasBySession?.[payload.sessionId];
       delete this.state.terminalActivityBySession[payload.sessionId];
       delete this.state.apiCallRecordingBySession[payload.sessionId];
-      this.heartbeatPartsAccessBySession.delete(payload.sessionId);
       this.heartbeatPartsBeforeCursorBySession.delete(payload.sessionId);
       this.modelCallDeltasAccessBySession.delete(payload.sessionId);
       this.requestAuxAccessBySession.delete(payload.sessionId);
@@ -5342,9 +5359,7 @@ export class RuntimeStore {
       } else if (event.type === "runtime.heartbeatPart") {
         const payload = event.payload as { entry: HeartbeatPartItem };
         const current = this.state.heartbeatPartsBySession[sessionId] ?? [];
-        this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
-          this.heartbeatPartsAccessBySession,
-          sessionId,
+        this.state.heartbeatPartsBySession[sessionId] = this.mergeHeartbeatEntries(
           current,
           [payload.entry],
           LOOPBUS_LRU_LIMIT,
@@ -5678,9 +5693,7 @@ export class RuntimeStore {
         traces.items,
         LOOPBUS_LRU_LIMIT,
       );
-      this.state.heartbeatPartsBySession[sessionId] = this.applyLruEntries(
-        this.heartbeatPartsAccessBySession,
-        sessionId,
+      this.state.heartbeatPartsBySession[sessionId] = this.mergeHeartbeatEntries(
         [],
         heartbeatParts.items,
         LOOPBUS_LRU_LIMIT,

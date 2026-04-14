@@ -310,6 +310,21 @@ const getToolInvocationId = (part: HeartbeatPart): string | null => {
 
 export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] => {
   const blocks: HeartbeatDisplayBlock[] = [];
+  const renderedInvocationIds = new Set<string>();
+  const consumedResultPartIds = new Set<number>();
+  const resultPartByInvocationId = new Map<string, HeartbeatPart>();
+
+  for (const part of entry.parts) {
+    if (part.partType !== "tool_result") {
+      continue;
+    }
+    const invocationId = getToolInvocationId(part);
+    if (!invocationId || resultPartByInvocationId.has(invocationId)) {
+      continue;
+    }
+    resultPartByInvocationId.set(invocationId, part);
+  }
+
   for (let index = 0; index < entry.parts.length; index += 1) {
     const part = entry.parts[index]!;
     const parsedToolTrace = parseHeartbeatToolTracePart(part);
@@ -320,12 +335,23 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
     if (part.partType === "tool_call") {
       const callPayload = (part.payload ?? {}) as ToolCallPayload;
       const invocationId = typeof callPayload.invocationId === "string" ? callPayload.invocationId : null;
-      const nextPart = entry.parts[index + 1];
-      const nextInvocationId = nextPart ? getToolInvocationId(nextPart) : null;
+      if (invocationId && renderedInvocationIds.has(invocationId)) {
+        continue;
+      }
+      if (invocationId) {
+        renderedInvocationIds.add(invocationId);
+      }
       const pairedResultPart =
-        nextPart && nextPart.partType === "tool_result" && invocationId !== null && invocationId === nextInvocationId
-          ? nextPart
-          : undefined;
+        invocationId === null
+          ? undefined
+          : (() => {
+              const candidate = resultPartByInvocationId.get(invocationId);
+              if (!candidate || candidate.partIndex <= part.partIndex) {
+                return undefined;
+              }
+              consumedResultPartIds.add(candidate.partId);
+              return candidate;
+            })();
       const resultPayload = (pairedResultPart?.payload ?? {}) as ToolResultPayload;
       const state: ToolUiState =
         pairedResultPart === undefined
@@ -344,12 +370,12 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
         output: resultPayload.output,
         errorText: resultPayload.error ?? null,
       });
-      if (pairedResultPart) {
-        index += 1;
-      }
       continue;
     }
     if (part.partType === "tool_result") {
+      if (consumedResultPartIds.has(part.partId)) {
+        continue;
+      }
       const resultPayload = (part.payload ?? {}) as ToolResultPayload;
       blocks.push({
         kind: "tool",

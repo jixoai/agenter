@@ -40,7 +40,14 @@ export interface AgentToolTraceEntry {
 export interface AgentToolProviderContext {
   readonly runtimeText: ReturnType<typeof createRuntimeText>;
   readonly signal?: AbortSignal;
-  traceTool: <TInput, TOutput>(toolName: string, input: TInput, handler: () => Promise<TOutput>) => Promise<TOutput>;
+  traceTool: <TInput, TOutput>(
+    toolName: string,
+    input: TInput,
+    handler: () => Promise<TOutput>,
+    options?: {
+      invocationId?: string;
+    },
+  ) => Promise<TOutput>;
 }
 
 export interface AgentToolProvider {
@@ -564,6 +571,33 @@ type ExecutableTool = Tool & {
     input: unknown,
     context?: { toolCallId: string; emitCustomEvent: (event: unknown) => void },
   ) => Promise<unknown>;
+};
+
+const hasMeaningfulToolInput = (value: unknown): boolean => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
+};
+
+const stringifyToolArgs = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 };
 
 const extractJsonObjectText = (value: string): string | null => {
@@ -1692,11 +1726,24 @@ export class AgenterAI {
       toolName: string,
       input: TInput,
       handler: () => Promise<TOutput>,
+      options?: {
+        invocationId?: string;
+      },
     ): Promise<TOutput> => {
-      const invocationId = `${toolName}:${createId()}`;
+      const invocationId = options?.invocationId?.trim() || `${toolName}:${createId()}`;
       const startedAt = Date.now();
       try {
         throwIfAborted();
+        if (hasMeaningfulToolInput(input)) {
+          await this.deps.onAssistantStream?.({
+            kind: "tool_call",
+            toolCallId: invocationId,
+            toolName,
+            argsText: stringifyToolArgs(input),
+            input,
+            timestamp: startedAt,
+          });
+        }
         const output = await handler();
         throwIfAborted();
         const finishedAt = Date.now();
@@ -1839,10 +1886,15 @@ export class AgenterAI {
           }),
         ),
       }),
-    }).server(async () =>
-      traceTool("attention_context_list", {}, async () => ({
-        contexts: this.deps.attentionGateway.listContexts(),
-      })),
+    }).server(async (_rawInput, context) =>
+      traceTool(
+        "attention_context_list",
+        {},
+        async () => ({
+          contexts: this.deps.attentionGateway.listContexts(),
+        }),
+        { invocationId: context?.toolCallId },
+      ),
     );
 
     const attentionQueryTool = toolDefinition({
@@ -1856,7 +1908,7 @@ export class AgenterAI {
       outputSchema: z.object({
         items: z.array(attentionMatchSchema),
       }),
-    }).server(async (rawInput) => {
+    }).server(async (rawInput, context) => {
       const input = z
         .object({
           query: z.string(),
@@ -1864,9 +1916,14 @@ export class AgenterAI {
           limit: z.number().int().min(1).max(200).optional(),
         })
         .parse(rawInput);
-      return traceTool("attention_query", input, async () => ({
-        items: (await this.deps.attentionGateway.query(input)).map(projectAttentionCommitMatchForModel),
-      }));
+      return traceTool(
+        "attention_query",
+        input,
+        async () => ({
+          items: (await this.deps.attentionGateway.query(input)).map(projectAttentionCommitMatchForModel),
+        }),
+        { invocationId: context?.toolCallId },
+      );
     });
 
     const attentionCommitTool = toolDefinition({
@@ -1877,7 +1934,7 @@ export class AgenterAI {
         ok: z.boolean(),
         commitId: z.string(),
       }),
-    }).server(async (rawInput) => {
+    }).server(async (rawInput, context) => {
       const input = attentionCommitToolInputSchema.parse(rawInput);
       const resolvedScores = input.done
         ? (() => {
@@ -1910,17 +1967,22 @@ export class AgenterAI {
         summary: input.summary,
         change: input.change ?? { type: "clean" },
       } satisfies AttentionCommitToolInput;
-      return traceTool("attention_commit", effectiveInput, async () => {
-        const commit = await this.deps.attentionGateway.commit(effectiveInput);
-        hooks.onAttentionUpdate({
-          contextId: input.contextId,
-          commitId: commit.commitId,
-          text: commit.summary,
-          scores: commit.scores,
-          done: input.done ?? false,
-        });
-        return { ok: true, commitId: commit.commitId };
-      });
+      return traceTool(
+        "attention_commit",
+        effectiveInput,
+        async () => {
+          const commit = await this.deps.attentionGateway.commit(effectiveInput);
+          hooks.onAttentionUpdate({
+            contextId: input.contextId,
+            commitId: commit.commitId,
+            text: commit.summary,
+            scores: commit.scores,
+            done: input.done ?? false,
+          });
+          return { ok: true, commitId: commit.commitId };
+        },
+        { invocationId: context?.toolCallId },
+      );
     });
 
     const tools: Tool[] = [attentionContextListTool, attentionQueryTool, attentionCommitTool, ...externalTools];
