@@ -16,6 +16,8 @@ The new structured-value viewer also needs one additional contract correction: a
 - Make Heartbeat rows read like inspection entries, not social chat bubbles.
 - Remove redundant metadata and low-signal chips from the Heartbeat stream.
 - Ensure structured payload content stays readable against inspection surfaces.
+- Avoid double-chrome payload cards for plain text Heartbeat parts.
+- Expose a concise collapsed tool preview so operators can scan intent before opening a tool block.
 - Bind Heartbeat row avatars to the AvatarSession icon already used elsewhere in the runtime shell.
 - Keep `JsonViewer` local overrides ephemeral and global changes live.
 - Record the ai-elements-svelte LLM docs URL in durable repo guidance.
@@ -68,8 +70,27 @@ Rationale:
 - This matches the user's requested interaction contract.
 - It avoids adding another persistence layer for something that should stay ephemeral.
 
+### 5. Text payloads keep a single visual chrome layer
+
+Decision:
+`runtime-heartbeat-part-content.svelte` will stop wrapping normal text payloads in one bordered card and then mounting a second bordered `MarkdownDocument` inside it. The payload surface keeps one primary chrome owner.
+
+Rationale:
+- Nested borders make one durable fact look like two stacked cards.
+- Inspection density depends on clear containment ownership.
+
+### 6. Tool rows expose a collapsed preview derived from stable input fields
+
+Decision:
+Tool rows will derive a one-line preview from high-signal input fields such as `command`, `cmd`, or the first stable scalar inside the tool payload. For shell-style payloads, the preview favors the leading command intent, e.g. `attention commit`, before the long JSON argument tail.
+
+Rationale:
+- Operators often need to scan several tool rows before deciding which one to open.
+- The full JSON payload remains available after expansion, so the collapsed preview should prioritize recognition speed.
+
 ## Risks / Trade-offs
 
 - [Heartbeat rows become less obviously "chat-like"] → This is intentional; the route is an inspection surface, and metadata plus alignment still preserve chronology.
 - [Using the session icon for all Heartbeat rows may blur actor distinctions] → Alignment and row content still distinguish request-side versus assistant-side facts, while the avatar now correctly anchors the runtime identity.
 - [Removing `round` or `Text` chips could hide debugging data] → Those facts remain available in durable payload content or clipboard export; they no longer consume the default visual scan path.
+- [Tool previews may overfit one payload shape] → Preview extraction is deliberately heuristic but constrained to stable top-level scalars; the expanded payload remains the durable truth.

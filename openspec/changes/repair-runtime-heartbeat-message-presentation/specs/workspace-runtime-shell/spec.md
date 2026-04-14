@@ -2,7 +2,7 @@
 
 ### Requirement: Heartbeat SHALL render one continuous message-parts runtime stream
 
-The `Heartbeat` tab SHALL render one continuous runtime surface backed by durable `message-parts` truth. It SHALL show request-side auxiliary rows, AI-visible request/response rows, and compact boundaries in chronological order without rebuilding the primary story from mixed chat rows, request-aux cards, and model-call cards. Default Heartbeat row presentation SHALL use inspection-first surfaces, high-signal metadata, and the active AvatarSession icon instead of generic chat bubble styling.
+The `Heartbeat` tab SHALL render one continuous runtime surface backed by durable `message-parts` truth. It SHALL show request-side auxiliary rows, AI-visible request/response rows, and compact boundaries in chronological order without rebuilding the primary story from mixed chat rows, request-aux cards, and model-call cards. Default Heartbeat row presentation SHALL use inspection-first surfaces, high-signal metadata, single-layer payload chrome, collapsed tool previews, and the active AvatarSession icon instead of generic chat bubble styling.
 
 #### Scenario: Heartbeat opens with folded auxiliary facts and durable AI-visible rows
 
@@ -22,3 +22,14 @@ The `Heartbeat` tab SHALL render one continuous runtime surface backed by durabl
 - **WHEN** a normal Heartbeat row renders a durable `message-parts` entry
 - **THEN** the default row chrome does not repeat low-signal chips such as duplicated `user` labels, `round 0`, or `Text`
 - **AND** the header preserves only the high-value metadata needed for rapid operator scanning
+
+#### Scenario: Plain text payloads do not render nested card chrome
+
+- **WHEN** a Heartbeat row renders a normal text or thinking payload
+- **THEN** the operator sees one primary payload surface instead of two stacked bordered cards for the same fact
+
+#### Scenario: Collapsed tool rows expose a high-signal preview
+
+- **WHEN** a Heartbeat row contains a tool block with shell-style input such as `command` or `cmd`
+- **THEN** the collapsed tool header shows a concise preview derived from that input
+- **AND** the preview favors the leading command intent, such as `attention commit`, before long serialized arguments

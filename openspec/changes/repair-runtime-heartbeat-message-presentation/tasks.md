@@ -8,6 +8,8 @@
 - [x] 2.1 Rework Heartbeat rows to use inspection-first surfaces instead of chat-primary bubble styling.
 - [x] 2.2 Remove redundant `user/user`, `round 0`, and `Text` presentation noise from default Heartbeat row rendering.
 - [x] 2.3 Bind Heartbeat row avatars to the active AvatarSession icon.
+- [ ] 2.4 Remove nested border chrome from plain text Heartbeat parts.
+- [ ] 2.5 Add collapsed high-signal previews for Heartbeat tool rows.
 
 ## 3. Structured viewer behavior and verification
 

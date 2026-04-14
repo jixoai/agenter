@@ -9,6 +9,8 @@ We need to correct this now because Heartbeat is an operator inspection surface,
 - Rebuild Heartbeat message-part rows so they use inspection-row styling instead of chat bubble skin.
 - Reduce Heartbeat row metadata to the durable facts that matter in practice, removing repeated role chips, meaningless `round 0` noise, and unnecessary `Text` part labels.
 - Use the active AvatarSession icon for Heartbeat row avatars instead of fallback initials like `YO`.
+- Remove nested content chrome from plain text Heartbeat parts so one payload does not read like two stacked cards.
+- Add high-signal collapsed previews to Tool rows so operators can identify commands such as `attention commit` before expanding the payload.
 - Fix structured-value viewer mode behavior so global mode changes immediately update any viewer without a local override, while local overrides stay DOM-local and reset on remount.
 - Record the official ai-elements-svelte LLM docs entry in the repository's durable engineering guidance.
 
@@ -20,7 +22,7 @@ We need to correct this now because Heartbeat is an operator inspection surface,
 
 ### Modified Capabilities
 
-- `workspace-runtime-shell`: Heartbeat rows now render as inspection-first runtime entries with reduced metadata noise, readable content surfaces, and AvatarSession-backed avatars.
+- `workspace-runtime-shell`: Heartbeat rows now render as inspection-first runtime entries with reduced metadata noise, single-layer readable content surfaces, collapsed tool previews, and AvatarSession-backed avatars.
 - `structured-value-preview`: global viewer mode changes now immediately update non-overridden viewers, while local overrides remain ephemeral per mounted DOM instance.
 
 ## Impact
