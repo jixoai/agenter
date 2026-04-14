@@ -3,3 +3,5 @@
 - [x] 3. Keep Heartbeat row semantics aligned with local ai-elements primitives, including `Checkpoint` for compact, `Reasoning` for thinking, and `Tool` for tool call/result blocks.
 - [x] 4. Add or update selector, Storybook DOM, and runtime-shell regression coverage for toolbar composition, footer status visibility, and long-list Heartbeat rendering.
 - [x] 5. Run targeted verification (`typecheck` plus runtime Heartbeat Storybook/browser-facing tests) and prepare the change for commit.
+- [x] 6. Collapse the avatars catalog toolbar on runtime/avatar-detail tabs so the runtime page-toolbar owns the only persistent chrome row above the body content.
+- [x] 7. Rebuild runtime page-toolbar content on the shared `WorkbenchToolbar` contract and extend regression coverage for collapsed parent chrome plus canonical `tool_call/tool_result` Tool rows.

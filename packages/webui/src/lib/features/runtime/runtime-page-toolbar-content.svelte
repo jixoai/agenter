@@ -6,6 +6,8 @@
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 
 	import RuntimeTabBar from './runtime-tab-bar.svelte';
 	import type { RuntimeTabId, RuntimeTabItem } from './runtime-shell-state';
@@ -33,56 +35,82 @@
 		isRunning: boolean;
 		onToggleRuntime: () => void | Promise<void>;
 	} = $props();
+
+	const resolveTabListClass = (toolbarState: WorkbenchToolbarRenderState): string =>
+		toolbarState.isNarrow
+			? 'rounded-full border border-border/60 bg-background/70 p-0.5'
+			: 'rounded-full border border-border/60 bg-background/70 p-1';
+
+const resolveTabTriggerClass = (toolbarState: WorkbenchToolbarRenderState): string =>
+	toolbarState.isNarrow
+		? 'h-6 rounded-full px-1.5 text-[10px]'
+		: 'h-6 rounded-full px-2.5 text-[11px] md:h-7 md:px-3 md:text-xs';
 </script>
 
-<div class="runtime-page-toolbar" data-testid="runtime-page-toolbar">
-	<div class="runtime-page-toolbar__identity" title={`${title} · ${workspaceLabel}`}>
-		<ProfileAvatar label={title} src={sessionIconUrl} class="runtime-page-toolbar__avatar" />
-		<div class="runtime-page-toolbar__title">
-			<span class="truncate font-semibold">{title}</span>
-			<span class="runtime-page-toolbar__workspace text-xs text-muted-foreground">
-				<FolderTreeIcon class="size-3.5" />
-				{workspaceLabel}
-			</span>
+{#snippet runtimeToolbarContent(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class="runtime-page-toolbar"
+		data-testid="runtime-page-toolbar"
+		data-toolbar-breakpoint={toolbarState.breakpoint}
+	>
+		<div class="runtime-page-toolbar__identity" title={`${title} · ${workspaceLabel}`}>
+			<ProfileAvatar label={title} src={sessionIconUrl} class="runtime-page-toolbar__avatar" />
+			<div class="runtime-page-toolbar__title">
+				<span class="truncate font-semibold">{title}</span>
+				{#if !toolbarState.isNarrow}
+					<span class="runtime-page-toolbar__workspace text-xs text-muted-foreground">
+						<FolderTreeIcon class="size-3.5" />
+						{workspaceLabel}
+					</span>
+				{/if}
+			</div>
+		</div>
+
+		<div class="runtime-page-toolbar__tabs">
+			<RuntimeTabBar
+				{sessionId}
+				{activeTab}
+				{tabs}
+				class="min-w-0"
+				listClass={resolveTabListClass(toolbarState)}
+				triggerClass={resolveTabTriggerClass(toolbarState)}
+			/>
+		</div>
+
+		<div class="runtime-page-toolbar__actions">
+			{#if !toolbarState.isNarrow}
+				<Badge variant="outline" class="rounded-full bg-background/70 text-[10px] uppercase tracking-[0.14em]">
+					{statusLabel}
+				</Badge>
+			{/if}
+			{#if unreadCount > 0 && toolbarState.isWide}
+				<Badge variant="secondary" class="rounded-full">{unreadCount} unread</Badge>
+			{/if}
+			<Button
+				size={toolbarState.isNarrow ? 'icon-sm' : 'sm'}
+				variant={isRunning ? 'destructive' : 'default'}
+				class="rounded-full"
+				aria-label={isRunning ? 'Stop runtime' : 'Start runtime'}
+				title={isRunning ? 'Stop runtime' : 'Start runtime'}
+				onclick={() => void onToggleRuntime()}
+			>
+				{#if isRunning}
+					<StopCircleIcon class="size-4" />
+					{#if !toolbarState.isNarrow}
+						<span>Stop</span>
+					{/if}
+				{:else}
+					<PlayIcon class="size-4" />
+					{#if !toolbarState.isNarrow}
+						<span>Start</span>
+					{/if}
+				{/if}
+			</Button>
 		</div>
 	</div>
+{/snippet}
 
-	<div class="runtime-page-toolbar__tabs">
-		<RuntimeTabBar
-			{sessionId}
-			{activeTab}
-			{tabs}
-			class="min-w-0"
-			listClass="rounded-full border border-border/60 bg-background/70 p-1"
-			triggerClass="h-6 rounded-full px-2.5 text-[11px] md:h-7 md:px-3 md:text-xs"
-		/>
-	</div>
-
-	<div class="runtime-page-toolbar__actions">
-		<Badge variant="outline" class="hidden rounded-full bg-background/70 md:inline-flex">
-			{statusLabel}
-		</Badge>
-		{#if unreadCount > 0}
-			<Badge variant="secondary" class="hidden rounded-full lg:inline-flex">{unreadCount} unread</Badge>
-		{/if}
-		<Button
-			size="sm"
-			variant={isRunning ? 'destructive' : 'default'}
-			class="rounded-full"
-			aria-label={isRunning ? 'Stop' : 'Start'}
-			title={isRunning ? 'Stop' : 'Start'}
-			onclick={() => void onToggleRuntime()}
-		>
-			{#if isRunning}
-				<StopCircleIcon class="size-4" />
-				<span class="runtime-page-toolbar__action-label">Stop</span>
-			{:else}
-				<PlayIcon class="size-4" />
-				<span class="runtime-page-toolbar__action-label">Start</span>
-			{/if}
-		</Button>
-	</div>
-</div>
+<WorkbenchToolbar content={runtimeToolbarContent} />
 
 <style>
 	.runtime-page-toolbar {
@@ -92,7 +120,7 @@
 		block-size: 100%;
 		min-block-size: 0;
 		min-inline-size: 0;
-		padding-inline: 0.6rem;
+		padding-inline: 0.55rem;
 	}
 
 	.runtime-page-toolbar__identity,
@@ -106,7 +134,7 @@
 		align-items: center;
 		gap: 0.55rem;
 		flex: 0 1 auto;
-		max-inline-size: 11rem;
+		max-inline-size: 12rem;
 		overflow: hidden;
 	}
 
@@ -128,7 +156,7 @@
 	}
 
 	.runtime-page-toolbar__workspace {
-		display: none;
+		display: inline-flex;
 		min-inline-size: 0;
 		align-items: center;
 		gap: 0.25rem;
@@ -155,10 +183,6 @@
 		.runtime-page-toolbar__identity {
 			max-inline-size: 20rem;
 		}
-
-		.runtime-page-toolbar__workspace {
-			display: inline-flex;
-		}
 	}
 
 	@container workbench-page-toolbar (max-width: 44rem) {
@@ -178,10 +202,6 @@
 
 		.runtime-page-toolbar__title {
 			font-size: 0.76rem;
-		}
-
-		.runtime-page-toolbar__action-label {
-			display: none;
 		}
 	}
 </style>

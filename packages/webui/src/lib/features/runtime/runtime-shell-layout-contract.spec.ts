@@ -16,7 +16,8 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeShellSource).not.toContain("<Scaffold.Header");
   });
 
-  test("Scenario: Given runtime tabs must live inside the toolbar When reading the toolbar content source Then the toolbar renders the tab strip beside title and start stop controls", () => {
+  test("Scenario: Given runtime tabs must live inside the shared toolbar law When reading the toolbar content source Then the toolbar renders the tab strip beside title and start stop controls through WorkbenchToolbar", () => {
+    expect(runtimePageToolbarSource).toContain("<WorkbenchToolbar");
     expect(runtimePageToolbarSource).toContain("<RuntimeTabBar");
     expect(runtimePageToolbarSource).toContain("Stop");
     expect(runtimePageToolbarSource).toContain("Start");

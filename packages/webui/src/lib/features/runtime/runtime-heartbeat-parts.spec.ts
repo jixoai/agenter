@@ -20,6 +20,67 @@ const baseEntry: HeartbeatPartItem = {
 };
 
 describe("Feature: Runtime Heartbeat display block parsing", () => {
+  test("Scenario: Given canonical tool_call and tool_result parts share one invocation id When display blocks are built Then the row upgrades into a single Tool block instead of two raw payload cards", () => {
+    const entry = {
+      ...baseEntry,
+      parts: [
+        {
+          partId: 101,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-1",
+            tool: "workspace.bash",
+            input: { command: "pwd" },
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+        {
+          partId: 102,
+          partIndex: 1,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_result",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-1",
+            tool: "workspace.bash",
+            output: { stdout: "/repo/agenter\n", exitCode: 0 },
+            error: null,
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "workspace-bash-1",
+        tool: "workspace.bash",
+        state: "output-available",
+        input: { command: "pwd" },
+        output: { stdout: "/repo/agenter\n", exitCode: 0 },
+        errorText: null,
+      },
+    ]);
+  });
+
   test("Scenario: Given a text part stores a fenced yaml tool trace When display blocks are built Then the row upgrades into the Tool primitive instead of a raw text card", () => {
     const entry = {
       ...baseEntry,
