@@ -40,15 +40,23 @@
 					value={text ?? ''}
 					mode="preview"
 					usage="chat"
+					surface="muted"
+					syntaxTone="accented"
 					padding="compact"
 					class="rounded-xl border border-border/60 bg-background px-3 py-3"
 				/>
 			</ReasoningContent>
 		</Reasoning>
 	{:else if text !== null}
-		<div class="rounded-xl border border-border/60 bg-background px-3 py-3 text-sm leading-6 whitespace-pre-wrap break-words">
-			{text}
-		</div>
+		<MarkdownDocument
+			value={text}
+			mode="preview"
+			usage="chat"
+			surface="muted"
+			syntaxTone="accented"
+			padding="compact"
+			class="rounded-xl border border-border/60 bg-background px-3 py-3"
+		/>
 	{:else}
 		<JSONViewer
 			value={part.payload}

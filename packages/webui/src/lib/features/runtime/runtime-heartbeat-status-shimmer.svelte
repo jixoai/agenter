@@ -24,7 +24,7 @@
 	data-running={summary.running ? 'true' : 'false'}
 	aria-live="polite"
 >
-	<span class="truncate">
+	<span class="block truncate">
 		{#if summary.running}
 			Waiting for AI call · {label}
 		{:else}

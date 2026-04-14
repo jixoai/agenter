@@ -14,6 +14,7 @@ type ToolResultPayload = {
   output?: unknown;
   error?: string | null;
 };
+type ParsedToolTrace = Extract<HeartbeatDisplayBlock, { kind: "tool" }>;
 
 const foldedPartTypes = new Set(["systemPrompt", "tools", "config", "compact"]);
 
@@ -139,6 +140,111 @@ export type HeartbeatDisplayBlock =
       errorText?: string | null;
     };
 
+const toolTraceFencePattern = /^```ya?ml\s*\n([\s\S]*?)\n```$/iu;
+
+const parseYamlScalar = (rawValue: string): unknown => {
+  const value = rawValue.trim();
+  if (value.length === 0) {
+    return "";
+  }
+  if (value === "null") {
+    return null;
+  }
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  if (/^-?\d+(?:\.\d+)?$/u.test(value)) {
+    return Number(value);
+  }
+  if (value.startsWith("\"") && value.endsWith("\"")) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+};
+
+const parseToolTraceYamlRecord = (source: string): Record<string, unknown> | null => {
+  const record: Record<string, unknown> = {};
+  let nestedRecord: Record<string, unknown> | null = null;
+
+  for (const rawLine of source.split(/\r?\n/u)) {
+    if (rawLine.trim().length === 0) {
+      continue;
+    }
+    const indent = rawLine.match(/^\s*/u)?.[0].length ?? 0;
+    const line = rawLine.trimStart();
+    const match = /^([A-Za-z0-9_]+):(?:\s*(.*))?$/u.exec(line);
+    if (!match) {
+      return null;
+    }
+    const [, key, value = ""] = match;
+    if (indent === 0) {
+      if (value.length === 0) {
+        nestedRecord = {};
+        record[key] = nestedRecord;
+        continue;
+      }
+      nestedRecord = null;
+      record[key] = parseYamlScalar(value);
+      continue;
+    }
+    if (indent !== 2 || nestedRecord === null) {
+      return null;
+    }
+    nestedRecord[key] = parseYamlScalar(value);
+  }
+
+  return record;
+};
+
+const parseHeartbeatToolTracePart = (part: HeartbeatPart): ParsedToolTrace | null => {
+  if (part.partType !== "text") {
+    return null;
+  }
+  const text = readHeartbeatPartText(part)?.trim();
+  if (!text) {
+    return null;
+  }
+  const fencedMatch = toolTraceFencePattern.exec(text);
+  if (!fencedMatch) {
+    return null;
+  }
+  const record = parseToolTraceYamlRecord(fencedMatch[1]);
+  if (!record || typeof record.tool !== "string") {
+    return null;
+  }
+  if (!("status" in record) || !("input" in record || "output" in record)) {
+    return null;
+  }
+
+  const errorText = typeof record.error === "string" ? record.error : null;
+  const status = typeof record.status === "string" ? record.status : "";
+  const state: ToolUiState =
+    status === "error" || errorText
+      ? "output-error"
+      : "output" in record
+        ? "output-available"
+        : part.isComplete
+          ? "input-available"
+          : "input-streaming";
+
+  return {
+    kind: "tool",
+    key: typeof record.invocationId === "string" ? record.invocationId : `text-tool:${part.partId}`,
+    tool: record.tool,
+    state,
+    input: record.input ?? null,
+    output: record.output,
+    errorText,
+  };
+};
+
 const getToolInvocationId = (part: HeartbeatPart): string | null => {
   const payload = part.payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -152,6 +258,11 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
   const blocks: HeartbeatDisplayBlock[] = [];
   const consumedInvocationIds = new Set<string>();
   for (const part of entry.parts) {
+    const parsedToolTrace = parseHeartbeatToolTracePart(part);
+    if (parsedToolTrace) {
+      blocks.push(parsedToolTrace);
+      continue;
+    }
     if (part.partType === "tool_result") {
       const invocationId = getToolInvocationId(part);
       if (invocationId && consumedInvocationIds.has(invocationId)) {

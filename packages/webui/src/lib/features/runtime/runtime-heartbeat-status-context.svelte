@@ -27,13 +27,13 @@
 			Context
 		</Badge>
 		{#if state.kind === 'available'}
-			<div class="flex min-w-0 items-center gap-2 font-mono text-[11px]">
+			<div class="flex min-w-0 items-center gap-2 truncate font-mono text-[11px]">
 				<span>P {state.promptTokens}</span>
 				<span>C {state.completionTokens}</span>
 				<span>T {state.totalTokens}</span>
 			</div>
 		{:else}
-			<div class="text-xs text-muted-foreground">Latest usage unavailable</div>
+			<div class="truncate text-xs text-muted-foreground">Latest usage unavailable</div>
 		{/if}
 	</div>
 {/if}

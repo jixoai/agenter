@@ -40,7 +40,7 @@
 		<ProfileAvatar label={title} src={sessionIconUrl} class="runtime-page-toolbar__avatar" />
 		<div class="runtime-page-toolbar__title">
 			<span class="truncate font-semibold">{title}</span>
-			<span class="hidden items-center gap-1 text-xs text-muted-foreground lg:inline-flex">
+			<span class="runtime-page-toolbar__workspace text-xs text-muted-foreground">
 				<FolderTreeIcon class="size-3.5" />
 				{workspaceLabel}
 			</span>
@@ -54,7 +54,7 @@
 			{tabs}
 			class="min-w-0"
 			listClass="rounded-full border border-border/60 bg-background/70 p-1"
-			triggerClass="h-7 rounded-full px-3 text-xs"
+			triggerClass="h-6 rounded-full px-2.5 text-[11px] md:h-7 md:px-3 md:text-xs"
 		/>
 	</div>
 
@@ -65,13 +65,20 @@
 		{#if unreadCount > 0}
 			<Badge variant="secondary" class="hidden rounded-full lg:inline-flex">{unreadCount} unread</Badge>
 		{/if}
-		<Button size="sm" variant={isRunning ? 'destructive' : 'default'} class="rounded-full" onclick={() => void onToggleRuntime()}>
+		<Button
+			size="sm"
+			variant={isRunning ? 'destructive' : 'default'}
+			class="rounded-full"
+			aria-label={isRunning ? 'Stop' : 'Start'}
+			title={isRunning ? 'Stop' : 'Start'}
+			onclick={() => void onToggleRuntime()}
+		>
 			{#if isRunning}
 				<StopCircleIcon class="size-4" />
-				Stop
+				<span class="runtime-page-toolbar__action-label">Stop</span>
 			{:else}
 				<PlayIcon class="size-4" />
-				Start
+				<span class="runtime-page-toolbar__action-label">Start</span>
 			{/if}
 		</Button>
 	</div>
@@ -79,14 +86,13 @@
 
 <style>
 	.runtime-page-toolbar {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.65rem;
 		block-size: 100%;
 		min-block-size: 0;
 		min-inline-size: 0;
-		padding-inline: 0.75rem;
+		padding-inline: 0.6rem;
 	}
 
 	.runtime-page-toolbar__identity,
@@ -98,13 +104,15 @@
 	.runtime-page-toolbar__identity {
 		display: flex;
 		align-items: center;
-		gap: 0.65rem;
+		gap: 0.55rem;
+		flex: 0 1 auto;
+		max-inline-size: 11rem;
 		overflow: hidden;
 	}
 
 	:global(.runtime-page-toolbar__avatar) {
-		block-size: 1.75rem;
-		inline-size: 1.75rem;
+		block-size: 1.6rem;
+		inline-size: 1.6rem;
 		border-radius: 0.8rem;
 		border-color: color-mix(in srgb, var(--border), transparent 20%);
 		background: color-mix(in srgb, var(--background), transparent 12%);
@@ -112,45 +120,68 @@
 	}
 
 	.runtime-page-toolbar__title {
-		display: flex;
+		display: grid;
 		min-inline-size: 0;
-		flex-wrap: wrap;
+		gap: 0.12rem;
+		font-size: 0.8rem;
+		line-height: 1.05;
+	}
+
+	.runtime-page-toolbar__workspace {
+		display: none;
+		min-inline-size: 0;
 		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.82rem;
-		line-height: 1.1;
+		gap: 0.25rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.runtime-page-toolbar__tabs {
 		display: flex;
 		align-items: center;
+		flex: 1 1 auto;
 	}
 
 	.runtime-page-toolbar__actions {
 		display: flex;
+		flex: none;
 		align-items: center;
 		justify-content: flex-end;
 		gap: 0.45rem;
 	}
 
-	@container workbench-page-toolbar (max-width: 56rem) {
-		.runtime-page-toolbar {
-			grid-template-columns: minmax(0, 1fr) auto;
+	@container workbench-page-toolbar (min-width: 64rem) {
+		.runtime-page-toolbar__identity {
+			max-inline-size: 20rem;
 		}
 
-		.runtime-page-toolbar__tabs {
-			grid-column: 1 / span 2;
-			grid-row: 2;
+		.runtime-page-toolbar__workspace {
+			display: inline-flex;
 		}
 	}
 
-	@container workbench-page-toolbar (max-width: 42rem) {
-		.runtime-page-toolbar__identity {
+	@container workbench-page-toolbar (max-width: 44rem) {
+		.runtime-page-toolbar {
 			gap: 0.45rem;
+			padding-inline: 0.45rem;
+		}
+
+		.runtime-page-toolbar__identity {
+			max-inline-size: 8.5rem;
+		}
+
+		:global(.runtime-page-toolbar__avatar) {
+			block-size: 1.45rem;
+			inline-size: 1.45rem;
 		}
 
 		.runtime-page-toolbar__title {
-			font-size: 0.78rem;
+			font-size: 0.76rem;
+		}
+
+		.runtime-page-toolbar__action-label {
+			display: none;
 		}
 	}
 </style>

@@ -27,18 +27,18 @@
 </script>
 
 <footer
-	class="grid gap-2 border-t border-border/60 bg-background/70 px-3 py-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center"
+	class="grid gap-2 border-t border-border/60 bg-background/72 px-3 py-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center"
 	data-testid="runtime-heartbeat-statusbar"
 >
-	<div class="min-w-0">
-		<RuntimeHeartbeatStatusContext state={contextState} />
+	<div class="min-w-0 md:order-2 md:justify-self-center">
+		<RuntimeHeartbeatStatusShimmer summary={shimmerSummary} class="w-full justify-center md:w-auto md:justify-start" />
 	</div>
 
-	<div class="min-w-0 md:justify-self-center">
-		<RuntimeHeartbeatStatusShimmer summary={shimmerSummary} />
+	<div class="flex min-w-0 items-center gap-2 md:order-1 md:justify-self-start">
+		<RuntimeHeartbeatStatusContext state={contextState} class="max-w-full" />
 	</div>
 
-	<div class="flex min-w-0 items-center justify-end gap-2">
+	<div class="flex min-w-0 items-center justify-between gap-2 md:order-3 md:justify-end">
 		<Badge variant="outline" class="rounded-full bg-background/70">
 			{entryCount} rows
 		</Badge>
