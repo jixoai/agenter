@@ -1,3 +1,4 @@
+import type { MessageKind, MessagePayload } from "@agenter/message-system";
 import type {
   SessionMessagePartInput,
   SessionMessageRecord,
@@ -8,22 +9,27 @@ import type {
 
 import type { ChatCycleCompactTrigger } from "./chat-cycles";
 import type { TextOnlyModelMessage } from "./model-client";
+import type { ChatMessage, ChatSessionAsset, ChatToolInvocation } from "./types";
 
 export const HEARTBEAT_MESSAGE_PART_SCOPE = "heartbeat_part" satisfies SessionMessageScope;
-export const LEGACY_HEARTBEAT_MESSAGE_SCOPE = "heartbeat" satisfies SessionMessageScope;
 export const HEARTBEAT_AUXILIARY_SCOPE = "request_aux" satisfies SessionMessageScope;
-export const HEARTBEAT_INSPECTION_SCOPES = [
-  HEARTBEAT_MESSAGE_PART_SCOPE,
-  LEGACY_HEARTBEAT_MESSAGE_SCOPE,
-  HEARTBEAT_AUXILIARY_SCOPE,
-] as const satisfies readonly SessionMessageScope[];
+export const HEARTBEAT_INSPECTION_SCOPES = [HEARTBEAT_MESSAGE_PART_SCOPE, HEARTBEAT_AUXILIARY_SCOPE] as const satisfies readonly SessionMessageScope[];
 
-export const shouldProjectLegacyHeartbeatIngress = (
-  entry: Pick<SessionMessageRecord, "scope" | "aiCallId" | "parts">,
-): boolean =>
-  entry.scope === LEGACY_HEARTBEAT_MESSAGE_SCOPE &&
-  entry.aiCallId === null &&
-  entry.parts.every((part) => part.partType !== "compact");
+interface HeartbeatEventTextPayload {
+  type: "text";
+  content: string;
+  chatId?: string;
+  format?: ChatMessage["format"];
+  channel?: ChatMessage["channel"];
+  heartbeatKind?: ChatMessage["heartbeatKind"];
+  compactTrigger?: ChatMessage["compactTrigger"];
+  visibleAt?: number;
+  updatedAt?: number;
+  messageKind?: MessageKind;
+  messagePayload?: MessagePayload;
+  attachments?: ChatSessionAsset[];
+  tool?: ChatToolInvocation;
+}
 
 const normalizeRole = (role: string | undefined): SessionMessageRole => {
   if (role === "assistant" || role === "system" || role === "tool" || role === "config") {
@@ -85,6 +91,41 @@ const buildCompactSeparatorText = (trigger: ChatCycleCompactTrigger | null): str
   }
   return `Prompt window compacted (${trigger}). Later Heartbeat rows continue from the rebuilt context.`;
 };
+
+export const toHeartbeatEventMessageUpsertInput = (input: {
+  message: ChatMessage;
+  roundIndex: number;
+  aiCallId?: number | null;
+}): SessionMessageUpsertInput => ({
+  messageId: input.message.id,
+  aiCallId: input.aiCallId ?? null,
+  roundIndex: input.roundIndex,
+  scope: HEARTBEAT_MESSAGE_PART_SCOPE,
+  role: input.message.role,
+  createdAt: input.message.timestamp,
+  updatedAt: input.message.updatedAt ?? input.message.timestamp,
+  parts: [
+    {
+      partType: "text",
+      payload: {
+        type: "text",
+        content: input.message.content,
+        chatId: input.message.chatId,
+        format: input.message.format ?? "markdown",
+        channel: input.message.channel,
+        heartbeatKind: input.message.heartbeatKind,
+        compactTrigger: input.message.compactTrigger ?? null,
+        visibleAt: input.message.visibleAt,
+        updatedAt: input.message.updatedAt,
+        messageKind: input.message.messageKind,
+        messagePayload: input.message.messagePayload,
+        attachments: input.message.attachments ? structuredClone(input.message.attachments) : undefined,
+        tool: input.message.tool ? structuredClone(input.message.tool) : undefined,
+      } satisfies HeartbeatEventTextPayload,
+      isComplete: true,
+    },
+  ],
+});
 
 export const toHeartbeatRequestMessageUpsertInputs = (input: {
   aiCallId: number;

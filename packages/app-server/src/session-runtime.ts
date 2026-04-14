@@ -95,9 +95,10 @@ import {
 } from "./chat-cycles";
 import {
   HEARTBEAT_INSPECTION_SCOPES,
+  HEARTBEAT_MESSAGE_PART_SCOPE,
   buildHeartbeatResponseMessageId,
-  shouldProjectLegacyHeartbeatIngress,
   toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
+  toHeartbeatEventMessageUpsertInput,
   toHeartbeatRequestMessageUpsertInputs,
   toHeartbeatResponseMessageUpsertInput,
 } from "./heartbeat-message-parts";
@@ -159,10 +160,9 @@ import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAs
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
 import {
+  isPersistedChatProjectionMessage,
   projectAiCallToModelCall,
   projectHeartbeatMessageToChatMessage,
-  toHeartbeatCompactSeparatorUpsertInput,
-  toHeartbeatMessageUpsertInput,
   type RuntimeModelCallRecord,
 } from "./session-ledger-view";
 import {
@@ -392,6 +392,23 @@ const pageLocalRecords = <T extends { id: number }>(
         : null,
     hasMoreBefore: filtered.length > pageDescending.length,
   };
+};
+
+const readAllMessagesByScope = (db: SessionDb, scope: typeof HEARTBEAT_MESSAGE_PART_SCOPE): SessionMessageRecord[] => {
+  const pages: SessionMessageRecord[][] = [];
+  let before: SessionDbReverseTimeCursor | undefined;
+  while (true) {
+    const page = db.pageMessagesByScope(scope, { before, limit: 1_000 });
+    if (page.items.length === 0) {
+      break;
+    }
+    pages.push(page.items);
+    if (!page.hasMoreBefore || !page.nextBefore) {
+      break;
+    }
+    before = page.nextBefore;
+  }
+  return pages.reverse().flat();
 };
 
 type PendingTraceSpan = Omit<SessionDbLoopbusTraceRecord, "id" | "seq" | "cycleId">;
@@ -5049,7 +5066,9 @@ export class SessionRuntime {
     this.sessionDb = new SessionDb(join(this.options.sessionRoot, "session.db"));
     const currentPromptWindowState = this.ensurePromptWindowStateInitialized();
     this.restoreAttentionRuntimeHistory();
-    const restoredChat = this.sessionDb.listMessagesByScope("heartbeat", { limit: 400 });
+    const restoredChat = readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE).filter(
+      isPersistedChatProjectionMessage,
+    );
     this.chatMessages = restoredChat.map((item) => projectHeartbeatMessageToChatMessage(item));
     const head = this.sessionDb.getHead();
     this.activeCycleId = head.currentRoundIndex;
@@ -5526,8 +5545,8 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb
-      .listMessagesByScope("heartbeat", { limit: Math.max(limit * 4, limit) })
+    return readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE)
+      .filter(isPersistedChatProjectionMessage)
       .filter((item) => item.id > afterId)
       .slice(-limit);
   }
@@ -5539,7 +5558,11 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return { items: [], nextBefore: null, hasMoreBefore: false };
     }
-    return this.sessionDb.pageMessagesByScope("heartbeat", input);
+    return pageLocalRecords(
+      readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE).filter(isPersistedChatProjectionMessage),
+      input,
+      (item) => item.createdAt,
+    );
   }
 
   pageHeartbeatParts(input?: {
@@ -5556,8 +5579,8 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return [];
     }
-    return this.sessionDb
-      .listMessagesByScope("heartbeat", { limit: Math.max(limit * 8, limit) })
+    return readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE)
+      .filter(isPersistedChatProjectionMessage)
       .filter((item) => item.id < beforeId)
       .slice(-limit);
   }
@@ -7469,20 +7492,17 @@ export class SessionRuntime {
     }
     const persistedCycleId = nextMessage.cycleId ?? cycleId;
     const channel = channelOverride ?? nextMessage.channel ?? (nextMessage.role === "user" ? "user_input" : "to_user");
-    const persistedRecord = this.sessionDb.upsertMessage(
+    this.upsertHeartbeatPartMessage(
       persistInputOverride ??
-        toHeartbeatMessageUpsertInput({
+        toHeartbeatEventMessageUpsertInput({
           message: {
             ...nextMessage,
             channel: channel === "user_input" ? undefined : channel,
           },
           roundIndex: this.sessionDb.getHead().currentRoundIndex,
-          aiCallId: aiCallIdOverride ?? (nextMessage.role === "assistant" ? this.resolveCurrentModelCallId() : null),
+          aiCallId: aiCallIdOverride ?? null,
         }),
     );
-    if (shouldProjectLegacyHeartbeatIngress(persistedRecord)) {
-      this.emitHeartbeatPart(persistedRecord);
-    }
     this.appendTerminalActivityForMessage(nextMessage, persistedCycleId, channel);
     if (
       this.activeCycle &&
@@ -7505,7 +7525,7 @@ export class SessionRuntime {
     const compactTrigger = this.activeCycle.compactTrigger ?? null;
     this.recordChatMessage(
       {
-        id: `heartbeat:compact:${modelCall.id}`,
+        id: `heartbeat-part:ai-call:${modelCall.id}:compact`,
         role: "system",
         content:
           compactTrigger === null
@@ -7520,15 +7540,6 @@ export class SessionRuntime {
       this.activeCycleId,
       "self_talk",
       modelCall.id,
-      toHeartbeatCompactSeparatorUpsertInput({
-        aiCallId: modelCall.id,
-        timestamp: completedAt,
-        callRoundIndex: modelCall.roundIndex,
-        currentRoundIndex,
-        compactTrigger: compactTrigger ?? null,
-      }),
-    );
-    this.upsertHeartbeatPartMessage(
       toHeartbeatPartCompactSeparatorUpsertInput({
         aiCallId: modelCall.id,
         timestamp: completedAt,

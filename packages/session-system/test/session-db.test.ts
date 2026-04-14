@@ -29,7 +29,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       const first = db.upsertMessage({
         messageId: "msg-assistant-1",
         roundIndex: 0,
-        scope: "heartbeat",
+        scope: "heartbeat_part",
         role: "assistant",
         createdAt: 100,
         updatedAt: 100,
@@ -38,7 +38,7 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       const updated = db.upsertMessage({
         messageId: "msg-assistant-1",
         roundIndex: 0,
-        scope: "heartbeat",
+        scope: "heartbeat_part",
         role: "assistant",
         createdAt: 100,
         updatedAt: 120,

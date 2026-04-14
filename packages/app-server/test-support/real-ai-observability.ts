@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { SessionDb, type SessionAiCallRecord, type SessionMessageScope } from "@agenter/session-system";
 
 const SESSION_DB_FILE_NAME = "session.db";
-const SESSION_MESSAGE_SCOPES = ["heartbeat", "prompt_window", "request_aux"] as const satisfies readonly SessionMessageScope[];
+const SESSION_MESSAGE_SCOPES = ["heartbeat_part", "prompt_window", "request_aux"] as const satisfies readonly SessionMessageScope[];
 
 export interface SessionDbScopeCount {
   c: number;

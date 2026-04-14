@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppKernel, SessionDb } from "../src";
-import { toHeartbeatMessageUpsertInput } from "../src/session-ledger-view";
+import { toHeartbeatEventMessageUpsertInput } from "../src/heartbeat-message-parts";
 import type { ChatMessage } from "../src/types";
 
 const tempDirs: string[] = [];
@@ -22,7 +22,7 @@ const createKernel = (): AppKernel => {
 
 const upsertHeartbeat = (db: SessionDb, input: { message: ChatMessage; roundIndex?: number; aiCallId?: number | null }) => {
   db.upsertMessage(
-    toHeartbeatMessageUpsertInput({
+    toHeartbeatEventMessageUpsertInput({
       message: input.message,
       roundIndex: input.roundIndex ?? 0,
       aiCallId: input.aiCallId ?? null,

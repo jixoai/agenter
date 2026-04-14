@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { SessionDb } from "@agenter/session-system";
 
 import {
-  projectHeartbeatMessageToChatMessage,
   toHeartbeatCompactSeparatorUpsertInput,
-  toHeartbeatMessageUpsertInput,
+  toHeartbeatEventMessageUpsertInput,
+} from "../src/heartbeat-message-parts";
+import {
+  projectHeartbeatMessageToChatMessage,
 } from "../src/session-ledger-view";
 
 const tempRoots: string[] = [];
@@ -26,7 +28,7 @@ const createSessionDb = (): SessionDb => {
 };
 
 describe("Feature: session heartbeat ledger projection", () => {
-  test("Scenario: Given a compact cycle boundary When it is persisted into heartbeat scope Then the projected row becomes a system separator", () => {
+  test("Scenario: Given a compact cycle boundary When it is persisted into heartbeat_part Then the projected row becomes a system separator", () => {
     const db = createSessionDb();
     try {
       const compactRecord = db.upsertMessage(
@@ -55,7 +57,7 @@ describe("Feature: session heartbeat ledger projection", () => {
     const db = createSessionDb();
     try {
       db.upsertMessage(
-        toHeartbeatMessageUpsertInput({
+        toHeartbeatEventMessageUpsertInput({
           message: {
             id: "user-1",
             chatId: "runtime-heartbeat",
@@ -77,7 +79,7 @@ describe("Feature: session heartbeat ledger projection", () => {
         }),
       );
       db.upsertMessage(
-        toHeartbeatMessageUpsertInput({
+        toHeartbeatEventMessageUpsertInput({
           message: {
             id: "assistant-1",
             chatId: "runtime-heartbeat",
@@ -91,11 +93,13 @@ describe("Feature: session heartbeat ledger projection", () => {
         }),
       );
 
-      const projected = db.listMessagesByScope("heartbeat", { limit: 10 }).map(projectHeartbeatMessageToChatMessage);
+      const projected = db
+        .listMessagesByScope("heartbeat_part", { limit: 10 })
+        .map(projectHeartbeatMessageToChatMessage);
 
       expect(projected.map((message) => message.id)).toEqual([
         "user-1",
-        "heartbeat:compact:52",
+        "heartbeat-part:ai-call:52:compact",
         "assistant-1",
       ]);
       expect(projected.map((message) => message.heartbeatKind ?? "message")).toEqual([

@@ -2,9 +2,7 @@ import type { MessageKind, MessagePayload } from "@agenter/message-system";
 import type {
   SessionAiCallRecord,
   SessionCollectedInput,
-  SessionMessagePartInput,
   SessionMessageRecord,
-  SessionMessageUpsertInput,
 } from "@agenter/session-system";
 
 import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleCompactTrigger } from "./chat-cycles";
@@ -62,11 +60,32 @@ const normalizeCompactTrigger = (value: unknown): ChatCycleCompactTrigger | null
   return value === "manual" || value === "threshold" || value === "error" || value === "attention_retry" ? value : null;
 };
 
-const buildCompactSeparatorText = (trigger: ChatCycleCompactTrigger | null): string => {
-  if (!trigger) {
-    return "Prompt window compacted. Later Heartbeat rows continue from the rebuilt context.";
+const readPayloadText = (payload: unknown): string | null => {
+  if (typeof payload === "string") {
+    return payload;
   }
-  return `Prompt window compacted (${trigger}). Later Heartbeat rows continue from the rebuilt context.`;
+  const record = asRecord(payload);
+  if (!record) {
+    return null;
+  }
+  if (record.type === "text" && typeof record.content === "string") {
+    return record.content;
+  }
+  if (typeof record.content === "string") {
+    return record.content;
+  }
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  return null;
+};
+
+const readStructuredHeartbeatText = (message: SessionMessageRecord): string => {
+  const textParts = message.parts.map((part) => readPayloadText(part.payload)).filter((part): part is string => part !== null);
+  if (textParts.length > 0) {
+    return textParts.join("");
+  }
+  return message.text;
 };
 
 const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMessagePayload => {
@@ -77,12 +96,19 @@ const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMe
   const payload = firstPart?.payload;
   const record = asRecord(payload);
   if (!record) {
-    return { text: message.text };
+    return { text: readStructuredHeartbeatText(message) };
   }
   const heartbeatKind =
-    record.heartbeatKind === "compact_separator" || firstPart?.partType === "compact" ? "compact_separator" : "message";
+    record.heartbeatKind === "compact_separator" || record.type === "compact" || firstPart?.partType === "compact"
+      ? "compact_separator"
+      : "message";
   return {
-    text: typeof record.text === "string" ? record.text : message.text,
+    text:
+      typeof record.text === "string"
+        ? record.text
+        : typeof record.content === "string"
+          ? record.content
+          : readStructuredHeartbeatText(message),
     chatId: typeof record.chatId === "string" ? record.chatId : undefined,
     format: record.format === "plain" || record.format === "markdown" ? record.format : undefined,
     channel:
@@ -102,73 +128,31 @@ const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMe
   };
 };
 
-export const toHeartbeatMessageUpsertInput = (input: {
-  message: ChatMessage;
-  roundIndex: number;
-  aiCallId?: number | null;
-}): SessionMessageUpsertInput => {
-  const heartbeatKind = input.message.heartbeatKind ?? "message";
-  const parts: SessionMessagePartInput[] = [
-    {
-      partType: heartbeatKind === "compact_separator" ? "compact" : "message",
-      payload: {
-        text: input.message.content,
-        chatId: input.message.chatId,
-        format: input.message.format ?? "markdown",
-        channel: input.message.channel,
-        heartbeatKind,
-        compactTrigger: input.message.compactTrigger ?? null,
-        visibleAt: input.message.visibleAt,
-        updatedAt: input.message.updatedAt,
-        messageKind: input.message.messageKind,
-        messagePayload: input.message.messagePayload,
-        attachments: input.message.attachments ? structuredClone(input.message.attachments) : undefined,
-        tool: input.message.tool ? structuredClone(input.message.tool) : undefined,
-      } satisfies HeartbeatMessagePayload,
-      isComplete: true,
-    },
-  ];
-  return {
-    messageId: input.message.id,
-    aiCallId: input.aiCallId ?? null,
-    roundIndex: input.roundIndex,
-    scope: "heartbeat",
-    role: input.message.role,
-    createdAt: input.message.timestamp,
-    updatedAt: input.message.updatedAt ?? input.message.timestamp,
-    parts,
-  };
+export const isPersistedChatProjectionMessage = (message: SessionMessageRecord): boolean => {
+  if (message.parts.some((part) => part.partType === "compact")) {
+    return true;
+  }
+  if (message.aiCallId === null) {
+    return true;
+  }
+  const payload = asRecord(message.parts[0]?.payload);
+  if (!payload) {
+    return false;
+  }
+  if (typeof payload.chatId === "string" && payload.chatId.length > 0) {
+    return true;
+  }
+  if (payload.channel === "to_user" || payload.channel === "self_talk" || payload.channel === "tool") {
+    return true;
+  }
+  if (typeof payload.messageKind === "string") {
+    return true;
+  }
+  if (Array.isArray(payload.attachments)) {
+    return true;
+  }
+  return "tool" in payload;
 };
-
-export const toHeartbeatCompactSeparatorUpsertInput = (input: {
-  aiCallId: number;
-  timestamp: number;
-  callRoundIndex: number;
-  currentRoundIndex: number;
-  compactTrigger: ChatCycleCompactTrigger | null;
-}): SessionMessageUpsertInput => ({
-  messageId: `heartbeat:compact:${input.aiCallId}`,
-  aiCallId: input.aiCallId,
-  roundIndex: input.currentRoundIndex,
-  scope: "heartbeat",
-  role: "system",
-  createdAt: input.timestamp,
-  updatedAt: input.timestamp,
-  parts: [
-    {
-      partType: "compact",
-      payload: {
-        text: buildCompactSeparatorText(input.compactTrigger),
-        format: "plain",
-        heartbeatKind: "compact_separator",
-        compactTrigger: input.compactTrigger,
-        callRoundIndex: input.callRoundIndex,
-        currentRoundIndex: input.currentRoundIndex,
-      } satisfies HeartbeatMessagePayload,
-      isComplete: true,
-    },
-  ],
-});
 
 export const projectHeartbeatMessageToChatMessage = (message: SessionMessageRecord): ChatMessage => {
   const payload = readHeartbeatMessagePayload(message);

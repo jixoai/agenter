@@ -3233,14 +3233,12 @@ describe("Feature: runtime store synchronization", () => {
       payload: {
         entry: createHeartbeatEntry({
           id: 4,
-          messageId: "legacy-room-ingress",
-          scope: "heartbeat",
-          role: "assistant",
-          partType: "message",
+          messageId: "room-ingress",
+          role: "user",
           createdAt: 130,
           payload: {
-            text: 'scoreMap={"room":1}',
-            messageKind: "room_message",
+            type: "text",
+            content: 'scoreMap={"room":1}',
           },
           text: 'scoreMap={"room":1}',
         }),
@@ -3270,9 +3268,9 @@ describe("Feature: runtime store synchronization", () => {
 
     expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 4, 3, 5]);
     expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.id === 3)?.text).toBe("final reply");
-    expect(
-      store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.messageId === "legacy-room-ingress"),
-    ).toEqual(expect.objectContaining({ scope: "heartbeat" }));
+    expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.messageId === "room-ingress")).toEqual(
+      expect.objectContaining({ scope: "heartbeat_part" }),
+    );
     expect(heartbeatCalls).toHaveLength(2);
     store.disconnect();
   });

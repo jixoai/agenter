@@ -965,7 +965,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given durable Heartbeat rows across legacy and structured scopes When runtime heartbeatPartsPage is queried Then the router returns one merged stream", async () => {
+  test("Scenario: Given durable Heartbeat-part and request-aux rows When runtime heartbeatPartsPage is queried Then the router returns one canonical merged stream", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -1002,19 +1002,18 @@ describe("Feature: app-server trpc procedures", () => {
         parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
       });
       db.upsertMessage({
-        messageId: "legacy-room-ingress",
+        messageId: "room-ingress-1",
         roundIndex: 0,
-        scope: "heartbeat",
-        role: "assistant",
+        scope: "heartbeat_part",
+        role: "user",
         createdAt: 115,
         updatedAt: 115,
         parts: [
           {
-            partType: "message",
+            partType: "text",
             payload: {
-              text: "weather?",
-              format: "markdown",
-              messageKind: "room_message",
+              type: "text",
+              content: 'scoreMap={"message:room-main":1} commit=weather?',
             },
             isComplete: true,
           },
@@ -1041,16 +1040,16 @@ describe("Feature: app-server trpc procedures", () => {
     expect(page.items.map((row) => row.messageId)).toEqual([
       "request-1",
       "config-1",
-      "legacy-room-ingress",
+      "room-ingress-1",
       "response-1",
     ]);
     expect(page.items.map((row) => row.scope)).toEqual([
       "heartbeat_part",
       "request_aux",
-      "heartbeat",
+      "heartbeat_part",
       "heartbeat_part",
     ]);
-    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "message", "text"]);
+    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "text", "text"]);
 
     await kernel.stop();
   });

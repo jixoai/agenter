@@ -89,7 +89,7 @@ import {
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
-import { HEARTBEAT_INSPECTION_SCOPES } from "./heartbeat-message-parts";
+import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -110,6 +110,7 @@ import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { resolveWorkspaceAvatarSessionId } from "./session-identity";
 import {
+  isPersistedChatProjectionMessage,
   projectAiCallToChatCycle,
   projectAiCallToModelCall,
   projectHeartbeatMessageToChatMessage,
@@ -313,7 +314,7 @@ const readAllHeartbeatMessages = (db: SessionDb): SessionMessageRecord[] => {
   const pages: SessionMessageRecord[][] = [];
   let before: ReverseTimeCursor | undefined;
   while (true) {
-    const page = db.pageMessagesByScope("heartbeat", { before, limit: 1_000 });
+    const page = db.pageMessagesByScope(HEARTBEAT_MESSAGE_PART_SCOPE, { before, limit: 1_000 });
     if (page.items.length === 0) {
       break;
     }
@@ -324,6 +325,44 @@ const readAllHeartbeatMessages = (db: SessionDb): SessionMessageRecord[] => {
     before = page.nextBefore;
   }
   return pages.reverse().flat();
+};
+
+const readAllPersistedChatMessages = (db: SessionDb): SessionMessageRecord[] =>
+  readAllHeartbeatMessages(db).filter(isPersistedChatProjectionMessage);
+
+const pagePersistedMessages = <T extends { id: number }>(
+  items: readonly T[],
+  input: { before?: ReverseTimeCursor; limit?: number } | undefined,
+  readTimestamp: (item: T) => number,
+): ReversePage<T> => {
+  const limit = Math.max(1, Math.min(input?.limit ?? 200, 1_000));
+  const before = input?.before;
+  const descending = [...items].sort((left, right) => {
+    const leftTime = readTimestamp(left);
+    const rightTime = readTimestamp(right);
+    return leftTime === rightTime ? right.id - left.id : rightTime - leftTime;
+  });
+  const filtered = descending.filter((item) => {
+    if (!before) {
+      return true;
+    }
+    const timestamp = readTimestamp(item);
+    return timestamp < before.beforeTimeMs || (timestamp === before.beforeTimeMs && item.id < before.beforeId);
+  });
+  const pageDescending = filtered.slice(0, limit);
+  const pageItems = [...pageDescending].reverse();
+  const oldest = pageItems[0] ?? null;
+  return {
+    items: pageItems,
+    nextBefore:
+      filtered.length > pageDescending.length && oldest
+        ? {
+            beforeTimeMs: readTimestamp(oldest),
+            beforeId: oldest.id,
+          }
+        : null,
+    hasMoreBefore: filtered.length > pageDescending.length,
+  };
 };
 
 const readAllAiCalls = (db: SessionDb): SessionAiCallRecord[] => {
@@ -3922,7 +3961,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      return readAllHeartbeatMessages(db)
+      return readAllPersistedChatMessages(db)
         .filter((message) => message.id > afterId)
         .slice(-limit)
         .map((message) => toPersistedChatMessage(sessionId, message));
@@ -3943,7 +3982,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      const page = db.pageMessagesByScope("heartbeat", input);
+      const page = pagePersistedMessages(readAllPersistedChatMessages(db), input, (message) => message.createdAt);
       return {
         items: page.items.map((message) => toPersistedChatMessage(sessionId, message)),
         nextBefore: page.nextBefore,
@@ -4190,7 +4229,7 @@ export class AppKernel {
 
     const db = new SessionDb(dbPath);
     try {
-      return readAllHeartbeatMessages(db)
+      return readAllPersistedChatMessages(db)
         .filter((message) => message.id < beforeId)
         .slice(-limit)
         .map((message) => toPersistedChatMessage(sessionId, message));
