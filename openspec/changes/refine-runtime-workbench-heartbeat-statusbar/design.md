@@ -36,6 +36,21 @@ Alternative considered:
 - Keep the current runtime `Scaffold` and only move tabs upward.
 - Rejected because it preserves a second shell law and keeps body-level chrome duplication alive.
 
+### 1.1. Avatar catalog toolbar yields to runtime detail chrome
+
+When a runtime or avatar-draft detail tab is active inside the avatars workbench, the catalog-level toolbar meta (`avatars / draft tabs / runtime tabs / New avatar`) stops rendering. The runtime page-toolbar becomes the only persistent toolbar row above the detail body.
+
+Why:
+
+- This is the actual space-saving change the operator asked for.
+- It avoids stacking an avatar-catalog dashboard row above an already dense runtime inspection surface.
+- It keeps catalog counts on the catalog route, where they are useful, without making runtime pages pay for them.
+
+Alternative considered:
+
+- Keep the avatar catalog toolbar visible on every avatar tab.
+- Rejected because it leaves runtime with two chrome rows and fails the "free vertical room for content" goal in real browser inspection.
+
 ### 2. Heartbeat virtualization is implemented as a local ai-elements adapter
 
 Add a virtualized conversation adapter under the local ai-elements namespace and back it with `ScrollView virtual`. `Message`, `Checkpoint`, `Tool`, and `Reasoning` remain leaf presentation primitives; virtualization stays a list concern.
@@ -83,5 +98,6 @@ Why:
 
 - [Virtual row measurement can regress Storybook browser tests] → Reuse the repository's existing `ScrollView virtual` pattern and keep Storybook DOM coverage focused on observable row rendering, footer visibility, and toolbar composition.
 - [Toolbar migration could disturb compact/mobile runtime layout] → Reuse `WorkbenchToolbar` responsive breakpoints and add compact Storybook coverage for the runtime shell.
+- [Avatar detail routes could lose their top-level context after the catalog toolbar collapses] → Keep the catalog tab strip intact and let the runtime page-toolbar carry title/workspace/status so the route still has one clear source of context.
 - [Latest model call may exist without usage] → Render `Context` in disabled/hidden fallback states instead of inventing estimated numbers.
 - [Existing uncommitted Heartbeat ai-elements work may drift from the final shell contract] → Integrate the current local ai-elements files as the baseline and only expand them where the new shell/statusbar contract requires it.

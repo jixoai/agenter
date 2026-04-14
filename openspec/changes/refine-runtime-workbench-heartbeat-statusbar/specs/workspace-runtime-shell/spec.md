@@ -16,6 +16,12 @@ The runtime detail route SHALL derive its chrome from the shared `WorkbenchWindo
 - **THEN** each tab reuses the same toolbar chrome host for its title-level metadata and actions
 - **AND** the main page body remains reserved for tab content rather than duplicated top chrome
 
+#### Scenario: Runtime detail routes collapse avatar catalog meta chrome
+
+- **WHEN** the operator opens a runtime or avatar-draft detail route inside the avatars workbench
+- **THEN** the avatar catalog meta toolbar does not consume a second toolbar row above the runtime page
+- **AND** the runtime page-toolbar remains the single durable toolbar row between the avatar tab strip and the detail body
+
 ## MODIFIED Requirements
 
 ### Requirement: Heartbeat SHALL render one continuous message-parts runtime stream
