@@ -220,13 +220,14 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 ## 6.1) Git Worktree / Merge Discipline
 
-- **worktree 是默认隔离单元**：新的专题工作默认使用 `.worktree/<topic>`；仓库内 canonical 脚本为 `./.gemini/scripts/wt-setup.sh`、`./.gemini/scripts/wt-clean.sh`、`./.gemini/scripts/wt-merge-verify.sh`。
+- **worktree 是默认隔离单元**：新的专题工作默认使用 `.worktree/<topic>`；仓库内 canonical 脚本为 `./.gemini/scripts/wt-setup.sh`、`./.gemini/scripts/wt-clean.sh`、`./.gemini/scripts/wt-merge-verify.sh`、`./.gemini/scripts/wt-land-ff.sh`。
 - **脚本必须基于 Git common root**：无论当前在主 checkout 还是子 worktree，创建/清理 worktree 都必须指向同一个共享 `.worktree/` 根目录，禁止在子 worktree 里再嵌套生成 `.worktree/`。
 - **merge-ready 必须绑定命名 target ref**：报告“可以合并”时，必须明确写出验证目标，例如 `origin/main`；不允许对模糊的“当前 main 状态”作结论。
 - **dirty main 不是合法 merge target**：`main` 上的未提交代码不属于可验证 ref。若这些改动必须纳入验证，先把它们物化成命名 branch/ref，再对该 ref 运行 merge verification。
 - **dirty target 先 snapshot 再验证**：对 dirty `main` 或其他 dirty target，先用 `./.gemini/scripts/wt-snapshot-dirty.sh <snapshot-branch>` 生成命名 ref，再对该 snapshot ref 运行 merge verification。
 - **merge 前固定先 rebase**：功能分支在宣称 ready-to-merge 之前，必须先对目标 ref 完成 rebase，再运行一次独立 merge simulation；只做 `git merge` 试探、不做 rebase，不算通过。
 - **merge simulation 必须在干净隔离环境中进行**：禁止切回用户正在使用的 `main` worktree 做试合并；统一在 disposable verification worktree 中完成 `--no-commit` merge 检查。
+- **verified landing 必须走 ff-only 脚本**：验证通过后，从目标 checkout 运行 `./.gemini/scripts/wt-land-ff.sh <feature-ref>`；它会 snapshot dirty target、执行 `git merge --ff-only`，并且默认只恢复 non-overlapping dirty paths，重叠 dirty paths 必须显式审查，不能自动覆盖 landed 分支状态。
 - **cleanup 也是受保护操作**：删除 worktree 或 branch 前必须检查 dirty state 和 merged state；除非显式 `force`，否则 cleanup 脚本必须拒绝破坏性移除。
 
 ## 7) Browser 走查标准（agent-browser）

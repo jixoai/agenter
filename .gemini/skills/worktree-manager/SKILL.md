@@ -46,6 +46,18 @@ If the target checkout is dirty, snapshot it first without mutating the worktree
 ### 3. Close and clean up a worktree
 
 ```bash
+./.gemini/scripts/wt-land-ff.sh <feature-ref> [--snapshot-ref snapshot/main-before-land]
+```
+
+Run this from the target checkout after merge verification passes.
+
+- Requires the feature ref to be a fast-forward descendant of the current target branch head.
+- If the target checkout is dirty, snapshots that dirty state into a named ref, backs it up locally, lands the feature with `git merge --ff-only`, restores only non-overlapping dirty paths, and reports skipped overlaps.
+- This is the canonical way to land a verified feature onto dirty `main` without silently overwriting the landed branch state.
+
+### 4. Close and clean up a worktree
+
+```bash
 ./.gemini/scripts/wt-clean.sh <topic-or-path> [--delete-branch] [--target origin/main]
 ```
 
