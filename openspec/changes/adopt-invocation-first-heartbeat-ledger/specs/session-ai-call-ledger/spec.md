@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Heartbeat tool lifecycle SHALL persist as invocation-first ledger rows
 
