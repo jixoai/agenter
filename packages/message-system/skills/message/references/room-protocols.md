@@ -18,6 +18,7 @@ Good defaults:
 - if the current obligation is `self_update` / `no_external_reply_needed`, prefer private tool work or attention settlement over another room reply
 - if the room fixed a concrete URL, path, or token, send that exact value back instead of a normalized variant such as a sibling path
 - if you need to correct yourself, send a new durable replacement instead of treating the earlier message as final truth
+- through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin` for room replies; only use argv JSON when it is trivially short
 - after the protocol reply is sent, switch back to `attention` and settle the same obligation instead of repeatedly re-reading the room
 
 Protocol discipline:

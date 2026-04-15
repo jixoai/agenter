@@ -5,9 +5,9 @@ Use `terminal` when process continuity matters.
 Typical flow:
 
 1. `terminal list`
-2. `terminal create '{"cwd":"...","focus":true}'`
-3. `terminal write '{...}'`
-4. `terminal read '{"terminalId":"..."}'`
+2. Run `terminal create` with JSON `stdin`
+3. Run `terminal write` with JSON `stdin`
+4. Run `terminal read` with JSON `stdin`
 
 Rules:
 
@@ -20,5 +20,5 @@ Rules:
 - `terminal read` output, a running prompt, or "no crash yet" do not replace that HTTP verification; use a separate exact-path check
 - if one-shot bash reports binding, sandbox, or permission errors while you are trying to make a URL reachable, treat that as evidence you picked the wrong execution surface
 - use `terminal create --help`, `terminal write --help`, and `terminal read --help` for the exact JSON contract
-- prefer `terminal create '{"cwd":"/absolute/project/path","focus":true}'` over ad-hoc positional guesses
-- when `terminal write.text` needs nested JSON or heavy quoting, switch to JSON stdin for `terminal write`
+- through `root_workspace_bash`, keep the command itself minimal and carry terminal JSON in `stdin` by default
+- use a single argv JSON payload only when it is trivially short and clearly cheaper in tokens

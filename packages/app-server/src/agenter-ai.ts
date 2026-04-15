@@ -652,9 +652,13 @@ export class AgenterAI {
     totalContextChars: 0,
   };
   private readonly runtimeText: ReturnType<typeof createRuntimeText>;
+  private modelClient: ModelClient;
+  private promptStore: PromptStore;
 
   constructor(private readonly deps: AgentDeps) {
     this.runtimeText = createRuntimeText(this.deps.locale);
+    this.modelClient = this.deps.modelClient;
+    this.promptStore = this.deps.promptStore;
     const initialPromptWindowState = this.deps.initialPromptWindowState;
     if (initialPromptWindowState) {
       this.promptWindow = structuredClone(initialPromptWindowState.messages);
@@ -663,6 +667,14 @@ export class AgenterAI {
       const ephemeralMatch = initialPromptWindowState.id.match(/^ephemeral-(\d+)$/);
       this.nextEphemeralPromptWindowStateId = ephemeralMatch ? Number(ephemeralMatch[1]) + 1 : 1;
     }
+  }
+
+  setModelClient(modelClient: ModelClient): void {
+    this.modelClient = modelClient;
+  }
+
+  setPromptStore(promptStore: PromptStore): void {
+    this.promptStore = promptStore;
   }
 
   private queueCompactRequest(trigger: ChatCycleCompactTrigger): void {
@@ -773,13 +785,14 @@ export class AgenterAI {
         promptWindowSize: this.promptWindow.length,
       },
     } satisfies AgentModelCallRecord["request"];
+    const modelClient = this.modelClient;
 
     await this.persistModelCall({
       id: requestId,
       timestamp: requestTimestamp,
       status: "running",
-      provider: this.deps.modelClient.getMeta().provider,
-      model: this.deps.modelClient.getMeta().model,
+      provider: modelClient.getMeta().provider,
+      model: modelClient.getMeta().model,
       request: requestRecord,
     });
 
@@ -787,7 +800,7 @@ export class AgenterAI {
       const response = await this.withModelCallTimeout({
         signal: input.signal,
         run: (abortController) =>
-          this.deps.modelClient.respondWithMeta({
+          modelClient.respondWithMeta({
             systemPrompt: requestRecord.systemPrompt,
             messages: requestMessages,
             tools: [],
@@ -808,8 +821,8 @@ export class AgenterAI {
         timestamp: requestTimestamp,
         completedAt: Date.now(),
         status: "done",
-        provider: this.deps.modelClient.getMeta().provider,
-        model: this.deps.modelClient.getMeta().model,
+        provider: modelClient.getMeta().provider,
+        model: modelClient.getMeta().model,
         request: requestRecord,
         outcome: { code: "done" },
         response: {
@@ -847,8 +860,8 @@ export class AgenterAI {
         timestamp: requestTimestamp,
         completedAt: Date.now(),
         status: "error",
-        provider: this.deps.modelClient.getMeta().provider,
-        model: this.deps.modelClient.getMeta().model,
+        provider: modelClient.getMeta().provider,
+        model: modelClient.getMeta().model,
         request: requestRecord,
         outcome: toTerminalOutcomeFromError(error),
         error: { message, name, stack },
@@ -1045,7 +1058,9 @@ export class AgenterAI {
           context?.signal,
         )
       : [];
-    const promptSnapshot = this.deps.promptStore.getSnapshot();
+    const promptStore = this.promptStore;
+    const modelClient = this.modelClient;
+    const promptSnapshot = promptStore.getSnapshot();
     const promptDocs = promptSnapshot.docs;
     const avatarName =
       typeof this.deps.avatarName === "string" && this.deps.avatarName.trim().length > 0
@@ -1054,17 +1069,17 @@ export class AgenterAI {
     const sharedPromptSlots = {
       AVATAR_NAME: avatarName,
     };
-    const agenterSystem = await this.deps.promptStore.buildMd(promptDocs.AGENTER_SYSTEM, {
+    const agenterSystem = await promptStore.buildMd(promptDocs.AGENTER_SYSTEM, {
       slots: sharedPromptSlots,
     });
     const agenterSystemWithSkills = [agenterSystem.trim(), this.deps.skillsList?.trim() ?? ""]
       .filter((part) => part.length > 0)
       .join("\n\n");
-    const agenter = await this.deps.promptStore.buildMd(promptDocs.AGENTER, {
+    const agenter = await promptStore.buildMd(promptDocs.AGENTER, {
       slots: sharedPromptSlots,
     });
-    const contract = await this.deps.promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
-    const systemPrompt = await this.deps.promptStore.buildMd(promptDocs.SYSTEM_TEMPLATE, {
+    const contract = await promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
+    const systemPrompt = await promptStore.buildMd(promptDocs.SYSTEM_TEMPLATE, {
       slots: {
         AGENTER_SYSTEM: agenterSystemWithSkills,
         SYSTEMS_GUIDE: "",
@@ -1095,8 +1110,8 @@ export class AgenterAI {
     const callRecordBase = {
       id: callId,
       timestamp: Date.now(),
-      provider: this.deps.modelClient.getMeta().provider,
-      model: this.deps.modelClient.getMeta().model,
+      provider: modelClient.getMeta().provider,
+      model: modelClient.getMeta().model,
       request: requestRecord,
     } as const;
     await this.persistModelCall({
@@ -1127,7 +1142,7 @@ export class AgenterAI {
       const response = await this.withModelCallTimeout({
         signal: context?.signal,
         run: (abortController) =>
-          this.deps.modelClient.respondWithMeta({
+          modelClient.respondWithMeta({
             systemPrompt,
             messages: promptWindowSnapshot,
             tools,
@@ -1142,11 +1157,11 @@ export class AgenterAI {
           }),
       });
 
-      this.stats.apiCalls += 1;
+        this.stats.apiCalls += 1;
       if (response.usage?.promptTokens !== undefined) {
         this.stats.lastPromptTokens = response.usage.promptTokens;
         this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
-        const compactConfig = this.deps.modelClient.getCompactConfig();
+        const compactConfig = modelClient.getCompactConfig();
         if (
           compactConfig.maxToken &&
           compactConfig.compactThreshold &&
@@ -1747,6 +1762,14 @@ export class AgenterAI {
         const output = await handler();
         throwIfAborted();
         const finishedAt = Date.now();
+        await this.deps.onAssistantStream?.({
+          kind: "tool_result",
+          toolCallId: invocationId,
+          toolName,
+          ok: true,
+          result: output,
+          timestamp: finishedAt,
+        });
         trace.push({
           invocationId,
           tool: toolName,
@@ -1759,6 +1782,14 @@ export class AgenterAI {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const finishedAt = Date.now();
+        await this.deps.onAssistantStream?.({
+          kind: "tool_result",
+          toolCallId: invocationId,
+          toolName,
+          ok: false,
+          error: message,
+          timestamp: finishedAt,
+        });
         trace.push({
           invocationId,
           tool: toolName,

@@ -9,6 +9,8 @@
 </script>
 
 <script lang="ts">
+	import { ScrollView } from '@agenter/svelte-components';
+
 	import { getStickToBottomContext } from './stick-to-bottom-context.svelte.js';
 
 	let {
@@ -19,9 +21,10 @@
 	}: ConversationContentProps = $props();
 
 	const context = getStickToBottomContext();
+	let viewportRef = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
-		context.setElement(ref);
+		context.setElement(viewportRef);
 		return () => {
 			context.setElement(null);
 		};
@@ -30,8 +33,10 @@
 
 <div
 	bind:this={ref}
-	class={cn('min-h-0 flex-1 overflow-y-auto', className)}
+	class={cn('min-h-0 flex-1 overflow-hidden', className)}
 	{...restProps}
 >
-	{@render children?.()}
+	<ScrollView class="h-full" bind:viewportRef={viewportRef}>
+		{@render children?.()}
+	</ScrollView>
 </div>

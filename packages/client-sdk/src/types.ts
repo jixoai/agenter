@@ -82,6 +82,9 @@ export type AttentionQueryOutput = RouterOutputs["runtime"]["attentionQuery"];
 export type AttentionQueryItem = AttentionQueryOutput["items"][number];
 export type ObservabilityTraceOutput = RouterOutputs["runtime"]["observabilityTraces"];
 export type ObservabilityTraceItem = ObservabilityTraceOutput["items"][number];
+export type HeartbeatGroupsPageOutput = RouterOutputs["runtime"]["heartbeatGroupsPage"];
+export type HeartbeatGroupItem = HeartbeatGroupsPageOutput["items"][number];
+export type HeartbeatGroupMessageItem = HeartbeatGroupItem["items"][number];
 export type HeartbeatPartsPageOutput = RouterOutputs["runtime"]["heartbeatPartsPage"];
 export type HeartbeatPartItem = HeartbeatPartsPageOutput["items"][number];
 export type ModelCallsPageOutput = RouterOutputs["runtime"]["modelCallsPage"];
@@ -184,7 +187,7 @@ export interface RuntimeClientState {
   globalTerminalActivityById: Record<string, CachedResourceState<TerminalActivityItem[]>>;
   schedulerLogsBySession: Record<string, SchedulerLogItem[]>;
   observabilityTracesBySession: Record<string, ObservabilityTraceItem[]>;
-  heartbeatPartsBySession: Record<string, HeartbeatPartItem[]>;
+  heartbeatGroupsBySession: Record<string, HeartbeatGroupItem[]>;
   modelCallsBySession: Record<string, ModelCallItem[]>;
   requestAuxBySession: Record<string, RequestAuxItem[]>;
   modelCallDeltasBySession?: Record<string, ModelCallDeltaItem[]>;

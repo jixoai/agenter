@@ -3,6 +3,8 @@ import { getContext, setContext } from 'svelte';
 type StickToBottomOptions = {
 	initial?: ScrollBehavior;
 	resize?: ScrollBehavior;
+	observeResize?: boolean;
+	observeMutations?: boolean;
 };
 
 const STICK_TO_BOTTOM_CONTEXT_KEY = Symbol('stick-to-bottom-context');
@@ -17,10 +19,14 @@ class StickToBottomContext {
 	#userHasScrolled = $state(false);
 	#initial: ScrollBehavior;
 	#resize: ScrollBehavior;
+	#observeResize: boolean;
+	#observeMutations: boolean;
 
 	constructor(options: StickToBottomOptions = {}) {
 		this.#initial = options.initial ?? 'auto';
 		this.#resize = options.resize ?? 'smooth';
+		this.#observeResize = options.observeResize ?? true;
+		this.#observeMutations = options.observeMutations ?? true;
 	}
 
 	get isAtBottom() {
@@ -30,6 +36,8 @@ class StickToBottomContext {
 	configure(options: StickToBottomOptions) {
 		this.#initial = options.initial ?? this.#initial;
 		this.#resize = options.resize ?? this.#resize;
+		this.#observeResize = options.observeResize ?? this.#observeResize;
+		this.#observeMutations = options.observeMutations ?? this.#observeMutations;
 	}
 
 	setElement(element: HTMLElement | null) {
@@ -99,28 +107,32 @@ class StickToBottomContext {
 
 		this.#element.addEventListener('scroll', this.#handleScroll, { passive: true });
 
-		this.#resizeObserver = new ResizeObserver(() => {
-			this.#checkScrollPosition();
-			if (this.#isAtBottom && !this.#userHasScrolled) {
-				this.scrollToBottom(this.#resize);
-			}
-		});
-		this.#resizeObserver.observe(this.#element);
-
-		this.#mutationObserver = new MutationObserver(() => {
-			requestAnimationFrame(() => {
-				const shouldStick = this.#isAtBottom && !this.#userHasScrolled;
+		if (this.#observeResize) {
+			this.#resizeObserver = new ResizeObserver(() => {
 				this.#checkScrollPosition();
-				if (shouldStick) {
-					this.scrollToBottom('smooth');
+				if (this.#isAtBottom && !this.#userHasScrolled) {
+					this.scrollToBottom(this.#resize);
 				}
 			});
-		});
-		this.#mutationObserver.observe(this.#element, {
-			childList: true,
-			subtree: true,
-			characterData: true,
-		});
+			this.#resizeObserver.observe(this.#element);
+		}
+
+		if (this.#observeMutations) {
+			this.#mutationObserver = new MutationObserver(() => {
+				requestAnimationFrame(() => {
+					const shouldStick = this.#isAtBottom && !this.#userHasScrolled;
+					this.#checkScrollPosition();
+					if (shouldStick) {
+						this.scrollToBottom(this.#resize);
+					}
+				});
+			});
+			this.#mutationObserver.observe(this.#element, {
+				childList: true,
+				subtree: true,
+				characterData: true,
+			});
+		}
 
 		this.#checkScrollPosition();
 		this.scrollToBottom(this.#initial);

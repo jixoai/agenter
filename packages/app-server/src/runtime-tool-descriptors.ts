@@ -76,6 +76,12 @@ type RuntimeToolExample =
       description?: string;
     };
 
+const runtimeToolExampleRank: Record<RuntimeToolExample["kind"], number> = {
+  none: 0,
+  stdin: 1,
+  argv: 2,
+};
+
 export interface RuntimeToolDescriptor<TInput extends ZodTypeAny = ZodTypeAny> {
   namespace: RuntimeToolNamespace;
   name: string;
@@ -206,7 +212,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/attention/query",
     description: "Query attention items and commits using the runtime attention index.",
     inputSchema: attentionQuerySchema,
-    examples: [{ kind: "argv", payload: { query: "homepage status", limit: 10 } }],
+    examples: [
+      { kind: "stdin", payload: { query: "homepage status", limit: 10 } },
+      { kind: "argv", payload: { query: "homepage status", limit: 10 } },
+    ],
     handler: async (input, handlers) => ({
       items: await handlers.attentionQuery(input),
     }),
@@ -219,14 +228,6 @@ export const runtimeToolDescriptors = [
     inputSchema: attentionCommitSchema,
     examples: [
       {
-        kind: "argv",
-        payload: {
-          contextId: "ctx-chat-main",
-          summary: "Work finished and user already notified.",
-          done: true,
-        },
-      },
-      {
         kind: "stdin",
         payload: {
           contextId: "ctx-chat-main",
@@ -236,6 +237,14 @@ export const runtimeToolDescriptors = [
             value: "APP-URL: http://127.0.0.1:4173/",
             format: "text/plain",
           },
+          done: true,
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          contextId: "ctx-chat-main",
+          summary: "Work finished and user already notified.",
           done: true,
         },
       },
@@ -267,7 +276,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/message/read",
     description: "Read a room snapshot with optional limit.",
     inputSchema: messageReadSchema,
-    examples: [{ kind: "argv", payload: { chatId: "room-1", limit: 10 } }],
+    examples: [
+      { kind: "stdin", payload: { chatId: "room-1", limit: 10 } },
+      { kind: "argv", payload: { chatId: "room-1", limit: 10 } },
+    ],
     handler: async (input, handlers) => ({
       snapshot: handlers.messageRead(input),
     }),
@@ -280,17 +292,17 @@ export const runtimeToolDescriptors = [
     inputSchema: messageSendSchema,
     examples: [
       {
-        kind: "argv",
-        payload: {
-          chatId: "room-1",
-          content: "APP-ACK: 我先处理一下，稍后给你结果。",
-        },
-      },
-      {
         kind: "stdin",
         payload: {
           chatId: "room-1",
           content: "我已经完成初版了。\n请直接打开我刚发给你的链接看看。",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          chatId: "room-1",
+          content: "APP-ACK: 我先处理一下，稍后给你结果。",
         },
       },
     ],
@@ -326,7 +338,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/terminal/create",
     description: "Create or recover a runtime terminal. Prefer an explicit absolute cwd when continuity matters.",
     inputSchema: terminalCreateSchema,
-    examples: [{ kind: "argv", payload: { cwd: "/absolute/project/path", focus: true } }],
+    examples: [
+      { kind: "stdin", payload: { cwd: "/absolute/project/path", focus: true } },
+      { kind: "argv", payload: { cwd: "/absolute/project/path", focus: true } },
+    ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalCreate(input),
     }),
@@ -337,7 +352,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/terminal/read",
     description: "Read terminal output using auto, diff, or snapshot mode.",
     inputSchema: terminalReadSchema,
-    examples: [{ kind: "argv", payload: { terminalId: "term-1", mode: "auto" } }],
+    examples: [
+      { kind: "stdin", payload: { terminalId: "term-1", mode: "auto" } },
+      { kind: "argv", payload: { terminalId: "term-1", mode: "auto" } },
+    ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalRead(input),
     }),
@@ -350,18 +368,18 @@ export const runtimeToolDescriptors = [
     inputSchema: terminalWriteSchema,
     examples: [
       {
-        kind: "argv",
-        payload: {
-          terminalId: "term-1",
-          text: "npm run dev",
-          submit: true,
-        },
-      },
-      {
         kind: "stdin",
         payload: {
           terminalId: "term-1",
           text: "python3 -m http.server 4173 --bind 127.0.0.1",
+          submit: true,
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          terminalId: "term-1",
+          text: "npm run dev",
           submit: true,
         },
       },
@@ -376,7 +394,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/terminal/focus",
     description: "Change the focused terminal set for this runtime.",
     inputSchema: terminalFocusSchema,
-    examples: [{ kind: "argv", payload: { op: "replace", terminalIds: ["term-1"] } }],
+    examples: [
+      { kind: "stdin", payload: { op: "replace", terminalIds: ["term-1"] } },
+      { kind: "argv", payload: { op: "replace", terminalIds: ["term-1"] } },
+    ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalFocus(input),
     }),
@@ -387,7 +408,10 @@ export const runtimeToolDescriptors = [
     route: "/v1/terminal/kill",
     description: "Kill a runtime terminal by id.",
     inputSchema: terminalKillSchema,
-    examples: [{ kind: "argv", payload: { terminalId: "term-1" } }],
+    examples: [
+      { kind: "stdin", payload: { terminalId: "term-1" } },
+      { kind: "argv", payload: { terminalId: "term-1" } },
+    ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalKill(input),
     }),
@@ -415,12 +439,61 @@ export const getRuntimeToolDescriptorByRoute = (route: string): RuntimeToolDescr
 
 const isJsonObjectText = (value: string): boolean => value.trim().startsWith("{");
 
+const containsNonLatin1CodePoint = (value: string): boolean => {
+  for (const char of value) {
+    if ((char.codePointAt(0) ?? 0) > 0xff) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const jsonValueContainsNonLatin1Text = (value: unknown): boolean => {
+  if (typeof value === "string") {
+    return containsNonLatin1CodePoint(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => jsonValueContainsNonLatin1Text(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).some((item) => jsonValueContainsNonLatin1Text(item));
+  }
+  return false;
+};
+
+const repairLikelyJustBashUtf8Mojibake = (value: string): string => {
+  if (!/[^\u0000-\u007f]/u.test(value) || containsNonLatin1CodePoint(value)) {
+    return value;
+  }
+  const repaired = Buffer.from(value, "latin1").toString("utf8");
+  if (repaired === value || repaired.includes("\uFFFD")) {
+    return value;
+  }
+
+  try {
+    const parsedOriginal = JSON.parse(value) as unknown;
+    const parsedRepaired = JSON.parse(repaired) as unknown;
+    if (!jsonValueContainsNonLatin1Text(parsedOriginal) && jsonValueContainsNonLatin1Text(parsedRepaired)) {
+      return repaired;
+    }
+  } catch {
+    try {
+      JSON.parse(repaired);
+      return repaired;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
 const parseJsonObjectText = (value: string, commandLabel: string): unknown => {
-  if (!isJsonObjectText(value)) {
+  const normalizedValue = repairLikelyJustBashUtf8Mojibake(value);
+  if (!isJsonObjectText(normalizedValue)) {
     throw new Error(`${commandLabel} requires one JSON object payload. Use \`${commandLabel} --help\` for details.`);
   }
   try {
-    return JSON.parse(value) as unknown;
+    return JSON.parse(normalizedValue) as unknown;
   } catch (error) {
     throw new Error(
       `${commandLabel} received invalid JSON: ${error instanceof Error ? error.message : String(error)}. Use \`${commandLabel} --help\` for details.`,
@@ -461,20 +534,23 @@ const renderExampleCommand = (descriptor: RuntimeToolDescriptor, example: Runtim
   }
   if (example.kind === "argv") {
     return [
-      `- \`${commandLabel} '${JSON.stringify(example.payload)}'\`${example.description ? ` ${example.description}` : ""}`,
+      `- Compact shell form for trivial payloads: \`${commandLabel} '${JSON.stringify(example.payload)}'\`${example.description ? ` ${example.description}` : ""}`,
     ];
   }
+  const payloadLines = JSON.stringify(example.payload, null, 2).split("\n").map((line) => `    ${line}`);
   return [
-    `- \`cat <<'EOF' | ${commandLabel}\`${example.description ? ` ${example.description}` : ""}`,
-    ...JSON.stringify(example.payload, null, 2)
-      .split("\n")
-      .map((line) => `  ${line}`),
-    "  EOF",
+    `- Preferred default through \`root_workspace_bash\`${example.description ? ` ${example.description}` : ""}`,
+    `  command: \`${commandLabel}\``,
+    "  stdin:",
+    ...payloadLines,
   ];
 };
 
 export const renderRuntimeToolHelp = (descriptor: RuntimeToolDescriptor): string => {
   const schema = toJSONSchema(descriptor.inputSchema, { unrepresentable: "any" });
+  const orderedExamples = [...descriptor.examples].sort(
+    (left, right) => runtimeToolExampleRank[left.kind] - runtimeToolExampleRank[right.kind],
+  );
   const lines = [
     `${descriptor.namespace} ${descriptor.name}`,
     "",
@@ -484,9 +560,9 @@ export const renderRuntimeToolHelp = (descriptor: RuntimeToolDescriptor): string
     JSON.stringify(schema, null, 2),
     "",
     "Canonical forms:",
-    ...descriptor.examples.flatMap((example) => renderExampleCommand(descriptor, example)),
+    ...orderedExamples.flatMap((example) => renderExampleCommand(descriptor, example)),
     "",
-    "Only JSON payload input is accepted. Use either one JSON argv or JSON stdin.",
+    "Only JSON payload input is accepted. Default to JSON stdin; use one JSON argv payload only when it is trivially short.",
   ];
   return `${lines.join("\n")}\n`;
 };

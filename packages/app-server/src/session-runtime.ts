@@ -1227,9 +1227,14 @@ export interface SessionRuntimeModelDebug {
     apiKeyEnv?: string;
     headers?: Record<string, string>;
     temperature: number;
+    topK?: number;
     maxRetries: number;
     maxToken?: number;
     compactThreshold?: number;
+    thinking?: {
+      enabled?: boolean;
+      budgetTokens?: number;
+    };
     capabilities: ModelCapabilities;
   } | null;
   promptWindow: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
@@ -5002,23 +5007,7 @@ export class SessionRuntime {
       });
     }
 
-    const resourceLoader = new ResourceLoader({
-      context: {
-        projectRoot: this.config.agentCwd,
-        cwd: this.config.agentCwd,
-      },
-    });
-
-    const promptStore = new FilePromptStore({
-      lang: this.config.lang,
-      rootDir: this.config.prompt.rootDir,
-      agenterPath: this.config.prompt.agenterPath,
-      agenterSystemPath: this.config.prompt.agenterSystemPath,
-      systemTemplatePath: this.config.prompt.systemTemplatePath,
-      responseContractPath: this.config.prompt.responseContractPath,
-      loader: resourceLoader,
-    });
-
+    const promptStore = this.createPromptStore(this.config);
     await promptStore.reload();
     this.runtimeSkills = listRuntimeSkills({
       homeDir: this.getHomeDir(),
@@ -5027,23 +5016,7 @@ export class SessionRuntime {
     });
     this.runtimeSkillsList = buildRuntimeSkillsList(this.runtimeSkills);
 
-    const modelClient = new ModelClient({
-      providerId: this.config.ai.providerId,
-      apiStandard: this.config.ai.apiStandard,
-      vendor: this.config.ai.vendor,
-      profile: this.config.ai.profile,
-      extensions: this.config.ai.extensions,
-      lang: this.config.lang,
-      apiKey: this.config.ai.apiKey,
-      apiKeyEnv: this.config.ai.apiKeyEnv,
-      model: this.config.ai.model,
-      baseUrl: this.config.ai.baseUrl,
-      headers: this.config.ai.headers,
-      temperature: this.config.ai.temperature,
-      maxRetries: this.config.ai.maxRetries,
-      maxToken: this.config.ai.maxToken,
-      compactThreshold: this.config.ai.compactThreshold,
-    });
+    const modelClient = this.createModelClient(this.config);
 
     this.taskSources = resolveTaskSources({
       homeDir: this.getHomeDir(),
@@ -5529,9 +5502,11 @@ export class SessionRuntime {
             apiKeyEnv: this.config.ai.apiKeyEnv,
             headers: this.config.ai.headers,
             temperature: this.config.ai.temperature,
+            topK: this.config.ai.topK,
             maxRetries: this.config.ai.maxRetries,
             maxToken: this.config.ai.maxToken,
             compactThreshold: this.config.ai.compactThreshold,
+            thinking: this.config.ai.thinking,
             capabilities: resolveModelCapabilities(this.config.ai),
           }
         : null,
@@ -5808,7 +5783,7 @@ export class SessionRuntime {
     if (!result.ok) {
       return result;
     }
-    await this.reloadSettingsLayers();
+    await this.reloadSettingsFromDisk({ persistPendingConfigFact: true });
     return {
       ok: true,
       file: result.file,
@@ -5816,6 +5791,50 @@ export class SessionRuntime {
         content: this.settingsEffective,
       },
     };
+  }
+
+  matchesScopedSettingsTarget(input: { scope: "workspace" | "global"; workspacePath?: string; avatar?: string }): boolean {
+    const runtimeAvatar = this.config?.avatar.nickname ?? this.options.avatar;
+    if (input.avatar && input.avatar !== runtimeAvatar) {
+      return false;
+    }
+    if (input.scope === "global") {
+      return true;
+    }
+    if (!input.workspacePath) {
+      return false;
+    }
+    return resolve(input.workspacePath) === resolve(this.options.cwd);
+  }
+
+  matchesWorkspaceSettingsTarget(input: { workspacePath: string; avatar?: string }): boolean {
+    return this.matchesScopedSettingsTarget({
+      scope: "workspace",
+      workspacePath: input.workspacePath,
+      avatar: input.avatar,
+    });
+  }
+
+  async reloadSettingsFromDisk(input: { persistPendingConfigFact?: boolean } = {}): Promise<void> {
+    const previousConfigPayload = this.buildPersistedModelConfigPayload();
+    const nextConfig = await resolveSessionConfig(this.options.cwd, {
+      avatar: this.options.avatar,
+      homeDir: this.getHomeDir(),
+    });
+    const promptStore = this.createPromptStore(nextConfig);
+    await promptStore.reload();
+    this.config = nextConfig;
+    this.settingsEditor = new SettingsEditor(nextConfig.agentCwd, nextConfig.prompt);
+    await this.reloadSettingsLayers(nextConfig);
+    this.agent?.setModelClient(this.createModelClient(nextConfig));
+    this.agent?.setPromptStore(promptStore);
+    const nextConfigPayload = this.buildPersistedModelConfigPayload(nextConfig);
+    if (
+      input.persistPendingConfigFact &&
+      JSON.stringify(previousConfigPayload ?? null) !== JSON.stringify(nextConfigPayload ?? null)
+    ) {
+      this.persistLooseConfigAuxiliaryMessage(Date.now(), nextConfigPayload);
+    }
   }
 
   async readEditable(kind: EditableKind): Promise<{ path: string; content: string; mtimeMs: number }> {
@@ -5836,7 +5855,11 @@ export class SessionRuntime {
     if (!this.settingsEditor) {
       throw new Error("runtime not started");
     }
-    return this.settingsEditor.save(kind, content, baseMtimeMs);
+    const result = await this.settingsEditor.save(kind, content, baseMtimeMs);
+    if (result.ok) {
+      await this.reloadSettingsFromDisk({ persistPendingConfigFact: kind === "settings" });
+    }
+    return result;
   }
 
   async uploadAssets(files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>): Promise<ChatSessionAsset[]> {
@@ -7949,25 +7972,73 @@ export class SessionRuntime {
     this.emit("modelCallDelta", { entry });
   }
 
-  private buildPersistedModelConfigPayload(): Record<string, unknown> | null {
-    if (!this.config) {
+  private buildPersistedModelConfigPayload(config: ResolvedSessionConfig | null = this.config): Record<string, unknown> | null {
+    if (!config) {
       return null;
     }
     return {
-      providerId: this.config.ai.providerId,
-      apiStandard: this.config.ai.apiStandard,
-      vendor: this.config.ai.vendor ?? null,
-      profile: this.config.ai.profile ?? null,
-      extensions: this.config.ai.extensions ?? [],
-      model: this.config.ai.model,
-      baseUrl: this.config.ai.baseUrl ?? null,
-      headers: this.config.ai.headers ?? {},
-      temperature: this.config.ai.temperature,
-      maxRetries: this.config.ai.maxRetries,
-      maxToken: this.config.ai.maxToken ?? null,
-      compactThreshold: this.config.ai.compactThreshold ?? null,
-      lang: this.config.lang,
+      providerId: config.ai.providerId,
+      apiStandard: config.ai.apiStandard,
+      vendor: config.ai.vendor ?? null,
+      profile: config.ai.profile ?? null,
+      extensions: config.ai.extensions ?? [],
+      model: config.ai.model,
+      baseUrl: config.ai.baseUrl ?? null,
+      headers: config.ai.headers ?? {},
+      temperature: config.ai.temperature,
+      topK: config.ai.topK ?? null,
+      maxRetries: config.ai.maxRetries,
+      maxToken: config.ai.maxToken ?? null,
+      compactThreshold: config.ai.compactThreshold ?? null,
+      thinking:
+        config.ai.thinking === undefined
+          ? null
+          : {
+              enabled: config.ai.thinking.enabled ?? false,
+              budgetTokens: config.ai.thinking.budgetTokens ?? null,
+            },
+      lang: config.lang,
     };
+  }
+
+  private createPromptStore(config: ResolvedSessionConfig): FilePromptStore {
+    const resourceLoader = new ResourceLoader({
+      context: {
+        projectRoot: config.agentCwd,
+        cwd: config.agentCwd,
+      },
+    });
+    return new FilePromptStore({
+      lang: config.lang,
+      rootDir: config.prompt.rootDir,
+      agenterPath: config.prompt.agenterPath,
+      agenterSystemPath: config.prompt.agenterSystemPath,
+      systemTemplatePath: config.prompt.systemTemplatePath,
+      responseContractPath: config.prompt.responseContractPath,
+      loader: resourceLoader,
+    });
+  }
+
+  private createModelClient(config: ResolvedSessionConfig): ModelClient {
+    return new ModelClient({
+      providerId: config.ai.providerId,
+      apiStandard: config.ai.apiStandard,
+      vendor: config.ai.vendor,
+      profile: config.ai.profile,
+      extensions: config.ai.extensions,
+      lang: config.lang,
+      apiKey: config.ai.apiKey,
+      apiKeyEnv: config.ai.apiKeyEnv,
+      model: config.ai.model,
+      baseUrl: config.ai.baseUrl,
+      headers: config.ai.headers,
+      temperature: config.ai.temperature,
+      topK: config.ai.topK,
+      maxRetries: config.ai.maxRetries,
+      maxToken: config.ai.maxToken,
+      compactThreshold: config.ai.compactThreshold,
+      thinking: config.ai.thinking,
+    });
   }
 
   private normalizePersistedModelRequest(
@@ -8063,6 +8134,35 @@ export class SessionRuntime {
       .filter((messageId) => messageId.length > 0);
   }
 
+  private persistLooseConfigAuxiliaryMessage(timestamp: number, payload: Record<string, unknown> | null): string | null {
+    const sessionDb = this.sessionDb;
+    if (!sessionDb) {
+      return null;
+    }
+    const latest = sessionDb.getLatestAuxiliaryMessage("config");
+    const latestPayload = latest?.parts[0]?.payload ?? null;
+    if (JSON.stringify(latestPayload) === JSON.stringify(payload ?? null)) {
+      return latest?.messageId ?? null;
+    }
+    const record = sessionDb.upsertMessage({
+      messageId: `request_aux:config:${timestamp}:${createId()}`,
+      roundIndex: sessionDb.getHead().currentRoundIndex,
+      scope: "request_aux",
+      role: "config",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      parts: [
+        {
+          partType: "config",
+          payload: structuredClone(payload),
+          isComplete: true,
+        },
+      ],
+    });
+    this.emitHeartbeatPart(record);
+    return record.messageId;
+  }
+
   private emitHeartbeatPart(entry: SessionMessageRecord): void {
     this.emit("heartbeatPart", { entry });
   }
@@ -8119,6 +8219,30 @@ export class SessionRuntime {
     }
     const record = this.upsertHeartbeatPartMessage(upsertInput);
     return record ? [record.messageId] : [];
+  }
+
+  private persistHeartbeatResponseArtifacts(input: {
+    aiCallId: number;
+    timestamp: number;
+    roundIndex: number;
+    isComplete: boolean;
+  }): string[] {
+    if (!this.activeModelResponseDraft || !this.sessionDb) {
+      return [];
+    }
+    return [
+      ...new Set([
+        ...this.persistHeartbeatResponseMessage(input),
+        ...this.activeModelResponseDraft.toolTrace.flatMap((entry) =>
+          this.persistHeartbeatToolInvocationMessage({
+            aiCallId: input.aiCallId,
+            roundIndex: input.roundIndex,
+            invocationId: entry.invocationId,
+            timestamp: input.timestamp,
+          }),
+        ),
+      ]),
+    ];
   }
 
   private persistHeartbeatToolInvocationMessage(input: {
@@ -8220,7 +8344,7 @@ export class SessionRuntime {
       status: "running",
       isComplete: false,
     });
-    const responseMessageIds = this.persistHeartbeatResponseMessage({
+    const responseMessageIds = this.persistHeartbeatResponseArtifacts({
       aiCallId: this.activeModelCallId,
       timestamp,
       roundIndex: this.sessionDb.getHead().currentRoundIndex,
@@ -8239,6 +8363,23 @@ export class SessionRuntime {
       return;
     }
     switch (input.kind) {
+      case "thinking":
+        if (!this.activeModelResponseDraft) {
+          this.activeModelResponseDraft = { toolTrace: [] };
+        }
+        this.activeModelResponseDraft.assistant = {
+          ...(this.activeModelResponseDraft.assistant ?? {}),
+          thinkingStartedAt:
+            this.activeModelResponseDraft.assistant?.thinkingStartedAt ??
+            (input.content.length > 0 ? input.timestamp : undefined),
+          thinking: input.content,
+        };
+        this.persistActiveModelResponse(input.timestamp);
+        this.setProjectionStage("decide");
+        this.updateActiveCycle({
+          status: "streaming",
+        });
+        return;
       case "draft":
         if (!this.activeModelResponseDraft) {
           this.activeModelResponseDraft = { toolTrace: [] };
@@ -8308,14 +8449,6 @@ export class SessionRuntime {
           },
         });
         this.persistActiveModelResponse(input.timestamp);
-        if (this.activeModelCallId !== null) {
-          this.persistHeartbeatToolInvocationMessage({
-            aiCallId: this.activeModelCallId,
-            roundIndex: this.sessionDb?.getHead().currentRoundIndex ?? 0,
-            invocationId: input.toolCallId,
-            timestamp: input.timestamp,
-          });
-        }
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const callValue = input.input ?? input.argsText;
@@ -8369,14 +8502,6 @@ export class SessionRuntime {
           },
         });
         this.persistActiveModelResponse(input.timestamp);
-        if (this.activeModelCallId !== null) {
-          this.persistHeartbeatToolInvocationMessage({
-            aiCallId: this.activeModelCallId,
-            roundIndex: this.sessionDb?.getHead().currentRoundIndex ?? 0,
-            invocationId: input.toolCallId,
-            timestamp: input.timestamp,
-          });
-        }
         this.setProjectionStage("act");
         const invocationId = input.toolCallId;
         const liveMessage = this.activeCycle.liveMessages.find((message) => message.id === `live-tool:${invocationId}`);
@@ -8549,7 +8674,7 @@ export class SessionRuntime {
     const responseMessageIds =
       record.status === "running"
         ? modelCall.responseMessageIds
-        : this.persistHeartbeatResponseMessage({
+        : this.persistHeartbeatResponseArtifacts({
             aiCallId: modelCall.id,
             timestamp: record.completedAt ?? record.timestamp,
             roundIndex: normalizedRequest.roundIndex,
@@ -8735,8 +8860,7 @@ export class SessionRuntime {
     }
   }
 
-  private async reloadSettingsLayers(): Promise<void> {
-    const config = this.config;
+  private async reloadSettingsLayers(config: ResolvedSessionConfig | null = this.config): Promise<void> {
     if (!config) {
       return;
     }

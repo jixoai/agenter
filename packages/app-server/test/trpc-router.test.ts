@@ -965,7 +965,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given durable Heartbeat-part and request-aux rows When runtime heartbeatPartsPage is queried Then the router returns one canonical merged stream", async () => {
+  test("Scenario: Given durable Heartbeat-part and request-aux rows When runtime heartbeatGroupsPage is queried Then the router projects before-call call and pending groups", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -982,6 +982,7 @@ describe("Feature: app-server trpc procedures", () => {
       autoStart: false,
     });
     const db = new SessionDb(join(created.session.sessionRoot, "session.db"));
+    let aiCallId = 0;
     try {
       db.upsertMessage({
         messageId: "request-1",
@@ -1024,32 +1025,63 @@ describe("Feature: app-server trpc procedures", () => {
         roundIndex: 0,
         scope: "heartbeat_part",
         role: "assistant",
+        aiCallId: 41,
         createdAt: 120,
         updatedAt: 120,
         parts: [{ partType: "text", payload: { type: "text", content: "reply" }, isComplete: true }],
+      });
+      aiCallId = db.appendAiCall({
+        roundIndex: 0,
+        kind: "model",
+        status: "done",
+        provider: "openai/chat",
+        model: "gpt-test",
+        requestUrl: "https://example.test/v1/chat/completions",
+        requestBody: { messages: [] },
+        responseBody: { text: "reply" },
+        requestMessageIds: [],
+        responseMessageIds: ["response-1"],
+        auxiliaryMessageIds: ["config-1"],
+        createdAt: 118,
+        updatedAt: 130,
+        completedAt: 130,
+        isComplete: true,
+      }).id;
+      db.upsertMessage({
+        messageId: "config-2",
+        roundIndex: 1,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 140,
+        updatedAt: 140,
+        parts: [{ partType: "config", payload: { temperature: 0.4 }, isComplete: true }],
       });
     } finally {
       db.close();
     }
 
-    const page = await caller.runtime.heartbeatPartsPage({
+    const page = await caller.runtime.heartbeatGroupsPage({
       sessionId: created.session.id,
       limit: 20,
     });
 
-    expect(page.items.map((row) => row.messageId)).toEqual([
+    expect(page.items.map((group) => group.kind)).toEqual([
+      "before-call",
+      "call",
+      "before-call-pending",
+    ]);
+    expect(page.items.map((group) => group.groupId)).toEqual([
+      `heartbeat-group:before-call:${aiCallId}`,
+      `heartbeat-group:call:${aiCallId}`,
+      `heartbeat-group:before-call-pending:${aiCallId + 1}`,
+    ]);
+    expect(page.items[0]?.items.map((row) => row.messageId)).toEqual([
       "request-1",
       "config-1",
       "room-ingress-1",
-      "response-1",
     ]);
-    expect(page.items.map((row) => row.scope)).toEqual([
-      "heartbeat_part",
-      "request_aux",
-      "heartbeat_part",
-      "heartbeat_part",
-    ]);
-    expect(page.items.map((row) => row.parts[0]?.partType)).toEqual(["text", "config", "text", "text"]);
+    expect(page.items[1]?.items.map((row) => row.messageId)).toEqual(["response-1"]);
+    expect(page.items[2]?.items.map((row) => row.messageId)).toEqual(["config-2"]);
 
     await kernel.stop();
   });

@@ -28,7 +28,7 @@ const runtimeClone = (store: RuntimeStore) => {
 		schedulerLogsBySession: { ...state.schedulerLogsBySession },
 		observabilityTracesBySession: { ...state.observabilityTracesBySession },
 		apiCallsBySession: { ...state.apiCallsBySession },
-		heartbeatPartsBySession: { ...state.heartbeatPartsBySession },
+		heartbeatGroupsBySession: { ...state.heartbeatGroupsBySession },
 		modelCallsBySession: { ...state.modelCallsBySession },
 		requestAuxBySession: { ...state.requestAuxBySession },
 		modelCallDeltasBySession: state.modelCallDeltasBySession ? { ...state.modelCallDeltasBySession } : undefined,

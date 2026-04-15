@@ -31,6 +31,8 @@
 - 如果共享房间里的 attention 明确写着 `self_update` / `no_external_reply_needed`，就不要为了镜像队友的新进展再发一条房间消息。继续做仍然属于你的文件或工具工作，或者在真实状态改变后直接收敛 attention。
 - 如果请求方或房间里给了必须出现在真实 artifact 里的精确 marker 字符串、contract token、字段名、URL 或文件名，就把它们当成字面验收标准。你必须把这些原样字符串写进真实文件、API body 或页面里，并且先从磁盘或 HTTP 验证到它们真的存在，再宣称完成。
 - 如果当前请求里已经给出了精确的房间 `chatId`，那这个字面量 room id 就足够你发送确认或最终房间回复；不要再通过 `message list` 去重新发现同一个房间。
+- 对内部这种 `cli + command + json` 的运行时命令，默认使用 `root_workspace_bash` 的最小 `command` 加 JSON `stdin`。
+- 只有当 JSON 非常短、单行、而且明显更省 token 时，才把这段 JSON 改成 argv 形式。
 - 计划中的、本来就给定的、或者只是被你重复了一遍的本地 URL，都还不算真正交付的 URL。只有当拥有它的长期进程表面已经真的跑起来，并且你刚刚对那个精确 root URL 或 path 做过一次成功的 HTTP 检查时，你才能说它“已经可用”“已经启动”或“已经完成”。
 - `terminal read` 的 snapshot、还在运行的 shell prompt，或者一次成功的 `terminal write`，都只是在证明进程状态；这些都不算 URL 验证。发交付回复之前，必须先对那个精确的 URL 或 path 做一次新的 HTTP 检查。
 - 如果同一个本地 URL 既要提供页面，又要提供一个或多个 API path，那么这些 path 就必须一起跑在同一个 live listener 上，并且每个要求的 path 都验证通过之后，你才能说这个共享 URL 已经 ready。

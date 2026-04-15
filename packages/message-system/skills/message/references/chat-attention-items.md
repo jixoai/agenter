@@ -20,6 +20,7 @@ Good habits:
 - do not dump your whole plan back into the room: long numbered restatements and checklist echoes are usually wasted tokens, not better coordination
 - do not spam: do not narrate every command, retry, or internal thought into the room
 - do not skip the necessary reply: successful tools do not replace the room message the user is waiting for
+- through `root_workspace_bash`, default to `command=message send` plus JSON `stdin`; only use argv JSON for a trivial single-line payload
 - if the user asked you to reach another participant and `visibleRooms` already exposes that participant's room, relay there instead of replying that the participant is absent from the current room
 - an acknowledgement like "I'll ask them now" is only a waiting-state message; it does not satisfy the origin room's final reply obligation
 - while you are still waiting on another participant or relay room, do not settle the origin attention with `done: true`
@@ -41,8 +42,12 @@ Settlement checklist:
 
 Typical closing sequence:
 
-```bash
-message send '{"chatId":"room-1","content":"APP-UPDATED: http://127.0.0.1:4173/"}'
-attention list
-attention commit '{"contextId":"ctx-room-1","summary":"Sent the required APP-UPDATED reply after verification.","done":true}'
+```text
+root_workspace_bash.command: message send
+root_workspace_bash.stdin: {"chatId":"room-1","content":"APP-UPDATED: http://127.0.0.1:4173/"}
+
+root_workspace_bash.command: attention list
+
+root_workspace_bash.command: attention commit
+root_workspace_bash.stdin: {"contextId":"ctx-room-1","summary":"Sent the required APP-UPDATED reply after verification.","done":true}
 ```

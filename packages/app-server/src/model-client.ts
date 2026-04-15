@@ -49,6 +49,11 @@ export interface AssistantTurn {
 
 export type AssistantStreamUpdate =
   | {
+      kind: "thinking";
+      content: string;
+      timestamp: number;
+    }
+  | {
       kind: "draft";
       content: string;
       usage?: DecisionUsage;
@@ -190,6 +195,7 @@ export class ModelClient {
         let yieldedAfterToolPhase = false;
         const toolCalls = new Map<string, { toolName: string; argsText: string }>();
         const defaultLoopStrategy = maxIterations(5);
+        const effectiveMaxTokens = input.maxTokens ?? this.config.maxToken;
 
         for await (const chunk of chat({
           adapter: this.textAdapter,
@@ -197,7 +203,8 @@ export class ModelClient {
           systemPrompts: [input.systemPrompt],
           tools: this.capabilities.tools ? input.tools : [],
           temperature: input.temperature ?? this.config.temperature,
-          maxTokens: input.maxTokens ?? this.config.maxToken,
+          maxTokens: effectiveMaxTokens,
+          modelOptions: this.buildModelOptions(effectiveMaxTokens),
           abortController: input.abortController,
           agentLoopStrategy: (state) => {
             if (!defaultLoopStrategy(state)) {
@@ -222,6 +229,11 @@ export class ModelClient {
           }
           if (isThinkingChunk(chunk)) {
             thinking = appendChunk(thinking, chunk.delta);
+            await input.onUpdate?.({
+              kind: "thinking",
+              content: thinking,
+              timestamp: chunk.timestamp,
+            });
             continue;
           }
           if (isToolCallStartChunk(chunk)) {
@@ -312,6 +324,32 @@ export class ModelClient {
     }
 
     throw new ModelDecisionError(`${this.config.apiStandard} response failed: retries exhausted`);
+  }
+
+  private buildModelOptions(maxTokens: number | undefined): Record<string, unknown> | undefined {
+    if (this.config.apiStandard !== "anthropic") {
+      return undefined;
+    }
+    const options: Record<string, unknown> = {};
+    if (typeof this.config.topK === "number") {
+      options.top_k = this.config.topK;
+    }
+    if (this.config.thinking?.enabled === true && (maxTokens === undefined || maxTokens > 1_024)) {
+      const fallbackBudget = this.config.thinking.budgetTokens ?? 1_024;
+      const clampedBudget =
+        typeof maxTokens === "number"
+          ? Math.max(1_024, Math.min(fallbackBudget, maxTokens - 1))
+          : Math.max(1_024, fallbackBudget);
+      options.thinking = {
+        type: "enabled",
+        budget_tokens: clampedBudget,
+      };
+    } else if (this.config.thinking?.enabled === false) {
+      options.thinking = {
+        type: "disabled",
+      };
+    }
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   async summarizeText(text: string): Promise<{ summary: string; usage?: DecisionUsage; skipped?: string }> {

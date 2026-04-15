@@ -1241,6 +1241,11 @@ export const appRouter = t.router({
       .query(({ ctx, input }) =>
         ctx.kernel.pageHeartbeatParts(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
+    heartbeatGroupsPage: t.procedure
+      .input(reversePageInput)
+      .query(({ ctx, input }) =>
+        ctx.kernel.pageHeartbeatGroups(input.sessionId, { before: input.before, limit: input.limit ?? 5 }),
+      ),
     modelCallsPage: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>

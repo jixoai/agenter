@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { Scaffold } from '@agenter/svelte-components';
+
 	import type {
-		HeartbeatPartItem,
+		HeartbeatGroupItem,
 		MessageChannelEntry,
 		ModelCallItem,
 		RuntimeSnapshotEntry,
@@ -8,6 +10,7 @@
 		SessionEntry,
 	} from '@agenter/client-sdk';
 
+	import type { RuntimeHeartbeatConfigBinding, RuntimeHeartbeatConfigDraft } from './runtime-heartbeat-config-state';
 	import RuntimeStageAttention from './runtime-stage-attention.svelte';
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 	import RuntimeStageSettings from './runtime-stage-settings.svelte';
@@ -19,8 +22,12 @@
 		runtime: RuntimeSnapshotEntry | null;
 		channels: MessageChannelEntry[];
 		notifications: SessionNotificationItem[];
-		heartbeatEntries: HeartbeatPartItem[];
+		heartbeatGroups: HeartbeatGroupItem[];
 		modelCalls: ModelCallItem[];
+		heartbeatConfigBinding: RuntimeHeartbeatConfigBinding;
+		heartbeatConfigLoading?: boolean;
+		heartbeatConfigSaving?: boolean;
+		heartbeatConfigError?: string | null;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
 		onOpenRoom: (chatId: string) => void | Promise<void>;
@@ -33,6 +40,8 @@
 			upToMessageId?: string | null;
 		}) => void | Promise<void>;
 		onLoadOlderHeartbeat: () => Promise<{ items: number; hasMore: boolean }>;
+		onRefreshHeartbeatConfig: () => void | Promise<void>;
+		onSaveHeartbeatConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
 	}
 
 	let {
@@ -41,8 +50,12 @@
 		runtime,
 		channels,
 		notifications,
-		heartbeatEntries,
+		heartbeatGroups,
 		modelCalls,
+		heartbeatConfigBinding,
+		heartbeatConfigLoading = false,
+		heartbeatConfigSaving = false,
+		heartbeatConfigError = null,
 		sessionIconUrl = null,
 		avatarLabel = session.avatar || session.name,
 		onOpenRoom,
@@ -51,32 +64,42 @@
 		onSetTerminalVisibility,
 		onConsumeNotification,
 		onLoadOlderHeartbeat,
+		onRefreshHeartbeatConfig,
+		onSaveHeartbeatConfig,
 	}: Props = $props();
 </script>
 
-<div class="h-full min-h-0" data-testid="runtime-primary-stage">
-	{#if tab === 'heartbeat'}
-		<RuntimeStageHeartbeat
-			entries={heartbeatEntries}
-			modelCalls={modelCalls}
-			attention={runtime?.attention ?? null}
-			{sessionIconUrl}
-			{avatarLabel}
-			onLoadOlder={onLoadOlderHeartbeat}
-		/>
-	{:else if tab === 'attention'}
-		<RuntimeStageAttention
-			sessionId={session.id}
-			{runtime}
-			{channels}
-			{notifications}
-			{onOpenRoom}
-			{onOpenTerminal}
-			{onSetRoomVisibility}
-			{onSetTerminalVisibility}
-			{onConsumeNotification}
-		/>
-	{:else}
-		<RuntimeStageSettings {session} {runtime} />
-	{/if}
-</div>
+<Scaffold.Root class="h-full" data-testid="runtime-primary-stage">
+	<Scaffold.Body class="h-full">
+		{#if tab === 'heartbeat'}
+			<RuntimeStageHeartbeat
+				groups={heartbeatGroups}
+				modelCalls={modelCalls}
+				attention={runtime?.attention ?? null}
+				configBinding={heartbeatConfigBinding}
+				configLoading={heartbeatConfigLoading}
+				configSaving={heartbeatConfigSaving}
+				configError={heartbeatConfigError}
+				{sessionIconUrl}
+				{avatarLabel}
+				onLoadOlder={onLoadOlderHeartbeat}
+				onRefreshConfig={onRefreshHeartbeatConfig}
+				onSaveConfig={onSaveHeartbeatConfig}
+			/>
+		{:else if tab === 'attention'}
+			<RuntimeStageAttention
+				sessionId={session.id}
+				{runtime}
+				{channels}
+				{notifications}
+				{onOpenRoom}
+				{onOpenTerminal}
+				{onSetRoomVisibility}
+				{onSetTerminalVisibility}
+				{onConsumeNotification}
+			/>
+		{:else}
+			<RuntimeStageSettings {session} {runtime} />
+		{/if}
+	</Scaffold.Body>
+</Scaffold.Root>

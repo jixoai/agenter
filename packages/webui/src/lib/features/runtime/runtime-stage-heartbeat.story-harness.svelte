@@ -1,39 +1,52 @@
 <script lang="ts">
-	import type { HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from '@agenter/client-sdk';
+	import type { HeartbeatGroupItem, ModelCallItem, RuntimeAttentionState } from '@agenter/client-sdk';
 
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
+	import { createEmptyRuntimeHeartbeatConfigBinding } from './runtime-heartbeat-config-state';
 
 	let {
-		initialEntries,
-		olderEntries = [],
+		initialGroups,
+		olderGroups = [],
 		modelCalls = [],
 		attention = null,
 		sessionIconUrl = 'https://example.test/avatar-default.webp',
 		avatarLabel = 'Default Avatar',
 	}: {
-		initialEntries: HeartbeatPartItem[];
-		olderEntries?: HeartbeatPartItem[];
+		initialGroups: HeartbeatGroupItem[];
+		olderGroups?: HeartbeatGroupItem[];
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
 	} = $props();
 
-	let entries = $state<HeartbeatPartItem[]>([]);
-	let olderLoaded = $state(false);
+let groups = $state<HeartbeatGroupItem[]>([]);
+let olderLoaded = $state(false);
+const configBinding = createEmptyRuntimeHeartbeatConfigBinding();
+const fixtureResetKey = $derived(
+	[
+		initialGroups.map((group) => `${group.id}:${group.updatedAt}:${group.items.length}`).join('|'),
+		olderGroups.map((group) => `${group.id}:${group.updatedAt}:${group.items.length}`).join('|'),
+	].join('::'),
+);
+let lastFixtureResetKey = $state<string | null>(null);
 
 	$effect(() => {
-		entries = [...initialEntries];
+		if (fixtureResetKey === lastFixtureResetKey) {
+			return;
+		}
+		lastFixtureResetKey = fixtureResetKey;
+		groups = [...initialGroups];
 		olderLoaded = false;
 	});
 
 	const handleLoadOlder = async (): Promise<{ items: number; hasMore: boolean }> => {
-		if (olderLoaded || olderEntries.length === 0) {
+		if (olderLoaded || olderGroups.length === 0) {
 			return { items: 0, hasMore: false };
 		}
-		entries = [...olderEntries, ...entries];
+		groups = [...olderGroups, ...groups];
 		olderLoaded = true;
-		return { items: olderEntries.length, hasMore: false };
+		return { items: olderGroups.length, hasMore: false };
 	};
 </script>
 
@@ -41,5 +54,15 @@
 	class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-story"
 >
-	<RuntimeStageHeartbeat {entries} {modelCalls} {attention} {sessionIconUrl} {avatarLabel} onLoadOlder={handleLoadOlder} />
+	<RuntimeStageHeartbeat
+		{groups}
+		{modelCalls}
+		{attention}
+		{sessionIconUrl}
+		{avatarLabel}
+		{configBinding}
+		onLoadOlder={handleLoadOlder}
+		onRefreshConfig={() => {}}
+		onSaveConfig={() => {}}
+	/>
 </div>

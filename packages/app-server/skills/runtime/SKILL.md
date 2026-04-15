@@ -19,6 +19,8 @@ Key laws:
 
 - The only direct model tools are `root_workspace_list` and `root_workspace_bash`.
 - `root_workspace_bash` is a one-shot shell, not a durable process owner.
+- `root_workspace_bash` also accepts optional `stdin`; for runtime-local CLI commands that take JSON payloads, default to `command=<bare action>` plus JSON `stdin`.
+- Use a single argv JSON payload only when it is trivially short, single-line, and clearly cheaper in tokens than opening a separate `stdin` field.
 - `root_workspace_bash` can use outbound network access for objective verification of current or external facts.
 - Long-lived or interactive work belongs in `terminal`.
 - A local delivery URL may be verified from `root_workspace_bash`, but the process that owns that URL still belongs in `terminal`.

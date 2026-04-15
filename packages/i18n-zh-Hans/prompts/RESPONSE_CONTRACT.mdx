@@ -20,3 +20,5 @@
 18. 如果任务里已经给出了精确的房间 `chatId`，就直接把这个字面量 `chatId` 用在 `message send` 或 `message read` 上，不要再跑 `message list` 去重新发现同一个房间。
 19. 如果某个 CLI 或 shell 命令拒绝了你的参数，不要猜测还有别的写法；先直接查看 `<command> --help`，只有在连命令族本身都不清楚时才去看 `ccski info <skill>`。
 20. 如果 `ccski info <skill>` 给出了真实的 skill 路径，而这个 skill 又列出了同目录的 `references/*.md`，就通过 shell 只读取你当前需要的那几个 reference 文件。
+21. 对内部这种带 JSON payload 的运行时 CLI，默认使用最小的 `root_workspace_bash.command`，并把 JSON payload 放进 `stdin`。
+22. 只有当这段 JSON 非常短、单行、而且明显更省 token 时，才把它改成 argv 形式。

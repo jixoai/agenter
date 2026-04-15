@@ -61,6 +61,8 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enSystem).toContain("your next action must be that delivery step");
     expect(enSystem).toContain("Match the requester's language");
     expect(enSystem).toContain("exact room `chatId`");
+    expect(enSystem).toContain("JSON payload in `stdin`");
+    expect(enSystem).toContain("Only switch that JSON payload into argv");
     expect(enSystem).toContain("do not open any `SKILL.md`");
     expect(enSystem).not.toContain("message-system");
     expect(enSystem).not.toContain("terminal-system");
@@ -75,6 +77,8 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhSystem).toContain("你的下一步动作就必须是执行那次交付");
     expect(zhSystem).toContain("跟随请求方所使用的语言");
     expect(zhSystem).toContain("精确的房间 `chatId`");
+    expect(zhSystem).toContain("最小 `command` 加 JSON `stdin`");
+    expect(zhSystem).toContain("明显更省 token");
     expect(zhSystem).toContain("不要先打开任何 `SKILL.md`");
     expect(zhSystem).not.toContain("message-system");
     expect(zhSystem).not.toContain("terminal-system");
@@ -88,6 +92,8 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enResponse).toContain("use that literal `chatId` directly");
     expect(enResponse).toContain("read only the specific reference files you need");
     expect(enResponse).toContain("the environment's durable delivery action");
+    expect(enResponse).toContain("minimal `root_workspace_bash.command`");
+    expect(enResponse).toContain("JSON payload in `stdin`");
     expect(enResponse).not.toContain("message CLI");
     expect(enResponse).not.toContain("terminal CLI");
 
@@ -99,6 +105,8 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhResponse).toContain("直接把这个字面量 `chatId` 用在 `message send`");
     expect(zhResponse).toContain("只读取你当前需要的那几个 reference 文件");
     expect(zhResponse).toContain("当前环境里的耐久交付动作");
+    expect(zhResponse).toContain("最小的 `root_workspace_bash.command`");
+    expect(zhResponse).toContain("JSON payload 放进 `stdin`");
     expect(zhResponse).not.toContain("message` CLI");
     expect(zhResponse).not.toContain("terminal` CLI");
   });

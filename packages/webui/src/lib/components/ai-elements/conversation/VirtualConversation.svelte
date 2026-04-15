@@ -12,11 +12,13 @@
 		viewportClass = '',
 		contentClass = '',
 		viewportTestId = undefined,
-		initial = 'auto',
-		resize = 'smooth',
+	initial = 'auto',
+	resize = 'auto',
+	viewportRef = $bindable<HTMLDivElement | null>(null),
 		items,
 		virtual,
 		virtualizerRef = $bindable<ScrollViewVirtualizer | null>(null),
+		atTop = $bindable(false),
 		renderItem,
 		renderEmpty,
 		scrollButtonClass = '',
@@ -27,29 +29,57 @@
 		viewportTestId?: string;
 		initial?: ScrollBehavior;
 		resize?: ScrollBehavior;
+		viewportRef?: HTMLDivElement | null;
 		items: readonly Item[];
 		virtual: Omit<ScrollVirtualConfig<Item>, 'items'>;
 		virtualizerRef?: ScrollViewVirtualizer | null;
+		atTop?: boolean;
 		renderItem?: Snippet<[Item, number]>;
 		renderEmpty?: Snippet;
 		scrollButtonClass?: string;
 	} = $props();
+
+	const resolvedViewportClass = $derived(cn('conversation-scroll-viewport', viewportClass));
 
 	const virtualConfig = $derived({
 		...virtual,
 		items,
 	} satisfies ScrollVirtualConfig<Item>);
 
-	const context = setStickToBottomContext();
+	const context = setStickToBottomContext({
+		observeMutations: false,
+		observeResize: false,
+	});
+	const TOP_THRESHOLD = 48;
+	let hasInitialStick = false;
+	let pendingStickFrame = 0;
 
-	let viewportRef = $state<HTMLDivElement | null>(null);
-	let hasInitialStick = $state(false);
+	const syncTopState = (): void => {
+		atTop = (viewportRef?.scrollTop ?? Number.POSITIVE_INFINITY) <= TOP_THRESHOLD;
+	};
 
 	$effect(() => {
 		context.configure({ initial, resize });
 		context.setElement(viewportRef);
+		syncTopState();
 		return () => {
 			context.setElement(null);
+		};
+	});
+
+	$effect(() => {
+		const viewport = viewportRef;
+		if (!viewport) {
+			atTop = false;
+			return;
+		}
+		syncTopState();
+		const onScroll = (): void => {
+			syncTopState();
+		};
+		viewport.addEventListener('scroll', onScroll, { passive: true });
+		return () => {
+			viewport.removeEventListener('scroll', onScroll);
 		};
 	});
 
@@ -61,18 +91,29 @@
 		}
 		const shouldStick = !hasInitialStick || context.isAtBottom;
 		const behavior = hasInitialStick ? resize : initial;
-		requestAnimationFrame(() => {
+		if (pendingStickFrame !== 0) {
+			cancelAnimationFrame(pendingStickFrame);
+		}
+		pendingStickFrame = requestAnimationFrame(() => {
+			pendingStickFrame = 0;
 			if (shouldStick) {
 				context.scrollToBottom(behavior);
 			}
 		});
 		hasInitialStick = true;
+		return () => {
+			if (pendingStickFrame !== 0) {
+				cancelAnimationFrame(pendingStickFrame);
+				pendingStickFrame = 0;
+			}
+		};
 	});
 </script>
 
 <div class={cn('relative flex h-full min-h-0 flex-col overflow-hidden', className)} role="log">
 	<ScrollView
-		class={cn('h-full', viewportClass)}
+		class="h-full"
+		viewportClass={resolvedViewportClass}
 		{contentClass}
 		{viewportTestId}
 		bind:viewportRef
@@ -91,6 +132,14 @@
 	<ConversationScrollButton
 		aria-label="Scroll to latest"
 		class={scrollButtonClass}
+		data-scroll-aware="true"
 		title="Scroll to latest"
 	/>
 </div>
+
+<style>
+	:global(.conversation-scroll-viewport) {
+		scroll-timeline-name: --conversation-scroll;
+		scroll-timeline-axis: block;
+	}
+</style>

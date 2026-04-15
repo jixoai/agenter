@@ -2,7 +2,15 @@
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { cn } from '$lib/utils.js';
 
-	let { class: className = '', input }: { class?: string; input: unknown } = $props();
+	let {
+		class: className = '',
+		input,
+		plain = false,
+	}: {
+		class?: string;
+		input: unknown;
+		plain?: boolean;
+	} = $props();
 
 	const hasMeaningfulInput = $derived(
 		input !== null &&
@@ -12,12 +20,13 @@
 </script>
 
 {#if hasMeaningfulInput}
-	<div class={cn('grid gap-2 px-3 pb-3', className)}>
-		<div class="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">Parameters</div>
+	<div class={cn('grid min-w-0 gap-1.5 px-2.5 pb-2', className)}>
+		<div class="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">Parameters</div>
 		<JSONViewer
 			value={input}
 			rawText={JSON.stringify(input, null, 2)}
-			class="rounded-xl border border-border/60 bg-background px-3 py-3"
+			{plain}
+			class="min-w-0 w-full max-w-full rounded-lg bg-background/70 px-2.5 py-2"
 		/>
 	</div>
 {/if}

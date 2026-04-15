@@ -1792,6 +1792,9 @@ describe("Feature: AgenterAI behavior", () => {
       toolName?: string;
       argsText?: string;
       input?: unknown;
+      ok?: boolean;
+      result?: unknown;
+      error?: string | null;
     }> = [];
     const modelCalls: AgentModelCallRecord[] = [];
 
@@ -1840,6 +1843,9 @@ describe("Feature: AgenterAI behavior", () => {
           toolName: "toolName" in update ? update.toolName : undefined,
           argsText: "argsText" in update ? update.argsText : undefined,
           input: "input" in update ? update.input : undefined,
+          ok: "ok" in update ? update.ok : undefined,
+          result: "result" in update ? update.result : undefined,
+          error: "error" in update ? update.error : undefined,
         });
       },
       onModelCall: async (record) => {
@@ -1862,6 +1868,12 @@ describe("Feature: AgenterAI behavior", () => {
       change: {
         type: "clean",
       },
+    });
+    const completedCallUpdate = streamedUpdates.find(
+      (update) => update.kind === "tool_result" && update.toolCallId === "call-attention-commit-stable",
+    );
+    expect(completedCallUpdate).toMatchObject({
+      ok: true,
     });
 
     const finalRecord = modelCalls.find((record) => record.status === "done");

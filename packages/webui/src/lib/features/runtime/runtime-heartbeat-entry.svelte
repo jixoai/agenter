@@ -1,168 +1,233 @@
 <script lang="ts">
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
 	import Copy from '@lucide/svelte/icons/copy';
-
-	import type { HeartbeatPartItem } from '@agenter/client-sdk';
+	import { onMount, tick } from 'svelte';
 
 	import { Action, Actions } from '$lib/components/ai-elements/action/index.js';
 	import { Checkpoint, CheckpointIcon } from '$lib/components/ai-elements/checkpoint/index.js';
-	import { Message, MessageAvatar, MessageContent } from '$lib/components/ai-elements/message/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { cn } from '$lib/utils.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Item as ToggleGroupItem, Root as ToggleGroupRoot } from '$lib/components/ui/toggle-group/index.js';
 
 	import RuntimeHeartbeatPartContent from './runtime-heartbeat-part-content.svelte';
 	import RuntimeHeartbeatToolBlock from './runtime-heartbeat-tool-block.svelte';
 	import {
-		buildHeartbeatDisplayBlocks,
-		buildHeartbeatEntryClipboardText,
-		getHeartbeatMessageFrom,
-		getHeartbeatRowLabel,
-		getHeartbeatRowMeta,
-		getHeartbeatRowPreviewLine,
-		isHeartbeatCompactRow,
-		isHeartbeatRowFoldedByDefault,
+		buildHeartbeatSectionClipboardText,
+		getHeartbeatSectionTimeMeta,
+		getHeartbeatRowPreview,
+		readHeartbeatPartText,
+		type HeartbeatSubjectSection,
 	} from './runtime-heartbeat-parts';
-	import { formatRuntimeTimestamp } from './runtime-shell-format';
+	import {
+		formatRuntimeCompactDuration,
+		formatRuntimeCompactTimestamp,
+	} from './runtime-shell-format';
+
+	type HeartbeatLayoutMode = 'compact' | 'detailed';
+	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM = 28;
+	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT = `${HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM}rem`;
 
 	let {
-		entry,
-		sessionIconUrl = null,
-		avatarLabel = 'Avatar',
+		section,
+		layoutMode = 'compact',
+		groupLabel,
+		groupTimestamp,
+		onLayoutModeChange = undefined,
 	}: {
-		entry: HeartbeatPartItem;
-		sessionIconUrl?: string | null;
-		avatarLabel?: string;
+		section: HeartbeatSubjectSection;
+		layoutMode?: HeartbeatLayoutMode;
+		groupLabel: string;
+		groupTimestamp: number;
+		onLayoutModeChange?: ((mode: HeartbeatLayoutMode) => void) | undefined;
 	} = $props();
 
-	const compactRow = $derived(isHeartbeatCompactRow(entry));
-	const foldedByDefault = $derived(isHeartbeatRowFoldedByDefault(entry));
-	const summary = $derived(getHeartbeatRowPreviewLine(entry));
-	const meta = $derived(getHeartbeatRowMeta(entry));
-	const messageFrom = $derived(getHeartbeatMessageFrom(entry));
-	const displayBlocks = $derived(buildHeartbeatDisplayBlocks(entry));
-	const rowAlignmentClass = $derived(messageFrom === 'user' ? 'grid justify-items-end' : 'grid');
-	const messageSurfaceClass = $derived(
-		cn(
-			'bg-card/95',
-			messageFrom === 'user'
-				? 'w-fit max-w-[min(58rem,calc(100%-2.75rem))] justify-self-end'
-				: 'w-full',
-		),
-	);
-	const detailShellClass = $derived(
-		cn(
-			'grid gap-3 px-11 pb-3',
-			messageFrom === 'user' ? 'justify-items-end pl-3 pr-11' : 'pl-11 pr-3',
-		),
-	);
-	const detailContentClass = $derived(
-		cn(
-			'grid gap-3 max-w-[min(58rem,100%)]',
-			messageFrom === 'user' ? 'w-fit justify-self-end' : 'w-full',
-		),
-	);
+	const summary = $derived(section.entries[0] ? getHeartbeatRowPreview(section.entries[0]) : '');
+	const compactCheckpointText = $derived.by(() => {
+		const firstBlock = section.blocks[0]?.content;
+		if (!firstBlock || section.blocks.length !== 1 || firstBlock.kind !== 'part' || firstBlock.part.partType !== 'compact') {
+			return null;
+		}
+		return readHeartbeatPartText(firstBlock.part)?.trim() ?? summary;
+	});
+	const timeMeta = $derived(getHeartbeatSectionTimeMeta(section));
+	const headerTimeLabel = $derived.by(() => {
+		const startedAt = timeMeta.startedAt ?? groupTimestamp;
+		const startedAtLabel = formatRuntimeCompactTimestamp(startedAt);
+		if (!timeMeta.showRange) {
+			return startedAtLabel;
+		}
+		return `${startedAtLabel}, ${formatRuntimeCompactDuration(timeMeta.durationMs)}`;
+	});
+	let localLayoutMode = $state<HeartbeatLayoutMode>('compact');
+	let syncedLayoutMode = $state<HeartbeatLayoutMode>('compact');
+	let contentViewport = $state<HTMLDivElement | null>(null);
+	let isExpandable = $state(false);
+	let isExpanded = $state(false);
 
-	const copyEntry = async (): Promise<void> => {
+	const copySection = async (): Promise<void> => {
 		if (typeof navigator === 'undefined' || !navigator.clipboard) {
 			return;
 		}
-		await navigator.clipboard.writeText(buildHeartbeatEntryClipboardText(entry));
+		await navigator.clipboard.writeText(buildHeartbeatSectionClipboardText(section));
 	};
+
+	const recalculateExpandableState = (): void => {
+		if (typeof window === 'undefined' || !contentViewport) {
+			return;
+		}
+		const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || '16');
+		const collapsedMaxHeightPx = HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM * rootFontSize;
+		const nextExpandable = contentViewport.scrollHeight > collapsedMaxHeightPx + 1;
+		isExpandable = nextExpandable;
+		if (!nextExpandable) {
+			isExpanded = false;
+		}
+	};
+
+	$effect(() => {
+		if (layoutMode === syncedLayoutMode) {
+			return;
+		}
+		syncedLayoutMode = layoutMode;
+		localLayoutMode = layoutMode;
+	});
+
+	$effect(() => {
+		if (localLayoutMode === syncedLayoutMode) {
+			return;
+		}
+		syncedLayoutMode = localLayoutMode;
+		onLayoutModeChange?.(localLayoutMode);
+	});
+
+	$effect(() => {
+		section.key;
+		section.blocks.length;
+		localLayoutMode;
+		void tick().then(() => {
+			recalculateExpandableState();
+		});
+	});
+
+	onMount(() => {
+		recalculateExpandableState();
+		if (!contentViewport || typeof ResizeObserver === 'undefined') {
+			return;
+		}
+		const resizeObserver = new ResizeObserver(() => {
+			recalculateExpandableState();
+		});
+		resizeObserver.observe(contentViewport);
+		return () => {
+			resizeObserver.disconnect();
+		};
+	});
 </script>
 
-{#if compactRow}
-	<div class="py-1" data-testid={`runtime-heartbeat-entry-${entry.id}`}>
-		<Checkpoint class="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-3 py-2">
-			<CheckpointIcon />
-				<div class="grid min-w-0 gap-1">
-					<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-						<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-						{#each meta as item (item)}
-							<Badge variant="secondary">{item}</Badge>
-						{/each}
-					<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
-				</div>
-				<div class="text-sm leading-6 text-muted-foreground">{summary}</div>
-			</div>
-			<Actions class="shrink-0">
-				<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
+<section
+	class="grid w-full min-w-0 gap-2.5 rounded-[1.2rem] border border-border/55 bg-background/72 px-3 py-2.5 shadow-[0_14px_28px_-28px_color-mix(in_srgb,var(--foreground),transparent_18%)]"
+	data-testid={`runtime-heartbeat-entry-${section.entryId}`}
+	data-layout-mode={localLayoutMode}
+>
+	<header
+		class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+		data-testid={`runtime-heartbeat-entry-header-${section.entryId}`}
+	>
+		<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+			<Badge variant="outline" class="rounded-full bg-background/70 px-2 py-0.5 text-[10px]">
+				{groupLabel}
+			</Badge>
+		</div>
+		<span
+			class="text-[11px] leading-none text-muted-foreground"
+			data-testid={`runtime-heartbeat-entry-time-${section.entryId}`}
+			title={timeMeta.endedAt ? `Ended ${formatRuntimeCompactTimestamp(timeMeta.endedAt)}` : undefined}
+		>
+			{headerTimeLabel}
+		</span>
+	</header>
+
+	<div class="relative min-w-0">
+		<div
+			bind:this={contentViewport}
+			class="grid min-w-0 gap-2"
+			data-overflow-state={isExpandable ? (isExpanded ? 'expanded' : 'collapsed') : 'fit'}
+			style:max-height={isExpandable && !isExpanded ? HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT : undefined}
+			style:overflow={isExpandable && !isExpanded ? 'hidden' : 'visible'}
+			data-testid={`runtime-heartbeat-entry-body-${section.entryId}`}
+		>
+			{#if compactCheckpointText}
+				<Checkpoint class="rounded-lg border border-dashed border-border/55 bg-muted/10 px-2.5 py-2">
+					<CheckpointIcon />
+					<div class="grid min-w-0 gap-0.5">
+						<div class="text-[13px] leading-5 text-foreground">{compactCheckpointText}</div>
+					</div>
+				</Checkpoint>
+			{:else}
+				{#each section.blocks as block (block.key)}
+					{#if block.content.kind === 'tool'}
+						<RuntimeHeartbeatToolBlock
+							block={block.content}
+							forceOpen={localLayoutMode === 'detailed'}
+							layoutMode={localLayoutMode}
+						/>
+					{:else}
+						<RuntimeHeartbeatPartContent part={block.content.part} />
+					{/if}
+				{/each}
+				{#if section.blocks.length === 0}
+					<div class="text-[13px] leading-5 text-muted-foreground">{summary}</div>
+				{/if}
+			{/if}
+		</div>
+		{#if isExpandable && !isExpanded}
+			<div
+				aria-hidden="true"
+				class="pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-[1rem] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background),transparent_100%)_0%,color-mix(in_srgb,var(--background),transparent_28%)_38%,color-mix(in_srgb,var(--background),transparent_4%)_100%)]"
+			></div>
+		{/if}
+	</div>
+
+	<footer
+		class="flex min-w-0 items-center justify-end gap-2 border-t border-border/25 pt-1.5"
+		data-testid={`runtime-heartbeat-entry-meta-${section.entryId}`}
+	>
+		<div class="flex flex-wrap items-center justify-end gap-1">
+			{#if isExpandable}
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-7 rounded-full px-2.5 text-[11px] font-medium"
+					onclick={() => {
+						isExpanded = !isExpanded;
+					}}
+				>
+					{#if isExpanded}
+						<ChevronUp class="size-3.5" />
+						Collapse
+					{:else}
+						<ChevronDown class="size-3.5" />
+						Expand
+					{/if}
+				</Button>
+			{/if}
+			<ToggleGroupRoot
+				ariaLabel="Heartbeat group layout"
+				bind:value={localLayoutMode}
+			>
+				<ToggleGroupItem value="compact">
+					Compact
+				</ToggleGroupItem>
+				<ToggleGroupItem value="detailed">
+					Detailed
+				</ToggleGroupItem>
+			</ToggleGroupRoot>
+			<Actions>
+				<Action class="size-7" tooltip="Copy section" label="Copy section" onclick={() => void copySection()}>
 					<Copy class="size-4" />
 				</Action>
 			</Actions>
-		</Checkpoint>
-	</div>
-{:else if foldedByDefault}
-	<details
-		open={false}
-		class={cn('group rounded-[1.6rem]', rowAlignmentClass)}
-		data-testid={`runtime-heartbeat-entry-${entry.id}`}
-	>
-		<summary class="cursor-pointer list-none">
-			<Message from={messageFrom}>
-				<MessageAvatar name={avatarLabel} src={sessionIconUrl} />
-				<MessageContent
-					variant="flat"
-					from="assistant"
-					class={cn('gap-2', messageSurfaceClass)}
-				>
-					<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-						<Badge variant="outline">{getHeartbeatRowLabel(entry)}</Badge>
-						{#each meta as item (item)}
-							<Badge variant="secondary">{item}</Badge>
-						{/each}
-						<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
-					</div>
-					<div class="text-sm leading-6 text-foreground">{summary}</div>
-				</MessageContent>
-			</Message>
-		</summary>
-
-		<div class={detailShellClass}>
-			<div class={detailContentClass}>
-				{#each displayBlocks as block (`${entry.id}:${block.kind}:${block.kind === 'tool' ? block.key : block.part.partId}`)}
-					{#if block.kind === 'tool'}
-						<RuntimeHeartbeatToolBlock {block} />
-					{:else}
-						<RuntimeHeartbeatPartContent part={block.part} />
-					{/if}
-				{/each}
-				<Actions>
-					<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
-						<Copy class="size-4" />
-					</Action>
-				</Actions>
-			</div>
 		</div>
-	</details>
-{:else}
-	<div class={rowAlignmentClass} data-testid={`runtime-heartbeat-entry-${entry.id}`}>
-		<Message from={messageFrom}>
-			<MessageAvatar name={avatarLabel} src={sessionIconUrl} />
-			<MessageContent
-				variant="flat"
-				from="assistant"
-				class={cn('gap-3', messageSurfaceClass)}
-			>
-				<div class="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-					{#each meta as item (item)}
-						<Badge variant="secondary">{item}</Badge>
-					{/each}
-					<span>{formatRuntimeTimestamp(entry.createdAt)}</span>
-				</div>
-
-				{#each displayBlocks as block (`${entry.id}:${block.kind}:${block.kind === 'tool' ? block.key : block.part.partId}`)}
-					{#if block.kind === 'tool'}
-						<RuntimeHeartbeatToolBlock {block} />
-					{:else}
-						<RuntimeHeartbeatPartContent part={block.part} />
-					{/if}
-				{/each}
-
-				<Actions>
-					<Action tooltip="Copy row" label="Copy row" onclick={() => void copyEntry()}>
-						<Copy class="size-4" />
-					</Action>
-				</Actions>
-			</MessageContent>
-		</Message>
-	</div>
-{/if}
+	</footer>
+</section>

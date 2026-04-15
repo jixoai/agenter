@@ -1,6 +1,6 @@
 import type { MessageFrom } from "$lib/components/ai-elements/message/index.js";
 import type { ToolUiState } from "$lib/components/ai-elements/tool/ToolHeader.svelte";
-import type { HeartbeatPartItem } from "@agenter/client-sdk";
+import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
 type HeartbeatPart = HeartbeatPartItem["parts"][number];
 type ToolCallPayload = {
@@ -94,6 +94,24 @@ export const getHeartbeatRowPreviewLine = (entry: HeartbeatPartItem): string => 
   return preview.length > 160 ? `${preview.slice(0, 157)}...` : preview;
 };
 
+export const getHeartbeatRowNarrativePreview = (entry: HeartbeatPartItem): string => {
+  for (const part of entry.parts) {
+    if (part.partType === "tool_call" || part.partType === "tool_result") {
+      continue;
+    }
+    const text = readHeartbeatPartText(part)?.trim();
+    if (text && text.length > 0) {
+      return text;
+    }
+  }
+  return "";
+};
+
+export const getHeartbeatRowNarrativePreviewLine = (entry: HeartbeatPartItem): string => {
+  const preview = getHeartbeatRowNarrativePreview(entry).replace(/\s+/g, " ").trim();
+  return preview.length > 160 ? `${preview.slice(0, 157)}...` : preview;
+};
+
 export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
   const meta: string[] = [];
   if (entry.aiCallId !== null) {
@@ -105,36 +123,12 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
   return meta;
 };
 
-const tokenizeCommand = (input: string): string[] => input.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-
-const summarizeCommandPreview = (command: string): string => {
-  const tokens = tokenizeCommand(command.trim());
-  if (tokens.length === 0) {
-    return "";
-  }
-  const previewTokens: string[] = [];
-  for (const token of tokens) {
-    if (previewTokens.length >= 2) {
-      break;
-    }
-    if (previewTokens.length > 0 && (/^['"{[]/u.test(token) || token.startsWith("--"))) {
-      break;
-    }
-    previewTokens.push(token);
-  }
-  const preview = previewTokens.join(" ").trim();
-  return preview.length > 0 ? preview : command.trim();
-};
-
-const shortenPreview = (value: string): string => {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
-};
+const normalizeToolPreview = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 export const getHeartbeatToolPreview = (input: unknown): string | null => {
   if (typeof input === "string") {
-    const summary = summarizeCommandPreview(input);
-    return summary.length > 0 ? shortenPreview(summary) : null;
+    const summary = normalizeToolPreview(input);
+    return summary.length > 0 ? summary : null;
   }
   const record = asRecord(input);
   if (!record) {
@@ -142,12 +136,12 @@ export const getHeartbeatToolPreview = (input: unknown): string | null => {
   }
   const commandCandidate = typeof record.command === "string" ? record.command : typeof record.cmd === "string" ? record.cmd : null;
   if (commandCandidate) {
-    const summary = summarizeCommandPreview(commandCandidate);
-    return summary.length > 0 ? shortenPreview(summary) : null;
+    const summary = normalizeToolPreview(commandCandidate);
+    return summary.length > 0 ? summary : null;
   }
   for (const [key, value] of Object.entries(record)) {
     if (typeof value === "string" && value.trim().length > 0) {
-      return shortenPreview(`${key}: ${value}`);
+      return normalizeToolPreview(`${key}: ${value}`);
     }
   }
   return null;
@@ -171,15 +165,198 @@ export const getHeartbeatActorLabel = (entry: HeartbeatPartItem): string => {
   }
 };
 
+const estimateWrappedLineCount = (text: string, charsPerLine = 72): number => {
+  let total = 0;
+  for (const line of text.split(/\r?\n/u)) {
+    total += Math.max(1, Math.ceil(line.length / charsPerLine));
+  }
+  return Math.max(total, 1);
+};
+
+const estimateStructuredLineCount = (value: unknown, depth = 0): number => {
+  if (value === null || value === undefined) {
+    return 1;
+  }
+  if (typeof value === "string") {
+    return estimateWrappedLineCount(value, depth === 0 ? 52 : 40);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return 1;
+  }
+  if (Array.isArray(value)) {
+    let total = 1;
+    for (const item of value.slice(0, 4)) {
+      total += Math.min(3, estimateStructuredLineCount(item, depth + 1));
+    }
+    if (value.length > 4) {
+      total += 1;
+    }
+    return Math.min(total, 10);
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return 2;
+  }
+  const entries = Object.entries(record);
+  let total = 1;
+  for (const [, nestedValue] of entries.slice(0, 6)) {
+    total += 1;
+    total += Math.min(2, estimateStructuredLineCount(nestedValue, depth + 1));
+  }
+  if (entries.length > 6) {
+    total += 1;
+  }
+  return Math.min(total, 12);
+};
+
+const estimateHeartbeatPartBlockHeight = (part: HeartbeatPart): number => {
+  const metaHeight = (part.mimeType ?? "").length > 0 || !part.isComplete ? 24 : 0;
+  if (part.partType === "thinking" && part.isComplete) {
+    return 44 + metaHeight;
+  }
+  const text = readHeartbeatPartText(part);
+  if (text !== null) {
+    const lineCount = estimateWrappedLineCount(text, part.partType === "thinking" ? 60 : 72);
+    return 30 + metaHeight + Math.min(lineCount, 14) * 18;
+  }
+  return 36 + metaHeight + Math.min(estimateStructuredLineCount(part.payload), 12) * 16;
+};
+
+const estimateHeartbeatToolBlockHeight = (input: {
+  hasOutput: boolean;
+  hasError: boolean;
+  isStreaming: boolean;
+}): number => {
+  if (input.hasError) {
+    return 144;
+  }
+  if (input.hasOutput) {
+    return 40;
+  }
+  return input.isStreaming ? 136 : 116;
+};
+
+const getToolInvocationId = (part: HeartbeatPart): string | null => {
+  const payload = part.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  return typeof record.invocationId === "string" ? record.invocationId : null;
+};
+
 export const estimateHeartbeatEntrySize = (entry: HeartbeatPartItem): number => {
   if (isHeartbeatCompactRow(entry)) {
-    return 92;
+    return 84 + Math.min(estimateWrappedLineCount(getHeartbeatRowPreview(entry)), 3) * 18;
   }
-  if (isHeartbeatRowFoldedByDefault(entry)) {
-    return 112;
+
+  const resultPartByInvocationId = new Map<string, HeartbeatPart>();
+  const consumedResultPartIds = new Set<number>();
+  let blockCount = 0;
+  let contentHeight = 0;
+
+  const addBlock = (height: number): void => {
+    blockCount += 1;
+    contentHeight += height;
+  };
+
+  for (const part of entry.parts) {
+    if (part.partType !== "tool_result") {
+      continue;
+    }
+    const invocationId = getToolInvocationId(part);
+    if (!invocationId || resultPartByInvocationId.has(invocationId)) {
+      continue;
+    }
+    resultPartByInvocationId.set(invocationId, part);
   }
-  const visibleBlockCount = buildHeartbeatDisplayBlocks(entry).length;
-  return 96 + visibleBlockCount * 88;
+
+  for (const part of entry.parts) {
+    if (part.partType === "tool_call") {
+      const invocationId = getToolInvocationId(part);
+      const pairedResult =
+        invocationId === null
+          ? undefined
+          : (() => {
+              const candidate = resultPartByInvocationId.get(invocationId);
+              if (!candidate || candidate.partIndex <= part.partIndex) {
+                return undefined;
+              }
+              consumedResultPartIds.add(candidate.partId);
+              return candidate;
+            })();
+      addBlock(
+        estimateHeartbeatToolBlockHeight({
+          hasOutput: pairedResult !== undefined,
+          hasError: Boolean(asRecord(pairedResult?.payload)?.error),
+          isStreaming: !part.isComplete,
+        }),
+      );
+      continue;
+    }
+    if (part.partType === "tool_result") {
+      if (consumedResultPartIds.has(part.partId)) {
+        continue;
+      }
+      addBlock(
+        estimateHeartbeatToolBlockHeight({
+          hasOutput: true,
+          hasError: Boolean(asRecord(part.payload)?.error),
+          isStreaming: !part.isComplete,
+        }),
+      );
+      continue;
+    }
+    addBlock(estimateHeartbeatPartBlockHeight(part));
+  }
+
+  if (blockCount === 0) {
+    addBlock(36 + Math.min(estimateWrappedLineCount(getHeartbeatRowPreview(entry)), 4) * 18);
+  }
+
+  const blockGap = blockCount > 1 ? (blockCount - 1) * 8 : 0;
+  return 44 + contentHeight + blockGap + 12;
+};
+
+const formatHeartbeatGroupKindLabel = (kind: HeartbeatGroupItem["kind"]): string => {
+  switch (kind) {
+    case "before-call":
+    case "before-call-pending":
+      return "Before Call";
+    case "compact":
+      return "Compact";
+    default:
+      return "Call";
+  }
+};
+
+export const getHeartbeatGroupLabel = (group: HeartbeatGroupItem): string => {
+  const baseLabel = formatHeartbeatGroupKindLabel(group.kind);
+  if (group.aiCallId !== null) {
+    return `${baseLabel} #${group.aiCallId}`;
+  }
+  if (group.kind === "before-call-pending") {
+    return `${baseLabel} (Pending)`;
+  }
+  return baseLabel;
+};
+
+export const getHeartbeatGroupMeta = (group: HeartbeatGroupItem): string[] => {
+  const meta: string[] = [];
+  if (group.items.length > 1) {
+    meta.push(`${group.items.length} rows`);
+  }
+  if (!group.isComplete) {
+    meta.push("streaming");
+  }
+  return meta;
+};
+
+export const estimateHeartbeatGroupSize = (group: HeartbeatGroupItem): number => {
+  const shellHeight = 112;
+  const itemGap = group.items.length > 1 ? (group.items.length - 1) * 16 : 0;
+  const itemHeights = group.items.reduce((total, item) => total + estimateHeartbeatEntrySize(item), 0);
+  return shellHeight + itemGap + itemHeights;
 };
 
 export type HeartbeatDisplayBlock =
@@ -193,6 +370,48 @@ export type HeartbeatDisplayBlock =
       output?: unknown;
       errorText?: string | null;
     };
+
+export type HeartbeatSubjectSectionBlock = {
+  key: string;
+  content: HeartbeatDisplayBlock;
+  createdAt: number;
+  sourceEntryIds: number[];
+};
+
+export type HeartbeatSubjectSection = {
+  key: string;
+  role: HeartbeatPartItem["role"];
+  name: string | null;
+  entryId: number;
+  entries: HeartbeatPartItem[];
+  blocks: HeartbeatSubjectSectionBlock[];
+};
+
+export type HeartbeatSectionTimeMeta = {
+  startedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
+  showRange: boolean;
+};
+
+type HeartbeatPartRef = {
+  entry: HeartbeatPartItem;
+  part: HeartbeatPart;
+  order: number;
+  role: HeartbeatPartItem["role"];
+  name: string | null;
+  subjectKey: string;
+};
+
+type HeartbeatDisplayToken = {
+  key: string;
+  role: HeartbeatPartItem["role"];
+  name: string | null;
+  subjectKey: string;
+  content: HeartbeatDisplayBlock;
+  createdAt: number;
+  sourceEntries: HeartbeatPartItem[];
+};
 
 const toolTraceFencePattern = /^```ya?ml\s*\n([\s\S]*?)\n```$/iu;
 
@@ -299,37 +518,92 @@ const parseHeartbeatToolTracePart = (part: HeartbeatPart): ParsedToolTrace | nul
   };
 };
 
-const getToolInvocationId = (part: HeartbeatPart): string | null => {
-  const payload = part.payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-  const record = payload as Record<string, unknown>;
-  return typeof record.invocationId === "string" ? record.invocationId : null;
+const readHeartbeatSubjectNameFromPayload = (payload: unknown): string | null => {
+  const rawName = asRecord(payload)?.name ?? asRecord(payload)?.speaker ?? asRecord(payload)?.author ?? null;
+  return typeof rawName === "string" && rawName.trim().length > 0 ? rawName.trim() : null;
 };
 
-export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] => {
-  const blocks: HeartbeatDisplayBlock[] = [];
-  const renderedInvocationIds = new Set<string>();
-  const consumedResultPartIds = new Set<number>();
-  const resultPartByInvocationId = new Map<string, HeartbeatPart>();
+const readHeartbeatSubjectName = (entry: HeartbeatPartItem, part?: HeartbeatPart): string | null =>
+  readHeartbeatSubjectNameFromPayload(part?.payload) ??
+  readHeartbeatSubjectNameFromPayload(entry.parts[0]?.payload) ??
+  null;
 
-  for (const part of entry.parts) {
-    if (part.partType !== "tool_result") {
-      continue;
+const buildHeartbeatSubjectKey = (role: HeartbeatPartItem["role"], name: string | null): string => `${role}:${name ?? ""}`;
+
+const buildHeartbeatPartRefs = (entries: readonly HeartbeatPartItem[]): HeartbeatPartRef[] => {
+  const partRefs: HeartbeatPartRef[] = [];
+  let order = 0;
+
+  for (const entry of entries) {
+    for (const part of entry.parts) {
+      const role = part.role;
+      const name = readHeartbeatSubjectName(entry, part);
+      partRefs.push({
+        entry,
+        part,
+        order,
+        role,
+        name,
+        subjectKey: buildHeartbeatSubjectKey(role, name),
+      });
+      order += 1;
     }
-    const invocationId = getToolInvocationId(part);
-    if (!invocationId || resultPartByInvocationId.has(invocationId)) {
-      continue;
-    }
-    resultPartByInvocationId.set(invocationId, part);
   }
 
-  for (let index = 0; index < entry.parts.length; index += 1) {
-    const part = entry.parts[index]!;
+  return partRefs;
+};
+
+const uniqueSourceEntries = (entries: readonly HeartbeatPartItem[]): HeartbeatPartItem[] => {
+  const uniqueEntries = new Map<number, HeartbeatPartItem>();
+  for (const entry of entries) {
+    if (!uniqueEntries.has(entry.id)) {
+      uniqueEntries.set(entry.id, entry);
+    }
+  }
+  return [...uniqueEntries.values()];
+};
+
+const buildHeartbeatDisplayTokens = (partRefs: readonly HeartbeatPartRef[]): HeartbeatDisplayToken[] => {
+  const tokens: HeartbeatDisplayToken[] = [];
+  const renderedInvocationIds = new Set<string>();
+  const consumedResultPartIds = new Set<number>();
+  const resultPartByInvocationId = new Map<string, HeartbeatPartRef>();
+
+  for (const partRef of partRefs) {
+    if (partRef.part.partType !== "tool_result") {
+      continue;
+    }
+    const invocationId = getToolInvocationId(partRef.part);
+    if (!invocationId) {
+      continue;
+    }
+    resultPartByInvocationId.set(invocationId, partRef);
+  }
+
+  const pushToken = (input: {
+    partRef: HeartbeatPartRef;
+    content: HeartbeatDisplayBlock;
+    sourceEntries?: HeartbeatPartItem[];
+  }): void => {
+    tokens.push({
+      key:
+        input.content.kind === "tool"
+          ? `${input.partRef.subjectKey}:tool:${input.content.key}`
+          : `${input.partRef.subjectKey}:part:${input.content.part.partId}`,
+      role: input.partRef.role,
+      name: input.partRef.name,
+      subjectKey: input.partRef.subjectKey,
+      content: input.content,
+      createdAt: input.partRef.part.createdAt,
+      sourceEntries: uniqueSourceEntries(input.sourceEntries ?? [input.partRef.entry]),
+    });
+  };
+
+  for (const partRef of partRefs) {
+    const part = partRef.part;
     const parsedToolTrace = parseHeartbeatToolTracePart(part);
     if (parsedToolTrace) {
-      blocks.push(parsedToolTrace);
+      pushToken({ partRef, content: parsedToolTrace });
       continue;
     }
     if (part.partType === "tool_call") {
@@ -346,13 +620,13 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
           ? undefined
           : (() => {
               const candidate = resultPartByInvocationId.get(invocationId);
-              if (!candidate || candidate.partIndex <= part.partIndex) {
+              if (!candidate || candidate.order <= partRef.order) {
                 return undefined;
               }
-              consumedResultPartIds.add(candidate.partId);
+              consumedResultPartIds.add(candidate.part.partId);
               return candidate;
             })();
-      const resultPayload = (pairedResultPart?.payload ?? {}) as ToolResultPayload;
+      const resultPayload = (pairedResultPart?.part.payload ?? {}) as ToolResultPayload;
       const state: ToolUiState =
         pairedResultPart === undefined
           ? part.isComplete
@@ -361,14 +635,18 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
           : resultPayload.error
             ? "output-error"
             : "output-available";
-      blocks.push({
-        kind: "tool",
-        key: invocationId ?? `${entry.id}:${part.partId}`,
-        tool: callPayload.tool ?? "tool",
-        state,
-        input: callPayload.input ?? null,
-        output: resultPayload.output,
-        errorText: resultPayload.error ?? null,
+      pushToken({
+        partRef,
+        content: {
+          kind: "tool",
+          key: invocationId ?? `${partRef.entry.id}:${part.partId}`,
+          tool: callPayload.tool ?? "tool",
+          state,
+          input: callPayload.input ?? null,
+          output: resultPayload.output,
+          errorText: resultPayload.error ?? null,
+        },
+        sourceEntries: pairedResultPart ? [partRef.entry, pairedResultPart.entry] : [partRef.entry],
       });
       continue;
     }
@@ -377,23 +655,96 @@ export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): Heartbeat
         continue;
       }
       const resultPayload = (part.payload ?? {}) as ToolResultPayload;
-      blocks.push({
-        kind: "tool",
-        key: getToolInvocationId(part) ?? `${entry.id}:${part.partId}`,
-        tool: resultPayload.tool ?? "tool",
-        state: resultPayload.error ? "output-error" : "output-available",
-        input: null,
-        output: resultPayload.output,
-        errorText: resultPayload.error ?? null,
+      pushToken({
+        partRef,
+        content: {
+          kind: "tool",
+          key: getToolInvocationId(part) ?? `${partRef.entry.id}:${part.partId}`,
+          tool: resultPayload.tool ?? "tool",
+          state: resultPayload.error ? "output-error" : "output-available",
+          input: null,
+          output: resultPayload.output,
+          errorText: resultPayload.error ?? null,
+        },
       });
       continue;
     }
     if (part.partType !== "tool_call") {
-      blocks.push({ kind: "part", part });
-      continue;
+      pushToken({ partRef, content: { kind: "part", part } });
     }
   }
-  return blocks;
+
+  return tokens;
+};
+
+export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] =>
+  buildHeartbeatDisplayTokens(buildHeartbeatPartRefs([entry])).map((token) => token.content);
+
+export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): HeartbeatSubjectSection[] => {
+  const sections: HeartbeatSubjectSection[] = [];
+  const tokens = buildHeartbeatDisplayTokens(buildHeartbeatPartRefs(group.items));
+
+  if (tokens.length === 0) {
+    return group.items.map((entry, index) => ({
+      key: `${group.groupId}:${index}:${buildHeartbeatSubjectKey(entry.role, readHeartbeatSubjectName(entry))}`,
+      role: entry.role,
+      name: readHeartbeatSubjectName(entry),
+      entryId: entry.id,
+      entries: [entry],
+      blocks: [],
+    }));
+  }
+
+  for (const token of tokens) {
+    const previous = sections.at(-1);
+    if (previous && previous.role === token.role && previous.name === token.name) {
+      previous.entries = uniqueSourceEntries([...previous.entries, ...token.sourceEntries]);
+      previous.blocks.push({
+        key: token.key,
+        content: token.content,
+        createdAt: token.createdAt,
+        sourceEntryIds: token.sourceEntries.map((entry) => entry.id),
+      });
+      continue;
+    }
+    sections.push({
+      key: `${group.groupId}:${sections.length}:${token.subjectKey}`,
+      role: token.role,
+      name: token.name,
+      entryId: token.sourceEntries[0]?.id ?? group.items[0]?.id ?? group.id,
+      entries: [...token.sourceEntries],
+      blocks: [
+        {
+          key: token.key,
+          content: token.content,
+          createdAt: token.createdAt,
+          sourceEntryIds: token.sourceEntries.map((entry) => entry.id),
+        },
+      ],
+    });
+  }
+
+  return sections;
+};
+
+export const getHeartbeatSectionTimeMeta = (section: HeartbeatSubjectSection): HeartbeatSectionTimeMeta => {
+  if (section.entries.length === 0) {
+    return {
+      startedAt: null,
+      endedAt: null,
+      durationMs: null,
+      showRange: false,
+    };
+  }
+  const startedAt = Math.min(...section.entries.map((entry) => entry.createdAt));
+  const endedAt = Math.max(...section.entries.map((entry) => entry.updatedAt));
+  const durationMs = Math.max(0, endedAt - startedAt);
+  return {
+    startedAt,
+    endedAt,
+    durationMs,
+    showRange: durationMs > 2_000,
+  };
 };
 
 export const buildHeartbeatEntryClipboardText = (entry: HeartbeatPartItem): string => {
@@ -404,6 +755,52 @@ export const buildHeartbeatEntryClipboardText = (entry: HeartbeatPartItem): stri
     ...getHeartbeatRowMeta(entry),
     "",
     ...entry.parts.map((part) => `[${formatHeartbeatPartTypeLabel(part.partType)}]\n${toHeartbeatPartRawText(part)}`),
+  ];
+  return lines.join("\n");
+};
+
+const buildHeartbeatSectionBlockClipboardText = (block: HeartbeatSubjectSectionBlock): string => {
+  if (block.content.kind === "tool") {
+    const lines = [
+      `[Tool ${block.content.tool}]`,
+      `state=${block.content.state}`,
+      `input=${stringifyJson(block.content.input)}`,
+    ];
+    if (block.content.output !== undefined) {
+      lines.push(`output=${stringifyJson(block.content.output)}`);
+    }
+    if (block.content.errorText) {
+      lines.push(`error=${block.content.errorText}`);
+    }
+    return lines.join("\n");
+  }
+  return `[${formatHeartbeatPartTypeLabel(block.content.part.partType)}]\n${toHeartbeatPartRawText(block.content.part)}`;
+};
+
+export const buildHeartbeatSectionClipboardText = (section: HeartbeatSubjectSection): string => {
+  const timeMeta = getHeartbeatSectionTimeMeta(section);
+  const lines = [
+    `role=${section.role}`,
+    `name=${section.name ?? ""}`,
+    `startedAt=${timeMeta.startedAt ? new Date(timeMeta.startedAt).toISOString() : ""}`,
+    `endedAt=${timeMeta.endedAt ? new Date(timeMeta.endedAt).toISOString() : ""}`,
+    `durationMs=${timeMeta.durationMs ?? 0}`,
+    "",
+    ...section.blocks.map((block) => buildHeartbeatSectionBlockClipboardText(block)),
+  ];
+  return lines.join("\n");
+};
+
+export const buildHeartbeatGroupClipboardText = (group: HeartbeatGroupItem): string => {
+  const lines = [
+    `group=${getHeartbeatGroupLabel(group)}`,
+    ...getHeartbeatGroupMeta(group),
+    `createdAt=${new Date(group.createdAt).toISOString()}`,
+    "",
+    ...group.items.flatMap((entry, index) => {
+      const entryText = buildHeartbeatEntryClipboardText(entry);
+      return index === 0 ? [entryText] : ["", entryText];
+    }),
   ];
   return lines.join("\n");
 };

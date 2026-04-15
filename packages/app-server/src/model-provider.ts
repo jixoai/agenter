@@ -15,9 +15,14 @@ export interface ModelProviderConfig {
   baseUrl?: string;
   headers?: Record<string, string>;
   temperature: number;
+  topK?: number;
   maxRetries: number;
   maxToken?: number;
   compactThreshold?: number;
+  thinking?: {
+    enabled?: boolean;
+    budgetTokens?: number;
+  };
 }
 
 export interface ModelVendorExtension {

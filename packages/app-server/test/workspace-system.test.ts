@@ -542,6 +542,33 @@ describe("Feature: workspace system kernel integration", () => {
     expect(deliveredItem?.unreadActorIds).toBeUndefined();
     expect(deliveredItem?.metadata).toBeUndefined();
 
+    const sentUtf8Argv = await execRootWorkspaceBash(kernel, session.id, {
+      command: [
+        "cat << 'PAYLOAD' > msg_payload.json",
+        `{"chatId":"${primaryRoom.chatId}","content":"你好！有什么可以帮你的吗？😊"}`,
+        "PAYLOAD",
+        'message send "$(cat msg_payload.json)"',
+      ].join("\n"),
+    });
+    expect(sentUtf8Argv.exitCode).toBe(0);
+
+    const readUtf8 = await execRootWorkspaceBash(kernel, session.id, {
+      command: "message read",
+      stdin: JSON.stringify({
+        chatId: primaryRoom.chatId,
+        limit: 20,
+      }),
+    });
+    expect(readUtf8.exitCode).toBe(0);
+    const readUtf8Payload = JSON.parse(readUtf8.stdout) as {
+      snapshot?: {
+        items?: Array<{
+          content: string;
+        }>;
+      };
+    };
+    expect(readUtf8Payload.snapshot?.items?.some((item) => item.content === "你好！有什么可以帮你的吗？😊")).toBeTrue();
+
     const workspaceList = await execRootWorkspaceBash(kernel, session.id, {
       command: "workspace list",
     });

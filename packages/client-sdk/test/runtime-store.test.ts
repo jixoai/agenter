@@ -4,6 +4,7 @@ import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
 import type {
   GlobalAvatarCatalogEntry,
+  HeartbeatGroupItem,
   HeartbeatPartItem,
   RuntimeSnapshot,
   WorkspaceAvatarCatalogEntry,
@@ -87,6 +88,26 @@ const createHeartbeatEntry = (input: {
       isComplete: input.isComplete ?? true,
     },
   ],
+});
+
+const createHeartbeatGroup = (input: {
+  id: number;
+  groupId: string;
+  kind?: HeartbeatGroupItem["kind"];
+  aiCallId?: number | null;
+  createdAt: number;
+  updatedAt?: number;
+  isComplete?: boolean;
+  items: HeartbeatPartItem[];
+}): HeartbeatGroupItem => ({
+  id: input.id,
+  groupId: input.groupId,
+  kind: input.kind ?? "call",
+  aiCallId: input.aiCallId ?? null,
+  createdAt: input.createdAt,
+  updatedAt: input.updatedAt ?? input.createdAt,
+  isComplete: input.isComplete ?? true,
+  items: input.items,
 });
 
 const createSnapshot = (
@@ -722,6 +743,11 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  heartbeatGroupsPageQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
   heartbeatPartsPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
@@ -862,6 +888,16 @@ const createMockClient = (input: {
         },
         modelCallsPage: {
           query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+        },
+        heartbeatGroupsPage: {
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.heartbeatGroupsPageQuery
+              ? await input.heartbeatGroupsPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         heartbeatPartsPage: {
           query: async (payload: {
@@ -3136,7 +3172,7 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given unified Heartbeat pages and live legacy ingress updates When the store hydrates and loads older rows Then the Heartbeat stream stays ordered and replaces streamed rows by id", async () => {
+  test("Scenario: Given grouped Heartbeat pages and live invalidation events When the store hydrates and reloads Then the Heartbeat groups stay ordered and refresh through the query path", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const heartbeatCalls: Array<{ before?: { beforeTimeMs: number; beforeId: number }; limit?: number }> = [];
     const client = createMockClient({
@@ -3144,50 +3180,165 @@ describe("Feature: runtime store synchronization", () => {
       onSubscribe: (handlers) => {
         onData = handlers.onData;
       },
-      heartbeatPartsPageQuery: async (input) => {
+      heartbeatGroupsPageQuery: async (input) => {
         heartbeatCalls.push({ before: input.before, limit: input.limit });
         if (input.before) {
           return {
             items: [
-              createHeartbeatEntry({
-                id: 1,
-                messageId: "heartbeat-part:older",
-                role: "system",
-                scope: "request_aux",
-                partType: "systemPrompt",
+              createHeartbeatGroup({
+                id: 400,
+                groupId: "heartbeat-group:before-call:40",
+                kind: "before-call",
+                aiCallId: 40,
                 createdAt: 100,
-                payload: "You are a Linux expert.",
-                text: "You are a Linux expert.",
+                items: [
+                  createHeartbeatEntry({
+                    id: 1,
+                    messageId: "heartbeat-part:older",
+                    role: "system",
+                    scope: "request_aux",
+                    partType: "systemPrompt",
+                    aiCallId: 40,
+                    createdAt: 100,
+                    payload: "You are a Linux expert.",
+                    text: "You are a Linux expert.",
+                  }),
+                ],
               }),
             ],
             nextBefore: null,
             hasMoreBefore: false,
           };
         }
+        const headQueryCount = heartbeatCalls.filter((call) => !call.before).length;
+        if (headQueryCount === 1) {
+          return {
+            items: [
+              createHeartbeatGroup({
+                id: 410,
+                groupId: "heartbeat-group:before-call:41",
+                kind: "before-call",
+                aiCallId: 41,
+                createdAt: 120,
+                items: [
+                  createHeartbeatEntry({
+                    id: 2,
+                    messageId: "heartbeat-part:user",
+                    role: "user",
+                    aiCallId: 41,
+                    createdAt: 120,
+                    payload: { type: "text", content: 'scoreMap={"room":1}' },
+                    text: 'scoreMap={"room":1}',
+                  }),
+                ],
+              }),
+              createHeartbeatGroup({
+                id: 411,
+                groupId: "heartbeat-group:call:41",
+                kind: "call",
+                aiCallId: 41,
+                createdAt: 140,
+                updatedAt: 145,
+                isComplete: false,
+                items: [
+                  createHeartbeatEntry({
+                    id: 3,
+                    messageId: "heartbeat-part:assistant",
+                    role: "assistant",
+                    aiCallId: 41,
+                    createdAt: 140,
+                    updatedAt: 145,
+                    isComplete: false,
+                    payload: { type: "text", content: "draft reply" },
+                    text: "draft reply",
+                  }),
+                ],
+              }),
+            ],
+            nextBefore: {
+              beforeTimeMs: 120,
+              beforeId: 410,
+            },
+            hasMoreBefore: true,
+          };
+        }
         return {
           items: [
-            createHeartbeatEntry({
-              id: 2,
-              messageId: "heartbeat-part:user",
-              role: "user",
+            createHeartbeatGroup({
+              id: 410,
+              groupId: "heartbeat-group:before-call:41",
+              kind: "before-call",
+              aiCallId: 41,
               createdAt: 120,
-              payload: { type: "text", content: 'scoreMap={"room":1}' },
-              text: 'scoreMap={"room":1}',
+              updatedAt: 180,
+              items: [
+                createHeartbeatEntry({
+                  id: 2,
+                  messageId: "heartbeat-part:user",
+                  role: "user",
+                  aiCallId: 41,
+                  createdAt: 120,
+                  payload: { type: "text", content: 'scoreMap={"room":1}' },
+                  text: 'scoreMap={"room":1}',
+                }),
+                createHeartbeatEntry({
+                  id: 4,
+                  messageId: "room-ingress",
+                  role: "user",
+                  aiCallId: 41,
+                  createdAt: 130,
+                  payload: { type: "text", content: 'scoreMap={"room":1}' },
+                  text: 'scoreMap={"room":1}',
+                }),
+              ],
             }),
-            createHeartbeatEntry({
-              id: 3,
-              messageId: "heartbeat-part:assistant",
-              role: "assistant",
+            createHeartbeatGroup({
+              id: 411,
+              groupId: "heartbeat-group:call:41",
+              kind: "call",
+              aiCallId: 41,
               createdAt: 140,
-              updatedAt: 145,
-              isComplete: false,
-              payload: { type: "text", content: "draft reply" },
-              text: "draft reply",
+              updatedAt: 180,
+              items: [
+                createHeartbeatEntry({
+                  id: 44,
+                  messageId: "heartbeat-part:assistant",
+                  role: "assistant",
+                  aiCallId: 41,
+                  createdAt: 140,
+                  updatedAt: 180,
+                  isComplete: true,
+                  payload: { type: "text", content: "final reply" },
+                  text: "final reply",
+                }),
+              ],
+            }),
+            createHeartbeatGroup({
+              id: 420,
+              groupId: "heartbeat-group:compact:42",
+              kind: "compact",
+              aiCallId: 42,
+              createdAt: 190,
+              items: [
+                createHeartbeatEntry({
+                  id: 5,
+                  messageId: "heartbeat-part:compact",
+                  role: "system",
+                  aiCallId: 42,
+                  partType: "compact",
+                  createdAt: 190,
+                  payload: {
+                    type: "compact",
+                    text: "Prompt window compacted.",
+                  },
+                  text: "Prompt window compacted.",
+                }),
+              ],
             }),
           ],
           nextBefore: {
             beforeTimeMs: 120,
-            beforeId: 2,
+            beforeId: 410,
           },
           hasMoreBefore: true,
         };
@@ -3198,11 +3349,18 @@ describe("Feature: runtime store synchronization", () => {
     await store.connect();
     await store.hydrateSessionArtifacts("i-1");
 
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([2, 3]);
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)).toEqual([
+      "heartbeat-group:before-call:41",
+      "heartbeat-group:call:41",
+    ]);
 
     const older = await store.loadMoreHeartbeatInspection("i-1", 50);
     expect(older.hasMore).toBe(false);
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3]);
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)).toEqual([
+      "heartbeat-group:before-call:40",
+      "heartbeat-group:before-call:41",
+      "heartbeat-group:call:41",
+    ]);
 
     expect(typeof onData).toBe("function");
     onData?.({
@@ -3266,43 +3424,101 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
 
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 4, 3, 5]);
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.id === 3)?.text).toBe("final reply");
-    expect(store.getState().heartbeatPartsBySession["i-1"]?.find((item) => item.messageId === "room-ingress")).toEqual(
-      expect.objectContaining({ scope: "heartbeat_part" }),
+    await waitFor(
+      () =>
+        JSON.stringify(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)) ===
+        JSON.stringify([
+          "heartbeat-group:before-call:40",
+          "heartbeat-group:before-call:41",
+          "heartbeat-group:call:41",
+          "heartbeat-group:compact:42",
+        ]),
     );
-    expect(heartbeatCalls).toHaveLength(2);
+    expect(
+      store.getState().heartbeatGroupsBySession["i-1"]?.find((item) => item.groupId === "heartbeat-group:call:41")?.items[0]
+        ?.text,
+    ).toBe("final reply");
+    expect(
+      store.getState().heartbeatGroupsBySession["i-1"]?.find((item) => item.groupId === "heartbeat-group:before-call:41")
+        ?.items.some((item) => item.messageId === "room-ingress"),
+    ).toBeTrue();
+    expect(heartbeatCalls.length).toBeGreaterThanOrEqual(3);
     store.disconnect();
   });
 
-  test("Scenario: Given the same Heartbeat message is re-emitted with a different row id When the store merges it Then messageId remains the durable identity", async () => {
+  test("Scenario: Given the same Heartbeat group is refreshed with newer rows When invalidation reloads the page Then groupId remains the durable identity", async () => {
     let onData: ((event: unknown) => void) | undefined;
+    let heartbeatPageMode: "draft" | "final" = "draft";
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(900),
       onSubscribe: (handlers) => {
         onData = handlers.onData;
       },
-      heartbeatPartsPageQuery: async () => ({
-        items: [
-          createHeartbeatEntry({
-            id: 30,
-            messageId: "heartbeat-part:assistant:stable",
-            role: "assistant",
-            createdAt: 200,
-            updatedAt: 210,
-            isComplete: false,
-            payload: { type: "text", content: "draft" },
-            text: "draft",
-          }),
-        ],
-        nextBefore: null,
-        hasMoreBefore: false,
-      }),
+      heartbeatGroupsPageQuery: async () => {
+        if (heartbeatPageMode === "final") {
+          return {
+            items: [
+              createHeartbeatGroup({
+                id: 510,
+                groupId: "heartbeat-group:call:51",
+                kind: "call",
+                aiCallId: 51,
+                createdAt: 200,
+                updatedAt: 260,
+                items: [
+                  createHeartbeatEntry({
+                    id: 44,
+                    messageId: "heartbeat-part:assistant:stable",
+                    role: "assistant",
+                    aiCallId: 51,
+                    createdAt: 200,
+                    updatedAt: 260,
+                    isComplete: true,
+                    payload: { type: "text", content: "final" },
+                    text: "final",
+                  }),
+                ],
+              }),
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        }
+        return {
+          items: [
+            createHeartbeatGroup({
+              id: 510,
+              groupId: "heartbeat-group:call:51",
+              kind: "call",
+              aiCallId: 51,
+              createdAt: 200,
+              updatedAt: 210,
+              isComplete: false,
+              items: [
+                createHeartbeatEntry({
+                  id: 30,
+                  messageId: "heartbeat-part:assistant:stable",
+                  role: "assistant",
+                  aiCallId: 51,
+                  createdAt: 200,
+                  updatedAt: 210,
+                  isComplete: false,
+                  payload: { type: "text", content: "draft" },
+                  text: "draft",
+                }),
+              ],
+            }),
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+        };
+      },
     });
     const store = new RuntimeStore(client);
 
     await store.connect();
     await store.hydrateSessionArtifacts("i-1");
+    heartbeatPageMode = "final";
 
     onData?.({
       version: 1,
@@ -3324,14 +3540,104 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
 
-    expect(store.getState().heartbeatPartsBySession["i-1"]).toEqual([
+    await waitFor(
+      () =>
+        store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.id === 44 &&
+        store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.text === "final",
+    );
+    expect(store.getState().heartbeatGroupsBySession["i-1"]).toEqual([
       expect.objectContaining({
-        id: 44,
-        messageId: "heartbeat-part:assistant:stable",
-        text: "final",
-        isComplete: true,
+        groupId: "heartbeat-group:call:51",
+        items: [
+          expect.objectContaining({
+            id: 44,
+            messageId: "heartbeat-part:assistant:stable",
+            text: "final",
+            isComplete: true,
+          }),
+        ],
       }),
     ]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given sustained Heartbeat part events When refresh invalidations keep arriving Then the store still refreshes during the active burst", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    let heartbeatQueryCount = 0;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(950),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      heartbeatGroupsPageQuery: async () => {
+        heartbeatQueryCount += 1;
+        return {
+          items: [
+            createHeartbeatGroup({
+              id: 600,
+              groupId: "heartbeat-group:call:60",
+              kind: "call",
+              aiCallId: 60,
+              createdAt: 300,
+              updatedAt: 300 + heartbeatQueryCount,
+              isComplete: heartbeatQueryCount > 1,
+              items: [
+                createHeartbeatEntry({
+                  id: 60 + heartbeatQueryCount,
+                  messageId: "heartbeat-part:assistant:burst",
+                  role: "assistant",
+                  aiCallId: 60,
+                  createdAt: 300,
+                  updatedAt: 300 + heartbeatQueryCount,
+                  isComplete: heartbeatQueryCount > 1,
+                  payload: { type: "text", content: `refresh-${heartbeatQueryCount}` },
+                  text: `refresh-${heartbeatQueryCount}`,
+                }),
+              ],
+            }),
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+    expect(heartbeatQueryCount).toBe(1);
+
+    let eventId = 951;
+    const interval = setInterval(() => {
+      onData?.({
+        version: 1,
+        eventId: eventId++,
+        timestamp: Date.now(),
+        type: "runtime.heartbeatPart",
+        sessionId: "i-1",
+        payload: {
+          entry: createHeartbeatEntry({
+            id: eventId,
+            messageId: `heartbeat-part:assistant:burst:${eventId}`,
+            role: "assistant",
+            aiCallId: 60,
+            createdAt: 320,
+            updatedAt: 320,
+            isComplete: false,
+            payload: { type: "text", content: "streaming" },
+            text: "streaming",
+          }),
+        },
+      });
+    }, 20);
+
+    try {
+      await waitFor(() => heartbeatQueryCount >= 2, 160);
+      expect(store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.text).toBe("refresh-2");
+    } finally {
+      clearInterval(interval);
+    }
+
     store.disconnect();
   });
 

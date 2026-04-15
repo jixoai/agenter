@@ -18,6 +18,8 @@ Boundary:
 
 - One-shot checks, inspection, short scripts, and outbound-network verification of current or external facts belong in `root_workspace_bash`.
 - Durable processes and interactive recovery belong in `terminal`.
+- For runtime-local CLI commands that accept JSON, default to `root_workspace_bash.command=<bare action>` plus JSON `stdin`.
+- Use a single argv JSON payload only when it is trivially short, single-line, and clearly cheaper in tokens.
 - If the answer depends on a changing external fact, prefer one-shot shell verification over guessing from memory.
 - `root_workspace_bash` can verify an already-running URL with one-shot commands such as `curl`, but it does not own the listener behind that URL.
 - A target URL mentioned in the request or room is still just a target until that exact root URL or required path actually responds. Do not repeat it back as "ready" before the durable process is up and the one-shot HTTP check succeeds.

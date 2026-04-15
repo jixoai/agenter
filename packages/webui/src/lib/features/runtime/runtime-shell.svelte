@@ -5,9 +5,16 @@
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import type { SettingsLayerFile } from '$lib/features/settings/settings-graph-types';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import { buildMessageRoomHref } from '$lib/features/messages/message-room-location';
 	import RuntimePageToolbarContent from './runtime-page-toolbar-content.svelte';
+	import {
+		pickEditableSettingsLayerId,
+		readRuntimeHeartbeatConfigBinding,
+		writeRuntimeHeartbeatConfigLayer,
+	} from './runtime-heartbeat-config-state';
 	import RuntimePrimaryStage from './runtime-primary-stage.svelte';
 	import {
 		basenameWorkspace,
@@ -30,6 +37,13 @@
 	let shellHydrationVersion = 0;
 	let shellHydrating = $state(true);
 	let shellHydrationError = $state<string | null>(null);
+	let heartbeatConfigLoading = $state(false);
+	let heartbeatConfigSaving = $state(false);
+	let heartbeatConfigError = $state<string | null>(null);
+	let heartbeatConfigGraph = $state<Awaited<ReturnType<typeof controller.runtimeStore.listRuntimeSettingsScope>> | null>(null);
+	let heartbeatConfigLayerFile = $state<SettingsLayerFile | null>(null);
+	let heartbeatConfigLoadVersion = 0;
+	let heartbeatConfigSessionId = $state<string | null>(null);
 
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
@@ -37,7 +51,7 @@
 	const channels = $derived(
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
-	const heartbeatEntries = $derived(controller.runtimeState.heartbeatPartsBySession[sessionId] ?? []);
+	const heartbeatGroups = $derived(controller.runtimeState.heartbeatGroupsBySession[sessionId] ?? []);
 	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
 	const notifications = $derived(
@@ -50,6 +64,7 @@
 	const sessionIconUrl = $derived(session ? controller.runtimeStore.sessionIconUrl(session.id) : null);
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
+	const heartbeatConfigBinding = $derived(readRuntimeHeartbeatConfigBinding(heartbeatConfigGraph, heartbeatConfigLayerFile));
 	const runtimeLoading = $derived(
 		shellHydrating ||
 			controller.runtimeState.connectionStatus === 'connecting' ||
@@ -73,6 +88,86 @@
 			return;
 		}
 		await controller.runtimeStore.startSession(session.id);
+	};
+
+	const loadHeartbeatConfig = async (preserveLayerId?: string | null): Promise<void> => {
+		if (!session) {
+			heartbeatConfigGraph = null;
+			heartbeatConfigLayerFile = null;
+			return;
+		}
+		const token = ++heartbeatConfigLoadVersion;
+		heartbeatConfigLoading = true;
+		heartbeatConfigError = null;
+		try {
+			const nextGraph = await controller.runtimeStore.listRuntimeSettingsScope(session.id);
+			if (token !== heartbeatConfigLoadVersion) {
+				return;
+			}
+			heartbeatConfigGraph = nextGraph;
+			const nextLayerId =
+				(preserveLayerId && nextGraph.layers.some((layer) => layer.layerId === preserveLayerId) ? preserveLayerId : null) ??
+				pickEditableSettingsLayerId(nextGraph);
+			if (!nextLayerId) {
+				heartbeatConfigLayerFile = null;
+				return;
+			}
+			const nextLayerFile = await controller.runtimeStore.readRuntimeSettingsLayer(session.id, nextLayerId);
+			if (token !== heartbeatConfigLoadVersion) {
+				return;
+			}
+			heartbeatConfigLayerFile = nextLayerFile;
+		} catch (error) {
+			if (token !== heartbeatConfigLoadVersion) {
+				return;
+			}
+			heartbeatConfigError = error instanceof Error ? error.message : 'Failed to load Heartbeat config.';
+			heartbeatConfigGraph = null;
+			heartbeatConfigLayerFile = null;
+		} finally {
+			if (token === heartbeatConfigLoadVersion) {
+				heartbeatConfigLoading = false;
+			}
+		}
+	};
+
+	const saveHeartbeatConfig = async (
+		draft: Parameters<typeof writeRuntimeHeartbeatConfigLayer>[0]['draft'],
+	): Promise<void> => {
+		if (!session || !heartbeatConfigLayerFile || !heartbeatConfigBinding.activeProviderId || !heartbeatConfigBinding.editableLayerId) {
+			return;
+		}
+		heartbeatConfigSaving = true;
+		heartbeatConfigError = null;
+		try {
+			const nextContent = writeRuntimeHeartbeatConfigLayer({
+				content: heartbeatConfigLayerFile.content,
+				activeProviderId: heartbeatConfigBinding.activeProviderId,
+				draft,
+			});
+			const result = await controller.runtimeStore.saveRuntimeSettingsLayer({
+				sessionId: session.id,
+				layerId: heartbeatConfigBinding.editableLayerId,
+				content: nextContent,
+				baseMtimeMs: heartbeatConfigLayerFile.mtimeMs,
+			});
+			if (!result.ok) {
+				heartbeatConfigError =
+					result.reason === 'readonly'
+						? result.message
+						: 'Conflict while saving Heartbeat config. Reloaded the latest layer.';
+				if (result.reason === 'conflict') {
+					heartbeatConfigLayerFile = result.latest;
+				}
+				return;
+			}
+			heartbeatConfigLayerFile = result.file;
+			await loadHeartbeatConfig(result.file.layer.layerId);
+		} catch (error) {
+			heartbeatConfigError = error instanceof Error ? error.message : 'Failed to save Heartbeat config.';
+		} finally {
+			heartbeatConfigSaving = false;
+		}
 	};
 
 	$effect(() => {
@@ -107,6 +202,22 @@
 		void controller.runtimeStore.loadChatCycles(session.id).finally(() => {
 			pendingCycleLoads.delete(session.id);
 		});
+	});
+
+	$effect(() => {
+		const configSessionId = session?.id ?? null;
+		if (!configSessionId) {
+			heartbeatConfigGraph = null;
+			heartbeatConfigLayerFile = null;
+			heartbeatConfigError = null;
+			heartbeatConfigSessionId = null;
+			return;
+		}
+		if (heartbeatConfigSessionId === configSessionId) {
+			return;
+		}
+		heartbeatConfigSessionId = configSessionId;
+		void loadHeartbeatConfig(null);
 	});
 </script>
 
@@ -148,15 +259,19 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="grid h-full min-h-0" data-testid="runtime-shell">
+	<WorkbenchScaffold tone="page" body="body" bodyClass="h-full" data-testid="runtime-shell">
 		<RuntimePrimaryStage
 			tab={activeTab}
 			{session}
 			{runtime}
 			{channels}
 			{notifications}
-			{heartbeatEntries}
+			{heartbeatGroups}
 			{modelCalls}
+			heartbeatConfigBinding={heartbeatConfigBinding}
+			heartbeatConfigLoading={heartbeatConfigLoading}
+			heartbeatConfigSaving={heartbeatConfigSaving}
+			heartbeatConfigError={heartbeatConfigError}
 			{sessionIconUrl}
 			avatarLabel={session.avatar || session.name}
 			onOpenRoom={(chatId) => void openRoom(chatId)}
@@ -185,7 +300,9 @@
 					upToMessageId: input.upToMessageId ?? null,
 				});
 			}}
-			onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id, 120)}
+			onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id)}
+			onRefreshHeartbeatConfig={() => void loadHeartbeatConfig(heartbeatConfigBinding.editableLayerId)}
+			onSaveHeartbeatConfig={saveHeartbeatConfig}
 		/>
-	</div>
+	</WorkbenchScaffold>
 {/if}

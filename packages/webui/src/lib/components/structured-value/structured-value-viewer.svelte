@@ -33,11 +33,13 @@
 		value,
 		rawText = '',
 		menuLabel = 'Structured value options',
+		plain = false,
 		class: className = '',
 	}: {
 		value: unknown;
 		rawText?: string;
 		menuLabel?: string;
+		plain?: boolean;
 		class?: string;
 	} = $props();
 
@@ -112,6 +114,7 @@
 	const activeMode = $derived(resolveJsonViewerMode({ localMode, globalMode }));
 	const activeModeLabel = $derived(getJsonViewerModeLabel(activeMode));
 	const viewerDocument = $derived(buildJsonViewerDocument({ mode: activeMode, value, rawText }));
+	const prefersPlainText = $derived(plain || renderFallback);
 
 	const syncViewerDocument = (view: EditorView, nextDocument: { text: string; language: Extension }): void => {
 		const currentText = view.state.doc.toString();
@@ -154,7 +157,7 @@
 			globalMode = getGlobalJsonViewerModeSnapshot();
 		});
 
-		if (renderFallback || !hostRef) {
+		if (plain || renderFallback || !hostRef) {
 			return () => {
 				unsubscribe();
 			};
@@ -211,66 +214,68 @@
 <div
 	bind:this={rootRef}
 	class={cn(
-		'structured-value-viewer grid min-w-0 gap-2 rounded-xl border border-border/60 bg-background/80 px-3 py-3 text-foreground',
+		'structured-value-viewer grid min-w-0 w-full max-w-full gap-2 rounded-xl border border-border/60 bg-background/80 px-3 py-3 text-foreground',
 		className,
 	)}
 	data-json-viewer-mode={activeMode}
 	data-testid="structured-value-viewer"
 >
-	<div class="flex min-w-0 justify-end">
-		<DropdownMenu bind:open={menuOpen}>
-			<DropdownMenuTrigger>
-				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="outline"
-						size="sm"
-						class="h-7 rounded-full px-2.5 text-[11px] font-medium tracking-[0.14em] uppercase"
-						aria-label={menuLabel}
-						title={menuLabel}
-					>
-						{#snippet children()}
-							<span class="truncate">{activeModeLabel}</span>
-							<ChevronDownIcon class="size-3.5 opacity-70" />
-						{/snippet}
-					</Button>
-				{/snippet}
-			</DropdownMenuTrigger>
-
-			<DropdownMenuContent class="w-72 max-w-[min(22rem,calc(100vw-2rem))]">
-				<DropdownMenuLabel>This viewer</DropdownMenuLabel>
-				<DropdownMenuRadioGroup value={activeMode} onValueChange={(mode) => setViewerMode('local', mode as JsonViewerMode)}>
-					{#each JSON_VIEWER_MODE_OPTIONS as option (option.mode)}
-						<DropdownMenuRadioItem value={option.mode}>
-							{#snippet children({ checked })}
-								<div class="grid gap-0.5 pr-5" data-checked={checked}>
-									<div class="text-xs font-medium">{option.label}</div>
-									<div class="text-[11px] leading-5 text-muted-foreground">{option.description}</div>
-								</div>
+	{#if !plain}
+		<div class="flex min-w-0 justify-end">
+			<DropdownMenu bind:open={menuOpen}>
+				<DropdownMenuTrigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							size="sm"
+							class="h-7 rounded-full px-2.5 text-[11px] font-medium tracking-[0.14em] uppercase"
+							aria-label={menuLabel}
+							title={menuLabel}
+						>
+							{#snippet children()}
+								<span class="truncate">{activeModeLabel}</span>
+								<ChevronDownIcon class="size-3.5 opacity-70" />
 							{/snippet}
-						</DropdownMenuRadioItem>
-					{/each}
-				</DropdownMenuRadioGroup>
+						</Button>
+					{/snippet}
+				</DropdownMenuTrigger>
 
-				<DropdownMenuSeparator />
-				<DropdownMenuLabel>All viewers</DropdownMenuLabel>
-				<DropdownMenuRadioGroup value={globalMode} onValueChange={(mode) => setViewerMode('global', mode as JsonViewerMode)}>
-					{#each JSON_VIEWER_MODE_OPTIONS as option (option.mode)}
-						<DropdownMenuRadioItem value={option.mode}>
-							{#snippet children({ checked })}
-								<div class="grid gap-0.5 pr-5" data-checked={checked}>
-									<div class="text-xs font-medium">{option.label}</div>
-									<div class="text-[11px] leading-5 text-muted-foreground">{option.description}</div>
-								</div>
-							{/snippet}
-						</DropdownMenuRadioItem>
-					{/each}
-				</DropdownMenuRadioGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	</div>
+				<DropdownMenuContent class="w-72 max-w-[min(22rem,calc(100vw-2rem))]">
+					<DropdownMenuLabel>This viewer</DropdownMenuLabel>
+					<DropdownMenuRadioGroup value={activeMode} onValueChange={(mode) => setViewerMode('local', mode as JsonViewerMode)}>
+						{#each JSON_VIEWER_MODE_OPTIONS as option (option.mode)}
+							<DropdownMenuRadioItem value={option.mode}>
+								{#snippet children({ checked })}
+									<div class="grid gap-0.5 pr-5" data-checked={checked}>
+										<div class="text-xs font-medium">{option.label}</div>
+										<div class="text-[11px] leading-5 text-muted-foreground">{option.description}</div>
+									</div>
+								{/snippet}
+							</DropdownMenuRadioItem>
+						{/each}
+					</DropdownMenuRadioGroup>
 
-	{#if renderFallback}
+					<DropdownMenuSeparator />
+					<DropdownMenuLabel>All viewers</DropdownMenuLabel>
+					<DropdownMenuRadioGroup value={globalMode} onValueChange={(mode) => setViewerMode('global', mode as JsonViewerMode)}>
+						{#each JSON_VIEWER_MODE_OPTIONS as option (option.mode)}
+							<DropdownMenuRadioItem value={option.mode}>
+								{#snippet children({ checked })}
+									<div class="grid gap-0.5 pr-5" data-checked={checked}>
+										<div class="text-xs font-medium">{option.label}</div>
+										<div class="text-[11px] leading-5 text-muted-foreground">{option.description}</div>
+									</div>
+								{/snippet}
+							</DropdownMenuRadioItem>
+						{/each}
+					</DropdownMenuRadioGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	{/if}
+
+	{#if prefersPlainText}
 		<pre class="structured-value-viewer-fallback">{viewerDocument.text}</pre>
 	{:else}
 		<div bind:this={hostRef} class="structured-value-viewer-editor"></div>
@@ -280,9 +285,25 @@
 <style>
 	.structured-value-viewer-editor,
 	.structured-value-viewer-fallback {
+		width: 100%;
 		min-width: 0;
 		max-width: 100%;
 		color: inherit;
+	}
+
+	.structured-value-viewer-editor {
+		overflow-x: auto;
+	}
+
+	.structured-value-viewer-editor :global(.cm-editor) {
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.structured-value-viewer-editor :global(.cm-scroller) {
+		max-width: 100%;
+		overflow: auto;
 	}
 
 	.structured-value-viewer-fallback {

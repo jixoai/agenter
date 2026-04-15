@@ -287,6 +287,14 @@
     measure(input);
     return {
       update(nextInput: { enabled: boolean; virtualizer: ScrollViewVirtualizer | null }) {
+        const sameBinding =
+          currentInput.enabled === nextInput.enabled && currentInput.virtualizer === nextInput.virtualizer;
+        if (sameBinding) {
+          return;
+        }
+        if (currentInput.enabled && currentInput.virtualizer && currentInput.virtualizer !== nextInput.virtualizer) {
+          currentInput.virtualizer.measureElement(null);
+        }
         currentInput = nextInput;
         measure(nextInput);
       },

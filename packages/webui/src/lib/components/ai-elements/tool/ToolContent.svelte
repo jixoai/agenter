@@ -5,6 +5,6 @@
 		$props();
 </script>
 
-<div class={cn('grid gap-3 pt-1', className)} {...restProps}>
+<div class={cn('grid min-w-0 gap-2 pt-0.5', className)} {...restProps}>
 	{@render children?.()}
 </div>

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { InMemoryFs } from "just-bash";
 
 import { createRuntimeShellCommands } from "../src/runtime-cli";
+import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
 
 const openServers: Server[] = [];
 const tempDirs: string[] = [];
@@ -128,6 +129,36 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given root workspace bash expands a UTF-8 JSON payload When message send forwards the heredoc argv Then the runtime API preserves the original Unicode content", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/message/send": { result: { ok: true, messageId: "msg-utf8" } },
+    });
+    const rootWorkspacePath = createTempRoot();
+
+    const result = await executeRootWorkspaceBash({
+      rootWorkspacePath,
+      command: [
+        "cat << 'PAYLOAD' > msg_payload.json",
+        '{"chatId":"room-1","content":"你好！有什么可以帮你的吗？😊"}',
+        "PAYLOAD",
+        'message send "$(cat msg_payload.json)"',
+      ].join("\n"),
+      mounts: [],
+      customCommands: createRuntimeShellCommands({
+        baseUrl: api.baseUrl,
+        privateKey: "test-private-key",
+        rootWorkspacePath,
+        homeDir: rootWorkspacePath,
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      chatId: "room-1",
+      content: "你好！有什么可以帮你的吗？😊",
+    });
+  });
+
   test("Scenario: Given JSON stdin When attention commit runs Then the CLI preserves the descriptor payload shape", async () => {
     const api = await startMockRuntimeApi({
       "/v1/attention/commit": { commit: { commitId: "commit-1" } },
@@ -175,8 +206,35 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("Write text into a terminal and optionally submit it.");
     expect(result.stdout).toContain('"terminalId"');
     expect(result.stdout).toContain('"text"');
-    expect(result.stdout).toContain("Only JSON payload input is accepted");
+    expect(result.stdout).toContain("Preferred default through `root_workspace_bash`");
+    expect(result.stdout).toContain("command: `terminal write`");
+    expect(result.stdout).toContain("stdin:");
+    expect(result.stdout).toContain("Compact shell form for trivial payloads");
+    expect(result.stdout).not.toContain("cat <<'EOF'");
+    expect(result.stdout).toContain("Default to JSON stdin");
     expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given descriptor help probes When stdin examples are rendered Then help prefers root_workspace_bash command plus stdin over heredoc shell snippets", async () => {
+    const api = await startMockRuntimeApi();
+    const message = createRuntimeCommand(api.baseUrl, "message");
+    const attention = createRuntimeCommand(api.baseUrl, "attention");
+
+    const messageHelp = await message.execute(["send", "--help"], createCommandContext());
+    const attentionHelp = await attention.execute(["commit", "--help"], createCommandContext());
+
+    expect(messageHelp.exitCode).toBe(0);
+    expect(messageHelp.stdout).toContain("Preferred default through `root_workspace_bash`");
+    expect(messageHelp.stdout).toContain("command: `message send`");
+    expect(messageHelp.stdout).not.toContain("cat <<'EOF'");
+    expect(messageHelp.stdout.indexOf("Preferred default through `root_workspace_bash`")).toBeLessThan(
+      messageHelp.stdout.indexOf("Compact shell form for trivial payloads"),
+    );
+
+    expect(attentionHelp.exitCode).toBe(0);
+    expect(attentionHelp.stdout).toContain("command: `attention commit`");
+    expect(attentionHelp.stdout).toContain("stdin:");
+    expect(attentionHelp.stdout).not.toContain("cat <<'EOF'");
   });
 
   test("Scenario: Given non-JSON arguments When message send runs Then the CLI rejects them and points back to JSON help", async () => {

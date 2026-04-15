@@ -49,9 +49,14 @@ export interface ResolvedSessionConfig {
     baseUrl?: string;
     headers?: Record<string, string>;
     temperature: number;
+    topK?: number;
     maxRetries: number;
     maxToken?: number;
     compactThreshold?: number;
+    thinking?: {
+      enabled?: boolean;
+      budgetTokens?: number;
+    };
   };
   terminals: Record<string, SessionTerminalConfig>;
   primaryTerminalId: string;
@@ -258,9 +263,11 @@ export const resolveSessionConfig = async (
       baseUrl: provider.baseUrl,
       headers: provider.headers,
       temperature: provider.temperature ?? 0.2,
+      topK: provider.topK,
       maxRetries: provider.maxRetries ?? 2,
       maxToken: provider.maxToken,
       compactThreshold: provider.compactThreshold,
+      thinking: provider.thinking,
     },
     terminals,
     primaryTerminalId,

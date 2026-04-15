@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/sveltekit";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 
-import type { HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from "@agenter/client-sdk";
+import type { HeartbeatGroupItem, HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from "@agenter/client-sdk";
 
 import RuntimeStageHeartbeatStoryHarness from "./runtime-stage-heartbeat.story-harness.svelte";
 
@@ -312,6 +312,66 @@ const olderEntries = [
   },
 ] satisfies HeartbeatPartItem[];
 
+const createHeartbeatGroupFixture = (input: {
+  id: number;
+  groupId: string;
+  kind: HeartbeatGroupItem["kind"];
+  aiCallId: number | null;
+  items: HeartbeatPartItem[];
+  isComplete?: boolean;
+}): HeartbeatGroupItem => ({
+  id: input.id,
+  groupId: input.groupId,
+  kind: input.kind,
+  aiCallId: input.aiCallId,
+  createdAt: input.items[0]?.createdAt ?? baseTimestamp,
+  updatedAt: Math.max(...input.items.map((item) => item.updatedAt)),
+  isComplete: input.isComplete ?? input.items.every((item) => item.isComplete),
+  items: input.items,
+});
+
+const initialGroups = [
+  createHeartbeatGroupFixture({
+    id: 410,
+    groupId: "heartbeat-group:before-call:41",
+    kind: "before-call",
+    aiCallId: 41,
+    items: [initialEntries[0]!, initialEntries[1]!, initialEntries[2]!],
+  }),
+  createHeartbeatGroupFixture({
+    id: 412,
+    groupId: "heartbeat-group:compact:41",
+    kind: "compact",
+    aiCallId: 41,
+    items: [initialEntries[3]!],
+  }),
+  createHeartbeatGroupFixture({
+    id: 411,
+    groupId: "heartbeat-group:call:41",
+    kind: "call",
+    aiCallId: 41,
+    items: [initialEntries[4]!],
+    isComplete: false,
+  }),
+] satisfies HeartbeatGroupItem[];
+
+const olderGroups = [
+  createHeartbeatGroupFixture({
+    id: 400,
+    groupId: "heartbeat-group:before-call:40",
+    kind: "before-call",
+    aiCallId: 40,
+    items: [olderEntries[0]!],
+  }),
+  createHeartbeatGroupFixture({
+    id: 401,
+    groupId: "heartbeat-group:call:40",
+    kind: "call",
+    aiCallId: 40,
+    items: [olderEntries[1]!],
+  }),
+] satisfies HeartbeatGroupItem[];
+
 const cloneHeartbeatEntry = (entry: HeartbeatPartItem, cloneIndex: number): HeartbeatPartItem => {
   const offsetMs = cloneIndex * 75_000;
   return {
@@ -334,6 +394,16 @@ const cloneHeartbeatEntry = (entry: HeartbeatPartItem, cloneIndex: number): Hear
 const longStreamEntries = Array.from({ length: 18 }, (_, index) =>
   cloneHeartbeatEntry(index % 2 === 0 ? initialEntries[2] : initialEntries[4], index + 1),
 ).sort((left, right) => left.createdAt - right.createdAt);
+
+const longStreamGroups = longStreamEntries.map((entry, index) =>
+  createHeartbeatGroupFixture({
+    id: 700 + index,
+    groupId: `heartbeat-group:story:${entry.messageId}`,
+    kind: entry.parts.some((part) => part.partType === "compact") ? "compact" : index % 2 === 0 ? "before-call" : "call",
+    aiCallId: entry.aiCallId,
+    items: [entry],
+  }),
+);
 
 const streamingToolEntries = [
   {
@@ -370,6 +440,64 @@ const streamingToolEntries = [
     ],
   },
 ] satisfies HeartbeatPartItem[];
+
+const streamingToolGroups = [
+  createHeartbeatGroupFixture({
+    id: 420,
+    groupId: "heartbeat-group:call:42",
+    kind: "call",
+    aiCallId: 42,
+    items: [streamingToolEntries[0]!],
+    isComplete: false,
+  }),
+] satisfies HeartbeatGroupItem[];
+
+const overflowingEntry = {
+  id: 520,
+  messageId: "heartbeat-part:ai-call:52:response:assistant",
+  windowId: null,
+  aiCallId: 52,
+  roundIndex: 12,
+  scope: "heartbeat_part",
+  role: "assistant",
+  createdAt: baseTimestamp + 90_000,
+  updatedAt: baseTimestamp + 96_000,
+  isComplete: true,
+  text: "Long heartbeat explanation",
+  parts: [
+    {
+      partId: 520,
+      partIndex: 0,
+      messageId: "heartbeat-part:ai-call:52:response:assistant",
+      windowId: null,
+      aiCallId: 52,
+      roundIndex: 12,
+      scope: "heartbeat_part",
+      role: "assistant",
+      partType: "text",
+      mimeType: null,
+      payload: {
+        type: "text",
+        content: Array.from({ length: 48 }, (_, index) =>
+          `- step ${index + 1}: replayed attention evidence and workspace facts so the operator can audit the full chain without losing any durable message-parts.`,
+        ).join("\n"),
+      },
+      createdAt: baseTimestamp + 90_000,
+      updatedAt: baseTimestamp + 96_000,
+      isComplete: true,
+    },
+  ],
+} satisfies HeartbeatPartItem;
+
+const overflowingGroups = [
+  createHeartbeatGroupFixture({
+    id: 520,
+    groupId: "heartbeat-group:call:52",
+    kind: "call",
+    aiCallId: 52,
+    items: [overflowingEntry],
+  }),
+] satisfies HeartbeatGroupItem[];
 
 const settledModelCalls = [
   {
@@ -503,20 +631,23 @@ type Story = StoryObj<typeof meta>;
 export const LoadingOlderKeepsHeartbeatRowsStable = {
   name: "Scenario: Given durable Heartbeat message-parts When older rows are loaded Then folded bootstrap facts compact boundaries and assistant updates stay in one stream",
   args: {
-    initialEntries,
-    olderEntries,
+    initialGroups,
+    olderGroups,
     modelCalls: settledModelCalls,
     attention: attentionState,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const stage = canvas.getByTestId("runtime-heartbeat-stage");
+    const beforeCallGroup = canvas.getByTestId("runtime-heartbeat-group-410");
     const systemPromptEntry = canvas.getByTestId("runtime-heartbeat-entry-21");
     const userEntry = canvas.getByTestId("runtime-heartbeat-entry-23");
     const assistantEntry = canvas.getByTestId("runtime-heartbeat-entry-25");
     const compactEntry = canvas.getByTestId("runtime-heartbeat-entry-24");
 
     await expect(stage).toBeInTheDocument();
+    await expect(beforeCallGroup).toHaveTextContent("Before Call #41");
+    await expect(beforeCallGroup).toHaveAttribute("data-layout-mode", "compact");
     await waitFor(() => {
       const userMarkdown = userEntry.querySelector("agenter-markdown-document") as
         | (HTMLElement & { value?: string })
@@ -524,75 +655,102 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
       expect(userMarkdown?.value).toContain('scoreMap={"message:room-main":1} commit=在吗？');
     });
     await waitFor(() => {
-      expect(compactEntry.textContent).toContain(
-        "Prompt window compacted (manual). Later Heartbeat rows continue from the rebuilt context.",
-      );
+      expect(compactEntry.textContent).toContain("Prompt window compacted (manual).");
     });
-    const userBadges = [...userEntry.querySelectorAll('[data-slot="badge"]')].map((badge) =>
-      badge.textContent?.trim(),
-    );
-    expect(userBadges).toEqual(["call #41"]);
+    expect(userEntry.textContent).not.toContain("call #41");
     expect(userEntry.textContent).not.toContain("round 0");
     expect(userEntry.textContent).not.toContain("Text");
     expect(assistantEntry.textContent).not.toContain("Text");
     expect(assistantEntry.textContent).toContain("attention commit");
-
-    const userMessage = userEntry.querySelector('[data-message-from="user"]');
-    if (!(userMessage instanceof HTMLElement)) {
-      throw new Error("User heartbeat message is missing.");
-    }
-    const userSurface = userMessage.children.item(1);
-    if (!(userSurface instanceof HTMLElement)) {
-      throw new Error("User heartbeat content surface is missing.");
-    }
-    expect(userSurface.className).toContain("bg-card/95");
-    expect(userSurface.className).not.toContain("bg-primary");
-    expect(userEntry.className).toContain("justify-items-end");
-    expect(userSurface.className).not.toContain("w-full");
-
-    const userAvatarImage = userEntry.querySelector('img[alt="Default Avatar"]');
-    await expect(userAvatarImage).toHaveAttribute(
-      "src",
-      expect.stringContaining("avatar-default.webp"),
+    expect(within(beforeCallGroup).getAllByRole("button", { name: "Copy section" }).length).toBeGreaterThan(0);
+    expect(systemPromptEntry.textContent).not.toContain(
+      "You are a Linux expert. Prefer bash and skills before asking for help.",
     );
-    const textDocuments = assistantEntry.querySelectorAll("agenter-markdown-document");
-    const latestTextDocument = textDocuments.item(textDocuments.length - 1);
-    if (!(latestTextDocument instanceof HTMLElement)) {
-      throw new Error("Assistant text payload is missing.");
-    }
-    expect(latestTextDocument.parentElement?.className ?? "").not.toContain("border");
-
-    const systemPromptSummary = systemPromptEntry.querySelector("summary");
-    if (!(systemPromptSummary instanceof HTMLElement)) {
-      throw new Error("System prompt summary is missing.");
-    }
-    await userEvent.click(systemPromptSummary);
-    await waitFor(() => {
-      expect(systemPromptEntry.textContent).toContain(
-        "You are a Linux expert. Prefer bash and skills before asking for help.",
-      );
-    });
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("P 320");
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent(
       "1 focused · 1 background · 1 muted",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Load older" }));
-    const olderAssistantEntry = canvas.getByTestId("runtime-heartbeat-entry-20");
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+    const loadOlderButton = canvas.getByRole("button", { name: "Load older" });
+    if (!(loadOlderButton instanceof HTMLButtonElement)) {
+      throw new Error("Expected Load older button to be rendered as a button.");
+    }
+    loadOlderButton.click();
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
     await waitFor(() => {
-      const olderAssistantMarkdown = olderAssistantEntry.querySelector("agenter-markdown-document") as
+      expect(canvas.getByTestId("runtime-heartbeat-group-400")).toBeInTheDocument();
+      expect(canvas.getByText("7 rows")).toBeInTheDocument();
+      expect(canvas.getByText("No older messages")).toBeInTheDocument();
+    });
+  },
+} satisfies Story;
+
+export const LayoutActionSwitchesGroupPresentation = {
+  name: "Scenario: Given one heartbeat group card When the operator switches layout Then compact summary and detailed ledger views stay attached to the same group",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const beforeCallGroup = canvas.getByTestId("runtime-heartbeat-group-410");
+    const callGroup = canvas.getByTestId("runtime-heartbeat-group-411");
+    const systemPromptEntry = canvas.getByTestId("runtime-heartbeat-entry-21");
+    const streamingAssistantEntry = canvas.getByTestId("runtime-heartbeat-entry-25");
+    const compactToolDetails = Array.from(callGroup.querySelectorAll("details")).find((details) =>
+      details.textContent?.includes("root_workspace_bash"),
+    );
+    const compactToolSummary = compactToolDetails?.querySelector("summary");
+
+    await expect(beforeCallGroup).toHaveAttribute("data-layout-mode", "compact");
+    expect(systemPromptEntry.textContent).not.toContain(
+      "You are a Linux expert. Prefer bash and skills before asking for help.",
+    );
+    expect(callGroup.textContent).not.toContain('{"invocationId":"tool-call-1"');
+    await expect(streamingAssistantEntry).toHaveTextContent("root_workspace_bash");
+    await expect(streamingAssistantEntry).toHaveTextContent("attention commit");
+    await expect(canvas.getByTestId("runtime-heartbeat-entry-time-25")).toHaveTextContent(
+      "2026/4/12 22:25:45, 5 sec",
+    );
+    await expect(canvas.getByTestId("runtime-heartbeat-entry-meta-25")).not.toHaveTextContent("Range");
+    expect(within(callGroup).getAllByRole("button", { name: "Copy section" }).length).toBeGreaterThan(0);
+    if (!(compactToolSummary instanceof HTMLElement) || !(compactToolDetails instanceof HTMLDetailsElement)) {
+      throw new Error("Expected compact tool summary to be rendered.");
+    }
+    expect(compactToolDetails.open).toBe(false);
+
+    await userEvent.click(compactToolSummary);
+
+    await waitFor(() => {
+      expect(compactToolDetails.open).toBe(true);
+    });
+    await expect(callGroup).toHaveTextContent("command:");
+
+    await userEvent.click(within(systemPromptEntry).getByRole("radio", { name: "Detailed" }));
+
+    await expect(beforeCallGroup).toHaveAttribute("data-layout-mode", "detailed");
+    await waitFor(() => {
+      const systemPromptMarkdown = systemPromptEntry.querySelector("agenter-markdown-document") as
         | (HTMLElement & { value?: string })
         | null;
-      expect(olderAssistantMarkdown?.value).toContain("Checkpoint restored.");
+      expect(systemPromptMarkdown?.value).toContain(
+        "You are a Linux expert. Prefer bash and skills before asking for help.",
+      );
     });
-    await expect(canvas.getByRole("button", { name: "History loaded" })).toBeDisabled();
+    await expect(beforeCallGroup).toHaveTextContent("Compact");
   },
 } satisfies Story;
 
 export const StickyBottomKeepsLatestRowsReachable = {
   name: "Scenario: Given a long virtualized Heartbeat stream When the operator scrolls away Then the stage exposes Scroll to latest and returns to the newest rows",
   args: {
-    initialEntries: longStreamEntries,
-    olderEntries: [],
+    initialGroups: longStreamGroups,
+    olderGroups: [],
     modelCalls: settledModelCalls,
     attention: attentionState,
   },
@@ -610,6 +768,9 @@ export const StickyBottomKeepsLatestRowsReachable = {
     });
     await waitFor(() => {
       expect(canvas.queryByTestId(`runtime-heartbeat-entry-${firstEntry.id}`)).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
     });
 
     viewport.scrollTop = 0;
@@ -631,8 +792,8 @@ export const StickyBottomKeepsLatestRowsReachable = {
 export const RunningFooterShowsShimmerWithoutUsage = {
   name: "Scenario: Given a running AI call without usage When the Heartbeat footer renders Then shimmer stays active while context falls back to disabled",
   args: {
-    initialEntries,
-    olderEntries: [],
+    initialGroups,
+    olderGroups: [],
     modelCalls: streamingModelCalls,
     attention: attentionState,
   },
@@ -648,8 +809,8 @@ export const RunningFooterShowsShimmerWithoutUsage = {
 export const StreamingToolCallRemainsVisible = {
   name: "Scenario: Given a running Heartbeat tool call has no result yet When the stage renders Then the tool row stays visible without empty-string parameter chrome",
   args: {
-    initialEntries: streamingToolEntries,
-    olderEntries: [],
+    initialGroups: streamingToolGroups,
+    olderGroups: [],
     modelCalls: streamingModelCalls,
     attention: attentionState,
   },
@@ -667,8 +828,8 @@ export const StreamingToolCallRemainsVisible = {
 export const EmptyLedgerShowsExplicitState = {
   name: "Scenario: Given no persisted Heartbeat rows When the stage opens Then the operator sees an explicit empty state instead of a blank panel",
   args: {
-    initialEntries: [],
-    olderEntries: [],
+    initialGroups: [],
+    olderGroups: [],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -679,5 +840,43 @@ export const EmptyLedgerShowsExplicitState = {
       expect(canvas.getByTestId("runtime-heartbeat-empty")).toBeInTheDocument();
     });
     await expect(canvas.getByText("No Heartbeat rows yet")).toBeInTheDocument();
+  },
+} satisfies Story;
+
+export const OverflowingCardCanExpand = {
+  name: "Scenario: Given an overflowing heartbeat card When the operator expands it Then the card grows beyond the default max height and can collapse back",
+  args: {
+    initialGroups: overflowingGroups,
+    olderGroups: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const entry = canvas.getByTestId("runtime-heartbeat-entry-520") as HTMLElement;
+    const body = canvas.getByTestId("runtime-heartbeat-entry-body-520") as HTMLElement;
+
+    await waitFor(() => {
+      expect(body.dataset.overflowState).toBe("collapsed");
+    });
+
+    const collapsedHeight = entry.getBoundingClientRect().height;
+    const expandButton = within(entry).getByRole("button", { name: "Expand" });
+    await userEvent.click(expandButton);
+
+    await waitFor(() => {
+      expect(body.dataset.overflowState).toBe("expanded");
+      expect(within(entry).getByRole("button", { name: "Collapse" })).toBeInTheDocument();
+    });
+
+    const expandedHeight = entry.getBoundingClientRect().height;
+    expect(expandedHeight).toBeGreaterThan(collapsedHeight + 32);
+
+    await userEvent.click(within(entry).getByRole("button", { name: "Collapse" }));
+
+    await waitFor(() => {
+      expect(body.dataset.overflowState).toBe("collapsed");
+      expect(within(entry).getByRole("button", { name: "Expand" })).toBeInTheDocument();
+    });
   },
 } satisfies Story;

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 
 	import type {
 		RuntimeHeartbeatAttentionFocusSummary,
 		RuntimeHeartbeatContextState,
 	} from './runtime-heartbeat-statusbar-state';
+	import type { RuntimeHeartbeatConfigBinding, RuntimeHeartbeatConfigDraft } from './runtime-heartbeat-config-state';
+	import RuntimeHeartbeatConfigPanel from './runtime-heartbeat-config-panel.svelte';
 	import RuntimeHeartbeatStatusContext from './runtime-heartbeat-status-context.svelte';
 	import RuntimeHeartbeatStatusShimmer from './runtime-heartbeat-status-shimmer.svelte';
 
@@ -13,16 +14,22 @@
 		contextState,
 		shimmerSummary,
 		entryCount,
-		loadingOlder,
-		hasMoreOlder,
-		onLoadOlder,
+		configBinding,
+		configLoading = false,
+		configSaving = false,
+		configError = null,
+		onRefreshConfig,
+		onSaveConfig,
 	}: {
 		contextState: RuntimeHeartbeatContextState;
 		shimmerSummary: RuntimeHeartbeatAttentionFocusSummary;
 		entryCount: number;
-		loadingOlder: boolean;
-		hasMoreOlder: boolean;
-		onLoadOlder: () => void | Promise<void>;
+		configBinding: RuntimeHeartbeatConfigBinding;
+		configLoading?: boolean;
+		configSaving?: boolean;
+		configError?: string | null;
+		onRefreshConfig: () => void | Promise<void>;
+		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -42,14 +49,13 @@
 		<Badge variant="outline" class="rounded-full bg-background/70">
 			{entryCount} rows
 		</Badge>
-		<Button
-			variant="outline"
-			size="sm"
-			class="rounded-full"
-			disabled={loadingOlder || !hasMoreOlder}
-			onclick={() => void onLoadOlder()}
-		>
-			{loadingOlder ? 'Loading older…' : hasMoreOlder ? 'Load older' : 'History loaded'}
-		</Button>
+		<RuntimeHeartbeatConfigPanel
+			binding={configBinding}
+			loading={configLoading}
+			saving={configSaving}
+			error={configError}
+			onRefresh={onRefreshConfig}
+			onSave={onSaveConfig}
+		/>
 	</div>
 </footer>

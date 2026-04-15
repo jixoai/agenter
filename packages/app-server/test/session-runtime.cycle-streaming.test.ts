@@ -34,6 +34,9 @@ interface RuntimeInternals {
         isComplete: boolean;
       }>;
     }>;
+    getAiCallById: (id: number) => {
+      responseMessageIds: string[];
+    } | null;
   };
   activeModelCallId: number | null;
   activeModelResponseDraft:
@@ -65,6 +68,22 @@ interface RuntimeInternals {
   }) => void;
   handleAssistantStreamUpdate: (
     input:
+      | {
+          kind: "thinking";
+          content: string;
+          timestamp: number;
+        }
+      | {
+          kind: "draft";
+          content: string;
+          usage?: {
+            promptTokens?: number;
+            completionTokens?: number;
+            totalTokens?: number;
+          };
+          finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
+          timestamp: number;
+        }
       | {
           kind: "tool_call";
           toolCallId: string;
@@ -234,6 +253,9 @@ describe("Feature: session runtime live cycle projection", () => {
       const hydrated = internal.sessionDb
         .listMessagesByScope("heartbeat_part", { limit: 20 })
         .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`);
+      expect(internal.sessionDb.getAiCallById(call.id)?.responseMessageIds).toContain(
+        `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`,
+      );
 
       expect(hydrated?.parts).toHaveLength(1);
       expect(hydrated?.parts[0]).toMatchObject({
@@ -266,6 +288,9 @@ describe("Feature: session runtime live cycle projection", () => {
       const completed = internal.sessionDb
         .listMessagesByScope("heartbeat_part", { limit: 20 })
         .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`);
+      expect(internal.sessionDb.getAiCallById(call.id)?.responseMessageIds).toContain(
+        `heartbeat-part:ai-call:${call.id}:tool:tool-bash-21`,
+      );
 
       expect(completed?.parts).toHaveLength(2);
       expect(completed?.parts[0]).toMatchObject({
@@ -297,6 +322,72 @@ describe("Feature: session runtime live cycle projection", () => {
         },
         isComplete: true,
       });
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given thinking chunks arrive before assistant text When heartbeat rows are persisted Then the response row stores a streaming thinking part", async () => {
+    const runtime = createRuntime();
+    try {
+      await runtime.start();
+      const internal = runtime as unknown as RuntimeInternals;
+
+      internal.createActiveCycle({
+        cycleId: 31,
+        seq: 31,
+        createdAt: 31,
+        wakeSource: "user",
+        inputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "在吗？" }],
+            meta: { clientMessageId: "client-31" },
+          },
+        ],
+      });
+
+      const call = internal.sessionDb.appendAiCall({
+        roundIndex: 0,
+        kind: "attention",
+        provider: "test-provider",
+        model: "test-model",
+        requestUrl: "",
+        requestBody: { messages: [] },
+        status: "running",
+        isComplete: false,
+        createdAt: 31,
+        updatedAt: 31,
+      });
+      internal.activeModelCallId = call.id;
+      internal.activeModelResponseDraft = { toolTrace: [] };
+      internal.promptWindowRoundIndex = 0;
+
+      internal.handleAssistantStreamUpdate({
+        kind: "thinking",
+        content: "Need to inspect the latest room focus first.",
+        timestamp: 32,
+      });
+
+      const responseRow = internal.sessionDb
+        .listMessagesByScope("heartbeat_part", { limit: 20 })
+        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:response:assistant`);
+
+      expect(internal.sessionDb.getAiCallById(call.id)?.responseMessageIds).toContain(
+        `heartbeat-part:ai-call:${call.id}:response:assistant`,
+      );
+      expect(responseRow?.parts).toMatchObject([
+        {
+          partType: "thinking",
+          payload: {
+            type: "thinking",
+            text: "Need to inspect the latest room focus first.",
+          },
+          isComplete: false,
+        },
+      ]);
     } finally {
       await runtime.stop();
     }

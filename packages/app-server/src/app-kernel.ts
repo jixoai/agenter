@@ -89,6 +89,7 @@ import {
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
+import { projectHeartbeatGroups, type RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
@@ -329,6 +330,23 @@ const readAllHeartbeatMessages = (db: SessionDb): SessionMessageRecord[] => {
 
 const readAllPersistedChatMessages = (db: SessionDb): SessionMessageRecord[] =>
   readAllHeartbeatMessages(db).filter(isPersistedChatProjectionMessage);
+
+const readAllHeartbeatInspectionMessages = (db: SessionDb): SessionMessageRecord[] => {
+  const pages: SessionMessageRecord[][] = [];
+  let before: ReverseTimeCursor | undefined;
+  while (true) {
+    const page = db.pageMessagesByScopes(HEARTBEAT_INSPECTION_SCOPES, { before, limit: 1_000 });
+    if (page.items.length === 0) {
+      break;
+    }
+    pages.push(page.items);
+    if (!page.hasMoreBefore || !page.nextBefore) {
+      break;
+    }
+    before = page.nextBefore;
+  }
+  return pages.reverse().flat();
+};
 
 const pagePersistedMessages = <T extends { id: number }>(
   items: readonly T[],
@@ -1948,6 +1966,18 @@ export class AppKernel {
       return emptyReversePage();
     }
     return this.readHeartbeatPartsPageFromDb(session.sessionRoot, input);
+  }
+
+  pageHeartbeatGroups(
+    sessionId: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<RuntimeHeartbeatGroupRecord> {
+    this.ensureSessionCatalogLoaded();
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return emptyReversePage();
+    }
+    return this.readHeartbeatGroupsPageFromDb(session.sessionRoot, input);
   }
 
   pageRequestAuxMessages(
@@ -3808,7 +3838,11 @@ export class AppKernel {
   }
 
   async saveSettingsLayer(input: { workspacePath: string; layerId: string; content: string; baseMtimeMs: number }) {
-    return await saveWorkspaceSettingsLayer(input);
+    const result = await saveWorkspaceSettingsLayer(input);
+    if (result.ok) {
+      await this.refreshRuntimesForWorkspaceSettingsSave({ workspacePath: input.workspacePath });
+    }
+    return result;
   }
 
   async saveSettingsScopeLayer(input: {
@@ -3819,7 +3853,11 @@ export class AppKernel {
     baseMtimeMs: number;
     avatar?: string;
   }) {
-    return await saveScopedSettingsLayer(input);
+    const result = await saveScopedSettingsLayer(input);
+    if (result.ok) {
+      await this.refreshRuntimesForScopedSettingsSave(input);
+    }
+    return result;
   }
 
   async getNotificationSnapshot(): Promise<SessionNotificationSnapshot> {
@@ -3885,6 +3923,31 @@ export class AppKernel {
     }
     const editor = await this.createPersistedSettingsEditor(input.sessionId);
     return await editor.save(kind, input.content, input.baseMtimeMs);
+  }
+
+  private async refreshRuntimesForWorkspaceSettingsSave(input: {
+    workspacePath: string;
+    avatar?: string;
+  }): Promise<void> {
+    for (const runtime of this.runtimes.values()) {
+      if (!runtime.matchesWorkspaceSettingsTarget(input)) {
+        continue;
+      }
+      await runtime.reloadSettingsFromDisk({ persistPendingConfigFact: true });
+    }
+  }
+
+  private async refreshRuntimesForScopedSettingsSave(input: {
+    scope: SettingsScope;
+    workspacePath?: string;
+    avatar?: string;
+  }): Promise<void> {
+    for (const runtime of this.runtimes.values()) {
+      if (!runtime.matchesScopedSettingsTarget(input)) {
+        continue;
+      }
+      await runtime.reloadSettingsFromDisk({ persistPendingConfigFact: true });
+    }
   }
 
   private async ensureRuntime(sessionId: string): Promise<SessionRuntime> {
@@ -4363,6 +4426,26 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       return db.pageMessagesByScopes(HEARTBEAT_INSPECTION_SCOPES, input);
+    } finally {
+      db.close();
+    }
+  }
+
+  private readHeartbeatGroupsPageFromDb(
+    sessionRoot: string,
+    input?: { before?: ReverseTimeCursor; limit?: number },
+  ): ReversePage<RuntimeHeartbeatGroupRecord> {
+    const dbPath = join(sessionRoot, "session.db");
+    if (!existsSync(dbPath)) {
+      return emptyReversePage();
+    }
+    const db = new SessionDb(dbPath);
+    try {
+      const groups = projectHeartbeatGroups({
+        aiCalls: readAllAiCalls(db),
+        inspectionMessages: readAllHeartbeatInspectionMessages(db),
+      });
+      return pagePersistedMessages(groups, input, (group) => group.createdAt);
     } finally {
       db.close();
     }

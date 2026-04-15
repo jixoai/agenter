@@ -1,8 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import type { HeartbeatPartItem } from "@agenter/client-sdk";
+import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
-import { buildHeartbeatDisplayBlocks, getHeartbeatRowMeta, getHeartbeatToolPreview } from "./runtime-heartbeat-parts";
+import {
+  buildHeartbeatDisplayBlocks,
+  getHeartbeatSectionTimeMeta,
+  buildHeartbeatSubjectSections,
+  getHeartbeatRowMeta,
+  getHeartbeatToolPreview,
+} from "./runtime-heartbeat-parts";
 
 const baseEntry: HeartbeatPartItem = {
   id: 1,
@@ -187,13 +193,15 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     expect(getHeartbeatRowMeta(entry)).toEqual(["call #51"]);
   });
 
-  test("Scenario: Given a shell-style tool input with long serialized arguments When the collapsed preview is built Then the header keeps only the leading command intent", () => {
+  test("Scenario: Given a shell-style tool input with long serialized arguments When the collapsed preview is built Then the header keeps the full command text for CSS overflow handling", () => {
     expect(
       getHeartbeatToolPreview({
         command:
           "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-abc\"],\"done\":true}'",
       }),
-    ).toBe("attention commit");
+    ).toBe(
+      "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-abc\"],\"done\":true}'",
+    );
   });
 
   test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the invocation still renders as one stable tool block anchored at the original tool call", () => {
@@ -319,5 +327,126 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
         errorText: null,
       },
     ]);
+  });
+
+  test("Scenario: Given an assistant tool call and a later tool result transport row When subject sections are built Then the tool stays in one assistant card instead of splitting into separate user and assistant cards", () => {
+    const assistantToolEntry = {
+      ...baseEntry,
+      id: 401,
+      messageId: "heartbeat-part:assistant:tool-call",
+      parts: [
+        {
+          partId: 401,
+          partIndex: 0,
+          messageId: "heartbeat-part:assistant:tool-call",
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-4",
+            tool: "workspace.bash",
+            input: { command: "pwd" },
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const toolTransportEntry = {
+      ...baseEntry,
+      id: 402,
+      role: "user",
+      messageId: "heartbeat-part:user:tool-result",
+      parts: [
+        {
+          partId: 402,
+          partIndex: 0,
+          messageId: "heartbeat-part:user:tool-result",
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "user",
+          partType: "tool_result",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-4",
+            tool: "workspace.bash",
+            output: { stdout: "/repo/agenter\n", exitCode: 0 },
+            error: null,
+          },
+          createdAt: baseEntry.createdAt + 1_000,
+          updatedAt: baseEntry.updatedAt + 1_000,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const assistantNarrativeEntry = {
+      ...baseEntry,
+      id: 403,
+      messageId: "heartbeat-part:assistant:follow-up",
+      parts: [
+        {
+          partId: 403,
+          partIndex: 0,
+          messageId: "heartbeat-part:assistant:follow-up",
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "text",
+          mimeType: null,
+          payload: {
+            type: "text",
+            content: "Tool result returned. Continue the plan.",
+          },
+          createdAt: baseEntry.createdAt + 2_000,
+          updatedAt: baseEntry.updatedAt + 2_000,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const group = {
+      id: 601,
+      groupId: "heartbeat-group:call:99",
+      kind: "call",
+      aiCallId: 99,
+      createdAt: assistantToolEntry.createdAt,
+      updatedAt: assistantNarrativeEntry.updatedAt,
+      isComplete: true,
+      items: [assistantToolEntry, toolTransportEntry, assistantNarrativeEntry],
+    } satisfies HeartbeatGroupItem;
+
+    const sections = buildHeartbeatSubjectSections(group);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.role).toBe("assistant");
+    expect(sections[0]?.entryId).toBe(401);
+    expect(sections[0]?.entries.map((entry) => entry.id)).toEqual([401, 402, 403]);
+    expect(sections[0]?.blocks.map((block) => block.content.kind)).toEqual(["tool", "part"]);
+    expect(sections[0]?.blocks[0]?.content).toEqual({
+      kind: "tool",
+      key: "workspace-bash-4",
+      tool: "workspace.bash",
+      state: "output-available",
+      input: { command: "pwd" },
+      output: { stdout: "/repo/agenter\n", exitCode: 0 },
+      errorText: null,
+    });
+    expect(getHeartbeatSectionTimeMeta(sections[0]!)).toEqual({
+      startedAt: assistantToolEntry.createdAt,
+      endedAt: assistantNarrativeEntry.updatedAt,
+      durationMs: assistantNarrativeEntry.updatedAt - assistantToolEntry.createdAt,
+      showRange: true,
+    });
   });
 });

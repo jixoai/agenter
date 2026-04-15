@@ -10,7 +10,11 @@
 	import JSONViewer from '$lib/components/web-components/json-viewer.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 
-	import { readHeartbeatPartText, toHeartbeatPartRawText } from './runtime-heartbeat-parts';
+	import {
+		formatHeartbeatPartTypeLabel,
+		readHeartbeatPartText,
+		toHeartbeatPartRawText,
+	} from './runtime-heartbeat-parts';
 
 	let {
 		part,
@@ -20,16 +24,20 @@
 
 	const text = $derived(readHeartbeatPartText(part));
 	const showMetaRow = $derived((part.mimeType ?? '').length > 0 || !part.isComplete);
+	const showTypeLabel = $derived(!['text', 'thinking', 'compact'].includes(part.partType));
 </script>
 
-<section class="grid gap-2">
-	{#if showMetaRow}
-		<div class="flex flex-wrap items-center gap-2">
+<section class="grid min-w-0 gap-1.5">
+	{#if showTypeLabel || showMetaRow}
+		<div class="flex flex-wrap items-center gap-1.5">
+			{#if showTypeLabel}
+				<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{formatHeartbeatPartTypeLabel(part.partType)}</Badge>
+			{/if}
 			{#if part.mimeType}
-				<Badge variant="secondary">{part.mimeType}</Badge>
+				<Badge variant="secondary" class="px-1.5 py-0 text-[10px]">{part.mimeType}</Badge>
 			{/if}
 			{#if !part.isComplete}
-				<Badge variant="secondary">streaming</Badge>
+				<Badge variant="secondary" class="px-1.5 py-0 text-[10px]">streaming</Badge>
 			{/if}
 		</div>
 	{/if}
@@ -39,15 +47,15 @@
 			<ReasoningTrigger />
 			<ReasoningContent>
 				<MarkdownDocument
-					value={text ?? ''}
-					mode="preview"
-					usage="chat"
-					surface="muted"
-					syntaxTone="accented"
-					padding="compact"
-					class="rounded-xl border border-border/60 bg-background px-3 py-3"
-				/>
-			</ReasoningContent>
+				value={text ?? ''}
+				mode="preview"
+				usage="chat"
+				surface="muted"
+				syntaxTone="accented"
+				padding="compact"
+				class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
+			/>
+		</ReasoningContent>
 		</Reasoning>
 	{:else if text !== null}
 		<MarkdownDocument
@@ -57,13 +65,14 @@
 			surface="muted"
 			syntaxTone="accented"
 			padding="compact"
-			class="rounded-xl border border-border/60 bg-background px-3 py-3"
+			class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
 		/>
 	{:else}
 		<JSONViewer
 			value={part.payload}
 			rawText={toHeartbeatPartRawText(part)}
-			class="rounded-xl border border-border/60 bg-background px-3 py-3"
+			plain
+			class="min-w-0 w-full max-w-full rounded-lg bg-background/70 px-2.5 py-2"
 		/>
 	{/if}
 </section>

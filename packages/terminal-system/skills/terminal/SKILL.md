@@ -23,8 +23,8 @@ Key laws:
 - When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
 - If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable, stop and switch to `terminal`.
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
-- `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. If you forget the shape, run `--help`.
-- If `terminal write.text` itself contains JSON, many quotes, or a heredoc, prefer JSON stdin to `terminal write` instead of hand-escaping a single argv string.
+- `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_workspace_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
+- Only use a single argv JSON payload when it is trivially short and clearly cheaper in tokens than a separate `stdin` field.
 
 References:
 - `references/terminal-lifecycle.md`: create/list/read/write/kill strategy and recovery patterns
