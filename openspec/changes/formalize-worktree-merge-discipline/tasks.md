@@ -13,4 +13,4 @@
 
 - [x] 3.1 Add or update the local worktree skill so it documents setup, cleanup, and merge-verification usage.
 - [x] 3.2 Update durable best-practice guidance with the dirty-main policy and the required rebase-before-merge workflow.
-- [ ] 3.3 Run targeted verification for the new scripts and record the verified results in this task list.
+- [x] 3.3 Run targeted verification for the new scripts and record the verified results in this task list. Verified `wt-setup.sh --help`, `wt-clean.sh --help`, `wt-merge-verify.sh --help`, `wt-setup.sh sample-topic --dry-run`, `wt-clean.sh ui-decarding --dry-run` safety refusal, and `wt-merge-verify.sh --target origin/main --report-file /tmp/ui-decarding-merge-report.txt` with PASS.
