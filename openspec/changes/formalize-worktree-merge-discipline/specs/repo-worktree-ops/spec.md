@@ -53,3 +53,22 @@ The repository workflow SHALL treat unpublished dirty working-tree changes as no
 - **WHEN** the operator wants to prove merge readiness while the local `main` checkout contains uncommitted changes
 - **THEN** the workflow reports readiness only against a named ref such as `origin/main`
 - **THEN** the workflow instructs the operator to materialize local `main` changes into a named branch/ref before those changes can become a valid verification target
+
+### Requirement: Verified fast-forward landing preserves only non-overlapping dirty target changes
+
+The repository SHALL provide a landing script for the step after merge verification. When the target checkout is dirty, the script SHALL snapshot the dirty state into a named ref, fast-forward the clean target branch to the verified feature ref, restore only the dirty paths that do not overlap with the landed feature diff, and report which overlapping dirty paths were intentionally skipped.
+
+#### Scenario: Landing a verified feature branch onto a dirty main checkout
+
+- **GIVEN** the operator is inside the target checkout, the target branch HEAD is an ancestor of the verified feature ref, and the target checkout contains unpublished dirty paths
+- **WHEN** the operator runs the landing script against that feature ref
+- **THEN** the script creates or updates a named snapshot ref for the dirty target state without mutating the dirty checkout first
+- **THEN** the script fast-forwards the clean target branch to the feature ref with `git merge --ff-only`
+- **THEN** the script restores only the dirty paths that are outside the landed feature diff
+- **THEN** the script reports the snapshot ref, backup directory, restored dirty paths, and skipped overlapping paths
+
+#### Scenario: Refusing a non-fast-forward landing
+
+- **WHEN** the feature ref is not a fast-forward descendant of the clean target branch HEAD
+- **THEN** the landing script exits non-zero with a message requiring the operator to rebase or otherwise linearize the feature branch first
+- **THEN** the script does not mutate the target branch or restore any dirty paths

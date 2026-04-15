@@ -66,12 +66,29 @@ Alternative considered:
 
 `AGENTS.md` will carry the durable repo-level law, while `.gemini/skills/worktree-manager/SKILL.md` will carry the operator-facing command workflow. This mirrors the existing split between durable collaboration rules and execution shortcuts.
 
+### 6. Verified landing into dirty main needs its own script
+
+The repository needs a separate landing script for the step after verification:
+1. snapshot the current target checkout's dirty state into a named ref without mutating the worktree;
+2. back up the dirty paths to a temporary directory for local recovery;
+3. require that the feature ref is a fast-forward descendant of the clean target HEAD;
+4. clean the target checkout just enough to perform `git merge --ff-only`;
+5. restore only the dirty paths that do not overlap with files changed by the landed feature;
+6. report the snapshot ref, backup directory, restored paths, and skipped overlapping paths.
+
+This keeps the "dirty target is not a merge target" law intact while still giving operators a reproducible way to land a verified branch onto a dirty `main` checkout.
+
+Alternatives considered:
+- Continue doing the landing step manually. Rejected because the workflow becomes agent-dependent and easy to mis-execute.
+- Auto-restore overlapping dirty paths after landing. Rejected because it can silently overwrite the just-landed branch state with stale local drafts.
+
 ## Risks / Trade-offs
 
 - [Risk] Bash tooling can be brittle across shells and path shapes. → Mitigation: use `bash`, `set -euo pipefail`, common helper functions, and explicit validation messages.
 - [Risk] Rebase verification is inherently stateful and can stop on conflicts. → Mitigation: require a clean feature worktree up front, exit non-zero on conflict, and leave the branch in the standard Git rebase state for manual resolution.
 - [Risk] Verification against `origin/main` does not prove compatibility with unpublished `main` edits. → Mitigation: document and enforce the named-target-ref rule.
 - [Risk] Cleanup can accidentally remove a worktree with unsaved local changes. → Mitigation: `wt-clean.sh` refuses dirty worktrees or unmerged branch deletion unless the user passes explicit force flags.
+- [Risk] Landing onto dirty `main` can reintroduce stale drafts over the newly landed feature. → Mitigation: restore only non-overlapping dirty paths by default and explicitly report skipped overlaps.
 
 ## Migration Plan
 
