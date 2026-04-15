@@ -28,6 +28,14 @@ This workflow is mandatory before merge:
 3. run a disposable `--no-commit` merge simulation in a clean verification worktree;
 4. report the verified target ref, feature branch, and feature HEAD.
 
+If the rebase stops on conflicts and you continue from automation, force a non-interactive editor:
+
+```bash
+GIT_EDITOR=true git rebase --continue
+```
+
+Apply the same rule to `merge --continue` / `cherry-pick --continue` so the workflow never hangs in Vim inside agent runs.
+
 If the target checkout is dirty, snapshot it first without mutating the worktree:
 
 ```bash
