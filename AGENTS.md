@@ -218,6 +218,16 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **功能层次化呈现**：主界面聚焦聊天与任务推进；进阶能力放入侧栏/工具面板，不堆叠在主视图。
 - **问题定位分层实验**：先隔离运行时（PTY/Terminal），再隔离渲染层（xterm/headless/web），逐层缩小问题面。
 
+## 6.1) Git Worktree / Merge Discipline
+
+- **worktree 是默认隔离单元**：新的专题工作默认使用 `.worktree/<topic>`；仓库内 canonical 脚本为 `./.gemini/scripts/wt-setup.sh`、`./.gemini/scripts/wt-clean.sh`、`./.gemini/scripts/wt-merge-verify.sh`。
+- **脚本必须基于 Git common root**：无论当前在主 checkout 还是子 worktree，创建/清理 worktree 都必须指向同一个共享 `.worktree/` 根目录，禁止在子 worktree 里再嵌套生成 `.worktree/`。
+- **merge-ready 必须绑定命名 target ref**：报告“可以合并”时，必须明确写出验证目标，例如 `origin/main`；不允许对模糊的“当前 main 状态”作结论。
+- **dirty main 不是合法 merge target**：`main` 上的未提交代码不属于可验证 ref。若这些改动必须纳入验证，先把它们物化成命名 branch/ref，再对该 ref 运行 merge verification。
+- **merge 前固定先 rebase**：功能分支在宣称 ready-to-merge 之前，必须先对目标 ref 完成 rebase，再运行一次独立 merge simulation；只做 `git merge` 试探、不做 rebase，不算通过。
+- **merge simulation 必须在干净隔离环境中进行**：禁止切回用户正在使用的 `main` worktree 做试合并；统一在 disposable verification worktree 中完成 `--no-commit` merge 检查。
+- **cleanup 也是受保护操作**：删除 worktree 或 branch 前必须检查 dirty state 和 merged state；除非显式 `force`，否则 cleanup 脚本必须拒绝破坏性移除。
+
 ## 7) Browser 走查标准（agent-browser）
 
 ### 7.1 固定流程
