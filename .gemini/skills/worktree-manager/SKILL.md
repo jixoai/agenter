@@ -28,6 +28,13 @@ This workflow is mandatory before merge:
 3. run a disposable `--no-commit` merge simulation in a clean verification worktree;
 4. report the verified target ref, feature branch, and feature HEAD.
 
+If the target checkout is dirty, snapshot it first without mutating the worktree:
+
+```bash
+./.gemini/scripts/wt-snapshot-dirty.sh snapshot/main-before-merge
+./.gemini/scripts/wt-merge-verify.sh --no-rebase --target snapshot/main-before-merge
+```
+
 ### 3. Close and clean up a worktree
 
 ```bash
@@ -41,7 +48,7 @@ This workflow is mandatory before merge:
 ## Policy
 
 - A dirty working tree is **not** a merge target.
-- If local `main` edits matter, turn them into a named branch/ref first, then verify against that ref.
+- If local `main` edits matter, turn them into a named branch/ref first with `wt-snapshot-dirty.sh`, then verify against that ref.
 - Never switch to the user’s dirty `main` checkout just to test a merge.
 - Cleanup is destructive and must stay safety-gated.
 
