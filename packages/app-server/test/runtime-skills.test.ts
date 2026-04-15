@@ -72,6 +72,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(attentionContent).toContain("relay room");
     expect(attentionContent).toContain("origin room already received the final answer");
     expect(attentionContent).toContain('attention commit \'{"contextId":"ctx-..."');
+    expect(attentionContent).toContain("marks compact as `Suggested` or `Available`");
     expect(attentionContent).toContain("references/settlement.md");
     expect(attentionContent).toContain("do that real work before browsing attention");
     expect(attentionContent).toContain("default to JSON `stdin`");
@@ -94,6 +95,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("deliver that answer back into the origin room");
     expect(messageContent).toContain("Terminal success alone is not the room reply");
     expect(messageContent).toContain("prefer `command=message send` plus JSON `stdin`");
+    expect(messageContent).toContain("message send --compact");
     expect(messageContent).toContain("References:");
     expect(messageContent).toContain("references/room-protocols.md");
     expect(messageContent).toContain("references/chat-attention-items.md");
@@ -111,6 +113,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalContent).toContain("do not prove the promised URL or API path actually responds");
     expect(terminalContent).toContain("the normal next move is to create or recover the terminal");
     expect(terminalContent).toContain("default to `command=<bare terminal action>` plus JSON `stdin`");
+    expect(terminalContent).toContain("accepts `--compact` positional arrays");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
     expect(terminalContent).toContain("references/file-writing.md");
@@ -125,6 +128,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(runtimeContent).toContain("objective verification of current or external facts");
     expect(runtimeContent).toContain("A local delivery URL may be verified from `root_workspace_bash`");
     expect(runtimeContent).toContain("default to `command=<bare action>` plus JSON `stdin`");
+    expect(runtimeContent).toContain("marks compact as `Suggested` or `Available`");
     expect(runtimeContent).toContain("not enough to prove a local delivery URL is ready");
     expect(runtimeContent).toContain("scheme, host, port, and path are all part of the delivery contract");
     expect(runtimeContent).toContain("references/discovery.md");
@@ -139,11 +143,13 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalLifecycleReference).toContain("ad-hoc listener experiments such as `python -m http.server`");
     expect(terminalLifecycleReference).toContain("do not replace that HTTP verification");
     expect(terminalLifecycleReference).toContain("carry terminal JSON in `stdin` by default");
+    expect(terminalLifecycleReference).toContain("accepts `--compact` positional arrays");
 
     const runtimeShellReference = readFileSync(join(dirname(runtime!.path), "references", "shell-surface.md"), "utf8");
     expect(runtimeShellReference).toContain("outbound-network verification of current or external facts");
     expect(runtimeShellReference).toContain("prefer one-shot shell verification over guessing from memory");
     expect(runtimeShellReference).toContain("plus JSON `stdin`");
+    expect(runtimeShellReference).toContain("marks compact as `Suggested` or `Available`");
     expect(runtimeShellReference).toContain("verify an already-running URL with one-shot commands such as `curl`");
     expect(runtimeShellReference).toContain("are not that HTTP proof");
     expect(runtimeShellReference).toContain("the next move is usually the required durable reply");
@@ -160,6 +166,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageAttentionReference).toContain("does not satisfy the origin room's final reply obligation");
     expect(messageAttentionReference).toContain("send the answer back to the origin room");
     expect(messageAttentionReference).toContain("default to `command=message send` plus JSON `stdin`");
+    expect(messageAttentionReference).toContain("message send --compact");
     expect(messageAttentionReference).toContain("keep the promised payload exact");
     expect(messageAttentionReference).toContain("after the exact HTTP check succeeds, send the room reply");
 
@@ -167,6 +174,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageRoomReference).toContain("send that acknowledgement before you start the deeper work");
     expect(messageRoomReference).toContain("origin room still owns the final user-visible answer");
     expect(messageRoomReference).toContain("prefer `command=message send` plus JSON `stdin`");
+    expect(messageRoomReference).toContain("message send --compact");
     expect(messageRoomReference).toContain("send that exact value back instead of a normalized variant");
 
     const collaborationReference = readFileSync(

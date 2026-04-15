@@ -13,6 +13,13 @@ import type {
   RuntimeTerminalView,
   RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
+import {
+  buildRuntimeToolCompactSurface,
+  decodeRuntimeToolCompactPayload,
+  pickRuntimeToolCompactExamplePayload,
+  renderRuntimeToolCompactFieldGuide,
+  type RuntimeToolCompactSurface,
+} from "./runtime-tool-compact";
 
 export interface RuntimeLocalApiHandlers {
   attentionList: () => AttentionContextDescriptor[];
@@ -91,6 +98,8 @@ export interface RuntimeToolDescriptor<TInput extends ZodTypeAny = ZodTypeAny> {
   examples: readonly RuntimeToolExample[];
   handler: (input: z.output<TInput>, handlers: RuntimeLocalApiHandlers) => Promise<RuntimeToolResult> | RuntimeToolResult;
 }
+
+export type RuntimeToolCliInputMode = "object" | "compact";
 
 const emptyObjectSchema = z.object({}).strict();
 
@@ -426,6 +435,8 @@ const runtimeDescriptorByRoute = new Map<string, RuntimeToolDescriptor>(
   runtimeToolDescriptors.map((descriptor) => [descriptor.route, descriptor]),
 );
 
+const runtimeCompactSurfaceByDescriptor = new WeakMap<RuntimeToolDescriptor, RuntimeToolCompactSurface>();
+
 export const listRuntimeToolDescriptors = (namespace?: RuntimeToolNamespace): RuntimeToolDescriptor[] =>
   runtimeToolDescriptors.filter((descriptor) => namespace === undefined || descriptor.namespace === namespace);
 
@@ -437,7 +448,17 @@ export const getRuntimeToolDescriptor = (
 export const getRuntimeToolDescriptorByRoute = (route: string): RuntimeToolDescriptor | null =>
   runtimeDescriptorByRoute.get(route) ?? null;
 
-const isJsonObjectText = (value: string): boolean => value.trim().startsWith("{");
+const getRuntimeToolCompactSurface = (descriptor: RuntimeToolDescriptor): RuntimeToolCompactSurface => {
+  const cached = runtimeCompactSurfaceByDescriptor.get(descriptor);
+  if (cached) {
+    return cached;
+  }
+  const surface = buildRuntimeToolCompactSurface(toJSONSchema(descriptor.inputSchema, { unrepresentable: "any" }));
+  runtimeCompactSurfaceByDescriptor.set(descriptor, surface);
+  return surface;
+};
+
+const isJsonText = (value: string, expectedStart: "{" | "["): boolean => value.trim().startsWith(expectedStart);
 
 const containsNonLatin1CodePoint = (value: string): boolean => {
   for (const char of value) {
@@ -487,10 +508,12 @@ const repairLikelyJustBashUtf8Mojibake = (value: string): string => {
   return value;
 };
 
-const parseJsonObjectText = (value: string, commandLabel: string): unknown => {
+const parseJsonText = (value: string, commandLabel: string, inputMode: RuntimeToolCliInputMode): unknown => {
   const normalizedValue = repairLikelyJustBashUtf8Mojibake(value);
-  if (!isJsonObjectText(normalizedValue)) {
-    throw new Error(`${commandLabel} requires one JSON object payload. Use \`${commandLabel} --help\` for details.`);
+  const expectedStart = inputMode === "compact" ? "[" : "{";
+  const expectedLabel = inputMode === "compact" ? "compact JSON array" : "JSON object";
+  if (!isJsonText(normalizedValue, expectedStart)) {
+    throw new Error(`${commandLabel} requires one ${expectedLabel} payload. Use \`${commandLabel} --help\` for details.`);
   }
   try {
     return JSON.parse(normalizedValue) as unknown;
@@ -505,26 +528,34 @@ export const parseRuntimeToolCliInput = <TInput extends ZodTypeAny>(
   descriptor: RuntimeToolDescriptor<TInput>,
   args: readonly string[],
   stdin: string,
+  inputMode: RuntimeToolCliInputMode = "object",
 ): z.output<TInput> => {
   const commandLabel = `${descriptor.namespace} ${descriptor.name}`;
   const trimmedStdin = stdin.trim();
+  const payloadLabel = inputMode === "compact" ? "compact JSON array" : "JSON object payload";
   if (args.length > 1) {
     throw new Error(
-      `${commandLabel} requires exactly one JSON object payload source: either one argv JSON or JSON stdin. Use \`${commandLabel} --help\` for details.`,
+      `${commandLabel} requires exactly one ${payloadLabel} source: either one argv JSON or JSON stdin. Use \`${commandLabel} --help\` for details.`,
     );
   }
   if (args.length === 1 && trimmedStdin.length > 0) {
     throw new Error(
-      `${commandLabel} received both argv JSON and stdin JSON. Provide exactly one JSON payload source. Use \`${commandLabel} --help\` for details.`,
+      `${commandLabel} received both argv JSON and stdin JSON. Provide exactly one ${payloadLabel} source. Use \`${commandLabel} --help\` for details.`,
     );
   }
   if (args.length === 1) {
-    return descriptor.inputSchema.parse(parseJsonObjectText(args[0]!, commandLabel));
+    const parsed = parseJsonText(args[0]!, commandLabel, inputMode);
+    return descriptor.inputSchema.parse(
+      inputMode === "compact" ? decodeRuntimeToolCompactPayload(getRuntimeToolCompactSurface(descriptor), parsed) : parsed,
+    );
   }
   if (trimmedStdin.length > 0) {
-    return descriptor.inputSchema.parse(parseJsonObjectText(trimmedStdin, commandLabel));
+    const parsed = parseJsonText(trimmedStdin, commandLabel, inputMode);
+    return descriptor.inputSchema.parse(
+      inputMode === "compact" ? decodeRuntimeToolCompactPayload(getRuntimeToolCompactSurface(descriptor), parsed) : parsed,
+    );
   }
-  return descriptor.inputSchema.parse({});
+  return descriptor.inputSchema.parse(inputMode === "compact" ? decodeRuntimeToolCompactPayload(getRuntimeToolCompactSurface(descriptor), []) : {});
 };
 
 const renderExampleCommand = (descriptor: RuntimeToolDescriptor, example: RuntimeToolExample): string[] => {
@@ -534,7 +565,7 @@ const renderExampleCommand = (descriptor: RuntimeToolDescriptor, example: Runtim
   }
   if (example.kind === "argv") {
     return [
-      `- Compact shell form for trivial payloads: \`${commandLabel} '${JSON.stringify(example.payload)}'\`${example.description ? ` ${example.description}` : ""}`,
+      `- Single argv JSON fallback for trivial payloads: \`${commandLabel} '${JSON.stringify(example.payload)}'\`${example.description ? ` ${example.description}` : ""}`,
     ];
   }
   const payloadLines = JSON.stringify(example.payload, null, 2).split("\n").map((line) => `    ${line}`);
@@ -546,8 +577,27 @@ const renderExampleCommand = (descriptor: RuntimeToolDescriptor, example: Runtim
   ];
 };
 
+const renderCompactExampleCommand = (
+  descriptor: RuntimeToolDescriptor,
+  surface: RuntimeToolCompactSurface,
+  examples: readonly RuntimeToolExample[],
+): string[] => {
+  const commandLabel = `${descriptor.namespace} ${descriptor.name}`;
+  const compactExample = pickRuntimeToolCompactExamplePayload(
+    surface,
+    examples.flatMap((example) => (example.kind === "none" ? [] : [example.payload])),
+  );
+  if (compactExample === null) {
+    return [];
+  }
+  return [
+    `- Optional positional compact mode (${surface.availability}): \`${commandLabel} --compact '${JSON.stringify(compactExample)}'\``,
+  ];
+};
+
 export const renderRuntimeToolHelp = (descriptor: RuntimeToolDescriptor): string => {
   const schema = toJSONSchema(descriptor.inputSchema, { unrepresentable: "any" });
+  const compactSurface = getRuntimeToolCompactSurface(descriptor);
   const orderedExamples = [...descriptor.examples].sort(
     (left, right) => runtimeToolExampleRank[left.kind] - runtimeToolExampleRank[right.kind],
   );
@@ -561,8 +611,16 @@ export const renderRuntimeToolHelp = (descriptor: RuntimeToolDescriptor): string
     "",
     "Canonical forms:",
     ...orderedExamples.flatMap((example) => renderExampleCommand(descriptor, example)),
+    ...renderCompactExampleCommand(descriptor, compactSurface, orderedExamples),
     "",
-    "Only JSON payload input is accepted. Default to JSON stdin; use one JSON argv payload only when it is trivially short.",
+    "Compact positional mode:",
+    `- Availability: ${compactSurface.availability}`,
+    "- Use `--compact` to switch the payload from object JSON to a schema-derived positional JSON array.",
+    "- Optional trailing fields may be omitted; skipped interior optional fields use `null`.",
+    "- Field indexes:",
+    ...renderRuntimeToolCompactFieldGuide(compactSurface).map((line) => `  ${line}`),
+    "",
+    "Only canonical JSON input is accepted. Default to JSON stdin; use one JSON argv payload only when it is trivially short, and use `--compact` only when you intentionally want positional encoding.",
   ];
   return `${lines.join("\n")}\n`;
 };
@@ -575,7 +633,7 @@ export const renderRuntimeNamespaceHelp = (namespace: RuntimeToolNamespace): str
     "Available subcommands:",
     ...descriptors.map((descriptor) => `- ${descriptor.name}: ${descriptor.description}`),
     "",
-    `Use \`${namespace} <subcommand> --help\` to inspect the JSON schema and canonical examples.`,
+    `Use \`${namespace} <subcommand> --help\` to inspect the JSON schema, compact layout, and canonical examples.`,
   ];
   return `${lines.join("\n")}\n`;
 };
@@ -588,5 +646,11 @@ export const renderRuntimeToolExamples = (
   if (!descriptor) {
     return [];
   }
-  return descriptor.examples.flatMap((example) => renderExampleCommand(descriptor, example));
+  const orderedExamples = [...descriptor.examples].sort(
+    (left, right) => runtimeToolExampleRank[left.kind] - runtimeToolExampleRank[right.kind],
+  );
+  return [
+    ...orderedExamples.flatMap((example) => renderExampleCommand(descriptor, example)),
+    ...renderCompactExampleCommand(descriptor, getRuntimeToolCompactSurface(descriptor), orderedExamples),
+  ];
 };

@@ -28,6 +28,24 @@ import {
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const isHelpArg = (value: string): boolean => value === "--help";
+const isCompactArg = (value: string): boolean => value === "--compact";
+const parseRuntimeSubcommandArgs = (args: readonly string[]) => {
+  let helpRequested = false;
+  let compactMode = false;
+  const payloadArgs: string[] = [];
+  for (const arg of args) {
+    if (isHelpArg(arg)) {
+      helpRequested = true;
+      continue;
+    }
+    if (isCompactArg(arg)) {
+      compactMode = true;
+      continue;
+    }
+    payloadArgs.push(arg);
+  }
+  return { helpRequested, compactMode, payloadArgs };
+};
 const renderToolNamespaceHelp = (toolFiles: readonly string[]): string =>
   [
     "tool <file>",
@@ -120,14 +138,15 @@ const createRuntimeNamespaceCommand = (input: {
           exitCode: 1,
         };
       }
-      if (rest.length === 1 && isHelpArg(rest[0]!)) {
+      const { helpRequested, compactMode, payloadArgs } = parseRuntimeSubcommandArgs(rest);
+      if (helpRequested) {
         return {
           stdout: renderRuntimeToolHelp(descriptor),
           stderr: "",
           exitCode: 0,
         };
       }
-      const body = parseRuntimeToolCliInput(descriptor, rest, ctx.stdin);
+      const body = parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object");
       return {
         stdout: json(
           await callRuntimeApi({

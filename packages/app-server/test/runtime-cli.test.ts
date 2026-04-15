@@ -129,6 +129,20 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given explicit compact argv When terminal kill runs Then the CLI decodes the positional payload back into the descriptor object", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/kill": { result: { ok: true, message: "killed" } },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["kill", "--compact", '["term-1"]'], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+    });
+  });
+
   test("Scenario: Given root workspace bash expands a UTF-8 JSON payload When message send forwards the heredoc argv Then the runtime API preserves the original Unicode content", async () => {
     const api = await startMockRuntimeApi({
       "/v1/message/send": { result: { ok: true, messageId: "msg-utf8" } },
@@ -184,6 +198,21 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given explicit compact stdin When message read runs Then the CLI decodes the positional array before calling the runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/message/read": { snapshot: { chatId: "room-1", messages: [] } },
+    });
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(["read", "--compact"], createCommandContext('["room-1",5]'));
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      chatId: "room-1",
+      limit: 5,
+    });
+  });
+
   test("Scenario: Given empty input list command When workspace list runs Then the CLI sends an empty descriptor payload", async () => {
     const api = await startMockRuntimeApi({
       "/v1/workspace/list": { workspaces: [] },
@@ -209,7 +238,11 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("Preferred default through `root_workspace_bash`");
     expect(result.stdout).toContain("command: `terminal write`");
     expect(result.stdout).toContain("stdin:");
-    expect(result.stdout).toContain("Compact shell form for trivial payloads");
+    expect(result.stdout).toContain("Single argv JSON fallback for trivial payloads");
+    expect(result.stdout).toContain("Compact positional mode:");
+    expect(result.stdout).toContain("Availability: Suggested");
+    expect(result.stdout).toContain('[0] terminalId: string');
+    expect(result.stdout).toContain('[1] text: string');
     expect(result.stdout).not.toContain("cat <<'EOF'");
     expect(result.stdout).toContain("Default to JSON stdin");
     expect(api.getRequests()).toHaveLength(0);
@@ -228,13 +261,29 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(messageHelp.stdout).toContain("command: `message send`");
     expect(messageHelp.stdout).not.toContain("cat <<'EOF'");
     expect(messageHelp.stdout.indexOf("Preferred default through `root_workspace_bash`")).toBeLessThan(
-      messageHelp.stdout.indexOf("Compact shell form for trivial payloads"),
+      messageHelp.stdout.indexOf("Single argv JSON fallback for trivial payloads"),
     );
+    expect(messageHelp.stdout).toContain("Optional positional compact mode");
+    expect(messageHelp.stdout).toContain("Availability: Available");
 
     expect(attentionHelp.exitCode).toBe(0);
     expect(attentionHelp.stdout).toContain("command: `attention commit`");
     expect(attentionHelp.stdout).toContain("stdin:");
     expect(attentionHelp.stdout).not.toContain("cat <<'EOF'");
+    expect(attentionHelp.stdout).toContain('["update", value, format?] | ["diff", value, format?] | ["clean"]');
+    expect(attentionHelp.stdout).toContain('[3] egress?: ["message_reply", chatId, rootId?, from?, to?]');
+  });
+
+  test("Scenario: Given explicit compact help markers When message send --compact --help runs Then local help still renders without calling the runtime API", async () => {
+    const api = await startMockRuntimeApi();
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(["send", "--compact", "--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("message send");
+    expect(result.stdout).toContain("Compact positional mode:");
+    expect(api.getRequests()).toHaveLength(0);
   });
 
   test("Scenario: Given non-JSON arguments When message send runs Then the CLI rejects them and points back to JSON help", async () => {

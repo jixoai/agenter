@@ -5,6 +5,7 @@ When you need to send a large multi-line command or a whole-file rewrite through
 - prefer one complete command block
 - through `root_workspace_bash`, default to `command=terminal write` plus JSON `stdin`
 - only use argv JSON for `terminal write` when the payload is trivially short
+- if `terminal write --help` marks compact as `Suggested` or `Available`, `terminal write --compact` is still only for short positional payloads; once the text grows or quoting gets heavy, switch back to object JSON immediately
 - avoid fragmented line-by-line paste when a single rewrite is possible
 
 Patterns:

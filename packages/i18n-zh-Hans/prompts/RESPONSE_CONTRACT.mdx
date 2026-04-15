@@ -22,3 +22,4 @@
 20. 如果 `ccski info <skill>` 给出了真实的 skill 路径，而这个 skill 又列出了同目录的 `references/*.md`，就通过 shell 只读取你当前需要的那几个 reference 文件。
 21. 对内部这种带 JSON payload 的运行时 CLI，默认使用最小的 `root_workspace_bash.command`，并把 JSON payload 放进 `stdin`。
 22. 只有当这段 JSON 非常短、单行、而且明显更省 token 时，才把它改成 argv 形式。
+23. 如果 `<command> --help` 把 compact 标成 `Suggested` 或 `Available`，你也可以使用 `--compact` 传输 schema 推导出的 positional JSON array；只要这个位置数组开始不清晰，就立刻退回标准 object JSON。

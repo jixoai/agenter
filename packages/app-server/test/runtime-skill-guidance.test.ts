@@ -63,6 +63,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enSystem).toContain("exact room `chatId`");
     expect(enSystem).toContain("JSON payload in `stdin`");
     expect(enSystem).toContain("Only switch that JSON payload into argv");
+    expect(enSystem).toContain("marks compact as `Suggested` or `Available`");
     expect(enSystem).toContain("do not open any `SKILL.md`");
     expect(enSystem).not.toContain("message-system");
     expect(enSystem).not.toContain("terminal-system");
@@ -79,6 +80,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhSystem).toContain("精确的房间 `chatId`");
     expect(zhSystem).toContain("最小 `command` 加 JSON `stdin`");
     expect(zhSystem).toContain("明显更省 token");
+    expect(zhSystem).toContain("把 compact 标成 `Suggested` 或 `Available`");
     expect(zhSystem).toContain("不要先打开任何 `SKILL.md`");
     expect(zhSystem).not.toContain("message-system");
     expect(zhSystem).not.toContain("terminal-system");
@@ -94,6 +96,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enResponse).toContain("the environment's durable delivery action");
     expect(enResponse).toContain("minimal `root_workspace_bash.command`");
     expect(enResponse).toContain("JSON payload in `stdin`");
+    expect(enResponse).toContain("marks compact as `Suggested` or `Available`");
     expect(enResponse).not.toContain("message CLI");
     expect(enResponse).not.toContain("terminal CLI");
 
@@ -107,6 +110,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhResponse).toContain("当前环境里的耐久交付动作");
     expect(zhResponse).toContain("最小的 `root_workspace_bash.command`");
     expect(zhResponse).toContain("JSON payload 放进 `stdin`");
+    expect(zhResponse).toContain("把 compact 标成 `Suggested` 或 `Available`");
     expect(zhResponse).not.toContain("message` CLI");
     expect(zhResponse).not.toContain("terminal` CLI");
   });

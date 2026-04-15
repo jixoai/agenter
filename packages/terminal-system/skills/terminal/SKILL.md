@@ -25,6 +25,7 @@ Key laws:
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
 - `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_workspace_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
 - Only use a single argv JSON payload when it is trivially short and clearly cheaper in tokens than a separate `stdin` field.
+- If `terminal create --help`, `terminal write --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
 
 References:
 - `references/terminal-lifecycle.md`: create/list/read/write/kill strategy and recovery patterns

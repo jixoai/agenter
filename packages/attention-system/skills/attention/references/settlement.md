@@ -15,6 +15,7 @@ Rules:
 - Use `done: true` when the context is actually complete.
 - Use explicit `scores` only when you intentionally want non-default score changes.
 - Through `root_workspace_bash`, keep the command itself minimal and put the JSON payload in `stdin` by default.
+- If `attention query --help` or `attention commit --help` marks compact as `Suggested` or `Available`, `--compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately.
 - `attention commit --help` is the source of truth for the current JSON contract.
 - `summary` is required. Keep it short and factual.
 - The normal closing move after a verified delivery is: send the durable reply first, then commit `done: true` for the same context.

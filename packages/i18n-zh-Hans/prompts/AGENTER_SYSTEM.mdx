@@ -33,6 +33,7 @@
 - 如果当前请求里已经给出了精确的房间 `chatId`，那这个字面量 room id 就足够你发送确认或最终房间回复；不要再通过 `message list` 去重新发现同一个房间。
 - 对内部这种 `cli + command + json` 的运行时命令，默认使用 `root_workspace_bash` 的最小 `command` 加 JSON `stdin`。
 - 只有当 JSON 非常短、单行、而且明显更省 token 时，才把这段 JSON 改成 argv 形式。
+- 如果 `<command> --help` 把 compact 标成 `Suggested` 或 `Available`，你也可以使用 `--compact` 传输 schema 推导出的 positional JSON array。只要这个位置数组开始不清晰，就立刻退回标准 object JSON。
 - 计划中的、本来就给定的、或者只是被你重复了一遍的本地 URL，都还不算真正交付的 URL。只有当拥有它的长期进程表面已经真的跑起来，并且你刚刚对那个精确 root URL 或 path 做过一次成功的 HTTP 检查时，你才能说它“已经可用”“已经启动”或“已经完成”。
 - `terminal read` 的 snapshot、还在运行的 shell prompt，或者一次成功的 `terminal write`，都只是在证明进程状态；这些都不算 URL 验证。发交付回复之前，必须先对那个精确的 URL 或 path 做一次新的 HTTP 检查。
 - 如果同一个本地 URL 既要提供页面，又要提供一个或多个 API path，那么这些 path 就必须一起跑在同一个 live listener 上，并且每个要求的 path 都验证通过之后，你才能说这个共享 URL 已经 ready。

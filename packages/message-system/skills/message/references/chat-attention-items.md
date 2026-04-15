@@ -21,6 +21,7 @@ Good habits:
 - do not spam: do not narrate every command, retry, or internal thought into the room
 - do not skip the necessary reply: successful tools do not replace the room message the user is waiting for
 - through `root_workspace_bash`, default to `command=message send` plus JSON `stdin`; only use argv JSON for a trivial single-line payload
+- if `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - if the user asked you to reach another participant and `visibleRooms` already exposes that participant's room, relay there instead of replying that the participant is absent from the current room
 - an acknowledgement like "I'll ask them now" is only a waiting-state message; it does not satisfy the origin room's final reply obligation
 - while you are still waiting on another participant or relay room, do not settle the origin attention with `done: true`

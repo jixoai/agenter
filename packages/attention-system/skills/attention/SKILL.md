@@ -18,6 +18,7 @@ Key laws:
 - `done: true` is the normal way to resolve the active scores for a context.
 - Lower scores only after the real work has actually happened.
 - For `attention query` and `attention commit` through `root_workspace_bash`, default to JSON `stdin`; only use argv JSON when the payload is trivially short.
+- If `attention query --help` or `attention commit --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
 - For a simple single-room delivery task, do not interrupt the first action just to inspect attention if the current room already states the work clearly.
 - If you already sent the required durable reply, verified the file, or confirmed the external side effect, settle the attention in the same round instead of leaving solved work active.
 - If the work is still waiting on another participant, relay room, or external source, the obligation is not complete yet and must stay unresolved.

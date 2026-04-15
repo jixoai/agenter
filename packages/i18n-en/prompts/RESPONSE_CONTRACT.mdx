@@ -22,3 +22,4 @@ Strict contract:
 20. If `ccski info <skill>` reveals a real skill path and that skill lists sibling `references/*.md` files, read only the specific reference files you need via shell.
 21. For internal runtime CLI commands with JSON payloads, default to a minimal `root_workspace_bash.command` and put the JSON payload in `stdin`.
 22. Only move that JSON payload into argv when it is trivially short, single-line, and clearly saves tokens.
+23. If `<command> --help` marks compact as `Suggested` or `Available`, you may use `--compact` with the schema-derived positional JSON array; if that array becomes unclear, fall back immediately to standard object JSON.

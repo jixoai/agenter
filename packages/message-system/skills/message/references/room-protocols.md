@@ -19,6 +19,7 @@ Good defaults:
 - if the room fixed a concrete URL, path, or token, send that exact value back instead of a normalized variant such as a sibling path
 - if you need to correct yourself, send a new durable replacement instead of treating the earlier message as final truth
 - through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin` for room replies; only use argv JSON when it is trivially short
+- if `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - after the protocol reply is sent, switch back to `attention` and settle the same obligation instead of repeatedly re-reading the room
 
 Protocol discipline:
