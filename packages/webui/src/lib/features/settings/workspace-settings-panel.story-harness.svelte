@@ -44,7 +44,7 @@
 		onSaveLayer?: () => void;
 	} = $props();
 
-	let liveStatus = $state(status);
+	let liveStatus = $state('');
 	let selectedLayerId = $state<string | null>(null);
 	let currentFile = $state<SettingsLayerFile | null>(null);
 
@@ -98,7 +98,7 @@
 </script>
 
 <Tooltip.Provider delayDuration={0}>
-	<div class={compactShell ? 'h-[860px] max-w-[40rem] p-6' : 'h-[860px] p-6'}>
+	<div class={compactShell ? 'h-[860px] w-[390px] p-6' : 'h-[860px] w-[1120px] p-6'}>
 		<WorkspaceSettingsPanel
 			{disabled}
 			{loading}
