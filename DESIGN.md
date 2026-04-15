@@ -84,6 +84,7 @@ Workspaces
 - toolbar 是固定高度。
 - 即便承载两行信息，也必须在固定高度内完成，不允许靠加高规避设计问题。
 - toolbar 的作用是组织页面身份、局部动作、视角切换与模式切换，不是堆文案说明。
+- 当 compact right detail 打开时，toolbar 只允许被共享 shell 临时接管为 `close-only` affordance；这是一种 view visibility contract，不是把 detail surface 自己再复制一套 header/actions 进 toolbar。
 
 ## 5) Page Content 心智模型
 
@@ -103,6 +104,8 @@ Workspaces
 - 当存在 `main-area + bottom-area + right-drawer` 时，`page-content` 应显式拥有这一横向装配权。
 - `content-stack` 负责吃掉剩余宽度，`right-drawer` 和 `drawer-handle` 负责固定宽度。
 - 禁止用固定总宽度、隐式绝对定位或“刚好拼满”的方式把内容区撑出来；否则窗口一旦变化就会出现裁切。
+- 当 `right-drawer` 需要在 desktop 与 compact 间切换时，这个切换必须由共享 split-detail primitive 根据容器宽度推导，而不是由 page-local viewport breakpoint 猜测。
+- desktop split 的 resize state 必须以 ratio 持久化，而不是记像素宽度；这样窗口变化时 left/right intent 才能保持稳定。
 
 ## 6) 系统页装配法则
 
@@ -214,7 +217,7 @@ Workspaces
 - tablet / mobile 的布局可以自适应重排，但必须继承相同的信息架构与能力路径。
 - 当水平空间不足时：
   - `left-sidebar` 可以收拢为 compact shell / drawer trigger
-  - `right-drawer` 可以转译为 page-content 末尾的 stacked sheet
+  - `right-drawer` 可以转译为 page-content 末尾的 stacked sheet，但必须沿用同一个 split-detail law、同一个 close ownership、同一个 detail 语义，而不是另外发明一套 mobile-only 页面
   - 但 `chrome-window`、toolbar 模式切换、shared content header、main-area / bottom-area / detail-surface 的职责不能丢
 - 当 compact toolbar 的模式标签在小屏中装不下时，可以做 **语义保持的缩写**（例如 `OpenTelemetry -> OTel`），但模式切换路径本身不能被隐藏成不可达状态。
 - `tablet landscape` 默认比 `tablet portrait / phone` 更晚丢失 persistent sidebar 和 persistent right-drawer；优先保留双栏工作感，实在不够再收拢。

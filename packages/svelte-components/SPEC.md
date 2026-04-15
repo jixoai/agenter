@@ -18,3 +18,11 @@
 - `Scaffold` / `DialogScaffold` / `SplitView` 负责结构与 sizing，不负责业务数据。
 - 这些 primitives 的内部 shrink/stretch law 必须绑定到不可被外部 slot 覆盖的内部 hook，而不是把 `data-slot` 当作内部样式真源。
 - `DialogScaffold` 只表达 dialog 内部布局，不包含 dialog open/close 状态机，也不绑定某个 UI 框架的 close affordance。
+
+## 4. Workbench split-detail contract
+
+- `WorkbenchSplitDetail` 是共享的 stateful structural primitive，负责 `main + right detail` 的 ratio、resize handle、LTR clamp 与 compact-collapse 法则。
+- `WorkbenchSplitDetail` 的 desktop ratio 是百分比语义，不是像素语义；窗口变宽或变窄时，应保持 left-share intent，并只在 minimum clamp 处受限。
+- `WorkbenchSplitDetail` 的 compact fallback 只能从容器宽度与 `leftMin + handle + rightMin` 推导；消费者不得在 feature 层重新用 viewport breakpoint 决定 split vs sheet。
+- `WorkbenchSplitDetail` 只负责布局与 persistence contract，不负责产品级 toolbar、sheet header、或 detail-local action 语义。
+- string-key persistence 默认走包内提供的 global ratio source：IndexedDB 持久化 + `BroadcastChannel` 跨窗口同步；需要隔离时，消费者必须通过自定义 provider 覆盖，而不是 fork primitive。
