@@ -13,6 +13,10 @@ const layoutPrimitiveFiles = [
   "src/layout/split-view/split-view-sidebar.svelte",
   "src/layout/split-view/split-view-content.svelte",
   "src/layout/split-view/split-view-detail.svelte",
+  "src/layout/workbench-split-detail/workbench-split-detail-root.svelte",
+  "src/layout/workbench-split-detail/workbench-split-detail-main.svelte",
+  "src/layout/workbench-split-detail/workbench-split-detail-handle.svelte",
+  "src/layout/workbench-split-detail/workbench-split-detail-detail.svelte",
 ];
 
 const dialogScaffoldWrapperFiles = [
@@ -74,6 +78,7 @@ describe("Feature: svelte-components layout foundation", () => {
     expect(source).toContain("export * as Scaffold");
     expect(source).toContain("export * as DialogScaffold");
     expect(source).toContain("export * as SplitView");
+    expect(source).toContain("export * as WorkbenchSplitDetail");
     expect(source).toContain("export { default as ClipSurface }");
   });
 

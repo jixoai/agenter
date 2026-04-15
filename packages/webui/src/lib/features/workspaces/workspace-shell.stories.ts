@@ -67,11 +67,19 @@ export const TreeDisclosureStaysInSurface = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = getCanvas(canvasElement);
+		let srcDirectoryButton: HTMLElement | null = null;
+		await waitFor(() => {
+			srcDirectoryButton = canvasElement.querySelector<HTMLElement>('[data-workspace-tree-path="/src"]');
+			expect(srcDirectoryButton).not.toBeNull();
+		});
+		if (!srcDirectoryButton) {
+			return;
+		}
 
 		await expect(canvas.queryByText('/src/app.ts')).not.toBeInTheDocument();
-		await userEvent.click(canvas.getByRole('button', { name: /src \/src/i }));
+		await userEvent.click(srcDirectoryButton);
 		await expect(canvas.getByText('/src/app.ts')).toBeInTheDocument();
-		await userEvent.click(canvas.getByRole('button', { name: /src \/src/i }));
+		await userEvent.click(srcDirectoryButton);
 		await expect(canvas.queryByText('/src/app.ts')).not.toBeInTheDocument();
 	},
 } satisfies Story;

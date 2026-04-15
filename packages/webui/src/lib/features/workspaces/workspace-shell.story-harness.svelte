@@ -54,6 +54,8 @@
 	let selectedAvatar = $state('default');
 	let expandedPaths = $state<Set<string>>(new Set(['/']));
 	let selectedPath = $state<string | null>('/README.md');
+	let detailCompact = $state(false);
+	let detailOpen = $state(false);
 
 	const selectedWorkspace = $derived(workspaces[0] ?? null);
 	const selectedAvatarEntry = $derived(avatars.find((avatar) => avatar.nickname === selectedAvatar) ?? avatars[0] ?? null);
@@ -68,9 +70,15 @@
 	$effect(() => {
 		mode = initialMode;
 	});
+
+	const openDetailIfCompact = (): void => {
+		if (detailCompact) {
+			detailOpen = true;
+		}
+	};
 </script>
 
-<div class="grid h-[58rem] gap-4 rounded-[1.35rem] border p-4" data-testid="workspace-shell-story">
+<div class="grid h-[58rem] w-[72rem] max-w-none gap-4 rounded-[1.35rem] border p-4" data-testid="workspace-shell-story">
 	<div class="flex flex-wrap items-center gap-2">
 		{#each ['explorer', 'rules', 'private'] as modeOption}
 			<Button
@@ -98,7 +106,12 @@
 		}}
 	/>
 
-	<WorkbenchPageContent>
+	<WorkbenchPageContent
+		detailLayout="split-detail"
+		bind:detailCompact
+		bind:detailOpen
+		detailRatioPersistence="workspace-shell-story:detail"
+	>
 		{#snippet main()}
 			<Card.Root class="h-full">
 				<Card.Header class="border-b">
@@ -115,6 +128,7 @@
 							viewportTestId="workspace-shell-story-tree"
 							onSelect={(path) => {
 								selectedPath = path;
+								openDetailIfCompact();
 							}}
 							onToggleDirectory={(path) => {
 								const next = new Set(expandedPaths);

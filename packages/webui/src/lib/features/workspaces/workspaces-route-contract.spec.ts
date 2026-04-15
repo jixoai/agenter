@@ -27,6 +27,15 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("WorkbenchDetailDrawer");
   });
 
+  test("Scenario: Given compact detail opens on mobile When reading the route source Then the content header yields focus so the detail surface can become the single task view", () => {
+    expect(workspacesRouteSource).toContain("hideCompactContentHeader");
+    expect(workspacesRouteSource).toContain("hidden md:block");
+    expect(workspacesRouteSource).toContain("detailCompact && detailOpen");
+    expect(workspacesRouteSource).toContain("gap-0 p-0");
+    expect(workspacesRouteSource).toContain("class=\"row-start-2 h-full\"");
+    expect(workspacesRouteSource).toContain("tone={detailCompact ? 'page' : 'pane'}");
+  });
+
   test("Scenario: Given workspace root selection moved to the fixed start page When reading the detail route source Then the detail shell no longer owns an inline root switcher", () => {
     expect(workspacesRouteSource).toContain("workspacePath");
     expect(workspacesRouteSource).toContain("buildWorkspaceDetailHref");

@@ -8,6 +8,7 @@
 	let {
 		title,
 		description,
+		tone = 'pane',
 		class: className,
 		contentClass,
 		summaryClass,
@@ -17,6 +18,7 @@
 	}: {
 		title: string;
 		description?: string;
+		tone?: 'page' | 'pane';
 		class?: string;
 		contentClass?: string;
 		summaryClass?: string;
@@ -48,7 +50,7 @@
 {/snippet}
 
 <WorkbenchScaffold
-	tone="pane"
+	{tone}
 	class={cn('workbench-detail-drawer', className)}
 	bodyClass="h-full"
 	data-testid={testId}

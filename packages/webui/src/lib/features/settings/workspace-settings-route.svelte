@@ -19,7 +19,6 @@
 	const controller = getAppControllerContext();
 
 	let selectedWorkspacePath = $state(page.url.searchParams.get('path') ?? '');
-	let detailMode = $state<'split' | 'sheet'>('split');
 	let loading = $state(false);
 	let saving = $state(false);
 	let status = $state('Select a workspace to inspect settings.');
@@ -147,21 +146,6 @@
 	};
 
 	$effect(() => {
-		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-			return;
-		}
-		const mediaQuery = window.matchMedia('(max-width: 1023.98px), ((max-width: 1279.98px) and (orientation: portrait))');
-		const syncMode = (): void => {
-			detailMode = mediaQuery.matches ? 'sheet' : 'split';
-		};
-		syncMode();
-		mediaQuery.addEventListener('change', syncMode);
-		return () => {
-			mediaQuery.removeEventListener('change', syncMode);
-		};
-	});
-
-	$effect(() => {
 		if (!sortedWorkspaces.length) {
 			return;
 		}
@@ -234,7 +218,6 @@
 				layers={settingsGraph?.layers ?? []}
 				{selectedLayerId}
 				layerContent={layerFile?.content ?? ''}
-				{detailMode}
 				onSelectLayer={(layerId) => {
 					selectedLayerId = layerId;
 				}}

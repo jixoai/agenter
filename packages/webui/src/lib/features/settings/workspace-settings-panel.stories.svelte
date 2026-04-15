@@ -219,11 +219,12 @@
 </Story>
 
 <Story
-	name="Scenario: Given compact workspace settings When selecting layer sources Then the editor opens in a right sheet"
+	name="Scenario: Given compact workspace settings When selecting one layer source Then the editor opens in a right sheet"
 	asChild
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('tab', { name: 'Layer Sources' }));
+		await userEvent.click(canvas.getByRole('button', { name: /project/i }));
 
 		await waitFor(() => {
 			expect(within(document.body).getByRole('dialog')).toBeInTheDocument();
@@ -238,7 +239,7 @@
 			initialSelectedLayerId="1:project"
 			initialLayerContent={layerContentById['1:project']}
 			{layerContentById}
-			detailMode="sheet"
+			compactShell
 		/>
 	</Tooltip.Provider>
 </Story>

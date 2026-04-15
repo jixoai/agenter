@@ -5,32 +5,46 @@
 	import WorkspaceSettingsPanel from './workspace-settings-panel.svelte';
 
 	let {
+		disabled = false,
+		loading = false,
+		saving = false,
+		status = 'layers refreshed',
+		title = 'Workspace settings',
+		description = 'Inspect effective settings and source layers.',
+		compactShell = false,
 		effective,
 		layers,
 		layerFiles = {},
 		layerContentById = {},
 		initialSelectedLayerId = null,
-		initialLayerContent = '',
-		title = 'Runtime settings',
-		description = 'Inspect effective settings and layer sources.',
-		detailMode = 'split',
+		initialLayerContent = '{}\n',
 		onSelectLayer,
+		onLayerContentChange,
+		onRefreshLayers,
 		onLoadLayer,
+		onSaveLayer,
 	}: {
+		disabled?: boolean;
+		loading?: boolean;
+		saving?: boolean;
+		status?: string;
+		title?: string;
+		description?: string;
+		compactShell?: boolean;
 		effective: SettingsEffectiveGraph;
 		layers: SettingsLayerItem[];
 		layerFiles?: Record<string, SettingsLayerFile>;
 		layerContentById?: Record<string, string>;
 		initialSelectedLayerId?: string | null;
 		initialLayerContent?: string;
-		title?: string;
-		description?: string;
-		detailMode?: 'split' | 'sheet';
 		onSelectLayer?: (layerId: string) => void;
+		onLayerContentChange?: (content: string) => void;
+		onRefreshLayers?: () => void;
 		onLoadLayer?: (layerId: string) => void;
+		onSaveLayer?: () => void;
 	} = $props();
 
-	let status = $state('Ready');
+	let liveStatus = $state(status);
 	let selectedLayerId = $state<string | null>(null);
 	let currentFile = $state<SettingsLayerFile | null>(null);
 
@@ -38,10 +52,12 @@
 		if (!layerId) {
 			return null;
 		}
+
 		const layer = layers.find((candidate) => candidate.layerId === layerId);
 		if (!layer) {
 			return null;
 		}
+
 		return (
 			layerFiles[layerId] ?? {
 				layer,
@@ -58,38 +74,42 @@
 	};
 
 	const loadLayer = (layerId: string): void => {
-		currentFile = resolveLayerFile(layerId);
+		currentFile = resolveLayerFile(layerId, currentFile?.content ?? initialLayerContent);
 		selectedLayerId = layerId;
-		status = `Loaded ${layerId}`;
+		liveStatus = `Loaded ${layerId}`;
 		onLoadLayer?.(layerId);
 	};
 
 	const saveLayer = (): void => {
-		status = `Saved ${selectedLayerId ?? 'layer'}`;
+		liveStatus = `Saved ${selectedLayerId ?? 'layer'}`;
+		onSaveLayer?.();
 	};
+
+	$effect(() => {
+		liveStatus = status;
+	});
 
 	$effect(() => {
 		const nextSelectedLayerId = initialSelectedLayerId ?? layers[0]?.layerId ?? null;
 		selectedLayerId = nextSelectedLayerId;
 		currentFile = resolveLayerFile(nextSelectedLayerId, initialLayerContent);
-		status = 'Ready';
+		liveStatus = status;
 	});
 </script>
 
 <Tooltip.Provider delayDuration={0}>
-	<div class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4">
+	<div class={compactShell ? 'h-[860px] max-w-[40rem] p-6' : 'h-[860px] p-6'}>
 		<WorkspaceSettingsPanel
-			status={status}
-			loading={false}
-			saving={false}
-			disabled={false}
+			{disabled}
+			{loading}
+			{saving}
+			status={liveStatus}
 			{title}
 			{description}
 			{effective}
 			{layers}
 			{selectedLayerId}
 			layerContent={currentFile?.content ?? ''}
-			{detailMode}
 			onSelectLayer={selectLayer}
 			onLayerContentChange={(content) => {
 				currentFile = currentFile
@@ -98,9 +118,11 @@
 							content,
 						}
 					: null;
+				onLayerContentChange?.(content);
 			}}
 			onRefreshLayers={() => {
-				status = 'Refreshed';
+				liveStatus = 'Refreshed';
+				onRefreshLayers?.();
 			}}
 			onLoadLayer={loadLayer}
 			onSaveLayer={saveLayer}

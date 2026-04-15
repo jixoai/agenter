@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import LayoutListIcon from '@lucide/svelte/icons/layout-list';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { ScrollView } from '@agenter/svelte-components';
 	import { goto } from '$app/navigation';
@@ -28,6 +29,8 @@
 	let searchQuery = $state('');
 	let selectedWorkspacePath = $state('');
 	let compactMode = $state(false);
+	let detailCompact = $state(false);
+	let detailOpen = $state(false);
 
 	const requestedAvatar = $derived(readWorkspaceAvatar(page.url.searchParams));
 	const sortedWorkspaces = $derived(
@@ -84,6 +87,12 @@
 			}
 		}
 	};
+
+	const openDetailIfCompact = (): void => {
+		if (detailCompact) {
+			detailOpen = true;
+		}
+	};
 </script>
 
 <WorkbenchPageToolbar>
@@ -111,6 +120,19 @@
 			<Button
 				variant="ghost"
 				size="icon"
+				class={cn('size-8 rounded-full', detailCompact ? 'inline-flex' : 'hidden')}
+				aria-label="Open detail panel"
+				title="Open detail panel"
+				disabled={!selectedWorkspace}
+				onclick={() => {
+					detailOpen = true;
+				}}
+			>
+				<PanelRightOpenIcon class="size-4" />
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon"
 				class={cn('size-8', compactMode && 'bg-accent text-accent-foreground')}
 				aria-label={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
 				title={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
@@ -134,11 +156,13 @@
 
 <div class="h-full" data-testid="workspace-start-route">
 	<WorkbenchPageContent
+		detailLayout="split-detail"
+		bind:detailCompact
+		bind:detailOpen
 		class="h-full"
-		gridClass="grid-rows-[minmax(0,1fr)_auto] gap-3 lg:grid-rows-[minmax(0,1fr)]"
 		mainClass="h-full"
 		drawerClass="h-full"
-		desktopRowsClass="lg:grid-rows-[minmax(0,1fr)]"
+		detailRatioPersistence="workspace-start:detail"
 	>
 		{#snippet main()}
 			<ScrollView class="h-full" contentClass="grid gap-0 px-1 py-2 md:px-2 md:py-3">
@@ -168,7 +192,10 @@
 									)}
 									data-workspace-start-item={workspace.path}
 									ondblclick={() => void openWorkspace(workspace.path)}
-									onclick={() => (selectedWorkspacePath = workspace.path)}
+									onclick={() => {
+										selectedWorkspacePath = workspace.path;
+										openDetailIfCompact();
+									}}
 									onkeydown={(e) => e.key === 'Enter' && void openWorkspace(workspace.path)}
 								>
 									<div class="min-w-0">
@@ -231,6 +258,7 @@
 			{/snippet}
 
 			<WorkbenchDetailDrawer
+				tone={detailCompact ? 'page' : 'pane'}
 				title={selectedWorkspace ? describeCompactWorkspace(selectedWorkspace.path) : 'Detail'}
 				description="Preview before entry."
 				summary={workspaceStartSummary}

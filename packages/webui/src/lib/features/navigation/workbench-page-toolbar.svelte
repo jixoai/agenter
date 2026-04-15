@@ -35,7 +35,9 @@
 </script>
 
 {#if host && children}
+{#if !registry?.takeover}
 	<div use:portal={host} class="workbench-page-toolbar-portal">
 		{@render children()}
 	</div>
+{/if}
 {/if}

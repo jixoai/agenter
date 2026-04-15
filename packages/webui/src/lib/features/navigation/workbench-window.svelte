@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { ClipSurface } from '@agenter/svelte-components';
+	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { cn } from '$lib/utils.js';
 	import WorkbenchTabStrip, { type WorkbenchTabItem } from './workbench-tab-strip.svelte';
 	import { setWorkbenchPageToolbarRegistry } from './workbench-page-toolbar-context.svelte';
-	import { cn } from '$lib/utils.js';
 
 	let {
 		ariaLabel,
@@ -47,14 +49,29 @@
 	<section
 		class="workbench-page-toolbar border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
 		data-workbench-page-toolbar
-		data-has-local-toolbar={toolbar ? 'true' : 'false'}
+		data-has-local-toolbar={toolbar && !pageToolbarRegistry.takeover ? 'true' : 'false'}
+		data-has-takeover={pageToolbarRegistry.takeover ? 'true' : 'false'}
 	>
-		{#if toolbar}
-			<div class="workbench-page-toolbar-local">
-				{@render toolbar()}
+		{#if pageToolbarRegistry.takeover}
+			<div class="workbench-page-toolbar-takeover">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="justify-start gap-2 rounded-full"
+					onclick={() => pageToolbarRegistry.takeover?.onClose()}
+				>
+					<XIcon class="size-4" />
+					{pageToolbarRegistry.takeover.label ?? 'Close detail'}
+				</Button>
 			</div>
+		{:else}
+			{#if toolbar}
+				<div class="workbench-page-toolbar-local">
+					{@render toolbar()}
+				</div>
+			{/if}
+			<div bind:this={pageToolbarRegistry.host} class="workbench-page-toolbar-host"></div>
 		{/if}
-		<div bind:this={pageToolbarRegistry.host} class="workbench-page-toolbar-host"></div>
 	</section>
 
 	<ClipSurface
@@ -87,8 +104,10 @@
 	}
 
 	.workbench-page-toolbar {
-		block-size: 48px;
+		--workbench-page-toolbar-rows: 1;
+		block-size: calc(var(--workbench-page-toolbar-rows) * 48px);
 		display: grid;
+		grid-auto-rows: minmax(0, 1fr);
 		container-type: inline-size;
 		container-name: workbench-page-toolbar;
 		overflow: clip;
@@ -96,22 +115,37 @@
 		z-index: 1;
 	}
 
+	.workbench-page-toolbar[data-has-local-toolbar='true']:has(.workbench-page-toolbar-host:not(:empty)) {
+		--workbench-page-toolbar-rows: 2;
+	}
+
+	.workbench-page-toolbar[data-has-local-toolbar='false'][data-has-takeover='false']:has(.workbench-page-toolbar-host:empty) {
+		display: none;
+	}
+
+	.workbench-page-toolbar[data-has-takeover='true'] {
+		z-index: 60;
+	}
+
 	.workbench-page-toolbar-local,
 	.workbench-page-toolbar-host {
+		display: block;
 		block-size: 100%;
 		min-inline-size: 0;
 	}
 
-	.workbench-page-toolbar[data-has-local-toolbar='false']:has(.workbench-page-toolbar-host:empty) {
-		display: none;
-	}
-
-	.workbench-page-toolbar:has(.workbench-page-toolbar-host:not(:empty)) .workbench-page-toolbar-local {
-		display: none;
-	}
-
 	.workbench-page-toolbar-host:empty {
 		display: none;
+	}
+
+	.workbench-page-toolbar-takeover {
+		display: flex;
+		block-size: 100%;
+		align-items: center;
+		padding-inline: 0.75rem;
+		pointer-events: auto;
+		position: relative;
+		z-index: 61;
 	}
 
 	.workbench-window-body,

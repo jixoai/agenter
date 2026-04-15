@@ -3,6 +3,7 @@
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -68,6 +69,8 @@
 	let searchQuery = $state(page.url.searchParams.get(WORKSPACE_SEARCH_QUERY_PARAM) ?? '');
 	let activeMatchIndex = $state(0);
 	let routeSyncReady = $state(false);
+	let detailCompact = $state(false);
+	let detailOpen = $state(false);
 
 	let explorerPages = $state<WorkspaceTreePages>({});
 	let privatePages = $state<WorkspaceTreePages>({});
@@ -151,6 +154,7 @@
 	);
 	const matchedRuleIdSet = $derived(new Set(collectWorkspaceRuleMatchIds(rules, searchQuery)));
 	const manageCatalogSignature = $derived(avatarOptions.map((entry) => entry.runtimeId).join('|'));
+	const hideCompactContentHeader = $derived(detailCompact && detailOpen);
 
 	const describeWorkspaceMountAccess = (
 		mount: RuntimeWorkspaceMountEntry | null,
@@ -192,6 +196,23 @@
 		searchQuery = '';
 		activeMatchIndex = 0;
 	};
+
+	const openDetailIfCompact = (): void => {
+		if (detailCompact) {
+			detailOpen = true;
+		}
+	};
+
+	const getPreviewEmptyStateTitle = (
+		currentPreview: NonNullable<typeof preview>,
+	): string => (currentPreview.previewKind === 'directory' ? 'Directory preview is not available.' : 'Preview is not available.');
+
+	const getPreviewEmptyStateDescription = (
+		currentPreview: NonNullable<typeof preview>,
+	): string =>
+		currentPreview.previewKind === 'directory'
+			? 'Choose a file inside this directory to inspect text, image, audio, or video content.'
+			: currentPreview.note ?? 'Select a different asset to inspect a richer preview.';
 
 	const revealTreePath = async (treeMode: 'explorer' | 'private', path: string): Promise<void> => {
 		const nextExpandedPaths = new Set(treeMode === 'explorer' ? expandedExplorerPaths : expandedPrivatePaths);
@@ -568,6 +589,7 @@
 			await revealTreePath('private', nextTarget);
 			selectedPrivatePath = nextTarget;
 			await loadPreview('private', nextTarget);
+			openDetailIfCompact();
 			await scrollActiveMatchIntoView(nextTarget);
 			return;
 		}
@@ -575,10 +597,12 @@
 			await revealTreePath('explorer', nextTarget);
 			selectedExplorerPath = nextTarget;
 			await loadPreview('explorer', nextTarget);
+			openDetailIfCompact();
 			await scrollActiveMatchIntoView(nextTarget);
 			return;
 		}
 		selectedRuleId = nextTarget;
+		openDetailIfCompact();
 		await scrollActiveMatchIntoView(nextTarget);
 	};
 
@@ -673,8 +697,20 @@
 				>
 					{modeOption}
 				</button>
-			{/each}
+				{/each}
 		</div>
+		<Button
+			variant="ghost"
+			size="icon-sm"
+			class={cn('rounded-full', detailCompact ? 'inline-flex' : 'hidden')}
+			aria-label="Open detail panel"
+			title="Open detail panel"
+			onclick={() => {
+				detailOpen = true;
+			}}
+		>
+			<PanelRightOpenIcon class="size-4" />
+		</Button>
 		<div class="hidden items-center gap-2 md:flex">
 			<SearchIcon class="size-4 text-muted-foreground" />
 			<Input
@@ -713,7 +749,10 @@
 </WorkbenchPageToolbar>
 
 <div
-	class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-4 p-4 md:p-5"
+	class={cn(
+		'grid h-full grid-rows-[auto_minmax(0,1fr)] md:gap-4 md:p-5',
+		hideCompactContentHeader ? 'gap-0 p-0' : 'gap-4 p-4',
+	)}
 	style="min-block-size: 0;"
 	data-testid="workspaces-route"
 >
@@ -734,16 +773,18 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-	<WorkspaceContentHeader
-		objectivePath={workspaceObjectivePath}
-		{selectedWorkspace}
-		selectedAvatar={selectedAvatar}
-		{selectedAvatarEntry}
-		avatars={avatarOptions}
-		onAvatarChange={(avatar) => {
-			selectedAvatar = avatar;
-		}}
-	/>
+	<div class={cn(hideCompactContentHeader && 'hidden md:block')}>
+		<WorkspaceContentHeader
+			objectivePath={workspaceObjectivePath}
+			{selectedWorkspace}
+			selectedAvatar={selectedAvatar}
+			{selectedAvatarEntry}
+			avatars={avatarOptions}
+			onAvatarChange={(avatar) => {
+				selectedAvatar = avatar;
+			}}
+		/>
+	</div>
 	<WorkspaceManageDialog
 		bind:open={manageDialogOpen}
 		workspacePath={selectedWorkspace.path}
@@ -756,7 +797,13 @@
 		onOpenAvatar={openRulesForAvatar}
 	/>
 
-	<WorkbenchPageContent>
+	<WorkbenchPageContent
+		class="row-start-2 h-full"
+		detailLayout="split-detail"
+		bind:detailCompact
+		bind:detailOpen
+		detailRatioPersistence="workspaces:detail"
+	>
 		{#snippet main()}
 			<Card.Root class="h-full">
 				<Card.Header class="border-b">
@@ -791,9 +838,10 @@
 											matched && 'bg-amber-500/10',
 											activeMatched && 'ring-2 ring-amber-500/60',
 										)}
-										onclick={() => {
-											selectedRuleId = rule.id;
-										}}
+									onclick={() => {
+										selectedRuleId = rule.id;
+										openDetailIfCompact();
+									}}
 									>
 										<div class="min-w-0">
 											<div class="truncate text-sm font-semibold">{rule.pattern}</div>
@@ -822,10 +870,12 @@
 								if (mode === 'private') {
 									selectedPrivatePath = path;
 									await loadPreview('private', path);
+									openDetailIfCompact();
 									return;
 								}
 								selectedExplorerPath = path;
 								await loadPreview('explorer', path);
+								openDetailIfCompact();
 							}}
 							onToggleDirectory={async (path) => {
 								await toggleExpandedPath(mode === 'private' ? 'private' : 'explorer', path);
@@ -964,9 +1014,6 @@
 					<div class="break-all"><span class="font-medium text-foreground">Path:</span> {preview.path}</div>
 					<div><span class="font-medium text-foreground">Kind:</span> {preview.previewKind}</div>
 					<div><span class="font-medium text-foreground">Size:</span> {preview.sizeBytes} bytes</div>
-					{#if preview.note}
-						<div>{preview.note}</div>
-					{/if}
 				{:else if selectedRule}
 					<div><span class="font-medium text-foreground">Priority:</span> {selectedRuleIndex + 1}</div>
 					<div><span class="font-medium text-foreground">Access:</span> {selectedRule.mode}</div>
@@ -976,12 +1023,14 @@
 			{/snippet}
 
 			<WorkbenchDetailDrawer
+				tone={detailCompact ? 'page' : 'pane'}
 				title={mode === 'rules' ? 'Rule detail' : 'Preview'}
 				description={
 					mode === 'rules'
 						? 'Rules keeps the drawer informational; editing stays in the bottom area.'
 						: 'Preview stays dominant and metadata remains docked near the bottom.'
 				}
+				contentClass={cn(mode !== 'rules' && detailCompact && 'min-h-full')}
 				summary={workspaceDrawerSummary}
 			>
 				{#if mode === 'rules'}
@@ -996,9 +1045,21 @@
 						{/if}
 					</div>
 				{:else if previewLoading}
-					<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">Loading preview…</div>
+					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+						<div class="grid max-w-[16rem] gap-2">
+							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<div class="font-medium text-foreground">Loading preview…</div>
+							<div class="text-xs leading-5 text-muted-foreground">Fetching the current selection before rendering the detail view.</div>
+						</div>
+					</div>
 				{:else if !preview}
-					<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">Select one entry to inspect its preview.</div>
+					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+						<div class="grid max-w-[16rem] gap-2">
+							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<div class="font-medium text-foreground">Select one entry to inspect its preview.</div>
+							<div class="text-xs leading-5 text-muted-foreground">The detail area stays focused on one current tree selection at a time.</div>
+						</div>
+					</div>
 				{:else if preview.previewKind === 'text'}
 					<ScrollView
 						class="max-h-[28rem] rounded-xl border bg-muted/30"
@@ -1014,8 +1075,12 @@
 					<!-- svelte-ignore a11y_media_has_caption -->
 					<video controls src={preview.mediaDataUrl} class="max-h-full w-full rounded-xl border"></video>
 				{:else}
-					<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-						{preview.note ?? 'No preview is available for this selection.'}
+					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+						<div class="grid max-w-[16rem] gap-2">
+							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<div class="font-medium text-foreground">{getPreviewEmptyStateTitle(preview)}</div>
+							<div class="text-xs leading-5 text-muted-foreground">{getPreviewEmptyStateDescription(preview)}</div>
+						</div>
 					</div>
 				{/if}
 			</WorkbenchDetailDrawer>

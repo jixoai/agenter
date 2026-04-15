@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ScrollView } from '@agenter/svelte-components';
+	import { ScrollView, WorkbenchSplitDetail } from '@agenter/svelte-components';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -23,7 +23,6 @@
 		layers,
 		selectedLayerId,
 		layerContent,
-		detailMode = 'split',
 		onSelectLayer,
 		onLayerContentChange,
 		onRefreshLayers,
@@ -40,7 +39,6 @@
 		layers: SettingsLayerItem[];
 		selectedLayerId: string | null;
 		layerContent: string;
-		detailMode?: 'split' | 'sheet';
 		onSelectLayer: (layerId: string) => void;
 		onLayerContentChange: (content: string) => void;
 		onRefreshLayers: () => void;
@@ -51,6 +49,7 @@
 	let activeTab = $state<'effective' | 'layers'>('effective');
 	let effectiveViewMode = $state<'source' | 'view'>('view');
 	let layerViewMode = $state<'source' | 'view'>('source');
+	let detailCompact = $state(false);
 	let detailOpen = $state(false);
 	let focusedLayerPointer = $state<string | null>(null);
 
@@ -62,7 +61,7 @@
 		focusedLayerPointer = null;
 		onSelectLayer(layerId);
 		onLoadLayer(layerId);
-		if (detailMode === 'sheet') {
+		if (detailCompact) {
 			detailOpen = true;
 		}
 	};
@@ -78,13 +77,17 @@
 	};
 
 	$effect(() => {
-		if (activeTab !== 'layers' || detailMode !== 'sheet') {
+		if (activeTab !== 'layers') {
 			detailOpen = false;
-			return;
 		}
-		if (selectedLayerId) {
-			detailOpen = true;
+	});
+
+	let lastCompact = $state(false);
+	$effect(() => {
+		if (detailCompact && !lastCompact) {
+			detailOpen = false;
 		}
+		lastCompact = detailCompact;
 	});
 </script>
 
@@ -137,7 +140,7 @@
 			{/if}
 		</div>
 	{:else}
-		<div class={detailMode === 'split' ? 'grid h-full gap-3 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]' : 'grid h-full'}>
+		{#snippet layerCatalog()}
 			<section class="grid h-full grid-rows-[auto_minmax(0,1fr)] rounded-xl border border-border/70 bg-background/50 p-2">
 				<header class="mb-2 flex items-center justify-between gap-2">
 					<div class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Layer files</div>
@@ -178,122 +181,90 @@
 					{/if}
 				</ScrollView>
 			</section>
+		{/snippet}
 
-			{#if detailMode === 'split'}
-				<section class="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-xl border border-border/70 bg-background/50 p-3">
-					<header class="flex flex-wrap items-start justify-between gap-2">
-						<div class="grid gap-1">
-							<h3 class="text-sm font-semibold">Layer Detail</h3>
-							<div class="break-all text-xs text-muted-foreground">
-								{selectedLayer?.path ?? 'Select a source layer'}
-							</div>
+		{#snippet layerDetailBody()}
+			<section class="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-xl border border-border/70 bg-background/50 p-3">
+				<header class="flex flex-wrap items-start justify-between gap-2">
+					<div class="grid gap-1">
+						<h3 class="text-sm font-semibold">Layer Detail</h3>
+						<div class="break-all text-xs text-muted-foreground">
+							{selectedLayer?.path ?? 'Select a source layer'}
 						</div>
-						<div class="flex items-center gap-2">
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={!selectedLayerId || disabled}
-								onclick={() => selectedLayerId && onLoadLayer(selectedLayerId)}
-							>
-								Reload
-							</Button>
-							<Button size="sm" disabled={!selectedLayer?.editable || disabled} onclick={onSaveLayer}>
-								Save
-							</Button>
-						</div>
-					</header>
+					</div>
+					<div class="flex items-center gap-2">
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={!selectedLayerId || disabled}
+							onclick={() => selectedLayerId && onLoadLayer(selectedLayerId)}
+						>
+							Reload
+						</Button>
+						<Button size="sm" disabled={!selectedLayer?.editable || disabled} onclick={onSaveLayer}>
+							Save
+						</Button>
+					</div>
+				</header>
 
-					<Tabs.Root value={layerViewMode} onValueChange={(value) => (layerViewMode = value as 'source' | 'view')}>
-						<Tabs.List>
-							<Tabs.Trigger value="source">Source</Tabs.Trigger>
-							<Tabs.Trigger value="view">View</Tabs.Trigger>
-						</Tabs.List>
-					</Tabs.Root>
+				<Tabs.Root value={layerViewMode} onValueChange={(value) => (layerViewMode = value as 'source' | 'view')}>
+					<Tabs.List>
+						<Tabs.Trigger value="source">Source</Tabs.Trigger>
+						<Tabs.Trigger value="view">View</Tabs.Trigger>
+					</Tabs.List>
+				</Tabs.Root>
 
-					{#if layerViewMode === 'source'}
-						<SettingsSourceEditor
-							value={layerContent}
-							onValueChange={(nextContent: string) => onLayerContentChange(nextContent)}
-							readOnly={selectedLayer?.editable !== true}
-							testId="settings-layer-source-editor"
-							class="h-full"
+				{#if layerViewMode === 'source'}
+					<SettingsSourceEditor
+						value={layerContent}
+						onValueChange={(nextContent: string) => onLayerContentChange(nextContent)}
+						readOnly={selectedLayer?.editable !== true}
+						testId="settings-layer-source-editor"
+						class="h-full"
+					/>
+				{:else if layerDraft}
+					<ScrollView class="h-full" viewportTestId="settings-layer-view-viewport" contentClass="grid gap-2 pr-2">
+						<SettingsSchemaView
+							schema={effective.schema}
+							value={layerDraft}
+							mode={selectedLayer?.editable ? 'editable' : 'readonly'}
+							focusPointer={focusedLayerPointer}
+							onValueChange={(nextValue) => onLayerContentChange(toPrettyJson(nextValue))}
 						/>
-					{:else if layerDraft}
-						<ScrollView class="h-full" viewportTestId="settings-layer-view-viewport" contentClass="grid gap-2 pr-2">
-							<SettingsSchemaView
-								schema={effective.schema}
-								value={layerDraft}
-								mode={selectedLayer?.editable ? 'editable' : 'readonly'}
-								focusPointer={focusedLayerPointer}
-								onValueChange={(nextValue) => onLayerContentChange(toPrettyJson(nextValue))}
-							/>
-						</ScrollView>
-					{:else}
-						<div class="rounded-lg border border-dashed px-3 py-3 text-sm text-muted-foreground">
-							Layer source is not valid JSON. Switch to <code>Source</code> to repair it.
-						</div>
-					{/if}
-				</section>
+					</ScrollView>
+				{:else}
+					<div class="rounded-lg border border-dashed px-3 py-3 text-sm text-muted-foreground">
+						Layer source is not valid JSON. Switch to <code>Source</code> to repair it.
+					</div>
+				{/if}
+			</section>
+		{/snippet}
+
+		<WorkbenchSplitDetail.Root
+			bind:compact={detailCompact}
+			ratioPersistence="workspace-settings:layers"
+			class="h-full"
+		>
+			<WorkbenchSplitDetail.Main class="h-full">
+				{@render layerCatalog()}
+			</WorkbenchSplitDetail.Main>
+
+			{#if !detailCompact}
+				<WorkbenchSplitDetail.Handle />
+				<WorkbenchSplitDetail.Detail class="h-full">
+					{@render layerDetailBody()}
+				</WorkbenchSplitDetail.Detail>
 			{/if}
-		</div>
+		</WorkbenchSplitDetail.Root>
+
+		{#if detailCompact}
+			<Sheet.Root bind:open={detailOpen}>
+				<Sheet.Content side="right" class="w-[min(40rem,calc(100vw-1rem))] p-4">
+					<div class="grid h-full min-h-[45dvh]">
+						{@render layerDetailBody()}
+					</div>
+				</Sheet.Content>
+			</Sheet.Root>
+		{/if}
 	{/if}
 </WorkbenchScaffold>
-
-{#if detailMode === 'sheet' && activeTab === 'layers'}
-	<Sheet.Root bind:open={detailOpen}>
-		<Sheet.Content side="right" class="w-[min(40rem,calc(100vw-1rem))] p-0">
-			<Sheet.Header class="border-b px-6 py-4">
-				<Sheet.Title>Layer Detail</Sheet.Title>
-				<Sheet.Description>{selectedLayer?.path ?? 'Select a source layer'}</Sheet.Description>
-			</Sheet.Header>
-			<div class="grid h-full min-h-[45dvh] grid-rows-[auto_minmax(0,1fr)] gap-3 p-4">
-				<div class="flex items-center justify-end gap-2">
-					<Button
-						size="sm"
-						variant="outline"
-						disabled={!selectedLayerId || disabled}
-						onclick={() => selectedLayerId && onLoadLayer(selectedLayerId)}
-					>
-						Reload
-					</Button>
-					<Button size="sm" disabled={!selectedLayer?.editable || disabled} onclick={onSaveLayer}>
-						Save
-					</Button>
-				</div>
-
-				<div class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
-					<Tabs.Root value={layerViewMode} onValueChange={(value) => (layerViewMode = value as 'source' | 'view')}>
-						<Tabs.List>
-							<Tabs.Trigger value="source">Source</Tabs.Trigger>
-							<Tabs.Trigger value="view">View</Tabs.Trigger>
-						</Tabs.List>
-					</Tabs.Root>
-
-					{#if layerViewMode === 'source'}
-						<SettingsSourceEditor
-							value={layerContent}
-							onValueChange={(nextContent: string) => onLayerContentChange(nextContent)}
-							readOnly={selectedLayer?.editable !== true}
-							testId="settings-layer-source-editor"
-							class="h-full"
-						/>
-					{:else if layerDraft}
-						<ScrollView class="h-full" viewportTestId="settings-layer-view-viewport" contentClass="grid gap-2 pr-2">
-							<SettingsSchemaView
-								schema={effective.schema}
-								value={layerDraft}
-								mode={selectedLayer?.editable ? 'editable' : 'readonly'}
-								focusPointer={focusedLayerPointer}
-								onValueChange={(nextValue) => onLayerContentChange(toPrettyJson(nextValue))}
-							/>
-						</ScrollView>
-					{:else}
-						<div class="rounded-lg border border-dashed px-3 py-3 text-sm text-muted-foreground">
-							Layer source is not valid JSON. Switch to <code>Source</code> to repair it.
-						</div>
-					{/if}
-				</div>
-			</div>
-		</Sheet.Content>
-	</Sheet.Root>
-{/if}

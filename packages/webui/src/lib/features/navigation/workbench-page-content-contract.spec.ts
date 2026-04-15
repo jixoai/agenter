@@ -21,4 +21,15 @@ describe("Feature: Workbench page content responsive contract", () => {
     expect(workbenchPageContentSource).toContain("grid-template-rows: auto auto auto;");
     expect(workbenchPageContentSource).toContain("desktopColumnsClass = 'lg:grid-cols-[minmax(0,1fr)_22rem]'");
   });
+
+  test("Scenario: Given split-detail adopters When reading the shared page-content source Then compact fallback comes from the shared split primitive instead of viewport matchMedia", () => {
+    expect(workbenchPageContentSource).toContain("detailLayout = 'static'");
+    expect(workbenchPageContentSource).toContain("WorkbenchSplitDetail.Root");
+    expect(workbenchPageContentSource).toContain("bind:compact={detailCompact}");
+    expect(workbenchPageContentSource).toContain("showDefaultClose={false}");
+    expect(workbenchPageContentSource).toContain("workbench-page-content__detail-sheet-layer");
+    expect(workbenchPageContentSource).toContain("portalProps={detailSheetHost ? { to: detailSheetHost } : undefined}");
+    expect(workbenchPageContentSource).toContain("workbench-page-content__detail-sheet-overlay");
+    expect(workbenchPageContentSource).not.toContain("matchMedia(");
+  });
 });

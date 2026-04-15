@@ -4,7 +4,11 @@
 	import type { Component } from 'svelte';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import WorkbenchDetailDrawer from './workbench-detail-drawer.svelte';
+	import WorkbenchPageContent from './workbench-page-content.svelte';
+	import WorkbenchPageToolbar from './workbench-page-toolbar.svelte';
 	import WorkbenchScaffold from './workbench-scaffold.svelte';
 	import WorkbenchToolbar from './workbench-toolbar.svelte';
 	import WorkbenchWindow from './workbench-window.svelte';
@@ -19,7 +23,16 @@
 		icon?: Component<{ class?: string }>;
 	}
 
+	let {
+		compactSplitDetailDemo = false,
+	}: {
+		compactSplitDetailDemo?: boolean;
+	} = $props();
+
 	let activeTabId = $state('workspace');
+	let detailCompact = $state(false);
+	let detailOpen = $state(false);
+	let selectedDetailId = $state('alpha');
 	const tabSeeds: StoryTabSeed[] = [
 		{
 			id: 'workspace',
@@ -40,6 +53,13 @@
 	];
 
 	const tabs = tabSeeds satisfies WorkbenchTabItem[];
+
+	const selectDetail = (detailId: string): void => {
+		selectedDetailId = detailId;
+		if (detailCompact) {
+			detailOpen = true;
+		}
+	};
 </script>
 
 {#snippet toolbar()}
@@ -56,26 +76,90 @@
 {/snippet}
 
 <Tooltip.Provider delayDuration={0}>
-	<div class="h-[42rem] w-full max-w-5xl p-4">
+	<div class={compactSplitDetailDemo ? 'h-[42rem] w-full max-w-[40rem] p-4' : 'h-[42rem] w-full max-w-5xl p-4'}>
 		<WorkbenchWindow ariaLabel="Workbench window story" value={activeTabId} {tabs} {toolbar}>
-			<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
-				{#snippet header()}
-					<div class="grid gap-1">
-						<h2 class="text-sm font-semibold text-foreground">Body Surface</h2>
-						<p class="text-sm text-muted-foreground">
-							This body lives inside the same shared window surface as the tabs and toolbar.
-						</p>
+			{#if compactSplitDetailDemo}
+				<WorkbenchPageToolbar>
+					<div class="flex h-full items-center justify-between gap-3 px-3">
+						<div class="text-sm font-medium" data-testid="workbench-window-route-toolbar">Route toolbar</div>
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={!detailCompact}
+							onclick={() => {
+								detailOpen = true;
+							}}
+						>
+							Open detail
+						</Button>
 					</div>
-				{/snippet}
+				</WorkbenchPageToolbar>
 
-				<div class="grid h-full place-items-center px-5 py-6 md:px-7">
-					<div class="w-full max-w-3xl rounded-[1rem] border border-dashed border-border/70 bg-background/55 p-5">
-						<p class="text-sm text-muted-foreground">
-							The route shell is integrated into the window instead of creating a second detached card.
-						</p>
+				<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
+					{#snippet header()}
+						<div class="grid gap-1">
+							<h2 class="text-sm font-semibold text-foreground">Compact Split Detail</h2>
+							<p class="text-sm text-muted-foreground">
+								The shared toolbar should take over close ownership while the right detail sheet is open.
+							</p>
+						</div>
+					{/snippet}
+
+					<WorkbenchPageContent
+						class="h-full"
+						detailLayout="split-detail"
+						bind:detailCompact
+						bind:detailOpen
+						detailRatioPersistence="workbench-window-story:detail"
+						data-testid="workbench-window-detail-demo"
+					>
+						{#snippet main()}
+							<div class="grid gap-3 px-5 py-6 md:px-7">
+								{#each ['alpha', 'beta', 'gamma'] as detailId}
+									<Button
+										variant={selectedDetailId === detailId ? 'secondary' : 'outline'}
+										onclick={() => {
+											selectDetail(detailId);
+										}}
+									>
+										Open {detailId}
+									</Button>
+								{/each}
+							</div>
+						{/snippet}
+
+						{#snippet drawer()}
+							<WorkbenchDetailDrawer
+								title="Preview"
+								description="Compact detail should remain dismissible from the toolbar position."
+							>
+								<div class="rounded-xl border px-4 py-3 text-sm font-medium">
+									Selected detail: {selectedDetailId}
+								</div>
+							</WorkbenchDetailDrawer>
+						{/snippet}
+					</WorkbenchPageContent>
+				</WorkbenchScaffold>
+			{:else}
+				<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
+					{#snippet header()}
+						<div class="grid gap-1">
+							<h2 class="text-sm font-semibold text-foreground">Body Surface</h2>
+							<p class="text-sm text-muted-foreground">
+								This body lives inside the same shared window surface as the tabs and toolbar.
+							</p>
+						</div>
+					{/snippet}
+
+					<div class="grid h-full place-items-center px-5 py-6 md:px-7">
+						<div class="w-full max-w-3xl rounded-[1rem] border border-dashed border-border/70 bg-background/55 p-5">
+							<p class="text-sm text-muted-foreground">
+								The route shell is integrated into the window instead of creating a second detached card.
+							</p>
+						</div>
 					</div>
-				</div>
-			</WorkbenchScaffold>
+				</WorkbenchScaffold>
+			{/if}
 		</WorkbenchWindow>
 	</div>
 	</Tooltip.Provider>
