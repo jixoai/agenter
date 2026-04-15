@@ -667,7 +667,7 @@
 </script>
 
 <WorkbenchPageToolbar>
-	<div class="flex h-full items-center justify-end gap-3 px-3 md:px-4">
+	<div class="flex h-full items-center justify-end gap-2.5 px-3 md:gap-3 md:px-4">
 		<div class="hidden min-w-0 flex-1 md:block">
 			<div class="truncate text-sm font-semibold">{selectedWorkspace ? describeCompactWorkspace(selectedWorkspace.path) : 'Workspaces'}</div>
 		</div>
@@ -751,7 +751,7 @@
 <div
 	class={cn(
 		'grid h-full grid-rows-[auto_minmax(0,1fr)] md:gap-4 md:p-5',
-		hideCompactContentHeader ? 'gap-0 p-0' : 'gap-4 p-4',
+		hideCompactContentHeader ? 'gap-0 p-0' : 'gap-3 px-3 pb-3 pt-3 md:gap-4 md:p-5',
 	)}
 	style="min-block-size: 0;"
 	data-testid="workspaces-route"
@@ -806,9 +806,9 @@
 	>
 		{#snippet main()}
 			<Card.Root class="h-full">
-				<Card.Header class="border-b">
+				<Card.Header class="gap-1 border-b px-4 py-4 pb-4 md:px-6 md:py-6 md:pb-6">
 					<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : 'Explorer'}</Card.Title>
-					<Card.Description>
+					<Card.Description class="hidden max-w-[32rem] leading-6 md:block">
 						{#if mode === 'rules'}
 							Rule order maps directly to runtime grant priority for the selected avatar lens.
 						{:else if mode === 'private'}
@@ -893,7 +893,7 @@
 
 		{#snippet bottom()}
 			<Card.Root>
-				<Card.Content class="grid gap-4 pt-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+				<Card.Content class="grid gap-3 px-4 pb-4 pt-4 md:gap-4 md:px-6 md:pb-6 md:pt-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
 					{#if mode === 'rules'}
 						<div class="grid gap-3 md:grid-cols-3">
 							<Input
@@ -981,19 +981,19 @@
 							{/if}
 						</div>
 					{:else}
-						<div class="grid gap-2.5 md:hidden">
-							<div class="grid gap-0.5">
-								<div class="truncate text-sm font-medium">
+						<div class="grid gap-2 md:hidden">
+							<div class="min-w-0 truncate text-sm font-medium" title={selectedExplorerPath ?? ''}>
 									{selectedExplorerPath ?? 'Select one path to stage a quick rule.'}
-								</div>
-								<div class="text-[11px] leading-5 text-muted-foreground">
-									Quick rule staging for the current tree selection.
-								</div>
 							</div>
 							<div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-								<NativeSelect.NativeSelect bind:value={quickRuleMode} class="min-w-0">
-									<option value="ro">Read only</option>
-									<option value="rw">Read write</option>
+								<NativeSelect.NativeSelect
+									bind:value={quickRuleMode}
+									class="min-w-0"
+									aria-label="Quick rule access mode"
+									title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}
+								>
+									<option value="ro">RO</option>
+									<option value="rw">RW</option>
 								</NativeSelect.NativeSelect>
 								<Button variant="outline" size="sm" onclick={stageQuickRule}>
 									<PlusIcon class="size-4" />

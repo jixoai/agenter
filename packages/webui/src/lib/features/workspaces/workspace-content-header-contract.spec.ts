@@ -9,14 +9,16 @@ const workspaceContentHeaderSource = readFileSync(
 );
 
 describe("Feature: Workspace content header mobile density contract", () => {
-  test("Scenario: Given a narrow workspace shell When reading the header source Then the mobile layout keeps one compact label plus the full path as secondary text", () => {
+  test("Scenario: Given a narrow workspace shell When reading the header source Then the mobile layout keeps one compact workspace label while the full path moves to the title affordance", () => {
     expect(workspaceContentHeaderSource).toContain("describeCompactWorkspace");
     expect(workspaceContentHeaderSource).toContain("objectiveCompactLabel");
+    expect(workspaceContentHeaderSource).toContain('title={objectiveLabel}');
     expect(workspaceContentHeaderSource).toContain("md:hidden");
+    expect(workspaceContentHeaderSource).toContain("hidden truncate text-sm font-medium text-foreground md:block");
   });
 
   test("Scenario: Given the mobile header must not widen the route When reading the source Then the outer surface and avatar trigger both opt into shrinking", () => {
     expect(workspaceContentHeaderSource).toContain("min-w-0 w-full");
-    expect(workspaceContentHeaderSource).toContain("class=\"h-auto min-h-10 w-full min-w-0");
+    expect(workspaceContentHeaderSource).toContain("class=\"h-10 min-h-10 w-full min-w-0");
   });
 });

@@ -37,8 +37,10 @@ describe("Feature: Workspaces route search and rules contract", () => {
   });
 
   test("Scenario: Given explorer quick actions stay in the bottom area When reading the route source Then mobile switches to a denser action dock instead of repeating the desktop card", () => {
-    expect(workspacesRouteSource).toContain("grid gap-2.5 md:hidden");
-    expect(workspacesRouteSource).toContain("Quick rule staging for the current tree selection.");
+    expect(workspacesRouteSource).toContain("grid gap-2 md:hidden");
+    expect(workspacesRouteSource).toContain("title={selectedExplorerPath ?? ''}");
+    expect(workspacesRouteSource).toContain('aria-label="Quick rule access mode"');
+    expect(workspacesRouteSource).toContain('title={quickRuleMode === \'ro\' ? \'Read only\' : \'Read write\'}');
     expect(workspacesRouteSource).toContain("Stage");
     expect(workspacesRouteSource).toContain("Apply");
     expect(workspacesRouteSource).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
