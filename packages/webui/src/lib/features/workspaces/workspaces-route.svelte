@@ -773,7 +773,7 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-	<div class={cn(hideCompactContentHeader && 'hidden md:block')}>
+	<div class={cn('min-w-0 w-full', hideCompactContentHeader && 'hidden md:block')}>
 		<WorkspaceContentHeader
 			objectivePath={workspaceObjectivePath}
 			{selectedWorkspace}
@@ -798,7 +798,7 @@
 	/>
 
 	<WorkbenchPageContent
-		class="row-start-2 h-full"
+		class="row-start-2 h-full min-w-0 w-full"
 		detailLayout="split-detail"
 		bind:detailCompact
 		bind:detailOpen
@@ -981,7 +981,31 @@
 							{/if}
 						</div>
 					{:else}
-						<div class="grid gap-2">
+						<div class="grid gap-2.5 md:hidden">
+							<div class="grid gap-0.5">
+								<div class="truncate text-sm font-medium">
+									{selectedExplorerPath ?? 'Select one path to stage a quick rule.'}
+								</div>
+								<div class="text-[11px] leading-5 text-muted-foreground">
+									Quick rule staging for the current tree selection.
+								</div>
+							</div>
+							<div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+								<NativeSelect.NativeSelect bind:value={quickRuleMode} class="min-w-0">
+									<option value="ro">Read only</option>
+									<option value="rw">Read write</option>
+								</NativeSelect.NativeSelect>
+								<Button variant="outline" size="sm" onclick={stageQuickRule}>
+									<PlusIcon class="size-4" />
+									Stage
+								</Button>
+								<Button size="sm" disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
+									<SaveIcon class="size-4" />
+									{rulesSaving ? 'Applying…' : 'Apply'}
+								</Button>
+							</div>
+						</div>
+						<div class="hidden md:grid md:gap-2">
 							<div class="text-sm font-medium">
 								{selectedExplorerPath ? `Selected path: ${selectedExplorerPath}` : 'Select one path to stage a quick rule.'}
 							</div>
@@ -989,7 +1013,7 @@
 								Quick edit only stages one rule; the full catalog lives in Rules mode.
 							</div>
 						</div>
-						<div class="flex flex-wrap items-center gap-2">
+						<div class="hidden md:flex md:flex-wrap md:items-center md:gap-2">
 							<NativeSelect.NativeSelect bind:value={quickRuleMode} class="min-w-36">
 								<option value="ro">Read only</option>
 								<option value="rw">Read write</option>

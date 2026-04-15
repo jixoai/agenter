@@ -32,8 +32,16 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("hidden md:block");
     expect(workspacesRouteSource).toContain("detailCompact && detailOpen");
     expect(workspacesRouteSource).toContain("gap-0 p-0");
-    expect(workspacesRouteSource).toContain("class=\"row-start-2 h-full\"");
+    expect(workspacesRouteSource).toContain("class=\"row-start-2 h-full min-w-0 w-full\"");
     expect(workspacesRouteSource).toContain("tone={detailCompact ? 'page' : 'pane'}");
+  });
+
+  test("Scenario: Given explorer quick actions stay in the bottom area When reading the route source Then mobile switches to a denser action dock instead of repeating the desktop card", () => {
+    expect(workspacesRouteSource).toContain("grid gap-2.5 md:hidden");
+    expect(workspacesRouteSource).toContain("Quick rule staging for the current tree selection.");
+    expect(workspacesRouteSource).toContain("Stage");
+    expect(workspacesRouteSource).toContain("Apply");
+    expect(workspacesRouteSource).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
   });
 
   test("Scenario: Given workspace root selection moved to the fixed start page When reading the detail route source Then the detail shell no longer owns an inline root switcher", () => {

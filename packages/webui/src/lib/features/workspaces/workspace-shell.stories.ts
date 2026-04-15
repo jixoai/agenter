@@ -48,7 +48,7 @@ export const AvatarLensKeepsRootContext = {
 		const canvas = getCanvas(canvasElement);
 		const contentHeader = getContentHeader(canvasElement);
 
-		await expect(contentHeader.getByText('/repo/agenter')).toBeInTheDocument();
+		await expect(contentHeader.getAllByText('/repo/agenter')[0]).toBeInTheDocument();
 		await expect(contentHeader.getByText('Persistent')).toBeInTheDocument();
 		await userEvent.click(canvas.getByTestId('workspace-avatar-select'));
 		await userEvent.click(await screen.findByText('reviewer'));
@@ -56,7 +56,7 @@ export const AvatarLensKeepsRootContext = {
 		await waitFor(() => {
 			expect(contentHeader.getByText('reviewer')).toBeInTheDocument();
 		});
-		await expect(contentHeader.getByText('/repo/agenter')).toBeInTheDocument();
+		await expect(contentHeader.getAllByText('/repo/agenter')[0]).toBeInTheDocument();
 	},
 } satisfies Story;
 
