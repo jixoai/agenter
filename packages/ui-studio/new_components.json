@@ -1,0 +1,157 @@
+{
+  "version": "2.10",
+  "name": "WebUI Shared Components",
+  "children": [
+    {
+      "id": "lib_root",
+      "type": "frame",
+      "name": "WebUI Components / Shared Library",
+      "width": 2400,
+      "height": 4000,
+      "fill": "#F5F7FA",
+      "layout": "vertical",
+      "padding": 48,
+      "gap": 80,
+      "children": [
+        {
+          "id": "row_shell",
+          "type": "frame",
+          "name": "Row 1 / Core Shell Components",
+          "layout": "horizontal",
+          "gap": 64,
+          "alignItems": "start",
+          "children": [
+            {
+              "id": "sb_atom",
+              "type": "frame",
+              "name": "Sidebar / Desktop / Atom",
+              "reusable": true,
+              "width": 248,
+              "height": 600,
+              "fill": "#F8FAFC",
+              "stroke": { "fill": "#E5E7EB", "thickness": { "right": 1 } },
+              "layout": "vertical",
+              "padding": [24, 16],
+              "gap": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "width": "fill_container",
+                  "children": [
+                    { "type": "text", "content": "Agenter", "fontSize": 18, "fontWeight": "700" },
+                    { "type": "frame", "width": 30, "height": 30, "cornerRadius": 15, "stroke": { "fill": "#D6DAE1", "thickness": 1 }, "layout": "vertical", "alignItems": "center", "justifyContent": "center", "children": [{ "type": "text", "content": "◧", "fontSize": 12 }] }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "sel_atom",
+              "type": "frame",
+              "name": "Shared Header / Identity Select",
+              "reusable": true,
+              "height": 40,
+              "cornerRadius": 20,
+              "fill": "#F8FAFC",
+              "stroke": { "fill": "#E2E8F0", "thickness": 1 },
+              "padding": [4, 12, 4, 4],
+              "gap": 12,
+              "layout": "horizontal",
+              "alignItems": "center",
+              "children": [
+                { "id": "av_target", "type": "ellipse", "width": 32, "height": 32, "fill": "#0F172A" },
+                { "type": "frame", "layout": "vertical", "gap": 0, "children": [
+                    { "type": "text", "content": "View as", "fontSize": 10, "fill": "#64748B" },
+                    { "id": "name_target", "type": "text", "content": "gaubee", "fontSize": 12, "fontWeight": "600" }
+                ]},
+                { "type": "text", "content": "▼", "fontSize": 10, "fill": "#94A3B8" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "row_utilities",
+          "type": "frame",
+          "name": "Row 2 / Utilities (HelpHint)",
+          "layout": "horizontal",
+          "gap": 64,
+          "alignItems": "start",
+          "children": [
+            {
+              "id": "hh_trigger",
+              "type": "frame",
+              "name": "Component / Help Hint / Trigger",
+              "reusable": true,
+              "width": 20,
+              "height": 20,
+              "cornerRadius": 999,
+              "stroke": { "fill": "#E2E8F0", "thickness": 1 },
+              "fill": "#FFFFFF",
+              "layout": "vertical",
+              "alignItems": "center",
+              "justifyContent": "center",
+              "children": [{ "type": "text", "content": "?", "fontSize": 11, "fontWeight": "700", "fill": "#64748B" }]
+            },
+            {
+              "id": "hh_popup",
+              "type": "frame",
+              "name": "Component / Help Hint / Popup",
+              "reusable": true,
+              "cornerRadius": 12,
+              "stroke": { "fill": "#E2E8F0", "thickness": 1 },
+              "fill": "#FFFFFF",
+              "padding": [10, 12],
+              "layout": "vertical",
+              "children": [{ "id": "hh_text_target", "type": "text", "content": "Help context...", "fontSize": 12, "fill": "#1E293B", "lineHeight": 1.6 }]
+            }
+          ]
+        },
+        {
+          "id": "row_viewers",
+          "type": "frame",
+          "name": "Row 3 / File Viewers",
+          "layout": "horizontal",
+          "gap": 32,
+          "alignItems": "start",
+          "children": [
+            {
+              "id": "fv_shell",
+              "type": "frame",
+              "name": "FileViewer / Shell",
+              "reusable": true,
+              "width": 312,
+              "height": 396,
+              "cornerRadius": 8,
+              "stroke": { "fill": "#E2E8F0", "thickness": 1 },
+              "fill": "#FAFAFA",
+              "layout": "vertical",
+              "clip": true,
+              "children": [
+                {
+                  "id": "fv_bar",
+                  "type": "frame",
+                  "height": 32,
+                  "fill": "#F1F5F9",
+                  "stroke": { "fill": "#E2E8F0", "thickness": { "bottom": 1 } },
+                  "layout": "horizontal",
+                  "alignItems": "center",
+                  "justifyContent": "space_between",
+                  "padding": [0, 8],
+                  "children": [
+                    { "type": "text", "content": "source mode", "fontSize": 10, "fontWeight": "700", "fill": "#64748B" },
+                    { "type": "frame", "height": 22, "padding": [0, 8], "cornerRadius": 4, "fill": "#FFFFFF", "stroke": { "fill": "#CBD5E1", "thickness": 1 }, "layout": "horizontal", "alignItems": "center", "gap": 4, "children": [
+                        { "type": "text", "content": "Preview", "fontSize": 10, "fontWeight": "600", "fill": "#475569" }
+                    ]}
+                  ]
+                },
+                { "id": "fv_content", "type": "frame", "layoutGrow": 1, "width": "fill_container" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

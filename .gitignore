@@ -8,10 +8,12 @@ coverage/
 .tmp/
 .screenshot/
 .worktree/
+.svelte-kit/
 logs/
 .DS_Store
 codedb.snapshot
 design/
+*-bak/
 
 # demo runtime artifacts
 demo/logs/
