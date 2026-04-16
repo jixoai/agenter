@@ -83,3 +83,23 @@ export const TreeDisclosureStaysInSurface = {
 		await expect(canvas.queryByText('/src/app.ts')).not.toBeInTheDocument();
 	},
 } satisfies Story;
+
+export const CompactShellPreservesPrimaryViewport = {
+	name: 'Scenario: Given a compact workspace shell When the shared header and bottom dock render Then the tree keeps the dominant viewport budget',
+	args: {
+		initialMode: 'explorer',
+		frameClass: 'h-[58rem] w-[390px] max-w-full',
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = getCanvas(canvasElement);
+		const contentHeader = canvas.getByTestId('workspace-content-header');
+		const treeViewport = canvas.getByTestId('workspace-shell-story-tree');
+
+		await waitFor(() => {
+			const headerRect = contentHeader.getBoundingClientRect();
+			const treeRect = treeViewport.getBoundingClientRect();
+			expect(Math.round(headerRect.height)).toBeLessThanOrEqual(120);
+			expect(Math.round(treeRect.height)).toBeGreaterThanOrEqual(260);
+		});
+	},
+} satisfies Story;

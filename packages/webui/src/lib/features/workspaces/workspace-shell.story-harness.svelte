@@ -4,6 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
+	import { cn } from '$lib/utils.js';
 
 	import WorkspaceContentHeader from './workspace-content-header.svelte';
 	import WorkspaceTree from './workspace-tree.svelte';
@@ -15,8 +16,10 @@
 
 	let {
 		initialMode = 'explorer',
+		frameClass = 'h-[58rem] w-[72rem] max-w-none',
 	}: {
 		initialMode?: WorkspaceMode;
+		frameClass?: string;
 	} = $props();
 
 	const workspaces = [
@@ -78,8 +81,11 @@
 	};
 </script>
 
-<div class="grid h-[58rem] w-[72rem] max-w-none gap-4 rounded-[1.35rem] border p-4" data-testid="workspace-shell-story">
-	<div class="flex flex-wrap items-center gap-2">
+<div
+	class={cn('grid grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-[1.1rem] border p-3', frameClass)}
+	data-testid="workspace-shell-story"
+>
+	<div class="flex flex-wrap items-center gap-1.5">
 		{#each ['explorer', 'rules', 'private'] as modeOption}
 			<Button
 				size="sm"
@@ -92,7 +98,7 @@
 				{modeOption}
 			</Button>
 		{/each}
-		<Badge variant="outline">{selectedWorkspace?.path}</Badge>
+		<Badge variant="outline" class="h-5 px-1.5 text-[10px]">{selectedWorkspace?.path}</Badge>
 	</div>
 
 	<WorkspaceContentHeader
@@ -111,13 +117,20 @@
 		bind:detailCompact
 		bind:detailOpen
 		detailRatioPersistence="workspace-shell-story:detail"
-	>
-		{#snippet main()}
-			<Card.Root class="h-full">
-				<Card.Header class="border-b">
-					<Card.Title>{mode === 'explorer' ? 'Explorer' : mode === 'rules' ? 'Rules' : 'Private assets'}</Card.Title>
-				</Card.Header>
-				<Card.Content class="h-full p-0">
+		>
+			{#snippet main()}
+				<Card.Root class="h-full">
+					<Card.Header class="gap-1 border-b px-4 py-4">
+						<Card.Title>{mode === 'explorer' ? 'Explorer' : mode === 'rules' ? 'Rules' : 'Private assets'}</Card.Title>
+						<Card.Description class="text-xs">
+							{mode === 'explorer'
+								? 'Primary tree first. Quick rule actions stay below.'
+								: mode === 'rules'
+									? 'Rule catalog remains primary. Editing stays docked below.'
+									: 'Private assets reuse the same tree model without permission chrome.'}
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="flex-1 p-0">
 					{#if mode === 'explorer'}
 						<WorkspaceTree
 							rows={rows}
@@ -141,24 +154,28 @@
 							}}
 							onLoadMore={() => {}}
 						/>
-					{:else if mode === 'rules'}
-						<div class="grid gap-3 p-4">
-							<div class="rounded-xl border px-4 py-3 text-sm font-medium">Rule priority follows row order.</div>
-							<div class="rounded-xl border px-4 py-3 text-sm text-muted-foreground">Rules stay in the main catalog. Editing belongs in the bottom area.</div>
-						</div>
-					{:else}
-						<div class="grid gap-3 p-4">
-							<div class="rounded-xl border px-4 py-3 text-sm font-medium">Private assets reuse the same tree mental model.</div>
-							<div class="rounded-xl border px-4 py-3 text-sm text-muted-foreground">Permission badges disappear because the avatar lens already implies authority.</div>
-						</div>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-		{/snippet}
+						{:else if mode === 'rules'}
+							<div class="grid gap-2 p-3">
+								<div class="rounded-xl border px-4 py-3 text-sm font-medium">Rule priority follows row order.</div>
+								<div class="rounded-xl border px-4 py-3 text-sm text-muted-foreground">
+									Rules stay in the main catalog. Editing belongs in the bottom area.
+								</div>
+							</div>
+						{:else}
+							<div class="grid gap-2 p-3">
+								<div class="rounded-xl border px-4 py-3 text-sm font-medium">Private assets reuse the same tree mental model.</div>
+								<div class="rounded-xl border px-4 py-3 text-sm text-muted-foreground">
+									Permission badges disappear because the avatar lens already implies authority.
+								</div>
+							</div>
+						{/if}
+					</Card.Content>
+				</Card.Root>
+			{/snippet}
 
 		{#snippet bottom()}
-			<Card.Root>
-				<Card.Content class="grid gap-2 pt-6">
+			<Card.Root class="border-dashed">
+				<Card.Content class="grid gap-1.5 px-4 pb-4 pt-4">
 					<div class="text-sm font-medium">Bottom area</div>
 					<div class="text-xs text-muted-foreground">
 						{mode === 'explorer'

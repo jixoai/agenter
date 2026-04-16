@@ -751,7 +751,7 @@
 <div
 	class={cn(
 		'grid h-full grid-rows-[auto_minmax(0,1fr)] md:gap-4 md:p-5',
-		hideCompactContentHeader ? 'gap-0 p-0' : 'gap-3 px-3 pb-3 pt-3 md:gap-4 md:p-5',
+		hideCompactContentHeader ? 'gap-0 p-0' : 'gap-2 px-2 pb-2 pt-2 md:gap-4 md:p-5',
 	)}
 	style="min-block-size: 0;"
 	data-testid="workspaces-route"
@@ -803,40 +803,40 @@
 		bind:detailCompact
 		bind:detailOpen
 		detailRatioPersistence="workspaces:detail"
-	>
-		{#snippet main()}
-			<Card.Root class="h-full">
-				<Card.Header class="gap-1 border-b px-4 py-4 pb-4 md:px-6 md:py-6 md:pb-6">
-					<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : 'Explorer'}</Card.Title>
-					<Card.Description class="hidden max-w-[32rem] leading-6 md:block">
-						{#if mode === 'rules'}
-							Rule order maps directly to runtime grant priority for the selected avatar lens.
-						{:else if mode === 'private'}
+		>
+			{#snippet main()}
+				<Card.Root class="h-full">
+					<Card.Header class="gap-1 border-b px-3 py-3.5 md:px-5 md:py-4.5">
+						<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : 'Explorer'}</Card.Title>
+						<Card.Description class="hidden max-w-[30rem] text-xs leading-5 md:block md:text-sm">
+							{#if mode === 'rules'}
+								Rule order maps directly to runtime grant priority for the selected avatar lens.
+							{:else if mode === 'private'}
 							Avatar-private assets reuse the tree model without workspace permission badges.
 						{:else}
 							Folders toggle inline and loaded tree search stays inside the same hierarchy.
 						{/if}
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="h-full p-0">
-					{#if mode === 'rules'}
-						<div class="grid gap-2 p-3">
-							{#if rules.length === 0}
-								<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-									No explicit rules are configured for this workspace/avatar pair.
+					<Card.Content class="h-full p-0">
+						{#if mode === 'rules'}
+							<div class="grid gap-2 p-2.5 md:p-3">
+								{#if rules.length === 0}
+									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+										No explicit rules are configured for this workspace/avatar pair.
 								</div>
 							{:else}
 								{#each rules as rule, index (rule.id)}
 									{@const matched = matchedRuleIdSet.has(rule.id)}
 									{@const activeMatched = activeMatchId === rule.id}
-									<button
-										type="button"
-										data-workspace-rule-id={rule.id}
-										class={cn(
-											'grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-2xl border px-4 py-3 text-left transition-colors hover:bg-muted/40',
-											selectedRule?.id === rule.id ? 'border-primary bg-primary/5' : 'bg-card/70',
-											matched && 'bg-amber-500/10',
-											activeMatched && 'ring-2 ring-amber-500/60',
+										<button
+											type="button"
+											data-workspace-rule-id={rule.id}
+											class={cn(
+												'grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2.5 rounded-[1.1rem] border px-3 py-2.5 text-left transition-colors hover:bg-muted/40 md:px-4 md:py-3',
+												selectedRule?.id === rule.id ? 'border-primary bg-primary/5' : 'bg-card/70',
+												matched && 'bg-amber-500/10',
+												activeMatched && 'ring-2 ring-amber-500/60',
 										)}
 									onclick={() => {
 										selectedRuleId = rule.id;
@@ -891,14 +891,14 @@
 			</Card.Root>
 		{/snippet}
 
-		{#snippet bottom()}
-			<Card.Root>
-				<Card.Content class="grid gap-3 px-4 pb-4 pt-4 md:gap-4 md:px-6 md:pb-6 md:pt-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-					{#if mode === 'rules'}
-						<div class="grid gap-3 md:grid-cols-3">
-							<Input
-								value={selectedRule?.pattern ?? '/'}
-								oninput={(event) => {
+			{#snippet bottom()}
+				<Card.Root>
+					<Card.Content class="grid gap-2.5 px-3 pb-3 pt-3 md:gap-3 md:px-5 md:pb-5 md:pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+						{#if mode === 'rules'}
+							<div class="grid gap-2.5 md:grid-cols-3">
+								<Input
+									value={selectedRule?.pattern ?? '/'}
+									oninput={(event) => {
 									const value = (event.currentTarget as HTMLInputElement).value;
 									if (!selectedRule) {
 										return;
@@ -937,7 +937,7 @@
 								Enabled
 							</label>
 						</div>
-						<div class="flex flex-wrap gap-2">
+							<div class="flex flex-wrap gap-2">
 							<Button variant="outline" onclick={addRule}>
 								<PlusIcon class="size-4" />
 								Add rule
@@ -963,10 +963,10 @@
 								{rulesSaving ? 'Applying…' : 'Apply rules'}
 							</Button>
 						</div>
-					{:else if mode === 'private'}
-						<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
-							<Input bind:value={privateAssetName} placeholder="New private asset name" />
-							<NativeSelect.NativeSelect bind:value={privateAssetKind}>
+						{:else if mode === 'private'}
+							<div class="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_12rem]">
+								<Input bind:value={privateAssetName} placeholder="New private asset name" />
+								<NativeSelect.NativeSelect bind:value={privateAssetKind}>
 								<option value="file">File</option>
 								<option value="directory">Directory</option>
 							</NativeSelect.NativeSelect>
@@ -980,29 +980,29 @@
 								<Badge variant="outline" class="bg-background/70">{assetRoots.privateRoots.memory}</Badge>
 							{/if}
 						</div>
-					{:else}
-						<div class="grid gap-2 md:hidden">
-							<div class="min-w-0 truncate text-sm font-medium" title={selectedExplorerPath ?? ''}>
-									{selectedExplorerPath ?? 'Select one path to stage a quick rule.'}
-							</div>
-							<div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-								<NativeSelect.NativeSelect
-									bind:value={quickRuleMode}
-									class="min-w-0"
+						{:else}
+							<div class="grid gap-2 md:hidden">
+								<div class="min-w-0 truncate text-[13px] font-medium" title={selectedExplorerPath ?? ''}>
+										{selectedExplorerPath ?? 'Select one path to stage a quick rule.'}
+								</div>
+								<div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5">
+									<NativeSelect.NativeSelect
+										bind:value={quickRuleMode}
+										class="min-w-0"
 									aria-label="Quick rule access mode"
 									title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}
 								>
-									<option value="ro">RO</option>
-									<option value="rw">RW</option>
-								</NativeSelect.NativeSelect>
-								<Button variant="outline" size="sm" onclick={stageQuickRule}>
-									<PlusIcon class="size-4" />
-									Stage
-								</Button>
-								<Button size="sm" disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
-									<SaveIcon class="size-4" />
-									{rulesSaving ? 'Applying…' : 'Apply'}
-								</Button>
+										<option value="ro">RO</option>
+										<option value="rw">RW</option>
+									</NativeSelect.NativeSelect>
+									<Button variant="outline" size="sm" class="px-2.5" onclick={stageQuickRule}>
+										<PlusIcon class="size-4" />
+										Stage
+									</Button>
+									<Button size="sm" class="px-2.5" disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
+										<SaveIcon class="size-4" />
+										{rulesSaving ? 'Applying…' : 'Apply'}
+									</Button>
 							</div>
 						</div>
 						<div class="hidden md:grid md:gap-2">
@@ -1051,14 +1051,14 @@
 				title={mode === 'rules' ? 'Rule detail' : 'Preview'}
 				description={
 					mode === 'rules'
-						? 'Rules keeps the drawer informational; editing stays in the bottom area.'
-						: 'Preview stays dominant and metadata remains docked near the bottom.'
+						? 'Rules keeps the drawer informational while editing stays below.'
+						: 'Preview stays dominant and metadata remains secondary.'
 				}
 				contentClass={cn(mode !== 'rules' && detailCompact && 'min-h-full')}
 				summary={workspaceDrawerSummary}
 			>
 				{#if mode === 'rules'}
-					<div class="rounded-xl border px-4 py-4 text-sm">
+					<div class="rounded-xl border px-4 py-3.5 text-sm">
 						{#if selectedRule}
 							<div class="font-semibold">{selectedRule.pattern}</div>
 							<div class="mt-2 text-muted-foreground">
@@ -1069,39 +1069,39 @@
 						{/if}
 					</div>
 				{:else if previewLoading}
-					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
-							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">Loading preview…</div>
 							<div class="text-xs leading-5 text-muted-foreground">Fetching the current selection before rendering the detail view.</div>
 						</div>
 					</div>
 				{:else if !preview}
-					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
-							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">Select one entry to inspect its preview.</div>
 							<div class="text-xs leading-5 text-muted-foreground">The detail area stays focused on one current tree selection at a time.</div>
 						</div>
 					</div>
 				{:else if preview.previewKind === 'text'}
 					<ScrollView
-						class="max-h-[28rem] rounded-xl border bg-muted/30"
+						class="max-h-[24rem] rounded-[0.95rem] border bg-muted/30 md:max-h-[28rem]"
 						contentClass="min-w-full"
 					>
-						<pre class="p-4 text-xs leading-6">{preview.textContent}</pre>
+						<pre class="p-3 text-[11px] leading-5 md:p-4 md:text-xs md:leading-6">{preview.textContent}</pre>
 					</ScrollView>
 				{:else if preview.previewKind === 'image' && preview.mediaDataUrl}
-					<img src={preview.mediaDataUrl} alt={preview.name} class="max-h-full w-full rounded-xl border object-contain" />
+					<img src={preview.mediaDataUrl} alt={preview.name} class="max-h-full w-full rounded-[0.95rem] border object-contain" />
 				{:else if preview.previewKind === 'audio' && preview.mediaDataUrl}
 					<audio controls src={preview.mediaDataUrl} class="w-full"></audio>
 				{:else if preview.previewKind === 'video' && preview.mediaDataUrl}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video controls src={preview.mediaDataUrl} class="max-h-full w-full rounded-xl border"></video>
+					<video controls src={preview.mediaDataUrl} class="max-h-full w-full rounded-[0.95rem] border"></video>
 				{:else}
-					<div class="grid min-h-[clamp(14rem,36vh,20rem)] place-items-center rounded-[1.1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-5 py-8 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
-							<SearchIcon class="mx-auto size-7 text-muted-foreground/70" />
+							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">{getPreviewEmptyStateTitle(preview)}</div>
 							<div class="text-xs leading-5 text-muted-foreground">{getPreviewEmptyStateDescription(preview)}</div>
 						</div>

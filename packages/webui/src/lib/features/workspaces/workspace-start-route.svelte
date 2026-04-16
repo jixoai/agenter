@@ -95,10 +95,10 @@
 	};
 </script>
 
-<WorkbenchPageToolbar>
-	<div class="flex h-full items-center justify-between gap-3 px-3 md:px-4">
-		<div class="min-w-0">
-			<div class="flex min-w-0 items-center gap-2">
+	<WorkbenchPageToolbar>
+		<div class="flex h-full items-center justify-between gap-3 px-3 md:px-4">
+			<div class="min-w-0">
+				<div class="flex min-w-0 items-center gap-2">
 				<div class="truncate text-sm font-semibold leading-tight">
 					<span class="sm:hidden">Roots</span>
 					<span class="hidden sm:inline">Workspace roots</span>
@@ -116,7 +116,7 @@
 				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-1.5 md:gap-2">
+			<div class="flex items-center gap-1.5 md:gap-2">
 			<Button
 				variant="ghost"
 				size="icon"
@@ -142,17 +142,17 @@
 			>
 				<LayoutListIcon class="size-4" />
 			</Button>
-			<div class="h-4 w-px bg-border/60"></div>
-			<SearchIcon class="size-3.5 text-muted-foreground" />
-			<Input
-				bind:value={searchQuery}
-				onkeydown={handleSearchKeyDown}
-				class="h-8 w-28 bg-background/70 text-xs sm:w-32 md:w-56 md:text-sm"
-				placeholder="Search roots"
-			/>
+				<div class="hidden h-4 w-px bg-border/60 sm:block"></div>
+				<SearchIcon class="hidden size-3.5 text-muted-foreground sm:block" />
+				<Input
+					bind:value={searchQuery}
+					onkeydown={handleSearchKeyDown}
+					class="h-8 w-24 bg-background/70 text-xs sm:w-32 md:w-56 md:text-sm"
+					placeholder="Search roots"
+				/>
+			</div>
 		</div>
-	</div>
-</WorkbenchPageToolbar>
+	</WorkbenchPageToolbar>
 
 <div class="h-full" data-testid="workspace-start-route">
 	<WorkbenchPageContent
@@ -163,69 +163,77 @@
 		mainClass="h-full"
 		drawerClass="h-full"
 		detailRatioPersistence="workspace-start:detail"
-	>
-		{#snippet main()}
-			<ScrollView class="h-full" contentClass="grid gap-0 px-1 py-2 md:px-2 md:py-3">
-				{#if filteredWorkspaces.length === 0}
-					<div class="flex flex-col items-center justify-center rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-						<div>No workspace roots matched this search.</div>
+		>
+			{#snippet main()}
+				<ScrollView class="h-full" contentClass="grid gap-0 px-0 py-1 md:px-1.5 md:py-2">
+					{#if filteredWorkspaces.length === 0}
+						<div class="flex flex-col items-center justify-center rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+							<div>No workspace roots matched this search.</div>
 						{#if searchQuery}
 							<Button variant="link" class="mt-2 h-auto p-0" onclick={() => (searchQuery = '')}>Clear search</Button>
 						{/if}
 					</div>
-				{:else}
-					<div class="grid gap-0 border-y border-border/50">
-						{#each filteredWorkspaces as workspace (workspace.path)}
-							<div
-								class={cn(
+					{:else}
+						<div class="grid gap-0 border-y border-border/50">
+							{#each filteredWorkspaces as workspace (workspace.path)}
+								<div
+									class={cn(
 									'border-b border-border/45 last:border-b-0 transition-colors',
 									selectedWorkspace?.path === workspace.path
 										? 'bg-[color-mix(in_srgb,var(--accent),transparent_72%)]'
 										: 'hover:bg-muted/20',
 								)}
 							>
-								<button
-									type="button"
-									class={cn(
-										'grid w-full gap-2 px-2 py-2.5 text-left md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:px-3 md:py-3',
-										compactMode && 'gap-1.5 py-2',
-									)}
-									data-workspace-start-item={workspace.path}
-									ondblclick={() => void openWorkspace(workspace.path)}
+									<button
+										type="button"
+										class={cn(
+											'grid w-full gap-1.5 px-2 py-2 text-left md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-2 md:px-3 md:py-2.5',
+											compactMode && 'gap-1 py-1.5',
+										)}
+										data-workspace-start-item={workspace.path}
+										ondblclick={() => void openWorkspace(workspace.path)}
 									onclick={() => {
 										selectedWorkspacePath = workspace.path;
 										openDetailIfCompact();
 									}}
 									onkeydown={(e) => e.key === 'Enter' && void openWorkspace(workspace.path)}
-								>
-									<div class="min-w-0">
-										<div class="flex flex-wrap items-center gap-1.5">
-											<div class={cn('truncate text-[13px] font-semibold md:text-sm', compactMode && 'text-[12px]')}>
-												{describeCompactWorkspace(workspace.path)}
-											</div>
-											{#if !compactMode}
+									>
+										<div class="min-w-0">
+											<div class="flex flex-wrap items-center gap-1.5">
+												<div class={cn('truncate text-[13px] font-semibold leading-tight md:text-sm', compactMode && 'text-[12px]')}>
+													{describeCompactWorkspace(workspace.path)}
+												</div>
 												{#if workspace.favorite}
-													<Badge variant="secondary" class="h-3.5 px-1 text-[9px]">Fav</Badge>
+													<Badge
+														variant="secondary"
+														class={cn('h-4 px-1 text-[9px]', compactMode && 'h-3.5')}
+													>
+														Fav
+													</Badge>
 												{/if}
 												{#if workspace.path === '~/'}
-													<Badge variant="outline" class="h-3.5 px-1 text-[9px]">Global</Badge>
+													<Badge
+														variant="outline"
+														class={cn('h-4 px-1 text-[9px]', compactMode && 'h-3.5')}
+													>
+														Global
+													</Badge>
 												{/if}
+											</div>
+											{#if !compactMode}
+												<div class="mt-0.5 truncate text-[10px] leading-4 text-muted-foreground md:text-[11px]">
+													{resolveObjectiveWorkspacePath(workspace, sortedWorkspaces)}
+												</div>
 											{/if}
 										</div>
-										{#if !compactMode}
-											<div class="mt-0.5 truncate text-[10px] leading-4 text-muted-foreground md:text-xs">
-												{resolveObjectiveWorkspacePath(workspace, sortedWorkspaces)}
-											</div>
-										{/if}
-									</div>
-									<div class="flex items-center justify-between gap-2 md:ml-4">
-										{#if !compactMode}
-											<div class="truncate text-[9px] text-muted-foreground md:text-[10px]">
-												{workspace.lastSessionActivityAt ?? 'Never started'}
-											</div>
-										{/if}
-										<a
-											href={buildWorkspaceDetailHref({ workspacePath: workspace.path, avatar: requestedAvatar })}
+										<div class="flex items-center justify-between gap-2 md:ml-4">
+											{#if !compactMode}
+												<div class="truncate text-[9px] text-muted-foreground md:text-[10px]">
+													{workspace.lastSessionActivityAt ?? 'Never started'}
+												</div>
+											{/if}
+											<a
+												href={buildWorkspaceDetailHref({ workspacePath: workspace.path, avatar: requestedAvatar })}
 											class={cn(
 												buttonVariants({
 													variant: selectedWorkspace?.path === workspace.path ? 'secondary' : 'ghost',
@@ -248,45 +256,45 @@
 			</ScrollView>
 		{/snippet}
 
-		{#snippet drawer()}
-			{#snippet workspaceStartSummary()}
-				{#if selectedWorkspace}
-					<div>{selectedWorkspace.lastSessionActivityAt ?? 'No sessions started yet.'}</div>
-				{:else}
-					<div>Select one workspace root from the list.</div>
-				{/if}
-			{/snippet}
+			{#snippet drawer()}
+				{#snippet workspaceStartSummary()}
+					{#if selectedWorkspace}
+						<div>{selectedWorkspace.lastSessionActivityAt ?? 'No sessions started yet.'}</div>
+					{:else}
+						<div>Select one workspace root from the list.</div>
+					{/if}
+				{/snippet}
 
 			<WorkbenchDetailDrawer
 				tone={detailCompact ? 'page' : 'pane'}
 				title={selectedWorkspace ? describeCompactWorkspace(selectedWorkspace.path) : 'Detail'}
 				description="Preview before entry."
 				summary={workspaceStartSummary}
-			>
-				{#if selectedWorkspace}
-					<div class="grid gap-4">
+				>
+					{#if selectedWorkspace}
 						<div class="grid gap-3">
-							<div class="grid gap-1">
-								<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Stored path</div>
-								<div class="break-all text-sm font-medium leading-5">{selectedWorkspace.path}</div>
-							</div>
-							<div class="grid gap-1 border-t border-border/45 pt-3">
-								<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Objective path</div>
-								<div class="break-all text-xs leading-5 text-muted-foreground">
-									{resolveObjectiveWorkspacePath(selectedWorkspace, sortedWorkspaces)}
+							<div class="grid gap-2.5">
+								<div class="grid gap-1">
+									<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Stored path</div>
+									<div class="break-all text-sm font-medium leading-5">{selectedWorkspace.path}</div>
+								</div>
+								<div class="grid gap-1 border-t border-border/45 pt-2.5">
+									<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Objective path</div>
+									<div class="break-all text-xs leading-5 text-muted-foreground">
+										{resolveObjectiveWorkspacePath(selectedWorkspace, sortedWorkspaces)}
+									</div>
+								</div>
+								<div class="flex items-center gap-2 text-xs text-muted-foreground">
+									<span>Single-root detail tab.</span>
+									<HelpHint textContext="Workspace detail stays bound to one root. Explorer, Rules, and Private operate inside that chosen root rather than swapping to another path inline.">
+										<p>Explorer, Rules, and Private stay bound to this one root after entry.</p>
+									</HelpHint>
 								</div>
 							</div>
-							<div class="flex items-center gap-2 text-xs text-muted-foreground">
-								<span>Single-root workspace detail.</span>
-								<HelpHint textContext="Workspace detail stays bound to one root. Explorer, Rules, and Private operate inside that chosen root rather than swapping to another path inline.">
-									<p>Explorer, Rules, and Private stay bound to this one root after entry.</p>
-								</HelpHint>
-							</div>
-						</div>
-						<Button class="w-full" onclick={() => void openWorkspace()}>
-							<ArrowUpRightIcon class="size-3.5" />
-							Open workspace detail
-						</Button>
+							<Button class="w-full" onclick={() => void openWorkspace()}>
+								<ArrowUpRightIcon class="size-3.5" />
+								Open workspace detail
+							</Button>
 					</div>
 				{:else}
 					<div class="text-sm text-muted-foreground">Select one workspace root to preview it here.</div>

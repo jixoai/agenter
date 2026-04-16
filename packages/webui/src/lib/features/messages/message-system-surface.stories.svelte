@@ -20,6 +20,18 @@
 		return within(toolbar!);
 	};
 
+	const expectInsideToolbarBand = (toolbarElement: HTMLElement, nodes: readonly HTMLElement[]): void => {
+		const toolbarRect = toolbarElement.getBoundingClientRect();
+		const epsilon = 1;
+		for (const node of nodes) {
+			const rect = node.getBoundingClientRect();
+			expect(rect.top).toBeGreaterThanOrEqual(toolbarRect.top - epsilon);
+			expect(rect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + epsilon);
+			expect(rect.left).toBeGreaterThanOrEqual(toolbarRect.left - epsilon);
+			expect(rect.right).toBeLessThanOrEqual(toolbarRect.right + epsilon);
+		}
+	};
+
 	const openAddUserForm = async (canvas: ReturnType<typeof within>): Promise<void> => {
 		const usersSection = await canvas.findByTestId('room-manage-users-section');
 		await userEvent.click(within(usersSection).getByRole('button', { name: 'Add user' }));
@@ -134,23 +146,28 @@
 </Story>
 
 <Story
-	name="Scenario: Given a fixed 48px room toolbar When compact width is applied Then the viewer trigger and mode chips stay fully visible inside the toolbar"
+	name="Scenario: Given a fixed 48px room toolbar When compact width is applied Then the viewer trigger, actions, and mode chips stay fully visible inside the toolbar"
 	asChild
 	play={async ({ canvasElement }) => {
 		const toolbarElement = canvasElement.querySelector<HTMLElement>('[data-workbench-page-toolbar]');
 		expect(toolbarElement).not.toBeNull();
 		const toolbar = getRoomToolbar(canvasElement);
 		const viewerTrigger = toolbar.getByLabelText('View room as user') as HTMLElement;
+		const searchAction = toolbar.getByRole('button', { name: 'Search messages' }) as HTMLElement;
+		const addUserAction = toolbar.getByRole('button', { name: 'Add user' }) as HTMLElement;
+		const manageAction = toolbar.getByRole('button', { name: 'Manage room' }) as HTMLElement;
 		const chatTab = toolbar.getByRole('tab', { name: 'chat' }) as HTMLElement;
 		const assetsTab = toolbar.getByRole('tab', { name: 'assets' }) as HTMLElement;
 
 		await waitFor(() => {
-			const toolbarRect = toolbarElement!.getBoundingClientRect();
-			for (const node of [viewerTrigger, chatTab, assetsTab]) {
-				const rect = node.getBoundingClientRect();
-				expect(rect.top).toBeGreaterThanOrEqual(toolbarRect.top - 0.5);
-				expect(rect.bottom).toBeLessThanOrEqual(toolbarRect.bottom + 0.5);
-			}
+			expectInsideToolbarBand(toolbarElement!, [
+				viewerTrigger,
+				searchAction,
+				addUserAction,
+				manageAction,
+				chatTab,
+				assetsTab,
+			]);
 		});
 	}}
 >

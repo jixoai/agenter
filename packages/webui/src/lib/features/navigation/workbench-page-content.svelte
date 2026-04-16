@@ -189,11 +189,15 @@
 <style>
 	.workbench-page-content,
 	.workbench-page-content__grid,
-	.workbench-page-content__split-root,
-	.workbench-page-content__split-main,
 	.workbench-page-content__main,
-	.workbench-page-content__bottom,
-	.workbench-page-content__drawer {
+	.workbench-page-content__bottom {
+		min-block-size: 0;
+		min-inline-size: 0;
+	}
+
+	:global(.workbench-page-content__split-root),
+	:global(.workbench-page-content__split-main),
+	:global(.workbench-page-content__drawer) {
 		min-block-size: 0;
 		min-inline-size: 0;
 	}
@@ -212,7 +216,11 @@
 		grid-template-rows: auto auto auto;
 	}
 
-	.workbench-page-content__split-main {
+	:global(.workbench-page-content__split-root) {
+		block-size: 100%;
+	}
+
+	:global(.workbench-page-content__split-main) {
 		display: grid;
 		block-size: 100%;
 		gap: 1rem;

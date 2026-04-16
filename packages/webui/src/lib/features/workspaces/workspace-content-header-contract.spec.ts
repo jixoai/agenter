@@ -14,11 +14,12 @@ describe("Feature: Workspace content header mobile density contract", () => {
     expect(workspaceContentHeaderSource).toContain("objectiveCompactLabel");
     expect(workspaceContentHeaderSource).toContain('title={objectiveLabel}');
     expect(workspaceContentHeaderSource).toContain("md:hidden");
-    expect(workspaceContentHeaderSource).toContain("hidden truncate text-sm font-medium text-foreground md:block");
+    expect(workspaceContentHeaderSource).toContain("hidden truncate text-sm font-medium leading-tight text-foreground md:block");
   });
 
   test("Scenario: Given the mobile header must not widen the route When reading the source Then the outer surface and avatar trigger both opt into shrinking", () => {
     expect(workspaceContentHeaderSource).toContain("min-w-0 w-full");
     expect(workspaceContentHeaderSource).toContain("class=\"h-10 min-h-10 w-full min-w-0");
+    expect(workspaceContentHeaderSource).toContain("grid-cols-[minmax(0,10.5rem)_minmax(0,1fr)]");
   });
 });

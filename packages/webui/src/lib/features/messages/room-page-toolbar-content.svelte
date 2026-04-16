@@ -51,112 +51,130 @@
   class="room-page-toolbar"
   data-room-toolbar-mode={activeMode}
 >
-  <div class="room-page-toolbar__avatar">
-    <ProfileAvatar
-      label={viewerAvatarLabel}
-      src={selectedViewer?.iconUrl ?? null}
-      class="room-page-toolbar__avatar-image"
-    />
-  </div>
+  <div class="room-page-toolbar__identity">
+    <div class="room-page-toolbar__avatar">
+      <ProfileAvatar
+        label={viewerAvatarLabel}
+        src={selectedViewer?.iconUrl ?? null}
+        class="room-page-toolbar__avatar-image"
+      />
+    </div>
 
-  <div class="room-page-toolbar__title">
-    {#if canSelectViewer}
-      <Select.Root
-        type="single"
-        items={viewerItems}
-        value={selectedViewerActorId ?? undefined}
-        onValueChange={(value) => {
-          onSelectViewer(value);
-        }}
-      >
-        <Select.Trigger
-          size="sm"
-          aria-label="View room as user"
-          class="room-page-toolbar__viewer-trigger"
-          title={selectedViewerLabel}
+    <div class="room-page-toolbar__viewer">
+      {#if canSelectViewer}
+        <Select.Root
+          type="single"
+          items={viewerItems}
+          value={selectedViewerActorId ?? undefined}
+          onValueChange={(value) => {
+            onSelectViewer(value);
+          }}
         >
+          <Select.Trigger
+            size="sm"
+            aria-label="View room as user"
+            class="room-page-toolbar__viewer-trigger"
+            title={selectedViewerLabel}
+          >
+            <span class="truncate">{selectedViewerLabel}</span>
+          </Select.Trigger>
+          <Select.Content>
+            {#each viewerItems as item (item.value)}
+              <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {:else}
+        <div class="room-page-toolbar__viewer-fallback" title={selectedViewerLabel}>
           <span class="truncate">{selectedViewerLabel}</span>
-        </Select.Trigger>
-        <Select.Content>
-          {#each viewerItems as item (item.value)}
-            <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-    {:else}
-      <div class="room-page-toolbar__viewer-fallback" title={selectedViewerLabel}>
-        <span class="truncate">{selectedViewerLabel}</span>
-      </div>
-    {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 
-  <div class="room-page-toolbar__actions" aria-label="Room actions">
-    <button
-      type="button"
-      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-      aria-label="Search messages"
-      title="Search messages"
-      disabled={!canSearch}
-      onclick={onSearchClick}
-    >
-      <SearchIcon class="size-4" />
-    </button>
-    <button
-      type="button"
-      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-      aria-label="Add user"
-      title="Add user"
-      onclick={onAddUserClick}
-    >
-      <UserPlusIcon class="size-4" />
-    </button>
-    <button
-      type="button"
-      class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-      aria-label="Manage room"
-      title="Manage room"
-      onclick={onManageClick}
-    >
-      <Settings2Icon class="size-4" />
-    </button>
-  </div>
-
-  <div class="room-page-toolbar__modes" role="tablist" aria-label="Room content mode">
-    {#each ["chat", "assets"] as mode (mode)}
+  <div class="room-page-toolbar__secondary">
+    <div class="room-page-toolbar__actions" aria-label="Room actions">
       <button
         type="button"
-        class="room-page-toolbar__mode-chip"
-        data-active={activeMode === mode ? "true" : "false"}
-        role="tab"
-        aria-selected={activeMode === mode}
-        onclick={() => {
-          onSelectMode(mode as RoomBodyMode);
-        }}
+        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
+        aria-label="Search messages"
+        title="Search messages"
+        disabled={!canSearch}
+        onclick={onSearchClick}
       >
-        {mode}
+        <SearchIcon class="size-4" />
       </button>
-    {/each}
+      <button
+        type="button"
+        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
+        aria-label="Add user"
+        title="Add user"
+        onclick={onAddUserClick}
+      >
+        <UserPlusIcon class="size-4" />
+      </button>
+      <button
+        type="button"
+        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
+        aria-label="Manage room"
+        title="Manage room"
+        onclick={onManageClick}
+      >
+        <Settings2Icon class="size-4" />
+      </button>
+    </div>
+
+    <div class="room-page-toolbar__modes" role="tablist" aria-label="Room content mode">
+      {#each ["chat", "assets"] as mode (mode)}
+        <button
+          type="button"
+          class="room-page-toolbar__mode-chip"
+          data-active={activeMode === mode ? "true" : "false"}
+          role="tab"
+          aria-selected={activeMode === mode}
+          onclick={() => {
+            onSelectMode(mode as RoomBodyMode);
+          }}
+        >
+          {mode}
+        </button>
+      {/each}
+    </div>
   </div>
 </div>
 
 <style>
   .room-page-toolbar {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    display: flex;
     align-items: center;
-    column-gap: 0.65rem;
-    row-gap: 0;
+    justify-content: space-between;
+    gap: 0.6rem;
     block-size: 100%;
     min-block-size: 0;
     min-inline-size: 0;
-    padding-inline: 0.75rem;
-    padding-block: 0.25rem;
+    padding-inline: 0.7rem;
+    padding-block: 0.2rem;
     overflow: clip;
   }
 
+  .room-page-toolbar__identity,
+  .room-page-toolbar__viewer,
+  .room-page-toolbar__secondary,
+  .room-page-toolbar__actions,
+  .room-page-toolbar__modes {
+    min-inline-size: 0;
+  }
+
+  .room-page-toolbar__identity {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
+  }
+
   .room-page-toolbar__avatar {
-    grid-row: 1 / span 2;
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -171,16 +189,8 @@
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background), white 78%);
   }
 
-  .room-page-toolbar__title,
-  .room-page-toolbar__actions,
-  .room-page-toolbar__modes {
-    min-inline-size: 0;
-  }
-
-  .room-page-toolbar__title {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: center;
+  .room-page-toolbar__viewer {
+    flex: 1 1 auto;
     overflow: hidden;
   }
 
@@ -189,26 +199,27 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    inline-size: fit-content;
-    max-inline-size: 100%;
+    inline-size: 100%;
     min-inline-size: 0;
-    min-block-size: 0;
-    block-size: auto;
+    max-inline-size: 100%;
+    min-block-size: 1.15rem;
+    block-size: 1.15rem;
     border-radius: 999px;
     border: 0;
     background: transparent;
     padding: 0;
     color: var(--foreground);
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: 600;
-    line-height: 1.05;
+    line-height: 1;
+    white-space: nowrap;
     box-shadow: none;
   }
 
   :global(.room-page-toolbar__viewer-trigger[data-slot="select-trigger"]) {
-    height: auto;
-    min-height: 0;
-    width: auto;
+    height: 1.15rem;
+    min-height: 1.15rem;
+    width: 100%;
     min-width: 0;
     gap: 0.25rem;
     padding: 0;
@@ -224,22 +235,29 @@
   }
 
   .room-page-toolbar__viewer-fallback {
-    min-block-size: 1rem;
+    min-block-size: 1.15rem;
   }
 
-  .room-page-toolbar__actions {
-    grid-column: 3;
-    grid-row: 1;
+  .room-page-toolbar__secondary {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.3rem;
+    gap: 0.35rem;
+  }
+
+  .room-page-toolbar__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.15rem;
   }
 
   :global(.room-page-toolbar__action) {
-    block-size: 1.6rem;
-    inline-size: 1.6rem;
-    border-radius: 0.72rem;
+    block-size: 1.55rem;
+    inline-size: 1.55rem;
+    border-radius: 0.68rem;
     border: 1px solid transparent;
     color: color-mix(in srgb, var(--foreground), transparent 36%);
   }
@@ -252,32 +270,25 @@
   }
 
   .room-page-toolbar__modes {
-    grid-column: 2 / span 2;
-    grid-row: 2;
+    flex: none;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.22rem;
     min-block-size: 0;
-    align-self: center;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .room-page-toolbar__modes::-webkit-scrollbar {
-    display: none;
+    white-space: nowrap;
   }
 
   .room-page-toolbar__mode-chip {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-block-size: 1rem;
+    min-block-size: 1.45rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border), transparent 20%);
     background: color-mix(in srgb, var(--background), transparent 14%);
-    padding-inline: 0.5rem;
+    padding-inline: 0.44rem;
     color: color-mix(in srgb, var(--foreground), transparent 30%);
-    font-size: 0.67rem;
+    font-size: 0.64rem;
     font-weight: 700;
     letter-spacing: 0.01em;
     text-transform: capitalize;
@@ -295,7 +306,6 @@
 
   @container (max-width: 43.999rem) {
     .room-page-toolbar {
-      column-gap: 0.55rem;
       padding-inline: 0.55rem;
     }
 
@@ -307,11 +317,11 @@
 
     :global(.room-page-toolbar__viewer-trigger),
     .room-page-toolbar__viewer-fallback {
-      font-size: 0.76rem;
+      font-size: 0.72rem;
     }
 
-    .room-page-toolbar__actions {
-      gap: 0.2rem;
+    .room-page-toolbar__secondary {
+      gap: 0.25rem;
     }
 
     :global(.room-page-toolbar__action) {
@@ -321,19 +331,28 @@
     }
 
     .room-page-toolbar__mode-chip {
-      min-block-size: 0.95rem;
-      padding-inline: 0.42rem;
-      font-size: 0.63rem;
+      min-block-size: 1.35rem;
+      padding-inline: 0.38rem;
+      font-size: 0.61rem;
     }
   }
 
   @container (max-width: 31.999rem) {
+    .room-page-toolbar {
+      gap: 0.45rem;
+      padding-inline: 0.48rem;
+    }
+
+    .room-page-toolbar__identity {
+      gap: 0.4rem;
+    }
+
     .room-page-toolbar__modes {
-      gap: 0.25rem;
+      gap: 0.18rem;
     }
 
     .room-page-toolbar__mode-chip {
-      padding-inline: 0.38rem;
+      padding-inline: 0.34rem;
     }
   }
 </style>

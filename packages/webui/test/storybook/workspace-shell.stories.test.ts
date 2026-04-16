@@ -6,6 +6,7 @@ import { getPortableStory } from './portable-stories';
 const ModeSwitchingKeepsSharedShell = getPortableStory(stories, 'ModeSwitchingKeepsSharedShell');
 const AvatarLensKeepsRootContext = getPortableStory(stories, 'AvatarLensKeepsRootContext');
 const TreeDisclosureStaysInSurface = getPortableStory(stories, 'TreeDisclosureStaysInSurface');
+const CompactShellPreservesPrimaryViewport = getPortableStory(stories, 'CompactShellPreservesPrimaryViewport');
 
 describe('Feature: Storybook DOM contract for workspace shell', () => {
 	test('Scenario: Given workspace mode switching When Explorer Rules and Private swap Then the shared shell keeps one stable header and body contract', async () => {
@@ -18,5 +19,9 @@ describe('Feature: Storybook DOM contract for workspace shell', () => {
 
 	test('Scenario: Given the workspace tree When directory disclosure toggles Then children stay inside the same explicit viewport', async () => {
 		await TreeDisclosureStaysInSurface.run();
+	});
+
+	test('Scenario: Given a compact workspace shell When shared header and bottom dock render Then the tree keeps the dominant viewport budget', async () => {
+		await CompactShellPreservesPrimaryViewport.run();
 	});
 });
