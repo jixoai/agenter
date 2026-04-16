@@ -50,7 +50,7 @@
 	}}
 >
 	{#snippet empty()}
-		<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+		<div class="rounded-[0.85rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
 			No entries match the current view.
 		</div>
 	{/snippet}
@@ -66,7 +66,7 @@
 				data-workspace-tree-path={row.entry.path}
 				data-workspace-tree-match-active={activeMatched}
 				class={cn(
-					'grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/40',
+					'grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[0.8rem] px-3 py-2 text-left transition-colors hover:bg-muted/34',
 					selected && 'bg-primary/8 ring-1 ring-primary/30',
 					matched && 'bg-amber-500/10',
 					activeMatched && 'ring-2 ring-amber-500/60',
@@ -105,7 +105,7 @@
 		{:else}
 			<button
 				type="button"
-				class="justify-self-start rounded-full border border-dashed px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40"
+				class="justify-self-start rounded-[0.8rem] bg-muted/24 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/38"
 				style={`margin-inline-start: calc(${row.depth} * 1rem + 0.75rem);`}
 				onclick={() => {
 					void onLoadMore(row.parentPath);

@@ -208,14 +208,14 @@
 	/>
 
 	<section
-		class="messages-workbench-window__toolbar border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
+		class="messages-workbench-window__toolbar border-b border-border/45 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background),white_12%)_0%,color-mix(in_srgb,var(--card),var(--background)_74%)_100%)]"
 		data-workbench-page-toolbar
 	>
 		<div bind:this={pageToolbarRegistry.host} class="messages-workbench-window__toolbar-host"></div>
 	</section>
 
 	<ClipSurface
-		class="messages-workbench-window__body rounded-b-[1.35rem] border border-border/65 border-t-0 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_16%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)] shadow-[0_30px_60px_-44px_color-mix(in_srgb,var(--foreground),transparent_18%)]"
+		class="messages-workbench-window__body border-0 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background),white_10%)_0%,color-mix(in_srgb,var(--card),var(--background)_68%)_100%)] shadow-none"
 		data-workbench-window-body
 	>
 		<div class="messages-workbench-window__content h-full" data-workbench-window-content>

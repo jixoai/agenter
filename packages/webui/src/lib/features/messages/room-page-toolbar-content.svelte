@@ -183,10 +183,9 @@
   :global(.room-page-toolbar__avatar-image) {
     block-size: 1.75rem;
     inline-size: 1.75rem;
-    border-radius: 0.8rem;
-    border-color: color-mix(in srgb, var(--border), transparent 20%);
+    border-radius: 999px;
     background: color-mix(in srgb, var(--background), transparent 12%);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background), white 78%);
+    box-shadow: none;
   }
 
   .room-page-toolbar__viewer {
@@ -257,15 +256,14 @@
   :global(.room-page-toolbar__action) {
     block-size: 1.55rem;
     inline-size: 1.55rem;
-    border-radius: 0.68rem;
-    border: 1px solid transparent;
+    border-radius: 999px;
+    border: 0;
     color: color-mix(in srgb, var(--foreground), transparent 36%);
   }
 
   :global(.room-page-toolbar__action:hover:not(:disabled)),
   :global(.room-page-toolbar__action:focus-visible:not(:disabled)) {
-    border-color: color-mix(in srgb, var(--border), transparent 15%);
-    background: color-mix(in srgb, var(--background), transparent 8%);
+    background: color-mix(in srgb, var(--foreground), transparent 94%);
     color: var(--foreground);
   }
 
@@ -284,10 +282,10 @@
     justify-content: center;
     min-block-size: 1.45rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--border), transparent 20%);
-    background: color-mix(in srgb, var(--background), transparent 14%);
+    border: 0;
+    background: transparent;
     padding-inline: 0.44rem;
-    color: color-mix(in srgb, var(--foreground), transparent 30%);
+    color: color-mix(in srgb, var(--foreground), transparent 34%);
     font-size: 0.64rem;
     font-weight: 700;
     letter-spacing: 0.01em;
@@ -299,7 +297,6 @@
   }
 
   .room-page-toolbar__mode-chip[data-active="true"] {
-    border-color: color-mix(in srgb, var(--foreground), transparent 68%);
     background: color-mix(in srgb, var(--foreground), transparent 92%);
     color: var(--foreground);
   }
@@ -312,7 +309,6 @@
     :global(.room-page-toolbar__avatar-image) {
       block-size: 1.6rem;
       inline-size: 1.6rem;
-      border-radius: 0.72rem;
     }
 
     :global(.room-page-toolbar__viewer-trigger),
@@ -327,7 +323,6 @@
     :global(.room-page-toolbar__action) {
       block-size: 1.45rem;
       inline-size: 1.45rem;
-      border-radius: 0.65rem;
     }
 
     .room-page-toolbar__mode-chip {

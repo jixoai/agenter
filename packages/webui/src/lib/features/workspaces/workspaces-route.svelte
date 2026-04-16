@@ -805,7 +805,7 @@
 		detailRatioPersistence="workspaces:detail"
 		>
 			{#snippet main()}
-				<Card.Root class="h-full">
+				<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
 					<Card.Header class="gap-1 border-b px-3 py-3.5 md:px-5 md:py-4.5">
 						<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : 'Explorer'}</Card.Title>
 						<Card.Description class="hidden max-w-[30rem] text-xs leading-5 md:block md:text-sm">
@@ -822,7 +822,7 @@
 						{#if mode === 'rules'}
 							<div class="grid gap-2 p-2.5 md:p-3">
 								{#if rules.length === 0}
-									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+									<div class="rounded-[0.9rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
 										No explicit rules are configured for this workspace/avatar pair.
 								</div>
 							{:else}
@@ -833,9 +833,9 @@
 											type="button"
 											data-workspace-rule-id={rule.id}
 											class={cn(
-												'grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2.5 rounded-[1.1rem] border px-3 py-2.5 text-left transition-colors hover:bg-muted/40 md:px-4 md:py-3',
-												selectedRule?.id === rule.id ? 'border-primary bg-primary/5' : 'bg-card/70',
-												matched && 'bg-amber-500/10',
+												'grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2.5 rounded-[0.85rem] border border-transparent px-3 py-2.5 text-left transition-colors hover:bg-muted/34 md:px-4 md:py-3',
+												selectedRule?.id === rule.id ? 'bg-primary/6 ring-1 ring-primary/24' : 'bg-transparent',
+												matched && 'bg-amber-500/8',
 												activeMatched && 'ring-2 ring-amber-500/60',
 										)}
 									onclick={() => {
@@ -892,8 +892,8 @@
 		{/snippet}
 
 			{#snippet bottom()}
-				<Card.Root>
-					<Card.Content class="grid gap-2.5 px-3 pb-3 pt-3 md:gap-3 md:px-5 md:pb-5 md:pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+				<Card.Root class="gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
+					<Card.Content class="grid gap-2.5 border-t border-border/40 bg-background/35 px-3 pb-3 pt-3 md:gap-3 md:px-5 md:pb-5 md:pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
 						{#if mode === 'rules'}
 							<div class="grid gap-2.5 md:grid-cols-3">
 								<Input
@@ -1058,7 +1058,7 @@
 				summary={workspaceDrawerSummary}
 			>
 				{#if mode === 'rules'}
-					<div class="rounded-xl border px-4 py-3.5 text-sm">
+					<div class="rounded-[0.85rem] bg-muted/24 px-4 py-3.5 text-sm">
 						{#if selectedRule}
 							<div class="font-semibold">{selectedRule.pattern}</div>
 							<div class="mt-2 text-muted-foreground">
@@ -1069,7 +1069,7 @@
 						{/if}
 					</div>
 				{:else if previewLoading}
-					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
 							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">Loading preview…</div>
@@ -1077,7 +1077,7 @@
 						</div>
 					</div>
 				{:else if !preview}
-					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
 							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">Select one entry to inspect its preview.</div>
@@ -1086,20 +1086,20 @@
 					</div>
 				{:else if preview.previewKind === 'text'}
 					<ScrollView
-						class="max-h-[24rem] rounded-[0.95rem] border bg-muted/30 md:max-h-[28rem]"
+						class="max-h-[24rem] rounded-[0.85rem] bg-muted/24 md:max-h-[28rem]"
 						contentClass="min-w-full"
 					>
 						<pre class="p-3 text-[11px] leading-5 md:p-4 md:text-xs md:leading-6">{preview.textContent}</pre>
 					</ScrollView>
 				{:else if preview.previewKind === 'image' && preview.mediaDataUrl}
-					<img src={preview.mediaDataUrl} alt={preview.name} class="max-h-full w-full rounded-[0.95rem] border object-contain" />
+					<img src={preview.mediaDataUrl} alt={preview.name} class="max-h-full w-full rounded-[0.85rem] object-contain" />
 				{:else if preview.previewKind === 'audio' && preview.mediaDataUrl}
 					<audio controls src={preview.mediaDataUrl} class="w-full"></audio>
 				{:else if preview.previewKind === 'video' && preview.mediaDataUrl}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video controls src={preview.mediaDataUrl} class="max-h-full w-full rounded-[0.95rem] border"></video>
+					<video controls src={preview.mediaDataUrl} class="max-h-full w-full rounded-[0.85rem]"></video>
 				{:else}
-					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[1rem] border border-dashed border-border/70 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
 							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
 							<div class="font-medium text-foreground">{getPreviewEmptyStateTitle(preview)}</div>

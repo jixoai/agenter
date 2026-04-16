@@ -16,6 +16,6 @@
 
 ## 4. Content De-framing Polish
 
-- [ ] 4.1 Remove non-semantic card framing from the shared workspace content header and workspace detail support surfaces
-- [ ] 4.2 Reduce unnecessary rounded/border treatment in dense message room content chrome without breaking the compact toolbar contract
-- [ ] 4.3 Refresh targeted verification and visual evidence for the de-framed routes
+- [x] 4.1 Remove non-semantic card framing from the shared workspace content header and workspace detail support surfaces
+- [x] 4.2 Reduce unnecessary rounded/border treatment in dense message room content chrome without breaking the compact toolbar contract
+- [x] 4.3 Refresh targeted verification and visual evidence for the de-framed routes

@@ -151,25 +151,21 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0.85rem;
     align-items: start;
-    border-radius: 1.15rem;
-    border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
-    background: color-mix(in srgb, var(--card), white 4%);
+    border-radius: 0.95rem;
+    border: 0;
+    background: color-mix(in srgb, var(--card), white 3%);
     padding: 0.9rem;
     color: inherit;
     text-decoration: none;
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--background), white 78%),
-      0 20px 36px -34px color-mix(in srgb, var(--foreground), transparent 22%);
+    box-shadow: none;
     transition:
-      border-color 120ms ease,
       background-color 120ms ease,
       transform 120ms ease;
   }
 
   .room-assets-pane__row:hover,
   .room-assets-pane__row:focus-visible {
-    border-color: color-mix(in srgb, var(--foreground), transparent 74%);
-    background: color-mix(in srgb, var(--card), white 8%);
+    background: color-mix(in srgb, var(--foreground), transparent 95%);
     transform: translateY(-1px);
   }
 
@@ -178,8 +174,7 @@
     place-items: center;
     block-size: 2.1rem;
     inline-size: 2.1rem;
-    border-radius: 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
+    border-radius: 0.78rem;
     background: color-mix(in srgb, var(--background), transparent 8%);
     color: color-mix(in srgb, var(--foreground), transparent 28%);
   }

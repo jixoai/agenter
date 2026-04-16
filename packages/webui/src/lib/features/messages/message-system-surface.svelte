@@ -599,6 +599,26 @@
 		min-block-size: 0;
 	}
 
+	:global(.message-system-surface [part='composer-frame']) {
+		border: 0;
+		border-radius: 0.95rem;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.94)),
+			radial-gradient(circle at top, rgba(20, 184, 166, 0.05), transparent 56%);
+		box-shadow: none;
+		padding: 0.72rem;
+	}
+
+	:global(.message-system-surface .composer-action-chip) {
+		border: 0;
+		background: rgba(255, 255, 255, 0.72);
+		box-shadow: none;
+	}
+
+	:global(.message-system-surface [part='composer-send']) {
+		box-shadow: none;
+	}
+
 	:global([data-message-id][data-room-search-match='true']) {
 		border-radius: 1.1rem;
 		outline: 2px solid color-mix(in srgb, var(--foreground), transparent 78%);

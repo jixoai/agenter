@@ -52,10 +52,10 @@
 </script>
 
 <section
-	class="min-w-0 w-full rounded-[0.95rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_10%)_0%,color-mix(in_srgb,var(--background),var(--card)_76%)_100%)] px-2.5 py-2 shadow-[0_16px_32px_-34px_color-mix(in_srgb,var(--foreground),transparent_18%)] md:rounded-[1.05rem] md:px-4 md:py-3"
+	class="min-w-0 w-full border-b border-border/45 px-0 py-2 md:py-2.5"
 	data-testid="workspace-content-header"
 >
-	<div class="grid min-w-0 grid-cols-[minmax(0,10.5rem)_minmax(0,1fr)] items-center gap-2.5 md:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] md:gap-4">
+	<div class="grid min-w-0 grid-cols-[minmax(0,10.5rem)_minmax(0,1fr)] items-center gap-2 md:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] md:gap-3.5">
 		<Select.Root
 			type="single"
 			items={avatarItems}
@@ -66,13 +66,13 @@
 		>
 			<Select.Trigger
 				aria-label="View as"
-				class="h-10 min-h-10 w-full min-w-0 justify-start rounded-[0.95rem] border border-border/75 bg-background/82 px-2 py-1.5 shadow-none md:h-11 md:rounded-[1rem] md:px-2.5"
+				class="h-10 min-h-10 w-full min-w-0 justify-start rounded-[0.8rem] border-0 bg-muted/35 px-2 py-1.5 shadow-none md:h-11 md:rounded-[0.9rem] md:px-2.5"
 				data-testid="workspace-avatar-select"
 			>
 				<div class="flex min-w-0 items-center gap-2">
 					<ProfileAvatar
 						label={selectedAvatarEntry?.nickname ?? selectedAvatar}
-						class="size-7 rounded-[0.9rem] border-0 bg-foreground text-background md:size-8 md:rounded-[1rem]"
+						class="size-7 rounded-[0.72rem] border-0 bg-foreground text-background md:size-8 md:rounded-[0.82rem]"
 					/>
 					<div class="grid min-w-0 text-left leading-tight">
 						<span class="hidden text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground md:block">View as</span>
