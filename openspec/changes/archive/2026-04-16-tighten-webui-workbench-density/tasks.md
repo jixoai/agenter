@@ -37,3 +37,9 @@
 - [x] 6.8 Iteration 8: tighten footer action/hint spacing without breaking the compact composer contract
 - [x] 6.9 Iteration 9: re-run desktop/mobile evidence review and adjust the remaining highest-signal density issue
 - [x] 6.10 Iteration 10: refresh verification and visual evidence for the transcript-tightening pass
+
+## 7. Button Affordance Correction
+
+- [x] 7.1 Restore visible borders for composer `Attach` and `Screenshot` buttons while keeping the dense footer layout
+- [x] 7.2 Add a real DOM contract so compact composer action buttons cannot regress into borderless affordances
+- [x] 7.3 Refresh verification and visual evidence for the button-affordance correction

@@ -621,8 +621,9 @@
 	}
 
 	:global(.message-system-surface .composer-action-chip) {
-		border: 0;
-		background: transparent;
+		border-width: 1px;
+		border-color: color-mix(in srgb, var(--foreground), transparent 78%);
+		background: color-mix(in srgb, var(--muted), transparent 18%);
 		box-shadow: none;
 	}
 

@@ -5,8 +5,7 @@
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import SendHorizontal from "@lucide/svelte/icons/send-horizontal";
 
-  import { buttonVariants } from "../ui/button";
-  import { cn } from "../ui/utils";
+  import { Button } from "../ui/button";
   import type { ResolvedWebChatComposerCapabilities } from "./composer-contract";
 
   let {
@@ -30,9 +29,11 @@
 
 <div class="composer-actions" data-composer-row="actions" part="composer-actions">
   <div class="composer-actions-leading">
-    <button
+    <Button
       type="button"
-      class={cn(buttonVariants({ size: "sm", variant: "outline" }), "composer-action-chip")}
+      size="sm"
+      variant="outline"
+      class="composer-action-chip"
       disabled={disabled || submitting}
       title="Attach files"
       hidden={!capabilities.attachmentEnabled}
@@ -46,11 +47,13 @@
         <Paperclip class="size-4" />
       </span>
       <span class="composer-action-label">Attach</span>
-    </button>
+    </Button>
 
-    <button
+    <Button
       type="button"
-      class={cn(buttonVariants({ size: "sm", variant: "outline" }), "composer-action-chip")}
+      size="sm"
+      variant="outline"
+      class="composer-action-chip"
       disabled={disabled || submitting}
       title="Capture screenshot"
       hidden={!capabilities.screenshotEnabled}
@@ -59,12 +62,13 @@
     >
       <MonitorUp class="size-4" />
       <span class="composer-action-label">Screenshot</span>
-    </button>
+    </Button>
   </div>
 
-  <button
+  <Button
     type="button"
-    class={cn(buttonVariants({ size: "sm" }), "composer-send")}
+    size="sm"
+    class="composer-send"
     disabled={!canSubmit}
     title={capabilities.submitTitle ?? capabilities.submitLabel}
     part="composer-send"
@@ -77,7 +81,7 @@
       <SendHorizontal class="size-4" />
     </span>
     <span class="composer-send-label">{capabilities.submitLabel}</span>
-  </button>
+  </Button>
 </div>
 
 <style>
@@ -98,8 +102,6 @@
   :global(.composer-action-chip) {
     min-width: 0;
     border-radius: 0.8rem;
-    border-color: transparent;
-    background: rgba(255, 255, 255, 0.34);
     box-shadow: none;
   }
 

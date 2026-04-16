@@ -40,6 +40,14 @@
 		expect(Math.abs(leftRect.bottom - rightRect.bottom)).toBeLessThanOrEqual(epsilon);
 	};
 
+	const expectVisibleButtonBorder = (button: HTMLElement): void => {
+		const style = getComputedStyle(button);
+		expect(Number.parseFloat(style.borderTopWidth)).toBeGreaterThan(0);
+		expect(style.borderTopStyle).not.toBe('none');
+		expect(style.borderTopColor).not.toBe('rgba(0, 0, 0, 0)');
+		expect(style.borderTopColor).not.toBe('transparent');
+	};
+
 	const openAddUserForm = async (canvas: ReturnType<typeof within>): Promise<void> => {
 		const usersSection = await canvas.findByTestId('room-manage-users-section');
 		await userEvent.click(within(usersSection).getByRole('button', { name: 'Add user' }));
@@ -194,6 +202,8 @@
 		await waitFor(() => {
 			expectSameRow(attachAction, sendAction);
 			expectSameRow(screenshotAction, sendAction);
+			expectVisibleButtonBorder(attachAction);
+			expectVisibleButtonBorder(screenshotAction);
 		});
 		await expect(canvas.getByLabelText('Composer help')).not.toBeVisible();
 	}}
