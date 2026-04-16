@@ -127,8 +127,17 @@ export interface FeatureSettings {
 
 export type { AiApiStandard, AiProviderInputSettings, AiProviderKind, LegacyAiProviderKind } from "./provider";
 
+export interface AiThinkingSettings {
+  enabled?: boolean;
+  budgetTokens?: number;
+}
+
 export interface AiSettings {
   activeProvider?: string;
+  temperature?: number;
+  topK?: number;
+  maxToken?: number;
+  thinking?: AiThinkingSettings;
   providers?: Record<string, AiProviderSettings>;
 }
 

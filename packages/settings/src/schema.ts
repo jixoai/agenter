@@ -3,6 +3,13 @@ import { z } from "zod";
 import { aiProviderSchema } from "./provider";
 
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
+const aiThinkingSchema = z
+  .object({
+    enabled: z.boolean().describe("Whether reasoning mode is enabled for model calls.").optional(),
+    budgetTokens: z.number().int().positive().describe("Reasoning token budget when supported.").optional(),
+  })
+  .describe("Runtime reasoning policy for the active provider.")
+  .optional();
 
 export const settingsSchema = z.object({
   settingsSource: z.array(z.string()).describe("Settings source precedence from low to high priority.").optional(),
@@ -123,6 +130,10 @@ export const settingsSchema = z.object({
   ai: z
     .object({
       activeProvider: z.string().min(1).describe("Provider id selected for model calls.").optional(),
+      temperature: z.number().min(0).max(2).describe("Runtime sampling temperature for the active provider.").optional(),
+      topK: z.number().int().nonnegative().describe("Runtime top-k sampling bound for the active provider.").optional(),
+      maxToken: z.number().int().positive().describe("Runtime max output token budget for the active provider.").optional(),
+      thinking: aiThinkingSchema,
       providers: z.record(z.string().min(1), aiProviderSchema).describe("Provider registry by id.").optional(),
     })
     .describe("AI provider selection and registry.")

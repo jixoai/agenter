@@ -68,10 +68,12 @@ export const resolveRealSemanticJudgeAvailability = async (input: {
     apiKeyEnv: provider.apiKeyEnv,
     baseUrl: provider.baseUrl,
     headers: provider.headers,
-    temperature: provider.temperature ?? 0,
+    temperature: loaded.settings.ai?.temperature ?? 0,
     maxRetries: provider.maxRetries ?? 0,
-    maxToken: provider.maxToken,
+    maxToken: loaded.settings.ai?.maxToken,
     compactThreshold: provider.compactThreshold,
+    topK: loaded.settings.ai?.topK,
+    thinking: loaded.settings.ai?.thinking,
   };
   if (!config.baseUrl) {
     return {

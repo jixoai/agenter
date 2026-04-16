@@ -36,8 +36,21 @@ const defaultDraft = (): RuntimeHeartbeatConfigDraft => ({
 	thinkingBudgetTokens: null,
 });
 
+const pickEditableSettingsLayer = (graph: ScopedSettingsOutput | null) => {
+	if (!graph) {
+		return null;
+	}
+	return (
+		graph.layers.find((layer) => layer.editable && layer.sourceId === 'user:avatar') ??
+		graph.layers.find((layer) => layer.editable && layer.kind === 'avatar') ??
+		graph.layers.find((layer) => layer.editable && layer.sourceId === 'user') ??
+		graph.layers.find((layer) => layer.editable) ??
+		null
+	);
+};
+
 export const pickEditableSettingsLayerId = (graph: ScopedSettingsOutput | null): string | null =>
-	graph?.layers.find((layer) => layer.editable)?.layerId ?? null;
+	pickEditableSettingsLayer(graph)?.layerId ?? null;
 
 export const readRuntimeHeartbeatConfigBinding = (
 	graph: ScopedSettingsOutput | null,
@@ -51,17 +64,18 @@ export const readRuntimeHeartbeatConfigBinding = (
 			? ai.activeProvider
 			: Object.keys(providers ?? {})[0] ?? null;
 	const provider = activeProviderId ? toRecord(providers?.[activeProviderId]) : null;
-	const thinking = toRecord(provider?.thinking);
+	const thinking = toRecord(ai?.thinking);
 	const model = typeof provider?.model === 'string' && provider.model.length > 0 ? provider.model : null;
+	const editableLayer = layerFile?.layer ?? pickEditableSettingsLayer(graph);
 	return {
-		editableLayerId: layerFile?.layer.layerId ?? pickEditableSettingsLayerId(graph),
-		editableLayerSource: layerFile?.layer.sourceId ?? null,
+		editableLayerId: editableLayer?.layerId ?? null,
+		editableLayerSource: editableLayer?.sourceId ?? null,
 		activeProviderId,
 		providerLabel: activeProviderId ? [activeProviderId, model].filter(Boolean).join(' · ') : null,
 		draft: {
-			temperature: toNumberOrNull(provider?.temperature),
-			topK: toNumberOrNull(provider?.topK),
-			maxToken: toNumberOrNull(provider?.maxToken),
+			temperature: toNumberOrNull(ai?.temperature),
+			topK: toNumberOrNull(ai?.topK),
+			maxToken: toNumberOrNull(ai?.maxToken),
 			thinkingEnabled: thinking?.enabled === true,
 			thinkingBudgetTokens: toNumberOrNull(thinking?.budgetTokens),
 		},
@@ -88,7 +102,6 @@ const setOrDelete = (parent: YAMLMap<unknown, unknown>, key: string, value: numb
 
 export const writeRuntimeHeartbeatConfigLayer = (input: {
 	content: string;
-	activeProviderId: string;
 	draft: RuntimeHeartbeatConfigDraft;
 }): string => {
 	const document = parseDocument(input.content.trim().length > 0 ? input.content : '{}');
@@ -97,20 +110,17 @@ export const writeRuntimeHeartbeatConfigLayer = (input: {
 	}
 	const root = document.contents as YAMLMap<unknown, unknown>;
 	const ai = ensureMap(root, 'ai');
-	const providers = ensureMap(ai, 'providers');
-	const provider = ensureMap(providers, input.activeProviderId);
 
-	ai.set('activeProvider', input.activeProviderId);
-	setOrDelete(provider, 'temperature', input.draft.temperature);
-	setOrDelete(provider, 'topK', input.draft.topK);
-	setOrDelete(provider, 'maxToken', input.draft.maxToken);
+	setOrDelete(ai, 'temperature', input.draft.temperature);
+	setOrDelete(ai, 'topK', input.draft.topK);
+	setOrDelete(ai, 'maxToken', input.draft.maxToken);
 
 	if (input.draft.thinkingEnabled || input.draft.thinkingBudgetTokens !== null) {
-		const thinking = ensureMap(provider, 'thinking');
+		const thinking = ensureMap(ai, 'thinking');
 		thinking.set('enabled', input.draft.thinkingEnabled);
 		setOrDelete(thinking, 'budgetTokens', input.draft.thinkingBudgetTokens);
 	} else {
-		provider.delete('thinking');
+		ai.delete('thinking');
 	}
 
 	return String(document);

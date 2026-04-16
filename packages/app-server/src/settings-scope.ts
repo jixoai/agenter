@@ -125,13 +125,13 @@ const attachJumpTargets = (
           pointer: origin.pointer,
         };
       }
-      if (!fileFallbackTarget && layer.kind === "file") {
+      if (!fileFallbackTarget && (layer.kind === "file" || layer.kind === "avatar")) {
         fileFallbackTarget = {
           layerId: layer.layerId,
           pointer: origin.pointer,
         };
       }
-      if (layer.editable && layer.kind === "file") {
+      if (layer.editable && (layer.kind === "file" || layer.kind === "avatar")) {
         editableTarget = {
           layerId: layer.layerId,
           pointer: origin.pointer,

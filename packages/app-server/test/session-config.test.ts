@@ -92,4 +92,47 @@ describe("Feature: session config provider resolution", () => {
 
     expect(config.tasks.sources).toEqual([]);
   });
+
+  test("Scenario: Given ai runtime knobs live at ai root When resolving session config Then runtime uses ai root values without requiring provider mutations", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-session-config-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(homeDir, ".agenter", "avatar", "default", "settings.json"), {
+      ai: {
+        temperature: 0.6,
+        topK: 32,
+        maxToken: 16384,
+        thinking: {
+          enabled: true,
+          budgetTokens: 2048,
+        },
+      },
+    });
+
+    await writeJson(join(homeDir, ".agenter", "settings.json"), {
+      avatar: "default",
+      ai: {
+        activeProvider: "default",
+        providers: {
+          default: {
+            kind: "deepseek",
+            apiKeyEnv: "DEEPSEEK_API_KEY",
+            model: "deepseek-chat",
+            baseUrl: "https://api.deepseek.com/v1",
+          },
+        },
+      },
+    });
+
+    const config = await resolveSessionConfig(projectRoot, { homeDir, avatar: "default" });
+
+    expect(config.ai.temperature).toBe(0.6);
+    expect(config.ai.topK).toBe(32);
+    expect(config.ai.maxToken).toBe(16384);
+    expect(config.ai.thinking).toEqual({
+      enabled: true,
+      budgetTokens: 2048,
+    });
+  });
 });

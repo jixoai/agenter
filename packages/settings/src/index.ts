@@ -24,6 +24,7 @@ export type {
   AgentSettings,
   AgenterSettings,
   AiSettings,
+  AiThinkingSettings,
   BuiltinSettingsSource,
   FeatureSettings,
   LoadSettingsOptions,

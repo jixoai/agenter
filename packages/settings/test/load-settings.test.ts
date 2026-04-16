@@ -81,6 +81,22 @@ describe("@agenter/settings", () => {
     expect(loaded.settings.avatar).toBe("alice");
     expect(loaded.settings.ai?.providers?.default?.model).toBe("project-settings-model");
     expect(loaded.settings.sessionStoreTarget).toBe("workspace");
+    expect(
+      loaded.graph.layers.some(
+        (layer) =>
+          layer.kind === "avatar" &&
+          layer.sourceId === "user:avatar" &&
+          layer.path === join(homeDir, ".agenter", "avatar", "alice", "settings.json"),
+      ),
+    ).toBe(true);
+    expect(
+      loaded.graph.layers.some(
+        (layer) =>
+          layer.kind === "avatar" &&
+          layer.sourceId === "project:avatar" &&
+          layer.path === join(projectRoot, ".agenter", "avatar", "alice", "settings.json"),
+      ),
+    ).toBe(true);
   });
 
   test("loadSettings merges layered sources and normalizes file paths", async () => {

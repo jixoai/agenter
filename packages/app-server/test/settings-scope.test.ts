@@ -96,6 +96,11 @@ describe("Feature: scoped settings graph", () => {
 
   test("Scenario: Given global scope graph When listing and saving user settings Then global effective payload remains scope-shaped", async () => {
     const { homeDir } = createFixture();
+    writeJson(join(homeDir, ".agenter", "avatar", "jon", "settings.json"), {
+      ai: {
+        temperature: 0.5,
+      },
+    });
     writeJson(join(homeDir, ".agenter", "settings.json"), {
       avatar: "jon",
       lang: "en",
@@ -106,30 +111,36 @@ describe("Feature: scoped settings graph", () => {
       homeDir,
     });
     const userLayer = graph.layers.find((layer) => layer.sourceId === "user");
+    const avatarLayer = graph.layers.find((layer) => layer.sourceId === "user:avatar");
     if (!userLayer) {
       throw new Error("expected global user layer");
     }
+    if (!avatarLayer) {
+      throw new Error("expected global avatar layer");
+    }
     expect(graph.effective.provenance["/avatar"]).toBeDefined();
+    expect(graph.effective.content).toContain('"temperature": 0.5');
+    expect(graph.effective.provenance["/ai/temperature"]?.jumpTarget?.layerId).toBe(avatarLayer.layerId);
 
     const file = await readScopedSettingsLayer({
       scope: "global",
       homeDir,
-      layerId: userLayer.layerId,
+      layerId: avatarLayer.layerId,
     });
-    expect(file.content).toContain('"avatar": "jon"');
+    expect(file.content).toContain('"temperature": 0.5');
 
     const saved = await saveScopedSettingsLayer({
       scope: "global",
       homeDir,
-      layerId: userLayer.layerId,
-      content: '{\n  "avatar": "nova",\n  "lang": "en"\n}\n',
+      layerId: avatarLayer.layerId,
+      content: '{\n  "ai": {\n    "temperature": 0.7\n  }\n}\n',
       baseMtimeMs: file.mtimeMs,
     });
     expect(saved.ok).toBe(true);
     if (!saved.ok) {
       throw new Error("expected global save to succeed");
     }
-    expect(saved.effective.content).toContain('"avatar": "nova"');
+    expect(saved.effective.content).toContain('"temperature": 0.7');
   });
 
   test("Scenario: Given a readonly scoped layer When saving Then scope save reports readonly semantics", async () => {

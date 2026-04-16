@@ -142,7 +142,6 @@
 		try {
 			const nextContent = writeRuntimeHeartbeatConfigLayer({
 				content: heartbeatConfigLayerFile.content,
-				activeProviderId: heartbeatConfigBinding.activeProviderId,
 				draft,
 			});
 			const result = await controller.runtimeStore.saveRuntimeSettingsLayer({

@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { defaultAvatarNickname } from "@agenter/avatar";
 import { toJSONSchema } from "zod";
@@ -39,6 +39,8 @@ const defaultSettings = (): AgenterSettings => ({
   },
   ai: {
     activeProvider: "default",
+    temperature: 0.2,
+    maxToken: 64_000,
     providers: {
       default: {
         apiStandard: "openai-chat",
@@ -46,9 +48,7 @@ const defaultSettings = (): AgenterSettings => ({
         model: "deepseek-chat",
         apiKeyEnv: "DEEPSEEK_API_KEY",
         baseUrl: "https://api.deepseek.com/v1",
-        temperature: 0.2,
         maxRetries: 2,
-        maxToken: 64_000,
         compactThreshold: 0.75,
       },
     },
@@ -150,6 +150,41 @@ const classifyMissingResource = (errorMessage: string): boolean => {
 };
 
 const isLocalPath = (value: string): boolean => value.startsWith("/") || value.startsWith("~");
+
+const readAvatarNameFromRawSettings = (text: string): string | undefined => {
+  try {
+    const parsed = JSON.parse(text) as { avatar?: unknown };
+    return typeof parsed.avatar === "string" && parsed.avatar.trim().length > 0 ? parsed.avatar.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const resolveAvatarSettingsPath = (settingsPath: string, avatar: string): string | null => {
+  if (!isLocalPath(settingsPath)) {
+    return null;
+  }
+  if (settingsPath.endsWith("/settings.local.json")) {
+    return join(dirname(settingsPath), "avatar", avatar, "settings.local.json");
+  }
+  if (settingsPath.endsWith("/settings.json")) {
+    return join(dirname(settingsPath), "avatar", avatar, "settings.json");
+  }
+  return null;
+};
+
+const resolveAvatarForSourceLayer = (input: {
+  avatarOverride?: string;
+  sourceText?: string;
+  settings: AgenterSettings;
+}): string => {
+  return (
+    input.avatarOverride?.trim() ??
+    (input.sourceText ? readAvatarNameFromRawSettings(input.sourceText) : undefined) ??
+    input.settings.avatar?.trim() ??
+    defaultAvatarNickname()
+  );
+};
 
 const readActiveProvider = (settings: AgenterSettings | undefined): string | undefined => {
   const value = settings?.ai?.activeProvider?.trim();
@@ -324,6 +359,37 @@ export const loadSettings = async (options: LoadSettingsOptions): Promise<Loaded
   for (const source of descriptors) {
     try {
       const text = await loader.readText(source.uri, { forSettings: true });
+      const avatarPath = resolveAvatarSettingsPath(
+        source.path,
+        resolveAvatarForSourceLayer({
+          avatarOverride,
+          sourceText: text,
+          settings,
+        }),
+      );
+      if (avatarPath) {
+        try {
+          const avatarText = await loader.readText(avatarPath, { forSettings: true });
+          const avatarLayer = parseJsonText(avatarText);
+          const avatarGraphLayer = pushLayer({
+            sourceId: `${source.id}:avatar`,
+            kind: "avatar",
+            path: avatarPath,
+            exists: true,
+          });
+          applyMergedLayer(avatarLayer, avatarGraphLayer, `avatar settings layer ${source.id}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const exists = !classifyMissingResource(message);
+          pushLayer({
+            sourceId: `${source.id}:avatar`,
+            kind: "avatar",
+            path: avatarPath,
+            exists,
+            note: message,
+          });
+        }
+      }
       const layer = parseJsonText(text);
       const graphLayer = pushLayer({
         sourceId: source.id,

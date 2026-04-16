@@ -28,15 +28,8 @@ interface AiProviderSharedFields {
   apiKey?: string;
   apiKeyEnv?: string;
   baseUrl?: string;
-  temperature?: number;
-  topK?: number;
   maxRetries?: number;
-  maxToken?: number;
   compactThreshold?: number;
-  thinking?: {
-    enabled?: boolean;
-    budgetTokens?: number;
-  };
   headers?: Record<string, string>;
 }
 
@@ -59,17 +52,8 @@ const sharedFields = {
   apiKey: z.string().min(1).optional(),
   apiKeyEnv: z.string().min(1).optional(),
   baseUrl: z.string().min(1).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  topK: z.number().int().nonnegative().optional(),
   maxRetries: z.number().int().nonnegative().optional(),
-  maxToken: z.number().int().positive().optional(),
   compactThreshold: compactThresholdSchema,
-  thinking: z
-    .object({
-      enabled: z.boolean().optional(),
-      budgetTokens: z.number().int().positive().optional(),
-    })
-    .optional(),
   headers: z.record(z.string().min(1), z.string()).optional(),
 } satisfies Record<string, z.ZodTypeAny>;
 
@@ -146,12 +130,8 @@ const withSharedFields = (
   apiKey: input.apiKey,
   apiKeyEnv: input.apiKeyEnv,
   baseUrl: normalizeBaseUrl(input.baseUrl),
-  temperature: input.temperature,
-  topK: input.topK,
   maxRetries: input.maxRetries,
-  maxToken: input.maxToken,
   compactThreshold: input.compactThreshold,
-  thinking: input.thinking,
   headers: input.headers,
 });
 
