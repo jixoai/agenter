@@ -46,6 +46,18 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** those controls use the minimum border and rounding needed for affordance clarity
 - **THEN** the route does not reintroduce heavy nested card framing inside the shared message workbench body
 
+#### Scenario: Compact room composer keeps send inline with the action rail
+
+- **WHEN** a room is selected on an iPhone 14-sized viewport with the shared room composer idle
+- **THEN** the `Attach`, `Screenshot`, and `Send` actions stay inside one compact action rail instead of forcing a full-width send row
+- **THEN** the composer does not spend a second dedicated chrome band on passive action affordances
+
+#### Scenario: Passive room composer metadata stays low-noise
+
+- **WHEN** the operator is idle in the room composer without pending assets or an active submit/disabled state
+- **THEN** passive shortcut/help metadata collapses into low-emphasis text or compact hiding instead of badge-like pill clusters
+- **THEN** the composer preserves transcript height instead of presenting another nested footer card
+
 #### Scenario: Room body switches between chat and assets without extra chrome inside content
 
 - **WHEN** the operator toggles `chat` or `assets`

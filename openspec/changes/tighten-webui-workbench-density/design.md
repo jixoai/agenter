@@ -87,12 +87,22 @@ Alternative considered:
 - Add a separate mobile-only room toolbar or hide mode chips behind another action.
   - Rejected because it would weaken discoverability and violate the current shared toolbar contract.
 
+### Keep the room composer subordinate to the transcript instead of becoming a second footer card
+
+The transcript is the primary room task. The composer therefore needs to stay visually integrated with the footer band, not expand into another stacked surface with its own oversized button row, pill-heavy status rail, and detached draft card. The correct move is to keep the shared composer primitive, but tighten its input shell, keep `Send` inline with `Attach` and `Screenshot` at the `390px` baseline, and demote passive shortcut/help metadata into low-noise text or compact-only hiding.
+
+Alternative considered:
+
+- Keep the current composer stack and only shave a few pixels off padding.
+  - Rejected because the main regression is structural: the current send-row takeover and passive pill chrome consume transcript height even when the operator is idle.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:
 
 - workspace shell density and compact behavior
 - compact room toolbar visibility at `390px`
+- compact room composer density at `390px`
 
 Alternative considered:
 
