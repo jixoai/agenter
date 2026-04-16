@@ -148,7 +148,8 @@ Workspaces
 - 右侧动作应默认出现在 **第一行**。
 - 不要把右侧动作拆成上下两行，否则会造成信息归属混乱。
 - 右侧动作优先使用 **icon-buttons**，而不是文本按钮。
-- 当空间有限时，icon-button 默认不加边框，避免进一步切割视觉内容。
+- 当空间有限时，纯 icon-only 的次级 toolbar action 可以默认不加边框，避免进一步切割视觉内容。
+- 这条规则 **不适用于** `variant="outline"` 的显式按钮，也不适用于 `icon + text` 的可点击动作；这两类控件仍然必须保留可见边框来表达 click affordance。
 - 右侧动作集合必须由当前模式决定，而不是给整页硬塞一套固定按钮；例如有些模式提供 `preview / inspector` 切换，有些模式只提供搜索或新增。
 
 ### 7.2 Toolbar 第二行
@@ -179,6 +180,7 @@ Workspaces
 - 不要用更厚的 border 去“解释结构”。
 - 不要用更多阴影去“补结构问题”。
 - 不要把每一块次级信息都包成 card；信息一多，线条、边框和间距会快速失控。
+- 去装饰化只针对被动 surface，不针对可点击按钮；`outline` 按钮、显式 action button、icon+text button 的边框属于 affordance 语义，不得为了“更轻”而抹掉。
 - `metadata`、补充说明、低频状态默认优先使用轻量分隔、留白或单条 divider，而不是新的 card/border 容器。
 - 当 `right-drawer` 同时承载 inspection 与 summary 时，inspection 内容优先放上方连续阅读，summary facts 优先停靠底部，而不是在中间穿插新的卡片堆。
 - 头像或图标一旦放进带 border 的容器，必须满足 **同心内缩（concentric inset）**：内容到 `top/right/bottom/left` 的视觉内边距保持一致，确保内外轮廓同心，不出现偏上、偏下、偏左、偏右的漂移。

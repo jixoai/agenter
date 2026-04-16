@@ -344,6 +344,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **显式 slot，不做猜测**：图标与文本的布局必须通过 slot 明确声明，不依赖 child 顺序推断业务语义。
 - **padding 规则**：图标所在侧的 `padding-inline` 必须收紧到与 `padding-block` 同级，文字侧再保留较大的水平留白；该规则只在 affordance primitive 内实现，不在 feature 代码重复书写。
 - **业务代码禁手搓**：feature 层禁止再写 `inline-flex items-center gap-* px-* py-*` 来拼装图标+文字的按钮、badge、摘要条、列表操作项；一律复用统一 primitive。
+- **Button 语义优先于去装饰化**：只要控件的语义是 `Button`，尤其是 `variant="outline"` 或 `icon + text` 的 action button，就必须保留可见 border；密度优化只能减弱被动 surface，不能把按钮退化成无边框文字。
 - **回归测试要求**：新增或改动 icon+text surface 时，至少补一个 unit 或 Storybook DOM contract，断言 `data-inline-affordance-layout` 与关键 spacing class。
 
 ## 10.3) Async / Adaptive / Signal Primitive 契约（WebUI）

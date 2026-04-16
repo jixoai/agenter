@@ -52,6 +52,12 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** the `Attach`, `Screenshot`, and `Send` actions stay inside one compact action rail instead of forcing a full-width send row
 - **THEN** the composer does not spend a second dedicated chrome band on passive action affordances
 
+#### Scenario: Compact room composer keeps explicit action borders
+
+- **WHEN** the shared room composer renders `Attach` or `Screenshot` as clickable buttons
+- **THEN** those actions keep a visible button border even inside the dense room footer
+- **THEN** density tuning does not collapse `outline` actions into borderless text or icon fragments
+
 #### Scenario: Passive room composer metadata stays low-noise
 
 - **WHEN** the operator is idle in the room composer without pending assets or an active submit/disabled state

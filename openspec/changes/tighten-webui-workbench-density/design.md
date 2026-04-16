@@ -105,6 +105,15 @@ Alternative considered:
 - Re-theme the entire message room in one large sweep.
   - Rejected because it would mix too many subjective visual decisions at once and make it harder to preserve the already-fixed compact toolbar and composer contracts.
 
+### Preserve explicit button affordance borders while de-framing passive chrome
+
+The previous density pass went one step too far: it treated composer action buttons like passive chrome and stripped their outline borders. That was architecturally wrong. `Attach` and `Screenshot` are explicit clickable actions implemented through the shared `Button` primitive, so their border is part of the control contract, not optional decoration. The correction is to keep dense layout and light backgrounds, but restore the visible outline border and verify it through a real DOM contract.
+
+Alternative considered:
+
+- Keep the borderless actions because the row looks visually lighter.
+  - Rejected because the control loses affordance clarity and drifts away from the shared `Button` law.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:
