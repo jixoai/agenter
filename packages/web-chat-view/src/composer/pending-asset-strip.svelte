@@ -163,13 +163,13 @@
     inline-size: 100%;
     aspect-ratio: 1;
     overflow: hidden;
-    border: 1px solid rgba(226, 232, 240, 0.92);
-    border-radius: 1rem;
+    border: 0;
+    border-radius: 0.78rem;
     color: white;
     background:
       radial-gradient(circle at top, rgba(148, 163, 184, 0.14), transparent 56%),
       rgba(15, 23, 42, 0.96);
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    box-shadow: none;
   }
 
   .pending-media-image {
@@ -205,12 +205,12 @@
     z-index: 1;
     width: 1.25rem;
     height: 1.25rem;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 0.6rem;
+    border: 0;
     background: rgba(15, 23, 42, 0.78);
     padding: 0;
     color: white;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.24);
+    box-shadow: none;
     backdrop-filter: blur(16px);
   }
 
@@ -236,10 +236,10 @@
     max-width: 100%;
     align-items: stretch;
     overflow: hidden;
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    border-radius: 1rem;
-    background: rgba(248, 250, 252, 0.92);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    border: 0;
+    border-radius: 0.82rem;
+    background: rgba(248, 250, 252, 0.78);
+    box-shadow: none;
   }
 
   .pending-file-preview {

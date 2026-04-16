@@ -76,7 +76,7 @@
     <span class:hidden={submitting}>
       <SendHorizontal class="size-4" />
     </span>
-    <span>{capabilities.submitLabel}</span>
+    <span class="composer-send-label">{capabilities.submitLabel}</span>
   </button>
 </div>
 
@@ -85,28 +85,29 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .composer-actions-leading {
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   :global(.composer-action-chip) {
     min-width: 0;
-    border-radius: 999px;
-    border-color: rgba(203, 213, 225, 0.88);
-    background: rgba(255, 255, 255, 0.74);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    border-radius: 0.8rem;
+    border-color: transparent;
+    background: rgba(255, 255, 255, 0.34);
+    box-shadow: none;
   }
 
   :global(.composer-send) {
-    min-width: 7.5rem;
-    border-radius: 999px;
-    box-shadow: 0 18px 32px -24px rgba(15, 23, 42, 0.46);
+    min-width: 5.25rem;
+    border-radius: 0.82rem;
+    padding-inline: 0.85rem;
+    box-shadow: none;
   }
 
   @container (max-width: 34rem) {
@@ -116,17 +117,25 @@
 
     :global(.composer-action-chip) {
       width: 2rem;
+      min-width: 2rem;
       padding-inline: 0;
-    }
-  }
-
-  @container (max-width: 28rem) {
-    .composer-actions {
-      grid-template-columns: 1fr;
+      border-radius: 0.72rem;
     }
 
     :global(.composer-send) {
-      width: 100%;
+      min-width: 4.8rem;
+      padding-inline: 0.72rem;
+    }
+  }
+
+  @container (max-width: 22rem) {
+    :global(.composer-send) {
+      min-width: 2rem;
+      padding-inline: 0.6rem;
+    }
+
+    .composer-send-label {
+      display: none;
     }
   }
 </style>

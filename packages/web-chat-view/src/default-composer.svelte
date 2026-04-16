@@ -262,9 +262,11 @@
       />
 
       <div class="composer-footnote">
-        <span class="composer-hint" part="composer-hint" aria-live="polite">
-          {hintText}
-        </span>
+        {#if composerCapabilities.helpItems.length === 0}
+          <span class="composer-hint" part="composer-hint" aria-live="polite">
+            {hintText}
+          </span>
+        {/if}
         <ComposerStatusBar
           disabled={disabled}
           submitting={sending}
@@ -278,67 +280,68 @@
 
 <style>
   .composer {
-    padding: 0.75rem 0 0;
+    padding: 0.5rem 0 0;
     container-type: inline-size;
   }
 
   .composer-frame {
     display: grid;
-    gap: 0.75rem;
-    border: 1px solid rgba(226, 232, 240, 0.95);
-    border-radius: 1.2rem;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: 0.95rem;
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94)),
-      radial-gradient(circle at top, rgba(20, 184, 166, 0.08), transparent 54%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.82),
-      0 22px 46px -40px rgba(15, 23, 42, 0.35);
-    padding: 0.8rem;
+      linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 250, 252, 0.74)),
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.04), transparent 58%);
+    box-shadow: none;
+    padding: 0.55rem;
   }
 
   .composer.dragging .composer-frame {
     background:
-      linear-gradient(180deg, rgba(240, 253, 250, 0.94), rgba(236, 253, 245, 0.92)),
-      radial-gradient(circle at top, rgba(20, 184, 166, 0.16), transparent 58%);
+      linear-gradient(180deg, rgba(240, 253, 250, 0.82), rgba(236, 253, 245, 0.78)),
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.12), transparent 60%);
+    outline: 1px solid rgba(20, 184, 166, 0.14);
   }
 
   .composer-notice {
-    border: 1px solid rgba(245, 158, 11, 0.32);
-    border-radius: 1rem;
-    background: rgba(255, 251, 235, 0.96);
+    border: 0;
+    border-radius: 0.8rem;
+    background: rgba(255, 251, 235, 0.9);
     color: #b45309;
-    padding: 0.7rem 0.85rem;
-    font-size: 0.8rem;
-    line-height: 1.5;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.74rem;
+    line-height: 1.45;
   }
 
   .composer-toolbar {
     display: grid;
-    gap: 0.65rem;
+    gap: 0.45rem;
   }
+
   .composer-footnote {
     display: grid;
-    gap: 0.55rem;
+    gap: 0.35rem;
   }
 
   .composer-hint {
     color: rgba(100, 116, 139, 0.96);
-    font-size: 0.72rem;
-    line-height: 1.45;
+    font-size: 0.68rem;
+    line-height: 1.35;
   }
 
   @container (max-width: 34rem) {
     .composer {
-      padding-top: 0.45rem;
+      padding-top: 0.25rem;
     }
 
     .composer-frame {
-      gap: 0.55rem;
-      padding: 0.65rem;
+      gap: 0.4rem;
+      padding: 0.45rem;
     }
 
+    .composer-toolbar,
     .composer-footnote {
-      gap: 0.4rem;
+      gap: 0.25rem;
     }
 
     .composer-hint {

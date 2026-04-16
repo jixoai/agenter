@@ -32,6 +32,14 @@
 		}
 	};
 
+	const expectSameRow = (left: HTMLElement, right: HTMLElement): void => {
+		const leftRect = left.getBoundingClientRect();
+		const rightRect = right.getBoundingClientRect();
+		const epsilon = 2;
+		expect(Math.abs(leftRect.top - rightRect.top)).toBeLessThanOrEqual(epsilon);
+		expect(Math.abs(leftRect.bottom - rightRect.bottom)).toBeLessThanOrEqual(epsilon);
+	};
+
 	const openAddUserForm = async (canvas: ReturnType<typeof within>): Promise<void> => {
 		const usersSection = await canvas.findByTestId('room-manage-users-section');
 		await userEvent.click(within(usersSection).getByRole('button', { name: 'Add user' }));
@@ -169,6 +177,25 @@
 				assetsTab,
 			]);
 		});
+	}}
+>
+	<Harness disableManageDialogPortal surfaceClass="h-[52rem] w-[390px] max-w-full min-w-0 bg-background" />
+</Story>
+
+<Story
+	name="Scenario: Given the compact room composer When idle at 390px width Then send stays inline and passive help chrome does not occupy a second footer row"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const attachAction = canvas.getByRole('button', { name: 'Attach' }) as HTMLElement;
+		const screenshotAction = canvas.getByRole('button', { name: 'Screenshot' }) as HTMLElement;
+		const sendAction = canvas.getByRole('button', { name: 'Send' }) as HTMLElement;
+
+		await waitFor(() => {
+			expectSameRow(attachAction, sendAction);
+			expectSameRow(screenshotAction, sendAction);
+		});
+		await expect(canvas.getByLabelText('Composer help')).not.toBeVisible();
 	}}
 >
 	<Harness disableManageDialogPortal surfaceClass="h-[52rem] w-[390px] max-w-full min-w-0 bg-background" />

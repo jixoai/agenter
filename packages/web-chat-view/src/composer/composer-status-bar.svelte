@@ -24,7 +24,7 @@
     if (submitting) {
       return {
         label: "Sending",
-        toneClassName: "border-amber-200 bg-amber-50 text-amber-800",
+        toneClassName: "text-amber-700",
         Icon: LoaderCircle,
         iconClassName: "animate-spin",
       };
@@ -32,34 +32,44 @@
     if (disabled) {
       return {
         label: "Unavailable",
-        toneClassName: "border-slate-200 bg-slate-100 text-slate-600",
+        toneClassName: "text-slate-500",
         Icon: TextCursorInput,
         iconClassName: "",
       };
     }
-    if (capabilities.attachmentEnabled) {
+    if (pendingAssetCount > 0) {
       return {
-        label: pendingAssetCount > 0 ? "Attachments ready" : "Draft + files",
-        toneClassName: "border-teal-200 bg-teal-50 text-teal-800",
+        label: `${pendingAssetCount} ${pendingAssetCount === 1 ? "file" : "files"} ready`,
+        toneClassName: "text-teal-700",
         Icon: ImagePlus,
         iconClassName: "",
       };
     }
-    return {
-      label: "Text draft",
-      toneClassName: "border-slate-200 bg-slate-50 text-slate-700",
-      Icon: TextCursorInput,
-      iconClassName: "",
-    };
+    if (!capabilities.attachmentEnabled) {
+      return {
+        label: "Text draft",
+        toneClassName: "text-slate-600",
+        Icon: TextCursorInput,
+        iconClassName: "",
+      };
+    }
+    return null;
   });
 </script>
 
-<div class="composer-status" data-composer-row="status" part="composer-status">
+<div
+  class="composer-status"
+  data-composer-row="status"
+  data-has-meta={statusMeta ? "true" : "false"}
+  part="composer-status"
+>
   <div class="composer-status-copy">
-    <div class="composer-status-meta {statusMeta.toneClassName}">
-      <statusMeta.Icon class={`size-3.5 shrink-0 ${statusMeta.iconClassName}`} />
-      <span class="truncate">{statusMeta.label}</span>
-    </div>
+    {#if statusMeta}
+      <div class="composer-status-meta {statusMeta.toneClassName}">
+        <statusMeta.Icon class={`size-3.5 shrink-0 ${statusMeta.iconClassName}`} />
+        <span class="truncate">{statusMeta.label}</span>
+      </div>
+    {/if}
 
     {#if capabilities.helpItems.length > 0}
       <div class="composer-status-hints">
@@ -73,34 +83,38 @@
     {/if}
   </div>
 
-  <HelpHint
-    helpId="web-chat-view:composer-shortcuts"
-    textContext={`web-chat-view composer: ${helpContext}`}
-    ariaLabel="Composer help"
-    align="end"
-    side="top"
-    class="composer-help"
-  >
-    {#snippet children()}
-      <div class="composer-help-trigger" aria-hidden="true">
-        <CircleHelp class="size-3.5" />
-      </div>
-    {/snippet}
-  </HelpHint>
+  {#if capabilities.helpItems.length > 0}
+    <HelpHint
+      helpId="web-chat-view:composer-shortcuts"
+      textContext={`web-chat-view composer: ${helpContext}`}
+      ariaLabel="Composer help"
+      align="end"
+      side="top"
+      class="composer-help"
+    >
+      {#snippet children()}
+        <div class="composer-help-trigger" aria-hidden="true">
+          <CircleHelp class="size-3.5" />
+        </div>
+      {/snippet}
+    </HelpHint>
+  {/if}
 </div>
 
 <style>
   .composer-status {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.75rem;
-    padding-top: 0.25rem;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-top: 0.1rem;
   }
 
   .composer-status-copy {
-    display: grid;
-    gap: 0.45rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.7rem;
     min-width: 0;
   }
 
@@ -108,33 +122,28 @@
     display: inline-flex;
     min-width: 0;
     align-items: center;
-    gap: 0.4rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 0.25rem 0.6rem;
-    font-size: 0.68rem;
+    gap: 0.35rem;
+    padding: 0;
+    font-size: 0.64rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
   }
 
   .composer-status-hints {
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.25rem 0.6rem;
   }
 
   .composer-status-hint {
     display: inline-flex;
     min-width: 0;
     align-items: center;
-    gap: 0.35rem;
-    border-radius: 999px;
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    background: rgba(255, 255, 255, 0.72);
-    padding: 0.18rem 0.5rem;
-    font-size: 0.64rem;
-    line-height: 1.35;
+    gap: 0.28rem;
+    padding: 0;
+    font-size: 0.62rem;
+    line-height: 1.3;
     color: #64748b;
   }
 
@@ -145,23 +154,43 @@
 
   .composer-help {
     display: inline-flex;
+    align-self: flex-start;
   }
 
   .composer-help-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 999px;
-    border: 1px solid rgba(203, 213, 225, 0.9);
-    background: rgba(255, 255, 255, 0.88);
-    color: #64748b;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 0.5rem;
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
   }
 
   @container (max-width: 34rem) {
+    .composer-status[data-has-meta="false"] {
+      display: none;
+    }
+
     .composer-status-hints {
       display: none;
     }
+
+    .composer-help {
+      display: none;
+    }
   }
-  </style>
+
+  @media (max-width: 430px) {
+    .composer-status[data-has-meta="false"] {
+      display: none;
+    }
+
+    .composer-status-hints,
+    .composer-help {
+      display: none;
+    }
+  }
+</style>

@@ -194,16 +194,16 @@
                 backgroundColor: "transparent",
               },
               ".cm-editor": {
-                minHeight: "var(--chat-draft-editor-min-height, 82px)",
+                minHeight: "var(--chat-draft-editor-min-height, 72px)",
                 backgroundColor: "transparent",
               },
               ".cm-scroller": {
                 fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
-                lineHeight: "1.55",
+                lineHeight: "1.5",
               },
               ".cm-content": {
-                minHeight: "var(--chat-draft-editor-content-min-height, 74px)",
-                padding: "10px 12px 9px",
+                minHeight: "var(--chat-draft-editor-content-min-height, 60px)",
+                padding: "8px 10px 7px",
               },
               ".cm-focused": {
                 outline: "none",
@@ -285,7 +285,7 @@
 {#if useCodeMirror}
   <div
     bind:this={hostRef}
-    class="chat-draft-editor min-w-0 rounded-[1rem] border border-slate-200/95 bg-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-[color,box-shadow] focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
+    class="chat-draft-editor min-w-0 rounded-[0.9rem] border border-slate-200/72 bg-white/60 shadow-none transition-[color,box-shadow] focus-within:border-ring/60 focus-within:ring-ring/20 focus-within:ring-[2px]"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
   ></div>
@@ -294,7 +294,7 @@
     value={value}
     rows={4}
     disabled={disabled || submitting}
-    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,5.1rem)] resize-none rounded-[1rem] border-slate-200/95 bg-white/78 px-3 py-2.5 text-[13px] leading-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
+    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,4.4rem)] resize-none rounded-[0.9rem] border-slate-200/72 bg-white/60 px-2.5 py-2 text-[13px] leading-[1.5] shadow-none"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
     {placeholder}
@@ -320,14 +320,14 @@
 
 <style>
   .chat-draft-editor {
-    --chat-draft-editor-min-height: 5.1rem;
-    --chat-draft-editor-content-min-height: 74px;
+    --chat-draft-editor-min-height: 4.4rem;
+    --chat-draft-editor-content-min-height: 60px;
   }
 
   @container (max-width: 34rem) {
     .chat-draft-editor {
-      --chat-draft-editor-min-height: 4rem;
-      --chat-draft-editor-content-min-height: 54px;
+      --chat-draft-editor-min-height: 3.35rem;
+      --chat-draft-editor-content-min-height: 44px;
     }
   }
 </style>

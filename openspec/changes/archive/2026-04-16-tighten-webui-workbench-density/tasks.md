@@ -19,3 +19,8 @@
 - [x] 4.1 Remove non-semantic card framing from the shared workspace content header and workspace detail support surfaces
 - [x] 4.2 Reduce unnecessary rounded/border treatment in dense message room content chrome without breaking the compact toolbar contract
 - [x] 4.3 Refresh targeted verification and visual evidence for the de-framed routes
+
+## 5. Room Composer Compactness
+
+- [x] 5.1 Tighten the shared room composer so the draft editor, action rail, and passive metadata stay transcript-first at the 390px mobile baseline
+- [x] 5.2 Refresh targeted verification and visual evidence for the composer compaction pass
