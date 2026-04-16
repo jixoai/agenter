@@ -13,3 +13,9 @@
 
 - [x] 3.1 Run targeted WebUI verification for the touched routes and stories
 - [x] 3.2 Capture updated visual evidence and leave the change in an apply-ready state
+
+## 4. Content De-framing Polish
+
+- [ ] 4.1 Remove non-semantic card framing from the shared workspace content header and workspace detail support surfaces
+- [ ] 4.2 Reduce unnecessary rounded/border treatment in dense message room content chrome without breaking the compact toolbar contract
+- [ ] 4.3 Refresh targeted verification and visual evidence for the de-framed routes

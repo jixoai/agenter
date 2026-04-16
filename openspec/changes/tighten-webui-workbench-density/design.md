@@ -4,17 +4,22 @@ The repository already has the correct structural law for these pages: shared wo
 
 `Workspaces` currently spends too much vertical and horizontal budget on low-value framing in both its start page and detail route. The shared content header reads like a detached card instead of integrated workbench chrome, the chooser/detail start page gives too much area to low-signal summary content, and the compact route still burns too much space before the main tree or rule catalog gets useful height. `Messages` has a related but narrower problem: its fixed-height toolbar already owns the right semantics, but the compact layout contract is brittle at the `390px` mobile baseline.
 
+After the first pass, a second route-level issue remains: some content surfaces still carry unnecessary `rounded` / `border` framing that no longer communicates distinct semantics. The result is "fake card" layering inside `page-content`, especially in the workspace content header, workspace detail drawer states, and compact room content chrome.
+
 ## Goals / Non-Goals
 
 **Goals:**
+
 - Keep the existing split-detail and workbench chrome laws unchanged while tightening high-value route assembly.
 - Make `Workspaces` the reference implementation for integrated desktop/mobile density inside the current shell.
 - Rebalance the workspace start page toward list-first scanning and factual, low-noise detail summary.
 - Rebalance the workspace detail route so the shared content header, primary stage, bottom-area, and right detail use less slack without losing their current role boundaries.
 - Make the compact `Messages` room toolbar stable at the fixed `48px` height and `390px` width baseline.
+- Remove non-semantic card framing from content areas whose job is density and continuity rather than standalone surface ownership.
 - Encode the new behavior in Storybook DOM / contract coverage so future tweaks do not drift.
 
 **Non-Goals:**
+
 - Do not introduce a new layout primitive or re-open the split-detail law.
 - Do not redesign `runtime` or `terminals` in this change.
 - Do not move detail-local workspace actions into the toolbar.
@@ -33,6 +38,7 @@ The correct architectural move is to keep all workbench framing responsibilities
 This avoids reopening a solved platform problem just because a few route-local surfaces still look loose.
 
 Alternative considered:
+
 - Rework shared workbench primitives again before touching the routes.
   - Rejected because the current bug is not the primitive contract; it is how the route spends its density budget inside that contract.
 
@@ -41,6 +47,7 @@ Alternative considered:
 The start page is a chooser, not a showcase card. Its primary job is to help the operator scan roots and enter one quickly. The list therefore keeps height priority, while the right detail only keeps short factual summary plus the explicit open action.
 
 Alternative considered:
+
 - Keep the current large preview/detail treatment and only tighten padding.
   - Rejected because the page would still spend too much space on low-value summary copy and leave too little first-screen scanning budget on mobile.
 
@@ -49,14 +56,25 @@ Alternative considered:
 `View as` and workspace root identity remain shared across `Explorer / Rules / Private`, but the surface needs to read as integrated workbench content instead of a second large hero card. The implementation will keep the same facts while reducing padding, visual weight, and unused white space, especially on compact screens.
 
 Alternative considered:
+
 - Split desktop and mobile into different header structures.
   - Rejected because it would drift the same context facts into two route-local header models and reintroduce maintenance divergence.
+
+### Strip fake-card framing from content areas that already live inside workbench surfaces
+
+When a section already sits inside `page-content`, repeated rounded corners, full borders, and showcase gradients should not survive unless they mark a true semantic owner such as media clipping or destructive notice. The workspace content header, rule rows, preview placeholders, and compact room content chrome should read as integrated content bands, not nested cards.
+
+Alternative considered:
+
+- Keep the current framing and only reduce padding.
+  - Rejected because the remaining problem is not only density; it is repeated surface ownership signals that make the content look heavier than it is.
 
 ### Treat compact workspace support surfaces as dense docks, not secondary cards
 
 On compact screens, the main tree/catalog must stay dominant. The bottom-area therefore compresses into a denser dock and the right detail keeps only the current preview/metadata model instead of expanding into layered secondary cards.
 
 Alternative considered:
+
 - Leave compact bottom-area and preview surfaces as card-like blocks and only hide some copy.
   - Rejected because the height problem comes from structural slack, not just from text length.
 
@@ -65,6 +83,7 @@ Alternative considered:
 The room toolbar already has the right semantics and action order. The fix is to tighten layout and affordance sizing so viewer identity, action icons, and `chat/assets` chips all remain visible inside the fixed toolbar band at the `390px` baseline. This is a local composition fix, not a new toolbar model.
 
 Alternative considered:
+
 - Add a separate mobile-only room toolbar or hide mode chips behind another action.
   - Rejected because it would weaken discoverability and violate the current shared toolbar contract.
 
@@ -76,6 +95,7 @@ Both problem areas are visible and interaction-sensitive. Story-driven DOM tests
 - compact room toolbar visibility at `390px`
 
 Alternative considered:
+
 - Rely only on source-string contract tests or manual screenshots.
   - Rejected because layout regressions need a real DOM gate, not only string presence checks.
 
@@ -85,6 +105,7 @@ Alternative considered:
 - [Risk] Workspace mobile tightening could accidentally hide key actions when compact detail opens. -> Mitigation: preserve the existing close-only takeover law and keep bottom-area actions available before and after detail open.
 - [Risk] The room toolbar compact fix may depend on brittle pixel tolerances. -> Mitigation: update the story assertion to verify containment and visibility against the fixed toolbar band after the new layout settles.
 - [Risk] Route-level tuning may expose a later need for a shared density primitive. -> Mitigation: keep implementations local in this change, then promote a primitive only if the same pattern repeats in `runtime` or other workbenches.
+- [Risk] Removing too much framing could blur truly separate states such as empty/error/destructive content. -> Mitigation: keep borders only for semantic notice states and preserve clipping only for media/content surfaces that actually need it.
 
 ## Migration Plan
 
