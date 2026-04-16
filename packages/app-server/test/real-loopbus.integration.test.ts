@@ -7,6 +7,7 @@ import {
   REAL_RELAY_AVATAR_PROFILE,
 } from "../test-support/real-ai-test-personas";
 import {
+  runRealCliCompactScenario,
   runRealCompactFollowUpScenario,
   runRealExternalFactThroughShellScenario,
   runRealInterleavedCanInputScenario,
@@ -97,6 +98,37 @@ describe("Feature: real AI loopbus convergence", () => {
         ).toBe(true);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 240_000 },
+  );
+
+  realTest(
+    "Scenario: Given a real provider When the room explicitly requires CLI compact mode Then the assistant inspects help and completes the reply through message send --compact",
+    async () => {
+      const harness = await createRealKernelHarness({ sessionName: "real-cli-compact" });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
+        const result = await runRealCliCompactScenario(harness);
+
+        expect(result.reply.chatId).toBe(primaryRoomId);
+        expect(result.reply.content).toBe("COMPACT-OK");
+        expect(result.settledAttention.active).toHaveLength(0);
+        expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
+        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.rootWorkspaceBashCommands).toContain("message send --help");
+        expect(result.rootWorkspaceBashCommands.some((command) => command.startsWith("message send --compact "))).toBe(
+          true,
+        );
       } finally {
         await harness.stop();
       }

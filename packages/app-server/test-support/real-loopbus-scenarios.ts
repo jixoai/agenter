@@ -203,6 +203,27 @@ const extractToolTraceTools = (call: { response?: unknown }): string[] => {
   );
 };
 
+const extractRootWorkspaceBashCommands = (call: { response?: unknown }): string[] => {
+  const response = call.response;
+  if (!response || typeof response !== "object" || !("toolTrace" in response) || !Array.isArray(response.toolTrace)) {
+    return [];
+  }
+  return response.toolTrace.flatMap((entry) => {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      entry.tool !== "root_workspace_bash" ||
+      !("input" in entry) ||
+      !entry.input ||
+      typeof entry.input !== "object" ||
+      typeof entry.input.command !== "string"
+    ) {
+      return [];
+    }
+    return [entry.input.command];
+  });
+};
+
 const extractModelDecision = (call: { response?: unknown }): Record<string, unknown> | null => {
   const response = call.response;
   if (!response || typeof response !== "object" || !("decision" in response)) {
@@ -311,6 +332,74 @@ export const runRealSimpleReplyScenario = async (
     settledAttention,
     recentModelCalls,
   };
+};
+
+export interface RealCliCompactScenarioResult {
+  reply: ChatMessage;
+  settledAttention: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number | null;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+  toolTraceTools: string[];
+  rootWorkspaceBashCommands: string[];
+}
+
+export const runRealCliCompactScenario = async (harness: RealKernelHarness): Promise<RealCliCompactScenarioResult> => {
+  const timeoutMs = 180_000;
+  const primaryRoomId = getPrimaryRoomId(harness);
+  const startAt = Date.now();
+
+  try {
+    const prompt = [
+      "请完成一个最小的 CLI compact 验证。",
+      `目标房间 chatId: ${primaryRoomId}`,
+      "必须先通过 root_workspace_bash 执行一次 `message send --help`。",
+      "然后必须通过 root_workspace_bash 使用 `message send --compact` 向目标房间发送一条用户可见消息。",
+      "最终发送的消息内容必须精确等于：COMPACT-OK",
+      "不要使用普通 object JSON message send，也不要发送额外的最终结果文本。",
+      "完成后把相关 attention score 收敛到 0。",
+    ].join("\n");
+    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    if (!sent.ok) {
+      throw new Error(`failed to send compact prompt: ${sent.reason ?? "unknown"}`);
+    }
+
+    const reply = await waitForAssistantMessage(harness, {
+      label: "compact cli reply on primary room",
+      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === "COMPACT-OK",
+      timeoutMs,
+    });
+    const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
+    const modelCallRecords = await waitForModelCallsAfter(harness, {
+      afterTimestamp: startAt,
+      label: "compact cli model call completion",
+      timeoutMs,
+    });
+
+    return {
+      reply,
+      settledAttention,
+      recentModelCalls: modelCallRecords.map((call) => ({
+        id: call.id,
+        cycleId: call.cycleId,
+        status: call.status,
+        outcome: readModelOutcomeCode(call),
+      })),
+      toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+      rootWorkspaceBashCommands: modelCallRecords.flatMap(extractRootWorkspaceBashCommands),
+    };
+  } catch (error) {
+    throw await buildRealScenarioDiagnosticError(harness, {
+      label: "real-cli-compact-scenario",
+      error,
+      extra: {
+        primaryRoomId,
+      },
+    });
+  }
 };
 
 export interface RealLunchRelayScenarioResult {
