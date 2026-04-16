@@ -100,7 +100,7 @@ The runtime client SHALL hydrate, merge, and republish one session-local Heartbe
 
 ### Requirement: Runtime clients SHALL surface running tool params from durable invocation rows
 
-The runtime client and Heartbeat UI SHALL render the invocation-first Heartbeat ledger directly, so operators can inspect tool intent before the tool finishes.
+The runtime client and Heartbeat UI SHALL render the invocation-first Heartbeat ledger directly, so operators can inspect tool intent before the tool finishes. When a running invocation row receives richer durable input after the initial `tool_call` start event, the grouped Heartbeat publication SHALL republish that same invocation row in place without waiting for completion and without moving it into a new group or a second visual row.
 
 #### Scenario: Heartbeat shows running invocation intent before completion
 
@@ -108,6 +108,13 @@ The runtime client and Heartbeat UI SHALL render the invocation-first Heartbeat 
 - **THEN** the Heartbeat UI shows the invocation as running
 - **AND** the operator can inspect the tool parameters immediately
 - **AND** the UI does not wait for a `tool_result` before exposing that intent
+
+#### Scenario: Later argument hydration updates the same running row
+
+- **WHEN** the provider first emits a running `tool_call` row with empty or partial arguments and later durable updates hydrate richer invocation input for the same `invocationId`
+- **THEN** the runtime publication path republishes the grouped Heartbeat data for that same invocation row while it is still running
+- **AND** the Heartbeat UI reveals the hydrated parameters on the existing running row
+- **AND** the operator does not need to wait for invocation completion to inspect those parameters
 
 #### Scenario: Invocation completion upgrades the same visual row
 
@@ -186,3 +193,4 @@ Grouped Heartbeat pagination SHALL be exposed from the scroll surface itself ins
 - **WHEN** the operator scrolls to the top of the grouped Heartbeat stream and older grouped pages exist
 - **THEN** the UI shows a centered `Load older` affordance near the top edge of the stream
 - **AND** after the final older page is loaded, that same affordance region shows `No older messages`
+
