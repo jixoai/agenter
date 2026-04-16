@@ -7,6 +7,8 @@ export {
   type AiApiStandard,
   type AiProviderInputSettings,
   type AiProviderKind,
+  type AiProviderPricingBandSettings,
+  type AiProviderPricingSettings,
   type AiProviderSettings,
   type LegacyAiProviderKind,
 } from "./provider";

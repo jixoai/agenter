@@ -10,11 +10,27 @@ export interface RuntimeHeartbeatConfigDraft {
 	thinkingBudgetTokens: number | null;
 }
 
+export interface RuntimeHeartbeatProviderPricingBand {
+	upToTokens: number | null;
+	inputPerMillion: number;
+	cachedInputPerMillion: number | null;
+	outputPerMillion: number;
+}
+
+export interface RuntimeHeartbeatProviderMetadata {
+	providerId: string;
+	model: string | null;
+	maxContextTokens: number | null;
+	pricingCurrency: string | null;
+	pricingBands: RuntimeHeartbeatProviderPricingBand[];
+}
+
 export interface RuntimeHeartbeatConfigBinding {
 	editableLayerId: string | null;
 	editableLayerSource: string | null;
 	activeProviderId: string | null;
 	providerLabel: string | null;
+	providerMetadata: RuntimeHeartbeatProviderMetadata | null;
 	draft: RuntimeHeartbeatConfigDraft;
 }
 
@@ -27,6 +43,31 @@ const toRecord = (value: unknown): Record<string, unknown> | null => {
 
 const toNumberOrNull = (value: unknown): number | null =>
 	typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const readPricingBands = (value: unknown): RuntimeHeartbeatProviderPricingBand[] => {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value.flatMap((entry) => {
+		const record = toRecord(entry);
+		if (!record) {
+			return [];
+		}
+		const inputPerMillion = toNumberOrNull(record.inputPerMillion);
+		const outputPerMillion = toNumberOrNull(record.outputPerMillion);
+		if (inputPerMillion === null || outputPerMillion === null) {
+			return [];
+		}
+		return [
+			{
+				upToTokens: toNumberOrNull(record.upToTokens),
+				inputPerMillion,
+				cachedInputPerMillion: toNumberOrNull(record.cachedInputPerMillion),
+				outputPerMillion,
+			},
+		];
+	});
+};
 
 const defaultDraft = (): RuntimeHeartbeatConfigDraft => ({
 	temperature: null,
@@ -66,12 +107,24 @@ export const readRuntimeHeartbeatConfigBinding = (
 	const provider = activeProviderId ? toRecord(providers?.[activeProviderId]) : null;
 	const thinking = toRecord(ai?.thinking);
 	const model = typeof provider?.model === 'string' && provider.model.length > 0 ? provider.model : null;
+	const pricing = toRecord(provider?.pricing);
+	const pricingCurrency = typeof pricing?.currency === 'string' && pricing.currency.trim().length > 0 ? pricing.currency : null;
+	const pricingBands = readPricingBands(pricing?.bands);
 	const editableLayer = layerFile?.layer ?? pickEditableSettingsLayer(graph);
 	return {
 		editableLayerId: editableLayer?.layerId ?? null,
 		editableLayerSource: editableLayer?.sourceId ?? null,
 		activeProviderId,
 		providerLabel: activeProviderId ? [activeProviderId, model].filter(Boolean).join(' · ') : null,
+		providerMetadata: activeProviderId
+			? {
+					providerId: activeProviderId,
+					model,
+					maxContextTokens: toNumberOrNull(provider?.maxContextTokens),
+					pricingCurrency,
+					pricingBands,
+				}
+			: null,
 		draft: {
 			temperature: toNumberOrNull(ai?.temperature),
 			topK: toNumberOrNull(ai?.topK),
@@ -141,5 +194,6 @@ export const createEmptyRuntimeHeartbeatConfigBinding = (): RuntimeHeartbeatConf
 	editableLayerSource: null,
 	activeProviderId: null,
 	providerLabel: null,
+	providerMetadata: null,
 	draft: defaultDraft(),
 });

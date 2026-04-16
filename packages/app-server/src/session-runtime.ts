@@ -5277,6 +5277,14 @@ export class SessionRuntime {
     this.sessionStore?.setLifecycle({ status: "running" });
   }
 
+  requestCompact(trigger: CompactCycleTrigger = "manual"): { ok: boolean } {
+    if (!this.started) {
+      return { ok: false };
+    }
+    this.queueCompactCycle(trigger);
+    return { ok: true };
+  }
+
   async abort(): Promise<void> {
     if (!this.started) {
       return;

@@ -1,5 +1,12 @@
 <script lang="ts">
-	import type { HeartbeatGroupItem, ModelCallItem, RuntimeAttentionState } from '@agenter/client-sdk';
+	import type {
+		CachedResourceState,
+		HeartbeatGroupItem,
+		ModelCallItem,
+		RuntimeAttentionState,
+		RuntimeSchedulerState,
+		SessionEntry,
+	} from '@agenter/client-sdk';
 	import { tick } from 'svelte';
 
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -8,21 +15,30 @@
 		VirtualConversation,
 	} from '$lib/components/ai-elements/conversation/index.js';
 
-	import type { RuntimeHeartbeatConfigBinding, RuntimeHeartbeatConfigDraft } from './runtime-heartbeat-config-state';
+	import type {
+		RuntimeHeartbeatConfigBinding,
+		RuntimeHeartbeatConfigDraft,
+		RuntimeHeartbeatProviderMetadata,
+	} from './runtime-heartbeat-config-state';
 	import RuntimeHeartbeatStatusbar from './runtime-heartbeat-statusbar.svelte';
 	import {
 		buildHeartbeatAttentionFocusSummary,
 		buildHeartbeatContextState,
+		buildHeartbeatStatusState,
 	} from './runtime-heartbeat-statusbar-state';
-	import {
-		estimateHeartbeatGroupSize,
-	} from './runtime-heartbeat-parts';
+	import { estimateHeartbeatGroupSize } from './runtime-heartbeat-parts';
 	import RuntimeHeartbeatGroup from './runtime-heartbeat-group.svelte';
 
 	let {
-		groups,
+		sessionStatus,
+		schedulerState = null,
+		groupsState,
 		modelCalls = [],
 		attention = null,
+		providerMetadata = null,
+		compactPending = false,
+		compactDisabled = false,
+		onRequestCompact,
 		onLoadOlder,
 		configBinding,
 		configLoading = false,
@@ -33,9 +49,15 @@
 		sessionIconUrl = null,
 		avatarLabel = 'Avatar',
 	}: {
-		groups: HeartbeatGroupItem[];
+		sessionStatus: SessionEntry['status'];
+		schedulerState?: RuntimeSchedulerState | null;
+		groupsState: CachedResourceState<HeartbeatGroupItem[]>;
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
+		providerMetadata?: RuntimeHeartbeatProviderMetadata | null;
+		compactPending?: boolean;
+		compactDisabled?: boolean;
+		onRequestCompact: () => void | Promise<void>;
 		onLoadOlder: () => Promise<{ items: number; hasMore: boolean }>;
 		configBinding: RuntimeHeartbeatConfigBinding;
 		configLoading?: boolean;
@@ -52,10 +74,46 @@
 	let viewportAtTop = $state(false);
 	let viewportRef = $state<HTMLDivElement | null>(null);
 
-	const contextState = $derived(buildHeartbeatContextState(modelCalls));
-	const shimmerSummary = $derived(buildHeartbeatAttentionFocusSummary(attention, modelCalls));
-	const rowCount = $derived(groups.reduce((total, group) => total + group.items.length, 0));
-	const showTopLoadAffordance = $derived(groups.length > 0 && viewportAtTop);
+	const groups = $derived(groupsState.data);
+	const contextState = $derived(buildHeartbeatContextState(modelCalls, providerMetadata));
+	const shimmerSummary = $derived(buildHeartbeatAttentionFocusSummary(attention));
+	const statusState = $derived(
+		buildHeartbeatStatusState({
+			sessionStatus,
+			schedulerState,
+			heartbeatGroups: groupsState,
+		}),
+	);
+	const showTopLoadAffordance = $derived(groupsState.loaded && groups.length > 0 && viewportAtTop);
+	const groupCount = $derived(groups.length);
+	const groupCountVisible = $derived(groupsState.loaded);
+	const secondaryStatus = $derived.by(() => {
+		if (groupsState.refreshing) {
+			return 'Refreshing persisted Heartbeat…';
+		}
+		if (groupsState.loaded && groupsState.error) {
+			return groupsState.error;
+		}
+		return null;
+	});
+	const emptyState = $derived.by(() => {
+		if (groupsState.error && !groupsState.loaded) {
+			return {
+				title: 'Heartbeat failed to load',
+				description: groupsState.error,
+			};
+		}
+		if (!groupsState.loaded) {
+			return {
+				title: 'Loading Heartbeat…',
+				description: 'Replaying persisted prompt facts, attention inputs, and assistant output.',
+			};
+		}
+		return {
+			title: 'No Heartbeat rows yet',
+			description: 'Persisted Heartbeat message-parts will appear here as soon as the runtime records prompt facts, attention inputs, or assistant output.',
+		};
+	});
 
 	const scrollViewportToTop = async (): Promise<void> => {
 		await tick();
@@ -93,8 +151,16 @@
 	class="relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
 	data-testid="runtime-heartbeat-stage"
 >
-	{#if showTopLoadAffordance}
+	{#if secondaryStatus}
 		<div class="absolute inset-x-0 top-3 z-10 flex justify-center px-3">
+			<div class="rounded-full border border-border/60 bg-background/88 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+				{secondaryStatus}
+			</div>
+		</div>
+	{/if}
+
+	{#if showTopLoadAffordance}
+		<div class="absolute inset-x-0 top-12 z-10 flex justify-center px-3">
 			{#if hasMoreOlder}
 				<Button
 					variant="outline"
@@ -123,6 +189,7 @@
 		virtual={{
 			estimateSize: (_, group) => estimateHeartbeatGroupSize(group),
 			getItemKey: (_, group) => group.groupId,
+			measureElement: true,
 			overscan: 4,
 			gap: 12,
 			paddingStart: 12,
@@ -137,20 +204,25 @@
 			<ConversationEmptyState
 				class="px-6 py-12"
 				data-testid="runtime-heartbeat-empty"
-				title="No Heartbeat rows yet"
-				description="Persisted Heartbeat message-parts will appear here as soon as the runtime records prompt facts, attention inputs, or assistant output."
+				title={emptyState.title}
+				description={emptyState.description}
 			/>
 		{/snippet}
 	</VirtualConversation>
 
 	<RuntimeHeartbeatStatusbar
+		{statusState}
 		{contextState}
 		{shimmerSummary}
-		entryCount={rowCount}
+		{groupCount}
+		{groupCountVisible}
+		{compactPending}
+		{compactDisabled}
 		{configBinding}
 		{configLoading}
 		{configSaving}
 		{configError}
+		{onRequestCompact}
 		onRefreshConfig={onRefreshConfig}
 		onSaveConfig={onSaveConfig}
 	/>

@@ -7,6 +7,9 @@ const LoadingOlderKeepsHeartbeatRowsStable = getPortableStory(stories, "LoadingO
 const LayoutActionSwitchesGroupPresentation = getPortableStory(stories, "LayoutActionSwitchesGroupPresentation");
 const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
+const ColdLoadingShowsExplicitState = getPortableStory(stories, "ColdLoadingShowsExplicitState");
+const WarmRefreshKeepsVisibleRows = getPortableStory(stories, "WarmRefreshKeepsVisibleRows");
+const CompactActionForwardsRequest = getPortableStory(stories, "CompactActionForwardsRequest");
 const StreamingToolCallRemainsVisible = getPortableStory(stories, "StreamingToolCallRemainsVisible");
 const EmptyLedgerShowsExplicitState = getPortableStory(stories, "EmptyLedgerShowsExplicitState");
 const OverflowingCardCanExpand = getPortableStory(stories, "OverflowingCardCanExpand");
@@ -26,6 +29,18 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given a running AI call without usage When the Heartbeat footer renders Then the shimmer stays active and context falls back to disabled", async () => {
     await RunningFooterShowsShimmerWithoutUsage.run();
+  });
+
+  test("Scenario: Given grouped Heartbeat history is still cold When the stage opens Then loading stays distinct from the empty ledger state", async () => {
+    await ColdLoadingShowsExplicitState.run();
+  });
+
+  test("Scenario: Given persisted Heartbeat rows are visible When a refresh begins Then the stage keeps those rows mounted and adds a secondary refresh signal", async () => {
+    await WarmRefreshKeepsVisibleRows.run();
+  });
+
+  test("Scenario: Given the footer Compact action is available When the operator clicks it Then the stage forwards the manual runtime compact request", async () => {
+    await CompactActionForwardsRequest.run();
   });
 
   test("Scenario: Given a running Heartbeat tool call without a result When the stage renders Then the tool row remains visible without empty parameter chrome", async () => {

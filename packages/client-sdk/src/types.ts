@@ -187,7 +187,7 @@ export interface RuntimeClientState {
   globalTerminalActivityById: Record<string, CachedResourceState<TerminalActivityItem[]>>;
   schedulerLogsBySession: Record<string, SchedulerLogItem[]>;
   observabilityTracesBySession: Record<string, ObservabilityTraceItem[]>;
-  heartbeatGroupsBySession: Record<string, HeartbeatGroupItem[]>;
+  heartbeatGroupsBySession: Record<string, CachedResourceState<HeartbeatGroupItem[]>>;
   modelCallsBySession: Record<string, ModelCallItem[]>;
   requestAuxBySession: Record<string, RequestAuxItem[]>;
   modelCallDeltasBySession?: Record<string, ModelCallDeltaItem[]>;

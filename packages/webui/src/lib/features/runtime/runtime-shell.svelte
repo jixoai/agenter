@@ -40,6 +40,7 @@
 	let heartbeatConfigLoading = $state(false);
 	let heartbeatConfigSaving = $state(false);
 	let heartbeatConfigError = $state<string | null>(null);
+	let heartbeatCompactPending = $state(false);
 	let heartbeatConfigGraph = $state<Awaited<ReturnType<typeof controller.runtimeStore.listRuntimeSettingsScope>> | null>(null);
 	let heartbeatConfigLayerFile = $state<SettingsLayerFile | null>(null);
 	let heartbeatConfigLoadVersion = 0;
@@ -51,7 +52,16 @@
 	const channels = $derived(
 		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
 	);
-	const heartbeatGroups = $derived(controller.runtimeState.heartbeatGroupsBySession[sessionId] ?? []);
+	const heartbeatGroups = $derived(
+		controller.runtimeState.heartbeatGroupsBySession[sessionId] ?? {
+			data: [],
+			loaded: false,
+			loading: false,
+			refreshing: false,
+			error: null,
+			refreshedAt: null,
+		},
+	);
 	const modelCalls = $derived(controller.runtimeState.modelCallsBySession[sessionId] ?? []);
 	const cycles = $derived(controller.runtimeState.chatCyclesBySession[sessionId] ?? []);
 	const notifications = $derived(
@@ -65,6 +75,9 @@
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
 	const heartbeatConfigBinding = $derived(readRuntimeHeartbeatConfigBinding(heartbeatConfigGraph, heartbeatConfigLayerFile));
+	const heartbeatProviderMetadata = $derived(heartbeatConfigBinding.providerMetadata);
+	const heartbeatSchedulerState = $derived(runtime?.schedulerState ?? null);
+	const heartbeatCompactDisabled = $derived(session?.status !== 'running' || runtime?.activeCycle?.kind === 'compact');
 	const runtimeLoading = $derived(
 		shellHydrating ||
 			controller.runtimeState.connectionStatus === 'connecting' ||
@@ -169,6 +182,18 @@
 		}
 	};
 
+	const requestHeartbeatCompact = async (): Promise<void> => {
+		if (!session || heartbeatCompactPending || heartbeatCompactDisabled) {
+			return;
+		}
+		heartbeatCompactPending = true;
+		try {
+			await controller.runtimeStore.requestRuntimeCompact(session.id);
+		} finally {
+			heartbeatCompactPending = false;
+		}
+	};
+
 	$effect(() => {
 		const requestedSessionId = sessionId;
 		const version = ++shellHydrationVersion;
@@ -267,10 +292,14 @@
 			{notifications}
 			{heartbeatGroups}
 			{modelCalls}
+			heartbeatSchedulerState={heartbeatSchedulerState}
+			heartbeatProviderMetadata={heartbeatProviderMetadata}
 			heartbeatConfigBinding={heartbeatConfigBinding}
 			heartbeatConfigLoading={heartbeatConfigLoading}
 			heartbeatConfigSaving={heartbeatConfigSaving}
 			heartbeatConfigError={heartbeatConfigError}
+			heartbeatCompactPending={heartbeatCompactPending}
+			heartbeatCompactDisabled={heartbeatCompactDisabled}
 			{sessionIconUrl}
 			avatarLabel={session.avatar || session.name}
 			onOpenRoom={(chatId) => void openRoom(chatId)}
@@ -300,6 +329,7 @@
 				});
 			}}
 			onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id)}
+			onRequestHeartbeatCompact={() => void requestHeartbeatCompact()}
 			onRefreshHeartbeatConfig={() => void loadHeartbeatConfig(heartbeatConfigBinding.editableLayerId)}
 			onSaveHeartbeatConfig={saveHeartbeatConfig}
 		/>

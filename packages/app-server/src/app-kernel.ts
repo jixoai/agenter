@@ -3733,6 +3733,14 @@ export class AppKernel {
     return await this.readPersistedAttentionState(session);
   }
 
+  requestRuntimeCompact(sessionId: string): { ok: boolean } {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) {
+      return { ok: false };
+    }
+    return runtime.requestCompact("manual");
+  }
+
   async queryAttention(sessionId: string, input: AttentionSearchRequest): Promise<AttentionCommitMatch[]> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {

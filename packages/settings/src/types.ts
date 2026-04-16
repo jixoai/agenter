@@ -125,7 +125,14 @@ export interface FeatureSettings {
   message?: MessageFeatureSettings;
 }
 
-export type { AiApiStandard, AiProviderInputSettings, AiProviderKind, LegacyAiProviderKind } from "./provider";
+export type {
+  AiApiStandard,
+  AiProviderInputSettings,
+  AiProviderKind,
+  AiProviderPricingBandSettings,
+  AiProviderPricingSettings,
+  LegacyAiProviderKind,
+} from "./provider";
 
 export interface AiThinkingSettings {
   enabled?: boolean;

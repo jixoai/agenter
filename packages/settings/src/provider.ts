@@ -30,7 +30,21 @@ interface AiProviderSharedFields {
   baseUrl?: string;
   maxRetries?: number;
   compactThreshold?: number;
+  maxContextTokens?: number;
+  pricing?: AiProviderPricingSettings;
   headers?: Record<string, string>;
+}
+
+export interface AiProviderPricingBandSettings {
+  upToTokens?: number;
+  inputPerMillion: number;
+  cachedInputPerMillion?: number;
+  outputPerMillion: number;
+}
+
+export interface AiProviderPricingSettings {
+  currency: string;
+  bands: AiProviderPricingBandSettings[];
 }
 
 export interface AiProviderSettings extends AiProviderSharedFields {
@@ -47,6 +61,16 @@ export interface LegacyAiProviderSettings extends AiProviderSharedFields {
 export type AiProviderInputSettings = AiProviderSettings | LegacyAiProviderSettings;
 
 const compactThresholdSchema = z.number().gt(0).lte(1).optional();
+const pricingBandSchema = z.object({
+  upToTokens: z.number().int().positive().optional(),
+  inputPerMillion: z.number().nonnegative(),
+  cachedInputPerMillion: z.number().nonnegative().optional(),
+  outputPerMillion: z.number().nonnegative(),
+});
+const pricingSchema = z.object({
+  currency: z.string().trim().min(1),
+  bands: z.array(pricingBandSchema).min(1),
+});
 const sharedFields = {
   model: z.string().min(1),
   apiKey: z.string().min(1).optional(),
@@ -54,6 +78,8 @@ const sharedFields = {
   baseUrl: z.string().min(1).optional(),
   maxRetries: z.number().int().nonnegative().optional(),
   compactThreshold: compactThresholdSchema,
+  maxContextTokens: z.number().int().positive().optional(),
+  pricing: pricingSchema.optional(),
   headers: z.record(z.string().min(1), z.string()).optional(),
 } satisfies Record<string, z.ZodTypeAny>;
 
@@ -132,6 +158,8 @@ const withSharedFields = (
   baseUrl: normalizeBaseUrl(input.baseUrl),
   maxRetries: input.maxRetries,
   compactThreshold: input.compactThreshold,
+  maxContextTokens: input.maxContextTokens,
+  pricing: input.pricing,
   headers: input.headers,
 });
 

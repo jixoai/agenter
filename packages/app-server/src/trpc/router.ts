@@ -1215,6 +1215,7 @@ export const appRouter = t.router({
           limit: input.limit,
         }),
       })),
+    requestCompact: t.procedure.input(sessionIdInput).mutation(({ ctx, input }) => ctx.kernel.requestRuntimeCompact(input.sessionId)),
     schedulerLogs: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>

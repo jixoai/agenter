@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/sveltekit";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
-import type { HeartbeatGroupItem, HeartbeatPartItem, ModelCallItem, RuntimeAttentionState } from "@agenter/client-sdk";
+import type {
+  HeartbeatGroupItem,
+  HeartbeatPartItem,
+  ModelCallItem,
+  RuntimeAttentionState,
+  RuntimeSchedulerState,
+} from "@agenter/client-sdk";
 
 import RuntimeStageHeartbeatStoryHarness from "./runtime-stage-heartbeat.story-harness.svelte";
 
@@ -615,6 +621,45 @@ const attentionState = {
 	hooks: [],
 } satisfies RuntimeAttentionState;
 
+const createSchedulerState = (overrides?: Partial<RuntimeSchedulerState>): RuntimeSchedulerState => ({
+  schemaVersion: 2,
+  stateVersion: 1,
+  running: false,
+  paused: false,
+  runtimeStatus: "idle",
+  phase: "stopped",
+  gate: "open",
+  queueSize: 0,
+  cycle: 0,
+  sentBatches: 0,
+  updatedAt: 0,
+  lastMessageAt: null,
+  lastResponseAt: null,
+  lastWakeAt: null,
+  lastWakeSource: null,
+  lastWakeCause: null,
+  activeContextCount: 0,
+  activeItemCount: 0,
+  unresolvedScoreCount: 0,
+  waitingReason: null,
+  nextAutoWakeAt: null,
+  backoffMs: null,
+  retryCount: 0,
+  blockedReason: null,
+  lastProgressAt: null,
+  lastError: null,
+  ...overrides,
+});
+
+const runningSchedulerState = createSchedulerState({
+  running: true,
+  runtimeStatus: "running",
+  phase: "calling_model",
+  lastWakeSource: "attention",
+  lastWakeCause: "ready_now",
+  updatedAt: baseTimestamp + 62_000,
+});
+
 const meta = {
   title: "Features/Runtime/Heartbeat Stage",
   component: RuntimeStageHeartbeatStoryHarness,
@@ -628,6 +673,8 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+const requestCompact = fn<() => void>();
+
 export const LoadingOlderKeepsHeartbeatRowsStable = {
   name: "Scenario: Given durable Heartbeat message-parts When older rows are loaded Then folded bootstrap facts compact boundaries and assistant updates stay in one stream",
   args: {
@@ -635,6 +682,10 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     olderGroups,
     modelCalls: settledModelCalls,
     attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -666,9 +717,9 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     expect(systemPromptEntry.textContent).not.toContain(
       "You are a Linux expert. Prefer bash and skills before asking for help.",
     );
-    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("P 320");
+    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("472 tok");
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent(
-      "1 focused · 1 background · 1 muted",
+      "Waiting · Attention Debt · 1 focused · 1 background · 1 muted",
     );
     const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
     viewport.scrollTop = 0;
@@ -682,7 +733,7 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     viewport.dispatchEvent(new Event("scroll"));
     await waitFor(() => {
       expect(canvas.getByTestId("runtime-heartbeat-group-400")).toBeInTheDocument();
-      expect(canvas.getByText("7 rows")).toBeInTheDocument();
+      expect(canvas.getByText("5 groups")).toBeInTheDocument();
       expect(canvas.getByText("No older messages")).toBeInTheDocument();
     });
   },
@@ -695,6 +746,10 @@ export const LayoutActionSwitchesGroupPresentation = {
     olderGroups: [],
     modelCalls: settledModelCalls,
     attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -753,6 +808,10 @@ export const StickyBottomKeepsLatestRowsReachable = {
     olderGroups: [],
     modelCalls: settledModelCalls,
     attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -796,13 +855,79 @@ export const RunningFooterShowsShimmerWithoutUsage = {
     olderGroups: [],
     modelCalls: streamingModelCalls,
     attention: attentionState,
+    schedulerState: runningSchedulerState,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveAttribute("data-running", "true");
-    await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent("Waiting for AI call");
+    await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent("Running");
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveAttribute("data-context-state", "unavailable");
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("Latest usage unavailable");
+  },
+} satisfies Story;
+
+export const ColdLoadingShowsExplicitState = {
+  name: "Scenario: Given grouped Heartbeat history has not loaded yet When the stage opens Then the operator sees an explicit loading state instead of an empty ledger",
+  args: {
+    initialGroups: [],
+    olderGroups: [],
+    loaded: false,
+    loading: true,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "room_inputs",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("runtime-heartbeat-empty")).toBeInTheDocument();
+    await expect(canvas.getByText("Loading Heartbeat…")).toBeInTheDocument();
+    expect(canvas.queryByText("No Heartbeat rows yet")).toBeNull();
+    expect(canvas.queryByText(/groups$/)).toBeNull();
+  },
+} satisfies Story;
+
+export const WarmRefreshKeepsVisibleRows = {
+  name: "Scenario: Given persisted Heartbeat rows are already mounted When a refresh starts Then the rows stay visible while the stage shows a secondary refresh signal",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    loaded: true,
+    refreshing: true,
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("runtime-heartbeat-group-410")).toBeInTheDocument();
+    await expect(canvas.getByText("Refreshing persisted Heartbeat…")).toBeInTheDocument();
+    expect(canvas.queryByTestId("runtime-heartbeat-empty")).toBeNull();
+  },
+} satisfies Story;
+
+export const CompactActionForwardsRequest = {
+  name: "Scenario: Given the footer Compact action is available When the operator clicks it Then the manual runtime compact callback fires without injecting transcript content",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    loaded: true,
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
+    onRequestCompact: requestCompact,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const compactButton = canvas.getByRole("button", { name: "Compact" });
+    await userEvent.click(compactButton);
+    await expect(requestCompact).toHaveBeenCalledTimes(1);
   },
 } satisfies Story;
 
@@ -813,6 +938,7 @@ export const StreamingToolCallRemainsVisible = {
     olderGroups: [],
     modelCalls: streamingModelCalls,
     attention: attentionState,
+    schedulerState: runningSchedulerState,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -830,6 +956,7 @@ export const EmptyLedgerShowsExplicitState = {
   args: {
     initialGroups: [],
     olderGroups: [],
+    loaded: true,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -850,6 +977,10 @@ export const OverflowingCardCanExpand = {
     olderGroups: [],
     modelCalls: settledModelCalls,
     attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

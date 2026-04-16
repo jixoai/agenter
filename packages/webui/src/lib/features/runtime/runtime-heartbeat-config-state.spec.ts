@@ -28,6 +28,17 @@ const graph: ScopedSettingsOutput = {
             apiStandard: "openai-chat",
             vendor: "deepseek",
             model: "deepseek-chat",
+            maxContextTokens: 128000,
+            pricing: {
+              currency: "USD",
+              bands: [
+                {
+                  upToTokens: 128000,
+                  inputPerMillion: 0.27,
+                  outputPerMillion: 1.1,
+                },
+              ],
+            },
           },
         },
       },
@@ -66,6 +77,20 @@ describe("Feature: Runtime heartbeat config state", () => {
     expect(binding.editableLayerId).toBe("avatar");
     expect(binding.activeProviderId).toBe("default");
     expect(binding.providerLabel).toBe("default · deepseek-chat");
+    expect(binding.providerMetadata).toEqual({
+      providerId: "default",
+      model: "deepseek-chat",
+      maxContextTokens: 128000,
+      pricingCurrency: "USD",
+      pricingBands: [
+        {
+          upToTokens: 128000,
+          inputPerMillion: 0.27,
+          cachedInputPerMillion: null,
+          outputPerMillion: 1.1,
+        },
+      ],
+    });
     expect(binding.draft).toEqual({
       temperature: 0.4,
       topK: 24,

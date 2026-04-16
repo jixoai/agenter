@@ -748,6 +748,7 @@ const createMockClient = (input: {
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
+  requestCompactMutate?: (input: { sessionId: string }) => Promise<{ ok: boolean }>;
   heartbeatPartsPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
@@ -943,6 +944,10 @@ const createMockClient = (input: {
               : {
                   unsubscribe: () => {},
                 },
+        },
+        requestCompact: {
+          mutate: async (payload: { sessionId: string }) =>
+            input.requestCompactMutate ? await input.requestCompactMutate(payload) : { ok: true },
         },
       },
       session: {
@@ -3349,14 +3354,15 @@ describe("Feature: runtime store synchronization", () => {
     await store.connect();
     await store.hydrateSessionArtifacts("i-1");
 
-    expect(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)).toEqual([
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.data.map((item) => item.groupId)).toEqual([
       "heartbeat-group:before-call:41",
       "heartbeat-group:call:41",
     ]);
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.loaded).toBe(true);
 
     const older = await store.loadMoreHeartbeatInspection("i-1", 50);
     expect(older.hasMore).toBe(false);
-    expect(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)).toEqual([
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.data.map((item) => item.groupId)).toEqual([
       "heartbeat-group:before-call:40",
       "heartbeat-group:before-call:41",
       "heartbeat-group:call:41",
@@ -3426,7 +3432,7 @@ describe("Feature: runtime store synchronization", () => {
 
     await waitFor(
       () =>
-        JSON.stringify(store.getState().heartbeatGroupsBySession["i-1"]?.map((item) => item.groupId)) ===
+        JSON.stringify(store.getState().heartbeatGroupsBySession["i-1"]?.data.map((item) => item.groupId)) ===
         JSON.stringify([
           "heartbeat-group:before-call:40",
           "heartbeat-group:before-call:41",
@@ -3435,11 +3441,11 @@ describe("Feature: runtime store synchronization", () => {
         ]),
     );
     expect(
-      store.getState().heartbeatGroupsBySession["i-1"]?.find((item) => item.groupId === "heartbeat-group:call:41")?.items[0]
+      store.getState().heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:41")?.items[0]
         ?.text,
     ).toBe("final reply");
     expect(
-      store.getState().heartbeatGroupsBySession["i-1"]?.find((item) => item.groupId === "heartbeat-group:before-call:41")
+      store.getState().heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:before-call:41")
         ?.items.some((item) => item.messageId === "room-ingress"),
     ).toBeTrue();
     expect(heartbeatCalls.length).toBeGreaterThanOrEqual(3);
@@ -3542,10 +3548,10 @@ describe("Feature: runtime store synchronization", () => {
 
     await waitFor(
       () =>
-        store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.id === 44 &&
-        store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.text === "final",
+        store.getState().heartbeatGroupsBySession["i-1"]?.data[0]?.items[0]?.id === 44 &&
+        store.getState().heartbeatGroupsBySession["i-1"]?.data[0]?.items[0]?.text === "final",
     );
-    expect(store.getState().heartbeatGroupsBySession["i-1"]).toEqual([
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.data).toEqual([
       expect.objectContaining({
         groupId: "heartbeat-group:call:51",
         items: [
@@ -3633,7 +3639,7 @@ describe("Feature: runtime store synchronization", () => {
 
     try {
       await waitFor(() => heartbeatQueryCount >= 2, 160);
-      expect(store.getState().heartbeatGroupsBySession["i-1"]?.[0]?.items[0]?.text).toBe("refresh-2");
+      expect(store.getState().heartbeatGroupsBySession["i-1"]?.data[0]?.items[0]?.text).toBe("refresh-2");
     } finally {
       clearInterval(interval);
     }
@@ -4279,6 +4285,23 @@ describe("Feature: runtime store synchronization", () => {
     expect(runtimeAttention).toBeDefined();
     expect(storedAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
     expect(runtimeAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
+    store.disconnect();
+  });
+
+  test("Scenario: Given the Heartbeat footer requests a manual compact When the runtime store forwards it Then the formal runtime control mutation is used", async () => {
+    const compactInputs: Array<{ sessionId: string }> = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(900),
+      requestCompactMutate: async (input) => {
+        compactInputs.push(input);
+        return { ok: true };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await expect(store.requestRuntimeCompact("i-1")).resolves.toEqual({ ok: true });
+    expect(compactInputs).toEqual([{ sessionId: "i-1" }]);
     store.disconnect();
   });
 

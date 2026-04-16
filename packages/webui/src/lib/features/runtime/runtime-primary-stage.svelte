@@ -2,15 +2,21 @@
 	import { Scaffold } from '@agenter/svelte-components';
 
 	import type {
+		CachedResourceState,
 		HeartbeatGroupItem,
 		MessageChannelEntry,
 		ModelCallItem,
 		RuntimeSnapshotEntry,
+		RuntimeSchedulerState,
 		SessionNotificationItem,
 		SessionEntry,
 	} from '@agenter/client-sdk';
 
-	import type { RuntimeHeartbeatConfigBinding, RuntimeHeartbeatConfigDraft } from './runtime-heartbeat-config-state';
+	import type {
+		RuntimeHeartbeatConfigBinding,
+		RuntimeHeartbeatConfigDraft,
+		RuntimeHeartbeatProviderMetadata,
+	} from './runtime-heartbeat-config-state';
 	import RuntimeStageAttention from './runtime-stage-attention.svelte';
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 	import RuntimeStageSettings from './runtime-stage-settings.svelte';
@@ -22,12 +28,16 @@
 		runtime: RuntimeSnapshotEntry | null;
 		channels: MessageChannelEntry[];
 		notifications: SessionNotificationItem[];
-		heartbeatGroups: HeartbeatGroupItem[];
+		heartbeatGroups: CachedResourceState<HeartbeatGroupItem[]>;
 		modelCalls: ModelCallItem[];
+		heartbeatSchedulerState: RuntimeSchedulerState | null;
+		heartbeatProviderMetadata: RuntimeHeartbeatProviderMetadata | null;
 		heartbeatConfigBinding: RuntimeHeartbeatConfigBinding;
 		heartbeatConfigLoading?: boolean;
 		heartbeatConfigSaving?: boolean;
 		heartbeatConfigError?: string | null;
+		heartbeatCompactPending?: boolean;
+		heartbeatCompactDisabled?: boolean;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
 		onOpenRoom: (chatId: string) => void | Promise<void>;
@@ -40,6 +50,7 @@
 			upToMessageId?: string | null;
 		}) => void | Promise<void>;
 		onLoadOlderHeartbeat: () => Promise<{ items: number; hasMore: boolean }>;
+		onRequestHeartbeatCompact: () => void | Promise<void>;
 		onRefreshHeartbeatConfig: () => void | Promise<void>;
 		onSaveHeartbeatConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
 	}
@@ -52,10 +63,14 @@
 		notifications,
 		heartbeatGroups,
 		modelCalls,
+		heartbeatSchedulerState,
+		heartbeatProviderMetadata,
 		heartbeatConfigBinding,
 		heartbeatConfigLoading = false,
 		heartbeatConfigSaving = false,
 		heartbeatConfigError = null,
+		heartbeatCompactPending = false,
+		heartbeatCompactDisabled = false,
 		sessionIconUrl = null,
 		avatarLabel = session.avatar || session.name,
 		onOpenRoom,
@@ -64,6 +79,7 @@
 		onSetTerminalVisibility,
 		onConsumeNotification,
 		onLoadOlderHeartbeat,
+		onRequestHeartbeatCompact,
 		onRefreshHeartbeatConfig,
 		onSaveHeartbeatConfig,
 	}: Props = $props();
@@ -73,9 +89,15 @@
 	<Scaffold.Body class="h-full">
 		{#if tab === 'heartbeat'}
 			<RuntimeStageHeartbeat
-				groups={heartbeatGroups}
+				sessionStatus={session.status}
+				schedulerState={heartbeatSchedulerState}
+				groupsState={heartbeatGroups}
 				modelCalls={modelCalls}
 				attention={runtime?.attention ?? null}
+				providerMetadata={heartbeatProviderMetadata}
+				compactPending={heartbeatCompactPending}
+				compactDisabled={heartbeatCompactDisabled}
+				onRequestCompact={onRequestHeartbeatCompact}
 				configBinding={heartbeatConfigBinding}
 				configLoading={heartbeatConfigLoading}
 				configSaving={heartbeatConfigSaving}
