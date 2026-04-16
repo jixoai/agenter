@@ -230,6 +230,15 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **verified landing 必须走 ff-only 脚本**：验证通过后，从目标 checkout 运行 `./.gemini/scripts/wt-land-ff.sh <feature-ref>`；它会 snapshot dirty target、执行 `git merge --ff-only`，并且默认只恢复 non-overlapping dirty paths，重叠 dirty paths 必须显式审查，不能自动覆盖 landed 分支状态。
 - **cleanup 也是受保护操作**：删除 worktree 或 branch 前必须检查 dirty state 和 merged state；除非显式 `force`，否则 cleanup 脚本必须拒绝破坏性移除。
 
+## 6.2) Pure Frontend Worktree Evidence Flow
+
+- **纯前端任务先建标准 worktree，再碰界面**：页面布局、视觉打磨、响应式、交互走查这类纯前端任务，必须先用 `./.gemini/scripts/wt-setup.sh <topic>` 创建 `.worktree/<topic>`，禁止先在主 checkout 或仓库外 ad-hoc worktree 动手。
+- **before 截图先于实现**：开始改 UI 之前，先在该 worktree 内产出 worktree-local `.screenshot/before/*`，作为本轮对比基线；没有 before 证据，不算进入实现阶段。
+- **路由级证据优先于 Storybook 替身**：涉及 route/layout/shell 的纯前端任务，before/after 默认必须来自真实 WebUI dev server 的真实路由；Storybook 只能补充组件态验证，不能替代 route-level 证据。
+- **双端截图是默认验收项**：before/after 都必须至少覆盖 desktop 与 `iPhone 14` mobile 两套 viewport；如果任务只修一个端，也要显式展示另一端未回归。
+- **证据跟着 worktree 走**：截图统一放在该 worktree 的 `.screenshot/before` 与 `.screenshot/after`，不要散落在主 checkout、临时目录或仓库外路径。
+- **实现结束后再拍 after**：代码改动和 targeted verification 完成后，回到同一组路由与 viewport 重拍 `.screenshot/after/*`；只有 before/after 成对存在，才算这个纯前端回合收口。
+
 ## 7) Browser 走查标准（agent-browser）
 
 ### 7.1 固定流程
