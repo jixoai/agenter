@@ -52,7 +52,7 @@
 		onLoadOlderHeartbeat: () => Promise<{ items: number; hasMore: boolean }>;
 		onRequestHeartbeatCompact: () => void | Promise<void>;
 		onRefreshHeartbeatConfig: () => void | Promise<void>;
-		onSaveHeartbeatConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
+		onSaveHeartbeatConfig: (draft: RuntimeHeartbeatConfigDraft) => boolean | Promise<boolean>;
 	}
 
 	let {

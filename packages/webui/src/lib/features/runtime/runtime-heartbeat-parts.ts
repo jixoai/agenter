@@ -134,7 +134,8 @@ export const getHeartbeatToolPreview = (input: unknown): string | null => {
   if (!record) {
     return null;
   }
-  const commandCandidate = typeof record.command === "string" ? record.command : typeof record.cmd === "string" ? record.cmd : null;
+  const commandCandidate =
+    typeof record.command === "string" ? record.command : typeof record.cmd === "string" ? record.cmd : null;
   if (commandCandidate) {
     const summary = normalizeToolPreview(commandCandidate);
     return summary.length > 0 ? summary : null;
@@ -391,6 +392,7 @@ export type HeartbeatSectionTimeMeta = {
   startedAt: number | null;
   endedAt: number | null;
   durationMs: number | null;
+  isRunning: boolean;
   showRange: boolean;
 };
 
@@ -432,7 +434,7 @@ const parseYamlScalar = (rawValue: string): unknown => {
   if (/^-?\d+(?:\.\d+)?$/u.test(value)) {
     return Number(value);
   }
-  if (value.startsWith("\"") && value.endsWith("\"")) {
+  if (value.startsWith('"') && value.endsWith('"')) {
     try {
       return JSON.parse(value);
     } catch {
@@ -528,7 +530,8 @@ const readHeartbeatSubjectName = (entry: HeartbeatPartItem, part?: HeartbeatPart
   readHeartbeatSubjectNameFromPayload(entry.parts[0]?.payload) ??
   null;
 
-const buildHeartbeatSubjectKey = (role: HeartbeatPartItem["role"], name: string | null): string => `${role}:${name ?? ""}`;
+const buildHeartbeatSubjectKey = (role: HeartbeatPartItem["role"], name: string | null): string =>
+  `${role}:${name ?? ""}`;
 
 const buildHeartbeatPartRefs = (entries: readonly HeartbeatPartItem[]): HeartbeatPartRef[] => {
   const partRefs: HeartbeatPartRef[] = [];
@@ -727,23 +730,29 @@ export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): Heartb
   return sections;
 };
 
-export const getHeartbeatSectionTimeMeta = (section: HeartbeatSubjectSection): HeartbeatSectionTimeMeta => {
+export const getHeartbeatSectionTimeMeta = (
+  section: HeartbeatSubjectSection,
+  now = Date.now(),
+): HeartbeatSectionTimeMeta => {
   if (section.entries.length === 0) {
     return {
       startedAt: null,
       endedAt: null,
       durationMs: null,
+      isRunning: false,
       showRange: false,
     };
   }
   const startedAt = Math.min(...section.entries.map((entry) => entry.createdAt));
-  const endedAt = Math.max(...section.entries.map((entry) => entry.updatedAt));
+  const isRunning = section.entries.some((entry) => !entry.isComplete);
+  const endedAt = isRunning ? now : Math.max(...section.entries.map((entry) => entry.updatedAt));
   const durationMs = Math.max(0, endedAt - startedAt);
   return {
     startedAt,
     endedAt,
     durationMs,
-    showRange: durationMs > 2_000,
+    isRunning,
+    showRange: isRunning || durationMs > 2_000,
   };
 };
 

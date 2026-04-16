@@ -37,6 +37,8 @@
     children,
     item,
     empty,
+    before,
+    after,
   }: ScrollViewProps<Item> = $props();
 
   const joinClassNames = (...values: Array<string | false | null | undefined>): string =>
@@ -357,7 +359,7 @@
       initialMeasurementsCache: config.initialMeasurementsCache,
       isScrollingResetDelay: config.isScrollingResetDelay,
       useScrollendEvent: config.useScrollendEvent,
-      useAnimationFrameWithResizeObserver: config.useAnimationFrameWithResizeObserver,
+      useAnimationFrameWithResizeObserver: config.useAnimationFrameWithResizeObserver ?? Boolean(config.measureElement),
     });
   });
 </script>
@@ -376,6 +378,7 @@
       data-scroll-view-content={virtual ? "virtual" : "static"}
     >
       {#if virtual && item}
+        {@render before?.()}
         {#if virtual.items.length === 0}
           {@render empty?.()}
         {:else}
@@ -399,8 +402,11 @@
             {/each}
           </div>
         {/if}
+        {@render after?.()}
       {:else}
+        {@render before?.()}
         {@render children?.()}
+        {@render after?.()}
       {/if}
     </div>
   </div>

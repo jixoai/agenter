@@ -7,6 +7,7 @@ const LoadingOlderKeepsHeartbeatRowsStable = getPortableStory(stories, "LoadingO
 const LayoutActionSwitchesGroupPresentation = getPortableStory(stories, "LayoutActionSwitchesGroupPresentation");
 const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
+const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
 const ColdLoadingShowsExplicitState = getPortableStory(stories, "ColdLoadingShowsExplicitState");
 const WarmRefreshKeepsVisibleRows = getPortableStory(stories, "WarmRefreshKeepsVisibleRows");
 const CompactActionForwardsRequest = getPortableStory(stories, "CompactActionForwardsRequest");
@@ -29,6 +30,10 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given a running AI call without usage When the Heartbeat footer renders Then the shimmer stays active and context falls back to disabled", async () => {
     await RunningFooterShowsShimmerWithoutUsage.run();
+  });
+
+  test("Scenario: Given a running Heartbeat group header When wall-clock time advances Then the elapsed duration label updates without new Heartbeat rows", async () => {
+    await RunningDurationTicks.run();
   });
 
   test("Scenario: Given grouped Heartbeat history is still cold When the stage opens Then loading stays distinct from the empty ledger state", async () => {

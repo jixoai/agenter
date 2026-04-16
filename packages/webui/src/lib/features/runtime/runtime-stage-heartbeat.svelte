@@ -9,6 +9,7 @@
 	} from '@agenter/client-sdk';
 	import { tick } from 'svelte';
 
+	import { Loader } from '$lib/components/ai-elements/loader/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
 		ConversationEmptyState,
@@ -64,7 +65,7 @@
 		configSaving?: boolean;
 		configError?: string | null;
 		onRefreshConfig: () => void | Promise<void>;
-		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
+		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => boolean | Promise<boolean>;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
 	} = $props();
@@ -148,7 +149,7 @@
 </script>
 
 <div
-	class="relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
+	class="relative grid h-full grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
 	data-testid="runtime-heartbeat-stage"
 >
 	{#if secondaryStatus}
@@ -159,28 +160,8 @@
 		</div>
 	{/if}
 
-	{#if showTopLoadAffordance}
-		<div class="absolute inset-x-0 top-12 z-10 flex justify-center px-3">
-			{#if hasMoreOlder}
-				<Button
-					variant="outline"
-					size="sm"
-					class="rounded-full bg-background/88 shadow-sm"
-					disabled={loadingOlder}
-					onclick={() => void loadOlder()}
-				>
-					{loadingOlder ? 'Loading older…' : 'Load older'}
-				</Button>
-			{:else}
-				<div class="rounded-full border border-border/60 bg-background/88 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-					No older messages
-				</div>
-			{/if}
-		</div>
-	{/if}
-
 	<VirtualConversation
-		class="h-full min-h-0"
+		class="h-full"
 		contentClass="px-3"
 		viewportTestId="runtime-heartbeat-viewport"
 		bind:atTop={viewportAtTop}
@@ -196,6 +177,32 @@
 			paddingEnd: 12,
 		}}
 	>
+		{#snippet renderBefore()}
+			{#if showTopLoadAffordance}
+				<div class="flex justify-center px-3 pb-2 pt-12">
+					{#if hasMoreOlder}
+						<Button
+							variant="outline"
+							size="sm"
+							class="rounded-full bg-background/88 shadow-sm"
+							disabled={loadingOlder}
+							onclick={() => void loadOlder()}
+						>
+							{#if loadingOlder}
+								<Loader label="Loading older" />
+							{:else}
+								Load older
+							{/if}
+						</Button>
+					{:else}
+						<div class="rounded-full border border-border/60 bg-background/88 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+							No older messages
+						</div>
+					{/if}
+				</div>
+			{/if}
+		{/snippet}
+
 		{#snippet renderItem(group)}
 			<RuntimeHeartbeatGroup {group} {sessionIconUrl} {avatarLabel} />
 		{/snippet}

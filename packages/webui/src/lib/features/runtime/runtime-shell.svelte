@@ -146,14 +146,15 @@
 
 	const saveHeartbeatConfig = async (
 		draft: Parameters<typeof writeRuntimeHeartbeatConfigLayer>[0]['draft'],
-	): Promise<void> => {
+	): Promise<boolean> => {
 		if (!session || !heartbeatConfigLayerFile || !heartbeatConfigBinding.activeProviderId || !heartbeatConfigBinding.editableLayerId) {
-			return;
+			return false;
 		}
 		heartbeatConfigSaving = true;
 		heartbeatConfigError = null;
 		try {
 			const nextContent = writeRuntimeHeartbeatConfigLayer({
+				path: heartbeatConfigLayerFile.path,
 				content: heartbeatConfigLayerFile.content,
 				draft,
 			});
@@ -171,12 +172,14 @@
 				if (result.reason === 'conflict') {
 					heartbeatConfigLayerFile = result.latest;
 				}
-				return;
+				return false;
 			}
 			heartbeatConfigLayerFile = result.file;
 			await loadHeartbeatConfig(result.file.layer.layerId);
+			return true;
 		} catch (error) {
 			heartbeatConfigError = error instanceof Error ? error.message : 'Failed to save Heartbeat config.';
+			return false;
 		} finally {
 			heartbeatConfigSaving = false;
 		}

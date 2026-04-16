@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { parse } from "yaml";
 
 import type { ScopedSettingsOutput } from "@agenter/client-sdk";
 
@@ -102,7 +101,9 @@ describe("Feature: Runtime heartbeat config state", () => {
 
   test("Scenario: Given the operator saves heartbeat config When writing the layer Then only ai runtime fields are updated without mutating provider defaults", () => {
     const next = writeRuntimeHeartbeatConfigLayer({
-      content: '{\n  "ai": {\n    "activeProvider": "default",\n    "providers": {\n      "default": {\n        "model": "deepseek-chat"\n      }\n    }\n  }\n}\n',
+      path: "/home/tester/.agenter/avatar/default/settings.json",
+      content:
+        '{\n  "ai": {\n    "activeProvider": "default",\n    "providers": {\n      "default": {\n        "model": "deepseek-chat"\n      }\n    }\n  }\n}\n',
       draft: {
         temperature: 0.3,
         topK: 12,
@@ -112,7 +113,7 @@ describe("Feature: Runtime heartbeat config state", () => {
       },
     });
 
-    const parsed = parse(next) as {
+    const parsed = JSON.parse(next) as {
       ai?: {
         activeProvider?: string;
         temperature?: number;
@@ -134,6 +135,27 @@ describe("Feature: Runtime heartbeat config state", () => {
     expect(parsed.ai?.providers).toEqual({
       default: {
         model: "deepseek-chat",
+      },
+    });
+  });
+
+  test("Scenario: Given thinking is turned off from the Heartbeat config writer When the avatar layer is saved Then the top-level ai.thinking block is removed from JSON without corrupting the document", () => {
+    const next = writeRuntimeHeartbeatConfigLayer({
+      path: "/home/tester/.agenter/avatar/default/settings.json",
+      content:
+        '{\n  "ai": {\n    "temperature": 0.4,\n    "thinking": {\n      "enabled": true,\n      "budgetTokens": 2048\n    }\n  }\n}\n',
+      draft: {
+        temperature: 0.4,
+        topK: null,
+        maxToken: null,
+        thinkingEnabled: false,
+        thinkingBudgetTokens: null,
+      },
+    });
+
+    expect(JSON.parse(next)).toEqual({
+      ai: {
+        temperature: 0.4,
       },
     });
   });

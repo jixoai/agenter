@@ -122,6 +122,6 @@
 		{configBinding}
 		onLoadOlder={handleLoadOlder}
 		onRefreshConfig={() => {}}
-		onSaveConfig={() => {}}
+		onSaveConfig={() => true}
 	/>
 </div>

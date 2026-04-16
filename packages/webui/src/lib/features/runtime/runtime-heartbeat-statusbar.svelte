@@ -44,7 +44,7 @@
 		configError?: string | null;
 		onRequestCompact: () => void | Promise<void>;
 		onRefreshConfig: () => void | Promise<void>;
-		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
+		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => boolean | Promise<boolean>;
 	} = $props();
 </script>
 

@@ -3441,11 +3441,13 @@ describe("Feature: runtime store synchronization", () => {
         ]),
     );
     expect(
-      store.getState().heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:41")?.items[0]
-        ?.text,
+      store.getState().heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:41")
+        ?.items[0]?.text,
     ).toBe("final reply");
     expect(
-      store.getState().heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:before-call:41")
+      store
+        .getState()
+        .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:before-call:41")
         ?.items.some((item) => item.messageId === "room-ingress"),
     ).toBeTrue();
     expect(heartbeatCalls.length).toBeGreaterThanOrEqual(3);
@@ -3564,6 +3566,177 @@ describe("Feature: runtime store synchronization", () => {
         ],
       }),
     ]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given a running invocation first lands without args When a tool_call delta later hydrates parameters Then the same Heartbeat group reloads through the grouped query path before completion", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    let heartbeatPageMode: "pending" | "hydrated" = "pending";
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(920),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      heartbeatGroupsPageQuery: async () => {
+        if (heartbeatPageMode === "hydrated") {
+          return {
+            items: [
+              createHeartbeatGroup({
+                id: 520,
+                groupId: "heartbeat-group:call:52",
+                kind: "call",
+                aiCallId: 52,
+                createdAt: 220,
+                updatedAt: 260,
+                isComplete: false,
+                items: [
+                  createHeartbeatEntry({
+                    id: 52,
+                    messageId: "heartbeat-part:assistant:tool-hydrated",
+                    role: "assistant",
+                    aiCallId: 52,
+                    createdAt: 220,
+                    updatedAt: 260,
+                    isComplete: false,
+                    partType: "tool_call",
+                    payload: {
+                      invocationId: "call-attention-commit",
+                      tool: "root_workspace_bash",
+                      input: {
+                        command: 'attention commit \'{"contextId":"ctx-room"}\'',
+                      },
+                    },
+                    text: '{"command":"attention commit"}',
+                  }),
+                ],
+              }),
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        }
+        return {
+          items: [
+            createHeartbeatGroup({
+              id: 520,
+              groupId: "heartbeat-group:call:52",
+              kind: "call",
+              aiCallId: 52,
+              createdAt: 220,
+              updatedAt: 230,
+              isComplete: false,
+              items: [
+                createHeartbeatEntry({
+                  id: 51,
+                  messageId: "heartbeat-part:assistant:tool-hydrated",
+                  role: "assistant",
+                  aiCallId: 52,
+                  createdAt: 220,
+                  updatedAt: 230,
+                  isComplete: false,
+                  partType: "tool_call",
+                  payload: {
+                    invocationId: "call-attention-commit",
+                    tool: "root_workspace_bash",
+                    input: "",
+                  },
+                  text: "",
+                }),
+              ],
+            }),
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.data).toEqual([
+      expect.objectContaining({
+        groupId: "heartbeat-group:call:52",
+        items: [
+          expect.objectContaining({
+            id: 51,
+            parts: [
+              expect.objectContaining({
+                partType: "tool_call",
+                payload: expect.objectContaining({
+                  input: "",
+                }),
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+
+    heartbeatPageMode = "hydrated";
+    onData?.({
+      version: 1,
+      eventId: 921,
+      timestamp: Date.now(),
+      type: "runtime.modelCall.delta",
+      sessionId: "i-1",
+      payload: {
+        entry: {
+          id: 92,
+          seq: 2,
+          modelCallId: 52,
+          cycleId: 18,
+          timestamp: 260,
+          kind: "tool_call",
+          data: {
+            toolCallId: "call-attention-commit",
+            toolName: "root_workspace_bash",
+            input: {
+              command: 'attention commit \'{"contextId":"ctx-room"}\'',
+            },
+          },
+        },
+      },
+    });
+
+    await waitFor(
+      () =>
+        store
+          .getState()
+          .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
+          ?.parts[0]?.payload &&
+        JSON.stringify(
+          store
+            .getState()
+            .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
+            ?.parts[0]?.payload,
+        ).includes("attention commit"),
+    );
+
+    expect(store.getState().heartbeatGroupsBySession["i-1"]?.data).toEqual([
+      expect.objectContaining({
+        groupId: "heartbeat-group:call:52",
+        items: [
+          expect.objectContaining({
+            id: 52,
+            messageId: "heartbeat-part:assistant:tool-hydrated",
+            parts: [
+              expect.objectContaining({
+                partType: "tool_call",
+                payload: expect.objectContaining({
+                  input: {
+                    command: 'attention commit \'{"contextId":"ctx-room"}\'',
+                  },
+                }),
+                isComplete: false,
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+
     store.disconnect();
   });
 

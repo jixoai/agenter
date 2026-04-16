@@ -27,7 +27,6 @@ import type {
   MessageChannelGrantEntry,
   ModelCallItem,
   NotificationSnapshotOutput,
-  RequestAuxItem,
   RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,
@@ -4445,12 +4444,7 @@ export class RuntimeStore {
     return await this.client.trpc.settings.scope.save.mutate(input);
   }
 
-  async saveRuntimeSettingsLayer(input: {
-    sessionId: string;
-    layerId: string;
-    content: string;
-    baseMtimeMs: number;
-  }) {
+  async saveRuntimeSettingsLayer(input: { sessionId: string; layerId: string; content: string; baseMtimeMs: number }) {
     return await this.saveScopedSettingsLayer({
       ...this.resolveRuntimeSettingsScope(input.sessionId),
       layerId: input.layerId,
@@ -4803,8 +4797,11 @@ export class RuntimeStore {
     limit = HEARTBEAT_GROUP_PAGE_LIMIT,
   ): Promise<{ items: number; hasMore: boolean }> {
     const current = this.ensureHeartbeatGroupsState(sessionId);
-    const before = this.resolveBeforeCursor(this.heartbeatGroupsBeforeCursorBySession, sessionId, current.data, (record) =>
-      this.toRecordHistoryCursor(record),
+    const before = this.resolveBeforeCursor(
+      this.heartbeatGroupsBeforeCursorBySession,
+      sessionId,
+      current.data,
+      (record) => this.toRecordHistoryCursor(record),
     );
     if (before === null) {
       return { items: 0, hasMore: false };
@@ -5547,6 +5544,9 @@ export class RuntimeStore {
           [payload.entry],
           MODEL_CALL_DELTA_LRU_LIMIT,
         );
+        if (payload.entry.kind === "tool_call" || payload.entry.kind === "tool_result") {
+          this.scheduleHeartbeatGroupRefresh(sessionId);
+        }
       } else if (event.type === "runtime.apiCall") {
         const payload = event.payload as { entry: ApiCallItem };
         const current = this.state.apiCallsBySession[sessionId] ?? [];

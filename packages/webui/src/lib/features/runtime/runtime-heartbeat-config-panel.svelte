@@ -26,7 +26,7 @@
 		saving?: boolean;
 		error?: string | null;
 		onRefresh: () => void | Promise<void>;
-		onSave: (draft: RuntimeHeartbeatConfigDraft) => void | Promise<void>;
+		onSave: (draft: RuntimeHeartbeatConfigDraft) => boolean | Promise<boolean>;
 	} = $props();
 
 	let open = $state(false);
@@ -67,14 +67,16 @@
 		if (binding.activeProviderId === null || binding.editableLayerId === null || saving) {
 			return;
 		}
-		await onSave({
+		const saved = await onSave({
 			temperature: toNumberOrNull(temperatureValue),
 			topK: toNumberOrNull(topKValue),
 			maxToken: toNumberOrNull(maxTokenValue),
 			thinkingEnabled,
-			thinkingBudgetTokens: thinkingEnabled ? toNumberOrNull(thinkingBudgetValue) : toNumberOrNull(thinkingBudgetValue),
+			thinkingBudgetTokens: thinkingEnabled ? toNumberOrNull(thinkingBudgetValue) : null,
 		});
-		open = false;
+		if (saved) {
+			open = false;
+		}
 	};
 
 	const refresh = async (): Promise<void> => {

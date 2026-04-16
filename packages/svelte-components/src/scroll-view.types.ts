@@ -1,9 +1,4 @@
-import type {
-  Range,
-  SvelteVirtualizer,
-  VirtualItem,
-  Virtualizer,
-} from "@tanstack/svelte-virtual";
+import type { Range, SvelteVirtualizer, VirtualItem, Virtualizer } from "@tanstack/svelte-virtual";
 
 export type ScrollOrientation = "vertical" | "horizontal" | "both";
 export type ScrollViewVirtualizer = SvelteVirtualizer<HTMLDivElement, HTMLDivElement>;
@@ -54,4 +49,6 @@ export interface ScrollViewProps<TItem> {
   children?: import("svelte").Snippet;
   item?: import("svelte").Snippet<[TItem, number, VirtualItem]>;
   empty?: import("svelte").Snippet;
+  before?: import("svelte").Snippet;
+  after?: import("svelte").Snippet;
 }

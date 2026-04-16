@@ -197,7 +197,7 @@ const initialEntries = [
           tool: "root_workspace_bash",
           input: {
             command:
-              "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-ca846a55-7bb0-402f-a85f-89e14ca618c7\"],\"egress\":{\"kind\":\"room_reply_sent\",\"chatId\":\"0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"done\":true}}'",
+              'attention commit \'{"contextId":"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","parentCommitIds":["commit-ca846a55-7bb0-402f-a85f-89e14ca618c7"],"egress":{"kind":"room_reply_sent","chatId":"0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","done":true}}\'',
           },
           startedAt: baseTimestamp + 46_000,
         },
@@ -405,7 +405,11 @@ const longStreamGroups = longStreamEntries.map((entry, index) =>
   createHeartbeatGroupFixture({
     id: 700 + index,
     groupId: `heartbeat-group:story:${entry.messageId}`,
-    kind: entry.parts.some((part) => part.partType === "compact") ? "compact" : index % 2 === 0 ? "before-call" : "call",
+    kind: entry.parts.some((part) => part.partType === "compact")
+      ? "compact"
+      : index % 2 === 0
+        ? "before-call"
+        : "call",
     aiCallId: entry.aiCallId,
     items: [entry],
   }),
@@ -484,8 +488,10 @@ const overflowingEntry = {
       mimeType: null,
       payload: {
         type: "text",
-        content: Array.from({ length: 48 }, (_, index) =>
-          `- step ${index + 1}: replayed attention evidence and workspace facts so the operator can audit the full chain without losing any durable message-parts.`,
+        content: Array.from(
+          { length: 48 },
+          (_, index) =>
+            `- step ${index + 1}: replayed attention evidence and workspace facts so the operator can audit the full chain without losing any durable message-parts.`,
         ).join("\n"),
       },
       createdAt: baseTimestamp + 90_000,
@@ -564,61 +570,61 @@ const streamingModelCalls = [
   },
 ] satisfies ModelCallItem[];
 
-const attentionContexts: RuntimeAttentionState['snapshot']['contexts'] = [
-			{
-				contextId: "ctx-room-main",
-				owner: "message",
-        focusState: "focused",
-        content: "Room main context",
-        contentFormat: "markdown",
-        scoreMap: { "message:room-main": 1 },
-        headCommitId: "commit-1",
-        createdAt: "2026-04-12T14:25:00.000Z",
-        updatedAt: "2026-04-12T14:26:00.000Z",
-        commits: [],
-        commitCount: 0,
-        commitsTruncated: false,
-				consumedPushCommitIds: [],
-			},
-			{
-				contextId: "ctx-workspace",
-				owner: "workspace",
-        focusState: "background",
-        content: "Workspace context",
-        contentFormat: "markdown",
-        scoreMap: { workspace: 0.5 },
-        headCommitId: "commit-2",
-        createdAt: "2026-04-12T14:25:10.000Z",
-        updatedAt: "2026-04-12T14:26:10.000Z",
-        commits: [],
-        commitCount: 0,
-        commitsTruncated: false,
-				consumedPushCommitIds: [],
-			},
-			{
-				contextId: "ctx-terminal",
-				owner: "terminal",
-        focusState: "muted",
-        content: "Terminal context",
-        contentFormat: "markdown",
-        scoreMap: {},
-        headCommitId: "commit-3",
-        createdAt: "2026-04-12T14:25:20.000Z",
-        updatedAt: "2026-04-12T14:26:20.000Z",
-        commits: [],
-        commitCount: 0,
-        commitsTruncated: false,
-				consumedPushCommitIds: [],
-			},
+const attentionContexts: RuntimeAttentionState["snapshot"]["contexts"] = [
+  {
+    contextId: "ctx-room-main",
+    owner: "message",
+    focusState: "focused",
+    content: "Room main context",
+    contentFormat: "markdown",
+    scoreMap: { "message:room-main": 1 },
+    headCommitId: "commit-1",
+    createdAt: "2026-04-12T14:25:00.000Z",
+    updatedAt: "2026-04-12T14:26:00.000Z",
+    commits: [],
+    commitCount: 0,
+    commitsTruncated: false,
+    consumedPushCommitIds: [],
+  },
+  {
+    contextId: "ctx-workspace",
+    owner: "workspace",
+    focusState: "background",
+    content: "Workspace context",
+    contentFormat: "markdown",
+    scoreMap: { workspace: 0.5 },
+    headCommitId: "commit-2",
+    createdAt: "2026-04-12T14:25:10.000Z",
+    updatedAt: "2026-04-12T14:26:10.000Z",
+    commits: [],
+    commitCount: 0,
+    commitsTruncated: false,
+    consumedPushCommitIds: [],
+  },
+  {
+    contextId: "ctx-terminal",
+    owner: "terminal",
+    focusState: "muted",
+    content: "Terminal context",
+    contentFormat: "markdown",
+    scoreMap: {},
+    headCommitId: "commit-3",
+    createdAt: "2026-04-12T14:25:20.000Z",
+    updatedAt: "2026-04-12T14:26:20.000Z",
+    commits: [],
+    commitCount: 0,
+    commitsTruncated: false,
+    consumedPushCommitIds: [],
+  },
 ];
 
 const attentionState = {
-	snapshot: {
-		contexts: attentionContexts,
-	},
-	active: [],
-	cycleFrames: [],
-	hooks: [],
+  snapshot: {
+    contexts: attentionContexts,
+  },
+  active: [],
+  cycleFrames: [],
+  hooks: [],
 } satisfies RuntimeAttentionState;
 
 const createSchedulerState = (overrides?: Partial<RuntimeSchedulerState>): RuntimeSchedulerState => ({
@@ -675,6 +681,57 @@ type Story = StoryObj<typeof meta>;
 
 const requestCompact = fn<() => void>();
 
+const createLiveRunningGroups = (): HeartbeatGroupItem[] => {
+  const now = Date.now();
+  return [
+    {
+      id: 730,
+      groupId: "heartbeat-group:call:73",
+      kind: "call",
+      aiCallId: 73,
+      createdAt: now - 5_000,
+      updatedAt: now - 4_000,
+      isComplete: false,
+      items: [
+        {
+          id: 731,
+          messageId: "heartbeat-part:assistant:live-running",
+          windowId: null,
+          aiCallId: 73,
+          roundIndex: 3,
+          scope: "heartbeat_part",
+          role: "assistant",
+          createdAt: now - 5_000,
+          updatedAt: now - 4_000,
+          isComplete: false,
+          text: "Streaming draft",
+          parts: [
+            {
+              partId: 731,
+              partIndex: 0,
+              messageId: "heartbeat-part:assistant:live-running",
+              windowId: null,
+              aiCallId: 73,
+              roundIndex: 3,
+              scope: "heartbeat_part",
+              role: "assistant",
+              partType: "text",
+              mimeType: null,
+              payload: {
+                type: "text",
+                content: "Streaming draft",
+              },
+              createdAt: now - 5_000,
+              updatedAt: now - 4_000,
+              isComplete: false,
+            },
+          ],
+        },
+      ],
+    },
+  ];
+};
+
 export const LoadingOlderKeepsHeartbeatRowsStable = {
   name: "Scenario: Given durable Heartbeat message-parts When older rows are loaded Then folded bootstrap facts compact boundaries and assistant updates stay in one stream",
   args: {
@@ -717,7 +774,8 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     expect(systemPromptEntry.textContent).not.toContain(
       "You are a Linux expert. Prefer bash and skills before asking for help.",
     );
-    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("472 tok");
+    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("Context");
+    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("472 / 128,000");
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent(
       "Waiting · Attention Debt · 1 focused · 1 background · 1 muted",
     );
@@ -769,9 +827,11 @@ export const LayoutActionSwitchesGroupPresentation = {
     expect(callGroup.textContent).not.toContain('{"invocationId":"tool-call-1"');
     await expect(streamingAssistantEntry).toHaveTextContent("root_workspace_bash");
     await expect(streamingAssistantEntry).toHaveTextContent("attention commit");
-    await expect(canvas.getByTestId("runtime-heartbeat-entry-time-25")).toHaveTextContent(
-      "2026/4/12 22:25:45, 5 sec",
-    );
+    await waitFor(() => {
+      expect(canvas.getByTestId("runtime-heartbeat-entry-time-25").textContent ?? "").toMatch(
+        /^2026\/4\/12 22:25:45, \d+ (?:sec|min|hr)(?: \d+ min)?$/,
+      );
+    });
     await expect(canvas.getByTestId("runtime-heartbeat-entry-meta-25")).not.toHaveTextContent("Range");
     expect(within(callGroup).getAllByRole("button", { name: "Copy section" }).length).toBeGreaterThan(0);
     if (!(compactToolSummary instanceof HTMLElement) || !(compactToolDetails instanceof HTMLDetailsElement)) {
@@ -862,7 +922,29 @@ export const RunningFooterShowsShimmerWithoutUsage = {
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveAttribute("data-running", "true");
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent("Running");
     await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveAttribute("data-context-state", "unavailable");
-    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("Latest usage unavailable");
+    await expect(canvas.getByRole("button", { name: /Context/ })).toBeDisabled();
+  },
+} satisfies Story;
+
+export const RunningDurationTicks = {
+  name: "Scenario: Given a running Heartbeat group header When wall-clock time advances Then the elapsed duration label updates without new Heartbeat rows",
+  args: {
+    initialGroups: createLiveRunningGroups(),
+    olderGroups: [],
+    modelCalls: streamingModelCalls,
+    attention: attentionState,
+    schedulerState: runningSchedulerState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const timeNode = await canvas.findByTestId("runtime-heartbeat-entry-time-731");
+    const initialLabel = timeNode.textContent;
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1_200));
+
+    await waitFor(() => {
+      expect(timeNode.textContent).not.toBe(initialLabel);
+    });
   },
 } satisfies Story;
 

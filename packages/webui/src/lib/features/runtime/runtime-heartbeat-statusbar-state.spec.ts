@@ -1,4 +1,10 @@
-import type { CachedResourceState, HeartbeatGroupItem, ModelCallItem, RuntimeAttentionState, RuntimeSchedulerState } from "@agenter/client-sdk";
+import type {
+  CachedResourceState,
+  HeartbeatGroupItem,
+  ModelCallItem,
+  RuntimeAttentionState,
+  RuntimeSchedulerState,
+} from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
 import type { RuntimeHeartbeatProviderMetadata } from "./runtime-heartbeat-config-state";
@@ -166,9 +172,11 @@ describe("Feature: Runtime Heartbeat statusbar selectors", () => {
       modelCallId: 41,
       status: "done",
       providerLabel: "default · gpt-test",
-      promptTokens: 320,
-      completionTokens: 152,
-      totalTokens: 472,
+      inputTokens: 320,
+      outputTokens: 152,
+      cachedInputTokens: null,
+      reasoningTokens: null,
+      usedTokens: 472,
       maxContextTokens: 128_000,
       progress: 472 / 128_000,
       remainingTokens: 128_000 - 472,

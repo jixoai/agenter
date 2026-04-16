@@ -50,7 +50,9 @@
 		}
 		return readHeartbeatPartText(firstBlock.part)?.trim() ?? summary;
 	});
-	const timeMeta = $derived(getHeartbeatSectionTimeMeta(section));
+	const hasRunningEntries = $derived(section.entries.some((entry) => !entry.isComplete));
+	let nowMs = $state(Date.now());
+	const timeMeta = $derived(getHeartbeatSectionTimeMeta(section, nowMs));
 	const headerTimeLabel = $derived.by(() => {
 		const startedAt = timeMeta.startedAt ?? groupTimestamp;
 		const startedAtLabel = formatRuntimeCompactTimestamp(startedAt);
@@ -102,6 +104,19 @@
 	});
 
 	$effect(() => {
+		nowMs = Date.now();
+		if (!hasRunningEntries) {
+			return;
+		}
+		const interval = window.setInterval(() => {
+			nowMs = Date.now();
+		}, 1_000);
+		return () => {
+			window.clearInterval(interval);
+		};
+	});
+
+	$effect(() => {
 		section.key;
 		section.blocks.length;
 		localLayoutMode;
@@ -142,7 +157,13 @@
 		<span
 			class="text-[11px] leading-none text-muted-foreground"
 			data-testid={`runtime-heartbeat-entry-time-${section.entryId}`}
-			title={timeMeta.endedAt ? `Ended ${formatRuntimeCompactTimestamp(timeMeta.endedAt)}` : undefined}
+			title={
+				timeMeta.isRunning
+					? `Running for ${formatRuntimeCompactDuration(timeMeta.durationMs)}`
+					: timeMeta.endedAt
+						? `Ended ${formatRuntimeCompactTimestamp(timeMeta.endedAt)}`
+						: undefined
+			}
 		>
 			{headerTimeLabel}
 		</span>

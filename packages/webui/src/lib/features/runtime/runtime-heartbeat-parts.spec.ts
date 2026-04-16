@@ -4,9 +4,9 @@ import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk"
 
 import {
   buildHeartbeatDisplayBlocks,
-  getHeartbeatSectionTimeMeta,
   buildHeartbeatSubjectSections,
   getHeartbeatRowMeta,
+  getHeartbeatSectionTimeMeta,
   getHeartbeatToolPreview,
 } from "./runtime-heartbeat-parts";
 
@@ -197,10 +197,10 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     expect(
       getHeartbeatToolPreview({
         command:
-          "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-abc\"],\"done\":true}'",
+          'attention commit \'{"contextId":"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","parentCommitIds":["commit-abc"],"done":true}\'',
       }),
     ).toBe(
-      "attention commit '{\"contextId\":\"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16\",\"parentCommitIds\":[\"commit-abc\"],\"done\":true}'",
+      'attention commit \'{"contextId":"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","parentCommitIds":["commit-abc"],"done":true}\'',
     );
   });
 
@@ -446,6 +446,35 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
       startedAt: assistantToolEntry.createdAt,
       endedAt: assistantNarrativeEntry.updatedAt,
       durationMs: assistantNarrativeEntry.updatedAt - assistantToolEntry.createdAt,
+      isRunning: false,
+      showRange: true,
+    });
+  });
+
+  test("Scenario: Given a running section When section time metadata is projected with wall-clock input Then the elapsed duration grows without needing a new Heartbeat row", () => {
+    const runningSection = {
+      key: "heartbeat-group:call:77:assistant",
+      role: "assistant",
+      name: null,
+      entryId: 701,
+      entries: [
+        {
+          ...baseEntry,
+          id: 701,
+          messageId: "heartbeat-part:assistant:running",
+          createdAt: 1_000,
+          updatedAt: 1_200,
+          isComplete: false,
+        },
+      ],
+      blocks: [],
+    } as const;
+
+    expect(getHeartbeatSectionTimeMeta(runningSection, 3_500)).toEqual({
+      startedAt: 1_000,
+      endedAt: 3_500,
+      durationMs: 2_500,
+      isRunning: true,
       showRange: true,
     });
   });
