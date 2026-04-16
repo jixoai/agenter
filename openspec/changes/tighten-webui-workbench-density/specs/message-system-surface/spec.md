@@ -58,6 +58,13 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** passive shortcut/help metadata collapses into low-emphasis text or compact hiding instead of badge-like pill clusters
 - **THEN** the composer preserves transcript height instead of presenting another nested footer card
 
+#### Scenario: Dense room transcript avoids decorative slack
+
+- **WHEN** the operator reads an active room transcript on desktop or mobile
+- **THEN** transcript rows use compact vertical spacing and do not burn height on decorative top/bottom padding
+- **THEN** message bubbles keep only the minimum radius, border, and shadow needed to distinguish ownership and tone
+- **THEN** the transcript viewport and footer transition keep the message stream dominant instead of creating large dead zones
+
 #### Scenario: Room body switches between chat and assets without extra chrome inside content
 
 - **WHEN** the operator toggles `chat` or `assets`

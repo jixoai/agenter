@@ -96,6 +96,15 @@ Alternative considered:
 - Keep the current composer stack and only shave a few pixels off padding.
   - Rejected because the main regression is structural: the current send-row takeover and passive pill chrome consume transcript height even when the operator is idle.
 
+### Continue transcript-first tightening in small rounds instead of one large re-theme
+
+After the composer compaction pass, the remaining issue is not a missing primitive. The room surface still spends too much density budget in the transcript lane itself: row padding is loose, bubbles still look slightly over-framed, footer gradients are thicker than their semantic value, and desktop width leaves too much dead center space for the current message mix. The right move is to continue with small evidence-driven reductions so each density change stays reviewable and revertable.
+
+Alternative considered:
+
+- Re-theme the entire message room in one large sweep.
+  - Rejected because it would mix too many subjective visual decisions at once and make it harder to preserve the already-fixed compact toolbar and composer contracts.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:
