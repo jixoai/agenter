@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the durable operator-facing contract for the standalone message-system route, including shared room transcript rendering, actor-scoped sending, auth-backed access management, read progress, room assets, and live room updates.
-
 ## Requirements
 ### Requirement: Message-system SHALL present rooms as a standalone product surface
 The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
@@ -31,6 +30,11 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** the fixed room toolbar shows the current `View as` user avatar and label as the primary identity
 - **THEN** the toolbar exposes `search-messages`, `add-user`, and `manage` actions in that order
 - **THEN** the toolbar exposes `chat` and `assets` chips as room-local body mode switches
+
+#### Scenario: Compact room toolbar keeps all affordances inside the fixed band
+- **WHEN** a room is selected on an iPhone 14-sized viewport with the fixed 48px room toolbar
+- **THEN** the `View as` trigger, room action buttons, and `chat/assets` mode chips all remain fully visible inside the toolbar band
+- **THEN** the toolbar does not clip those affordances vertically or push them outside the fixed chrome region
 
 #### Scenario: Room body switches between chat and assets without extra chrome inside content
 - **WHEN** the operator toggles `chat` or `assets`
@@ -187,3 +191,4 @@ The selected room transcript SHALL present canonical avatars, improved message b
 - **WHEN** the operator invokes `search-messages` from the room toolbar
 - **THEN** the room can search within the currently loaded transcript messages
 - **THEN** search navigation uses transcript row anchors instead of requiring a second route-local message renderer
+
