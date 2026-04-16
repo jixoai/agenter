@@ -238,6 +238,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **双端截图是默认验收项**：before/after 都必须至少覆盖 desktop 与 `iPhone 14` mobile 两套 viewport；如果任务只修一个端，也要显式展示另一端未回归。
 - **证据跟着 worktree 走**：截图统一放在该 worktree 的 `.screenshot/before` 与 `.screenshot/after`，不要散落在主 checkout、临时目录或仓库外路径。
 - **实现结束后再拍 after**：代码改动和 targeted verification 完成后，回到同一组路由与 viewport 重拍 `.screenshot/after/*`；只有 before/after 成对存在，才算这个纯前端回合收口。
+- **汇报前先核对证据时间戳**：在向用户声明“after 已更新”之前，必须核对将要引用的 route-level 与 close-up/button-level 截图文件时间戳，确认它们来自同一轮重拍；禁止把旧页面级截图和新局部截图混报成同一轮证据。
 
 ## 7) Browser 走查标准（agent-browser）
 
