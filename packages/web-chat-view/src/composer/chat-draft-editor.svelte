@@ -194,7 +194,7 @@
                 backgroundColor: "transparent",
               },
               ".cm-editor": {
-                minHeight: "var(--chat-draft-editor-min-height, 72px)",
+                minHeight: "var(--chat-draft-editor-min-height, 64px)",
                 backgroundColor: "transparent",
               },
               ".cm-scroller": {
@@ -202,8 +202,8 @@
                 lineHeight: "1.5",
               },
               ".cm-content": {
-                minHeight: "var(--chat-draft-editor-content-min-height, 60px)",
-                padding: "8px 10px 7px",
+                minHeight: "var(--chat-draft-editor-content-min-height, 52px)",
+                padding: "7px 9px 6px",
               },
               ".cm-focused": {
                 outline: "none",
@@ -294,7 +294,7 @@
     value={value}
     rows={4}
     disabled={disabled || submitting}
-    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,4.4rem)] resize-none rounded-[0.9rem] border-slate-200/72 bg-white/60 px-2.5 py-2 text-[13px] leading-[1.5] shadow-none"
+    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,4rem)] resize-none rounded-[0.9rem] border-slate-200/72 bg-white/60 px-2.25 py-1.75 text-[13px] leading-[1.5] shadow-none"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
     {placeholder}
@@ -320,14 +320,14 @@
 
 <style>
   .chat-draft-editor {
-    --chat-draft-editor-min-height: 4.4rem;
-    --chat-draft-editor-content-min-height: 60px;
+    --chat-draft-editor-min-height: 4rem;
+    --chat-draft-editor-content-min-height: 52px;
   }
 
   @container (max-width: 34rem) {
     .chat-draft-editor {
-      --chat-draft-editor-min-height: 3.35rem;
-      --chat-draft-editor-content-min-height: 44px;
+      --chat-draft-editor-min-height: 2.95rem;
+      --chat-draft-editor-content-min-height: 38px;
     }
   }
 </style>

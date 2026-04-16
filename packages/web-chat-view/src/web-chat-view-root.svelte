@@ -950,14 +950,14 @@
   }
 
   .chat-scroll-viewport {
-    padding: 1rem 1rem 0.75rem;
+    padding: 0.72rem 0.8rem 0.35rem;
   }
 
   .chat-scroll-content {
     display: grid;
     gap: 0.15rem;
     min-block-size: 100%;
-    padding-block-end: 1rem;
+    padding-block-end: 0.55rem;
   }
 
   .chat-transcript-notice {
@@ -989,16 +989,16 @@
 
   .chat-footer {
     padding: 0;
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.16), rgba(248, 250, 252, 0.98));
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.06), rgba(248, 250, 252, 0.94));
   }
 
   .chat-scroll-viewport-embedded {
-    padding: 0.55rem 0 0.5rem;
+    padding: 0.28rem 0 0.2rem;
   }
 
   .chat-footer-embedded {
     background:
-      linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.96) 26%, rgba(248, 250, 252, 0.99) 100%);
+      linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.88) 20%, rgba(248, 250, 252, 0.97) 100%);
   }
 
   .chat-empty-shell {
@@ -1046,12 +1046,13 @@
     }
 
     .chat-scroll-viewport {
-      padding-inline: 0.75rem;
+      padding-inline: 0.6rem;
+      padding-top: 0.56rem;
     }
 
     .chat-scroll-viewport-embedded {
       padding-inline: 0;
-      padding-block: 0.4rem 0.4rem;
+      padding-block: 0.18rem 0.12rem;
     }
   }
 </style>

@@ -314,7 +314,7 @@
     display: flex;
     justify-content: flex-start;
     width: 100%;
-    padding: 0.42rem 0;
+    padding: 0.22rem 0;
   }
 
   .row.viewer-owned {
@@ -324,15 +324,15 @@
   .row-body {
     display: flex;
     align-items: flex-end;
-    gap: 0.7rem;
-    max-width: min(52rem, 100%);
+    gap: 0.55rem;
+    max-width: min(58rem, 100%);
   }
 
   .message-cluster {
     display: flex;
     min-width: 0;
     align-items: flex-end;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
 
   .row.viewer-owned .row-body {
@@ -354,43 +354,43 @@
   .bubble {
     position: relative;
     min-width: 0;
-    max-width: min(42rem, calc(100% - 3rem));
-    border-radius: 1.3rem;
-    padding: 0.85rem 1rem 0.9rem;
-    border: 1px solid rgba(203, 213, 225, 0.72);
+    max-width: min(46rem, calc(100% - 2.7rem));
+    border-radius: 1.02rem;
+    padding: 0.68rem 0.82rem 0.74rem;
+    border: 1px solid rgba(203, 213, 225, 0.48);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.96)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(248, 250, 252, 0.94)),
       radial-gradient(circle at top, rgba(15, 23, 42, 0.02), transparent 60%);
     color: #0f172a;
-    box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.34);
+    box-shadow: none;
   }
 
   .row.viewer-owned .bubble {
-    border-color: rgba(15, 23, 42, 0.18);
+    border-color: rgba(15, 23, 42, 0.12);
     background:
       linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96)),
       radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 62%);
     color: white;
-    box-shadow: 0 22px 46px -34px rgba(15, 23, 42, 0.52);
+    box-shadow: none;
   }
 
   .row.assistant .bubble {
-    border-color: rgba(45, 212, 191, 0.22);
+    border-color: rgba(45, 212, 191, 0.14);
     background:
       linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(236, 253, 245, 0.95)),
-      radial-gradient(circle at top, rgba(20, 184, 166, 0.1), transparent 56%);
+      radial-gradient(circle at top, rgba(20, 184, 166, 0.08), transparent 56%);
   }
 
   .row[data-kind="error"] .bubble {
-    border-color: rgba(251, 113, 133, 0.28);
+    border-color: rgba(251, 113, 133, 0.2);
     background: linear-gradient(180deg, rgba(255, 241, 242, 0.98), rgba(255, 228, 230, 0.96));
     color: #881337;
   }
 
   .bubble-actions {
     position: absolute;
-    top: 0.55rem;
-    right: 0.55rem;
+    top: 0.4rem;
+    right: 0.4rem;
     opacity: 0;
     transform: translateY(-2px);
     transition: opacity 120ms ease, transform 120ms ease;
@@ -406,9 +406,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.45rem;
-    padding-right: 2rem;
+    gap: 0.55rem;
+    margin-bottom: 0.3rem;
+    padding-right: 1.6rem;
   }
 
   .meta-copy {
@@ -427,15 +427,15 @@
 
   .author {
     min-width: 0;
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.015em;
   }
 
   .subtitle,
   .timestamp {
-    font-size: 0.68rem;
-    line-height: 1.35;
+    font-size: 0.64rem;
+    line-height: 1.28;
     color: rgba(100, 116, 139, 0.92);
   }
 
@@ -492,7 +492,7 @@
   .recall-block,
   .interactive-block {
     display: grid;
-    gap: 0.65rem;
+    gap: 0.5rem;
   }
 
   .error-block p,
@@ -527,13 +527,13 @@
 
   .interactive-fields {
     display: grid;
-    gap: 0.75rem;
+    gap: 0.55rem;
   }
 
   .interactive-field {
     display: grid;
     gap: 0.35rem;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: #334155;
   }
 
@@ -556,12 +556,13 @@
   @container (max-width: 34rem) {
     .row-body {
       max-width: 100%;
-      gap: 0.6rem;
+      gap: 0.45rem;
     }
 
     .bubble {
-      max-width: calc(100% - 2.5rem);
-      padding-inline: 0.9rem;
+      max-width: calc(100% - 2.25rem);
+      padding: 0.62rem 0.72rem 0.68rem;
+      border-radius: 0.94rem;
     }
   }
 </style>

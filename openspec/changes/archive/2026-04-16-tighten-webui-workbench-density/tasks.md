@@ -24,3 +24,16 @@
 
 - [x] 5.1 Tighten the shared room composer so the draft editor, action rail, and passive metadata stay transcript-first at the 390px mobile baseline
 - [x] 5.2 Refresh targeted verification and visual evidence for the composer compaction pass
+
+## 6. Transcript Density Iterations
+
+- [x] 6.1 Iteration 1: reduce transcript viewport padding so the message stream reaches useful height faster
+- [x] 6.2 Iteration 2: reduce message row vertical padding and lane gap
+- [x] 6.3 Iteration 3: reduce bubble radius and decorative border weight
+- [x] 6.4 Iteration 4: remove low-value bubble shadow depth
+- [x] 6.5 Iteration 5: tighten bubble inner padding and meta spacing
+- [x] 6.6 Iteration 6: tighten desktop bubble width budget so the center lane wastes less space
+- [x] 6.7 Iteration 7: reduce footer gradient weight and transition slack
+- [x] 6.8 Iteration 8: tighten footer action/hint spacing without breaking the compact composer contract
+- [x] 6.9 Iteration 9: re-run desktop/mobile evidence review and adjust the remaining highest-signal density issue
+- [x] 6.10 Iteration 10: refresh verification and visual evidence for the transcript-tightening pass

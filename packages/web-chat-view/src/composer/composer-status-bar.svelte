@@ -114,7 +114,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.7rem;
+    gap: 0.18rem 0.55rem;
     min-width: 0;
   }
 
@@ -133,7 +133,7 @@
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
-    gap: 0.25rem 0.6rem;
+    gap: 0.18rem 0.48rem;
   }
 
   .composer-status-hint {
@@ -142,7 +142,7 @@
     align-items: center;
     gap: 0.28rem;
     padding: 0;
-    font-size: 0.62rem;
+    font-size: 0.58rem;
     line-height: 1.3;
     color: #64748b;
   }

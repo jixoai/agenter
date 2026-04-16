@@ -280,20 +280,20 @@
 
 <style>
   .composer {
-    padding: 0.5rem 0 0;
+    padding: 0.3rem 0 0;
     container-type: inline-size;
   }
 
   .composer-frame {
     display: grid;
-    gap: 0.5rem;
+    gap: 0.42rem;
     border: 0;
     border-radius: 0.95rem;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 250, 252, 0.74)),
       radial-gradient(circle at top, rgba(20, 184, 166, 0.04), transparent 58%);
     box-shadow: none;
-    padding: 0.55rem;
+    padding: 0.42rem 0.5rem 0.34rem;
   }
 
   .composer.dragging .composer-frame {
@@ -315,12 +315,12 @@
 
   .composer-toolbar {
     display: grid;
-    gap: 0.45rem;
+    gap: 0.24rem;
   }
 
   .composer-footnote {
     display: grid;
-    gap: 0.35rem;
+    gap: 0.16rem;
   }
 
   .composer-hint {
@@ -331,12 +331,12 @@
 
   @container (max-width: 34rem) {
     .composer {
-      padding-top: 0.25rem;
+      padding-top: 0.14rem;
     }
 
     .composer-frame {
-      gap: 0.4rem;
-      padding: 0.45rem;
+      gap: 0.28rem;
+      padding: 0.3rem 0.36rem 0.24rem;
     }
 
     .composer-toolbar,
