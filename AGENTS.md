@@ -235,6 +235,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **纯前端任务先建标准 worktree，再碰界面**：页面布局、视觉打磨、响应式、交互走查这类纯前端任务，必须先用 `./.gemini/scripts/wt-setup.sh <topic>` 创建 `.worktree/<topic>`，禁止先在主 checkout 或仓库外 ad-hoc worktree 动手。
 - **before 截图先于实现**：开始改 UI 之前，先在该 worktree 内产出 worktree-local `.screenshot/before/*`，作为本轮对比基线；没有 before 证据，不算进入实现阶段。
 - **路由级证据优先于 Storybook 替身**：涉及 route/layout/shell 的纯前端任务，before/after 默认必须来自真实 WebUI dev server 的真实路由；Storybook 只能补充组件态验证，不能替代 route-level 证据。
+- **截图端口必须属于当前 worktree**：拍 route-level screenshot 时，优先使用 fresh inactive port 让脚本从当前 worktree 拉起 dev server；如果端口已被占用，必须先确认进程确实属于当前 worktree，否则直接换新端口，不能盲信任意 localhost 页面。
 - **双端截图是默认验收项**：before/after 都必须至少覆盖 desktop 与 `iPhone 14` mobile 两套 viewport；如果任务只修一个端，也要显式展示另一端未回归。
 - **证据跟着 worktree 走**：截图统一放在该 worktree 的 `.screenshot/before` 与 `.screenshot/after`，不要散落在主 checkout、临时目录或仓库外路径。
 - **实现结束后再拍 after**：代码改动和 targeted verification 完成后，回到同一组路由与 viewport 重拍 `.screenshot/after/*`；只有 before/after 成对存在，才算这个纯前端回合收口。
