@@ -67,6 +67,22 @@ Alternative considered:
 - Replace the current avatar workbench with a marketplace-first landing page.
   - Rejected because it would bury the current runtime-first operational value and over-rotate toward acquisition.
 
+### The current local-only page should become directory-ready before Discover and Sources ship
+
+The product should not wait for full remote-source implementation before correcting the current page language and structure. The existing local route should already read as the future `My Avatars` operational surface:
+
+- avoid over-committing to `local-only catalog` wording
+- keep the selected-avatar lens runtime-first
+- reserve a stable secondary slot for provenance/origin facts
+- avoid fake disabled `Discover` / `Sources` chrome before those surfaces exist
+
+This lets the current page evolve by addition rather than by conceptual rename-and-rewrite later.
+
+Alternative considered:
+
+- Leave the current page fully local-catalog flavored until remote implementation starts.
+  - Rejected because it would force a second disruptive IA rewrite later and make the future directory feel bolted on.
+
 ### Install is the default durable path
 
 Remote packages may theoretically support temporary launch later, but the primary product path for this change is explicit install:

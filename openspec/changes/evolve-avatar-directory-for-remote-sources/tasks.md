@@ -9,6 +9,7 @@
 - [ ] 2.1 Redesign the `Avatars` workbench IA around `My Avatars / Discover / Sources`
 - [ ] 2.2 Specify how runtime tabs and avatar draft tabs stay layered on top of the unified directory shell
 - [ ] 2.3 Define `My Avatars` provenance presentation so source facts stay secondary to runtime-first operation
+- [ ] 2.4 Refine the current local-only avatar page so it already reads as the future `My Avatars` surface without shipping fake remote controls
 
 ## 3. Discover and install flow
 

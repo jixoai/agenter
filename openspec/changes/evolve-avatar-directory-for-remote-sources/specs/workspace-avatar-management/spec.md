@@ -32,3 +32,16 @@ Installed avatars that originate from remote packages SHALL keep provenance visi
 - **WHEN** the operator scans `My Avatars` and some avatars were never installed from any remote source
 - **THEN** those pure-local avatars remain first-class entries in the same operational catalog
 - **AND** the workbench does not split the list into incompatible local-vs-remote runtime classes
+
+### Requirement: The current avatar page SHALL become directory-ready before remote surfaces land
+Before `Discover` and `Sources` are implemented, the current avatar page SHALL already use `My Avatars`-compatible structure and language. It SHALL avoid hard-coding a local-only catalog story that would require a conceptual rewrite later.
+
+#### Scenario: Current page stops over-committing to local-only catalog language
+- **WHEN** the operator opens the current avatar page before remote-source features are implemented
+- **THEN** the dominant page language can already evolve toward `My Avatars` or an equivalent installed-avatar operational framing
+- **AND** the page does not require a future rename from a strongly local-only concept just to make the directory IA coherent
+
+#### Scenario: Current page reserves a stable slot for provenance without inventing fake remote UI
+- **WHEN** the operator uses the current local-only avatar page
+- **THEN** the selected-avatar lens keeps a stable secondary place where source or origin provenance can later appear
+- **AND** the page does not introduce fake disabled `Discover` or `Sources` controls before those surfaces actually exist
