@@ -18,6 +18,9 @@
 		$props();
 
 	const context = getContextValue();
+	const triggerLabel = $derived(
+		context.hasProgressMeter ? context.displayPercent : Number.isFinite(context.usedTokens) ? context.usedTokensFormatted : "—",
+	);
 </script>
 
 {#snippet triggerContent()}
@@ -25,7 +28,7 @@
 		{@render children()}
 	{:else}
 		<span class="text-muted-foreground font-medium">
-			{context.displayPercent}
+			{triggerLabel}
 		</span>
 		<ContextIcon />
 	{/if}

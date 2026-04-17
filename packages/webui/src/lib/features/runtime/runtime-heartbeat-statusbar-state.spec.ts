@@ -7,7 +7,6 @@ import type {
 } from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
-import type { RuntimeHeartbeatProviderMetadata } from "./runtime-heartbeat-config-state";
 import {
   buildHeartbeatAttentionFocusSummary,
   buildHeartbeatContextState,
@@ -22,6 +21,14 @@ const settledCall: ModelCallItem = {
   status: "done",
   provider: "openai/chat",
   model: "gpt-test",
+  providerSnapshot: {
+    providerId: "default",
+    apiStandard: "openai-responses",
+    vendor: "openai",
+    profile: null,
+    model: "gpt-test",
+    maxContextTokens: 128_000,
+  },
   requestUrl: "https://example.test/v1/chat/completions",
   request: { meta: { cycleId: 8 } },
   response: {
@@ -67,6 +74,95 @@ const compactCall: ModelCallItem = {
   createdAt: 1712931980000,
   updatedAt: 1712931990000,
   completedAt: 1712931990000,
+};
+
+const usageOnlyCall: ModelCallItem = {
+  ...settledCall,
+  id: 44,
+  providerSnapshot: {
+    providerId: "fallback",
+    apiStandard: "openai-responses",
+    vendor: "openai",
+    profile: null,
+    model: "gpt-usage-only",
+    maxContextTokens: null,
+  },
+  request: {
+    meta: { cycleId: 8 },
+    config: {
+      maxToken: 64_000,
+    },
+  },
+};
+
+const previousRoundModelCall: ModelCallItem = {
+  ...settledCall,
+  id: 35,
+  roundIndex: 7,
+  response: {
+    assistant: { text: "Earlier round reply." },
+    usage: {
+      promptTokens: 900,
+      completionTokens: 80,
+      totalTokens: 980,
+    },
+  },
+  createdAt: 1712931700000,
+  updatedAt: 1712931710000,
+  completedAt: 1712931710000,
+};
+
+const previousRoundCompactCall: ModelCallItem = {
+  ...compactCall,
+  id: 36,
+  roundIndex: 7,
+  createdAt: 1712931720000,
+  updatedAt: 1712931730000,
+  completedAt: 1712931730000,
+  response: {
+    usage: {
+      promptTokens: 1024,
+      completionTokens: 32,
+      totalTokens: 1056,
+    },
+  },
+};
+
+const currentRoundEarlierCall: ModelCallItem = {
+  ...settledCall,
+  id: 40,
+  roundIndex: 8,
+  response: {
+    assistant: { text: "Tool follow-up." },
+    usage: {
+      promptTokens: 280,
+      completionTokens: 48,
+      totalTokens: 328,
+    },
+  },
+  createdAt: 1712931800000,
+  updatedAt: 1712931810000,
+  completedAt: 1712931810000,
+};
+
+const failedCall: ModelCallItem = {
+  ...settledCall,
+  id: 39,
+  roundIndex: 7,
+  status: "error",
+  isComplete: true,
+  response: {
+    usage: {
+      promptTokens: 10_000,
+      completionTokens: 999,
+      totalTokens: 10_999,
+    },
+  },
+  error: { message: "provider failed" },
+  outcome: { code: "error" },
+  createdAt: 1712931790000,
+  updatedAt: 1712931795000,
+  completedAt: 1712931795000,
 };
 
 const attentionState: RuntimeAttentionState = {
@@ -124,21 +220,6 @@ const attentionState: RuntimeAttentionState = {
   hooks: [],
 };
 
-const providerMetadata: RuntimeHeartbeatProviderMetadata = {
-  providerId: "default",
-  model: "gpt-test",
-  maxContextTokens: 128_000,
-  pricingCurrency: "USD",
-  pricingBands: [
-    {
-      upToTokens: 128_000,
-      inputPerMillion: 2.5,
-      cachedInputPerMillion: null,
-      outputPerMillion: 10,
-    },
-  ],
-};
-
 const createHeartbeatGroupsState = (
   overrides?: Partial<CachedResourceState<HeartbeatGroupItem[]>>,
 ): CachedResourceState<HeartbeatGroupItem[]> => ({
@@ -182,43 +263,86 @@ const createSchedulerState = (overrides?: Partial<RuntimeSchedulerState>): Runti
 });
 
 describe("Feature: Runtime Heartbeat statusbar selectors", () => {
-  test("Scenario: Given latest model-call usage and provider metadata When building context state Then footer exposes tokens progress and estimated cost", () => {
-    expect(buildHeartbeatContextState([settledCall], providerMetadata)).toEqual({
+  test("Scenario: Given retained ai_call facts across two rounds When building context state Then footer aggregates current-round output against prior-round input", () => {
+    expect(
+      buildHeartbeatContextState([
+        previousRoundModelCall,
+        previousRoundCompactCall,
+        failedCall,
+        currentRoundEarlierCall,
+        settledCall,
+      ]),
+    ).toEqual({
       kind: "available",
       modelCallId: 41,
       status: "done",
       providerLabel: "default · gpt-test",
-      inputTokens: 320,
-      outputTokens: 152,
+      inputTokens: 112,
+      outputTokens: 200,
       cachedInputTokens: null,
       reasoningTokens: null,
-      usedTokens: 472,
+      usedTokens: 312,
       maxContextTokens: 128_000,
-      progress: 472 / 128_000,
-      remainingTokens: 128_000 - 472,
-      estimatedCost: {
-        currency: "USD",
-        inputCost: (320 / 1_000_000) * 2.5,
-        outputCost: (152 / 1_000_000) * 10,
-        totalCost: (320 / 1_000_000) * 2.5 + (152 / 1_000_000) * 10,
-        bandLimitTokens: 128_000,
-        estimated: true,
-      },
+      progress: 312 / 128_000,
+      remainingTokens: 128_000 - 312,
     });
   });
 
-  test("Scenario: Given the latest model call is still running without usage When building context state Then the footer falls back to unavailable instead of guessing", () => {
-    expect(buildHeartbeatContextState([settledCall, runningCallWithoutUsage], providerMetadata)).toEqual({
-      kind: "unavailable",
+  test("Scenario: Given the latest model call only exposes usage totals When building context state Then footer falls back to request maxToken so context progress remains objective", () => {
+    expect(buildHeartbeatContextState([usageOnlyCall])).toEqual({
+      kind: "available",
+      modelCallId: 44,
+      status: "done",
+      providerLabel: "fallback · gpt-usage-only",
+      inputTokens: 0,
+      outputTokens: 152,
+      cachedInputTokens: null,
+      reasoningTokens: null,
+      usedTokens: 152,
+      maxContextTokens: 64_000,
+      progress: 152 / 64_000,
+      remainingTokens: 64_000 - 152,
+    });
+  });
+
+  test("Scenario: Given the operator updates max tokens in current config When building context state Then the current config budget overrides the stale ai_call budget", () => {
+    expect(buildHeartbeatContextState([usageOnlyCall], 200_000)).toEqual({
+      kind: "available",
+      modelCallId: 44,
+      status: "done",
+      providerLabel: "fallback · gpt-usage-only",
+      inputTokens: 0,
+      outputTokens: 152,
+      cachedInputTokens: null,
+      reasoningTokens: null,
+      usedTokens: 152,
+      maxContextTokens: 200_000,
+      progress: 152 / 200_000,
+      remainingTokens: 200_000 - 152,
+    });
+  });
+
+  test("Scenario: Given the latest model call is still running without usage When building context state Then the footer preserves aggregated round truth instead of collapsing to unavailable", () => {
+    expect(
+      buildHeartbeatContextState([previousRoundModelCall, currentRoundEarlierCall, settledCall, runningCallWithoutUsage]),
+    ).toEqual({
+      kind: "available",
       modelCallId: 42,
       status: "running",
       providerLabel: "default · gpt-test",
+      inputTokens: 80,
+      outputTokens: 200,
+      cachedInputTokens: null,
+      reasoningTokens: null,
+      usedTokens: 280,
       maxContextTokens: 128_000,
+      progress: 280 / 128_000,
+      remainingTokens: 128_000 - 280,
     });
   });
 
   test("Scenario: Given the latest model call is a compact cycle When building context state Then the footer resets instead of reusing pre-compact usage", () => {
-    expect(buildHeartbeatContextState([settledCall, compactCall], providerMetadata)).toEqual({
+    expect(buildHeartbeatContextState([settledCall, compactCall])).toEqual({
       kind: "unavailable",
       modelCallId: 43,
       status: "done",

@@ -19,7 +19,6 @@
 	import type {
 		RuntimeHeartbeatConfigBinding,
 		RuntimeHeartbeatConfigDraft,
-		RuntimeHeartbeatProviderMetadata,
 	} from './runtime-heartbeat-config-state';
 	import RuntimeHeartbeatStatusbar from './runtime-heartbeat-statusbar.svelte';
 	import {
@@ -36,7 +35,6 @@
 		groupsState,
 		modelCalls = [],
 		attention = null,
-		providerMetadata = null,
 		compactPending = false,
 		compactDisabled = false,
 		onRequestCompact,
@@ -55,7 +53,6 @@
 		groupsState: CachedResourceState<HeartbeatGroupItem[]>;
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
-		providerMetadata?: RuntimeHeartbeatProviderMetadata | null;
 		compactPending?: boolean;
 		compactDisabled?: boolean;
 		onRequestCompact: () => void | Promise<void>;
@@ -76,7 +73,8 @@
 	let viewportRef = $state<HTMLDivElement | null>(null);
 
 	const groups = $derived(buildHeartbeatDisplayGroups(groupsState.data));
-	const contextState = $derived(buildHeartbeatContextState(modelCalls, providerMetadata));
+	const configuredContextLimit = $derived(configBinding.draft.maxToken ?? configBinding.providerMetadata?.maxContextTokens ?? null);
+	const contextState = $derived(buildHeartbeatContextState(modelCalls, configuredContextLimit));
 	const shimmerSummary = $derived(buildHeartbeatAttentionFocusSummary(attention));
 	const statusState = $derived(
 		buildHeartbeatStatusState({

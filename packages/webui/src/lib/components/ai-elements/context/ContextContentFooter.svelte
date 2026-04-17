@@ -13,14 +13,19 @@
 	let context = getContextValue();
 </script>
 
-<div
-	class={cn("bg-secondary flex w-full items-center justify-between gap-3 p-3 text-xs", className)}
-	{...props}
->
-	{#if children}
+{#if children}
+	<div
+		class={cn("bg-secondary flex w-full items-center justify-between gap-3 p-3 text-xs", className)}
+		{...props}
+	>
 		{@render children?.()}
-	{:else}
+	</div>
+{:else if context.estimatedCostLabel}
+	<div
+		class={cn("bg-secondary flex w-full items-center justify-between gap-3 p-3 text-xs", className)}
+		{...props}
+	>
 		<span class="text-muted-foreground">Estimated cost</span>
-		<span>{context.estimatedCostLabel ?? "Unavailable"}</span>
-	{/if}
-</div>
+		<span>{context.estimatedCostLabel}</span>
+	</div>
+{/if}

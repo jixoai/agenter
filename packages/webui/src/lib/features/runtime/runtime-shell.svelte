@@ -75,7 +75,6 @@
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
 	const heartbeatConfigBinding = $derived(readRuntimeHeartbeatConfigBinding(heartbeatConfigGraph, heartbeatConfigLayerFile));
-	const heartbeatProviderMetadata = $derived(heartbeatConfigBinding.providerMetadata);
 	const heartbeatSchedulerState = $derived(runtime?.schedulerState ?? null);
 	const heartbeatCompactDisabled = $derived(session?.status !== 'running' || runtime?.activeCycle?.kind === 'compact');
 	const runtimeLoading = $derived(
@@ -296,7 +295,6 @@
 			{heartbeatGroups}
 			{modelCalls}
 			heartbeatSchedulerState={heartbeatSchedulerState}
-			heartbeatProviderMetadata={heartbeatProviderMetadata}
 			heartbeatConfigBinding={heartbeatConfigBinding}
 			heartbeatConfigLoading={heartbeatConfigLoading}
 			heartbeatConfigSaving={heartbeatConfigSaving}

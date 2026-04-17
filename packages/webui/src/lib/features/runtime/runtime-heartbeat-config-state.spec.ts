@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { ScopedSettingsOutput } from "@agenter/client-sdk";
 
 import {
+  parseRuntimeHeartbeatDraftNumber,
   pickEditableSettingsLayerId,
   readRuntimeHeartbeatConfigBinding,
   writeRuntimeHeartbeatConfigLayer,
@@ -66,6 +67,14 @@ const graph: ScopedSettingsOutput = {
 };
 
 describe("Feature: Runtime heartbeat config state", () => {
+  test("Scenario: Given numeric draft inputs arrive from the config form When parsing number fields Then both string and number bindings are accepted without trim errors", () => {
+    expect(parseRuntimeHeartbeatDraftNumber(" 4096 ")).toBe(4096);
+    expect(parseRuntimeHeartbeatDraftNumber(8192)).toBe(8192);
+    expect(parseRuntimeHeartbeatDraftNumber("")).toBeNull();
+    expect(parseRuntimeHeartbeatDraftNumber(null)).toBeNull();
+    expect(parseRuntimeHeartbeatDraftNumber(Number.NaN)).toBeNull();
+  });
+
   test("Scenario: Given runtime settings expose avatar and provider layers When picking the editable layer Then the avatar layer wins", () => {
     expect(pickEditableSettingsLayerId(graph)).toBe("avatar");
   });

@@ -44,6 +44,21 @@ const toRecord = (value: unknown): Record<string, unknown> | null => {
 const toNumberOrNull = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
+export const parseRuntimeHeartbeatDraftNumber = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const readPricingBands = (value: unknown): RuntimeHeartbeatProviderPricingBand[] => {
   if (!Array.isArray(value)) {
     return [];

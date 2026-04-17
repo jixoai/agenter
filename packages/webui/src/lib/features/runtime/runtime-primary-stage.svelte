@@ -15,7 +15,6 @@
 	import type {
 		RuntimeHeartbeatConfigBinding,
 		RuntimeHeartbeatConfigDraft,
-		RuntimeHeartbeatProviderMetadata,
 	} from './runtime-heartbeat-config-state';
 	import RuntimeStageAttention from './runtime-stage-attention.svelte';
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
@@ -31,7 +30,6 @@
 		heartbeatGroups: CachedResourceState<HeartbeatGroupItem[]>;
 		modelCalls: ModelCallItem[];
 		heartbeatSchedulerState: RuntimeSchedulerState | null;
-		heartbeatProviderMetadata: RuntimeHeartbeatProviderMetadata | null;
 		heartbeatConfigBinding: RuntimeHeartbeatConfigBinding;
 		heartbeatConfigLoading?: boolean;
 		heartbeatConfigSaving?: boolean;
@@ -64,7 +62,6 @@
 		heartbeatGroups,
 		modelCalls,
 		heartbeatSchedulerState,
-		heartbeatProviderMetadata,
 		heartbeatConfigBinding,
 		heartbeatConfigLoading = false,
 		heartbeatConfigSaving = false,
@@ -94,7 +91,6 @@
 				groupsState={heartbeatGroups}
 				modelCalls={modelCalls}
 				attention={runtime?.attention ?? null}
-				providerMetadata={heartbeatProviderMetadata}
 				compactPending={heartbeatCompactPending}
 				compactDisabled={heartbeatCompactDisabled}
 				onRequestCompact={onRequestHeartbeatCompact}

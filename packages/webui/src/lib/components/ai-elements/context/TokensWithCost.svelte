@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatTokenCount } from "./context-context.svelte.js";
+
 	interface Props {
 		tokens?: number;
 		costText?: string;
@@ -7,11 +9,7 @@
 	let { tokens, costText }: Props = $props();
 
 	let tokensFormatted = $derived.by(() => {
-		return tokens === undefined
-			? "—"
-			: new Intl.NumberFormat("en-US", {
-					notation: "compact",
-				}).format(tokens);
+		return tokens === undefined ? "—" : formatTokenCount(tokens);
 	});
 </script>
 

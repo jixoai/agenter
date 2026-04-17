@@ -10,7 +10,6 @@
 	import RuntimeStageHeartbeat from './runtime-stage-heartbeat.svelte';
 	import {
 		createEmptyRuntimeHeartbeatConfigBinding,
-		type RuntimeHeartbeatProviderMetadata,
 	} from './runtime-heartbeat-config-state';
 
 	type ScheduledHeartbeatUpdate =
@@ -32,20 +31,6 @@
 		attention = null,
 		sessionStatus = 'running',
 		schedulerState = null,
-		providerMetadata = {
-			providerId: 'default',
-			model: 'gpt-test',
-			maxContextTokens: 128_000,
-			pricingCurrency: 'USD',
-			pricingBands: [
-				{
-					upToTokens: 128_000,
-					inputPerMillion: 2.5,
-					cachedInputPerMillion: null,
-					outputPerMillion: 10,
-				},
-			],
-		},
 		loaded = true,
 		loading = false,
 		refreshing = false,
@@ -63,7 +48,6 @@
 		attention?: RuntimeAttentionState | null;
 		sessionStatus?: SessionEntry['status'];
 		schedulerState?: RuntimeSchedulerState | null;
-		providerMetadata?: RuntimeHeartbeatProviderMetadata | null;
 		loaded?: boolean;
 		loading?: boolean;
 		refreshing?: boolean;
@@ -170,7 +154,6 @@
 		}}
 		{modelCalls}
 		{attention}
-		{providerMetadata}
 		{compactPending}
 		{compactDisabled}
 		{onRequestCompact}

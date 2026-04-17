@@ -11,7 +11,11 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 
-	import type { RuntimeHeartbeatConfigBinding, RuntimeHeartbeatConfigDraft } from './runtime-heartbeat-config-state';
+	import {
+		parseRuntimeHeartbeatDraftNumber,
+		type RuntimeHeartbeatConfigBinding,
+		type RuntimeHeartbeatConfigDraft,
+	} from './runtime-heartbeat-config-state';
 
 	let {
 		binding,
@@ -37,14 +41,6 @@
 	let thinkingBudgetValue = $state('');
 
 	const toInputValue = (value: number | null): string => (value === null ? '' : String(value));
-	const toNumberOrNull = (value: string): number | null => {
-		const trimmed = value.trim();
-		if (trimmed.length === 0) {
-			return null;
-		}
-		const parsed = Number(trimmed);
-		return Number.isFinite(parsed) ? parsed : null;
-	};
 
 	const syncDraftFromBinding = (): void => {
 		temperatureValue = toInputValue(binding.draft.temperature);
@@ -68,11 +64,11 @@
 			return;
 		}
 		const saved = await onSave({
-			temperature: toNumberOrNull(temperatureValue),
-			topK: toNumberOrNull(topKValue),
-			maxToken: toNumberOrNull(maxTokenValue),
+			temperature: parseRuntimeHeartbeatDraftNumber(temperatureValue),
+			topK: parseRuntimeHeartbeatDraftNumber(topKValue),
+			maxToken: parseRuntimeHeartbeatDraftNumber(maxTokenValue),
 			thinkingEnabled,
-			thinkingBudgetTokens: thinkingEnabled ? toNumberOrNull(thinkingBudgetValue) : null,
+			thinkingBudgetTokens: thinkingEnabled ? parseRuntimeHeartbeatDraftNumber(thinkingBudgetValue) : null,
 		});
 		if (saved) {
 			open = false;

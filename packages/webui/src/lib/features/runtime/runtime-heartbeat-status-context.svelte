@@ -15,9 +15,7 @@
 
 	import type { RuntimeHeartbeatContextState } from './runtime-heartbeat-statusbar-state';
 
-type RenderableContextState = Exclude<RuntimeHeartbeatContextState, { kind: 'absent' }> & {
-	maxContextTokens: number;
-};
+	type RenderableContextState = Exclude<RuntimeHeartbeatContextState, { kind: 'absent' }>;
 
 	let {
 		state,
@@ -27,31 +25,11 @@ type RenderableContextState = Exclude<RuntimeHeartbeatContextState, { kind: 'abs
 		class?: string;
 	} = $props();
 
-	const currencyFormatter = (currency: string) =>
-		new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency,
-			maximumFractionDigits: 4,
-		});
-
-	const estimatedCostLabel = $derived.by(() => {
-		if (state.kind !== 'available' || !state.estimatedCost) {
-			return null;
-		}
-		return currencyFormatter(state.estimatedCost.currency).format(state.estimatedCost.totalCost);
-	});
-
 	const renderableState = $derived.by((): RenderableContextState | null => {
 		if (state.kind === 'absent') {
 			return null;
 		}
-		return {
-			...state,
-			maxContextTokens:
-				state.maxContextTokens !== null && Number.isFinite(state.maxContextTokens) && state.maxContextTokens > 0
-					? state.maxContextTokens
-					: 0,
-		};
+		return state;
 	});
 </script>
 
@@ -74,8 +52,8 @@ type RenderableContextState = Exclude<RuntimeHeartbeatContextState, { kind: 'abs
 						}
 					: undefined
 			}
-			usedTokens={renderableState.kind === 'available' ? renderableState.usedTokens : 0}
-			estimatedCostLabel={estimatedCostLabel}
+			usedTokens={renderableState.kind === 'available' ? renderableState.usedTokens : null}
+			estimatedCostLabel={null}
 		>
 			<ContextTrigger class="h-8 max-w-full gap-2" disabled={renderableState.kind !== 'available'} />
 			<ContextContent>

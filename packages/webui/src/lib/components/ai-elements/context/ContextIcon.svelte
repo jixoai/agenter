@@ -31,17 +31,19 @@
 		stroke="currentColor"
 		stroke-width={ICON_STROKE_WIDTH}
 	/>
-	<circle
-		cx={ICON_CENTER}
-		cy={ICON_CENTER}
-		fill="none"
-		opacity="0.7"
-		r={ICON_RADIUS}
-		stroke="currentColor"
-		stroke-dasharray="{circumference} {circumference}"
-		stroke-dashoffset={dashOffset}
-		stroke-linecap="round"
-		stroke-width={ICON_STROKE_WIDTH}
-		style="transform-origin: center; transform: rotate(-90deg);"
-	/>
+	{#if context.hasProgressMeter}
+		<circle
+			cx={ICON_CENTER}
+			cy={ICON_CENTER}
+			fill="none"
+			opacity="0.7"
+			r={ICON_RADIUS}
+			stroke="currentColor"
+			stroke-dasharray="{circumference} {circumference}"
+			stroke-dashoffset={dashOffset}
+			stroke-linecap="round"
+			stroke-width={ICON_STROKE_WIDTH}
+			style="transform-origin: center; transform: rotate(-90deg);"
+		/>
+	{/if}
 </svg>

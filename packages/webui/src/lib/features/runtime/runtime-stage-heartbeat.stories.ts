@@ -666,6 +666,14 @@ const settledModelCalls = [
     status: "done",
     provider: "openai/chat",
     model: "gpt-test",
+    providerSnapshot: {
+      providerId: "default",
+      apiStandard: "openai-responses",
+      vendor: "openai",
+      profile: null,
+      model: "gpt-test",
+      maxContextTokens: 128_000,
+    },
     requestUrl: "https://example.test/v1/chat/completions",
     request: {
       meta: { cycleId: 8 },
@@ -698,6 +706,14 @@ const streamingModelCalls = [
     status: "running",
     provider: "openai/chat",
     model: "gpt-test",
+    providerSnapshot: {
+      providerId: "default",
+      apiStandard: "openai-responses",
+      vendor: "openai",
+      profile: null,
+      model: "gpt-test",
+      maxContextTokens: 128_000,
+    },
     requestUrl: "https://example.test/v1/chat/completions",
     request: {
       meta: { cycleId: 9 },
@@ -1275,7 +1291,7 @@ export const StreamingToolCallRemainsVisible = {
     await expect(entry).toBeInTheDocument();
     await expect(entry).toHaveTextContent("root_workspace_bash");
     await expect(entry).toHaveTextContent("Running");
-    await expect(entry).toHaveTextContent('message send --compact');
+    await expect(entry).toHaveTextContent("message send --compact");
     await expect(entry).toHaveTextContent("Parameters");
     expect(entry.textContent).not.toContain("Pending");
     expect(entry.textContent).not.toContain("Completed");

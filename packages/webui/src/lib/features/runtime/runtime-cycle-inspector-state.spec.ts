@@ -115,6 +115,14 @@ const modelCall: ModelCallItem = {
   status: "done",
   provider: "openai/chat",
   model: "gpt-test",
+  providerSnapshot: {
+    providerId: "default",
+    apiStandard: "openai-responses",
+    vendor: "openai",
+    profile: null,
+    model: "gpt-test",
+    maxContextTokens: 128_000,
+  },
   requestUrl: "https://example.test/v1/chat/completions",
   request: {
     systemPrompt: "You are helpful.",

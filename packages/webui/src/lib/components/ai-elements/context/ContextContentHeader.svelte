@@ -18,14 +18,21 @@
 	{#if children}
 		{@render children()}
 	{:else}
-		<div class="flex items-center justify-between gap-3 text-xs">
-			<p>{context.displayPercent}</p>
-			<p class="text-muted-foreground font-mono">
-				{context.usedTokensFormatted} / {context.maxTokensFormatted}
-			</p>
-		</div>
-		<div class="space-y-2">
-			<Progress class="bg-muted" value={context.usedPercent * PERCENT_MAX} />
-		</div>
+		{#if context.hasProgressMeter}
+			<div class="flex items-center justify-between gap-3 text-xs">
+				<p>{context.displayPercent}</p>
+				<p class="text-muted-foreground font-mono">
+					{context.usedTokensFormatted} / {context.maxTokensFormatted}
+				</p>
+			</div>
+			<div class="space-y-2">
+				<Progress class="bg-muted" value={context.usedPercent * PERCENT_MAX} />
+			</div>
+		{:else}
+			<div class="flex items-center justify-between gap-3 text-xs">
+				<p class="text-muted-foreground">Tokens</p>
+				<p class="font-mono">{context.usedTokensFormatted}</p>
+			</div>
+		{/if}
 	{/if}
 </div>

@@ -23,10 +23,10 @@
 	}: Props = $props();
 
 	const contextInstance = new ContextClass({
-		usedTokens: 0,
-		maxTokens: 0,
+		usedTokens: null,
+		maxTokens: null,
 		usage: undefined,
-		modelId: undefined,
+		modelId: null,
 		estimatedCostLabel: null,
 	});
 

@@ -7,17 +7,6 @@ import type {
   SessionEntry,
 } from "@agenter/client-sdk";
 
-import type { RuntimeHeartbeatProviderMetadata } from "./runtime-heartbeat-config-state";
-
-export interface RuntimeHeartbeatCostEstimate {
-  currency: string;
-  inputCost: number;
-  outputCost: number;
-  totalCost: number;
-  bandLimitTokens: number | null;
-  estimated: true;
-}
-
 export type RuntimeHeartbeatContextState =
   | { kind: "absent" }
   | {
@@ -40,7 +29,6 @@ export type RuntimeHeartbeatContextState =
       maxContextTokens: number | null;
       progress: number | null;
       remainingTokens: number | null;
-      estimatedCost: RuntimeHeartbeatCostEstimate | null;
     };
 
 export interface RuntimeHeartbeatAttentionFocusSummary {
@@ -71,37 +59,13 @@ const toPositiveNumber = (value: unknown): number | null =>
 const toNonNegativeNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 
-const readUsage = (
-  call: ModelCallItem,
-): {
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens: number | null;
-  reasoningTokens: number | null;
-  usedTokens: number;
-} | null => {
+const readCallOutputTokens = (call: ModelCallItem): number | null => {
   const response = asRecord(call.response);
   const usage = asRecord(response?.usage);
   if (!usage) {
     return null;
   }
-  const inputTokens = toNonNegativeNumber(usage.inputTokens) ?? toNonNegativeNumber(usage.promptTokens) ?? 0;
-  const outputTokens = toNonNegativeNumber(usage.outputTokens) ?? toNonNegativeNumber(usage.completionTokens) ?? 0;
-  const cachedInputTokens = toNonNegativeNumber(usage.cachedInputTokens);
-  const reasoningTokens = toNonNegativeNumber(usage.reasoningTokens);
-  const usedTokens =
-    toPositiveNumber(usage.totalTokens) ??
-    [inputTokens, outputTokens, reasoningTokens ?? 0].reduce((total, value) => total + value, 0);
-  if (usedTokens <= 0) {
-    return null;
-  }
-  return {
-    inputTokens,
-    outputTokens,
-    cachedInputTokens,
-    reasoningTokens,
-    usedTokens,
-  };
+  return toNonNegativeNumber(usage.outputTokens) ?? toNonNegativeNumber(usage.completionTokens);
 };
 
 const compareModelCallsDesc = (left: ModelCallItem, right: ModelCallItem): number => {
@@ -117,46 +81,27 @@ const compareModelCallsDesc = (left: ModelCallItem, right: ModelCallItem): numbe
 const latestModelCall = (modelCalls: ReadonlyArray<ModelCallItem>): ModelCallItem | null =>
   [...modelCalls].sort(compareModelCallsDesc)[0] ?? null;
 
-const pickPricingBand = (
-  providerMetadata: RuntimeHeartbeatProviderMetadata,
-  promptTokens: number,
-): RuntimeHeartbeatProviderMetadata["pricingBands"][number] | null => {
-  const bands = [...providerMetadata.pricingBands].sort((left, right) => {
-    if (left.upToTokens === null) {
-      return 1;
-    }
-    if (right.upToTokens === null) {
-      return -1;
-    }
-    return left.upToTokens - right.upToTokens;
-  });
-  return bands.find((band) => band.upToTokens === null || promptTokens <= band.upToTokens) ?? bands.at(-1) ?? null;
-};
+const isSuccessfulCompletedCall = (call: ModelCallItem): boolean => call.isComplete && call.status === "done";
 
-const estimateHeartbeatCost = (
-  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number | null },
-  providerMetadata: RuntimeHeartbeatProviderMetadata | null,
-): RuntimeHeartbeatCostEstimate | null => {
-  if (!providerMetadata?.pricingCurrency || providerMetadata.pricingBands.length === 0) {
-    return null;
-  }
-  const band = pickPricingBand(providerMetadata, usage.inputTokens);
-  if (!band) {
-    return null;
-  }
-  const cachedInputTokens = usage.cachedInputTokens ?? 0;
-  const uncachedInputTokens = Math.max(0, usage.inputTokens - cachedInputTokens);
-  const inputCost =
-    (uncachedInputTokens / 1_000_000) * band.inputPerMillion +
-    (cachedInputTokens / 1_000_000) * (band.cachedInputPerMillion ?? band.inputPerMillion);
-  const outputCost = (usage.outputTokens / 1_000_000) * band.outputPerMillion;
+const readProviderSnapshot = (
+  call: ModelCallItem,
+): {
+  providerLabel: string | null;
+  maxContextTokens: number | null;
+} => {
+  const snapshot = asRecord(call.providerSnapshot);
+  const request = asRecord(call.request);
+  const config = asRecord(request?.config);
+  const providerId =
+    typeof snapshot?.providerId === "string" && snapshot.providerId.length > 0 ? snapshot.providerId : call.provider;
+  const model = typeof snapshot?.model === "string" && snapshot.model.length > 0 ? snapshot.model : call.model;
   return {
-    currency: providerMetadata.pricingCurrency,
-    inputCost,
-    outputCost,
-    totalCost: inputCost + outputCost,
-    bandLimitTokens: band.upToTokens,
-    estimated: true,
+    providerLabel:
+      [providerId, model].filter((part) => typeof part === "string" && part.length > 0).join(" · ") || null,
+    maxContextTokens:
+      toPositiveNumber(snapshot?.maxContextTokens) ??
+      toPositiveNumber(config?.maxContextTokens) ??
+      toPositiveNumber(config?.maxToken),
   };
 };
 
@@ -198,46 +143,69 @@ const buildResourceHint = (resource: CachedResourceState<HeartbeatGroupItem[]>):
 
 export const buildHeartbeatContextState = (
   modelCalls: ReadonlyArray<ModelCallItem>,
-  providerMetadata: RuntimeHeartbeatProviderMetadata | null,
+  configuredMaxContextTokens?: number | null,
 ): RuntimeHeartbeatContextState => {
   const latestCall = latestModelCall(modelCalls);
   if (!latestCall) {
     return { kind: "absent" };
   }
-  const providerLabel = providerMetadata
-    ? [providerMetadata.providerId, providerMetadata.model].filter(Boolean).join(" · ")
-    : null;
+  const providerSnapshot = readProviderSnapshot(latestCall);
+  const resolvedMaxContextTokens = toPositiveNumber(configuredMaxContextTokens) ?? providerSnapshot.maxContextTokens;
   if (latestCall.kind === "compact") {
     return {
       kind: "unavailable",
       modelCallId: latestCall.id,
       status: latestCall.status,
-      providerLabel,
-      maxContextTokens: providerMetadata?.maxContextTokens ?? null,
+      providerLabel: providerSnapshot.providerLabel,
+      maxContextTokens: resolvedMaxContextTokens,
     };
   }
-  const usage = readUsage(latestCall);
-  if (!usage) {
+  const currentRoundIndex = latestCall.roundIndex;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  for (const call of modelCalls) {
+    if (!isSuccessfulCompletedCall(call)) {
+      continue;
+    }
+    const completionTokens = readCallOutputTokens(call);
+    if (completionTokens === null || completionTokens <= 0) {
+      continue;
+    }
+    if (call.roundIndex === currentRoundIndex) {
+      outputTokens += completionTokens;
+      continue;
+    }
+    if (call.roundIndex < currentRoundIndex) {
+      inputTokens += completionTokens;
+    }
+  }
+
+  const usedTokens = inputTokens + outputTokens;
+  if (usedTokens <= 0) {
     return {
       kind: "unavailable",
       modelCallId: latestCall.id,
       status: latestCall.status,
-      providerLabel,
-      maxContextTokens: providerMetadata?.maxContextTokens ?? null,
+      providerLabel: providerSnapshot.providerLabel,
+      maxContextTokens: resolvedMaxContextTokens,
     };
   }
-  const maxContextTokens = providerMetadata?.maxContextTokens ?? null;
-  const progress = maxContextTokens ? Math.min(1, usage.usedTokens / maxContextTokens) : null;
+  const maxContextTokens = resolvedMaxContextTokens;
+  const progress = maxContextTokens ? Math.min(1, usedTokens / maxContextTokens) : null;
   return {
     kind: "available",
     modelCallId: latestCall.id,
     status: latestCall.status,
-    providerLabel,
-    ...usage,
+    providerLabel: providerSnapshot.providerLabel,
+    inputTokens,
+    outputTokens,
+    cachedInputTokens: null,
+    reasoningTokens: null,
+    usedTokens,
     maxContextTokens,
     progress,
-    remainingTokens: maxContextTokens ? Math.max(0, maxContextTokens - usage.usedTokens) : null,
-    estimatedCost: estimateHeartbeatCost(usage, providerMetadata),
+    remainingTokens: maxContextTokens ? Math.max(0, maxContextTokens - usedTokens) : null,
   };
 };
 
