@@ -122,6 +122,16 @@ The runtime client and Heartbeat UI SHALL render the invocation-first Heartbeat 
 - **THEN** the existing Heartbeat visual row upgrades from running to completed
 - **AND** the UI does not create a second row for the same invocation
 
+### Requirement: Runtime Heartbeat publication SHALL preserve assistant response segments objectively
+
+The runtime Heartbeat ledger SHALL persist assistant `thinking` and `text` spans as chronological response segments instead of collapsing them into one mutable assistant snapshot for the whole AI call.
+
+#### Scenario: Thinking can resume after a tool boundary without losing order
+
+- **WHEN** one AI call emits `thinking`, then a tool invocation, then more `thinking`, then final assistant text
+- **THEN** the durable Heartbeat ledger preserves those assistant spans as separate chronological response segments
+- **AND** later inspection can reconstruct the objective order without guessing from the latest aggregate assistant body
+
 ### Requirement: Runtime clients SHALL project Heartbeat into grouped inspection pages
 
 Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of directly rendering paged raw parts.
@@ -143,6 +153,22 @@ Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of di
 - **WHEN** a realtime `runtime.heartbeatPart` event arrives
 - **THEN** the client treats it as an invalidation signal for grouped Heartbeat data
 - **AND** the visible Heartbeat stream is reloaded from the grouped query path instead of merging raw parts locally
+
+### Requirement: Grouped Heartbeat projection SHALL compare auxiliary facts by payload truth
+
+Grouped Heartbeat publication SHALL deduplicate ordinary request-side auxiliary facts by payload equivalence rather than by message-id churn, while still attaching compact-specific prompt facts to the compact call that uses them.
+
+#### Scenario: Unchanged ordinary prompt facts do not create a fresh before-call replay
+
+- **WHEN** two consecutive ordinary AI calls reuse the same durable `systemPrompt`, `tools`, or `config` payloads
+- **THEN** the grouped Heartbeat projection does not emit a new `before-call` replay just because the durable auxiliary message ids changed
+- **AND** only materially changed auxiliary facts appear as new pre-call rows
+
+#### Scenario: Compact-specific prompt facts stay attached to the compact call
+
+- **WHEN** a compact cycle records compact-only prompt facts and then records the compact boundary/result
+- **THEN** the grouped Heartbeat projection keeps those compact prompt facts attached to the compact call
+- **AND** the operator does not need to read a separate ordinary `before-call` card to understand that compact event
 
 ### Requirement: Runtime clients SHALL publish grouped Heartbeat resource state explicitly
 
@@ -194,3 +220,8 @@ Grouped Heartbeat pagination SHALL be exposed from the scroll surface itself ins
 - **THEN** the UI shows a centered `Load older` affordance near the top edge of the stream
 - **AND** after the final older page is loaded, that same affordance region shows `No older messages`
 
+#### Scenario: Top-of-stream paging affordance shows active loading state objectively
+
+- **WHEN** the operator requests older grouped Heartbeat history from that top affordance
+- **THEN** the same top affordance region switches into a disabled loading indicator while the request is in flight
+- **AND** the already visible grouped Heartbeat rows stay mounted below that loading region
