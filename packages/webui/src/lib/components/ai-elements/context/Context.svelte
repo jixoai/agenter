@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as HoverCard from "$lib/components/ui/hover-card/index.js";
-	import { ContextClass, setContextValue, type ContextSchema } from "./context-context.svelte";
+	import { ContextClass, setContextValue, type ContextSchema } from "./context-context.svelte.js";
 
 	interface Props extends ContextSchema {
 		children?: import("svelte").Snippet;

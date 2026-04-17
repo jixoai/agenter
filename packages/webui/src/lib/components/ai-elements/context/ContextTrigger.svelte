@@ -4,7 +4,7 @@
 	import { buttonVariants } from "$lib/components/ui/button/button.variants.js";
 	import HoverCardTrigger from "$lib/components/ui/hover-card/hover-card-trigger.svelte";
 	import ContextIcon from "./ContextIcon.svelte";
-	import { getContextValue } from "./context-context.svelte";
+	import { getContextValue } from "./context-context.svelte.js";
 
 	interface Props {
 		children?: import("svelte").Snippet;

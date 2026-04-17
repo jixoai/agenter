@@ -76,7 +76,7 @@ export class ContextClass {
 	}
 }
 
-let CONTEXT_KEY = Symbol("context");
+const CONTEXT_KEY = Symbol.for("@agenter/webui/ai-elements/context");
 
 export function setContextValue(contextInstance: ContextClass) {
 	setContext(CONTEXT_KEY, contextInstance);

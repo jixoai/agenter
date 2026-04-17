@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Progress from "$lib/components/ui/progress/progress.svelte";
 	import { cn } from "$lib/utils";
-	import { getContextValue, PERCENT_MAX } from "./context-context.svelte";
+	import { getContextValue, PERCENT_MAX } from "./context-context.svelte.js";
 
 	interface Props {
 		children?: import("svelte").Snippet;
