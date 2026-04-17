@@ -1,34 +1,35 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import BotIcon from '@lucide/svelte/icons/bot';
-	import PlusIcon from '@lucide/svelte/icons/plus';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { ScrollView } from '@agenter/svelte-components';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import { Badge } from '$lib/components/ui/badge/index.js';
+	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
 	import { buildAvatarNewHref, createAvatarDraftId } from '$lib/features/avatars/avatar-workbench-location';
 	import { buildWorkspaceIndexHref } from '$lib/features/workspaces/workspace-location';
 
 	const controller = getAppControllerContext();
+	type AvatarCatalogEntry = (typeof controller.runtimeState.globalAvatarCatalog.data)[number];
 
 	let selectedAvatar = $state(page.url.searchParams.get('avatar') ?? '');
-	let nextCatalogDraftId = $state(createAvatarDraftId());
 	let runtimeBusy = $state(false);
 	let runtimeError = $state<string | null>(null);
 	let copyDialogOpen = $state(false);
 	let copyNickname = $state('');
 	let copyBusy = $state(false);
 	let copyError = $state<string | null>(null);
+	let detailsOpen = $state(false);
 
 	const catalogState = $derived(controller.runtimeState.globalAvatarCatalog);
 	const avatars = $derived(catalogState.data);
@@ -38,6 +39,7 @@
 	const selectedSession = $derived(
 		selectedEntry ? controller.runtimeState.sessions.find((session) => session.id === selectedEntry.runtimeId) ?? null : null,
 	);
+	const selectedStatusLabel = $derived(selectedSession?.status ?? 'stopped');
 	const copyNicknameConflict = $derived(
 		copyNickname.trim().length > 0 && avatars.some((avatar) => avatar.nickname === copyNickname.trim().toLowerCase()),
 	);
@@ -58,6 +60,38 @@
 			selectedAvatar = selectedEntry.nickname;
 		}
 	});
+
+	$effect(() => {
+		if (!selectedEntry) {
+			return;
+		}
+		detailsOpen = false;
+	});
+
+	const compactRuntimeId = (runtimeId: string): string => {
+		const prefix = runtimeId.slice(0, 8);
+		return runtimeId.length > 8 ? `${prefix}…` : prefix;
+	};
+
+	const formatStatusLabel = (status: string): string => {
+		return status.length > 0 ? `${status.slice(0, 1).toUpperCase()}${status.slice(1)}` : status;
+	};
+
+	const openAvatarDraft = async (): Promise<void> => {
+		if (!selectedEntry) {
+			return;
+		}
+		await goto(
+			buildAvatarNewHref({
+				draftId: createAvatarDraftId(),
+				sourceAvatarNickname: selectedEntry.nickname,
+			}),
+			{
+				keepFocus: true,
+				noScroll: true,
+			},
+		);
+	};
 
 	const openAvatarRuntime = async (input: { autoStart: boolean; tab: 'heartbeat' | 'attention' }): Promise<void> => {
 		if (!selectedEntry || runtimeBusy) {
@@ -105,164 +139,187 @@
 			copyBusy = false;
 		}
 	};
-
 </script>
 
-<WorkbenchPageToolbar>
-	<div class="flex h-full items-center justify-between gap-3 px-4 md:px-5">
-		<div class="min-w-0">
-			<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Avatars</div>
-			<div class="truncate text-sm font-semibold">
-				{selectedEntry ? `${selectedEntry.nickname} runtime catalog` : 'Global avatar catalog'}
+{#snippet avatarCatalogEntry(entry: AvatarCatalogEntry)}
+	{@const isSelected = selectedEntry?.runtimeId === entry.runtimeId}
+	<div
+		class={`avatar-catalog-entry transition-colors ${
+			isSelected ? 'bg-[color-mix(in_srgb,var(--accent),transparent_72%)]' : 'hover:bg-muted/20'
+		}`}
+	>
+		<button
+			type="button"
+			class="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 px-2 py-2 text-left md:px-3 md:py-2.5"
+			aria-pressed={isSelected}
+			onclick={() => {
+				selectedAvatar = entry.nickname;
+			}}
+		>
+			<ProfileAvatar label={entry.nickname} class="size-8 rounded-lg border-border/65 bg-background/65" />
+			<div class="grid min-w-0 gap-0.5">
+				<div class="truncate text-[13px] font-semibold leading-tight md:text-sm">{entry.nickname}</div>
+				<div class="truncate text-[10px] leading-4 text-muted-foreground md:text-[11px]">
+					{compactRuntimeId(entry.runtimeId)}
+				</div>
 			</div>
-		</div>
-		{#if selectedEntry}
-			<Badge variant="outline" class="bg-background/70">{selectedEntry.runtimeId}</Badge>
-		{/if}
+		</button>
 	</div>
-</WorkbenchPageToolbar>
+{/snippet}
 
 <div
-	class="grid h-full gap-4 p-4 md:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] md:p-5"
+	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[56rem] md:grid-cols-[minmax(13rem,15rem)_minmax(22rem,36rem)] md:justify-center md:items-start md:gap-5 md:p-4 lg:max-w-[58rem] lg:grid-cols-[15rem_minmax(24rem,38rem)] lg:p-5"
 	style="min-block-size: 0;"
 	data-testid="avatar-catalog-route"
 >
-	<Card.Root style="min-block-size: 0;">
-		<Card.Header class="border-b">
-			<Card.Title>Global catalog</Card.Title>
-			<Card.Description>Avatar identities are global resources. Workspaces only project their lens.</Card.Description>
-		</Card.Header>
-		<Card.Content class="p-0" style="min-block-size: 0;">
-			<ScrollView class="h-full" contentClass="grid gap-2 p-3">
-				{#if avatars.length === 0}
-					<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-						{catalogState.error ?? 'No avatars are available yet.'}
-					</div>
-				{:else}
+	<section class="avatar-catalog-layout__rail grid gap-2.5 md:self-start">
+		<div class="grid gap-1 pb-1">
+			<h2 class="text-base font-semibold">Global catalog</h2>
+		</div>
+
+		{#if avatars.length === 0}
+			<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+				{catalogState.error ?? 'No avatars are available yet.'}
+			</div>
+		{:else}
+			<div class="avatar-catalog-list grid gap-0 md:hidden">
+				{#each avatars as entry (entry.runtimeId)}
+					{@render avatarCatalogEntry(entry)}
+				{/each}
+			</div>
+			<div class="avatar-catalog-list hidden md:block">
+				<ScrollView class="max-h-52" contentClass="grid gap-0 pr-1">
 					{#each avatars as entry (entry.runtimeId)}
-						<button
-							type="button"
-							class={`grid gap-2 rounded-2xl border px-4 py-3 text-left transition-colors hover:bg-muted/40 ${
-								selectedEntry?.runtimeId === entry.runtimeId ? 'border-primary bg-primary/5' : 'bg-card/70'
-							}`}
-							onclick={() => {
-								selectedAvatar = entry.nickname;
-							}}
-						>
-							<div class="flex items-center gap-3">
-								<ProfileAvatar label={entry.nickname} class="size-10 rounded-xl" />
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-2">
-										<div class="truncate text-sm font-semibold">{entry.nickname}</div>
-										{#if entry.defaultAvatar}
-											<Badge variant="secondary">Default</Badge>
-										{/if}
-									</div>
-									<div class="truncate text-xs text-muted-foreground">{entry.runtimeId}</div>
+						{@render avatarCatalogEntry(entry)}
+					{/each}
+				</ScrollView>
+			</div>
+		{/if}
+	</section>
+
+	<section class="avatar-catalog-layout__lens grid gap-4 pt-4 md:min-w-0 md:pt-0">
+		<div class="grid gap-1 pb-1">
+			<div class="flex items-center gap-2">
+				<h2 class="text-base font-semibold">Runtime lens</h2>
+				<HelpHint
+					textContext="The runtime lens stays bound to the selected avatar identity. It opens the canonical runtime first, while workspace entry remains a secondary handoff."
+				>
+					<p>Use the runtime lens to open the canonical avatar runtime first. Workspace navigation remains a secondary handoff from the same identity.</p>
+				</HelpHint>
+			</div>
+		</div>
+
+		{#if !selectedEntry}
+			<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+				Select one avatar to inspect its runtime identity.
+			</div>
+		{:else}
+			{#if runtimeError}
+				<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
+			{/if}
+			<div class="avatar-runtime-lens__hero grid gap-3 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
+				<div class="flex items-start gap-3">
+					<ProfileAvatar
+						label={selectedEntry.nickname}
+						class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
+					/>
+					<div class="grid min-w-0 gap-1.5">
+						<div class="grid gap-1">
+							<div class="grid min-w-0 gap-0.5 md:flex md:flex-wrap md:items-baseline md:gap-x-2 md:gap-y-1">
+								<h1 class="truncate text-lg font-semibold md:text-xl">{selectedEntry.nickname}</h1>
+								<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs">
+									<span>{formatStatusLabel(selectedStatusLabel)}</span>
+									{#if selectedEntry.defaultAvatar}
+										<span aria-hidden="true">·</span>
+										<span>Default</span>
+									{/if}
 								</div>
 							</div>
-						</button>
-					{/each}
-				{/if}
-			</ScrollView>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root style="min-block-size: 0;">
-		<Card.Header class="border-b">
-			<Card.Title>Runtime lens</Card.Title>
-			<Card.Description>Open the canonical runtime shell or jump into workspace permissions from this avatar lens.</Card.Description>
-		</Card.Header>
-		<Card.Content class="grid gap-4 pt-6">
-			{#if !selectedEntry}
-				<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-					Select one avatar to inspect its runtime identity.
-				</div>
-			{:else}
-				{#if runtimeError}
-					<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} class="mb-2" />
-				{/if}
-				<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-					<div class="flex items-start gap-4">
-						<ProfileAvatar label={selectedEntry.nickname} class="size-16 rounded-2xl" />
-						<div class="grid gap-2">
-							<div class="flex flex-wrap items-center gap-2">
-								<h1 class="text-xl font-semibold">{selectedEntry.nickname}</h1>
-								{#if selectedSession}
-									<Badge variant="outline">{selectedSession.status}</Badge>
-								{:else}
-									<Badge variant="outline">stopped</Badge>
-								{/if}
-							</div>
-							<p class="text-sm text-muted-foreground">
-								Canonical runtime id stays stable across workspace mounts and detaches.
-							</p>
 						</div>
 					</div>
-
-					<div class="flex flex-wrap gap-2 lg:justify-end">
-						<Button
-							variant="outline"
-							onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
-							disabled={runtimeBusy}
-						>
-							<BotIcon class="size-4" />
-							Open avatar
-						</Button>
-						<Button
-							onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
-							disabled={runtimeBusy}
-						>
-							<PlayIcon class="size-4" />
-							{runtimeBusy ? 'Starting avatar…' : 'Start avatar'}
-						</Button>
-						<Button
-							variant="outline"
-							onclick={() => {
-								copyDialogOpen = true;
-								copyNickname = '';
-								copyError = null;
-							}}
-						>
-							Copy avatar
-						</Button>
-						<Button
-							variant="ghost"
-							href={buildAvatarNewHref({
-								draftId: nextCatalogDraftId,
-								sourceAvatarNickname: selectedEntry.nickname,
-							})}
-						>
-							<PlusIcon class="size-4" />
-							New avatar tab
-						</Button>
-						<Button
-							variant="ghost"
-							onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
-						>
-							<ArrowUpRightIcon class="size-4" />
-							Open workspaces
-						</Button>
-					</div>
 				</div>
 
-				<div class="grid gap-3 md:grid-cols-3">
-					<div class="rounded-xl border px-4 py-3">
-						<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Runtime id</div>
-						<div class="mt-2 break-all text-sm font-semibold">{selectedEntry.runtimeId}</div>
-					</div>
-					<div class="rounded-xl border px-4 py-3">
-						<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Global source</div>
-						<div class="mt-2 break-all text-sm font-semibold">{selectedEntry.globalPath}</div>
-					</div>
-					<div class="rounded-xl border px-4 py-3">
-						<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Private slot</div>
-						<div class="mt-2 break-all text-sm font-semibold">{selectedEntry.workspacePrivatePath}</div>
-					</div>
+				<div class="grid grid-cols-2 gap-1.5 md:flex md:flex-wrap md:justify-end">
+					<Button
+						variant="outline"
+						size="sm"
+						class="w-full md:w-auto"
+						onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
+						disabled={runtimeBusy}
+					>
+						<BotIcon class="size-4" />
+						Open avatar
+					</Button>
+					<Button
+						size="sm"
+						class="w-full md:w-auto"
+						onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
+						disabled={runtimeBusy}
+					>
+						<PlayIcon class="size-4" />
+						{runtimeBusy ? 'Starting avatar…' : 'Start avatar'}
+					</Button>
 				</div>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+			</div>
+
+			<div class="avatar-runtime-secondary-actions flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-medium text-muted-foreground">
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+					onclick={() => void openAvatarDraft()}
+				>
+					<PlusIcon class="size-3.5" />
+					Create draft from this avatar
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+					onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
+				>
+					<ArrowUpRightIcon class="size-3.5" />
+					Open workspaces
+				</button>
+			</div>
+
+			<div class="avatar-runtime-facts grid gap-0">
+				<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Runtime ID</div>
+					<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.runtimeId}</div>
+				</div>
+				<Collapsible.Root bind:open={detailsOpen}>
+					<div class="avatar-runtime-facts__block avatar-runtime-details">
+						<Collapsible.Trigger class="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+							<span>Runtime details</span>
+							<ChevronDownIcon class={`size-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
+						</Collapsible.Trigger>
+						<Collapsible.Content class="grid gap-0 pb-1">
+							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
+								<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Global source</div>
+								<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.globalPath}</div>
+							</div>
+							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
+								<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Private slot</div>
+								<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.workspacePrivatePath}</div>
+							</div>
+							<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
+								<button
+									type="button"
+									class="inline-flex items-center gap-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+									onclick={() => {
+										copyDialogOpen = true;
+										copyNickname = '';
+										copyError = null;
+									}}
+								>
+									Copy avatar
+								</button>
+							</div>
+						</Collapsible.Content>
+					</div>
+				</Collapsible.Root>
+			</div>
+		{/if}
+	</section>
 </div>
 
 <Dialog.Root bind:open={copyDialogOpen}>
@@ -282,7 +339,7 @@
 			</Dialog.Header>
 
 			<div class="grid gap-4">
-				<div class="rounded-xl border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+				<div class="border-b border-border/40 pb-3 text-sm text-muted-foreground">
 					Source avatar: <span class="font-medium text-foreground">{selectedEntry?.nickname ?? 'Unavailable'}</span>
 				</div>
 
@@ -319,3 +376,114 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
+
+<style>
+	.avatar-catalog-layout__rail,
+	.avatar-catalog-layout__lens,
+	.avatar-catalog-list,
+	.avatar-catalog-entry,
+	.avatar-runtime-lens__hero,
+	.avatar-runtime-facts__block {
+		position: relative;
+	}
+
+	.avatar-catalog-layout__lens::before {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		inset-block-start: 0;
+		block-size: 1px;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			color-mix(in srgb, var(--border), transparent 18%) 18%,
+			color-mix(in srgb, var(--border), transparent 68%) 100%
+		);
+	}
+
+	.avatar-catalog-list::before,
+	.avatar-catalog-list::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0.65rem;
+		block-size: 1px;
+		background: color-mix(in srgb, var(--border), transparent 28%);
+	}
+
+	.avatar-catalog-list::before {
+		inset-block-start: 0;
+	}
+
+	.avatar-catalog-list::after {
+		inset-block-end: 0;
+	}
+
+	.avatar-catalog-entry + .avatar-catalog-entry::before {
+		content: '';
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-start: 3.15rem;
+		inset-inline-end: 0.65rem;
+		block-size: 1px;
+		background: color-mix(in srgb, var(--border), transparent 36%);
+	}
+
+	.avatar-runtime-lens__hero::after,
+	.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		inset-block-start: 0;
+		block-size: 1px;
+		background: linear-gradient(
+			90deg,
+			color-mix(in srgb, var(--border), transparent 14%) 0%,
+			color-mix(in srgb, var(--border), transparent 44%) 72%,
+			transparent 100%
+		);
+	}
+
+	.avatar-runtime-lens__hero::after {
+		inset-block-start: auto;
+		inset-block-end: 0;
+	}
+
+	.avatar-runtime-secondary-actions {
+		padding-block: 0.15rem 0.35rem;
+	}
+
+	@media (min-width: 768px) {
+		.avatar-catalog-layout__rail {
+			padding-inline-end: 0.25rem;
+		}
+
+		.avatar-catalog-layout__rail::after {
+			content: '';
+			position: absolute;
+			inset-block: 0.5rem 0.25rem;
+			inset-inline-end: -0.625rem;
+			inline-size: 1px;
+			background: linear-gradient(
+				180deg,
+				transparent 0%,
+				color-mix(in srgb, var(--border), transparent 20%) 14%,
+				color-mix(in srgb, var(--border), transparent 56%) 86%,
+				transparent 100%
+			);
+		}
+
+		.avatar-catalog-layout__lens::before {
+			display: none;
+		}
+
+		.avatar-catalog-entry + .avatar-catalog-entry::before {
+			inset-inline-start: 3.75rem;
+			inset-inline-end: 0.9rem;
+		}
+
+		.avatar-catalog-list::before,
+		.avatar-catalog-list::after {
+			inset-inline: 0.9rem;
+		}
+	}
+</style>
