@@ -107,6 +107,6 @@
 
 ## 17. Avatar Primary Fact Attachment Follow-up
 
-- [ ] 17.1 Attach the primary canonical runtime fact to the selected identity lane instead of leaving it inside the desktop audit grid
-- [ ] 17.2 Preserve the lower `Runtime details` disclosure as the dedicated audit/debug field grid while keeping mobile compact behavior stable
-- [ ] 17.3 Run targeted verification and refresh desktop/mobile visual evidence for the primary-fact attachment follow-up
+- [x] 17.1 Attach the primary canonical runtime fact to the selected identity lane instead of leaving it inside the desktop audit grid
+- [x] 17.2 Preserve the lower `Runtime details` disclosure as the dedicated audit/debug field grid while keeping mobile compact behavior stable
+- [x] 17.3 Run targeted verification and refresh desktop/mobile visual evidence for the primary-fact attachment follow-up

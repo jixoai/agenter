@@ -39,20 +39,20 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain(
       "grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 px-2 py-2 text-left",
     );
-    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts grid gap-0"');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts avatar-runtime-details grid gap-0"');
   });
 
   test("Scenario: Given the control tower should read like product UI When reading the source Then contextual handoffs dock to the selected identity and canonical facts use semantic labels", () => {
     expect(avatarCatalogRouteSource).toContain("Canonical runtime");
+    expect(avatarCatalogRouteSource).toContain("avatar-runtime-primary-fact");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-secondary-actions {");
     expect(avatarCatalogRouteSource).toContain("padding-inline-start: 4.25rem;");
-    expect(avatarCatalogRouteSource).toContain("margin-block-start: -0.15rem;");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact::before,");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-facts::before,");
     expect(avatarCatalogRouteSource).toContain("inset-inline-start: 8rem;");
   });
 
   test("Scenario: Given the first durable fact is product-facing When reading the source Then it uses distinct primary typography while lower details keep audit-style field labels", () => {
-    expect(avatarCatalogRouteSource).toContain("avatar-runtime-fact-row--primary");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label avatar-runtime-fact-label--primary"');
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all"');
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-label--primary {");
@@ -60,6 +60,18 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--primary {");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Global source</div>');
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Private slot</div>');
+  });
+
+  test("Scenario: Given the primary runtime fact should attach to the selected identity lane When reading the source Then it stays above the secondary branch actions and outside the runtime-details audit disclosure", () => {
+    expect(avatarCatalogRouteSource.indexOf("avatar-runtime-primary-fact")).toBeLessThan(
+      avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions"),
+    );
+    expect(avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions")).toBeLessThan(
+      avatarCatalogRouteSource.indexOf('<Collapsible.Root bind:open={detailsOpen}>'),
+    );
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts avatar-runtime-details grid gap-0"');
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact {");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact::before {");
   });
 
   test("Scenario: Given compact runtime lens should stay title-first When reading the source Then passive facts stack under the title and actions use the available mobile width", () => {

@@ -262,6 +262,11 @@
 				</div>
 			</div>
 
+			<div class="avatar-runtime-primary-fact grid gap-1.5 py-2.5 md:gap-1 md:py-3">
+				<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
+				<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
+			</div>
+
 			<div class="avatar-runtime-secondary-actions flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-medium text-muted-foreground">
 				<button
 					type="button"
@@ -281,43 +286,37 @@
 				</button>
 			</div>
 
-			<div class="avatar-runtime-facts grid gap-0">
-				<div class="avatar-runtime-facts__block avatar-runtime-fact-row avatar-runtime-fact-row--primary grid gap-1.5 py-2.5 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4 md:py-3">
-					<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
-					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
+			<Collapsible.Root bind:open={detailsOpen}>
+				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
+					<Collapsible.Trigger class="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+						<span>Runtime details</span>
+						<ChevronDownIcon class={`size-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
+					</Collapsible.Trigger>
+					<Collapsible.Content class="grid gap-0 pb-1">
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
+							<div class="avatar-runtime-fact-label">Global source</div>
+							<div class="avatar-runtime-fact-value break-all">{selectedEntry.globalPath}</div>
+						</div>
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
+							<div class="avatar-runtime-fact-label">Private slot</div>
+							<div class="avatar-runtime-fact-value break-all">{selectedEntry.workspacePrivatePath}</div>
+						</div>
+						<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
+							<button
+								type="button"
+								class="inline-flex items-center gap-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+								onclick={() => {
+									copyDialogOpen = true;
+									copyNickname = '';
+									copyError = null;
+								}}
+							>
+								Copy avatar
+							</button>
+						</div>
+					</Collapsible.Content>
 				</div>
-				<Collapsible.Root bind:open={detailsOpen}>
-					<div class="avatar-runtime-facts__block avatar-runtime-details">
-						<Collapsible.Trigger class="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-							<span>Runtime details</span>
-							<ChevronDownIcon class={`size-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
-						</Collapsible.Trigger>
-						<Collapsible.Content class="grid gap-0 pb-1">
-							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-								<div class="avatar-runtime-fact-label">Global source</div>
-								<div class="avatar-runtime-fact-value break-all">{selectedEntry.globalPath}</div>
-							</div>
-							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-								<div class="avatar-runtime-fact-label">Private slot</div>
-								<div class="avatar-runtime-fact-value break-all">{selectedEntry.workspacePrivatePath}</div>
-							</div>
-							<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
-								<button
-									type="button"
-									class="inline-flex items-center gap-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
-									onclick={() => {
-										copyDialogOpen = true;
-										copyNickname = '';
-										copyError = null;
-									}}
-								>
-									Copy avatar
-								</button>
-							</div>
-						</Collapsible.Content>
-					</div>
-				</Collapsible.Root>
-			</div>
+			</Collapsible.Root>
 		{/if}
 	</section>
 </div>
@@ -383,6 +382,7 @@
 	.avatar-catalog-list,
 	.avatar-catalog-entry,
 	.avatar-runtime-lens__hero,
+	.avatar-runtime-primary-fact,
 	.avatar-runtime-facts,
 	.avatar-runtime-facts__block {
 		position: relative;
@@ -429,6 +429,7 @@
 		background: color-mix(in srgb, var(--border), transparent 36%);
 	}
 
+	.avatar-runtime-primary-fact::before,
 	.avatar-runtime-facts::before,
 	.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
 		content: '';
@@ -446,7 +447,7 @@
 	}
 
 	.avatar-runtime-secondary-actions {
-		padding-block: 0.15rem 0.35rem;
+		padding-block: 0.1rem 0.35rem;
 	}
 
 	.avatar-runtime-fact-label {
@@ -500,10 +501,18 @@
 			display: none;
 		}
 
+		.avatar-runtime-primary-fact {
+			padding-inline-start: 4.25rem;
+		}
+
+		.avatar-runtime-primary-fact::before {
+			inset-inline-start: 4.25rem;
+			inset-inline-end: 0;
+		}
+
 		.avatar-runtime-secondary-actions {
 			padding-inline-start: 4.25rem;
-			padding-block: 0 0.45rem;
-			margin-block-start: -0.15rem;
+			padding-block: 0.05rem 0.45rem;
 		}
 
 		.avatar-runtime-facts::before,
