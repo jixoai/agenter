@@ -290,7 +290,7 @@
 				</div>
 				<div class="avatar-runtime-origin-fact avatar-runtime-fact-row grid gap-1 py-2.5 md:py-3">
 					<div class="avatar-runtime-fact-label">Origin</div>
-					<div class="avatar-runtime-fact-value">{selectedOriginLabel}</div>
+					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--supporting">{selectedOriginLabel}</div>
 				</div>
 			</div>
 
@@ -314,11 +314,11 @@
 			</div>
 
 			<div class="avatar-runtime-details-desktop hidden md:grid md:gap-0">
-				<div class="avatar-runtime-details-desktop__label flex items-center justify-between gap-3 py-3">
+				<div class="avatar-runtime-details-desktop__label flex items-center gap-3 py-3">
 					<div class="text-sm font-medium text-muted-foreground">Runtime details</div>
 					<button
 						type="button"
-						class="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+						class="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
 						onclick={() => {
 							openCopyAvatarDialog();
 						}}
@@ -328,22 +328,31 @@
 				</div>
 				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
 					{#if workspaceSlotMatchesRoot}
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
 							<div class="avatar-runtime-fact-label">Runtime home</div>
-							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+							<div
+								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
+								title={selectedEntry.globalPath}
+							>
 								{selectedEntry.globalPath}
 							</div>
 						</div>
 					{:else}
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
 							<div class="avatar-runtime-fact-label">Root workspace</div>
-							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+							<div
+								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
+								title={selectedEntry.globalPath}
+							>
 								{selectedEntry.globalPath}
 							</div>
 						</div>
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
 							<div class="avatar-runtime-fact-label">Workspace slot</div>
-							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+							<div
+								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
+								title={selectedEntry.workspacePrivatePath}
+							>
 								{selectedEntry.workspacePrivatePath}
 							</div>
 						</div>
@@ -553,6 +562,13 @@
 	.avatar-runtime-fact-value--primary {
 		font-size: 0.95rem;
 		line-height: 1.4rem;
+	}
+
+	.avatar-runtime-fact-value--supporting {
+		font-size: 0.84rem;
+		line-height: 1.32rem;
+		font-weight: 500;
+		color: color-mix(in srgb, var(--foreground), transparent 14%);
 	}
 
 	.avatar-runtime-fact-value--path {

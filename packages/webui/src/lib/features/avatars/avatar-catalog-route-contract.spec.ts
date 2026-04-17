@@ -63,6 +63,7 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-label--primary {");
     expect(avatarCatalogRouteSource).toContain("text-transform: none;");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--primary {");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--supporting {");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--path {");
     expect(avatarCatalogRouteSource).toContain("Runtime home");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Root workspace</div>');
@@ -104,7 +105,7 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain("Selected avatar");
     expect(avatarCatalogRouteSource).toContain("The selected-avatar lens stays bound to one installed avatar identity.");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-details-desktop hidden md:grid md:gap-0"');
-    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-details-desktop__label flex items-center justify-between gap-3 py-3"');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-details-desktop__label flex items-center gap-3 py-3"');
     expect(avatarCatalogRouteSource).toContain('<Collapsible.Root bind:open={detailsOpen} class="md:hidden">');
     expect(avatarCatalogRouteSource).toContain('class="md:hidden"');
     expect(avatarCatalogRouteSource).toContain("<span>Runtime details</span>");
