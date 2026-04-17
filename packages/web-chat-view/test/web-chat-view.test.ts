@@ -141,6 +141,7 @@ class ResizeObserverMock {
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
+const mountedComponents: object[] = [];
 
 const mountHost = (props: Record<string, unknown>) => {
   const target = document.createElement("div");
@@ -150,6 +151,7 @@ const mountHost = (props: Record<string, unknown>) => {
     target,
     props: props as never,
   });
+  mountedComponents.push(component);
   flushSync();
   return { target, component };
 };
@@ -267,6 +269,13 @@ describe("Feature: web-chat-view package", () => {
   });
 
   afterEach(() => {
+    while (mountedComponents.length > 0) {
+      const component = mountedComponents.pop();
+      if (component) {
+        unmount(component);
+      }
+    }
+    flushSync();
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
     if (originalCreateObjectURL) {
@@ -444,8 +453,8 @@ describe("Feature: web-chat-view package", () => {
     await Promise.resolve();
 
     const composerStatus = document.body.querySelector("[part='composer-status']");
-    expect(readRenderedText(composerStatus)).toContain("Draft + files");
-    expect(readRenderedText(composerStatus)).not.toContain("Attachments ready");
+    expect(readRenderedText(composerStatus)).not.toContain("Unavailable");
+    expect(readRenderedText(composerStatus)).not.toContain("1 file ready");
 
     const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),
@@ -494,7 +503,7 @@ describe("Feature: web-chat-view package", () => {
       expect(document.body.querySelector("[part='composer-asset']")).toBeTruthy();
     });
     expect(readRenderedText(document.body.querySelector("[part='composer-asset']"))).toContain("notes.txt");
-    expect(readRenderedText(document.body.querySelector("[part='composer-status']"))).toContain("Attachments ready");
+    expect(readRenderedText(document.body.querySelector("[part='composer-status']"))).toContain("1 file ready");
 
     const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Send"),
