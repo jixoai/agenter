@@ -95,6 +95,6 @@
 
 ## 15. Avatar Control Tower Follow-up
 
-- [ ] 15.1 Dock contextual secondary actions closer to the selected avatar identity so handoff paths feel attached to the current lens rather than floating as a separate row
-- [ ] 15.2 Rename the first durable runtime fact semantically and refine the remaining seam insets so the launch lens feels more product-led than implementation-led
-- [ ] 15.3 Run targeted verification and refresh desktop/mobile visual evidence for the control-tower follow-up
+- [x] 15.1 Dock contextual secondary actions closer to the selected avatar identity so handoff paths feel attached to the current lens rather than floating as a separate row
+- [x] 15.2 Rename the first durable runtime fact semantically and refine the remaining seam insets so the launch lens feels more product-led than implementation-led
+- [x] 15.3 Run targeted verification and refresh desktop/mobile visual evidence for the control-tower follow-up

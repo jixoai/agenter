@@ -283,7 +283,7 @@
 
 			<div class="avatar-runtime-facts grid gap-0">
 				<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Runtime ID</div>
+					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Canonical runtime</div>
 					<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.runtimeId}</div>
 				</div>
 				<Collapsible.Root bind:open={detailsOpen}>
@@ -383,6 +383,7 @@
 	.avatar-catalog-list,
 	.avatar-catalog-entry,
 	.avatar-runtime-lens__hero,
+	.avatar-runtime-facts,
 	.avatar-runtime-facts__block {
 		position: relative;
 	}
@@ -428,11 +429,12 @@
 		background: color-mix(in srgb, var(--border), transparent 36%);
 	}
 
-	.avatar-runtime-lens__hero::after,
+	.avatar-runtime-facts::before,
 	.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
 		content: '';
 		position: absolute;
-		inset-inline: 0;
+		inset-inline-start: 0.75rem;
+		inset-inline-end: 0;
 		inset-block-start: 0;
 		block-size: 1px;
 		background: linear-gradient(
@@ -441,11 +443,6 @@
 			color-mix(in srgb, var(--border), transparent 44%) 72%,
 			transparent 100%
 		);
-	}
-
-	.avatar-runtime-lens__hero::after {
-		inset-block-start: auto;
-		inset-block-end: 0;
 	}
 
 	.avatar-runtime-secondary-actions {
@@ -474,6 +471,18 @@
 
 		.avatar-catalog-layout__lens::before {
 			display: none;
+		}
+
+		.avatar-runtime-secondary-actions {
+			padding-inline-start: 4.25rem;
+			padding-block: 0 0.45rem;
+			margin-block-start: -0.15rem;
+		}
+
+		.avatar-runtime-facts::before,
+		.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
+			inset-inline-start: 8rem;
+			inset-inline-end: 0;
 		}
 
 		.avatar-catalog-entry + .avatar-catalog-entry::before {

@@ -13,7 +13,7 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).not.toContain("WorkbenchPageToolbar");
     expect(avatarCatalogRouteSource).not.toContain("import { Badge } from '$lib/components/ui/badge/index.js';");
     expect(avatarCatalogRouteSource).not.toContain("hidden bg-background/70 text-[11px] sm:inline-flex");
-    expect(avatarCatalogRouteSource).toContain("Runtime ID");
+    expect(avatarCatalogRouteSource).toContain("Canonical runtime");
   });
 
   test("Scenario: Given runtime lens chrome should stay factual instead of pill-heavy When reading the source Then status and default facts demote into text while only primary actions keep button chrome", () => {
@@ -40,6 +40,15 @@ describe("Feature: Avatar catalog density contract", () => {
       "grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 px-2 py-2 text-left",
     );
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts grid gap-0"');
+  });
+
+  test("Scenario: Given the control tower should read like product UI When reading the source Then contextual handoffs dock to the selected identity and canonical facts use semantic labels", () => {
+    expect(avatarCatalogRouteSource).toContain("Canonical runtime");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-secondary-actions {");
+    expect(avatarCatalogRouteSource).toContain("padding-inline-start: 4.25rem;");
+    expect(avatarCatalogRouteSource).toContain("margin-block-start: -0.15rem;");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-facts::before,");
+    expect(avatarCatalogRouteSource).toContain("inset-inline-start: 8rem;");
   });
 
   test("Scenario: Given compact runtime lens should stay title-first When reading the source Then passive facts stack under the title and actions use the available mobile width", () => {
