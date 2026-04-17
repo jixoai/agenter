@@ -301,6 +301,22 @@ Alternative considered:
 - Keep the current control-tower structure and stop because it is already "good enough".
   - Rejected because this page is acting as a reference surface; if the semantic hierarchy still leaks implementation naming and slightly detached secondary actions, that debt will spread to adjacent workbench pages.
 
+### Promote the first runtime fact into product-led typography
+
+After the semantic rename, one final layout debt remains on desktop: the first durable fact still borrows the same all-caps field-label treatment as the debugging facts below it. That keeps the wording better, but the visual contract still says "implementation field" instead of "primary product fact".
+
+The next refinement should therefore:
+
+- keep the control-tower structure and seam language unchanged
+- promote the first durable runtime fact into its own product-led label/value rhythm
+- keep lower facts (`Global source`, `Private slot`) in the existing audit-style field language
+- avoid introducing a new route-local visual dialect; the result should still feel native to the repository's current toolbar/list language
+
+Alternative considered:
+
+- Move the canonical runtime into the hero row beside the title and launch actions.
+  - Rejected because it would overload the first viewport again and force the product fact to compete directly with launch decisions instead of reinforcing them underneath.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:

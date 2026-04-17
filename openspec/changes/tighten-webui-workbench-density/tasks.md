@@ -98,3 +98,9 @@
 - [x] 15.1 Dock contextual secondary actions closer to the selected avatar identity so handoff paths feel attached to the current lens rather than floating as a separate row
 - [x] 15.2 Rename the first durable runtime fact semantically and refine the remaining seam insets so the launch lens feels more product-led than implementation-led
 - [x] 15.3 Run targeted verification and refresh desktop/mobile visual evidence for the control-tower follow-up
+
+## 16. Avatar Primary Fact Typography Follow-up
+
+- [ ] 16.1 Promote the primary canonical runtime fact from field-label styling into product-led fact typography without weakening audit readability
+- [ ] 16.2 Refine the desktop launch-lens spacing so the promoted primary fact feels attached to the launch story instead of appended underneath it
+- [ ] 16.3 Run targeted verification and refresh desktop/mobile visual evidence for the primary-fact typography follow-up

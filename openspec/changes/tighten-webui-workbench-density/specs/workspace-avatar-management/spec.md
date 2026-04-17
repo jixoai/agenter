@@ -39,3 +39,9 @@ The fixed `Avatars / Catalog` surface SHALL remain list-first and density-aware 
 - **WHEN** the operator scans the first durable fact in the runtime lens
 - **THEN** the page frames it as the canonical runtime identity rather than only as an implementation-flavored field label
 - **THEN** the underlying runtime id value remains visible for audit and debugging use
+
+#### Scenario: Avatar control tower gives the primary runtime fact distinct hierarchy
+
+- **WHEN** the operator scans the runtime lens on desktop after selecting an avatar
+- **THEN** the first durable runtime fact reads as a product-led fact with its own label/value hierarchy
+- **THEN** lower runtime details keep the tighter audit/debug field treatment instead of visually competing with that primary fact
