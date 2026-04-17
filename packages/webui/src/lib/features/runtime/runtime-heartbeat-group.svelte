@@ -57,6 +57,7 @@
 					{layoutMode}
 					groupLabel={groupLabel}
 					groupTimestamp={group.createdAt}
+					presentation={group.kind === 'compact' ? 'compact-special' : 'default'}
 					onLayoutModeChange={(value) => {
 						layoutMode = value;
 					}}

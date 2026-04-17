@@ -79,8 +79,8 @@ const toMessageParts = (content: TextOnlyModelMessage["content"]): SessionMessag
 export const buildHeartbeatRequestMessageId = (aiCallId: number, index: number): string =>
   `heartbeat-part:ai-call:${aiCallId}:request:${index}`;
 
-export const buildHeartbeatResponseMessageId = (aiCallId: number): string =>
-  `heartbeat-part:ai-call:${aiCallId}:response:assistant`;
+export const buildHeartbeatResponseSegmentMessageId = (aiCallId: number, segmentIndex: number): string =>
+  `heartbeat-part:ai-call:${aiCallId}:response:assistant:${segmentIndex}`;
 
 export const buildHeartbeatToolInvocationMessageId = (aiCallId: number, invocationId: string): string =>
   `heartbeat-part:ai-call:${aiCallId}:tool:${invocationId}`;
@@ -147,68 +147,46 @@ export const toHeartbeatRequestMessageUpsertInputs = (input: {
     parts: toMessageParts(message.content),
   }));
 
-export const toHeartbeatResponseMessageUpsertInput = (input: {
-  aiCallId: number;
-  roundIndex: number;
-  createdAt: number;
+export interface HeartbeatAssistantResponseSegment {
+  partType: "thinking" | "text";
+  content: string;
+  startedAt: number;
   updatedAt: number;
   isComplete: boolean;
-  response: {
-    assistant?: {
-      thinking?: string;
-      thinkingStartedAt?: number;
-      text?: string;
-      textStartedAt?: number;
-    };
-  };
-}): SessionMessageUpsertInput | null => {
-  const orderedParts: Array<{ orderAt: number; insertionIndex: number; part: SessionMessagePartInput }> = [];
-  let insertionIndex = 0;
-  const pushOrderedPart = (orderAt: number, part: SessionMessagePartInput): void => {
-    orderedParts.push({
-      orderAt,
-      insertionIndex,
-      part,
-    });
-    insertionIndex += 1;
-  };
-  if (typeof input.response.assistant?.thinking === "string" && input.response.assistant.thinking.length > 0) {
-    pushOrderedPart(input.response.assistant.thinkingStartedAt ?? input.createdAt, {
-      partType: "thinking",
-      payload: {
-        type: "thinking",
-        text: input.response.assistant.thinking,
-      },
-      isComplete: input.isComplete,
-    });
-  }
-  if (typeof input.response.assistant?.text === "string") {
-    pushOrderedPart(input.response.assistant.textStartedAt ?? input.updatedAt, {
-      partType: "text",
-      payload: {
-        type: "text",
-        content: input.response.assistant.text,
-      },
-      isComplete: input.isComplete,
-    });
-  }
-  const parts = orderedParts
-    .sort((left, right) => left.orderAt - right.orderAt || left.insertionIndex - right.insertionIndex)
-    .map((entry) => entry.part);
-  if (parts.length === 0) {
-    return null;
-  }
-  return {
-    messageId: buildHeartbeatResponseMessageId(input.aiCallId),
-    aiCallId: input.aiCallId,
-    roundIndex: input.roundIndex,
-    scope: HEARTBEAT_MESSAGE_PART_SCOPE,
-    role: "assistant",
-    createdAt: input.createdAt,
-    updatedAt: input.updatedAt,
-    parts,
-  };
-};
+}
+
+export const toHeartbeatResponseSegmentMessageUpsertInputs = (input: {
+  aiCallId: number;
+  roundIndex: number;
+  segments: readonly HeartbeatAssistantResponseSegment[];
+}): SessionMessageUpsertInput[] =>
+  input.segments
+    .filter((segment) => segment.content.length > 0)
+    .map((segment, segmentIndex) => ({
+      messageId: buildHeartbeatResponseSegmentMessageId(input.aiCallId, segmentIndex),
+      aiCallId: input.aiCallId,
+      roundIndex: input.roundIndex,
+      scope: HEARTBEAT_MESSAGE_PART_SCOPE,
+      role: "assistant",
+      createdAt: segment.startedAt,
+      updatedAt: segment.updatedAt,
+      parts: [
+        {
+          partType: segment.partType,
+          payload:
+            segment.partType === "thinking"
+              ? {
+                  type: "thinking",
+                  text: segment.content,
+                }
+              : {
+                  type: "text",
+                  content: segment.content,
+                },
+          isComplete: segment.isComplete,
+        },
+      ],
+    }));
 
 export const toHeartbeatToolInvocationMessageUpsertInput = (input: {
   aiCallId: number;

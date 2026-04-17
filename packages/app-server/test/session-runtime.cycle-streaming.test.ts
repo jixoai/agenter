@@ -41,6 +41,18 @@ interface RuntimeInternals {
   activeModelCallId: number | null;
   activeModelResponseDraft:
     | {
+        assistant?: {
+          thinking?: string;
+          text?: string;
+          finishReason?: string | null;
+        };
+        assistantSegments: Array<{
+          partType: "thinking" | "text";
+          content: string;
+          startedAt: number;
+          updatedAt: number;
+          isComplete: boolean;
+        }>;
         toolTrace: Array<{
           invocationId: string;
           tool: string;
@@ -70,11 +82,13 @@ interface RuntimeInternals {
     input:
       | {
           kind: "thinking";
+          delta?: string;
           content: string;
           timestamp: number;
         }
       | {
           kind: "draft";
+          delta?: string;
           content: string;
           usage?: {
             promptTokens?: number;
@@ -99,6 +113,16 @@ interface RuntimeInternals {
           ok: boolean;
           result?: unknown;
           error?: string | null;
+          timestamp: number;
+        }
+      | {
+          kind: "run_finished";
+          usage?: {
+            promptTokens?: number;
+            completionTokens?: number;
+            totalTokens?: number;
+          };
+          finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
           timestamp: number;
         },
   ) => void;
@@ -209,7 +233,7 @@ describe("Feature: session runtime live cycle projection", () => {
         updatedAt: 21,
       });
       internal.activeModelCallId = call.id;
-      internal.activeModelResponseDraft = { toolTrace: [] };
+      internal.activeModelResponseDraft = { assistantSegments: [], toolTrace: [] };
       internal.promptWindowRoundIndex = 0;
 
       internal.handleAssistantStreamUpdate({
@@ -362,21 +386,22 @@ describe("Feature: session runtime live cycle projection", () => {
         updatedAt: 31,
       });
       internal.activeModelCallId = call.id;
-      internal.activeModelResponseDraft = { toolTrace: [] };
+      internal.activeModelResponseDraft = { assistantSegments: [], toolTrace: [] };
       internal.promptWindowRoundIndex = 0;
 
       internal.handleAssistantStreamUpdate({
         kind: "thinking",
+        delta: "Need to inspect the latest room focus first.",
         content: "Need to inspect the latest room focus first.",
         timestamp: 32,
       });
 
       const responseRow = internal.sessionDb
         .listMessagesByScope("heartbeat_part", { limit: 20 })
-        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:response:assistant`);
+        .find((message) => message.messageId === `heartbeat-part:ai-call:${call.id}:response:assistant:0`);
 
       expect(internal.sessionDb.getAiCallById(call.id)?.responseMessageIds).toContain(
-        `heartbeat-part:ai-call:${call.id}:response:assistant`,
+        `heartbeat-part:ai-call:${call.id}:response:assistant:0`,
       );
       expect(responseRow?.parts).toMatchObject([
         {
@@ -387,6 +412,131 @@ describe("Feature: session runtime live cycle projection", () => {
           },
           isComplete: false,
         },
+      ]);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given assistant thinking resumes after a tool boundary When heartbeat rows are persisted Then response segments stay in objective order instead of collapsing into one assistant snapshot", async () => {
+    const runtime = createRuntime();
+    try {
+      await runtime.start();
+      const internal = runtime as unknown as RuntimeInternals;
+
+      internal.createActiveCycle({
+        cycleId: 41,
+        seq: 41,
+        createdAt: 41,
+        wakeSource: "user",
+        inputs: [
+          {
+            source: "message",
+            role: "user",
+            name: "User",
+            parts: [{ type: "text", text: "继续" }],
+            meta: { clientMessageId: "client-41" },
+          },
+        ],
+      });
+
+      const call = internal.sessionDb.appendAiCall({
+        roundIndex: 0,
+        kind: "attention",
+        provider: "test-provider",
+        model: "test-model",
+        requestUrl: "",
+        requestBody: { messages: [] },
+        status: "running",
+        isComplete: false,
+        createdAt: 41,
+        updatedAt: 41,
+      });
+      internal.activeModelCallId = call.id;
+      internal.activeModelResponseDraft = { assistantSegments: [], toolTrace: [] };
+      internal.promptWindowRoundIndex = 0;
+
+      internal.handleAssistantStreamUpdate({
+        kind: "thinking",
+        delta: "Need to inspect the room.",
+        content: "Need to inspect the room.",
+        timestamp: 42,
+      });
+      internal.handleAssistantStreamUpdate({
+        kind: "tool_call",
+        toolCallId: "tool-room-41",
+        toolName: "root_workspace_bash",
+        argsText: "{\"command\":\"pwd\"}",
+        input: { command: "pwd" },
+        timestamp: 43,
+      });
+      internal.handleAssistantStreamUpdate({
+        kind: "tool_result",
+        toolCallId: "tool-room-41",
+        toolName: "root_workspace_bash",
+        ok: true,
+        result: { stdout: "/repo/agenter\n", exitCode: 0 },
+        timestamp: 44,
+      });
+      internal.handleAssistantStreamUpdate({
+        kind: "thinking",
+        delta: "Need to summarize the result.",
+        content: "Need to summarize the result.",
+        timestamp: 45,
+      });
+      internal.handleAssistantStreamUpdate({
+        kind: "draft",
+        delta: "已检查完成。",
+        content: "已检查完成。",
+        finishReason: "stop",
+        timestamp: 46,
+      });
+      internal.handleAssistantStreamUpdate({
+        kind: "run_finished",
+        finishReason: "stop",
+        timestamp: 47,
+      });
+
+      const messages = internal.sessionDb.listMessagesByScope("heartbeat_part", { limit: 20 });
+      expect(messages.map((message) => message.messageId)).toEqual(
+        expect.arrayContaining([
+          `heartbeat-part:ai-call:${call.id}:response:assistant:0`,
+          `heartbeat-part:ai-call:${call.id}:tool:tool-room-41`,
+          `heartbeat-part:ai-call:${call.id}:response:assistant:1`,
+          `heartbeat-part:ai-call:${call.id}:response:assistant:2`,
+        ]),
+      );
+
+      const messageById = new Map(messages.map((message) => [message.messageId, message]));
+      expect(messageById.get(`heartbeat-part:ai-call:${call.id}:response:assistant:0`)?.parts[0]).toMatchObject({
+        partType: "thinking",
+        payload: {
+          type: "thinking",
+          text: "Need to inspect the room.",
+        },
+        isComplete: true,
+      });
+      expect(messageById.get(`heartbeat-part:ai-call:${call.id}:response:assistant:1`)?.parts[0]).toMatchObject({
+        partType: "thinking",
+        payload: {
+          type: "thinking",
+          text: "Need to summarize the result.",
+        },
+        isComplete: true,
+      });
+      expect(messageById.get(`heartbeat-part:ai-call:${call.id}:response:assistant:2`)?.parts[0]).toMatchObject({
+        partType: "text",
+        payload: {
+          type: "text",
+          content: "已检查完成。",
+        },
+        isComplete: true,
+      });
+      expect(internal.sessionDb.getAiCallById(call.id)?.responseMessageIds).toEqual([
+        `heartbeat-part:ai-call:${call.id}:response:assistant:0`,
+        `heartbeat-part:ai-call:${call.id}:response:assistant:1`,
+        `heartbeat-part:ai-call:${call.id}:response:assistant:2`,
+        `heartbeat-part:ai-call:${call.id}:tool:tool-room-41`,
       ]);
     } finally {
       await runtime.stop();

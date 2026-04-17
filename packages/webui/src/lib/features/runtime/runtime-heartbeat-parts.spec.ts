@@ -3,9 +3,11 @@ import { describe, expect, test } from "vitest";
 import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
 import {
+  buildHeartbeatDisplayGroups,
   buildHeartbeatDisplayBlocks,
   buildHeartbeatSubjectSections,
   getHeartbeatRowMeta,
+  type HeartbeatSubjectSection,
   getHeartbeatSectionTimeMeta,
   getHeartbeatToolPreview,
 } from "./runtime-heartbeat-parts";
@@ -329,6 +331,47 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     ]);
   });
 
+  test("Scenario: Given a running tool call already exposes parameters before the result arrives When display blocks are built Then the tool block is marked running instead of pending", () => {
+    const entry = {
+      ...baseEntry,
+      isComplete: false,
+      parts: [
+        {
+          partId: 311,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "workspace-bash-3b",
+            tool: "workspace.bash",
+            input: { command: "attention commit --compact '[\"ctx-1\",[],\"Settled.\"]'" },
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: false,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "workspace-bash-3b",
+        tool: "workspace.bash",
+        state: "input-available",
+        input: { command: "attention commit --compact '[\"ctx-1\",[],\"Settled.\"]'" },
+        output: undefined,
+        errorText: null,
+      },
+    ]);
+  });
+
   test("Scenario: Given an assistant tool call and a later tool result transport row When subject sections are built Then the tool stays in one assistant card instead of splitting into separate user and assistant cards", () => {
     const assistantToolEntry = {
       ...baseEntry,
@@ -451,8 +494,217 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     });
   });
 
+  test("Scenario: Given a compact Heartbeat group When subject sections are built Then prompt facts and compact response stay in one special card without replaying the raw compact request", () => {
+    const systemPromptEntry = {
+      ...baseEntry,
+      id: 801,
+      messageId: "request_aux:systemPrompt:compact",
+      scope: "request_aux",
+      role: "system",
+      text: "You are rewriting the bounded prompt window.",
+      parts: [
+        {
+          partId: 801,
+          partIndex: 0,
+          messageId: "request_aux:systemPrompt:compact",
+          windowId: null,
+          aiCallId: 88,
+          roundIndex: 2,
+          scope: "request_aux",
+          role: "system",
+          partType: "systemPrompt",
+          mimeType: null,
+          payload: "You are rewriting the bounded prompt window.",
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const toolsEntry = {
+      ...baseEntry,
+      id: 802,
+      messageId: "request_aux:tools:compact",
+      scope: "request_aux",
+      role: "system",
+      text: '[{"name":"root_workspace_bash"}]',
+      parts: [
+        {
+          partId: 802,
+          partIndex: 0,
+          messageId: "request_aux:tools:compact",
+          windowId: null,
+          aiCallId: 88,
+          roundIndex: 2,
+          scope: "request_aux",
+          role: "system",
+          partType: "tools",
+          mimeType: null,
+          payload: [{ name: "root_workspace_bash" }],
+          createdAt: baseEntry.createdAt + 1,
+          updatedAt: baseEntry.updatedAt + 1,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const compactRequestEntry = {
+      ...baseEntry,
+      id: 803,
+      messageId: "heartbeat-part:ai-call:88:request:0",
+      scope: "heartbeat_part",
+      role: "user",
+      text: "## AttentionContexts.metadata",
+      parts: [
+        {
+          partId: 803,
+          partIndex: 0,
+          messageId: "heartbeat-part:ai-call:88:request:0",
+          windowId: null,
+          aiCallId: 88,
+          roundIndex: 2,
+          scope: "heartbeat_part",
+          role: "user",
+          partType: "text",
+          mimeType: null,
+          payload: {
+            type: "text",
+            content: "## AttentionContexts.metadata",
+          },
+          createdAt: baseEntry.createdAt + 2,
+          updatedAt: baseEntry.updatedAt + 2,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const compactResponseEntry = {
+      ...baseEntry,
+      id: 804,
+      messageId: "heartbeat-part:ai-call:88:compact",
+      scope: "heartbeat_part",
+      role: "system",
+      text: "Prompt window compacted (manual).",
+      parts: [
+        {
+          partId: 804,
+          partIndex: 0,
+          messageId: "heartbeat-part:ai-call:88:compact",
+          windowId: null,
+          aiCallId: 88,
+          roundIndex: 3,
+          scope: "heartbeat_part",
+          role: "system",
+          partType: "compact",
+          mimeType: null,
+          payload: {
+            type: "compact",
+            text: "Prompt window compacted (manual).",
+          },
+          createdAt: baseEntry.createdAt + 3,
+          updatedAt: baseEntry.updatedAt + 3,
+          isComplete: true,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    const group = {
+      id: 880,
+      groupId: "heartbeat-group:compact:88",
+      kind: "compact",
+      aiCallId: 88,
+      createdAt: systemPromptEntry.createdAt,
+      updatedAt: compactResponseEntry.updatedAt,
+      isComplete: true,
+      items: [systemPromptEntry, toolsEntry, compactRequestEntry, compactResponseEntry],
+    } satisfies HeartbeatGroupItem;
+
+    const sections = buildHeartbeatSubjectSections(group);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.role).toBe("system");
+    expect(sections[0]?.entries.map((entry) => entry.id)).toEqual([801, 802, 804]);
+    expect(
+      sections[0]?.blocks.map((block) =>
+        block.content.kind === "part" ? block.content.part.partType : block.content.kind,
+      ),
+    ).toEqual(["systemPrompt", "tools", "compact"]);
+  });
+
+  test("Scenario: Given a before-call group directly precedes a compact group for the same aiCallId When display groups are built Then Heartbeat renders one compact card instead of two separate cards", () => {
+    const beforeCallGroup = {
+      id: 901,
+      groupId: "heartbeat-group:before-call:88",
+      kind: "before-call",
+      aiCallId: 88,
+      createdAt: 1_000,
+      updatedAt: 1_100,
+      isComplete: true,
+      items: [
+        {
+          ...baseEntry,
+          id: 9011,
+          messageId: "request_aux:systemPrompt:88",
+          scope: "request_aux",
+          role: "system",
+        },
+      ],
+    } satisfies HeartbeatGroupItem;
+
+    const compactGroup = {
+      id: 902,
+      groupId: "heartbeat-group:compact:88",
+      kind: "compact",
+      aiCallId: 88,
+      createdAt: 1_200,
+      updatedAt: 1_300,
+      isComplete: true,
+      items: [
+        {
+          ...baseEntry,
+          id: 9021,
+          messageId: "heartbeat-part:ai-call:88:compact",
+          scope: "heartbeat_part",
+          role: "system",
+          parts: [
+            {
+              partId: 9021,
+              partIndex: 0,
+              messageId: "heartbeat-part:ai-call:88:compact",
+              windowId: null,
+              aiCallId: 88,
+              roundIndex: 3,
+              scope: "heartbeat_part",
+              role: "system",
+              partType: "compact",
+              mimeType: null,
+              payload: {
+                type: "compact",
+                text: "Prompt window compacted (manual).",
+              },
+              createdAt: 1_200,
+              updatedAt: 1_300,
+              isComplete: true,
+            },
+          ],
+          text: "Prompt window compacted (manual).",
+        },
+      ],
+    } satisfies HeartbeatGroupItem;
+
+    const groups = buildHeartbeatDisplayGroups([beforeCallGroup, compactGroup]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.kind).toBe("compact");
+    expect(groups[0]?.groupId).toBe("heartbeat-group:compact:88");
+    expect(groups[0]?.items.map((item) => item.id)).toEqual([9011, 9021]);
+    expect(groups[0]?.createdAt).toBe(1_000);
+    expect(groups[0]?.updatedAt).toBe(1_300);
+  });
+
   test("Scenario: Given a running section When section time metadata is projected with wall-clock input Then the elapsed duration grows without needing a new Heartbeat row", () => {
-    const runningSection = {
+    const runningSection: HeartbeatSubjectSection = {
       key: "heartbeat-group:call:77:assistant",
       role: "assistant",
       name: null,
@@ -468,7 +720,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
         },
       ],
       blocks: [],
-    } as const;
+    };
 
     expect(getHeartbeatSectionTimeMeta(runningSection, 3_500)).toEqual({
       startedAt: 1_000,

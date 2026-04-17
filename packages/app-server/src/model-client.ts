@@ -50,11 +50,13 @@ export interface AssistantTurn {
 export type AssistantStreamUpdate =
   | {
       kind: "thinking";
+      delta?: string;
       content: string;
       timestamp: number;
     }
   | {
       kind: "draft";
+      delta?: string;
       content: string;
       usage?: DecisionUsage;
       finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
@@ -222,6 +224,7 @@ export class ModelClient {
             text = appendChunk(text, chunk.delta);
             await input.onUpdate?.({
               kind: "draft",
+              delta: chunk.delta,
               content: text,
               timestamp: chunk.timestamp,
             });
@@ -231,6 +234,7 @@ export class ModelClient {
             thinking = appendChunk(thinking, chunk.delta);
             await input.onUpdate?.({
               kind: "thinking",
+              delta: chunk.delta,
               content: thinking,
               timestamp: chunk.timestamp,
             });

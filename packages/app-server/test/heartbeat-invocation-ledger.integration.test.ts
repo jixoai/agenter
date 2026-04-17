@@ -108,9 +108,9 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
 
         const completedAiCall = runningAiCall ? db.getAiCallById(runningAiCall.id) : null;
         expect(completedAiCall?.responseMessageIds).toContain(runningRow.messageId);
-        expect(
-          completedAiCall?.responseMessageIds.some((messageId) => messageId.endsWith(":response:assistant")),
-        ).toBeTrue();
+        const assistantResponseIds =
+          completedAiCall?.responseMessageIds.filter((messageId) => messageId.includes(":response:assistant:")) ?? [];
+        expect(assistantResponseIds.every((messageId) => messageId.includes(":response:assistant:"))).toBeTrue();
 
         await harness.kernel.stop();
 

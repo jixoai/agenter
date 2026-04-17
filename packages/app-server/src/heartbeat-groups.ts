@@ -61,8 +61,29 @@ const collectMessageRecords = (
 ): SessionMessageRecord[] =>
   messageIds.flatMap((messageId) => {
     const message = messageById.get(messageId);
-    return message ? [message] : [];
+      return message ? [message] : [];
   });
+
+const isSameMessagePayload = (
+  left: SessionMessageRecord | undefined,
+  right: SessionMessageRecord | undefined,
+): boolean => {
+  if (!left || !right || left.parts.length !== right.parts.length) {
+    return false;
+  }
+  return left.parts.every((part, index) => {
+    const other = right.parts[index];
+    if (!other) {
+      return false;
+    }
+    return (
+      part.partType === other.partType &&
+      part.role === other.role &&
+      part.mimeType === other.mimeType &&
+      JSON.stringify(part.payload) === JSON.stringify(other.payload)
+    );
+  });
+};
 
 const buildHeartbeatGroupId = (kind: RuntimeHeartbeatGroupKind, aiCallId: number | null, suffix?: string): string => {
   if (aiCallId !== null) {
@@ -111,7 +132,7 @@ export const projectHeartbeatGroups = (input: {
 
   const groups: RuntimeHeartbeatGroupRecord[] = [];
   let looseIndex = 0;
-  let previousAuxiliaryIds: string[] = [];
+  let previousDurableAuxiliaryItems: SessionMessageRecord[] = [];
 
   for (const call of [...input.aiCalls].sort((left, right) => left.id - right.id)) {
     while (looseIndex < looseHeartbeatRows.length && looseHeartbeatRows[looseIndex]!.createdAt < call.createdAt) {
@@ -121,11 +142,18 @@ export const projectHeartbeatGroups = (input: {
     looseHeartbeatRows.splice(0, looseIndex);
     looseIndex = 0;
 
-    const changedAuxiliaryIds = call.auxiliaryMessageIds.filter((messageId, index) => previousAuxiliaryIds[index] !== messageId);
-    previousAuxiliaryIds = [...call.auxiliaryMessageIds];
+    const currentAuxiliaryItems = collectMessageRecords(call.auxiliaryMessageIds, messageById);
+    const changedAuxiliaryItems = currentAuxiliaryItems.filter(
+      (message, index) => !isSameMessagePayload(message, previousDurableAuxiliaryItems[index]),
+    );
+    const callKind: RuntimeHeartbeatGroupKind = call.kind === "compact" ? "compact" : "call";
+    const compactAuxiliaryItems = callKind === "compact" ? changedAuxiliaryItems : [];
+    if (callKind !== "compact") {
+      previousDurableAuxiliaryItems = currentAuxiliaryItems;
+    }
 
     const beforeCallItems = sortMessagesAscending([
-      ...collectMessageRecords(changedAuxiliaryIds, messageById),
+      ...(callKind === "compact" ? [] : changedAuxiliaryItems),
       ...looseBeforeCall,
     ]);
     if (beforeCallItems.length > 0) {
@@ -142,6 +170,7 @@ export const projectHeartbeatGroups = (input: {
     }
 
     const callItems = sortMessagesAscending([
+      ...compactAuxiliaryItems,
       ...collectMessageRecords(call.requestMessageIds, messageById),
       ...collectMessageRecords(call.responseMessageIds, messageById),
       ...(extraRowsByAiCallId.get(call.id) ?? []),
@@ -149,11 +178,10 @@ export const projectHeartbeatGroups = (input: {
     if (callItems.length === 0) {
       continue;
     }
-    const kind: RuntimeHeartbeatGroupKind = call.kind === "compact" ? "compact" : "call";
     groups.push({
       id: buildSyntheticGroupId(call.id, 1, groups.length + 1),
-      groupId: buildHeartbeatGroupId(kind, call.id),
-      kind,
+      groupId: buildHeartbeatGroupId(callKind, call.id),
+      kind: callKind,
       aiCallId: call.id,
       createdAt: callItems[0]!.createdAt,
       updatedAt: Math.max(call.updatedAt, maxUpdatedAt(callItems, call.updatedAt)),

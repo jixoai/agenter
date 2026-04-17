@@ -1,5 +1,5 @@
 import type { MessageFrom } from "$lib/components/ai-elements/message/index.js";
-import type { ToolUiState } from "$lib/components/ai-elements/tool/ToolHeader.svelte";
+import type { ToolUiState } from "$lib/components/ai-elements/tool/tool.types.js";
 import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
 type HeartbeatPart = HeartbeatPartItem["parts"][number];
@@ -36,6 +36,22 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
     return null;
   }
   return value as Record<string, unknown>;
+};
+
+const hasMeaningfulToolInput = (value: unknown): boolean => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
 };
 
 export const formatHeartbeatPartTypeLabel = (partType: string): string => {
@@ -124,6 +140,17 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
 };
 
 const normalizeToolPreview = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+const sortHeartbeatItemsAscending = (items: ReadonlyArray<HeartbeatPartItem>): HeartbeatPartItem[] =>
+  [...items].sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      return left.createdAt - right.createdAt;
+    }
+    if (left.updatedAt !== right.updatedAt) {
+      return left.updatedAt - right.updatedAt;
+    }
+    return left.id - right.id;
+  });
 
 export const getHeartbeatToolPreview = (input: unknown): string | null => {
   if (typeof input === "string") {
@@ -360,6 +387,38 @@ export const estimateHeartbeatGroupSize = (group: HeartbeatGroupItem): number =>
   return shellHeight + itemGap + itemHeights;
 };
 
+export const buildHeartbeatDisplayGroups = (
+  groups: ReadonlyArray<HeartbeatGroupItem>,
+): HeartbeatGroupItem[] => {
+  const displayGroups: HeartbeatGroupItem[] = [];
+  for (let index = 0; index < groups.length; index += 1) {
+    const current = groups[index];
+    const next = groups[index + 1];
+    if (
+      current &&
+      next &&
+      current.kind === "before-call" &&
+      next.kind === "compact" &&
+      current.aiCallId !== null &&
+      current.aiCallId === next.aiCallId
+    ) {
+      displayGroups.push({
+        ...next,
+        createdAt: Math.min(current.createdAt, next.createdAt),
+        updatedAt: Math.max(current.updatedAt, next.updatedAt),
+        isComplete: current.isComplete && next.isComplete,
+        items: sortHeartbeatItemsAscending([...current.items, ...next.items]),
+      });
+      index += 1;
+      continue;
+    }
+    if (current) {
+      displayGroups.push(current);
+    }
+  }
+  return displayGroups;
+};
+
 export type HeartbeatDisplayBlock =
   | { kind: "part"; part: HeartbeatPart }
   | {
@@ -505,9 +564,11 @@ const parseHeartbeatToolTracePart = (part: HeartbeatPart): ParsedToolTrace | nul
       ? "output-error"
       : "output" in record
         ? "output-available"
-        : part.isComplete
+        : hasMeaningfulToolInput(record.input)
           ? "input-available"
-          : "input-streaming";
+          : part.isComplete
+            ? "input-available"
+            : "input-streaming";
 
   return {
     kind: "tool",
@@ -632,9 +693,11 @@ const buildHeartbeatDisplayTokens = (partRefs: readonly HeartbeatPartRef[]): Hea
       const resultPayload = (pairedResultPart?.part.payload ?? {}) as ToolResultPayload;
       const state: ToolUiState =
         pairedResultPart === undefined
-          ? part.isComplete
+          ? hasMeaningfulToolInput(callPayload.input)
             ? "input-available"
-            : "input-streaming"
+            : part.isComplete
+              ? "input-available"
+              : "input-streaming"
           : resultPayload.error
             ? "output-error"
             : "output-available";
@@ -683,7 +746,38 @@ const buildHeartbeatDisplayTokens = (partRefs: readonly HeartbeatPartRef[]): Hea
 export const buildHeartbeatDisplayBlocks = (entry: HeartbeatPartItem): HeartbeatDisplayBlock[] =>
   buildHeartbeatDisplayTokens(buildHeartbeatPartRefs([entry])).map((token) => token.content);
 
+const isCompactSeparatorEntry = (entry: HeartbeatPartItem): boolean =>
+  entry.parts.some((part) => part.partType === "compact");
+
+const isCompactDisplayEntry = (entry: HeartbeatPartItem): boolean =>
+  entry.scope === "request_aux" || isCompactSeparatorEntry(entry);
+
+const buildHeartbeatCompactSection = (group: HeartbeatGroupItem): HeartbeatSubjectSection | null => {
+  const relevantEntries = group.items.filter(isCompactDisplayEntry);
+  if (relevantEntries.length === 0) {
+    return null;
+  }
+  const tokens = buildHeartbeatDisplayTokens(buildHeartbeatPartRefs(relevantEntries));
+  return {
+    key: `${group.groupId}:compact`,
+    role: relevantEntries[0]?.role ?? "system",
+    name: null,
+    entryId: relevantEntries[0]?.id ?? group.id,
+    entries: relevantEntries,
+    blocks: tokens.map((token) => ({
+      key: token.key,
+      content: token.content,
+      createdAt: token.createdAt,
+      sourceEntryIds: token.sourceEntries.map((entry) => entry.id),
+    })),
+  };
+};
+
 export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): HeartbeatSubjectSection[] => {
+  if (group.kind === "compact") {
+    const compactSection = buildHeartbeatCompactSection(group);
+    return compactSection ? [compactSection] : [];
+  }
   const sections: HeartbeatSubjectSection[] = [];
   const tokens = buildHeartbeatDisplayTokens(buildHeartbeatPartRefs(group.items));
 

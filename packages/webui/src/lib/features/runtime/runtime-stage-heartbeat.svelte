@@ -27,7 +27,7 @@
 		buildHeartbeatContextState,
 		buildHeartbeatStatusState,
 	} from './runtime-heartbeat-statusbar-state';
-	import { estimateHeartbeatGroupSize } from './runtime-heartbeat-parts';
+	import { buildHeartbeatDisplayGroups, estimateHeartbeatGroupSize } from './runtime-heartbeat-parts';
 	import RuntimeHeartbeatGroup from './runtime-heartbeat-group.svelte';
 
 	let {
@@ -75,7 +75,7 @@
 	let viewportAtTop = $state(false);
 	let viewportRef = $state<HTMLDivElement | null>(null);
 
-	const groups = $derived(groupsState.data);
+	const groups = $derived(buildHeartbeatDisplayGroups(groupsState.data));
 	const contextState = $derived(buildHeartbeatContextState(modelCalls, providerMetadata));
 	const shimmerSummary = $derived(buildHeartbeatAttentionFocusSummary(attention));
 	const statusState = $derived(

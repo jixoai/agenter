@@ -25,6 +25,7 @@
 	} from './runtime-shell-format';
 
 	type HeartbeatLayoutMode = 'compact' | 'detailed';
+	type HeartbeatEntryPresentation = 'default' | 'compact-special';
 	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM = 28;
 	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT = `${HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM}rem`;
 
@@ -33,16 +34,54 @@
 		layoutMode = 'compact',
 		groupLabel,
 		groupTimestamp,
+		presentation = 'default',
 		onLayoutModeChange = undefined,
 	}: {
 		section: HeartbeatSubjectSection;
 		layoutMode?: HeartbeatLayoutMode;
 		groupLabel: string;
 		groupTimestamp: number;
+		presentation?: HeartbeatEntryPresentation;
 		onLayoutModeChange?: ((mode: HeartbeatLayoutMode) => void) | undefined;
 	} = $props();
 
+	let localLayoutMode = $state<HeartbeatLayoutMode>('compact');
+	let syncedLayoutMode = $state<HeartbeatLayoutMode>('compact');
+	let contentViewport = $state<HTMLDivElement | null>(null);
+	let isExpandable = $state(false);
+	let isExpanded = $state(false);
+	let resizeMeasureFrame = 0;
+
 	const summary = $derived(section.entries[0] ? getHeartbeatRowPreview(section.entries[0]) : '');
+	const compactSpecialPreludeBlocks = $derived.by(() =>
+		presentation === 'compact-special'
+			? section.blocks.filter(
+					(block) => !(block.content.kind === 'part' && block.content.part.partType === 'compact'),
+				)
+			: [],
+	);
+	const compactSpecialResponseBlocks = $derived.by(() =>
+		presentation === 'compact-special'
+			? section.blocks.filter(
+					(block) => block.content.kind === 'part' && block.content.part.partType === 'compact',
+				)
+			: [],
+	);
+	const compactSpecialResponseText = $derived.by(() => {
+		if (presentation !== 'compact-special') {
+			return null;
+		}
+		const compactBlock = compactSpecialResponseBlocks[0]?.content;
+		if (!compactBlock || compactBlock.kind !== 'part') {
+			return null;
+		}
+		return readHeartbeatPartText(compactBlock.part)?.trim() ?? null;
+	});
+	const showCompactSpecialPrelude = $derived(
+		presentation === 'compact-special' &&
+			compactSpecialPreludeBlocks.length > 0 &&
+			localLayoutMode === 'detailed',
+	);
 	const compactCheckpointText = $derived.by(() => {
 		const firstBlock = section.blocks[0]?.content;
 		if (!firstBlock || section.blocks.length !== 1 || firstBlock.kind !== 'part' || firstBlock.part.partType !== 'compact') {
@@ -61,11 +100,6 @@
 		}
 		return `${startedAtLabel}, ${formatRuntimeCompactDuration(timeMeta.durationMs)}`;
 	});
-	let localLayoutMode = $state<HeartbeatLayoutMode>('compact');
-	let syncedLayoutMode = $state<HeartbeatLayoutMode>('compact');
-	let contentViewport = $state<HTMLDivElement | null>(null);
-	let isExpandable = $state(false);
-	let isExpanded = $state(false);
 
 	const copySection = async (): Promise<void> => {
 		if (typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -85,6 +119,19 @@
 		if (!nextExpandable) {
 			isExpanded = false;
 		}
+	};
+
+	const scheduleExpandableMeasurement = (): void => {
+		if (typeof window === 'undefined') {
+			return;
+		}
+		if (resizeMeasureFrame !== 0) {
+			window.cancelAnimationFrame(resizeMeasureFrame);
+		}
+		resizeMeasureFrame = window.requestAnimationFrame(() => {
+			resizeMeasureFrame = 0;
+			recalculateExpandableState();
+		});
 	};
 
 	$effect(() => {
@@ -121,20 +168,23 @@
 		section.blocks.length;
 		localLayoutMode;
 		void tick().then(() => {
-			recalculateExpandableState();
+			scheduleExpandableMeasurement();
 		});
 	});
 
 	onMount(() => {
-		recalculateExpandableState();
+		scheduleExpandableMeasurement();
 		if (!contentViewport || typeof ResizeObserver === 'undefined') {
 			return;
 		}
 		const resizeObserver = new ResizeObserver(() => {
-			recalculateExpandableState();
+			scheduleExpandableMeasurement();
 		});
 		resizeObserver.observe(contentViewport);
 		return () => {
+			if (resizeMeasureFrame !== 0) {
+				window.cancelAnimationFrame(resizeMeasureFrame);
+			}
 			resizeObserver.disconnect();
 		};
 	});
@@ -178,7 +228,55 @@
 			style:overflow={isExpandable && !isExpanded ? 'hidden' : 'visible'}
 			data-testid={`runtime-heartbeat-entry-body-${section.entryId}`}
 		>
-			{#if compactCheckpointText}
+			{#if presentation === 'compact-special'}
+				{#if compactSpecialPreludeBlocks.length > 0}
+					<div class="grid gap-2 rounded-lg border border-dashed border-border/55 bg-muted/10 px-2.5 py-2">
+						<div class="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+							Compact prompt facts
+						</div>
+						{#if showCompactSpecialPrelude}
+							{#each compactSpecialPreludeBlocks as block (block.key)}
+								{#if block.content.kind === 'tool'}
+									<RuntimeHeartbeatToolBlock
+										block={block.content}
+										forceOpen
+										layoutMode={localLayoutMode}
+									/>
+								{:else}
+									<RuntimeHeartbeatPartContent part={block.content.part} layoutMode={localLayoutMode} />
+								{/if}
+							{/each}
+						{:else}
+							<div class="text-[13px] leading-5 text-muted-foreground">
+								System prompt and tool inventory are folded in Compact mode. Switch to Detailed to inspect the exact compact prompt.
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if compactSpecialResponseText}
+					<Checkpoint class="rounded-lg border border-dashed border-border/55 bg-muted/10 px-2.5 py-2">
+						<CheckpointIcon />
+						<div class="grid min-w-0 gap-0.5">
+							<div class="text-[13px] leading-5 text-foreground">{compactSpecialResponseText}</div>
+						</div>
+					</Checkpoint>
+				{:else if compactSpecialResponseBlocks.length > 0}
+					{#each compactSpecialResponseBlocks as block (block.key)}
+						{#if block.content.kind === 'tool'}
+							<RuntimeHeartbeatToolBlock
+								block={block.content}
+								forceOpen={localLayoutMode === 'detailed'}
+								layoutMode={localLayoutMode}
+							/>
+						{:else}
+							<RuntimeHeartbeatPartContent part={block.content.part} layoutMode={localLayoutMode} />
+						{/if}
+					{/each}
+				{:else if compactSpecialPreludeBlocks.length === 0}
+					<div class="text-[13px] leading-5 text-muted-foreground">{summary}</div>
+				{/if}
+			{:else if compactCheckpointText}
 				<Checkpoint class="rounded-lg border border-dashed border-border/55 bg-muted/10 px-2.5 py-2">
 					<CheckpointIcon />
 					<div class="grid min-w-0 gap-0.5">
@@ -194,7 +292,7 @@
 							layoutMode={localLayoutMode}
 						/>
 					{:else}
-						<RuntimeHeartbeatPartContent part={block.content.part} />
+						<RuntimeHeartbeatPartContent part={block.content.part} layoutMode={localLayoutMode} />
 					{/if}
 				{/each}
 				{#if section.blocks.length === 0}

@@ -18,13 +18,16 @@
 
 	let {
 		part,
+		layoutMode = 'compact',
 	}: {
 		part: HeartbeatPartItem['parts'][number];
+		layoutMode?: 'compact' | 'detailed';
 	} = $props();
 
 	const text = $derived(readHeartbeatPartText(part));
 	const showMetaRow = $derived((part.mimeType ?? '').length > 0 || !part.isComplete);
 	const showTypeLabel = $derived(!['text', 'thinking', 'compact'].includes(part.partType));
+	const shouldOpenReasoning = $derived(layoutMode === 'detailed' || !part.isComplete);
 </script>
 
 <section class="grid min-w-0 gap-1.5">
@@ -43,19 +46,19 @@
 	{/if}
 
 	{#if part.partType === 'thinking'}
-		<Reasoning isStreaming={!part.isComplete} defaultOpen={!part.isComplete}>
+		<Reasoning isStreaming={!part.isComplete} defaultOpen={shouldOpenReasoning}>
 			<ReasoningTrigger />
 			<ReasoningContent>
 				<MarkdownDocument
-				value={text ?? ''}
-				mode="preview"
-				usage="chat"
-				surface="muted"
-				syntaxTone="accented"
-				padding="compact"
-				class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
-			/>
-		</ReasoningContent>
+					value={text ?? ''}
+					mode="preview"
+					usage="chat"
+					surface="muted"
+					syntaxTone="accented"
+					padding="compact"
+					class="min-w-0 rounded-lg bg-background/70 px-2.5 py-2"
+				/>
+			</ReasoningContent>
 		</Reasoning>
 	{:else if text !== null}
 		<MarkdownDocument
