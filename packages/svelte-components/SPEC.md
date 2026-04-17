@@ -10,8 +10,10 @@
 
 ## 2. Scroll ownership contract
 
-- `ScrollView` 是共享滚动所有权的唯一 durable primitive。
-- 任何需要滚动的 Svelte surface，都应通过 `ScrollView` 表达 scroll owner，而不是在 feature 层重新声明 raw scroll overflow。
+- `ScrollView` 是标准 surface 的共享滚动所有权 durable primitive。
+- `BottomAnchoredTimeline` 是 dense conversation / timeline surface 的专用 durable primitive：它把视觉底部映射为 `scrollTop = 0`，并在 primitive 边界承担 reverse-flow virtualization、visual-top older-page slot 与 latest-anchor 语义。
+- 任何需要滚动的 Svelte surface，都应通过 `ScrollView` 或 `BottomAnchoredTimeline` 表达 scroll owner，而不是在 feature 层重新声明 raw scroll overflow。
+- 会话、Heartbeat、room transcript 这类“latest-first but chronologically rendered”的 surface，必须优先复用 `BottomAnchoredTimeline`，不得在 feature 层重新发明 `scrollHeight/scrollTop + RAF + prepend anchor` 粘底数学。
 
 ## 3. Scaffold family contract
 

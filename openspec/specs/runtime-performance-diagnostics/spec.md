@@ -1,7 +1,7 @@
 # runtime-performance-diagnostics Specification
 
 ## Purpose
-TBD - created by archiving change performance-guard-platform-vnext. Update Purpose after archive.
+Define one shared diagnostics and evidence workflow for runtime/browser performance work so long-list regressions are measured through reproducible traces instead of subjective CPU complaints.
 ## Requirements
 ### Requirement: Performance diagnostics SHALL expose shared runtime and UI counters
 The system SHALL provide one shared diagnostics surface for performance investigation so publication churn, hydration growth, and memory-sensitive routes can be inspected without bespoke instrumentation per panel.
@@ -23,4 +23,4 @@ The repository SHALL define one shared workflow for capturing browser-level perf
 - **WHEN** a developer runs the standard browser performance walkthrough
 - **THEN** the workflow captures evidence for both desktop and iPhone 14 viewports
 - **THEN** the resulting evidence can be compared against the same route and interaction checkpoints in later regressions
-
+- **AND** raw browser traces stay outside committed durable facts while the reproducible summary is recorded in the repository evidence workflow

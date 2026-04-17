@@ -38,7 +38,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention durable fact 必须显式分层为 provenance / body / egress 三个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容，外部路由意图走 typed `egress`；不得再把 reply target、私有 blob、快捷动作塞回 metadata。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 typed coordinate law：message 依赖 `channelId + subjectId`，terminal/task 依赖最小寻址字段；不得重新打开 `meta` 逃逸口。
-- WebUI 的用户可见滚动所有权必须统一委托给共享 `ScrollView` 原语；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
+- WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
@@ -54,6 +54,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 当 source adapter 希望强化某类后续行为时，应优先提交额外的 typed attention items，并由该 system 自己的 skill 教 AI 如何理解和处理这些 items；不要把这类行为期待偷塞进全局 prompt 或内核特判。
 - source ref / read result 如果只承担 lookup hint，就只能服务 adapter 自身寻址；一旦某事实要进入 durable attention、prompt payload 或外部 UI 契约，就必须先提升为 typed draft field 或 attention body。
 - `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/webui` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
+- `Heartbeat` 与 `@agenter/web-chat-view` 这类 latest-anchored transcript surface 的 durable law 是“chronological storage, reverse-flow view boundary”: store / transport 仍保持时间正序 truth，reverse 映射只允许发生在共享 timeline primitive 边界，不得泄漏回 durable merge / pagination contract。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。

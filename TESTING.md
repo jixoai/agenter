@@ -54,3 +54,13 @@ bun run --filter "@agenter/webui" test:dom
 - Storybook stories 是 WebUI 组件状态与交互夹具的单一真源。
 - Vitest 通过 `composeStories(...).run()` 执行 BDD 场景，避免重复造测试壳。
 - Playwright 继续保留给跨页面/跨进程链路，不替代 Storybook DOM 层。
+
+## Browser Performance Evidence
+
+```bash
+pnpm --filter "@agenter/webui" perf:reverse-flow-conversation
+```
+
+- 该工作流对 `Heartbeat` 与 shared room chat 采集同一组 desktop + iPhone 14 Chromium traces。
+- 基线来自一个临时 `HEAD` baseline worktree；候选版本来自当前 worktree，因此可以直接对比未提交的 reverse-flow 变更。
+- 原始 trace 写入 `.tmp/reverse-flow-conversation/<timestamp>/`，可提交的结论写入 `evidence/performance/reverse-flow-conversation/`。
