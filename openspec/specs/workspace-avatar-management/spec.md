@@ -96,3 +96,44 @@ The global `Avatars` destination SHALL keep one fixed `Catalog` surface for insp
 - **WHEN** the user starts more than one avatar creation flow
 - **THEN** each flow opens as its own closable draft tab
 - **AND** closing one draft does not delete or collapse the others
+
+#### Scenario: Compact avatar catalog keeps identity and runtime facts readable
+- **WHEN** the operator reads `Avatars / Catalog` on an iPhone 14-sized viewport
+- **THEN** the catalog keeps multiple avatar identities visible before secondary runtime details dominate the screen
+- **THEN** the selected-avatar runtime facts remain readable without expanding into a second oversized card surface
+
+#### Scenario: Desktop avatar catalog stays list-first while lens actions remain adjacent
+- **WHEN** the operator reads `Avatars / Catalog` on a desktop-sized viewport
+- **THEN** the left catalog remains a scan-first list surface
+- **THEN** the selected-avatar runtime lens stays within a deliberate reading width instead of stretching across decorative empty space
+- **THEN** contextual actions such as runtime launch, draft creation, and workspace entry stay visually attached to the selected identity lane
+
+#### Scenario: Avatar catalog keeps the shared workbench language while tightening compact hierarchy
+- **WHEN** the avatar catalog renders inside the shared workbench shell
+- **THEN** it reuses the repository's existing toolbar, list, and content-language patterns instead of inventing a detached page-local design language
+- **THEN** compact runtime hierarchy still fits within that shared language without reintroducing redundant title bands or badge-heavy metadata chrome
+
+#### Scenario: Avatar catalog makes runtime launch the dominant story
+- **WHEN** the operator opens `Avatars / Catalog` to act on one selected identity
+- **THEN** the right lens makes runtime launch the primary next step
+- **THEN** provenance, branching, and cross-page actions remain reachable as secondary paths instead of competing as first-line peers
+
+#### Scenario: Avatar catalog uses aligned seams instead of generic border cuts
+- **WHEN** the route separates catalog rows, left/right regions, and runtime fact groups
+- **THEN** those separations follow distinct aligned seam roles
+- **THEN** the page no longer depends on one repeated raw `border-*` treatment to explain every structural relationship
+
+#### Scenario: Avatar control tower names canonical facts by product meaning
+- **WHEN** the operator scans the first durable fact in the runtime lens
+- **THEN** the page frames it as the canonical runtime identity rather than only as an implementation-flavored field label
+- **THEN** the underlying runtime id value remains visible for audit and debugging use
+
+#### Scenario: Avatar control tower gives the primary runtime fact distinct hierarchy
+- **WHEN** the operator scans the runtime lens on desktop after selecting an avatar
+- **THEN** the first durable runtime fact reads as a product-led fact with its own label/value hierarchy
+- **THEN** lower runtime details keep the tighter audit/debug field treatment instead of visually competing with that primary fact
+
+#### Scenario: Avatar control tower keeps the primary runtime fact attached to the selected identity lane
+- **WHEN** the operator scans the desktop runtime lens after the primary-fact typography pass
+- **THEN** the first runtime fact sits with the selected identity lane instead of reading like the first row of the lower audit grid
+- **THEN** the `Runtime details` disclosure still owns the structured debug field grid underneath

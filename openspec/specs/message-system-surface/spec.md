@@ -36,6 +36,32 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** the `View as` trigger, room action buttons, and `chat/assets` mode chips all remain fully visible inside the toolbar band
 - **THEN** the toolbar does not clip those affordances vertically or push them outside the fixed chrome region
 
+#### Scenario: Dense room chrome avoids redundant card treatment inside content
+- **WHEN** the operator views room-local chrome such as the compact toolbar or body-mode affordances
+- **THEN** those controls use the minimum border and rounding needed for affordance clarity
+- **THEN** the route does not reintroduce heavy nested card framing inside the shared message workbench body
+
+#### Scenario: Compact room composer keeps send inline with the action rail
+- **WHEN** a room is selected on an iPhone 14-sized viewport with the shared room composer idle
+- **THEN** the `Attach`, `Screenshot`, and `Send` actions stay inside one compact action rail instead of forcing a full-width send row
+- **THEN** the composer does not spend a second dedicated chrome band on passive action affordances
+
+#### Scenario: Compact room composer keeps explicit action borders
+- **WHEN** the shared room composer renders `Attach` or `Screenshot` as clickable buttons
+- **THEN** those actions keep a visible button border even inside the dense room footer
+- **THEN** density tuning does not collapse `outline` actions into borderless text or icon fragments
+
+#### Scenario: Passive room composer metadata stays low-noise
+- **WHEN** the operator is idle in the room composer without pending assets or an active submit/disabled state
+- **THEN** passive shortcut/help metadata collapses into low-emphasis text or compact hiding instead of badge-like pill clusters
+- **THEN** the composer preserves transcript height instead of presenting another nested footer card
+
+#### Scenario: Dense room transcript avoids decorative slack
+- **WHEN** the operator reads an active room transcript on desktop or mobile
+- **THEN** transcript rows use compact vertical spacing and do not burn height on decorative top/bottom padding
+- **THEN** message bubbles keep only the minimum radius, border, and shadow needed to distinguish ownership and tone
+- **THEN** the transcript viewport and footer transition keep the message stream dominant instead of creating large dead zones
+
 #### Scenario: Room body switches between chat and assets without extra chrome inside content
 - **WHEN** the operator toggles `chat` or `assets`
 - **THEN** `page_content` renders exactly one room body mode at a time
@@ -191,4 +217,3 @@ The selected room transcript SHALL present canonical avatars, improved message b
 - **WHEN** the operator invokes `search-messages` from the room toolbar
 - **THEN** the room can search within the currently loaded transcript messages
 - **THEN** search navigation uses transcript row anchors instead of requiring a second route-local message renderer
-
