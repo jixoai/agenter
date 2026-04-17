@@ -104,3 +104,9 @@
 - [x] 16.1 Promote the primary canonical runtime fact from field-label styling into product-led fact typography without weakening audit readability
 - [x] 16.2 Refine the desktop launch-lens spacing so the promoted primary fact feels attached to the launch story instead of appended underneath it
 - [x] 16.3 Run targeted verification and refresh desktop/mobile visual evidence for the primary-fact typography follow-up
+
+## 17. Avatar Primary Fact Attachment Follow-up
+
+- [ ] 17.1 Attach the primary canonical runtime fact to the selected identity lane instead of leaving it inside the desktop audit grid
+- [ ] 17.2 Preserve the lower `Runtime details` disclosure as the dedicated audit/debug field grid while keeping mobile compact behavior stable
+- [ ] 17.3 Run targeted verification and refresh desktop/mobile visual evidence for the primary-fact attachment follow-up

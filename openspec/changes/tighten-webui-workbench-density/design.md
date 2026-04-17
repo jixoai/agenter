@@ -317,6 +317,22 @@ Alternative considered:
 - Move the canonical runtime into the hero row beside the title and launch actions.
   - Rejected because it would overload the first viewport again and force the product fact to compete directly with launch decisions instead of reinforcing them underneath.
 
+### Attach the primary fact to the identity lane instead of the audit grid
+
+After the typography pass, one subtle but still visible debt remains: the first runtime fact reads better, but it is still laid out inside the same desktop two-column field grid as the lower debug facts. That means the wording says "product fact" while the layout still says "audit table row".
+
+The next refinement should therefore:
+
+- keep the first runtime fact directly attached to the selected identity lane
+- let the primary fact use its own stacked label/value composition on desktop instead of borrowing the audit grid
+- keep `Runtime details` and the lower facts in the existing structured field grid so debug readability does not regress
+- keep mobile behavior compact and stable, avoiding any new hero-band chrome
+
+Alternative considered:
+
+- Keep the new typography and stop because the issue is now "minor".
+  - Rejected because this route is acting as a density/design reference; leaving the primary fact half-detached would normalize a muddled hierarchy for adjacent workbench pages.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:

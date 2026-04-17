@@ -45,3 +45,9 @@ The fixed `Avatars / Catalog` surface SHALL remain list-first and density-aware 
 - **WHEN** the operator scans the runtime lens on desktop after selecting an avatar
 - **THEN** the first durable runtime fact reads as a product-led fact with its own label/value hierarchy
 - **THEN** lower runtime details keep the tighter audit/debug field treatment instead of visually competing with that primary fact
+
+#### Scenario: Avatar control tower keeps the primary runtime fact attached to the selected identity lane
+
+- **WHEN** the operator scans the desktop runtime lens after the primary-fact typography pass
+- **THEN** the first runtime fact sits with the selected identity lane instead of reading like the first row of the lower audit grid
+- **THEN** the `Runtime details` disclosure still owns the structured debug field grid underneath
