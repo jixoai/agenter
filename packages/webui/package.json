@@ -14,6 +14,7 @@
     "test:unit": "vitest run --project server",
     "test:dom": "vitest run --project storybook",
     "test": "pnpm run test:unit && pnpm run test:dom",
+    "perf:reverse-flow-conversation": "bun run ./scripts/perf/reverse-flow-conversation/collect.ts",
     "e2e": "playwright test",
     "storybook": "storybook dev --ci --no-open --port 6006",
     "storybook:build": "storybook build"

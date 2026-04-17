@@ -1,5 +1,6 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { getBottomAnchoredStartScrollTop } from "@agenter/svelte-components";
 
 import { type WebChatMessage, type WebChatSocketFactory, type WebChatSocketLike } from "../src";
 import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
@@ -66,34 +67,62 @@ class WebSocketMock implements WebChatSocketLike {
 
 const socketFactory: WebChatSocketFactory = (url) => new WebSocketMock(url);
 
-class IntersectionObserverMock {
-  constructor(private readonly callback: IntersectionObserverCallback) {}
+const parseBottomRootMargin = (value?: string): number => {
+  if (!value) {
+    return 0;
+  }
+  const parts = value.split(/\s+/u).filter((part) => part.length > 0);
+  const candidate = parts[2] ?? parts[0] ?? "0";
+  const parsed = Number.parseFloat(candidate);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
-  observe(target: Element): void {
-    this.callback(
-      [
-        {
-          target,
-          isIntersecting: true,
-          intersectionRatio: 1,
-        } as IntersectionObserverEntry,
-      ],
-      this as unknown as IntersectionObserver,
-    );
+const isLatestSentinel = (target: Element): target is HTMLElement => {
+  return target instanceof HTMLElement && target.dataset.bottomAnchoredTimelineLatestSentinel === "true";
+};
+
+class IntersectionObserverMock {
+  static instances: IntersectionObserverMock[] = [];
+
+  private readonly observed = new Set<Element>();
+  private readonly rootScrollHandler = (): void => {
+    for (const target of this.observed) {
+      if (isLatestSentinel(target)) {
+        this.emit(target);
+      }
+    }
+  };
+
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    private readonly options: IntersectionObserverInit = {},
+  ) {
+    IntersectionObserverMock.instances.push(this);
+    if (this.options.root instanceof HTMLElement) {
+      this.options.root.addEventListener("scroll", this.rootScrollHandler);
+    }
   }
 
-  disconnect(): void {}
-  unobserve(): void {}
-}
-
-class FirstObservationOnlyIntersectionObserverMock {
-  private observedCount = 0;
-
-  constructor(private readonly callback: IntersectionObserverCallback) {}
-
   observe(target: Element): void {
-    this.observedCount += 1;
-    const visible = this.observedCount === 1;
+    this.observed.add(target);
+    this.emit(target);
+  }
+
+  disconnect(): void {
+    if (this.options.root instanceof HTMLElement) {
+      this.options.root.removeEventListener("scroll", this.rootScrollHandler);
+    }
+    this.observed.clear();
+  }
+
+  unobserve(target?: Element): void {
+    if (target) {
+      this.observed.delete(target);
+    }
+  }
+
+  private emit(target: Element): void {
+    const visible = this.resolveVisibility(target);
     this.callback(
       [
         {
@@ -106,8 +135,81 @@ class FirstObservationOnlyIntersectionObserverMock {
     );
   }
 
-  disconnect(): void {}
-  unobserve(): void {}
+  private resolveVisibility(target: Element): boolean {
+    if (!isLatestSentinel(target)) {
+      return true;
+    }
+    if (!(this.options.root instanceof HTMLElement)) {
+      return true;
+    }
+    const threshold = parseBottomRootMargin(this.options.rootMargin);
+    return Math.max(0, -this.options.root.scrollTop) <= threshold;
+  }
+}
+
+class FirstObservationOnlyIntersectionObserverMock {
+  private observedCount = 0;
+  private readonly observed = new Set<Element>();
+  private readonly rootScrollHandler = (): void => {
+    for (const target of this.observed) {
+      if (isLatestSentinel(target)) {
+        this.emit(target, this.resolveLatestSentinelVisibility());
+      }
+    }
+  };
+
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    private readonly options: IntersectionObserverInit = {},
+  ) {
+    if (this.options.root instanceof HTMLElement) {
+      this.options.root.addEventListener("scroll", this.rootScrollHandler);
+    }
+  }
+
+  observe(target: Element): void {
+    this.observed.add(target);
+    if (isLatestSentinel(target)) {
+      this.emit(target, this.resolveLatestSentinelVisibility());
+      return;
+    }
+    this.observedCount += 1;
+    this.emit(target, this.observedCount === 1);
+  }
+
+  disconnect(): void {
+    if (this.options.root instanceof HTMLElement) {
+      this.options.root.removeEventListener("scroll", this.rootScrollHandler);
+    }
+    this.observed.clear();
+  }
+
+  unobserve(target?: Element): void {
+    if (target) {
+      this.observed.delete(target);
+    }
+  }
+
+  private resolveLatestSentinelVisibility(): boolean {
+    if (!(this.options.root instanceof HTMLElement)) {
+      return true;
+    }
+    const threshold = parseBottomRootMargin(this.options.rootMargin);
+    return Math.max(0, -this.options.root.scrollTop) <= threshold;
+  }
+
+  private emit(target: Element, visible: boolean): void {
+    this.callback(
+      [
+        {
+          target,
+          isIntersecting: visible,
+          intersectionRatio: visible ? 1 : 0,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    );
+  }
 }
 
 class ResizeObserverMock {
@@ -236,6 +338,7 @@ const settleLitUpdates = async (root: ParentNode = document): Promise<void> => {
 describe("Feature: web-chat-view package", () => {
   beforeEach(() => {
     WebSocketMock.instances.length = 0;
+    IntersectionObserverMock.instances.length = 0;
     Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
       value: 400,
@@ -253,6 +356,31 @@ describe("Feature: web-chat-view package", () => {
       },
       set(value: number) {
         this.dataset.scrollTop = String(value);
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value(topOrOptions: ScrollToOptions | number, y?: number) {
+        const top =
+          typeof topOrOptions === "number"
+            ? (typeof y === "number" ? y : 0)
+            : (topOrOptions.top ?? 0);
+        this.scrollTop = top;
+        this.dispatchEvent(new Event("scroll"));
+      },
+    });
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value(callback: FrameRequestCallback) {
+        return window.setTimeout(() => {
+          callback(window.performance.now() + 200);
+        }, 0);
+      },
+    });
+    Object.defineProperty(window, "cancelAnimationFrame", {
+      configurable: true,
+      value(handle: number) {
+        window.clearTimeout(handle);
       },
     });
     vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
@@ -384,7 +512,7 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).toContain("latest reply");
 
     const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    viewport.scrollTop = 0;
+    viewport.scrollTop = -40_000;
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
 
@@ -420,6 +548,71 @@ describe("Feature: web-chat-view package", () => {
 
     expect(readRenderedText(document.body)).toContain("earliest message");
     expect(readRenderedText(document.body)).toContain("latest reply");
+    expect(
+      (document.body.querySelector("[data-message-id='1']") as HTMLElement | null)?.dataset.insertMotion,
+    ).toBe("older");
+  });
+
+  test("Scenario: Given the transcript moves away from latest When the viewport returns to latest Then the affordance appears only while away", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-scroll-latest",
+        kind: "room",
+        title: "Scroll latest",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+        rowId: index + 1,
+        messageId: `scroll-${index + 1}`,
+        chatId: "chat-scroll-latest",
+        from: index % 2 === 0 ? "User" : "jane",
+        to: index % 2 === 0 ? "jane" : undefined,
+        kind: "text" as const,
+        content: `scroll transcript row ${index + 1}`,
+        createdAt: (index + 1) * 100,
+        updatedAt: (index + 1) * 100,
+        visibleAt: (index + 1) * 100,
+        metadata: {},
+        attachments: [],
+      })),
+    });
+
+    await settleLitUpdates();
+
+    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+    const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
+    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLButtonElement | null;
+    expect(buttonShell?.dataset.visible).toBe("false");
+    expect(viewport.scrollTop).toBe(0);
+
+    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
+    viewport.dispatchEvent(new Event("scroll"));
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(buttonShell?.dataset.visible).toBe("true");
+    });
+
+    expect(button).not.toBeNull();
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(buttonShell?.dataset.visible).toBe("false");
+    });
   });
 
   test("Scenario: Given a host send handler When the composer submits text Then the package delegates to the host instead of raw transport send", async () => {
@@ -998,19 +1191,29 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeTruthy();
+    expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeTruthy();
     expect(viewport.querySelector("[data-message-id='virtual-120']")).toBeNull();
     const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
     expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
+    Object.defineProperties(viewport, {
+      clientHeight: {
+        configurable: true,
+        value: 600,
+      },
+      scrollHeight: {
+        configurable: true,
+        value: 40_600,
+      },
+    });
 
-    viewport.scrollTop = 40000;
+    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
     await settleLitUpdates();
 
     await vi.waitFor(() => {
-      expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeTruthy();
-      expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeNull();
+      expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeTruthy();
+      expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeNull();
     });
   });
 
@@ -1062,8 +1265,15 @@ describe("Feature: web-chat-view package", () => {
     });
 
     await settleLitUpdates();
-    const transcript = readRenderedText(document.body.querySelector("[data-testid='web-chat-scroll-viewport']"));
-    expect(transcript.indexOf("queued visible draft")).toBeLessThan(transcript.indexOf("assistant reply"));
+    const queuedRow = document.body.querySelector("[data-message-id='queued-1']") as HTMLElement | null;
+    const replyRow = document.body.querySelector("[data-message-id='reply-1']") as HTMLElement | null;
+    expect(queuedRow).toBeTruthy();
+    expect(replyRow).toBeTruthy();
+    expect(
+      Number(queuedRow?.closest<HTMLElement>("[data-source-index]")?.dataset.sourceIndex ?? "-1"),
+    ).toBeLessThan(
+      Number(replyRow?.closest<HTMLElement>("[data-source-index]")?.dataset.sourceIndex ?? "-1"),
+    );
     expect(readRenderedText(document.body)).not.toContain("Pending for attention");
   });
 
@@ -1122,10 +1332,10 @@ describe("Feature: web-chat-view package", () => {
 
     const rows = [...document.body.querySelectorAll<HTMLElement>("[data-message-author]")];
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.dataset.messageAuthor).toBe("participant");
-    expect(rows[1]?.dataset.messageAuthor).toBe("viewer");
-    expect(readRenderedText(rows[0] ?? null)).toContain("first analyst");
-    expect(readRenderedText(rows[1] ?? null)).toContain("viewer analyst");
+    const participantRow = rows.find((row) => readRenderedText(row).includes("first analyst")) ?? null;
+    const viewerRow = rows.find((row) => readRenderedText(row).includes("viewer analyst")) ?? null;
+    expect(participantRow?.dataset.messageAuthor).toBe("participant");
+    expect(viewerRow?.dataset.messageAuthor).toBe("viewer");
   });
 
   test("Scenario: Given bootstrap transcript rows mirror the transport snapshot with legacy ids When the websocket snapshot arrives Then the view collapses semantic duplicates into one transcript", async () => {
@@ -1628,6 +1838,9 @@ describe("Feature: web-chat-view package", () => {
         rowId: 2,
       });
     });
+    expect(
+      (document.body.querySelector("[data-message-id='msg-latest']") as HTMLElement | null)?.dataset.insertMotion,
+    ).toBe("latest");
     unmount(component);
   });
 

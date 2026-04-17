@@ -7,6 +7,7 @@ const LoadingOlderKeepsHeartbeatRowsStable = getPortableStory(stories, "LoadingO
 const LayoutActionSwitchesGroupPresentation = getPortableStory(stories, "LayoutActionSwitchesGroupPresentation");
 const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const BottomAnchorSurvivesLatestAppend = getPortableStory(stories, "BottomAnchorSurvivesLatestAppend");
+const LatestAppendPlaysInsertMotion = getPortableStory(stories, "LatestAppendPlaysInsertMotion");
 const BottomAnchorSurvivesLatestGrowth = getPortableStory(stories, "BottomAnchorSurvivesLatestGrowth");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
 const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
@@ -28,6 +29,10 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given the Heartbeat viewport is pinned to bottom When a new measured group appears Then the latest rows stay bottom-anchored without manual scrolling", async () => {
     await BottomAnchorSurvivesLatestAppend.run();
+  });
+
+  test("Scenario: Given a new latest Heartbeat group When it mounts Then the shared WAAPI insert motion actually advances over animation frames", async () => {
+    await LatestAppendPlaysInsertMotion.run();
   });
 
   test("Scenario: Given the Heartbeat viewport is pinned to bottom When the last group grows without changing item count Then the viewport keeps the latest rows anchored", async () => {

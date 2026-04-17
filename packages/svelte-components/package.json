@@ -22,6 +22,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
     "svelte": "^5.55.2",
     "svelte-check": "^4.4.2",

@@ -7,7 +7,11 @@
 		RuntimeSchedulerState,
 		SessionEntry,
 	} from '@agenter/client-sdk';
-	import { tick } from 'svelte';
+	import {
+		BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
+		type BottomAnchoredTimelineHandle,
+	} from '@agenter/svelte-components';
+	import { tick, onDestroy } from 'svelte';
 
 	import { Loader } from '$lib/components/ai-elements/loader/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -71,6 +75,10 @@
 	let hasMoreOlder = $state(true);
 	let viewportAtTop = $state(false);
 	let viewportRef = $state<HTMLDivElement | null>(null);
+	let timelineRef = $state<BottomAnchoredTimelineHandle | null>(null);
+	let insertMotionByGroupId = $state<Record<string, 'latest' | 'older'>>({});
+	let insertMotionClearHandle = 0;
+	let previousGroupIds: string[] = [];
 
 	const groups = $derived(buildHeartbeatDisplayGroups(groupsState.data));
 	const configuredContextLimit = $derived(configBinding.draft.maxToken ?? configBinding.providerMetadata?.maxContextTokens ?? null);
@@ -114,36 +122,160 @@
 		};
 	});
 
-	const scrollViewportToTop = async (): Promise<void> => {
+	const clearInsertMotion = (groupIds?: string[]): void => {
+		if (!groupIds || groupIds.length === 0) {
+			insertMotionByGroupId = {};
+			return;
+		}
+		const nextState = { ...insertMotionByGroupId };
+		for (const groupId of groupIds) {
+			delete nextState[groupId];
+		}
+		insertMotionByGroupId = nextState;
+	};
+
+	const scheduleInsertMotionClear = (groupIds: string[]): void => {
+		if (typeof window === 'undefined' || groupIds.length === 0) {
+			return;
+		}
+		if (insertMotionClearHandle !== 0) {
+			window.clearTimeout(insertMotionClearHandle);
+		}
+		insertMotionClearHandle = window.setTimeout(() => {
+			insertMotionClearHandle = 0;
+			clearInsertMotion(groupIds);
+		}, BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS);
+	};
+
+	const markInsertedGroups = (groupIds: string[], motion: 'latest' | 'older'): void => {
+		if (groupIds.length === 0) {
+			return;
+		}
+		insertMotionByGroupId = {
+			...insertMotionByGroupId,
+			...Object.fromEntries(groupIds.map((groupId) => [groupId, motion])),
+		};
+		scheduleInsertMotionClear(groupIds);
+	};
+
+	const waitForTimelineSettle = async (): Promise<void> => {
 		await tick();
-		await new Promise<void>((resolve) => {
-			requestAnimationFrame(() => {
+		if (typeof window === 'undefined' || !viewportRef) {
+			return;
+		}
+		let stableFrames = 0;
+		let lastSignature = '';
+		for (let index = 0; index < 12; index += 1) {
+			await new Promise<void>((resolve) => {
 				requestAnimationFrame(() => {
 					resolve();
 				});
 			});
-		});
-		if (!viewportRef) {
+			const currentViewport = viewportRef;
+			if (!currentViewport) {
+				return;
+			}
+			const nextSignature = `${currentViewport.scrollTop}:${currentViewport.scrollHeight}`;
+			if (nextSignature === lastSignature) {
+				stableFrames += 1;
+				if (stableFrames >= 2) {
+					return;
+				}
+				continue;
+			}
+			lastSignature = nextSignature;
+			stableFrames = 0;
+		}
+	};
+
+	const waitForGroupCount = async (minimumCount: number): Promise<void> => {
+		if (groups.length >= minimumCount) {
 			return;
 		}
-		viewportRef.scrollTo({ top: 0, behavior: 'auto' });
-		viewportAtTop = true;
-		viewportRef.dispatchEvent(new Event('scroll'));
+		for (let index = 0; index < 12; index += 1) {
+			await tick();
+			if (groups.length >= minimumCount) {
+				return;
+			}
+			await new Promise<void>((resolve) => {
+				requestAnimationFrame(() => {
+					resolve();
+				});
+			});
+			if (groups.length >= minimumCount) {
+				return;
+			}
+		}
 	};
 
 	const loadOlder = async (): Promise<void> => {
 		if (loadingOlder || !hasMoreOlder) {
 			return;
 		}
+		const preLoadGroupCount = groups.length;
 		loadingOlder = true;
 		try {
 			const result = await onLoadOlder();
 			hasMoreOlder = result.hasMore;
-			await scrollViewportToTop();
+			if (result.items > 0) {
+				await waitForGroupCount(preLoadGroupCount + result.items);
+				await waitForTimelineSettle();
+			}
 		} finally {
 			loadingOlder = false;
 		}
 	};
+
+	$effect(() => {
+		const currentGroupIds = groups.map((group) => group.groupId);
+		const previousSet = new Set(previousGroupIds);
+		const currentSet = new Set(currentGroupIds);
+		const hasOverlap = previousGroupIds.some((groupId) => currentSet.has(groupId));
+		const newGroupIds = currentGroupIds.filter((groupId) => !previousSet.has(groupId));
+		previousGroupIds = currentGroupIds;
+		if (currentGroupIds.length === 0 || previousSet.size === 0 || !hasOverlap || newGroupIds.length === 0) {
+			if (!hasOverlap) {
+				clearInsertMotion();
+			}
+			return;
+		}
+
+		let firstExistingIndex = -1;
+		let lastExistingIndex = -1;
+		for (const [index, groupId] of currentGroupIds.entries()) {
+			if (!previousSet.has(groupId)) {
+				continue;
+			}
+			if (firstExistingIndex === -1) {
+				firstExistingIndex = index;
+			}
+			lastExistingIndex = index;
+		}
+		if (firstExistingIndex === -1 || lastExistingIndex === -1) {
+			return;
+		}
+
+		const olderGroupIds: string[] = [];
+		const latestGroupIds: string[] = [];
+		for (const groupId of newGroupIds) {
+			const index = currentGroupIds.indexOf(groupId);
+			if (index < firstExistingIndex) {
+				olderGroupIds.push(groupId);
+				continue;
+			}
+			if (index > lastExistingIndex) {
+				latestGroupIds.push(groupId);
+			}
+		}
+		markInsertedGroups(olderGroupIds, 'older');
+		markInsertedGroups(latestGroupIds, 'latest');
+	});
+
+	onDestroy(() => {
+		if (typeof window !== 'undefined' && insertMotionClearHandle !== 0) {
+			window.clearTimeout(insertMotionClearHandle);
+		}
+	});
 </script>
 
 <div
@@ -164,6 +296,7 @@
 		viewportTestId="runtime-heartbeat-viewport"
 		bind:atTop={viewportAtTop}
 		bind:viewportRef
+		bind:timelineRef
 		items={groups}
 		virtual={{
 			estimateSize: (_, group) => estimateHeartbeatGroupSize(group),
@@ -174,7 +307,7 @@
 			paddingStart: 12,
 			paddingEnd: 12,
 		}}
-	>
+		>
 		{#snippet renderBefore()}
 			{#if showTopLoadAffordance}
 				<div class="flex justify-center px-3 pb-2 pt-12">
@@ -202,7 +335,9 @@
 		{/snippet}
 
 		{#snippet renderItem(group)}
-			<RuntimeHeartbeatGroup {group} {sessionIconUrl} {avatarLabel} />
+			<div data-insert-motion={insertMotionByGroupId[group.groupId] ?? 'none'}>
+				<RuntimeHeartbeatGroup {group} {sessionIconUrl} {avatarLabel} />
+			</div>
 		{/snippet}
 
 		{#snippet renderEmpty()}

@@ -11,6 +11,18 @@
 	import {
 		createEmptyRuntimeHeartbeatConfigBinding,
 	} from './runtime-heartbeat-config-state';
+	import { Button } from '$lib/components/ui/button/index.js';
+
+	type InteractiveHeartbeatGroupFactory = (input: {
+		count: number;
+		groups: readonly HeartbeatGroupItem[];
+	}) => HeartbeatGroupItem;
+	type InteractiveHeartbeatControls = {
+		appendLatest?: InteractiveHeartbeatGroupFactory;
+		prependOlder?: InteractiveHeartbeatGroupFactory;
+		replaceLatest?: InteractiveHeartbeatGroupFactory;
+		hint?: string;
+	};
 
 	type ScheduledHeartbeatUpdate =
 		| {
@@ -38,6 +50,7 @@
 		compactPending = false,
 		compactDisabled = false,
 		scheduledUpdates = [],
+		interactiveControls = undefined,
 		onRequestCompact = () => {},
 		sessionIconUrl = 'https://example.test/avatar-default.webp',
 		avatarLabel = 'Default Avatar',
@@ -55,6 +68,7 @@
 		compactPending?: boolean;
 		compactDisabled?: boolean;
 		scheduledUpdates?: ScheduledHeartbeatUpdate[];
+		interactiveControls?: InteractiveHeartbeatControls | undefined;
 		onRequestCompact?: () => void | Promise<void>;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
@@ -62,9 +76,19 @@
 
 	let groups = $state<HeartbeatGroupItem[]>([]);
 	let olderLoaded = $state(false);
+	let appendCount = $state(0);
+	let prependCount = $state(0);
+	let replaceCount = $state(0);
 	let scheduledUpdateTimers: number[] = [];
 	const configBinding = createEmptyRuntimeHeartbeatConfigBinding();
 	const cloneGroup = (group: HeartbeatGroupItem): HeartbeatGroupItem => structuredClone(group);
+	const resetGroups = (): void => {
+		groups = initialGroups.map(cloneGroup);
+		olderLoaded = false;
+		appendCount = 0;
+		prependCount = 0;
+		replaceCount = 0;
+	};
 	const clearScheduledUpdates = (): void => {
 		if (typeof window === 'undefined') {
 			scheduledUpdateTimers = [];
@@ -100,8 +124,7 @@
 		}
 		lastFixtureResetKey = fixtureResetKey;
 		clearScheduledUpdates();
-		groups = initialGroups.map(cloneGroup);
-		olderLoaded = false;
+		resetGroups();
 		if (typeof window === 'undefined' || scheduledUpdates.length === 0) {
 			return;
 		}
@@ -134,12 +157,99 @@
 		olderLoaded = true;
 		return { items: olderGroups.length, hasMore: false };
 	};
+
+	const applyInteractiveGroup = (
+		factory: InteractiveHeartbeatGroupFactory | undefined,
+		mode: 'append' | 'prepend' | 'replace',
+	): void => {
+		if (!factory) {
+			return;
+		}
+		const nextCount =
+			mode === 'append' ? appendCount + 1 : mode === 'prepend' ? prependCount + 1 : replaceCount + 1;
+		const nextGroup = cloneGroup(
+			factory({
+				count: nextCount,
+				groups,
+			}),
+		);
+		switch (mode) {
+			case 'append':
+				appendCount = nextCount;
+				groups = [...groups, nextGroup];
+				return;
+			case 'prepend':
+				prependCount = nextCount;
+				groups = [nextGroup, ...groups];
+				return;
+			case 'replace':
+				replaceCount = nextCount;
+				if (groups.length === 0) {
+					groups = [nextGroup];
+					return;
+				}
+				groups = [...groups.slice(0, -1), nextGroup];
+				return;
+		}
+	};
 </script>
 
 <div
 	class="grid h-[44rem] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-story"
 >
+	{#if interactiveControls}
+		<section
+			class="grid gap-2 rounded-2xl border border-border/70 bg-background/85 px-3 py-3 shadow-sm"
+			data-testid="runtime-heartbeat-playground-controls"
+		>
+			<div class="flex flex-wrap items-center gap-2">
+				{#if interactiveControls.appendLatest}
+					<Button
+						size="sm"
+						variant="outline"
+						data-testid="runtime-heartbeat-playground-append-latest"
+						onclick={() => applyInteractiveGroup(interactiveControls.appendLatest, 'append')}
+					>
+						Append latest
+					</Button>
+				{/if}
+				{#if interactiveControls.prependOlder}
+					<Button
+						size="sm"
+						variant="outline"
+						data-testid="runtime-heartbeat-playground-prepend-older"
+						onclick={() => applyInteractiveGroup(interactiveControls.prependOlder, 'prepend')}
+					>
+						Prepend older
+					</Button>
+				{/if}
+				{#if interactiveControls.replaceLatest}
+					<Button
+						size="sm"
+						variant="outline"
+						data-testid="runtime-heartbeat-playground-grow-latest"
+						onclick={() => applyInteractiveGroup(interactiveControls.replaceLatest, 'replace')}
+					>
+						Grow latest
+					</Button>
+				{/if}
+				<Button
+					size="sm"
+					variant="secondary"
+					data-testid="runtime-heartbeat-playground-reset"
+					onclick={resetGroups}
+				>
+					Reset
+				</Button>
+			</div>
+			{#if interactiveControls.hint}
+				<p class="text-xs text-muted-foreground" data-testid="runtime-heartbeat-playground-hint">
+					{interactiveControls.hint}
+				</p>
+			{/if}
+		</section>
+	{/if}
 	<div class="sr-only" data-testid="runtime-heartbeat-story-count">{groups.length}</div>
 	<RuntimeStageHeartbeat
 		{sessionStatus}

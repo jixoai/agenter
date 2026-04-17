@@ -1,5 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/sveltekit";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import {
+  BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
+  BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+  getBottomAnchoredDistanceToLatest,
+  getBottomAnchoredDistanceToStart,
+  getBottomAnchoredStartScrollTop,
+} from "@agenter/svelte-components";
 
 import type {
   HeartbeatGroupItem,
@@ -544,19 +551,127 @@ const growingBottomAnchorExpandedGroup = createHeartbeatGroupFixture({
 
 const bottomAnchorGrowthGroups = [...longStreamGroups.slice(0, -1), growingBottomAnchorBaseGroup];
 
-const getViewportDistanceToBottom = (viewport: HTMLElement): number =>
-  viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+const cloneHeartbeatGroupAtTime = (
+  template: HeartbeatGroupItem,
+  sequence: number,
+  targetCreatedAt: number,
+): HeartbeatGroupItem => {
+  const timeDelta = targetCreatedAt - template.createdAt;
+  const groupClone = structuredClone(template);
+  return {
+    ...groupClone,
+    id: groupClone.id + sequence * 10_000,
+    groupId: `${groupClone.groupId}:playground:${sequence}`,
+    createdAt: groupClone.createdAt + timeDelta,
+    updatedAt: groupClone.updatedAt + timeDelta,
+    items: groupClone.items.map((item, itemIndex) => ({
+      ...item,
+      id: item.id + sequence * 10_000 + itemIndex,
+      messageId: `${item.messageId}:playground:${sequence}:${itemIndex}`,
+      createdAt: item.createdAt + timeDelta,
+      updatedAt: item.updatedAt + timeDelta,
+      parts: item.parts.map((part, partIndex) => ({
+        ...part,
+        partId: part.partId + sequence * 100_000 + partIndex,
+        messageId: `${part.messageId}:playground:${sequence}:${itemIndex}:${partIndex}`,
+        createdAt: part.createdAt + timeDelta,
+        updatedAt: part.updatedAt + timeDelta,
+      })),
+    })),
+  };
+};
+
+const createInteractiveLatestGroup = ({
+  count,
+  groups,
+}: {
+  count: number;
+  groups: readonly HeartbeatGroupItem[];
+}): HeartbeatGroupItem => {
+  const latestTimestamp = groups[groups.length - 1]?.updatedAt ?? baseTimestamp;
+  return cloneHeartbeatGroupAtTime(appendedBottomAnchorGroup, count, latestTimestamp + count * 180_000);
+};
+
+const createInteractiveOlderGroup = ({
+  count,
+  groups,
+}: {
+  count: number;
+  groups: readonly HeartbeatGroupItem[];
+}): HeartbeatGroupItem => {
+  const oldestTimestamp = groups[0]?.createdAt ?? baseTimestamp;
+  const template = olderGroups[(count - 1) % olderGroups.length] ?? olderGroups[0] ?? appendedBottomAnchorGroup;
+  return cloneHeartbeatGroupAtTime(template, count, oldestTimestamp - count * 180_000);
+};
+
+const createInteractiveLatestGrowthGroup = ({
+  count,
+  groups,
+}: {
+  count: number;
+  groups: readonly HeartbeatGroupItem[];
+}): HeartbeatGroupItem => {
+  const latestGroup = groups[groups.length - 1] ?? growingBottomAnchorBaseGroup;
+  const latestTimestamp = latestGroup.updatedAt;
+  return {
+    ...structuredClone(growingBottomAnchorExpandedGroup),
+    id: latestGroup.id,
+    groupId: latestGroup.groupId,
+    createdAt: latestGroup.createdAt,
+    updatedAt: latestTimestamp + count * 1_000,
+  };
+};
+
+const getViewportDistanceToLatest = (viewport: HTMLElement): number =>
+  getBottomAnchoredDistanceToLatest(viewport);
+const getViewportDistanceToStart = (viewport: HTMLElement): number =>
+  getBottomAnchoredDistanceToStart(viewport);
 const describeViewportMetrics = (viewport: HTMLElement, root: HTMLElement): string =>
   JSON.stringify({
     scrollTop: viewport.scrollTop,
     clientHeight: viewport.clientHeight,
     scrollHeight: viewport.scrollHeight,
-    distanceToBottom: getViewportDistanceToBottom(viewport),
+    distanceToLatest: getViewportDistanceToLatest(viewport),
+    distanceToStart: getViewportDistanceToStart(viewport),
     storyGroupCount:
       root.querySelector<HTMLElement>('[data-testid="runtime-heartbeat-story-count"]')?.textContent ?? null,
-    mountedIndexes: Array.from(root.querySelectorAll<HTMLElement>(".scroll-view-virtual-item[data-index]")).map(
-      (node) => Number(node.dataset.index ?? "-1"),
+    mountedIndexes: Array.from(root.querySelectorAll<HTMLElement>(".scroll-view-virtual-item[data-source-index]")).map(
+      (node) => Number(node.dataset.sourceIndex ?? "-1"),
     ),
+  });
+
+const findInsertMotion = (node: HTMLElement | null): string | null =>
+  node?.closest<HTMLElement>("[data-insert-motion]")?.dataset.insertMotion ?? null;
+const waitForAnimationFrame = async (): Promise<void> =>
+  new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+const waitForTwoAnimationFrames = async (): Promise<void> => {
+  await waitForAnimationFrame();
+  await waitForAnimationFrame();
+};
+const waitForViewportSettle = async (viewport: HTMLElement): Promise<void> => {
+  let stableFrames = 0;
+  let lastSignature = "";
+  for (let index = 0; index < 12; index += 1) {
+    await waitForAnimationFrame();
+    const nextSignature = `${viewport.scrollTop}:${viewport.scrollHeight}`;
+    if (nextSignature === lastSignature) {
+      stableFrames += 1;
+      if (stableFrames >= 2) {
+        return;
+      }
+      continue;
+    }
+    lastSignature = nextSignature;
+    stableFrames = 0;
+  }
+};
+const waitForInsertMotionCleanup = async (): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS + 80);
   });
 
 const streamingToolEntries = [
@@ -930,20 +1045,54 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
       "Waiting · Attention Debt · 1 focused · 1 background · 1 muted",
     );
     const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
-    viewport.scrollTop = 0;
+    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
-    const loadOlderButton = canvas.getByRole("button", { name: "Load older" });
+    const loadOlderButton = await canvas.findByRole("button", { name: "Load older" });
     if (!(loadOlderButton instanceof HTMLButtonElement)) {
       throw new Error("Expected Load older button to be rendered as a button.");
     }
+    const preLoadScrollTop = viewport.scrollTop;
     loadOlderButton.click();
-    viewport.scrollTop = 0;
-    viewport.dispatchEvent(new Event("scroll"));
     await waitFor(() => {
       expect(canvas.getByTestId("runtime-heartbeat-group-400")).toBeInTheDocument();
-      expect(canvas.getByText("4 groups")).toBeInTheDocument();
-      expect(canvas.getByText("No older messages")).toBeInTheDocument();
+      expect(canvas.getByTestId("runtime-heartbeat-story-count")).toHaveTextContent("5");
     });
+    const earliestGroup = canvas.getByTestId("runtime-heartbeat-group-400");
+    await waitFor(() => {
+      const absoluteStart = getBottomAnchoredStartScrollTop(viewport);
+      if (viewport.scrollTop === absoluteStart) {
+        throw new Error(`Older reveal collapsed back to absolute start: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      if (viewport.scrollTop >= preLoadScrollTop) {
+        throw new Error(`Older reveal did not move toward history start: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      expect(findInsertMotion(earliestGroup)).toBe("older");
+    });
+
+    const animationHost = await waitFor(() => {
+      const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="older"]');
+      if (!host) {
+        throw new Error(`Older reveal host did not retain insert-motion: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      return host;
+    });
+    const animation = await waitFor(() => {
+      const runningAnimations = animationHost.getAnimations().filter((candidate) => candidate.playState !== "idle");
+      const candidate = runningAnimations[0];
+      if (!candidate) {
+        throw new Error("Older reveal did not expose a running WAAPI animation.");
+      }
+      return candidate;
+    });
+    const beforeTime = Number(animation.currentTime ?? 0);
+    await waitFor(
+      () => {
+        expect(Number(animation.currentTime ?? 0)).toBeGreaterThan(beforeTime);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+      },
+    );
   },
 } satisfies Story;
 
@@ -1042,19 +1191,35 @@ export const StickyBottomKeepsLatestRowsReachable = {
       expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
     });
 
-    viewport.scrollTop = 0;
+    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
 
     await waitFor(() => {
       expect(canvas.getByRole("button", { name: "Scroll to latest" })).toBeInTheDocument();
       expect(canvas.getByTestId(`runtime-heartbeat-entry-${firstEntry.id}`)).toBeInTheDocument();
     });
-
-    await userEvent.click(canvas.getByRole("button", { name: "Scroll to latest" }));
-
+    const scrollButton = canvas.getByRole("button", { name: "Scroll to latest" });
     await waitFor(() => {
-      expect(canvas.queryByTestId(`runtime-heartbeat-entry-${lastEntry.id}`)).toBeInTheDocument();
+      expect(scrollButton.closest<HTMLElement>("[data-visible='true']")).not.toBeNull();
     });
+    await waitForViewportSettle(viewport);
+
+    scrollButton.click();
+
+    await waitFor(
+      () => {
+        if (viewport.scrollTop !== 0) {
+          throw new Error(
+            `Scroll to latest did not return to zero: ${describeViewportMetrics(viewport, canvasElement)}`,
+          );
+        }
+        expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+        expect(scrollButton.closest<HTMLElement>("[data-visible='true']")).toBeNull();
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
   },
 } satisfies Story;
 
@@ -1086,16 +1251,16 @@ export const BottomAnchorSurvivesLatestAppend = {
       expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
     });
 
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" });
+    viewport.scrollTop = 0;
     viewport.dispatchEvent(new Event("scroll"));
 
     await waitFor(() => {
-      expect(getViewportDistanceToBottom(viewport)).toBeLessThanOrEqual(48);
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
     });
 
     await waitFor(() => {
-      const distanceToBottom = getViewportDistanceToBottom(viewport);
-      if (distanceToBottom > 48) {
+      const distanceToLatest = getViewportDistanceToLatest(viewport);
+      if (distanceToLatest > 48) {
         throw new Error(`Viewport drifted after append: ${describeViewportMetrics(viewport, canvasElement)}`);
       }
       const latestEntry = canvas.queryByTestId("runtime-heartbeat-entry-920");
@@ -1103,14 +1268,134 @@ export const BottomAnchorSurvivesLatestAppend = {
         throw new Error(`Latest append entry not mounted: ${describeViewportMetrics(viewport, canvasElement)}`);
       }
       expect(latestEntry).toBeInTheDocument();
+      expect(findInsertMotion(latestEntry)).toBe("latest");
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 220));
+    await waitForInsertMotionCleanup();
 
     await waitFor(() => {
-      expect(getViewportDistanceToBottom(viewport)).toBeLessThanOrEqual(48);
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
       expect(canvas.getByTestId("runtime-heartbeat-entry-920")).toBeInTheDocument();
     });
+  },
+} satisfies Story;
+
+export const LatestAppendPlaysInsertMotion = {
+  name: "Scenario: Given a new latest Heartbeat group When it mounts Then the shared WAAPI insert motion is actually playing instead of only setting data attributes",
+  args: {
+    initialGroups: longStreamGroups,
+    olderGroups: [],
+    scheduledUpdates: [
+      {
+        type: "append-groups" as const,
+        afterMs: 900,
+        groups: [appendedBottomAnchorGroup],
+      },
+    ],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "running",
+      running: true,
+      phase: "calling_model",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    await waitFor(() => {
+      const entry = canvas.queryByTestId("runtime-heartbeat-entry-920");
+      if (!entry) {
+        throw new Error(`Latest append entry not mounted: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      if (findInsertMotion(entry) !== "latest") {
+        throw new Error(`Latest append entry lost insert-motion marker: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+    });
+
+    const animationHost = await waitFor(() => {
+      const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
+      if (!host) {
+        throw new Error(`Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      const hostedEntry = host.querySelector<HTMLElement>('[data-testid="runtime-heartbeat-entry-920"]');
+      if (!hostedEntry) {
+        throw new Error(`Latest append host lost the appended entry before animation sampling: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      return host;
+    });
+
+    const animation = await waitFor(() => {
+      const runningAnimations = animationHost.getAnimations().filter((candidate) => candidate.playState !== "idle");
+      const candidate = runningAnimations[0];
+      if (!candidate) {
+        throw new Error("Latest append entry did not expose a running WAAPI animation.");
+      }
+      return candidate;
+    });
+
+    const beforeScrollTop = viewport.scrollTop;
+    const beforeTime = Number(animation.currentTime ?? 0);
+    await waitFor(
+      () => {
+        expect(Number(animation.currentTime ?? 0)).toBeGreaterThan(beforeTime);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+      },
+    );
+    expect(animation.playState === "running" || animation.playState === "finished").toBe(true);
+    expect(beforeScrollTop).toBeLessThan(0);
+    await waitFor(
+      () => {
+        expect(viewport.scrollTop).toBeGreaterThan(beforeScrollTop);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+      },
+    );
+
+    await waitFor(async () => {
+      await waitForTwoAnimationFrames();
+      expect(animation.playState).toBe("finished");
+    }, { timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 4 });
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+  },
+} satisfies Story;
+
+export const InsertMotionPlayground = {
+  name: "Playground: Heartbeat reverse-flow insert motion controls",
+  args: {
+    initialGroups: longStreamGroups,
+    olderGroups: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "running",
+      running: true,
+      phase: "calling_model",
+    }),
+    interactiveControls: {
+      appendLatest: createInteractiveLatestGroup,
+      prependOlder: createInteractiveOlderGroup,
+      replaceLatest: createInteractiveLatestGrowthGroup,
+      hint: "Append latest shows the new-card motion. Scroll to visual top, then use Prepend older to watch the older/load-old reveal. Grow latest replaces the last card in place so you can inspect remeasurement without insertion.",
+    },
   },
 } satisfies Story;
 
@@ -1142,16 +1427,16 @@ export const BottomAnchorSurvivesLatestGrowth = {
       expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
     });
 
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" });
+    viewport.scrollTop = 0;
     viewport.dispatchEvent(new Event("scroll"));
 
     await waitFor(() => {
-      expect(getViewportDistanceToBottom(viewport)).toBeLessThanOrEqual(48);
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
     });
 
     await waitFor(() => {
-      const distanceToBottom = getViewportDistanceToBottom(viewport);
-      if (distanceToBottom > 48) {
+      const distanceToLatest = getViewportDistanceToLatest(viewport);
+      if (distanceToLatest > 48) {
         throw new Error(`Viewport drifted after growth: ${describeViewportMetrics(viewport, canvasElement)}`);
       }
       const latestEntry = canvas.queryByTestId("runtime-heartbeat-entry-930");
@@ -1159,12 +1444,13 @@ export const BottomAnchorSurvivesLatestGrowth = {
         throw new Error(`Latest growth marker not mounted: ${describeViewportMetrics(viewport, canvasElement)}`);
       }
       expect(latestEntry.textContent ?? "").toMatch(/after-growth marker/);
+      expect(findInsertMotion(latestEntry)).toBe("none");
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 220));
+    await waitForInsertMotionCleanup();
 
     await waitFor(() => {
-      expect(getViewportDistanceToBottom(viewport)).toBeLessThanOrEqual(48);
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
       expect(canvas.getByTestId("runtime-heartbeat-entry-930")).toBeInTheDocument();
     });
   },
@@ -1336,11 +1622,12 @@ export const OverflowingCardCanExpand = {
 
     await waitFor(() => {
       expect(body.dataset.overflowState).toBe("collapsed");
+      expect(body.style.maxHeight).toBe("12rem");
+      expect(body.style.overflow).toBe("hidden");
     });
 
     const collapsedHeight = entry.getBoundingClientRect().height;
-    const expandButton = within(entry).getByRole("button", { name: "Expand" });
-    await userEvent.click(expandButton);
+    await userEvent.click(within(entry).getByRole("radio", { name: "Detailed" }));
 
     await waitFor(() => {
       expect(body.dataset.overflowState).toBe("expanded");
@@ -1349,6 +1636,20 @@ export const OverflowingCardCanExpand = {
 
     const expandedHeight = entry.getBoundingClientRect().height;
     expect(expandedHeight).toBeGreaterThan(collapsedHeight + 32);
+
+    await userEvent.click(within(entry).getByRole("radio", { name: "Compact" }));
+
+    await waitFor(() => {
+      expect(body.dataset.overflowState).toBe("collapsed");
+      expect(within(entry).getByRole("button", { name: "Expand" })).toBeInTheDocument();
+    });
+
+    await userEvent.click(within(entry).getByRole("button", { name: "Expand" }));
+
+    await waitFor(() => {
+      expect(body.dataset.overflowState).toBe("expanded");
+      expect(within(entry).getByRole("button", { name: "Collapse" })).toBeInTheDocument();
+    });
 
     await userEvent.click(within(entry).getByRole("button", { name: "Collapse" }));
 

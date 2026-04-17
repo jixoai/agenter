@@ -26,8 +26,8 @@
 
 	type HeartbeatLayoutMode = 'compact' | 'detailed';
 	type HeartbeatEntryPresentation = 'default' | 'compact-special';
-	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM = 28;
-	const HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT = `${HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM}rem`;
+	const HEARTBEAT_ENTRY_COMPACT_MAX_CONTENT_HEIGHT_REM = 12;
+	const HEARTBEAT_ENTRY_COMPACT_MAX_CONTENT_HEIGHT = `${HEARTBEAT_ENTRY_COMPACT_MAX_CONTENT_HEIGHT_REM}rem`;
 
 	let {
 		section,
@@ -50,6 +50,7 @@
 	let contentViewport = $state<HTMLDivElement | null>(null);
 	let isExpandable = $state(false);
 	let isExpanded = $state(false);
+	let previousLayoutMode = $state<HeartbeatLayoutMode | null>(null);
 	let resizeMeasureFrame = 0;
 
 	const summary = $derived(section.entries[0] ? getHeartbeatRowPreview(section.entries[0]) : '');
@@ -113,7 +114,7 @@
 			return;
 		}
 		const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || '16');
-		const collapsedMaxHeightPx = HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT_REM * rootFontSize;
+		const collapsedMaxHeightPx = HEARTBEAT_ENTRY_COMPACT_MAX_CONTENT_HEIGHT_REM * rootFontSize;
 		const nextExpandable = contentViewport.scrollHeight > collapsedMaxHeightPx + 1;
 		isExpandable = nextExpandable;
 		if (!nextExpandable) {
@@ -148,6 +149,19 @@
 		}
 		syncedLayoutMode = localLayoutMode;
 		onLayoutModeChange?.(localLayoutMode);
+	});
+
+	$effect(() => {
+		const nextLayoutMode = localLayoutMode;
+		if (previousLayoutMode === nextLayoutMode) {
+			return;
+		}
+		previousLayoutMode = nextLayoutMode;
+		if (nextLayoutMode === 'detailed') {
+			isExpanded = true;
+			return;
+		}
+		isExpanded = false;
 	});
 
 	$effect(() => {
@@ -224,8 +238,8 @@
 			bind:this={contentViewport}
 			class="grid min-w-0 gap-2"
 			data-overflow-state={isExpandable ? (isExpanded ? 'expanded' : 'collapsed') : 'fit'}
-			style:max-height={isExpandable && !isExpanded ? HEARTBEAT_ENTRY_MAX_CONTENT_HEIGHT : undefined}
-			style:overflow={isExpandable && !isExpanded ? 'hidden' : 'visible'}
+			style:max-height={!isExpanded ? HEARTBEAT_ENTRY_COMPACT_MAX_CONTENT_HEIGHT : undefined}
+			style:overflow={!isExpanded ? 'hidden' : 'visible'}
 			data-testid={`runtime-heartbeat-entry-body-${section.entryId}`}
 		>
 			{#if presentation === 'compact-special'}

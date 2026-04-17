@@ -1,4 +1,26 @@
 export { default as ScrollView } from "./scroll-view.svelte";
+export { default as BottomAnchoredTimeline } from "./bottom-anchored-timeline.svelte";
+export {
+  BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
+  BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+  BOTTOM_ANCHORED_INSERT_MOTION_EASING,
+  BOTTOM_ANCHORED_INSERT_MOTION_OFFSET_PX,
+} from "./bottom-anchored-insert-motion";
+export {
+  getBottomAnchoredDistanceToLatest,
+  getBottomAnchoredDistanceToStart,
+  getBottomAnchoredLatestScrollTop,
+  getBottomAnchoredScrollExtent,
+  getBottomAnchoredScrollTopFromVirtualOffset,
+  getBottomAnchoredStartScrollTop,
+  getBottomAnchoredVirtualOffset,
+} from "./bottom-anchored-scroll";
+export type {
+  BottomAnchoredTimelineHandle,
+  BottomAnchoredTimelineProps,
+  BottomAnchoredTimelineVirtualRow,
+} from "./bottom-anchored-timeline.types";
+export type { BottomAnchoredScrollViewport } from "./bottom-anchored-scroll";
 export type {
   ScrollOrientation,
   ScrollViewProps,

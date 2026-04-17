@@ -1,16 +1,25 @@
 <script lang="ts">
+  import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import type {
     MessageTransportClientMessage,
     MessageTransportServerMessage,
     ReverseTimeCursor,
   } from "@agenter/message-system/types";
-  import { Scaffold, ScrollView, type ScrollVirtualConfig } from "@agenter/svelte-components";
-  import { onMount, untrack } from "svelte";
+  import {
+    BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
+    BottomAnchoredTimeline,
+    getBottomAnchoredDistanceToStart,
+    type BottomAnchoredTimelineHandle,
+    Scaffold,
+    type ScrollVirtualConfig,
+  } from "@agenter/svelte-components";
+  import { onDestroy, tick, untrack } from "svelte";
 
   import ChatAvatar from "./chat-avatar.svelte";
   import DefaultComposer from "./default-composer.svelte";
   import MessageRow from "./message-row.svelte";
   import { Badge } from "./ui/badge";
+  import { Button } from "./ui/button";
   import * as Card from "./ui/card";
   import {
     compareMessages,
@@ -36,7 +45,6 @@
   const CONNECTING_READY_STATE = 0;
   const OPEN_READY_STATE = 1;
   const LOAD_MORE_OFFSET = 160;
-  const STICKY_BOTTOM_OFFSET = 48;
 
   let {
     channel,
@@ -65,6 +73,7 @@
 
   let viewportRef: HTMLDivElement | null = $state(null as HTMLDivElement | null);
   let contentRef: HTMLDivElement | null = $state(null as HTMLDivElement | null);
+  let timelineRef: BottomAnchoredTimelineHandle | null = $state(null as BottomAnchoredTimelineHandle | null);
   let messages: WebChatMessage[] = $state([] as WebChatMessage[]);
   let connectionState: WebChatConnectionState = $state("idle" as WebChatConnectionState);
   let errorMessage: string | null = $state(null as string | null);
@@ -73,12 +82,17 @@
   let loadingInitial = $state(false);
   let loadingMore = $state(false);
   let sending = $state(false);
-  let stickToBottom = $state(true);
+  let timelineAtLatest = $state(true);
   let visibilityChatId = $state<string | null>(null);
+  let activeTimelineChatId = $state<string | null>(null);
+  let insertMotionByMessageId = $state<Record<string, "latest" | "older">>({});
+  let insertMotionClearHandle = 0;
+  let pendingOlderRevealPx = $state<number | null>(null);
+  let pendingOlderRevealBaseScrollTop = $state<number | null>(null);
+  let pendingLatestIntent = $state(false);
 
   let nextBefore: ReverseTimeCursor | null = null;
   let socketRef: WebChatSocketLike | null = null;
-  let prependAnchor: { count: number; scrollHeight: number; scrollTop: number } | null = null;
   let activeTransportKey = "";
   const visibleMessageIds = new Map<string, boolean>();
   const visibleAssistantIds = new Map<string, boolean>();
@@ -110,6 +124,83 @@
   };
 
   const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
+  const clearInsertMotion = (messageIds?: string[]): void => {
+    if (!messageIds || messageIds.length === 0) {
+      insertMotionByMessageId = {};
+      return;
+    }
+    const nextState = { ...insertMotionByMessageId };
+    for (const messageId of messageIds) {
+      delete nextState[messageId];
+    }
+    insertMotionByMessageId = nextState;
+  };
+  const scheduleInsertMotionClear = (messageIds: string[]): void => {
+    if (typeof window === "undefined" || messageIds.length === 0) {
+      return;
+    }
+    if (insertMotionClearHandle !== 0) {
+      window.clearTimeout(insertMotionClearHandle);
+    }
+    insertMotionClearHandle = window.setTimeout(() => {
+      insertMotionClearHandle = 0;
+      clearInsertMotion(messageIds);
+    }, BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS);
+  };
+  const markInsertedMessages = (messageIds: string[], motion: "latest" | "older"): void => {
+    if (messageIds.length === 0) {
+      return;
+    }
+    insertMotionByMessageId = {
+      ...insertMotionByMessageId,
+      ...Object.fromEntries(messageIds.map((messageId) => [messageId, motion])),
+    };
+    scheduleInsertMotionClear(messageIds);
+  };
+  const collectNewMessageIds = (
+    currentMessages: readonly WebChatMessage[],
+    incomingMessages: readonly WebChatMessage[],
+  ): string[] => {
+    const currentIds = new Set(currentMessages.map((message) => message.messageId));
+    return incomingMessages
+      .filter((message) => !currentIds.has(message.messageId))
+      .map((message) => message.messageId);
+  };
+  const waitForTimelineSettle = async (): Promise<void> => {
+    await tick();
+    if (typeof window === "undefined" || !viewportRef) {
+      return;
+    }
+    let stableFrames = 0;
+    let lastSignature = "";
+    for (let index = 0; index < 12; index += 1) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+      const currentViewport = viewportRef;
+      if (!currentViewport) {
+        return;
+      }
+      const nextSignature = `${currentViewport.scrollTop}:${currentViewport.scrollHeight}`;
+      if (nextSignature === lastSignature) {
+        stableFrames += 1;
+        if (stableFrames >= 2) {
+          return;
+        }
+        continue;
+      }
+      lastSignature = nextSignature;
+      stableFrames = 0;
+    }
+  };
+  const getOlderRevealPx = (): number => {
+    if (!viewportRef) {
+      return 0;
+    }
+    return Math.min(96, viewportRef.clientHeight * 0.2);
+  };
 
   const transcriptMessages = $derived([...messages].sort(compareMessages));
   const effectiveSocketFactory = $derived(socketFactory ?? defaultSocketFactory);
@@ -153,13 +244,12 @@
       return undefined;
     }
     return {
-      items: transcriptMessages,
       estimateSize: (_index, message) => estimateMessageRowSize(message),
       getItemKey: (_index, message) => message.messageId,
       measureElement: true,
       overscan: 8,
       useAnimationFrameWithResizeObserver: true,
-    } satisfies ScrollVirtualConfig<WebChatMessage>;
+    } satisfies Omit<ScrollVirtualConfig<WebChatMessage>, "items">;
   });
 
   const composerProps = $derived.by(() => {
@@ -197,7 +287,7 @@
   const syncLatestVisibleIds = (): void => {
     let nextMessage: WebChatVisibleMessageFact | null = null;
     let nextAssistantId: string | null = null;
-    const stickyBottomMessage = stickToBottom ? transcriptMessages[transcriptMessages.length - 1] : null;
+    const stickyBottomMessage = timelineAtLatest ? transcriptMessages[transcriptMessages.length - 1] : null;
     if (stickyBottomMessage) {
       nextMessage = {
         messageId: stickyBottomMessage.messageId,
@@ -293,6 +383,10 @@
     hasMoreBefore = false;
     nextBefore = null;
     loadingMore = false;
+    pendingOlderRevealPx = null;
+    pendingOlderRevealBaseScrollTop = null;
+    pendingLatestIntent = false;
+    clearInsertMotion();
 
     if (!input.chatId) {
       connectionState = "idle";
@@ -348,13 +442,24 @@
           return;
         }
         if (serverMessage.type === "messages") {
-          messages = mergeMessages(messages, normalizeMessageRecords(serverMessage.items));
+          const nextItems = normalizeMessageRecords(serverMessage.items);
+          const nextMessageIds = collectNewMessageIds(messages, nextItems);
+          messages = mergeMessages(messages, nextItems);
+          markInsertedMessages(nextMessageIds, "latest");
           return;
         }
         if (serverMessage.type === "page") {
+          const nextItems = normalizeMessageRecords(serverMessage.page.items);
+          const nextMessageIds = collectNewMessageIds(messages, nextItems);
           nextBefore = serverMessage.page.nextBefore;
           hasMoreBefore = serverMessage.page.hasMoreBefore;
-          messages = mergeMessages(messages, normalizeMessageRecords(serverMessage.page.items));
+          messages = mergeMessages(messages, nextItems);
+          markInsertedMessages(nextMessageIds, "older");
+          if (nextMessageIds.length > 0) {
+            pendingOlderRevealPx = getOlderRevealPx();
+            return;
+          }
+          pendingOlderRevealBaseScrollTop = null;
           loadingMore = false;
           return;
         }
@@ -374,6 +479,8 @@
         }
         loadingInitial = false;
         loadingMore = false;
+        pendingOlderRevealPx = null;
+        pendingOlderRevealBaseScrollTop = null;
         connectionState = "closed";
       };
 
@@ -383,6 +490,8 @@
         }
         loadingInitial = false;
         loadingMore = false;
+        pendingOlderRevealPx = null;
+        pendingOlderRevealBaseScrollTop = null;
         connectionState = "error";
         errorMessage = "chat transport failed";
       };
@@ -447,6 +556,7 @@
       return;
     }
     loadingMore = true;
+    pendingOlderRevealBaseScrollTop = viewportRef?.scrollTop ?? null;
     const payload: MessageTransportClientMessage = {
       type: "page",
       before: nextBefore,
@@ -455,21 +565,17 @@
     socketRef.send(JSON.stringify(payload));
   };
 
+  const requestScrollToLatest = (): void => {
+    pendingLatestIntent = true;
+    timelineRef?.scrollToLatest("smooth");
+  };
+
   const handleScroll = (): void => {
-    if (!viewportRef) {
+    if (!viewportRef || pendingLatestIntent) {
       return;
     }
-    const distanceFromBottom = viewportRef.scrollHeight - viewportRef.scrollTop - viewportRef.clientHeight;
-    const nextStickToBottom = distanceFromBottom <= STICKY_BOTTOM_OFFSET;
-    if (stickToBottom !== nextStickToBottom) {
-      stickToBottom = nextStickToBottom;
-    }
-    if (viewportRef.scrollTop <= LOAD_MORE_OFFSET && hasMoreBefore && !loadingMore) {
-      prependAnchor = {
-        count: transcriptMessages.length,
-        scrollHeight: viewportRef.scrollHeight,
-        scrollTop: viewportRef.scrollTop,
-      };
+    const distanceFromStart = getBottomAnchoredDistanceToStart(viewportRef);
+    if (distanceFromStart <= LOAD_MORE_OFFSET && hasMoreBefore && !loadingMore) {
       loadOlder();
     }
   };
@@ -525,6 +631,84 @@
 
   $effect(() => {
     const chatId = channel?.chatId ?? null;
+    const handle = timelineRef;
+    if (!chatId) {
+      activeTimelineChatId = null;
+      return;
+    }
+    if (chatId === activeTimelineChatId || !handle) {
+      return;
+    }
+    activeTimelineChatId = chatId;
+    void tick().then(() => {
+      if (channel?.chatId !== chatId) {
+        return;
+      }
+      handle.scrollToLatest("auto");
+    });
+  });
+
+  $effect(() => {
+    const revealPx = pendingOlderRevealPx;
+    const preLoadScrollTop = pendingOlderRevealBaseScrollTop;
+    const handle = timelineRef;
+    if (revealPx === null || !handle || !loadingMore) {
+      return;
+    }
+    void (async () => {
+      await waitForTimelineSettle();
+      if (pendingOlderRevealPx !== revealPx || !timelineRef) {
+        return;
+      }
+      if (pendingLatestIntent) {
+        timelineRef.scrollToLatest("smooth");
+        pendingOlderRevealPx = null;
+        pendingOlderRevealBaseScrollTop = null;
+        loadingMore = false;
+        return;
+      }
+      const autoRevealPx =
+        preLoadScrollTop === null || !viewportRef ? 0 : Math.max(0, preLoadScrollTop - viewportRef.scrollTop);
+      const revealCorrectionPx = revealPx - autoRevealPx;
+      if (revealCorrectionPx !== 0) {
+        timelineRef.scrollTowardStart(revealCorrectionPx, "smooth");
+      }
+      pendingOlderRevealPx = null;
+      pendingOlderRevealBaseScrollTop = null;
+      loadingMore = false;
+    })();
+  });
+
+  $effect(() => {
+    if (!pendingLatestIntent || loadingMore || !timelineAtLatest) {
+      return;
+    }
+    pendingLatestIntent = false;
+  });
+
+  $effect(() => {
+    if (!pendingLatestIntent || loadingMore || timelineAtLatest || !timelineRef) {
+      return;
+    }
+    void (async () => {
+      await waitForTimelineSettle();
+      if (!pendingLatestIntent || loadingMore || timelineAtLatest || !timelineRef) {
+        return;
+      }
+      timelineRef.scrollToLatest("smooth");
+    })();
+  });
+
+  $effect(() => {
+    timelineAtLatest;
+    const latestMessage = transcriptMessages[transcriptMessages.length - 1] ?? null;
+    latestMessage?.messageId;
+    latestMessage?.rowId;
+    syncLatestVisibleIds();
+  });
+
+  $effect(() => {
+    const chatId = channel?.chatId ?? null;
     const viewerActorId = effectiveViewerActorId ?? null;
     const message = latestVisibleMessage;
     if (!chatId || !message) {
@@ -545,47 +729,6 @@
       rowId: message.rowId,
     };
     latestVisibleMessageIdHandler?.(message);
-  });
-
-  $effect(() => {
-    if (!stickToBottom || !viewportRef) {
-      return;
-    }
-    const targetWindow = viewportRef.ownerDocument.defaultView;
-    if (!targetWindow) {
-      return;
-    }
-    let settleFrame: number | null = null;
-    const frame = targetWindow.requestAnimationFrame(() => {
-      if (!viewportRef) {
-        return;
-      }
-      viewportRef.scrollTop = viewportRef.scrollHeight;
-      settleFrame = targetWindow.requestAnimationFrame(() => {
-        if (viewportRef) {
-          viewportRef.scrollTop = viewportRef.scrollHeight;
-        }
-      });
-    });
-    return () => {
-      targetWindow.cancelAnimationFrame(frame);
-      if (settleFrame !== null) {
-        targetWindow.cancelAnimationFrame(settleFrame);
-      }
-    };
-  });
-
-  $effect(() => {
-    if (!prependAnchor || !viewportRef || loadingMore) {
-      return;
-    }
-    if (messages.length > prependAnchor.count) {
-      viewportRef.scrollTop = Math.max(
-        0,
-        prependAnchor.scrollTop + (viewportRef.scrollHeight - prependAnchor.scrollHeight),
-      );
-    }
-    prependAnchor = null;
   });
 
   $effect(() => {
@@ -657,33 +800,10 @@
     };
   });
 
-  onMount(() => {
-    if (!contentRef || typeof ResizeObserver === "undefined") {
-      return;
+  onDestroy(() => {
+    if (typeof window !== "undefined" && insertMotionClearHandle !== 0) {
+      window.clearTimeout(insertMotionClearHandle);
     }
-    let frame = 0;
-    const scheduleStickToBottom = (): void => {
-      if (frame !== 0) {
-        cancelAnimationFrame(frame);
-      }
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (!stickToBottom || !viewportRef) {
-          return;
-        }
-        viewportRef.scrollTop = viewportRef.scrollHeight;
-      });
-    };
-    const observer = new ResizeObserver(() => {
-      scheduleStickToBottom();
-    });
-    observer.observe(contentRef);
-    return () => {
-      if (frame !== 0) {
-        cancelAnimationFrame(frame);
-      }
-      observer.disconnect();
-    };
   });
 </script>
 
@@ -751,31 +871,46 @@
                 {transcriptPreambleNotice.message}
               </div>
             {/if}
-            <ScrollView
+            <BottomAnchoredTimeline
               bind:viewportRef
               bind:contentRef
+              bind:timelineRef
+              bind:atLatest={timelineAtLatest}
               class="chat-scroll"
               viewportClass={`chat-scroll-viewport ${showHeader ? "" : "chat-scroll-viewport-embedded"}`}
               contentClass={transcriptContentClass}
               viewportTestId="web-chat-scroll-viewport"
               onViewportScroll={handleScroll}
+              items={transcriptMessages}
               virtual={transcriptVirtual}
             >
-              {#if loadingInitial && transcriptMessages.length === 0}
-                <div class="empty-state" part="empty-state loading-state">
-                  <h3>Loading channel history...</h3>
-                  <p>Connecting to the room transport.</p>
-                </div>
-              {:else if transcriptMessages.length === 0}
-                <div class="empty-state" part="empty-state transcript-empty-state">
-                  <h3>{emptyTranscriptTitle}</h3>
-                  <p>{emptyTranscriptMessage}</p>
-                </div>
-              {/if}
+              {#snippet start()}
+                {#if loadingMore}
+                  <div class="chat-transcript-edge-affordance" part="transcript-edge-affordance">
+                    Loading older messages…
+                  </div>
+                {/if}
+              {/snippet}
+
+              {#snippet empty()}
+                {#if loadingInitial && transcriptMessages.length === 0}
+                  <div class="empty-state" part="empty-state loading-state">
+                    <h3>Loading channel history...</h3>
+                    <p>Connecting to the room transport.</p>
+                  </div>
+                {:else if transcriptMessages.length === 0}
+                  <div class="empty-state" part="empty-state transcript-empty-state">
+                    <h3>{emptyTranscriptTitle}</h3>
+                    <p>{emptyTranscriptMessage}</p>
+                  </div>
+                {/if}
+              {/snippet}
+
               {#snippet item(message)}
                 <section
                   data-message-id={message.messageId}
                   data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
+                  data-insert-motion={insertMotionByMessageId[message.messageId] ?? "none"}
                 >
                   <MessageRow
                     {channel}
@@ -790,7 +925,23 @@
                   />
                 </section>
               {/snippet}
-            </ScrollView>
+            </BottomAnchoredTimeline>
+            <div class="chat-scroll-latest" data-visible={!timelineAtLatest}>
+              <Button
+                aria-label="Scroll to latest"
+                aria-hidden={timelineAtLatest}
+                class="chat-scroll-latest-button"
+                part="scroll-latest"
+                size="icon"
+                tabindex={timelineAtLatest ? -1 : undefined}
+                title="Scroll to latest"
+                type="button"
+                variant="outline"
+                onclick={requestScrollToLatest}
+              >
+                <ArrowDown class="size-4" />
+              </Button>
+            </div>
           </div>
         </Scaffold.Body>
 
@@ -875,6 +1026,44 @@
 
   .chat-header-description {
     line-height: 1.45;
+  }
+
+  .chat-transcript-shell {
+    position: relative;
+  }
+
+  .chat-transcript-edge-affordance {
+    display: flex;
+    justify-content: center;
+    padding: 0.75rem 1rem 0.25rem;
+    color: var(--web-chat-muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  .chat-scroll-latest {
+    position: absolute;
+    inset-inline-end: 1rem;
+    inset-block-end: 1rem;
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px) scale(0.96);
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+  }
+
+  .chat-scroll-latest[data-visible="true"] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+  }
+
+  .chat-scroll-latest-button {
+    border-color: color-mix(in srgb, var(--web-chat-border), transparent 16%);
+    background: color-mix(in srgb, var(--web-chat-surface), transparent 12%);
+    box-shadow: 0 18px 34px -24px rgba(15, 23, 42, 0.38);
   }
 
   .chat-eyebrow {
