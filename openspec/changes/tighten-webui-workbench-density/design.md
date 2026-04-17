@@ -285,6 +285,22 @@ Alternative considered:
 - Keep the same layout and only reduce border opacity.
   - Rejected because it would still leave the page with engineer-style dividers instead of product-level structure cues.
 
+### Dock handoff actions to the selected identity and name facts semantically
+
+After the control-tower pass, one small but meaningful product gap still remains: the secondary actions are present, but they still read slightly like adjacent links rather than branches from the currently selected identity. At the same time, the first canonical fact is still labeled like an implementation field (`Runtime ID`) instead of a user-facing product fact.
+
+The next refinement should therefore:
+
+- dock contextual handoff actions closer to the selected identity on desktop while keeping mobile stacking simple
+- keep runtime launch as the primary CTA pair
+- rename the first durable fact around product meaning (`canonical runtime`) while still showing the underlying id value
+- further align inset seams so the launch lens feels composed rather than merely divided
+
+Alternative considered:
+
+- Keep the current control-tower structure and stop because it is already "good enough".
+  - Rejected because this page is acting as a reference surface; if the semantic hierarchy still leaks implementation naming and slightly detached secondary actions, that debt will spread to adjacent workbench pages.
+
 ### Use Storybook contracts as the primary regression gate
 
 Both problem areas are visible and interaction-sensitive. Story-driven DOM tests remain the fastest durable contract:

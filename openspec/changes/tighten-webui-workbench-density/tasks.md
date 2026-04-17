@@ -92,3 +92,9 @@
 - [x] 14.2 Re-introduce contextual secondary actions that branch from the current avatar identity without competing with the runtime launch actions
 - [x] 14.3 Replace the remaining raw divider treatment with a clearer seam language for rail, section, and fact grouping
 - [x] 14.4 Run targeted verification and refresh desktop/mobile visual evidence for the control-tower iteration
+
+## 15. Avatar Control Tower Follow-up
+
+- [ ] 15.1 Dock contextual secondary actions closer to the selected avatar identity so handoff paths feel attached to the current lens rather than floating as a separate row
+- [ ] 15.2 Rename the first durable runtime fact semantically and refine the remaining seam insets so the launch lens feels more product-led than implementation-led
+- [ ] 15.3 Run targeted verification and refresh desktop/mobile visual evidence for the control-tower follow-up

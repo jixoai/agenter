@@ -33,3 +33,9 @@ The fixed `Avatars / Catalog` surface SHALL remain list-first and density-aware 
 - **WHEN** the route separates catalog rows, left/right regions, and runtime fact groups
 - **THEN** those separations follow distinct aligned seam roles
 - **THEN** the page no longer depends on one repeated raw `border-*` treatment to explain every structural relationship
+
+#### Scenario: Avatar control tower names canonical facts by product meaning
+
+- **WHEN** the operator scans the first durable fact in the runtime lens
+- **THEN** the page frames it as the canonical runtime identity rather than only as an implementation-flavored field label
+- **THEN** the underlying runtime id value remains visible for audit and debugging use
