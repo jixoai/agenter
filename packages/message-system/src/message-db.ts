@@ -15,6 +15,8 @@ import type {
   MessagePayload,
   MessageChannelRecord,
   MessageCreateInput,
+  MessageEditInput,
+  MessageRecallInput,
   MessageIssueGrantInput,
   MessageParticipant,
   MessageRecord,
@@ -38,7 +40,8 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
-const MESSAGE_DB_SCHEMA_VERSION = 4;
+const MESSAGE_DB_BREAKING_RESET_VERSION = 4;
+const MESSAGE_DB_SCHEMA_VERSION = 5;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
@@ -157,6 +160,8 @@ const mapMessage = (row: {
   created_at: number;
   updated_at: number;
   visible_at: number | null;
+  recalled_at: number | null;
+  recalled_by_actor_id: string | null;
   read_actor_ids_json: string | null;
   unread_actor_ids_json: string | null;
   metadata_json: string | null;
@@ -175,6 +180,8 @@ const mapMessage = (row: {
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   visibleAt: row.visible_at ?? undefined,
+  recalledAt: row.recalled_at ?? undefined,
+  recalledByActorId: (row.recalled_by_actor_id ?? undefined) as MessageActorId | undefined,
   readActorIds: parseActorIds(row.read_actor_ids_json),
   unreadActorIds: parseActorIds(row.unread_actor_ids_json),
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
@@ -308,7 +315,7 @@ export class MessageDb {
     }
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
          order by id asc`,
@@ -318,19 +325,21 @@ export class MessageDb {
     let changed = false;
     const updateMessageActors = this.db.query(
       `update chat_message
-       set sender_actor_id = ?, read_actor_ids_json = ?, unread_actor_ids_json = ?
+       set sender_actor_id = ?, recalled_by_actor_id = ?, read_actor_ids_json = ?, unread_actor_ids_json = ?
        where id = ?`,
     );
 
     for (const row of rows) {
       const message = mapMessage(row);
       const nextSenderActorId = remapActorId(message.senderActorId, actorIdMap);
+      const nextRecalledByActorId = remapActorId(message.recalledByActorId, actorIdMap);
       const nextReadActorIds = remapActorIds(message.readActorIds, actorIdMap);
       const nextUnreadActorIds = remapActorIds(message.unreadActorIds, actorIdMap).filter(
         (actorId) => !nextReadActorIds.includes(actorId),
       );
       if (
         nextSenderActorId === message.senderActorId &&
+        nextRecalledByActorId === message.recalledByActorId &&
         nextReadActorIds.length === message.readActorIds.length &&
         nextUnreadActorIds.length === message.unreadActorIds.length &&
         nextReadActorIds.every((actorId, index) => actorId === message.readActorIds[index]) &&
@@ -340,6 +349,7 @@ export class MessageDb {
       }
       updateMessageActors.run(
         nextSenderActorId ?? null,
+        nextRecalledByActorId ?? null,
         toJson(nextReadActorIds),
         toJson(nextUnreadActorIds),
         message.rowId,
@@ -362,7 +372,7 @@ export class MessageDb {
     }
     const visibleMessages = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -828,10 +838,70 @@ export class MessageDb {
     return mapMessage(row);
   }
 
+  editMessage(input: MessageEditInput): MessageRecord {
+    const current = this.getMessage(input.chatId, input.messageId);
+    if (!current) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    if (current.recalledAt) {
+      throw new Error("cannot edit recalled message");
+    }
+    const updatedAt = input.updatedAt ?? Date.now();
+    const updateMessage = this.db.transaction(() => {
+      this.db
+        .query(
+          `update chat_message
+           set content = ?, updated_at = ?
+           where chat_id = ? and message_id = ?`,
+        )
+        .run(input.content, updatedAt, input.chatId, input.messageId);
+      this.touchChannel(input.chatId, updatedAt);
+    });
+    updateMessage();
+    const refreshed = this.getMessage(input.chatId, input.messageId);
+    if (!refreshed) {
+      throw new Error("failed to load updated message");
+    }
+    return refreshed;
+  }
+
+  recallMessage(input: MessageRecallInput): MessageRecord {
+    const current = this.getMessage(input.chatId, input.messageId);
+    if (!current) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    if (current.recalledAt) {
+      return current;
+    }
+    const recalledAt = input.recalledAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? recalledAt;
+    const recallMessage = this.db.transaction(() => {
+      this.db
+        .query(
+          `update chat_message
+           set content = '',
+               updated_at = ?,
+               recalled_at = ?,
+               recalled_by_actor_id = ?,
+               attachments_json = '[]',
+               payload_json = null
+           where chat_id = ? and message_id = ?`,
+        )
+        .run(updatedAt, recalledAt, input.recalledByActorId ?? null, input.chatId, input.messageId);
+      this.touchChannel(input.chatId, updatedAt);
+    });
+    recallMessage();
+    const refreshed = this.getMessage(input.chatId, input.messageId);
+    if (!refreshed) {
+      throw new Error("failed to load recalled message");
+    }
+    return refreshed;
+  }
+
   getMessage(chatId: string, messageId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ? and message_id = ?`,
       )
@@ -844,7 +914,7 @@ export class MessageDb {
     const before = input.before ?? undefined;
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and (
@@ -885,7 +955,7 @@ export class MessageDb {
   resolveLatestVisibleMessage(chatId: string): MessageRecord | undefined {
     const row = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -903,7 +973,7 @@ export class MessageDb {
   }): { changed: boolean } {
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -1068,7 +1138,7 @@ export class MessageDb {
   private listVisibleMessages(chatId: string): MessageRecord[] {
     const rows = this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message
          where chat_id = ?
            and visible_at is not null
@@ -1212,7 +1282,7 @@ export class MessageDb {
   private getMessageRowByDbId(id: number): Parameters<typeof mapMessage>[0] | null {
     return this.db
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
          from chat_message where id = ?`,
       )
       .get(id) as Parameters<typeof mapMessage>[0] | null;
@@ -1229,7 +1299,7 @@ export class MessageDb {
       this.hasTable("actor_room_state");
     const hasLegacyReadStateTable = this.hasTable("chat_read_state");
     const needsBreakingReset =
-      currentSchemaVersion < MESSAGE_DB_SCHEMA_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
+      currentSchemaVersion < MESSAGE_DB_BREAKING_RESET_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
 
     if (needsBreakingReset) {
       // The read model moved from mutable per-seat cursors to frozen per-message arrays.
@@ -1285,6 +1355,8 @@ export class MessageDb {
         created_at integer not null,
         updated_at integer not null,
         visible_at integer,
+        recalled_at integer,
+        recalled_by_actor_id text,
         read_actor_ids_json text not null default '[]',
         unread_actor_ids_json text not null default '[]',
         metadata_json text,
@@ -1356,6 +1428,14 @@ export class MessageDb {
     const hasUnreadActorIdsColumn = messageColumns.some((column) => column.name === "unread_actor_ids_json");
     if (!hasUnreadActorIdsColumn) {
       this.db.exec(`alter table chat_message add column unread_actor_ids_json text not null default '[]';`);
+    }
+    const hasRecalledAtColumn = messageColumns.some((column) => column.name === "recalled_at");
+    if (!hasRecalledAtColumn) {
+      this.db.exec(`alter table chat_message add column recalled_at integer;`);
+    }
+    const hasRecalledByActorIdColumn = messageColumns.some((column) => column.name === "recalled_by_actor_id");
+    if (!hasRecalledByActorIdColumn) {
+      this.db.exec(`alter table chat_message add column recalled_by_actor_id text;`);
     }
     this.db.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
     this.db.exec(`update chat_message set read_actor_ids_json = coalesce(read_actor_ids_json, '[]');`);

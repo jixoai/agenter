@@ -96,6 +96,11 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("Terminal success alone is not the room reply");
     expect(messageContent).toContain("prefer `command=message send` plus JSON `stdin`");
     expect(messageContent).toContain("message send --compact");
+    expect(messageContent).toContain("message edit");
+    expect(messageContent).toContain("message recall");
+    expect(messageContent).toContain("already know its `messageId`");
+    expect(messageContent).toContain("should no longer remain visible");
+    expect(messageContent).toContain("send a corrected follow-up message instead of guessing");
     expect(messageContent).toContain("References:");
     expect(messageContent).toContain("references/room-protocols.md");
     expect(messageContent).toContain("references/chat-attention-items.md");

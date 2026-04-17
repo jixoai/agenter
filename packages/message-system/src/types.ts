@@ -183,6 +183,8 @@ export interface MessageRecord {
   createdAt: number;
   updatedAt: number;
   visibleAt?: number;
+  recalledAt?: number;
+  recalledByActorId?: MessageActorId;
   readActorIds: MessageActorId[];
   unreadActorIds: MessageActorId[];
   metadata?: Record<string, unknown>;
@@ -262,12 +264,35 @@ export interface MessageAppendInput {
   payload?: MessagePayload;
 }
 
+export interface MessageEditInput {
+  chatId: string;
+  messageId: string;
+  content: string;
+  updatedAt?: number;
+}
+
+export interface MessageRecallInput {
+  chatId: string;
+  messageId: string;
+  updatedAt?: number;
+  recalledAt?: number;
+  recalledByActorId?: MessageActorId;
+}
+
 export interface MessageAuthorizedReadInput {
   chatId: string;
   accessToken: string;
 }
 
 export interface MessageAuthorizedWriteInput extends MessageAppendInput {
+  accessToken: string;
+}
+
+export interface MessageAuthorizedEditInput extends MessageEditInput {
+  accessToken: string;
+}
+
+export interface MessageAuthorizedRecallInput extends MessageRecallInput {
   accessToken: string;
 }
 
@@ -303,6 +328,14 @@ export type MessageTransportClientMessage =
   | {
       type: "send";
       message: Omit<MessageAppendInput, "chatId">;
+    }
+  | {
+      type: "edit";
+      message: Omit<MessageEditInput, "chatId">;
+    }
+  | {
+      type: "recall";
+      message: Omit<MessageRecallInput, "chatId">;
     }
   | {
       type: "page";

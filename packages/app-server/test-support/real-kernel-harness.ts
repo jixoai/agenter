@@ -104,17 +104,31 @@ const toRoomDiagnosticMessage = (
   record: MessageRecord,
   assistantNickname: string,
 ): {
+  rowId: number;
+  messageId: string;
   chatId: string;
   role: "assistant" | "user";
+  from: string;
+  senderActorId?: string;
   content: string;
   timestamp: number;
   updatedAt: number;
+  visibleAt?: number;
+  recalledAt?: number;
+  recalledByActorId?: string;
 } => ({
+  rowId: record.rowId,
+  messageId: record.messageId,
   chatId: record.chatId,
   role: record.from === assistantNickname ? "assistant" : "user",
+  from: record.from,
+  senderActorId: record.senderActorId,
   content: clipText(record.content) ?? "",
   timestamp: record.createdAt,
   updatedAt: record.updatedAt,
+  visibleAt: record.visibleAt,
+  recalledAt: record.recalledAt,
+  recalledByActorId: record.recalledByActorId,
 });
 
 const getMessageControlPlane = (kernel: AppKernel): MessageControlPlane =>
@@ -132,11 +146,18 @@ export interface RealKernelHarnessDiagnostics {
     primaryRoomId: string | null;
   };
   roomTruth: Array<{
+    rowId: number;
+    messageId: string;
     chatId: string;
     role: "assistant" | "user";
+    from: string;
+    senderActorId?: string;
     content: string;
     timestamp: number;
     updatedAt: number;
+    visibleAt?: number;
+    recalledAt?: number;
+    recalledByActorId?: string;
   }>;
   recentModelCalls: Array<{
     id: number;

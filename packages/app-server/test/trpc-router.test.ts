@@ -534,6 +534,26 @@ describe("Feature: app-server trpc procedures", () => {
     expect(snapshot.items.some((item) => item.content === "hello ops")).toBeTrue();
     const sentMessage = snapshot.items.find((item) => item.content === "hello ops");
     expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
+    const edited = await caller.message.globalEdit({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: sentMessage?.messageId ?? "",
+      text: "hello ops corrected",
+    });
+    expect(edited.ok).toBeTrue();
+
+    const snapshotAfterEdit = await caller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    expect(snapshotAfterEdit.items.some((item) => item.content === "hello ops corrected")).toBeTrue();
+    const recalled = await caller.message.globalRecall({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: sentMessage?.messageId ?? "",
+    });
+    expect(recalled.ok).toBeTrue();
     const relay = await caller.message.globalIssueGrant({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -541,6 +561,21 @@ describe("Feature: app-server trpc procedures", () => {
       participantId: "session:ops-relay",
       label: "Ops relay",
     });
+    const relayRejectedEdit = await caller.message.globalEdit({
+      chatId: room.chatId,
+      accessToken: relay.grant.accessToken,
+      messageId: sentMessage?.messageId ?? "",
+      text: "tampered",
+    });
+    expect(relayRejectedEdit.ok).toBeFalse();
+    expect(relayRejectedEdit.reason).toBe("message edit requires original sender");
+    const relayRejectedRecall = await caller.message.globalRecall({
+      chatId: room.chatId,
+      accessToken: relay.grant.accessToken,
+      messageId: sentMessage?.messageId ?? "",
+    });
+    expect(relayRejectedRecall.ok).toBeFalse();
+    expect(relayRejectedRecall.reason).toBe("message recall requires original sender");
 
     const relayRead = await caller.message.globalMarkRead({
       chatId: room.chatId,
@@ -559,7 +594,9 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: room.accessToken,
       limit: 20,
     });
-    expect(page.items.some((item) => item.content === "hello ops")).toBeTrue();
+    const recalledMessage = page.items.find((item) => item.messageId === sentMessage?.messageId);
+    expect(recalledMessage?.content).toBe("");
+    expect(recalledMessage?.recalledAt).toBeDefined();
 
     const focused = await caller.message.globalFocus({
       op: "replace",

@@ -36,6 +36,15 @@ export interface RuntimeLocalApiHandlers {
     to?: string;
     originAckFallback?: string;
   }) => Promise<{ ok: boolean; messageId: string }>;
+  messageEdit: (input: {
+    chatId: string;
+    messageId: string;
+    content: string;
+  }) => Promise<{ ok: boolean; messageId: string; updatedAt: number }>;
+  messageRecall: (input: {
+    chatId: string;
+    messageId: string;
+  }) => Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }>;
   workspaceList: () => Array<RuntimeWorkspaceSurface>;
   terminalList: () => RuntimeTerminalView[];
   terminalCreate: (input: {
@@ -166,6 +175,17 @@ const messageSendSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   originAckFallback: z.string().optional(),
+});
+
+const messageEditSchema = z.object({
+  chatId: z.string(),
+  messageId: z.string(),
+  content: z.string(),
+});
+
+const messageRecallSchema = z.object({
+  chatId: z.string(),
+  messageId: z.string(),
 });
 
 const terminalCreateSchema = z.object({
@@ -317,6 +337,60 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       result: await handlers.messageSend(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message",
+    name: "edit",
+    route: "/v1/message/edit",
+    description: "Edit an existing durable room message by messageId when you need to correct your own prior reply.",
+    inputSchema: messageEditSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "room-1",
+          messageId: "msg-1",
+          content: "更正：新的交付 URL 是 /preview/42。",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          chatId: "room-1",
+          messageId: "msg-1",
+          content: "Correction: use /preview/42 instead.",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.messageEdit(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message",
+    name: "recall",
+    route: "/v1/message/recall",
+    description: "Recall an existing durable room message by messageId when the prior reply should no longer remain visible.",
+    inputSchema: messageRecallSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "room-1",
+          messageId: "msg-1",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          chatId: "room-1",
+          messageId: "msg-1",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.messageRecall(input),
     }),
   }),
   defineRuntimeToolDescriptor({

@@ -141,9 +141,17 @@ export const isViewerOwnedMessage = (
   return message.senderActorId === viewerActorId;
 };
 
+export const isRecalledMessage = (message: WebChatMessage): boolean => typeof message.recalledAt === "number";
+
+export const isEditedMessage = (message: WebChatMessage): boolean =>
+  !isRecalledMessage(message) && message.updatedAt > message.createdAt;
+
+export const getRenderableMessageText = (message: WebChatMessage): string =>
+  isRecalledMessage(message) ? "This message was recalled." : message.content;
+
 export const estimateMessageRowSize = (message: WebChatMessage): number => {
   const baseHeight = 112;
-  const contentLength = Math.max(message.content.trim().length, 1);
+  const contentLength = Math.max(getRenderableMessageText(message).trim().length, 1);
   const estimatedTextLines = Math.min(10, Math.ceil(contentLength / 56));
   const textHeight = estimatedTextLines * 20;
   const attachmentHeight = (message.attachments?.length ?? 0) > 0 ? 116 : 0;

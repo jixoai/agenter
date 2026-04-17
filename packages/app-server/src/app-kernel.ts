@@ -2731,6 +2731,63 @@ export class AppKernel {
     }
   }
 
+  editGlobalRoomMessage(input: {
+    chatId: string;
+    messageId: string;
+    text: string;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): { ok: boolean; reason?: string; messageId?: string; updatedAt?: number } {
+    try {
+      const access = this.resolveGlobalRoomAccess(input);
+      const message = this.messageControlPlane.editAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        messageId: input.messageId,
+        content: input.text,
+      });
+      return {
+        ok: true,
+        messageId: message.messageId,
+        updatedAt: message.updatedAt,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : "message edit failed",
+      };
+    }
+  }
+
+  recallGlobalRoomMessage(input: {
+    chatId: string;
+    messageId: string;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): { ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number } {
+    try {
+      const access = this.resolveGlobalRoomAccess(input);
+      const message = this.messageControlPlane.recallAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        messageId: input.messageId,
+      });
+      return {
+        ok: true,
+        messageId: message.messageId,
+        updatedAt: message.updatedAt,
+        recalledAt: message.recalledAt,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : "message recall failed",
+      };
+    }
+  }
+
   updateGlobalRoom(input: {
     chatId: string;
     patch: MessageChannelPatchInput;
@@ -3129,6 +3186,56 @@ export class AppKernel {
         clientMessageId: input.clientMessageId,
       });
       return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async editMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+    text: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      return runtime.editMessageChannel({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        messageId: input.messageId,
+        text: input.text,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async recallMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    const runtime = this.runtimes.get(input.sessionId);
+    if (!runtime) {
+      return { ok: false, reason: "session runtime is not active" };
+    }
+    try {
+      return runtime.recallMessageChannel({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        messageId: input.messageId,
+      });
     } catch (error) {
       return {
         ok: false,

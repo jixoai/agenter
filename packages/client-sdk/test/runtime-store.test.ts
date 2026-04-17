@@ -547,6 +547,19 @@ const createMockClient = (input: {
     assetIds?: string[];
     clientMessageId: string;
   }) => Promise<{ ok: boolean; reason?: string }>;
+  messageEditMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+    text: string;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }>;
+  messageRecallMutate?: (input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }>;
   messageUpdateChannelMutate?: (input: {
     sessionId: string;
     chatId: string;
@@ -621,6 +634,17 @@ const createMockClient = (input: {
     assetIds?: string[];
     clientMessageId?: string;
   }) => Promise<{ ok: boolean; reason?: string }>;
+  messageGlobalEditMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    messageId: string;
+    text: string;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }>;
+  messageGlobalRecallMutate?: (input: {
+    chatId: string;
+    accessToken?: string;
+    messageId: string;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }>;
   messageGlobalUpdateMutate?: (input: {
     chatId: string;
     accessToken?: string;
@@ -1015,6 +1039,29 @@ const createMockClient = (input: {
             clientMessageId: string;
           }) => (input.messageSendMutate ? await input.messageSendMutate(payload) : { ok: true }),
         },
+        edit: {
+          mutate: async (payload: {
+            sessionId: string;
+            chatId: string;
+            accessToken: string;
+            messageId: string;
+            text: string;
+          }) =>
+            input.messageEditMutate
+              ? await input.messageEditMutate(payload)
+              : { ok: true, messageId: payload.messageId, updatedAt: Date.now() },
+        },
+        recall: {
+          mutate: async (payload: {
+            sessionId: string;
+            chatId: string;
+            accessToken: string;
+            messageId: string;
+          }) =>
+            input.messageRecallMutate
+              ? await input.messageRecallMutate(payload)
+              : { ok: true, messageId: payload.messageId, updatedAt: Date.now(), recalledAt: Date.now() },
+        },
         updateChannel: {
           mutate: async (payload: {
             sessionId: string;
@@ -1116,6 +1163,27 @@ const createMockClient = (input: {
             assetIds?: string[];
             clientMessageId?: string;
           }) => (input.messageGlobalSendMutate ? await input.messageGlobalSendMutate(payload) : { ok: true }),
+        },
+        globalEdit: {
+          mutate: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            messageId: string;
+            text: string;
+          }) =>
+            input.messageGlobalEditMutate
+              ? await input.messageGlobalEditMutate(payload)
+              : { ok: true, messageId: payload.messageId, updatedAt: Date.now() },
+        },
+        globalRecall: {
+          mutate: async (payload: {
+            chatId: string;
+            accessToken?: string;
+            messageId: string;
+          }) =>
+            input.messageGlobalRecallMutate
+              ? await input.messageGlobalRecallMutate(payload)
+              : { ok: true, messageId: payload.messageId, updatedAt: Date.now(), recalledAt: Date.now() },
         },
         globalUpdate: {
           mutate: async (payload: {
@@ -3740,6 +3808,204 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given a running Heartbeat tool row arrives before grouped refresh resolves When the store receives the objective heartbeatPart event Then the running command is visible immediately", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    let heartbeatPageQueryCount = 0;
+    let resolveRefresh:
+      | ((value: ReversePageResult<HeartbeatGroupItem>) => void)
+      | undefined;
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(930),
+      onSubscribe: (handlers) => {
+        onData = handlers.onData;
+      },
+      heartbeatGroupsPageQuery: async () => {
+        heartbeatPageQueryCount += 1;
+        if (heartbeatPageQueryCount === 1) {
+          return {
+            items: [
+              createHeartbeatGroup({
+                id: 530,
+                groupId: "heartbeat-group:call:53",
+                kind: "call",
+                aiCallId: 53,
+                createdAt: 220,
+                updatedAt: 230,
+                isComplete: false,
+                items: [
+                  createHeartbeatEntry({
+                    id: 530,
+                    messageId: "heartbeat-part:ai-call:53:response:assistant:0",
+                    role: "assistant",
+                    aiCallId: 53,
+                    createdAt: 220,
+                    updatedAt: 230,
+                    isComplete: false,
+                    payload: { type: "text", content: "Working on it…" },
+                    text: "Working on it…",
+                  }),
+                ],
+              }),
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        }
+        return await new Promise<ReversePageResult<HeartbeatGroupItem>>((resolve) => {
+          resolveRefresh = resolve;
+        });
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    onData?.({
+      version: 1,
+      eventId: 931,
+      timestamp: Date.now(),
+      type: "runtime.heartbeatPart",
+      sessionId: "i-1",
+      payload: {
+        entry: createHeartbeatEntry({
+          id: 531,
+          messageId: "heartbeat-part:ai-call:53:tool:call-attention-commit",
+          role: "assistant",
+          aiCallId: 53,
+          createdAt: 240,
+          updatedAt: 240,
+          isComplete: false,
+          partType: "tool_call",
+          payload: {
+            invocationId: "call-attention-commit",
+            tool: "root_workspace_bash",
+            input: {
+              command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'',
+            },
+          },
+          text: '{"command":"attention commit --compact"}',
+        }),
+      },
+    });
+
+    await waitFor(() => {
+      const group = store
+        .getState()
+        .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:53");
+      const toolEntry = group?.items.find((item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit");
+      const toolPayload = toolEntry?.parts[0]?.payload as { input?: { command?: string } } | undefined;
+      return toolPayload?.input?.command === 'attention commit --compact \'["ctx-1",[],"Settled."]\'';
+    });
+
+    expect(
+      store
+        .getState()
+        .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:53")
+        ?.items.map((item) => item.messageId),
+    ).toEqual([
+      "heartbeat-part:ai-call:53:response:assistant:0",
+      "heartbeat-part:ai-call:53:tool:call-attention-commit",
+    ]);
+
+    resolveRefresh?.({
+      items: [
+        createHeartbeatGroup({
+          id: 530,
+          groupId: "heartbeat-group:call:53",
+          kind: "call",
+          aiCallId: 53,
+          createdAt: 220,
+          updatedAt: 260,
+          isComplete: true,
+          items: [
+            createHeartbeatEntry({
+              id: 530,
+              messageId: "heartbeat-part:ai-call:53:response:assistant:0",
+              role: "assistant",
+              aiCallId: 53,
+              createdAt: 220,
+              updatedAt: 230,
+              isComplete: true,
+              payload: { type: "text", content: "Working on it…" },
+              text: "Working on it…",
+            }),
+            {
+              id: 531,
+              messageId: "heartbeat-part:ai-call:53:tool:call-attention-commit",
+              windowId: null,
+              aiCallId: 53,
+              roundIndex: 1,
+              scope: "heartbeat_part",
+              role: "assistant",
+              createdAt: 240,
+              updatedAt: 260,
+              isComplete: true,
+              text: '{"command":"attention commit --compact"}',
+              parts: [
+                {
+                  partId: 531,
+                  partIndex: 0,
+                  messageId: "heartbeat-part:ai-call:53:tool:call-attention-commit",
+                  windowId: null,
+                  aiCallId: 53,
+                  roundIndex: 1,
+                  scope: "heartbeat_part",
+                  role: "assistant",
+                  partType: "tool_call",
+                  mimeType: null,
+                  payload: {
+                    invocationId: "call-attention-commit",
+                    tool: "root_workspace_bash",
+                    input: {
+                      command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'',
+                    },
+                  },
+                  createdAt: 240,
+                  updatedAt: 260,
+                  isComplete: true,
+                },
+                {
+                  partId: 532,
+                  partIndex: 1,
+                  messageId: "heartbeat-part:ai-call:53:tool:call-attention-commit",
+                  windowId: null,
+                  aiCallId: 53,
+                  roundIndex: 1,
+                  scope: "heartbeat_part",
+                  role: "assistant",
+                  partType: "tool_result",
+                  mimeType: null,
+                  payload: {
+                    invocationId: "call-attention-commit",
+                    tool: "root_workspace_bash",
+                    output: { ok: true },
+                    error: null,
+                  },
+                  createdAt: 260,
+                  updatedAt: 260,
+                  isComplete: true,
+                },
+              ],
+            },
+          ],
+        }),
+      ],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+
+    await waitFor(() => {
+      const group = store
+        .getState()
+        .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:53");
+      return group?.items.find((item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit")
+        ?.parts.length === 2;
+    });
+
+    store.disconnect();
+  });
+
   test("Scenario: Given sustained Heartbeat part events When refresh invalidations keep arriving Then the store still refreshes during the active burst", async () => {
     let onData: ((event: unknown) => void) | undefined;
     let heartbeatQueryCount = 0;
@@ -3812,7 +4078,13 @@ describe("Feature: runtime store synchronization", () => {
 
     try {
       await waitFor(() => heartbeatQueryCount >= 2, 160);
-      expect(store.getState().heartbeatGroupsBySession["i-1"]?.data[0]?.items[0]?.text).toBe("refresh-2");
+      expect(
+        store
+          .getState()
+          .heartbeatGroupsBySession["i-1"]?.data[0]?.items.some(
+            (item) => item.messageId === "heartbeat-part:assistant:burst" && item.text === "refresh-2",
+          ),
+      ).toBe(true);
     } finally {
       clearInterval(interval);
     }
@@ -4983,6 +5255,19 @@ describe("Feature: runtime store synchronization", () => {
         assetIds?: string[];
         clientMessageId: string;
       };
+      edit?: {
+        sessionId: string;
+        chatId: string;
+        accessToken: string;
+        messageId: string;
+        text: string;
+      };
+      recall?: {
+        sessionId: string;
+        chatId: string;
+        accessToken: string;
+        messageId: string;
+      };
       update?: {
         sessionId: string;
         chatId: string;
@@ -5030,6 +5315,14 @@ describe("Feature: runtime store synchronization", () => {
         messageSendMutate: async (input) => {
           requests.send = input;
           return { ok: true };
+        },
+        messageEditMutate: async (input) => {
+          requests.edit = input;
+          return { ok: true, messageId: input.messageId, updatedAt: 5 };
+        },
+        messageRecallMutate: async (input) => {
+          requests.recall = input;
+          return { ok: true, messageId: input.messageId, updatedAt: 6, recalledAt: 6 };
         },
         messageUpdateChannelMutate: async (input) => {
           requests.update = input;
@@ -5091,6 +5384,19 @@ describe("Feature: runtime store synchronization", () => {
       text: "hello",
       assetIds: ["asset-1"],
     });
+    const edited = await store.editMessageChannel({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      messageId: "msg-1",
+      text: "hello again",
+    });
+    const recalled = await store.recallMessageChannel({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      messageId: "msg-2",
+    });
     const updated = await store.updateMessageChannel({
       sessionId: "i-1",
       chatId: "chat-main",
@@ -5124,6 +5430,21 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(requests.send?.accessToken).toBe("msgtok_admin");
     expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(requests.edit).toEqual({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      messageId: "msg-1",
+      text: "hello again",
+    });
+    expect(edited).toMatchObject({ ok: true, messageId: "msg-1", updatedAt: 5 });
+    expect(requests.recall).toEqual({
+      sessionId: "i-1",
+      chatId: "chat-main",
+      accessToken: "msgtok_admin",
+      messageId: "msg-2",
+    });
+    expect(recalled).toMatchObject({ ok: true, messageId: "msg-2", updatedAt: 6, recalledAt: 6 });
     expect(requests.update?.patch.title).toBe("Updated chat");
     expect(requests.listGrants?.accessToken).toBe("msgtok_admin");
     expect(requests.issue?.participantId).toBe("user:gaubee");
@@ -5165,6 +5486,11 @@ describe("Feature: runtime store synchronization", () => {
         text: string;
         assetIds?: string[];
         clientMessageId?: string;
+      };
+      recall?: {
+        chatId: string;
+        accessToken?: string;
+        messageId: string;
       };
       update?: {
         chatId: string;
@@ -5267,6 +5593,10 @@ describe("Feature: runtime store synchronization", () => {
         messageGlobalSendMutate: async (input) => {
           requests.send = input;
           return { ok: true };
+        },
+        messageGlobalRecallMutate: async (input) => {
+          requests.recall = input;
+          return { ok: true, messageId: input.messageId, updatedAt: 8, recalledAt: 8 };
         },
         messageGlobalUpdateMutate: async (input) => {
           requests.update = input;
@@ -5400,6 +5730,13 @@ describe("Feature: runtime store synchronization", () => {
         assetIds: ["asset-1"],
       }),
     ).toEqual({ ok: true });
+    expect(
+      await store.recallGlobalRoomMessage({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        messageId: "11",
+      }),
+    ).toEqual({ ok: true, messageId: "11", updatedAt: 8, recalledAt: 8 });
     const updated = await store.updateGlobalRoom({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -5456,6 +5793,11 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(requests.send?.text).toBe("hello ops");
     expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(requests.recall).toEqual({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: "11",
+    });
     expect(requests.update?.patch.adminGroupCandidateIds).toEqual(["auth:admin-a"]);
     expect(requests.listGrants?.accessToken).toBe(room.accessToken);
     expect(requests.issue?.participantId).toBe("auth:observer");

@@ -52,6 +52,19 @@ export const REAL_RELAY_AVATAR_PROFILE: RealAvatarPersonaProfile = {
   ]),
 };
 
+export const REAL_MESSAGE_REVISION_AVATAR_PROFILE: RealAvatarPersonaProfile = {
+  nickname: "test-message-revision",
+  prompt: toPrompt([
+    "Test Avatar working preferences:",
+    "",
+    ...COMMON_RUNTIME_LAW,
+    "- Treat room messages as durable shared facts that may need correction after verification.",
+    "- If you already sent a room reply and later learn better facts, prefer revising that existing room fact instead of leaving two conflicting visible answers when the earlier reply should remain the same fact.",
+    "- If an earlier room draft is only a placeholder and should no longer stay visible, use the platform's withdrawal capability before posting the replacement final reply.",
+    "- In revision tests, optimize for clean durable room truth rather than status chatter.",
+  ]),
+};
+
 export const REAL_ROOM_TERMINAL_AVATAR_PROFILE: RealAvatarPersonaProfile = {
   nickname: "test-room-builder",
   prompt: toPrompt([

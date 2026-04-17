@@ -3,8 +3,12 @@ export { MessageControlPlane as MessageSystem } from "./message-control-plane";
 export type {
   CommitWaitHandle,
   MessageAppendInput,
+  MessageEditInput,
+  MessageRecallInput,
   MessageActorRoomStateRecord,
   MessageActorStateRecord,
+  MessageAuthorizedEditInput,
+  MessageAuthorizedRecallInput,
   MessageAuthorizedMarkReadInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,

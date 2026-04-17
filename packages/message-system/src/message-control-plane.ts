@@ -10,6 +10,8 @@ import type {
   MessageActorStateRecord,
   MessageAdminWorkItem,
   MessageAppendInput,
+  MessageAuthorizedEditInput,
+  MessageAuthorizedRecallInput,
   MessageAuthorizedMarkReadInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
@@ -23,6 +25,8 @@ import type {
   MessageControlPlaneEntry,
   MessageCreateInput,
   MessageCreateInitialUserInput,
+  MessageEditInput,
+  MessageRecallInput,
   MessageParticipant,
   MessageFocusOp,
   MessageIssueGrantInput,
@@ -579,6 +583,34 @@ export class MessageControlPlane {
     return message;
   }
 
+  edit(input: MessageEditInput): MessageRecord {
+    const message = this.db.editMessage(input);
+    this.bumpVersion();
+    for (const listener of this.messageListeners) {
+      listener({ chatId: input.chatId, message });
+    }
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "message",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+    });
+    return message;
+  }
+
+  recall(input: MessageRecallInput): MessageRecord {
+    const message = this.db.recallMessage(input);
+    this.bumpVersion();
+    for (const listener of this.messageListeners) {
+      listener({ chatId: input.chatId, message });
+    }
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "message",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+    });
+    return message;
+  }
+
   sendAuthorized(input: MessageAuthorizedWriteInput): MessageRecord {
     if (input.kind === "error") {
       if (!input.payload?.error) {
@@ -620,6 +652,37 @@ export class MessageControlPlane {
       metadata: input.metadata,
       attachments: input.attachments,
       payload: input.payload,
+    });
+  }
+
+  editAuthorized(input: MessageAuthorizedEditInput): MessageRecord {
+    const grant = this.requireAccess(input.chatId, input.accessToken, "member");
+    const target = this.db.getMessage(input.chatId, input.messageId);
+    if (!target) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    const editorActorId =
+      grant.participantId && isCanonicalActorId(grant.participantId) ? (grant.participantId as MessageActorId) : undefined;
+    if (editorActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== editorActorId) {
+      throw new Error("message edit requires original sender");
+    }
+    return this.edit(input);
+  }
+
+  recallAuthorized(input: MessageAuthorizedRecallInput): MessageRecord {
+    const grant = this.requireAccess(input.chatId, input.accessToken, "member");
+    const target = this.db.getMessage(input.chatId, input.messageId);
+    if (!target) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    const recallActorId =
+      grant.participantId && isCanonicalActorId(grant.participantId) ? (grant.participantId as MessageActorId) : undefined;
+    if (recallActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== recallActorId) {
+      throw new Error("message recall requires original sender");
+    }
+    return this.recall({
+      ...input,
+      recalledByActorId: input.recalledByActorId ?? recallActorId,
     });
   }
 
@@ -1301,6 +1364,14 @@ export class MessageControlPlane {
           try {
             if (message.type === "send") {
               this.sendAuthorized({ chatId, accessToken, ...message.message });
+              return;
+            }
+            if (message.type === "edit") {
+              this.editAuthorized({ chatId, accessToken, ...message.message });
+              return;
+            }
+            if (message.type === "recall") {
+              this.recallAuthorized({ chatId, accessToken, ...message.message });
               return;
             }
             if (message.type === "page") {

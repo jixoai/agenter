@@ -96,12 +96,12 @@ import {
 import {
   HEARTBEAT_INSPECTION_SCOPES,
   HEARTBEAT_MESSAGE_PART_SCOPE,
-  buildHeartbeatResponseMessageId,
+  type HeartbeatAssistantResponseSegment,
   buildHeartbeatToolInvocationMessageId,
   toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
   toHeartbeatEventMessageUpsertInput,
   toHeartbeatRequestMessageUpsertInputs,
-  toHeartbeatResponseMessageUpsertInput,
+  toHeartbeatResponseSegmentMessageUpsertInputs,
   toHeartbeatToolInvocationMessageUpsertInput,
 } from "./heartbeat-message-parts";
 import type { LoopBusInput, LoopBusPhase, LoopBusWakeSource } from "./loop-bus";
@@ -1303,11 +1303,10 @@ export class SessionRuntime {
   private activeModelResponseDraft: {
     assistant?: {
       thinking?: string;
-      thinkingStartedAt?: number;
       text?: string;
-      textStartedAt?: number;
       finishReason?: string | null;
     };
+    assistantSegments: HeartbeatAssistantResponseSegment[];
     usage?: {
       promptTokens?: number;
       completionTokens?: number;
@@ -2113,6 +2112,46 @@ export class SessionRuntime {
     });
   }
 
+  private async editMessageTool(input: {
+    chatId: string;
+    messageId: string;
+    content: string;
+  }): Promise<{ ok: boolean; messageId: string; updatedAt: number }> {
+    const access = this.requireActorChannelWriteAccess(input.chatId);
+    const message = this.messageSystem.editAuthorized({
+      chatId: access.chatId,
+      accessToken: access.accessToken,
+      messageId: input.messageId,
+      content: input.content,
+    });
+    return {
+      ok: true,
+      messageId: message.messageId,
+      updatedAt: message.updatedAt,
+    };
+  }
+
+  private async recallMessageTool(input: {
+    chatId: string;
+    messageId: string;
+  }): Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }> {
+    const access = this.requireActorChannelWriteAccess(input.chatId);
+    const message = this.messageSystem.recallAuthorized({
+      chatId: access.chatId,
+      accessToken: access.accessToken,
+      messageId: input.messageId,
+    });
+    if (!message.recalledAt) {
+      throw new Error("message recall did not persist recalledAt");
+    }
+    return {
+      ok: true,
+      messageId: message.messageId,
+      updatedAt: message.updatedAt,
+      recalledAt: message.recalledAt,
+    };
+  }
+
   private requireActorChannelWriteAccess(chatId: string): { chatId: string; accessToken: string } {
     if (chatId === this.getDefaultChatId()) {
       this.requireDefaultChatChannel();
@@ -2239,6 +2278,21 @@ export class SessionRuntime {
     originAckFallback?: string;
   }): Promise<{ ok: boolean; messageId: string }> {
     return await this.sendMessageTool(input);
+  }
+
+  async editRuntimeMessage(input: {
+    chatId: string;
+    messageId: string;
+    content: string;
+  }): Promise<{ ok: boolean; messageId: string; updatedAt: number }> {
+    return await this.editMessageTool(input);
+  }
+
+  async recallRuntimeMessage(input: {
+    chatId: string;
+    messageId: string;
+  }): Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }> {
+    return await this.recallMessageTool(input);
   }
 
   async createMessageChannel(input: {
@@ -3449,6 +3503,8 @@ export class SessionRuntime {
         messageList: (input) => this.listMessageChannelsForTooling(input),
         messageRead: (input) => this.readMessageChannelForTooling(input),
         messageSend: async (input) => await this.sendRuntimeMessage(input),
+        messageEdit: async (input) => await this.editRuntimeMessage(input),
+        messageRecall: async (input) => await this.recallRuntimeMessage(input),
         workspaceList: () => this.projectRuntimeWorkspaceList(),
         terminalList: () => this.listRuntimeTerminals().map(projectRuntimeTerminal),
         terminalCreate: async (input) => {
@@ -5964,6 +6020,46 @@ export class SessionRuntime {
     });
   }
 
+  editMessageChannel(input: {
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+    text: string;
+  }): { ok: boolean; messageId: string; updatedAt: number } {
+    const message = this.messageSystem.editAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      messageId: input.messageId,
+      content: input.text,
+    });
+    return {
+      ok: true,
+      messageId: message.messageId,
+      updatedAt: message.updatedAt,
+    };
+  }
+
+  recallMessageChannel(input: {
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+  }): { ok: boolean; messageId: string; updatedAt: number; recalledAt: number } {
+    const message = this.messageSystem.recallAuthorized({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      messageId: input.messageId,
+    });
+    if (!message.recalledAt) {
+      throw new Error("message recall did not persist recalledAt");
+    }
+    return {
+      ok: true,
+      messageId: message.messageId,
+      updatedAt: message.updatedAt,
+      recalledAt: message.recalledAt,
+    };
+  }
+
   private appendLocalUserChatMessage(input: {
     chatId: string;
     text: string;
@@ -8201,46 +8297,244 @@ export class SessionRuntime {
     return entries.map((entry) => entry.messageId);
   }
 
-  private persistHeartbeatResponseMessage(input: {
-    aiCallId: number;
+  private createEmptyActiveModelResponseDraft(): NonNullable<SessionRuntime["activeModelResponseDraft"]> {
+    return {
+      assistantSegments: [],
+      toolTrace: [],
+    };
+  }
+
+  private ensureActiveModelResponseDraft(): NonNullable<SessionRuntime["activeModelResponseDraft"]> {
+    this.activeModelResponseDraft ??= this.createEmptyActiveModelResponseDraft();
+    return this.activeModelResponseDraft;
+  }
+
+  private readPersistedAssistantResponseSegments(response: AgentModelCallRecord["response"] | undefined): HeartbeatAssistantResponseSegment[] {
+    const candidate = response && typeof response === "object" && "assistantSegments" in response ? response.assistantSegments : undefined;
+    if (!Array.isArray(candidate)) {
+      return [];
+    }
+    return candidate.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return [];
+      }
+      const partType = "partType" in entry ? entry.partType : undefined;
+      const content = "content" in entry ? entry.content : undefined;
+      const startedAt = "startedAt" in entry ? entry.startedAt : undefined;
+      const updatedAt = "updatedAt" in entry ? entry.updatedAt : undefined;
+      const isComplete = "isComplete" in entry ? entry.isComplete : undefined;
+      if (
+        (partType !== "thinking" && partType !== "text") ||
+        typeof content !== "string" ||
+        typeof startedAt !== "number" ||
+        typeof updatedAt !== "number"
+      ) {
+        return [];
+      }
+      return [
+        {
+          partType,
+          content,
+          startedAt,
+          updatedAt,
+          isComplete: typeof isComplete === "boolean" ? isComplete : true,
+        } satisfies HeartbeatAssistantResponseSegment,
+      ];
+    });
+  }
+
+  private resolveAssistantSegmentDelta(input: {
+    partType: HeartbeatAssistantResponseSegment["partType"];
+    content: string;
+    delta?: string;
+  }): string {
+    if (typeof input.delta === "string") {
+      return input.delta;
+    }
+    const activeSegment = this.activeModelResponseDraft?.assistantSegments.at(-1);
+    if (!activeSegment || activeSegment.partType !== input.partType || activeSegment.isComplete) {
+      return input.content;
+    }
+    if (input.content.startsWith(activeSegment.content)) {
+      return input.content.slice(activeSegment.content.length);
+    }
+    return input.content;
+  }
+
+  private closeActiveAssistantResponseSegment(timestamp: number): void {
+    const activeSegment = this.activeModelResponseDraft?.assistantSegments.at(-1);
+    if (!activeSegment || activeSegment.isComplete) {
+      return;
+    }
+    activeSegment.updatedAt = Math.max(activeSegment.updatedAt, timestamp);
+    activeSegment.isComplete = true;
+  }
+
+  private appendAssistantResponseSegment(input: {
+    partType: HeartbeatAssistantResponseSegment["partType"];
+    content: string;
+    delta?: string;
     timestamp: number;
+  }): void {
+    const draft = this.ensureActiveModelResponseDraft();
+    const activeSegment = draft.assistantSegments.at(-1);
+    if (activeSegment && activeSegment.partType !== input.partType && !activeSegment.isComplete) {
+      this.closeActiveAssistantResponseSegment(input.timestamp);
+    }
+    const delta = this.resolveAssistantSegmentDelta(input);
+    const currentSegment = draft.assistantSegments.at(-1);
+    if (currentSegment && currentSegment.partType === input.partType && !currentSegment.isComplete) {
+      currentSegment.content = delta.length > 0 ? currentSegment.content + delta : input.content;
+      currentSegment.updatedAt = Math.max(currentSegment.updatedAt, input.timestamp);
+      return;
+    }
+    const nextContent = delta.length > 0 ? delta : input.content;
+    if (nextContent.length === 0) {
+      return;
+    }
+    draft.assistantSegments.push({
+      partType: input.partType,
+      content: nextContent,
+      startedAt: input.timestamp,
+      updatedAt: input.timestamp,
+      isComplete: false,
+    });
+  }
+
+  private collectAssistantSummaryFromDraft():
+    | {
+        thinking?: string;
+        text?: string;
+        finishReason?: string | null;
+      }
+    | undefined {
+    if (!this.activeModelResponseDraft) {
+      return undefined;
+    }
+    const persisted = this.activeModelResponseDraft.assistant;
+    const segments = this.activeModelResponseDraft.assistantSegments;
+    if (segments.length === 0) {
+      if (!persisted) {
+        return undefined;
+      }
+      const summary: {
+        thinking?: string;
+        text?: string;
+        finishReason?: string | null;
+      } = {};
+      if (typeof persisted.thinking === "string" && persisted.thinking.length > 0) {
+        summary.thinking = persisted.thinking;
+      }
+      if (typeof persisted.text === "string" && persisted.text.length > 0) {
+        summary.text = persisted.text;
+      }
+      if (persisted.finishReason !== undefined) {
+        summary.finishReason = persisted.finishReason ?? null;
+      }
+      return Object.keys(summary).length > 0 ? summary : undefined;
+    }
+    const summary: {
+      thinking?: string;
+      text?: string;
+      finishReason?: string | null;
+    } = {};
+    const thinking = segments
+      .filter((segment) => segment.partType === "thinking")
+      .map((segment) => segment.content)
+      .join("");
+    const text = segments
+      .filter((segment) => segment.partType === "text")
+      .map((segment) => segment.content)
+      .join("");
+    if (thinking.length > 0) {
+      summary.thinking = thinking;
+    }
+    if (text.length > 0) {
+      summary.text = text;
+    }
+    if (persisted?.finishReason !== undefined) {
+      summary.finishReason = persisted.finishReason ?? null;
+    }
+    return Object.keys(summary).length > 0 ? summary : undefined;
+  }
+
+  private cloneAssistantResponseSegments(): HeartbeatAssistantResponseSegment[] {
+    return this.activeModelResponseDraft?.assistantSegments.map((segment) => ({ ...segment })) ?? [];
+  }
+
+  private hasMeaningfulHeartbeatToolInput(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    if (typeof value === "object") {
+      return Object.keys(value).length > 0;
+    }
+    return true;
+  }
+
+  private mergeHeartbeatToolInput(current: unknown, incoming: unknown): unknown {
+    const currentMeaningful = this.hasMeaningfulHeartbeatToolInput(current);
+    const incomingMeaningful = this.hasMeaningfulHeartbeatToolInput(incoming);
+    if (typeof incoming === "string" && incoming.length === 0 && current === null) {
+      return incoming;
+    }
+    if (!incomingMeaningful) {
+      return current;
+    }
+    if (!currentMeaningful) {
+      return incoming;
+    }
+    if (typeof current === "object" && current !== null && !Array.isArray(current)) {
+      if (typeof incoming === "string") {
+        return current;
+      }
+    }
+    if (typeof incoming === "object" && incoming !== null && !Array.isArray(incoming)) {
+      if (typeof current === "string") {
+        return incoming;
+      }
+    }
+    if (typeof current === "string" && typeof incoming === "string") {
+      return incoming.length >= current.length ? incoming : current;
+    }
+    return incoming;
+  }
+
+  private persistHeartbeatResponseSegments(input: {
+    aiCallId: number;
     roundIndex: number;
-    isComplete: boolean;
   }): string[] {
     if (!this.activeModelResponseDraft || !this.sessionDb) {
       return [];
     }
-    const messageId = buildHeartbeatResponseMessageId(input.aiCallId);
-    const existing = this.sessionDb.getMessageById(messageId);
-    const upsertInput = toHeartbeatResponseMessageUpsertInput({
+    const upsertInputs = toHeartbeatResponseSegmentMessageUpsertInputs({
       aiCallId: input.aiCallId,
       roundIndex: input.roundIndex,
-      createdAt: existing?.createdAt ?? input.timestamp,
-      updatedAt: input.timestamp,
-      isComplete: input.isComplete,
-      response: {
-        assistant: this.activeModelResponseDraft.assistant ? { ...this.activeModelResponseDraft.assistant } : undefined,
-      },
+      segments: this.cloneAssistantResponseSegments(),
     });
-    if (!upsertInput) {
-      return [];
-    }
-    const record = this.upsertHeartbeatPartMessage(upsertInput);
-    return record ? [record.messageId] : [];
+    return upsertInputs.flatMap((upsertInput) => {
+      const record = this.upsertHeartbeatPartMessage(upsertInput);
+      return record ? [record.messageId] : [];
+    });
   }
 
   private persistHeartbeatResponseArtifacts(input: {
     aiCallId: number;
     timestamp: number;
     roundIndex: number;
-    isComplete: boolean;
   }): string[] {
     if (!this.activeModelResponseDraft || !this.sessionDb) {
       return [];
     }
     return [
       ...new Set([
-        ...this.persistHeartbeatResponseMessage(input),
+        ...this.persistHeartbeatResponseSegments(input),
         ...this.activeModelResponseDraft.toolTrace.flatMap((entry) =>
           this.persistHeartbeatToolInvocationMessage({
             aiCallId: input.aiCallId,
@@ -8293,7 +8587,7 @@ export class SessionRuntime {
     }>;
   }): void {
     if (!this.activeModelResponseDraft) {
-      this.activeModelResponseDraft = { toolTrace: [] };
+      this.activeModelResponseDraft = this.createEmptyActiveModelResponseDraft();
     }
     const existingIndex = this.activeModelResponseDraft.toolTrace.findIndex(
       (entry) => entry.invocationId === input.invocationId,
@@ -8312,6 +8606,10 @@ export class SessionRuntime {
       ...current,
       tool: input.tool,
       ...input.payload,
+      input:
+        "input" in input.payload
+          ? this.mergeHeartbeatToolInput(current.input, input.payload.input)
+          : current.input,
       startedAt:
         input.payload.startedAt === undefined
           ? current.startedAt
@@ -8325,20 +8623,36 @@ export class SessionRuntime {
     this.activeModelResponseDraft.toolTrace.push(next);
   }
 
-  private buildActiveModelResponseEnvelope(): { response: Record<string, unknown>; outcome: null } {
-    const response: Record<string, unknown> = {};
-    if (this.activeModelResponseDraft?.assistant) {
-      response.assistant = { ...this.activeModelResponseDraft.assistant };
+  private buildActiveModelResponseEnvelope(input?: {
+    baseResponse?: AgentModelCallRecord["response"];
+    outcome?: SessionTerminalOutcome | null;
+  }): { response: Record<string, unknown> | null; outcome: SessionTerminalOutcome | null } {
+    const response = input?.baseResponse ? structuredClone(input.baseResponse as Record<string, unknown>) : {};
+    const assistant = this.collectAssistantSummaryFromDraft();
+    if (assistant) {
+      response.assistant = assistant;
+    } else {
+      delete response.assistant;
+    }
+    const assistantSegments = this.cloneAssistantResponseSegments();
+    if (assistantSegments.length > 0) {
+      response.assistantSegments = assistantSegments;
+    } else {
+      delete response.assistantSegments;
     }
     if (this.activeModelResponseDraft?.usage) {
       response.usage = { ...this.activeModelResponseDraft.usage };
+    } else {
+      delete response.usage;
     }
     if ((this.activeModelResponseDraft?.toolTrace.length ?? 0) > 0) {
       response.toolTrace = this.activeModelResponseDraft?.toolTrace.map((entry) => ({ ...entry })) ?? [];
+    } else {
+      delete response.toolTrace;
     }
     return {
-      response,
-      outcome: null,
+      response: Object.keys(response).length > 0 ? response : null,
+      outcome: input?.outcome ?? null,
     };
   }
 
@@ -8356,7 +8670,6 @@ export class SessionRuntime {
       aiCallId: this.activeModelCallId,
       timestamp,
       roundIndex: this.sessionDb.getHead().currentRoundIndex,
-      isComplete: false,
     });
     if (responseMessageIds.length > 0) {
       this.sessionDb.updateAiCall(this.activeModelCallId, {
@@ -8372,16 +8685,12 @@ export class SessionRuntime {
     }
     switch (input.kind) {
       case "thinking":
-        if (!this.activeModelResponseDraft) {
-          this.activeModelResponseDraft = { toolTrace: [] };
-        }
-        this.activeModelResponseDraft.assistant = {
-          ...(this.activeModelResponseDraft.assistant ?? {}),
-          thinkingStartedAt:
-            this.activeModelResponseDraft.assistant?.thinkingStartedAt ??
-            (input.content.length > 0 ? input.timestamp : undefined),
-          thinking: input.content,
-        };
+        this.appendAssistantResponseSegment({
+          partType: "thinking",
+          content: input.content,
+          delta: input.delta,
+          timestamp: input.timestamp,
+        });
         this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("decide");
         this.updateActiveCycle({
@@ -8389,19 +8698,19 @@ export class SessionRuntime {
         });
         return;
       case "draft":
-        if (!this.activeModelResponseDraft) {
-          this.activeModelResponseDraft = { toolTrace: [] };
-        }
-        this.activeModelResponseDraft.assistant = {
-          ...(this.activeModelResponseDraft.assistant ?? {}),
-          textStartedAt:
-            this.activeModelResponseDraft.assistant?.textStartedAt ??
-            (input.content.length > 0 ? input.timestamp : undefined),
-          text: input.content,
+        this.appendAssistantResponseSegment({
+          partType: "text",
+          content: input.content,
+          delta: input.delta,
+          timestamp: input.timestamp,
+        });
+        const draft = this.ensureActiveModelResponseDraft();
+        draft.assistant = {
+          ...(draft.assistant ?? {}),
           finishReason: input.finishReason ?? null,
         };
         if (input.usage) {
-          this.activeModelResponseDraft.usage = { ...input.usage };
+          draft.usage = { ...input.usage };
         }
         this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("decide");
@@ -8422,15 +8731,14 @@ export class SessionRuntime {
         });
         return;
       case "run_finished":
-        if (!this.activeModelResponseDraft) {
-          this.activeModelResponseDraft = { toolTrace: [] };
-        }
-        this.activeModelResponseDraft.assistant = {
-          ...(this.activeModelResponseDraft.assistant ?? {}),
+        this.closeActiveAssistantResponseSegment(input.timestamp);
+        const finishedDraft = this.ensureActiveModelResponseDraft();
+        finishedDraft.assistant = {
+          ...(finishedDraft.assistant ?? {}),
           finishReason: input.finishReason ?? null,
         };
         if (input.usage) {
-          this.activeModelResponseDraft.usage = { ...input.usage };
+          finishedDraft.usage = { ...input.usage };
         }
         this.persistActiveModelResponse(input.timestamp);
         this.setProjectionStage("decide");
@@ -8447,6 +8755,7 @@ export class SessionRuntime {
         });
         return;
       case "tool_call": {
+        this.closeActiveAssistantResponseSegment(input.timestamp);
         this.upsertActiveModelToolTrace({
           invocationId: input.toolCallId,
           tool: input.toolName,
@@ -8580,7 +8889,7 @@ export class SessionRuntime {
   private async handleModelCall(record: AgentModelCallRecord): Promise<void> {
     if (record.status === "running") {
       this.commitActiveCycleUnreadReadAcks();
-      this.activeModelResponseDraft = { toolTrace: [] };
+      this.activeModelResponseDraft = this.createEmptyActiveModelResponseDraft();
     }
     if (!this.sessionDb || this.activeCycleId === null) {
       return;
@@ -8613,7 +8922,11 @@ export class SessionRuntime {
       request: normalizedRequest,
     });
     if (record.status !== "running" && record.response) {
-      this.activeModelResponseDraft ??= { toolTrace: [] };
+      this.activeModelResponseDraft ??= this.createEmptyActiveModelResponseDraft();
+      const persistedAssistantSegments = this.readPersistedAssistantResponseSegments(record.response);
+      if (persistedAssistantSegments.length > 0) {
+        this.activeModelResponseDraft.assistantSegments = persistedAssistantSegments;
+      }
       if (record.response.assistant) {
         this.activeModelResponseDraft.assistant = {
           ...(this.activeModelResponseDraft.assistant ?? {}),
@@ -8626,7 +8939,12 @@ export class SessionRuntime {
       if (record.response.toolTrace) {
         this.activeModelResponseDraft.toolTrace = record.response.toolTrace.map((entry) => ({ ...entry }));
       }
+      this.closeActiveAssistantResponseSegment(record.completedAt ?? record.timestamp);
     }
+    const responseBody = this.buildActiveModelResponseEnvelope({
+      baseResponse: record.response,
+      outcome: record.outcome ?? null,
+    });
     const existingModelCallId = this.activeModelCallId ?? null;
     const modelCall =
       record.status === "running" || existingModelCallId === null
@@ -8640,10 +8958,7 @@ export class SessionRuntime {
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
             requestBody,
-            responseBody: {
-              response: record.response ?? null,
-              outcome: record.outcome ?? null,
-            },
+            responseBody,
             error: record.error,
             outcome: record.outcome,
             requestMessageIds: [],
@@ -8659,10 +8974,7 @@ export class SessionRuntime {
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
             requestBody,
-            responseBody: {
-              response: record.response ?? null,
-              outcome: record.outcome ?? null,
-            },
+            responseBody,
             error: record.error,
             outcome: record.outcome,
             completedAt: record.completedAt ?? null,
@@ -8686,7 +8998,6 @@ export class SessionRuntime {
             aiCallId: modelCall.id,
             timestamp: record.completedAt ?? record.timestamp,
             roundIndex: normalizedRequest.roundIndex,
-            isComplete: true,
           });
     const linkedModelCall = this.sessionDb.updateAiCall(modelCall.id, {
       requestMessageIds,

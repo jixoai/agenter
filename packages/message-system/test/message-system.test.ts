@@ -588,6 +588,168 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
   });
 
+  test("Scenario: Given a sender edits their own durable room message When the edit is authorized Then content changes but delivery membership stays intact", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "first draft",
+    });
+
+    const edited = plane.editAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: sent.messageId,
+      content: "corrected draft",
+      updatedAt: sent.updatedAt + 1,
+    });
+
+    expect(edited.messageId).toBe(sent.messageId);
+    expect(edited.content).toBe("corrected draft");
+    expect(edited.updatedAt).toBe(sent.updatedAt + 1);
+    expect(edited.createdAt).toBe(sent.createdAt);
+    expect(edited.readActorIds).toEqual(sent.readActorIds);
+    expect(edited.unreadActorIds).toEqual(sent.unreadActorIds);
+  });
+
+  test("Scenario: Given a different member tries to edit someone else's durable room message When the edit is authorized Then message-system rejects the mutation", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const member = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "owner only",
+    });
+
+    expect(() =>
+      plane.editAuthorized({
+        chatId: room.chatId,
+        accessToken: member.accessToken,
+        messageId: sent.messageId,
+        content: "tampered",
+      }),
+    ).toThrow("message edit requires original sender");
+    expect(plane.getMessage(room.chatId, sent.messageId)?.content).toBe("owner only");
+  });
+
+  test("Scenario: Given a sender recalls their own durable room message When the recall is authorized Then the same room fact stays in place with recalled truth", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "draft to withdraw",
+      attachments: [{ assetId: "asset-1", kind: "file", name: "draft.txt", mimeType: "text/plain", sizeBytes: 12 }],
+    });
+
+    const recalled = plane.recallAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: sent.messageId,
+      recalledAt: sent.updatedAt + 2,
+    });
+
+    expect(recalled.messageId).toBe(sent.messageId);
+    expect(recalled.createdAt).toBe(sent.createdAt);
+    expect(recalled.updatedAt).toBe(sent.updatedAt + 2);
+    expect(recalled.recalledAt).toBe(sent.updatedAt + 2);
+    expect(recalled.recalledByActorId).toBe("auth:owner");
+    expect(recalled.content).toBe("");
+    expect(recalled.attachments).toEqual([]);
+    expect(recalled.readActorIds).toEqual(sent.readActorIds);
+    expect(recalled.unreadActorIds).toEqual(sent.unreadActorIds);
+  });
+
+  test("Scenario: Given a different member tries to recall someone else's durable room message When the recall is authorized Then message-system rejects the mutation", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const member = plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "owner only",
+    });
+
+    expect(() =>
+      plane.recallAuthorized({
+        chatId: room.chatId,
+        accessToken: member.accessToken,
+        messageId: sent.messageId,
+      }),
+    ).toThrow("message recall requires original sender");
+    expect(plane.getMessage(room.chatId, sent.messageId)?.content).toBe("owner only");
+    expect(plane.getMessage(room.chatId, sent.messageId)?.recalledAt).toBeUndefined();
+  });
+
+  test("Scenario: Given a recalled durable room message When the sender tries to edit it again Then message-system rejects the edit", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "temporary",
+    });
+
+    plane.recallAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: sent.messageId,
+    });
+
+    expect(() =>
+      plane.editAuthorized({
+        chatId: room.chatId,
+        accessToken: ownerRoom?.accessToken ?? "",
+        messageId: sent.messageId,
+        content: "too late",
+      }),
+    ).toThrow("cannot edit recalled message");
+  });
+
   test("Scenario: Given a runtime waits on actor unread state When unread room work arrives or settles Then unread summaries and wait handles resolve without polling room rows", async () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

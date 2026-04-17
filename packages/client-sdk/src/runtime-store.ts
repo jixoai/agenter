@@ -22,6 +22,7 @@ import type {
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
   HeartbeatGroupItem,
+  HeartbeatPartItem,
   HistoryPageCursor,
   MessageChannelEntry,
   MessageChannelGrantEntry,
@@ -352,6 +353,49 @@ const pickNewerHeartbeatGroup = (current: HeartbeatGroupItem, incoming: Heartbea
     return incoming.id > current.id ? incoming : current;
   }
   return incoming;
+};
+
+const mergeHeartbeatGroup = (current: HeartbeatGroupItem, incoming: HeartbeatGroupItem): HeartbeatGroupItem => {
+  const preferred = pickNewerHeartbeatGroup(current, incoming);
+  const items = mergeHeartbeatPartItems(current.items, incoming.items);
+  const maxItemUpdatedAt = items.reduce((latest, item) => Math.max(latest, item.updatedAt), 0);
+  return {
+    ...preferred,
+    createdAt: items[0]?.createdAt ?? Math.min(current.createdAt, incoming.createdAt),
+    updatedAt: Math.max(current.updatedAt, incoming.updatedAt, maxItemUpdatedAt),
+    isComplete: preferred.isComplete && items.every((item) => item.isComplete),
+    items,
+  };
+};
+
+const pickNewerHeartbeatPartItem = (current: HeartbeatPartItem, incoming: HeartbeatPartItem): HeartbeatPartItem => {
+  if (incoming.updatedAt !== current.updatedAt) {
+    return incoming.updatedAt > current.updatedAt ? incoming : current;
+  }
+  if (incoming.id !== current.id) {
+    return incoming.id > current.id ? incoming : current;
+  }
+  return incoming;
+};
+
+const mergeHeartbeatPartItems = (
+  current: HeartbeatPartItem[],
+  incoming: HeartbeatPartItem[],
+): HeartbeatPartItem[] => {
+  const entries = new Map<string, HeartbeatPartItem>();
+  for (const item of current) {
+    entries.set(item.messageId, item);
+  }
+  for (const item of incoming) {
+    const existing = entries.get(item.messageId);
+    entries.set(item.messageId, existing ? pickNewerHeartbeatPartItem(existing, item) : item);
+  }
+  return [...entries.values()].sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      return left.createdAt - right.createdAt;
+    }
+    return left.id - right.id;
+  });
 };
 
 const sameChatAttachmentSet = (
@@ -2084,7 +2128,7 @@ export class RuntimeStore {
     }
     for (const item of incoming) {
       const existing = entries.get(item.groupId);
-      entries.set(item.groupId, existing ? pickNewerHeartbeatGroup(existing, item) : item);
+      entries.set(item.groupId, existing ? mergeHeartbeatGroup(existing, item) : item);
     }
     const merged = [...entries.values()].sort((left, right) => {
       const byCursor = compareHistoryCursor(this.toRecordHistoryCursor(left), this.toRecordHistoryCursor(right));
@@ -2094,6 +2138,63 @@ export class RuntimeStore {
       return left.groupId.localeCompare(right.groupId);
     });
     return merged.length > limit ? merged.slice(-limit) : merged;
+  }
+
+  private resolveLiveHeartbeatGroupKind(
+    sessionId: string,
+    entry: HeartbeatPartItem,
+  ): Extract<HeartbeatGroupItem["kind"], "call" | "compact"> | null {
+    if (entry.scope !== "heartbeat_part" || entry.aiCallId === null) {
+      return null;
+    }
+    const modelCall = this.state.modelCallsBySession[sessionId]?.find((item) => item.id === entry.aiCallId);
+    if (modelCall?.kind === "compact") {
+      return "compact";
+    }
+    return entry.parts.some((part) => part.partType === "compact") ? "compact" : "call";
+  }
+
+  private applyLiveHeartbeatPart(sessionId: string, entry: HeartbeatPartItem): void {
+    const resource = this.state.heartbeatGroupsBySession[sessionId];
+    if (!resource?.loaded) {
+      return;
+    }
+    const aiCallId = entry.aiCallId;
+    const kind = this.resolveLiveHeartbeatGroupKind(sessionId, entry);
+    if (aiCallId === null || !kind) {
+      return;
+    }
+    const groupId = `heartbeat-group:${kind}:${aiCallId}`;
+    const existing =
+      resource.data.find((group) => group.groupId === groupId) ??
+      resource.data.find(
+        (group) => group.aiCallId === aiCallId && (group.kind === "call" || group.kind === "compact"),
+      );
+    const items = mergeHeartbeatPartItems(existing?.items ?? [], [entry]);
+    const updatedAt = items.reduce((latest, item) => Math.max(latest, item.updatedAt), existing?.updatedAt ?? 0);
+    const nextGroup: HeartbeatGroupItem = {
+      id: existing?.id ?? aiCallId * 10 + 1,
+      groupId,
+      kind,
+      aiCallId,
+      createdAt: items[0]?.createdAt ?? existing?.createdAt ?? entry.createdAt,
+      updatedAt: Math.max(updatedAt, entry.updatedAt),
+      isComplete: items.every((item) => item.isComplete),
+      items,
+    };
+    this.setHeartbeatGroupsState(sessionId, (current) => ({
+      ...current,
+      data: this.mergeHeartbeatGroups(
+        current.data.filter(
+          (group) =>
+            group.groupId === nextGroup.groupId ||
+            group.aiCallId !== aiCallId ||
+            (group.kind !== "call" && group.kind !== "compact"),
+        ),
+        [nextGroup],
+        HEARTBEAT_GROUP_LRU_LIMIT,
+      ),
+    }));
   }
 
   private createOptimisticCycle(input: {
@@ -3238,6 +3339,25 @@ export class RuntimeStore {
     void attachments;
   }
 
+  async editMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+    text: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+    return await this.client.trpc.message.edit.mutate(input);
+  }
+
+  async recallMessageChannel(input: {
+    sessionId: string;
+    chatId: string;
+    accessToken: string;
+    messageId: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    return await this.client.trpc.message.recall.mutate(input);
+  }
+
   async sendMessageChannelError(input: {
     sessionId: string;
     chatId: string;
@@ -3597,6 +3717,29 @@ export class RuntimeStore {
     clientMessageId?: string;
   }): Promise<{ ok: boolean; reason?: string }> {
     return await this.client.trpc.message.globalSend.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
+  }
+
+  async editGlobalRoomMessage(input: {
+    chatId: string;
+    accessToken?: string;
+    messageId: string;
+    text: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+    return await this.client.trpc.message.globalEdit.mutate({
+      ...input,
+      accessToken: normalizeOptionalAccessToken(input.accessToken),
+    });
+  }
+
+  async recallGlobalRoomMessage(input: {
+    chatId: string;
+    accessToken?: string;
+    messageId: string;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    return await this.client.trpc.message.globalRecall.mutate({
       ...input,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
     });
@@ -5510,6 +5653,8 @@ export class RuntimeStore {
           LOOPBUS_LRU_LIMIT,
         );
       } else if (event.type === "runtime.heartbeatPart") {
+        const payload = event.payload as { entry: HeartbeatPartItem };
+        this.applyLiveHeartbeatPart(sessionId, payload.entry);
         this.scheduleHeartbeatGroupRefresh(sessionId);
       } else if (event.type === "runtime.modelCall") {
         const payload = event.payload as { entry: ModelCallItem };

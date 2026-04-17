@@ -1,27 +1,33 @@
 ---
 name: agenter-message
-description: Read and send durable room messages. Use this when work depends on room context, a room expects a protocol-shaped reply, or a chat-related attention item still needs a user-visible reply.
+description: Read, send, edit, and recall durable room messages. Use this when work depends on room context, a room expects a protocol-shaped reply, or a chat-related attention item still needs a user-visible reply.
 ---
 
 # agenter-message
 
-Use this skill when you need to read room history, send a durable room message, or decide whether a chat-related attention item still requires a room reply.
+Use this skill when you need to read room history, send, edit, or recall a durable room message, or decide whether a chat-related attention item still requires a room reply.
 
 Quick start:
 1. If the latest room message already contains the full task and no other room is involved yet, do not reread the room first.
-2. If the task already shows the exact room `chatId`, use that literal `chatId` directly for `message send` or `message read`.
+2. If the task already shows the exact room `chatId`, use that literal `chatId` directly for `message send`, `message edit`, `message recall`, or `message read`.
 3. Run `message list` once only when you truly need a `chatId` or need to discover another visible room.
 4. Run `message read` with JSON `stdin` only when room history may actually change the decision.
 5. Decide whether the room needs an acknowledgement, a narrow follow-up question, or a final reply.
 6. Send one durable message with the correct room scope and protocol. Through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin`; only use argv JSON for trivial single-line payloads. If `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads.
-7. If a prior room message is invalid or stale, send a corrected replacement.
-8. If that reply completes the obligation, switch to `attention` and settle the same context.
+7. If your prior room message is invalid or stale and you already know its `messageId`, prefer `message edit` to correct that durable reply in place.
+8. If the earlier durable reply should disappear rather than remain visible with corrected wording, use `message recall` on that `messageId` before sending a replacement.
+9. If you cannot safely edit or recall the earlier durable reply, send a corrected replacement.
+10. If that reply completes the obligation, switch to `attention` and settle the same context.
 
 Key laws:
 - The origin room owns the user-visible conversation.
-- For `message read` and `message send` through `root_workspace_bash`, default to JSON `stdin`; only use argv JSON when the payload is trivially small.
-- If `message read --help` or `message send --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
+- For `message read`, `message send`, `message edit`, and `message recall` through `root_workspace_bash`, default to JSON `stdin`; only use argv JSON when the payload is trivially small.
+- If `message read --help`, `message send --help`, `message edit --help`, or `message recall --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
 - If the task already gives the exact room `chatId`, that literal room id is enough to send the acknowledgement or final reply; do not rediscover the same room through `message list`.
+- If you already have the prior durable reply's `messageId`, `message edit` is the cleanest correction path for your own earlier message.
+- If the earlier message should no longer remain visible in the room, `message recall` is the cleanest withdrawal path for your own earlier message.
+- If you do not have the `messageId`, or the earlier message belongs to someone else, send a corrected follow-up message instead of guessing.
+- Prefer `message edit` when the same room fact should stay visible with corrected content; prefer `message recall` when the prior room fact should be withdrawn before you post a replacement.
 - If the current room message already fixes the task, URL, or required reply token, the normal next move is acknowledgement or tool work, not another room read.
 - If the room context already exposes `visibleRooms`, those rooms are real durable channels you can use now; a participant missing from the origin room is not automatically unavailable.
 - If the user asks you to ask or relay to another participant and a matching visible room already exists, relay there instead of telling the user that the participant is not here.

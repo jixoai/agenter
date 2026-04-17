@@ -605,6 +605,67 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).toContain("auth:user");
   });
 
+  test("Scenario: Given edited and recalled room messages When the transcript renders Then revision state stays objective on the same rows", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          messageId: "msg-edited",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "corrected answer",
+          createdAt: 100,
+          updatedAt: 120,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+        {
+          rowId: 2,
+          messageId: "msg-recalled",
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "",
+          createdAt: 130,
+          updatedAt: 140,
+          recalledAt: 140,
+          recalledByActorId: "auth:user",
+          visibleAt: 130,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const rendered = readRenderedText(document.body);
+    expect(rendered).toContain("Edited");
+    expect(rendered).toContain("corrected answer");
+    expect(rendered).toContain("Recalled");
+    expect(rendered).toContain("This message was recalled.");
+  });
+
   test("Scenario: Given room read-state projections When the transcript renders Then each message can expose an inline-end read indicator", async () => {
     mountHost({
       channel: {

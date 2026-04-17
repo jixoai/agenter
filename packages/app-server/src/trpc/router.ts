@@ -354,6 +354,42 @@ export const appRouter = t.router({
           clientMessageId: input.clientMessageId,
         }),
       ),
+    edit: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          messageId: z.string().min(1),
+          text: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.editMessageChannel({
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          messageId: input.messageId,
+          text: input.text,
+        }),
+      ),
+    recall: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1),
+          messageId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.recallMessageChannel({
+          sessionId: input.sessionId,
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          messageId: input.messageId,
+        }),
+      ),
     sendError: t.procedure
       .input(
         z.object({
@@ -615,6 +651,35 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) =>
         ctx.kernel.sendGlobalRoomMessage({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalEdit: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          messageId: z.string().min(1),
+          text: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.editGlobalRoomMessage({
+          ...input,
+          ...resolveMessageCallerScope(ctx.auth),
+        }),
+      ),
+    globalRecall: t.procedure
+      .input(
+        z.object({
+          chatId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          messageId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.recallGlobalRoomMessage({
           ...input,
           ...resolveMessageCallerScope(ctx.auth),
         }),

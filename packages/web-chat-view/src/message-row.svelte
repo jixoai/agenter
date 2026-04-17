@@ -19,7 +19,13 @@
     WebChatMessageReadProgress,
     WebChatMessageRenderInput,
   } from "./types";
-  import { isAssistantMessage, isViewerOwnedMessage } from "./message-utils";
+  import {
+    getRenderableMessageText,
+    isAssistantMessage,
+    isEditedMessage,
+    isRecalledMessage,
+    isViewerOwnedMessage,
+  } from "./message-utils";
 
   let {
     channel,
@@ -53,6 +59,9 @@
 
   const assistant = $derived(isAssistantMessage(channel, message));
   const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message));
+  const recalled = $derived(isRecalledMessage(message));
+  const edited = $derived(isEditedMessage(message));
+  const renderableContent = $derived(getRenderableMessageText(message));
   const interactive = $derived(message.kind === "interactive" ? message.payload?.interactive : undefined);
   const renderInput = $derived({
     channel,
@@ -177,7 +186,7 @@
   part={`message-row ${assistant ? "message-row-assistant" : viewerOwned ? "message-row-viewer" : "message-row-participant"}`}
   class:assistant={assistant}
   class:viewer-owned={viewerOwned && !assistant}
-  data-kind={message.kind}
+  data-kind={recalled ? "recalled" : message.kind}
   data-message-author={viewerOwned ? "viewer" : assistant ? "assistant" : "participant"}
 >
   <div class="row-body" part="message-row-body">
@@ -206,7 +215,14 @@
 
               <div class="meta" part="message-meta">
                 <div class="meta-copy">
-                  <span class="author" part="message-author">{actorPresentation.label}</span>
+                  <div class="meta-head">
+                    <span class="author" part="message-author">{actorPresentation.label}</span>
+                    {#if recalled}
+                      <span class="revision-badge revision-badge-recalled">Recalled</span>
+                    {:else if edited}
+                      <span class="revision-badge">Edited</span>
+                    {/if}
+                  </div>
                   {#if actorPresentation.subtitle}
                     <span class="subtitle">{actorPresentation.subtitle}</span>
                   {/if}
@@ -214,7 +230,11 @@
                 <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
               </div>
 
-              {#if message.kind === "error"}
+              {#if recalled}
+                <div class="recall-block" part="message-recalled">
+                  <p>{renderableContent}</p>
+                </div>
+              {:else if message.kind === "error"}
                 <div class="error-block" part="message-error">
                   <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
                   <p>{message.content}</p>
@@ -267,9 +287,9 @@
                     {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
                   </Button>
                 </div>
-              {:else if message.content.trim().length > 0}
+              {:else if renderableContent.trim().length > 0}
                 <div class="content" part="message-content">
-                  <MessageMarkdownContent value={message.content} />
+                  <MessageMarkdownContent value={renderableContent} />
                 </div>
               {/if}
 
@@ -397,6 +417,14 @@
     min-width: 0;
   }
 
+  .meta-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
   .author {
     min-width: 0;
     font-size: 0.74rem;
@@ -425,6 +453,34 @@
     color: inherit;
   }
 
+  .revision-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.08rem 0.42rem;
+    background: rgba(148, 163, 184, 0.18);
+    color: rgba(51, 65, 85, 0.92);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .revision-badge-recalled {
+    background: rgba(251, 113, 133, 0.14);
+    color: #9f1239;
+  }
+
+  .row.viewer-owned .revision-badge {
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .row.viewer-owned .revision-badge-recalled {
+    background: rgba(251, 113, 133, 0.18);
+    color: rgba(255, 228, 230, 0.95);
+  }
+
   @media (pointer: coarse) {
     .bubble-actions {
       opacity: 1;
@@ -433,17 +489,29 @@
   }
 
   .error-block,
+  .recall-block,
   .interactive-block {
     display: grid;
     gap: 0.65rem;
   }
 
   .error-block p,
+  .recall-block p,
   .interactive-description {
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;
+  }
+
+  .recall-block {
+    padding: 0.15rem 0 0.05rem;
+    color: rgba(71, 85, 105, 0.92);
+    font-style: italic;
+  }
+
+  .row.viewer-owned .recall-block {
+    color: rgba(255, 255, 255, 0.82);
   }
 
   .error-title,

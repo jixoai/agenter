@@ -129,6 +129,54 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given JSON stdin When message edit runs Then the CLI posts the validated edit payload to the runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/message/edit": { result: { ok: true, messageId: "msg-1", updatedAt: 42 } },
+    });
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(
+      ["edit"],
+      createCommandContext(
+        JSON.stringify({
+          chatId: "room-1",
+          messageId: "msg-1",
+          content: "Correction: use /preview/42 instead.",
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      chatId: "room-1",
+      messageId: "msg-1",
+      content: "Correction: use /preview/42 instead.",
+    });
+  });
+
+  test("Scenario: Given JSON stdin When message recall runs Then the CLI posts the validated recall payload to the runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/message/recall": { result: { ok: true, messageId: "msg-1", updatedAt: 42, recalledAt: 42 } },
+    });
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(
+      ["recall"],
+      createCommandContext(
+        JSON.stringify({
+          chatId: "room-1",
+          messageId: "msg-1",
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      chatId: "room-1",
+      messageId: "msg-1",
+    });
+  });
+
   test("Scenario: Given explicit compact argv When terminal kill runs Then the CLI decodes the positional payload back into the descriptor object", async () => {
     const api = await startMockRuntimeApi({
       "/v1/terminal/kill": { result: { ok: true, message: "killed" } },
