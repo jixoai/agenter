@@ -52,6 +52,7 @@ export interface ResolvedSessionConfig {
     topK?: number;
     maxRetries: number;
     maxToken?: number;
+    maxContextTokens?: number;
     compactThreshold?: number;
     thinking?: {
       enabled?: boolean;
@@ -264,6 +265,7 @@ export const resolveSessionConfig = async (
       topK: ai.topK,
       maxRetries: provider.maxRetries ?? 2,
       maxToken: ai.maxToken,
+      maxContextTokens: provider.maxContextTokens,
       compactThreshold: provider.compactThreshold,
       thinking: ai.thinking,
     },

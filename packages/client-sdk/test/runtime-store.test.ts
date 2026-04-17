@@ -4,9 +4,16 @@ import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
 import type {
   GlobalAvatarCatalogEntry,
+  GlobalRoomMessage,
+  GlobalTerminalApprovalRequest,
+  GlobalTerminalEntry,
+  GlobalTerminalGrantEntry,
   HeartbeatGroupItem,
   HeartbeatPartItem,
+  ModelCallItem,
+  RuntimeAttentionState,
   RuntimeSnapshot,
+  SessionEntry,
   WorkspaceAvatarCatalogEntry,
 } from "../src/types";
 
@@ -15,6 +22,10 @@ type ReversePageResult<T> = {
   nextBefore?: { beforeTimeMs: number; beforeId: number } | null;
   hasMoreBefore?: boolean;
 };
+
+type AttentionContextItem = RuntimeAttentionState["snapshot"]["contexts"][number];
+type AttentionCommitItem = AttentionContextItem["commits"][number];
+type SubscriptionHandlers = { onData?: (event: unknown) => void; onError?: () => void };
 
 const createTraceEntry = (input: {
   id: number;
@@ -171,6 +182,8 @@ const createSnapshot = (
         enabled: false,
         refCount: 0,
       },
+      attentionApi: null,
+      rootWorkspace: null,
       terminals: [
         {
           terminalId: "main",
@@ -193,6 +206,104 @@ const createSnapshot = (
     },
   },
 });
+
+const createAttentionCommit = (input: {
+  commitId: string;
+  contextId: string;
+  author: string;
+  source: string;
+  summary: string;
+  value: string;
+  scores: Record<string, number>;
+  createdAt?: string;
+  format?: string;
+}): AttentionCommitItem => ({
+  commitId: input.commitId,
+  contextId: input.contextId,
+  ingressType: "commit",
+  parentCommitIds: [],
+  meta: {
+    author: input.author,
+    source: input.source,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+  },
+  scores: input.scores,
+  summary: input.summary,
+  change: {
+    type: "update",
+    value: input.value,
+    format: input.format ?? "text/plain",
+  },
+  createdAt: input.createdAt ?? new Date().toISOString(),
+});
+
+const createAttentionContext = (input: {
+  contextId: string;
+  owner: string;
+  content: string;
+  scoreMap: Record<string, number>;
+  commit: AttentionCommitItem;
+  contentFormat?: string;
+  focusState?: AttentionContextItem["focusState"];
+  createdAt?: string;
+  updatedAt?: string;
+}): AttentionContextItem => ({
+  contextId: input.contextId,
+  owner: input.owner,
+  focusState: input.focusState ?? "focused",
+  content: input.content,
+  contentFormat: input.contentFormat,
+  scoreMap: input.scoreMap,
+  consumedPushCommitIds: [],
+  headCommitId: input.commit.commitId,
+  createdAt: input.createdAt ?? new Date().toISOString(),
+  updatedAt: input.updatedAt ?? new Date().toISOString(),
+  commitCount: 1,
+  commitsTruncated: false,
+  commits: [input.commit],
+});
+
+const createModelCallItem = (input: {
+  id: number;
+  cycleId: number | null;
+  roundIndex?: number;
+  kind?: string;
+  status: ModelCallItem["status"];
+  provider: string;
+  model: string;
+  createdAt: number;
+  updatedAt?: number;
+  completedAt?: number | null;
+  providerSnapshot?: ModelCallItem["providerSnapshot"];
+  requestUrl?: string;
+  request?: unknown;
+  response?: unknown;
+  error?: unknown;
+  outcome?: unknown;
+  isComplete?: boolean;
+}): ModelCallItem => ({
+  id: input.id,
+  cycleId: input.cycleId,
+  roundIndex: input.roundIndex ?? 1,
+  kind: input.kind ?? "chat",
+  status: input.status,
+  provider: input.provider,
+  model: input.model,
+  providerSnapshot: input.providerSnapshot ?? null,
+  requestUrl: input.requestUrl ?? "",
+  request: input.request ?? {},
+  response: input.response ?? null,
+  error: input.error ?? null,
+  outcome: input.outcome ?? null,
+  createdAt: input.createdAt,
+  updatedAt: input.updatedAt ?? input.createdAt,
+  completedAt: input.completedAt ?? null,
+  isComplete: input.isComplete ?? input.status !== "running",
+});
+
+const emitSubscriptionEvent = (handlers: SubscriptionHandlers | null, event: unknown) => {
+  handlers?.onData?.(event);
+};
 
 const emptyNotificationSnapshot = () => ({
   items: [],
@@ -762,6 +873,18 @@ const createMockClient = (input: {
     offset?: number;
     limit?: number;
   }) => Promise<{ items: unknown[] }>;
+  usageAnalyticsQuery?: (input: {
+    sessionId: string;
+    sinceMs: number;
+    untilMs: number;
+    granularity?: "auto" | "raw" | "day" | "month" | "year";
+    filters?: {
+      sessionId?: string;
+      kind?: string;
+      providerId?: string;
+      model?: string;
+    };
+  }) => Promise<unknown>;
   requestAuxPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
@@ -893,6 +1016,38 @@ const createMockClient = (input: {
         attentionQuery: {
           query: async (payload: { sessionId: string; query?: string; offset?: number; limit?: number }) =>
             input.attentionQueryQuery ? await input.attentionQueryQuery(payload) : { items: [] },
+        },
+        usageAnalytics: {
+          query: async (payload: {
+            sessionId: string;
+            sinceMs: number;
+            untilMs: number;
+            granularity?: "auto" | "raw" | "day" | "month" | "year";
+            filters?: {
+              sessionId?: string;
+              kind?: string;
+              providerId?: string;
+              model?: string;
+            };
+          }) =>
+            input.usageAnalyticsQuery
+              ? await input.usageAnalyticsQuery(payload)
+              : {
+                  granularity: payload.granularity ?? "auto",
+                  sinceMs: payload.sinceMs,
+                  untilMs: payload.untilMs,
+                  filters: payload.filters ?? {},
+                  totals: {
+                    callCount: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    totalTokens: 0,
+                    cachedInputTokens: { value: 0, knownCallCount: 0 },
+                    reasoningTokens: { value: 0, knownCallCount: 0 },
+                    uncachedInputTokens: { value: 0, knownCallCount: 0 },
+                  },
+                  items: [],
+                },
         },
         events: {
           subscribe: (_payload: unknown, handlers: { onData?: (event: unknown) => void; onError?: () => void }) => {
@@ -2000,37 +2155,21 @@ describe("Feature: runtime store synchronization", () => {
     const attention = {
       snapshot: {
         contexts: [
-          {
+          createAttentionContext({
             contextId: "ctx-chat-main",
             owner: "tester-bot",
             content: "current notebook",
             scoreMap: { abcd12: 100 },
-            headCommitId: "commit-1",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            commitCount: 1,
-            commitsTruncated: false,
-            commits: [
-              {
-                commitId: "commit-1",
-                contextId: "ctx-chat-main",
-                parentCommitIds: [],
-                meta: {
-                  author: "tester-bot",
-                  source: "message",
-                  createdAt: new Date().toISOString(),
-                },
-                scores: { abcd12: 100 },
-                summary: "User asked for a reply",
-                change: {
-                  type: "update" as const,
-                  value: "current notebook",
-                  format: "text/plain",
-                },
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
+            commit: createAttentionCommit({
+              commitId: "commit-1",
+              contextId: "ctx-chat-main",
+              author: "tester-bot",
+              source: "message",
+              summary: "User asked for a reply",
+              value: "current notebook",
+              scores: { abcd12: 100 },
+            }),
+          }),
         ],
       },
       active: [],
@@ -2359,10 +2498,11 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given createSession call succeeds When events have not arrived yet Then local state is updated optimistically", async () => {
     const nowIso = new Date().toISOString();
-    const newSession = {
+    const newSession: SessionEntry = {
       id: "i-2",
       name: "workspace-2",
       cwd: process.cwd(),
+      workspacePath: process.cwd(),
       avatar: "tester-bot",
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -2391,6 +2531,58 @@ describe("Feature: runtime store synchronization", () => {
     expect(store.getState().chatsBySession["i-2"]).toEqual([]);
 
     store.disconnect();
+  });
+
+  test("Scenario: Given runtime usage analytics query is available When the store requests it Then the typed token totals are returned without local recomputation", async () => {
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(30),
+      usageAnalyticsQuery: async (input) => ({
+        granularity: input.granularity ?? "raw",
+        sinceMs: input.sinceMs,
+        untilMs: input.untilMs,
+        filters: input.filters ?? {},
+        totals: {
+          callCount: 2,
+          inputTokens: 640,
+          outputTokens: 160,
+          totalTokens: 800,
+          cachedInputTokens: { value: 64, knownCallCount: 1 },
+          reasoningTokens: { value: 24, knownCallCount: 1 },
+          uncachedInputTokens: { value: 576, knownCallCount: 1 },
+        },
+        items: [],
+      }),
+    });
+    const store = new RuntimeStore(client);
+
+    const result = await store.queryUsageAnalytics({
+      sessionId: "i-1",
+      sinceMs: 1_000,
+      untilMs: 2_000,
+      granularity: "raw",
+      filters: {
+        kind: "model",
+      },
+    });
+
+    expect(result).toEqual({
+      granularity: "raw",
+      sinceMs: 1_000,
+      untilMs: 2_000,
+      filters: {
+        kind: "model",
+      },
+      totals: {
+        callCount: 2,
+        inputTokens: 640,
+        outputTokens: 160,
+        totalTokens: 800,
+        cachedInputTokens: { value: 64, knownCallCount: 1 },
+        reasoningTokens: { value: 24, knownCallCount: 1 },
+        uncachedInputTokens: { value: 576, knownCallCount: 1 },
+      },
+      items: [],
+    });
   });
 
   test("Scenario: Given high-volume loopbus traces When streaming updates Then memory keeps only LRU 100 items", async () => {
@@ -2483,19 +2675,17 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
 
-    expect(store.getState().modelCallsBySession["i-1"]).toEqual([
-      {
-        id: 11,
-        cycleId: 4,
-        createdAt: 100,
-        status: "done",
-        completedAt: 150,
-        provider: "deepseek/openai-chat",
-        model: "deepseek-chat",
-        request: { messages: [{ role: "user", content: "hello" }] },
-        response: { assistant: { text: "hi" } },
-      },
-    ]);
+    expect(store.getState().modelCallsBySession["i-1"]).toHaveLength(1);
+    expect(store.getState().modelCallsBySession["i-1"]?.[0]).toMatchObject({
+      id: 11,
+      cycleId: 4,
+      status: "done",
+      completedAt: 150,
+      provider: "deepseek/openai-chat",
+      model: "deepseek-chat",
+      request: { messages: [{ role: "user", content: "hello" }] },
+      response: { assistant: { text: "hi" } },
+    });
 
     store.disconnect();
   });
@@ -3769,17 +3959,13 @@ describe("Feature: runtime store synchronization", () => {
     });
 
     await waitFor(
-      () =>
-        store
+      () => {
+        const payload = store
           .getState()
           .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
-          ?.parts[0]?.payload &&
-        JSON.stringify(
-          store
-            .getState()
-            .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
-            ?.parts[0]?.payload,
-        ).includes("attention commit"),
+          ?.parts[0]?.payload;
+        return payload !== undefined && JSON.stringify(payload).includes("attention commit");
+      },
     );
 
     expect(store.getState().heartbeatGroupsBySession["i-1"]?.data).toEqual([
@@ -4632,33 +4818,26 @@ describe("Feature: runtime store synchronization", () => {
       ...createSnapshot(0).sessions[0],
       status: "paused" as const,
     };
-    const persistedAttention = {
+    const persistedAttention: RuntimeAttentionState = {
       snapshot: {
         contexts: [
-          {
+          createAttentionContext({
             contextId: "ctx-chat-kzf",
             owner: "avatar:jane",
             content: "ask gaubee lunch",
             contentFormat: "markdown",
             scoreMap: { a1b2c3: 100 },
-            headCommitId: "commit-1",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            commitCount: 1,
-            commitsTruncated: false,
-            commits: [
-              {
-                commitId: "commit-1",
-                contextId: "ctx-chat-kzf",
-                parentCommitIds: [],
-                meta: { author: "user:kzf", source: "message", createdAt: new Date().toISOString() },
-                scores: { a1b2c3: 100 },
-                summary: "Need lunch reply",
-                change: { type: "update", value: "ask gaubee lunch", format: "markdown" },
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
+            commit: createAttentionCommit({
+              commitId: "commit-1",
+              contextId: "ctx-chat-kzf",
+              author: "user:kzf",
+              source: "message",
+              summary: "Need lunch reply",
+              value: "ask gaubee lunch",
+              scores: { a1b2c3: 100 },
+              format: "markdown",
+            }),
+          }),
         ],
       },
       active: [],
@@ -4906,33 +5085,26 @@ describe("Feature: runtime store synchronization", () => {
       status: "stopped" as const,
       sessionRoot: "/tmp/sessions/i-2",
     };
-    const persistedAttention = {
+    const persistedAttention: RuntimeAttentionState = {
       snapshot: {
         contexts: [
-          {
+          createAttentionContext({
             contextId: "ctx-room-main",
             owner: "avatar:persisted-shell",
             content: "deliver URL update",
             contentFormat: "markdown",
             scoreMap: { delivery: 100 },
-            headCommitId: "commit-1",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            commitCount: 1,
-            commitsTruncated: false,
-            commits: [
-              {
-                commitId: "commit-1",
-                contextId: "ctx-room-main",
-                parentCommitIds: [],
-                meta: { author: "user:kzf", source: "message", createdAt: new Date().toISOString() },
-                scores: { delivery: 100 },
-                summary: "Deliver the ready URL back to the room",
-                change: { type: "update", value: "pending room delivery", format: "markdown" },
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
+            commit: createAttentionCommit({
+              commitId: "commit-1",
+              contextId: "ctx-room-main",
+              author: "user:kzf",
+              source: "message",
+              summary: "Deliver the ready URL back to the room",
+              value: "pending room delivery",
+              scores: { delivery: 100 },
+              format: "markdown",
+            }),
+          }),
         ],
       },
       active: [],
@@ -5025,7 +5197,7 @@ describe("Feature: runtime store synchronization", () => {
 
     expect(store.getState().sessions.map((session) => session.id)).toEqual(["i-2"]);
     expect(store.getState().runtimes["i-2"]?.started).toBe(false);
-    expect(store.getState().attentionBySession["i-2"]).toEqual(persistedAttention);
+    expect(store.getState().attentionBySession?.["i-2"]).toEqual(persistedAttention);
     expect(store.getState().chatsBySession["i-2"]?.map((message) => message.content)).toEqual(["persisted ready url"]);
     expect(store.getState().messageChannelsBySession["i-2"]).toEqual({
       data: [channel],
@@ -5560,9 +5732,9 @@ describe("Feature: runtime store synchronization", () => {
                 content: "snapshot",
                 createdAt: 2,
                 updatedAt: 2,
-                attentionState: "loaded" as const,
-                editable: false,
-              },
+                readActorIds: [],
+                unreadActorIds: [],
+              } satisfies GlobalRoomMessage,
             ],
             nextBefore: { beforeTimeMs: 2, beforeId: 11 },
             hasMoreBefore: true,
@@ -5582,9 +5754,9 @@ describe("Feature: runtime store synchronization", () => {
                 content: "older",
                 createdAt: 1,
                 updatedAt: 1,
-                attentionState: "loaded" as const,
-                editable: false,
-              },
+                readActorIds: [],
+                unreadActorIds: [],
+              } satisfies GlobalRoomMessage,
             ],
             nextBefore: null,
             hasMoreBefore: false,
@@ -5689,8 +5861,8 @@ describe("Feature: runtime store synchronization", () => {
           content: "snapshot",
           createdAt: 2,
           updatedAt: 2,
-          attentionState: "loaded",
-          editable: false,
+          readActorIds: [],
+          unreadActorIds: [],
         },
       ],
       nextBefore: { beforeTimeMs: 2, beforeId: 11 },
@@ -5715,8 +5887,8 @@ describe("Feature: runtime store synchronization", () => {
           content: "older",
           createdAt: 1,
           updatedAt: 1,
-          attentionState: "loaded",
-          editable: false,
+          readActorIds: [],
+          unreadActorIds: [],
         },
       ],
       hasMore: false,
@@ -5998,7 +6170,7 @@ describe("Feature: runtime store synchronization", () => {
       [roomA.chatId]: 0,
       [roomB.chatId]: 0,
     };
-    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    let eventHandlers: SubscriptionHandlers | null = null;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -6080,7 +6252,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(assetCounts[roomA.chatId]).toBe(1);
     expect(assetCounts[roomB.chatId]).toBe(0);
 
-    eventHandlers?.onData?.({
+    emitSubscriptionEvent(eventHandlers, {
       version: 1,
       eventId: 1,
       timestamp: Date.now(),
@@ -6106,7 +6278,12 @@ describe("Feature: runtime store synchronization", () => {
   });
 
   test("Scenario: Given retained terminal slices When a live terminal invalidation arrives Then runtime store refreshes only the retained terminal resources", async () => {
-    const createTerminalEntry = (terminalId: string, title: string, cwd: string, accessToken: string) => ({
+    const createTerminalEntry = (
+      terminalId: string,
+      title: string,
+      cwd: string,
+      accessToken: string,
+    ): GlobalTerminalEntry => ({
       terminalId,
       processKind: "shell",
       command: ["/bin/bash"],
@@ -6166,7 +6343,7 @@ describe("Feature: runtime store synchronization", () => {
       [terminalA.terminalId]: 0,
       [terminalB.terminalId]: 0,
     };
-    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    let eventHandlers: SubscriptionHandlers | null = null;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -6256,7 +6433,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(activityCounts[terminalA.terminalId]).toBe(1);
     expect(activityCounts[terminalB.terminalId]).toBe(0);
 
-    eventHandlers?.onData?.({
+    emitSubscriptionEvent(eventHandlers, {
       version: 1,
       eventId: 1,
       timestamp: Date.now(),
@@ -6320,7 +6497,7 @@ describe("Feature: runtime store synchronization", () => {
       delete?: { terminalId: string };
       activity?: { terminalId: string; limit?: number };
     } = {};
-    const terminal = {
+    const terminal: GlobalTerminalEntry = {
       terminalId: "term-ops",
       processKind: "shell",
       command: ["/bin/bash"],
@@ -6365,18 +6542,16 @@ describe("Feature: runtime store synchronization", () => {
         },
       ],
     };
-    const initialGrant = {
+    const initialGrant: GlobalTerminalGrantEntry = {
       grantId: "grant-reviewer",
       terminalId: terminal.terminalId,
       role: "writer" as const,
       label: "Reviewer",
       participantId: "auth:reviewer",
       accessToken: "termtok_writer",
-      currentAdmin: false,
-      adminCandidateRank: 1,
       createdAt: 2,
     };
-    const pendingApproval = {
+    const pendingApproval: GlobalTerminalApprovalRequest = {
       requestId: "approval-1",
       terminalId: terminal.terminalId,
       participantId: "auth:requester",
@@ -6390,7 +6565,7 @@ describe("Feature: runtime store synchronization", () => {
       createdAt: 3,
       expiresAt: 93_000,
     };
-    const deniedApproval = {
+    const deniedApproval: GlobalTerminalApprovalRequest = {
       requestId: "approval-2",
       terminalId: terminal.terminalId,
       participantId: "auth:guest",
@@ -6599,12 +6774,16 @@ describe("Feature: runtime store synchronization", () => {
       terminal,
     });
     expect(store.getState().globalTerminals.data[0]?.terminalId).toBe(terminal.terminalId);
+    const terminalAccessToken = terminal.access?.accessToken;
+    if (!terminalAccessToken) {
+      throw new Error("expected terminal access token");
+    }
 
     expect(
       await store.focusGlobalTerminals({
         op: "replace",
         terminalIds: [terminal.terminalId],
-        accessToken: terminal.access.accessToken,
+        accessToken: terminalAccessToken,
       }),
     ).toEqual({
       ok: true,
@@ -6614,7 +6793,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(
       await store.readGlobalTerminal({
         terminalId: terminal.terminalId,
-        accessToken: terminal.access.accessToken,
+        accessToken: terminalAccessToken,
         mode: "snapshot",
       }),
     ).toMatchObject({
@@ -6714,11 +6893,11 @@ describe("Feature: runtime store synchronization", () => {
     expect(requests.focus).toEqual({
       op: "replace",
       terminalIds: [terminal.terminalId],
-      accessToken: terminal.access.accessToken,
+      accessToken: terminalAccessToken,
     });
     expect(requests.read).toEqual({
       terminalId: terminal.terminalId,
-      accessToken: terminal.access.accessToken,
+      accessToken: terminalAccessToken,
       mode: "snapshot",
     });
     expect(requests.write).toEqual({
@@ -6773,7 +6952,7 @@ describe("Feature: runtime store synchronization", () => {
     let terminalListCalls = 0;
     let approvalListCalls = 0;
     let activityListCalls = 0;
-    const pendingApproval = {
+    const pendingApproval: GlobalTerminalApprovalRequest = {
       requestId: "approval-refresh",
       terminalId,
       participantId: "auth:requester",
@@ -7488,7 +7667,7 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given one invalidated workspace avatar catalog When a live invalidation event arrives Then only the affected catalog is refreshed", async () => {
     const workspaceA = "/repo/a";
     const workspaceB = "/repo/b";
-    const queryCounts = {
+    const queryCounts: Record<string, number> = {
       [workspaceA]: 0,
       [workspaceB]: 0,
     };
@@ -7500,7 +7679,7 @@ describe("Feature: runtime store synchronization", () => {
         createAvatarCatalogEntry("beta", { workspacePrivatePath: "/repo/b/.agenter/avatars/by-principal/beta" }),
       ],
     };
-    let eventHandlers: { onData?: (event: unknown) => void; onError?: () => void } | null = null;
+    let eventHandlers: SubscriptionHandlers | null = null;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -7532,7 +7711,7 @@ describe("Feature: runtime store synchronization", () => {
       }),
     ];
 
-    eventHandlers?.onData?.({
+    emitSubscriptionEvent(eventHandlers, {
       version: 1,
       eventId: 1,
       timestamp: Date.now(),

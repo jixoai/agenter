@@ -35,6 +35,8 @@ import type {
   RuntimeEvent,
   RuntimeSchedulerContainmentState,
   RuntimeSnapshotEntry,
+  RuntimeUsageAnalyticsInput,
+  RuntimeUsageAnalyticsOutput,
   RuntimeWorkspaceAssetRootsOutput,
   RuntimeWorkspaceExecOutput,
   RuntimeWorkspaceGrantEntry,
@@ -3059,6 +3061,10 @@ export class RuntimeStore {
   }): Promise<AttentionQueryItem[]> {
     const output = await this.client.trpc.runtime.attentionQuery.query(input);
     return output.items;
+  }
+
+  async queryUsageAnalytics(input: RuntimeUsageAnalyticsInput): Promise<RuntimeUsageAnalyticsOutput> {
+    return await this.client.trpc.runtime.usageAnalytics.query(input);
   }
 
   async resolveDraft(input: { cwd: string; avatar?: string }): Promise<DraftResolutionOutput> {

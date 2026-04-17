@@ -9,9 +9,7 @@ import {
   toHeartbeatCompactSeparatorUpsertInput,
   toHeartbeatEventMessageUpsertInput,
 } from "../src/heartbeat-message-parts";
-import {
-  projectHeartbeatMessageToChatMessage,
-} from "../src/session-ledger-view";
+import { projectAiCallToModelCall, projectHeartbeatMessageToChatMessage } from "../src/session-ledger-view";
 
 const tempRoots: string[] = [];
 
@@ -107,6 +105,60 @@ describe("Feature: session heartbeat ledger projection", () => {
         "compact_separator",
         "message",
       ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given an ai_call stores provider snapshot inside request config When projecting model-call rows Then provider snapshot stays available to the UI", () => {
+    const db = createSessionDb();
+    try {
+      const call = db.appendAiCall({
+        roundIndex: 8,
+        kind: "model",
+        status: "done",
+        provider: "openai/chat",
+        model: "gpt-5.1",
+        requestUrl: "https://example.test/v1/responses",
+        requestBody: {
+          meta: { cycleId: 8 },
+          config: {
+            providerSnapshot: {
+              providerId: "default",
+              apiStandard: "openai-responses",
+              vendor: "openai",
+              profile: null,
+              model: "gpt-5.1",
+              maxContextTokens: 128_000,
+            },
+          },
+        },
+        responseBody: {
+          response: {
+            usage: {
+              promptTokens: 120,
+              completionTokens: 48,
+              totalTokens: 168,
+            },
+          },
+          outcome: { code: "done" },
+        },
+        createdAt: Date.UTC(2026, 3, 12, 14, 26, 0),
+        updatedAt: Date.UTC(2026, 3, 12, 14, 26, 5),
+        completedAt: Date.UTC(2026, 3, 12, 14, 26, 5),
+        isComplete: true,
+      });
+
+      const projected = projectAiCallToModelCall(call);
+
+      expect(projected.providerSnapshot).toEqual({
+        providerId: "default",
+        apiStandard: "openai-responses",
+        vendor: "openai",
+        profile: null,
+        model: "gpt-5.1",
+        maxContextTokens: 128_000,
+      });
     } finally {
       db.close();
     }

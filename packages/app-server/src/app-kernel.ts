@@ -132,6 +132,9 @@ import {
   type SettingsScope,
 } from "./settings-scope";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, RoomMediaAsset } from "./types";
+import { createEmptyUsageAnalyticsResult, UsageAnalyticsDb } from "./usage-analytics-db";
+import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "./usage-analytics-paths";
+import type { UsageAnalyticsQuery, UsageAnalyticsQueryResult } from "./usage-analytics-types";
 import { WorkspacePathSearchIndex } from "./workspace-path-search";
 import {
   listWorkspaceSettingsLayers,
@@ -2290,6 +2293,7 @@ export class AppKernel {
       avatarPrivateKey: avatarSeat.privateKey,
       homeDir: this.getHomeDir(),
       rootWorkspacePath,
+      usageAnalyticsRoot: resolveGlobalAvatarCanonicalRoot(meta.avatarPrincipalId, this.getHomeDir()),
       listRuntimeWorkspaceAuthorities: () => this.listRuntimeWorkspaceAuthorities(meta.id),
       messageSystem: this.messageControlPlane,
       messageActorId: this.resolveSessionMessageActorId(meta),
@@ -3699,6 +3703,25 @@ export class AppKernel {
       return [];
     }
     return runtime.listModelCallsBefore(beforeId, limit);
+  }
+
+  queryUsageAnalytics(sessionId: string, input: UsageAnalyticsQuery): UsageAnalyticsQueryResult {
+    const session = this.sessions.get(sessionId);
+    if (!session?.avatarPrincipalId) {
+      return createEmptyUsageAnalyticsResult(input);
+    }
+    const dbPath = resolveUsageAnalyticsDbPathFromAvatarRoot(
+      resolveGlobalAvatarCanonicalRoot(session.avatarPrincipalId, this.getHomeDir()),
+    );
+    if (!existsSync(dbPath)) {
+      return createEmptyUsageAnalyticsResult(input);
+    }
+    const db = new UsageAnalyticsDb(dbPath);
+    try {
+      return db.query(session.avatarPrincipalId, input);
+    } finally {
+      db.close();
+    }
   }
 
   listApiCalls(sessionId: string, afterId = 0, limit = 200): Array<ReturnType<SessionRuntime["listApiCalls"]>[number]> {

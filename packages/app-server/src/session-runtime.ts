@@ -96,13 +96,13 @@ import {
 import {
   HEARTBEAT_INSPECTION_SCOPES,
   HEARTBEAT_MESSAGE_PART_SCOPE,
-  type HeartbeatAssistantResponseSegment,
   buildHeartbeatToolInvocationMessageId,
-  toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
   toHeartbeatEventMessageUpsertInput,
+  toHeartbeatCompactSeparatorUpsertInput as toHeartbeatPartCompactSeparatorUpsertInput,
   toHeartbeatRequestMessageUpsertInputs,
   toHeartbeatResponseSegmentMessageUpsertInputs,
   toHeartbeatToolInvocationMessageUpsertInput,
+  type HeartbeatAssistantResponseSegment,
 } from "./heartbeat-message-parts";
 import type { LoopBusInput, LoopBusPhase, LoopBusWakeSource } from "./loop-bus";
 import type { LoopBusKernelSnapshot, LoopBusKernelState } from "./loopbus-kernel";
@@ -124,6 +124,7 @@ import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repai
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
+import { buildProviderSnapshot, normalizeTokenUsage, readProviderSnapshotFromRequestBody } from "./provider-snapshot";
 import { createRuntimeShellCommands } from "./runtime-cli";
 import type {
   RuntimeCycleRecord,
@@ -176,6 +177,9 @@ import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from "./types";
+import { UsageAnalyticsDb } from "./usage-analytics-db";
+import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "./usage-analytics-paths";
+import type { UsageAnalyticsFactInput } from "./usage-analytics-types";
 import {
   listWorkspaceSettingsLayers,
   readWorkspaceSettingsLayer,
@@ -1184,6 +1188,7 @@ export interface SessionRuntimeOptions {
   avatarPrivateKey?: string;
   homeDir?: string;
   rootWorkspacePath?: string;
+  usageAnalyticsRoot?: string;
   sessionRoot: string;
   sessionName: string;
   storeTarget: "global" | "workspace";
@@ -1230,6 +1235,7 @@ export interface SessionRuntimeModelDebug {
     topK?: number;
     maxRetries: number;
     maxToken?: number;
+    maxContextTokens?: number;
     compactThreshold?: number;
     thinking?: {
       enabled?: boolean;
@@ -1265,6 +1271,7 @@ export class SessionRuntime {
   private settingsEditor: SettingsEditor | null = null;
   private sessionStore: SessionStore | null = null;
   private sessionDb: SessionDb | null = null;
+  private usageAnalyticsDb: UsageAnalyticsDb | null = null;
   private attentionSearchEngine: AttentionSearchEngine | null = null;
   private attentionStore: AttentionStore | null = null;
   private attentionHashAliasStore: AttentionHashAliasStore | null = null;
@@ -5095,6 +5102,9 @@ export class SessionRuntime {
     });
     this.sessionStore = sessionStore;
     this.sessionDb = new SessionDb(join(this.options.sessionRoot, "session.db"));
+    this.usageAnalyticsDb = this.options.usageAnalyticsRoot
+      ? new UsageAnalyticsDb(resolveUsageAnalyticsDbPathFromAvatarRoot(this.options.usageAnalyticsRoot))
+      : null;
     const currentPromptWindowState = this.ensurePromptWindowStateInitialized();
     this.restoreAttentionRuntimeHistory();
     const restoredChat = readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE).filter(
@@ -5396,6 +5406,8 @@ export class SessionRuntime {
     }
     this.sessionDb?.close();
     this.sessionDb = null;
+    this.usageAnalyticsDb?.close();
+    this.usageAnalyticsDb = null;
     this.loopKernelSnapshot = null;
     this.activeCycle = null;
     for (const signal of Object.values(this.inputSignals)) {
@@ -5569,6 +5581,7 @@ export class SessionRuntime {
             topK: this.config.ai.topK,
             maxRetries: this.config.ai.maxRetries,
             maxToken: this.config.ai.maxToken,
+            maxContextTokens: this.config.ai.maxContextTokens,
             compactThreshold: this.config.ai.compactThreshold,
             thinking: this.config.ai.thinking,
             capabilities: resolveModelCapabilities(this.config.ai),
@@ -5857,7 +5870,11 @@ export class SessionRuntime {
     };
   }
 
-  matchesScopedSettingsTarget(input: { scope: "workspace" | "global"; workspacePath?: string; avatar?: string }): boolean {
+  matchesScopedSettingsTarget(input: {
+    scope: "workspace" | "global";
+    workspacePath?: string;
+    avatar?: string;
+  }): boolean {
     const runtimeAvatar = this.config?.avatar.nickname ?? this.options.avatar;
     if (input.avatar && input.avatar !== runtimeAvatar) {
       return false;
@@ -6020,12 +6037,11 @@ export class SessionRuntime {
     });
   }
 
-  editMessageChannel(input: {
-    chatId: string;
-    accessToken: string;
+  editMessageChannel(input: { chatId: string; accessToken: string; messageId: string; text: string }): {
+    ok: boolean;
     messageId: string;
-    text: string;
-  }): { ok: boolean; messageId: string; updatedAt: number } {
+    updatedAt: number;
+  } {
     const message = this.messageSystem.editAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
@@ -6039,11 +6055,12 @@ export class SessionRuntime {
     };
   }
 
-  recallMessageChannel(input: {
-    chatId: string;
-    accessToken: string;
+  recallMessageChannel(input: { chatId: string; accessToken: string; messageId: string }): {
+    ok: boolean;
     messageId: string;
-  }): { ok: boolean; messageId: string; updatedAt: number; recalledAt: number } {
+    updatedAt: number;
+    recalledAt: number;
+  } {
     const message = this.messageSystem.recallAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
@@ -8076,7 +8093,9 @@ export class SessionRuntime {
     this.emit("modelCallDelta", { entry });
   }
 
-  private buildPersistedModelConfigPayload(config: ResolvedSessionConfig | null = this.config): Record<string, unknown> | null {
+  private buildPersistedModelConfigPayload(
+    config: ResolvedSessionConfig | null = this.config,
+  ): Record<string, unknown> | null {
     if (!config) {
       return null;
     }
@@ -8093,7 +8112,9 @@ export class SessionRuntime {
       topK: config.ai.topK ?? null,
       maxRetries: config.ai.maxRetries,
       maxToken: config.ai.maxToken ?? null,
+      maxContextTokens: config.ai.maxContextTokens ?? null,
       compactThreshold: config.ai.compactThreshold ?? null,
+      providerSnapshot: buildProviderSnapshot(config),
       thinking:
         config.ai.thinking === undefined
           ? null
@@ -8103,6 +8124,79 @@ export class SessionRuntime {
             },
       lang: config.lang,
     };
+  }
+
+  private buildUsageAnalyticsFactInput(linkedModelCall: SessionAiCallRecord): UsageAnalyticsFactInput | null {
+    if (linkedModelCall.status === "running" || !this.options.avatarPrincipalId) {
+      return null;
+    }
+    const responseEnvelope =
+      linkedModelCall.responseBody &&
+      typeof linkedModelCall.responseBody === "object" &&
+      !Array.isArray(linkedModelCall.responseBody)
+        ? linkedModelCall.responseBody
+        : null;
+    const response =
+      responseEnvelope && "response" in responseEnvelope
+        ? (responseEnvelope as { response?: unknown }).response
+        : linkedModelCall.responseBody;
+    const responseRecord = response && typeof response === "object" && !Array.isArray(response) ? response : null;
+    const usage = normalizeTokenUsage(
+      responseRecord && "usage" in responseRecord ? (responseRecord as { usage?: unknown }).usage : undefined,
+    );
+    if (!usage) {
+      return null;
+    }
+    const providerSnapshot =
+      readProviderSnapshotFromRequestBody(linkedModelCall.requestBody) ?? buildProviderSnapshot(this.config);
+    if (!providerSnapshot) {
+      return null;
+    }
+    const requestRecord =
+      linkedModelCall.requestBody &&
+      typeof linkedModelCall.requestBody === "object" &&
+      !Array.isArray(linkedModelCall.requestBody)
+        ? linkedModelCall.requestBody
+        : null;
+    const requestMeta = requestRecord && "meta" in requestRecord ? (requestRecord as { meta?: unknown }).meta : null;
+    const cycleId =
+      requestMeta && typeof requestMeta === "object" && !Array.isArray(requestMeta) && "cycleId" in requestMeta
+        ? (() => {
+            const candidate = (requestMeta as { cycleId?: unknown }).cycleId;
+            return typeof candidate === "number" && Number.isInteger(candidate) ? candidate : null;
+          })()
+        : null;
+    return {
+      principalId: this.options.avatarPrincipalId,
+      sessionId: this.options.sessionId,
+      aiCallId: linkedModelCall.id,
+      cycleId,
+      roundIndex: linkedModelCall.roundIndex,
+      kind: linkedModelCall.kind,
+      status: linkedModelCall.status,
+      providerId: providerSnapshot.providerId,
+      apiStandard: providerSnapshot.apiStandard,
+      vendor: providerSnapshot.vendor,
+      profile: providerSnapshot.profile,
+      model: providerSnapshot.model,
+      createdAt: linkedModelCall.createdAt,
+      completedAt: linkedModelCall.completedAt ?? linkedModelCall.updatedAt,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      cachedInputTokens: usage.cachedInputTokens,
+      reasoningTokens: usage.reasoningTokens,
+      uncachedInputTokens: usage.uncachedInputTokens,
+      maxContextTokens: providerSnapshot.maxContextTokens,
+    };
+  }
+
+  private persistUsageAnalyticsFact(linkedModelCall: SessionAiCallRecord): void {
+    const fact = this.buildUsageAnalyticsFactInput(linkedModelCall);
+    if (!fact) {
+      return;
+    }
+    this.usageAnalyticsDb?.upsertFact(fact);
   }
 
   private createPromptStore(config: ResolvedSessionConfig): FilePromptStore {
@@ -8238,7 +8332,10 @@ export class SessionRuntime {
       .filter((messageId) => messageId.length > 0);
   }
 
-  private persistLooseConfigAuxiliaryMessage(timestamp: number, payload: Record<string, unknown> | null): string | null {
+  private persistLooseConfigAuxiliaryMessage(
+    timestamp: number,
+    payload: Record<string, unknown> | null,
+  ): string | null {
     const sessionDb = this.sessionDb;
     if (!sessionDb) {
       return null;
@@ -8309,8 +8406,13 @@ export class SessionRuntime {
     return this.activeModelResponseDraft;
   }
 
-  private readPersistedAssistantResponseSegments(response: AgentModelCallRecord["response"] | undefined): HeartbeatAssistantResponseSegment[] {
-    const candidate = response && typeof response === "object" && "assistantSegments" in response ? response.assistantSegments : undefined;
+  private readPersistedAssistantResponseSegments(
+    response: AgentModelCallRecord["response"] | undefined,
+  ): HeartbeatAssistantResponseSegment[] {
+    const candidate =
+      response && typeof response === "object" && "assistantSegments" in response
+        ? response.assistantSegments
+        : undefined;
     if (!Array.isArray(candidate)) {
       return [];
     }
@@ -8506,10 +8608,7 @@ export class SessionRuntime {
     return incoming;
   }
 
-  private persistHeartbeatResponseSegments(input: {
-    aiCallId: number;
-    roundIndex: number;
-  }): string[] {
+  private persistHeartbeatResponseSegments(input: { aiCallId: number; roundIndex: number }): string[] {
     if (!this.activeModelResponseDraft || !this.sessionDb) {
       return [];
     }
@@ -8556,7 +8655,9 @@ export class SessionRuntime {
     if (!this.activeModelResponseDraft || !this.sessionDb) {
       return [];
     }
-    const invocation = this.activeModelResponseDraft.toolTrace.find((entry) => entry.invocationId === input.invocationId);
+    const invocation = this.activeModelResponseDraft.toolTrace.find(
+      (entry) => entry.invocationId === input.invocationId,
+    );
     if (!invocation) {
       return [];
     }
@@ -8601,15 +8702,13 @@ export class SessionRuntime {
             input: null,
             startedAt: input.payload.startedAt ?? Date.now(),
             finishedAt: input.payload.finishedAt ?? input.payload.startedAt ?? Date.now(),
-        };
+          };
     const next = {
       ...current,
       tool: input.tool,
       ...input.payload,
       input:
-        "input" in input.payload
-          ? this.mergeHeartbeatToolInput(current.input, input.payload.input)
-          : current.input,
+        "input" in input.payload ? this.mergeHeartbeatToolInput(current.input, input.payload.input) : current.input,
       startedAt:
         input.payload.startedAt === undefined
           ? current.startedAt
@@ -8946,6 +9045,10 @@ export class SessionRuntime {
       outcome: record.outcome ?? null,
     });
     const existingModelCallId = this.activeModelCallId ?? null;
+    const persistedRequestBody =
+      existingModelCallId === null
+        ? requestBody
+        : (this.sessionDb.getAiCallById(existingModelCallId)?.requestBody ?? requestBody);
     const modelCall =
       record.status === "running" || existingModelCallId === null
         ? this.sessionDb.appendAiCall({
@@ -8957,7 +9060,7 @@ export class SessionRuntime {
             provider: record.provider,
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
-            requestBody,
+            requestBody: persistedRequestBody,
             responseBody,
             error: record.error,
             outcome: record.outcome,
@@ -8973,7 +9076,7 @@ export class SessionRuntime {
             provider: record.provider,
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
-            requestBody,
+            requestBody: persistedRequestBody,
             responseBody,
             error: record.error,
             outcome: record.outcome,
@@ -9084,6 +9187,9 @@ export class SessionRuntime {
     });
     if (record.status === "done") {
       this.recordHeartbeatCompactBoundary(linkedModelCall);
+    }
+    if (record.status !== "running") {
+      this.persistUsageAnalyticsFact(linkedModelCall);
     }
     if (record.status === "error") {
       this.setProjectionStage("error");

@@ -1,11 +1,8 @@
 import type { MessageKind, MessagePayload } from "@agenter/message-system";
-import type {
-  SessionAiCallRecord,
-  SessionCollectedInput,
-  SessionMessageRecord,
-} from "@agenter/session-system";
+import type { SessionAiCallRecord, SessionCollectedInput, SessionMessageRecord } from "@agenter/session-system";
 
 import { collectClientMessageIds, toChatCycleId, type ChatCycle, type ChatCycleCompactTrigger } from "./chat-cycles";
+import { readProviderSnapshotFromRequestBody, type ProviderSnapshot } from "./provider-snapshot";
 import type { ChatMessage, ChatSessionAsset, ChatToolInvocation } from "./types";
 
 interface HeartbeatMessagePayload {
@@ -38,6 +35,7 @@ export interface RuntimeModelCallRecord {
   status: SessionAiCallRecord["status"];
   provider: string;
   model: string;
+  providerSnapshot: ProviderSnapshot | null;
   requestUrl: string;
   request: unknown;
   response: unknown;
@@ -81,7 +79,9 @@ const readPayloadText = (payload: unknown): string | null => {
 };
 
 const readStructuredHeartbeatText = (message: SessionMessageRecord): string => {
-  const textParts = message.parts.map((part) => readPayloadText(part.payload)).filter((part): part is string => part !== null);
+  const textParts = message.parts
+    .map((part) => readPayloadText(part.payload))
+    .filter((part): part is string => part !== null);
   if (textParts.length > 0) {
     return textParts.join("");
   }
@@ -123,7 +123,9 @@ const readHeartbeatMessagePayload = (message: SessionMessageRecord): HeartbeatMe
     updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : undefined,
     messageKind: typeof record.messageKind === "string" ? (record.messageKind as MessageKind) : undefined,
     messagePayload: record.messagePayload as MessagePayload | undefined,
-    attachments: Array.isArray(record.attachments) ? structuredClone(record.attachments as ChatSessionAsset[]) : undefined,
+    attachments: Array.isArray(record.attachments)
+      ? structuredClone(record.attachments as ChatSessionAsset[])
+      : undefined,
     tool: record.tool ? (structuredClone(record.tool) as ChatToolInvocation) : undefined,
   };
 };
@@ -216,12 +218,7 @@ const readCompactTrigger = (call: SessionAiCallRecord): ChatCycleCompactTrigger 
   const responseRecord = asRecord(response);
   const decision = asRecord(responseRecord?.decision);
   const trigger = decision?.trigger;
-  if (
-    trigger === "manual" ||
-    trigger === "threshold" ||
-    trigger === "error" ||
-    trigger === "attention_retry"
-  ) {
+  if (trigger === "manual" || trigger === "threshold" || trigger === "error" || trigger === "attention_retry") {
     return trigger;
   }
   const request = asRecord(call.requestBody);
@@ -239,6 +236,7 @@ export const projectAiCallToModelCall = (call: SessionAiCallRecord): RuntimeMode
     status: call.status,
     provider: call.provider,
     model: call.model,
+    providerSnapshot: readProviderSnapshotFromRequestBody(call.requestBody),
     requestUrl: call.requestUrl,
     request: structuredClone(call.requestBody),
     response: structuredClone(envelope.response ?? null),

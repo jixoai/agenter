@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
+import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import type { MessageControlPlane } from "@agenter/message-system";
 import type { TerminalControlPlane } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
+import { UsageAnalyticsDb } from "../src/usage-analytics-db";
+import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 
 const tempDirs: string[] = [];
 
@@ -89,6 +92,85 @@ describe("Feature: app-server trpc procedures", () => {
       privateKey: ROOT_AUTH_PRIVATE_KEY,
       authId: expectedAuthId,
       rootAuthKeyPath: descriptor.rootAuthKeyPath,
+    });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given durable usage analytics facts When runtime.usageAnalytics is queried Then the caller receives token totals for the avatar behind that session", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+
+    const created = await caller.session.create({
+      cwd: root,
+      name: "usage-session",
+      autoStart: false,
+    });
+    const avatarPrincipalId = created.session.avatarPrincipalId;
+    expect(avatarPrincipalId).toBeDefined();
+    if (!avatarPrincipalId) {
+      throw new Error("avatar principal missing");
+    }
+    const analyticsDb = new UsageAnalyticsDb(
+      resolveUsageAnalyticsDbPathFromAvatarRoot(resolveGlobalAvatarCanonicalRoot(avatarPrincipalId, homeDir)),
+    );
+    analyticsDb.upsertFact({
+      principalId: avatarPrincipalId,
+      sessionId: created.session.id,
+      aiCallId: 11,
+      cycleId: 4,
+      roundIndex: 4,
+      kind: "model",
+      status: "done",
+      providerId: "default",
+      apiStandard: "openai-responses",
+      vendor: "openai",
+      profile: null,
+      model: "gpt-test",
+      createdAt: Date.UTC(2026, 3, 12, 14, 25, 0),
+      completedAt: Date.UTC(2026, 3, 12, 14, 25, 5),
+      inputTokens: 180,
+      outputTokens: 72,
+      totalTokens: 252,
+      cachedInputTokens: 24,
+      reasoningTokens: 18,
+      uncachedInputTokens: 156,
+      maxContextTokens: 128_000,
+    });
+    analyticsDb.close();
+
+    const result = await caller.runtime.usageAnalytics({
+      sessionId: created.session.id,
+      sinceMs: Date.UTC(2026, 3, 12, 14, 0, 0),
+      untilMs: Date.UTC(2026, 3, 12, 15, 0, 0),
+      granularity: "raw",
+    });
+
+    expect(result.totals).toEqual({
+      callCount: 1,
+      inputTokens: 180,
+      outputTokens: 72,
+      totalTokens: 252,
+      cachedInputTokens: {
+        value: 24,
+        knownCallCount: 1,
+      },
+      reasoningTokens: {
+        value: 18,
+        knownCallCount: 1,
+      },
+      uncachedInputTokens: {
+        value: 156,
+        knownCallCount: 1,
+      },
     });
 
     await kernel.stop();
@@ -1102,21 +1184,13 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
 
-    expect(page.items.map((group) => group.kind)).toEqual([
-      "before-call",
-      "call",
-      "before-call-pending",
-    ]);
+    expect(page.items.map((group) => group.kind)).toEqual(["before-call", "call", "before-call-pending"]);
     expect(page.items.map((group) => group.groupId)).toEqual([
       `heartbeat-group:before-call:${aiCallId}`,
       `heartbeat-group:call:${aiCallId}`,
       `heartbeat-group:before-call-pending:${aiCallId + 1}`,
     ]);
-    expect(page.items[0]?.items.map((row) => row.messageId)).toEqual([
-      "request-1",
-      "config-1",
-      "room-ingress-1",
-    ]);
+    expect(page.items[0]?.items.map((row) => row.messageId)).toEqual(["request-1", "config-1", "room-ingress-1"]);
     expect(page.items[1]?.items.map((row) => row.messageId)).toEqual(["response-1"]);
     expect(page.items[2]?.items.map((row) => row.messageId)).toEqual(["config-2"]);
 

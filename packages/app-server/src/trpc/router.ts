@@ -20,6 +20,25 @@ const reversePageInput = z.object({
   before: reverseTimeCursorSchema.optional(),
   limit: z.number().int().positive().max(500).optional(),
 });
+const usageAnalyticsInput = z
+  .object({
+    sessionId: z.string().min(1),
+    sinceMs: z.number().int().nonnegative(),
+    untilMs: z.number().int().nonnegative(),
+    granularity: z.enum(["auto", "raw", "day", "month", "year"]).optional(),
+    filters: z
+      .object({
+        sessionId: z.string().min(1).optional(),
+        kind: z.string().min(1).optional(),
+        providerId: z.string().min(1).optional(),
+        model: z.string().min(1).optional(),
+      })
+      .optional(),
+  })
+  .refine((value) => value.untilMs >= value.sinceMs, {
+    message: "untilMs must be greater than or equal to sinceMs",
+    path: ["untilMs"],
+  });
 const channelAccessInput = z.object({
   chatId: z.string().min(1),
   accessToken: z.string().min(1),
@@ -1280,7 +1299,9 @@ export const appRouter = t.router({
           limit: input.limit,
         }),
       })),
-    requestCompact: t.procedure.input(sessionIdInput).mutation(({ ctx, input }) => ctx.kernel.requestRuntimeCompact(input.sessionId)),
+    requestCompact: t.procedure
+      .input(sessionIdInput)
+      .mutation(({ ctx, input }) => ctx.kernel.requestRuntimeCompact(input.sessionId)),
     schedulerLogs: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
@@ -1317,6 +1338,14 @@ export const appRouter = t.router({
       .query(({ ctx, input }) =>
         ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
+    usageAnalytics: t.procedure.input(usageAnalyticsInput).query(({ ctx, input }) =>
+      ctx.kernel.queryUsageAnalytics(input.sessionId, {
+        sinceMs: input.sinceMs,
+        untilMs: input.untilMs,
+        granularity: input.granularity,
+        filters: input.filters,
+      }),
+    ),
     requestAuxPage: t.procedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
