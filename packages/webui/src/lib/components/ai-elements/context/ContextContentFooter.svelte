@@ -1,35 +1,26 @@
 <script lang="ts">
-	import { formatContextInteger, formatContextPercent } from './context-format';
-	import { getAiElementsContextState } from './context-state.svelte.js';
+	import { cn } from "$lib/utils";
+	import { getContextValue } from "./context-context.svelte.js";
 
-	const state = getAiElementsContextState();
-	const progress = $derived.by(() => {
-		if (state.usedTokens === null || state.maxTokens === null || state.maxTokens <= 0) {
-			return null;
-		}
-		return Math.min(1, state.usedTokens / state.maxTokens);
-	});
-	const remaining = $derived.by(() => {
-		if (state.usedTokens === null || state.maxTokens === null) {
-			return null;
-		}
-		return Math.max(0, state.maxTokens - state.usedTokens);
-	});
+	interface Props {
+		children?: import("svelte").Snippet;
+		class?: string;
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
+
+	let context = getContextValue();
 </script>
 
-<footer class="grid gap-2 border-t border-border/50 pt-3">
-	{#if progress !== null}
-		<div class="grid gap-1">
-			<div class="h-1.5 overflow-hidden rounded-full bg-muted/75">
-				<div class="h-full rounded-full bg-primary/75" style:width={`${Math.max(0.02, progress) * 100}%`}></div>
-			</div>
-			<div class="flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-				<div>{formatContextPercent(progress)} used</div>
-				<div>{formatContextInteger(remaining)} remaining</div>
-			</div>
-		</div>
+<div
+	class={cn("bg-secondary flex w-full items-center justify-between gap-3 p-3 text-xs", className)}
+	{...props}
+>
+	{#if children}
+		{@render children?.()}
+	{:else}
+		<span class="text-muted-foreground">Estimated cost</span>
+		<span>{context.estimatedCostLabel ?? "Unavailable"}</span>
 	{/if}
-	{#if state.estimatedCostLabel}
-		<div class="text-[11px] text-muted-foreground">Estimated cost {state.estimatedCostLabel}</div>
-	{/if}
-</footer>
+</div>

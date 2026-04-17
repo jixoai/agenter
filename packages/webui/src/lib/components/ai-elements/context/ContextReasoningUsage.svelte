@@ -1,10 +1,26 @@
 <script lang="ts">
-	import ContextUsageRow from './ContextUsageRow.svelte';
-	import { getAiElementsContextState } from './context-state.svelte.js';
+	import { cn } from "$lib/utils";
+	import { getContextValue } from "./context-context.svelte.js";
+	import TokensWithCost from "./TokensWithCost.svelte";
 
-	const state = getAiElementsContextState();
+	interface Props {
+		children?: import("svelte").Snippet;
+		class?: string;
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
+
+	let context = getContextValue();
+
+	let reasoningTokens = $derived.by(() => context.usage?.reasoningTokens ?? 0);
 </script>
 
-{#if typeof state.usage?.reasoningTokens === 'number'}
-	<ContextUsageRow label="Reasoning" description="Thinking tokens" value={state.usage.reasoningTokens} />
+{#if children}
+	{@render children()}
+{:else if reasoningTokens}
+	<div class={cn("flex items-center justify-between text-xs", className)} {...props}>
+		<span class="text-muted-foreground">Reasoning</span>
+		<TokensWithCost tokens={reasoningTokens} />
+	</div>
 {/if}

@@ -8,6 +8,7 @@ const runtimePageToolbarSource = readFileSync(
   resolve(import.meta.dirname, "runtime-page-toolbar-content.svelte"),
   "utf8",
 );
+const runtimeHeartbeatStageSource = readFileSync(resolve(import.meta.dirname, "runtime-stage-heartbeat.svelte"), "utf8");
 
 describe("Feature: Runtime shell toolbar contract", () => {
   test("Scenario: Given runtime chrome belongs to the shared page toolbar When reading the runtime shell source Then it injects toolbar content instead of reviving a body header", () => {
@@ -21,5 +22,10 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimePageToolbarSource).toContain("<RuntimeTabBar");
     expect(runtimePageToolbarSource).toContain("Stop");
     expect(runtimePageToolbarSource).toContain("Start");
+  });
+
+  test("Scenario: Given Heartbeat owns an inner scroll viewport When reading the stage source Then the stage itself stays shrinkable instead of expanding past the workbench body", () => {
+    expect(runtimeHeartbeatStageSource).toContain('class="runtime-heartbeat-stage');
+    expect(runtimeHeartbeatStageSource).toContain("min-block-size: 0;");
   });
 });

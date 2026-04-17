@@ -1,13 +1,14 @@
 <script lang="ts">
-	let {
-		class: className = '',
-		children,
-	}: {
+	import { cn } from "$lib/utils";
+	interface Props {
+		children?: import("svelte").Snippet;
 		class?: string;
-		children?: import('svelte').Snippet;
-	} = $props();
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
 </script>
 
-<div class={`grid gap-2 ${className}`.trim()}>
+<div class={cn("w-full p-3", className)} {...props}>
 	{@render children?.()}
 </div>

@@ -15,6 +15,10 @@
 
 	import type { RuntimeHeartbeatContextState } from './runtime-heartbeat-statusbar-state';
 
+type RenderableContextState = Exclude<RuntimeHeartbeatContextState, { kind: 'absent' }> & {
+	maxContextTokens: number;
+};
+
 	let {
 		state,
 		class: className = '',
@@ -36,28 +40,44 @@
 		}
 		return currencyFormatter(state.estimatedCost.currency).format(state.estimatedCost.totalCost);
 	});
+
+	const renderableState = $derived.by((): RenderableContextState | null => {
+		if (state.kind === 'absent') {
+			return null;
+		}
+		return {
+			...state,
+			maxContextTokens:
+				state.maxContextTokens !== null && Number.isFinite(state.maxContextTokens) && state.maxContextTokens > 0
+					? state.maxContextTokens
+					: 0,
+		};
+	});
 </script>
 
-{#if state.kind !== 'absent'}
-	<div class={cn('max-w-full', className)} data-testid="runtime-heartbeat-context" data-context-state={state.kind}>
+{#if renderableState}
+	<div
+		class={cn('max-w-full', className)}
+		data-testid="runtime-heartbeat-context"
+		data-context-state={renderableState.kind}
+	>
 		<Context
-			maxTokens={state.maxContextTokens}
-			modelId={state.providerLabel}
+			maxTokens={renderableState.maxContextTokens}
+			modelId={renderableState.providerLabel ?? undefined}
 			usage={
-				state.kind === 'available'
+				renderableState.kind === 'available'
 					? {
-							inputTokens: state.inputTokens,
-							outputTokens: state.outputTokens,
-							cachedInputTokens: state.cachedInputTokens,
-							reasoningTokens: state.reasoningTokens,
+							inputTokens: renderableState.inputTokens,
+							outputTokens: renderableState.outputTokens,
+							cachedInputTokens: renderableState.cachedInputTokens ?? undefined,
+							reasoningTokens: renderableState.reasoningTokens ?? undefined,
 						}
-					: null
+					: undefined
 			}
-			usedTokens={state.kind === 'available' ? state.usedTokens : null}
+			usedTokens={renderableState.kind === 'available' ? renderableState.usedTokens : 0}
 			estimatedCostLabel={estimatedCostLabel}
-			disabled={state.kind !== 'available'}
 		>
-			<ContextTrigger class="h-8 max-w-full" />
+			<ContextTrigger class="h-8 max-w-full gap-2" disabled={renderableState.kind !== 'available'} />
 			<ContextContent>
 				<ContextContentHeader />
 				<ContextContentBody>

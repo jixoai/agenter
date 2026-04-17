@@ -1,10 +1,26 @@
 <script lang="ts">
-	import ContextUsageRow from './ContextUsageRow.svelte';
-	import { getAiElementsContextState } from './context-state.svelte.js';
+	import { cn } from "$lib/utils";
+	import { getContextValue } from "./context-context.svelte.js";
+	import TokensWithCost from "./TokensWithCost.svelte";
 
-	const state = getAiElementsContextState();
+	interface Props {
+		children?: import("svelte").Snippet;
+		class?: string;
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
+
+	let context = getContextValue();
+
+	let cacheTokens = $derived.by(() => context.usage?.cachedInputTokens ?? 0);
 </script>
 
-{#if typeof state.usage?.cachedInputTokens === 'number'}
-	<ContextUsageRow label="Cache" description="Cached input tokens" value={state.usage.cachedInputTokens} />
+{#if children}
+	{@render children?.()}
+{:else if cacheTokens}
+	<div class={cn("flex items-center justify-between text-xs", className)} {...props}>
+		<span class="text-muted-foreground">Cache</span>
+		<TokensWithCost tokens={cacheTokens} />
+	</div>
 {/if}

@@ -149,7 +149,7 @@
 </script>
 
 <div
-	class="relative grid h-full grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
+	class="runtime-heartbeat-stage relative grid h-full min-w-0 grid-rows-[minmax(0,1fr)_auto] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_6%)_0%,var(--card)_18%,color-mix(in_srgb,var(--background),var(--card)_42%)_100%)]"
 	data-testid="runtime-heartbeat-stage"
 >
 	{#if secondaryStatus}
@@ -161,7 +161,7 @@
 	{/if}
 
 	<VirtualConversation
-		class="h-full"
+		class="h-full min-w-0"
 		contentClass="px-3"
 		viewportTestId="runtime-heartbeat-viewport"
 		bind:atTop={viewportAtTop}
@@ -234,3 +234,9 @@
 		onSaveConfig={onSaveConfig}
 	/>
 </div>
+
+<style>
+	.runtime-heartbeat-stage {
+		min-block-size: 0;
+	}
+</style>

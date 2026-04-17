@@ -17,6 +17,8 @@ class StickToBottomContext {
 	#intersectionObserver: IntersectionObserver | null = null;
 	#sentinel: HTMLElement | null = null;
 	#userHasScrolled = $state(false);
+	#programmaticScrollGuardFrames = 0;
+	#programmaticScrollGuardHandle = 0;
 	#initial: ScrollBehavior;
 	#resize: ScrollBehavior;
 	#observeResize: boolean;
@@ -31,6 +33,10 @@ class StickToBottomContext {
 
 	get isAtBottom() {
 		return this.#isAtBottom;
+	}
+
+	get shouldStick() {
+		return !this.#userHasScrolled;
 	}
 
 	configure(options: StickToBottomOptions) {
@@ -54,10 +60,12 @@ class StickToBottomContext {
 			return;
 		}
 		this.#userHasScrolled = false;
+		this.#armProgrammaticScrollGuard();
 		this.#element.scrollTo({
 			top: this.#element.scrollHeight,
 			behavior,
 		});
+		this.#element.dispatchEvent(new Event('scroll'));
 	}
 
 	#handleScroll = () => {
@@ -68,8 +76,32 @@ class StickToBottomContext {
 		const threshold = 160;
 		const isAtBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 		this.#isAtBottom = isAtBottom;
-		this.#userHasScrolled = !isAtBottom;
+		if (isAtBottom) {
+			this.#userHasScrolled = false;
+			return;
+		}
+		if (this.#programmaticScrollGuardFrames > 0) {
+			return;
+		}
+		this.#userHasScrolled = true;
 	};
+
+	#armProgrammaticScrollGuard(frames = 24) {
+		if (this.#programmaticScrollGuardHandle !== 0) {
+			cancelAnimationFrame(this.#programmaticScrollGuardHandle);
+			this.#programmaticScrollGuardHandle = 0;
+		}
+		this.#programmaticScrollGuardFrames = frames;
+		const tickGuard = () => {
+			if (this.#programmaticScrollGuardFrames <= 0) {
+				this.#programmaticScrollGuardHandle = 0;
+				return;
+			}
+			this.#programmaticScrollGuardFrames -= 1;
+			this.#programmaticScrollGuardHandle = requestAnimationFrame(tickGuard);
+		};
+		this.#programmaticScrollGuardHandle = requestAnimationFrame(tickGuard);
+	}
 
 	#checkScrollPosition() {
 		if (!this.#element) {
@@ -142,6 +174,9 @@ class StickToBottomContext {
 		this.#resizeObserver?.disconnect();
 		this.#mutationObserver?.disconnect();
 		this.#intersectionObserver?.disconnect();
+		if (this.#programmaticScrollGuardHandle !== 0) {
+			cancelAnimationFrame(this.#programmaticScrollGuardHandle);
+		}
 		if (this.#element) {
 			this.#element.removeEventListener('scroll', this.#handleScroll);
 		}
@@ -152,6 +187,8 @@ class StickToBottomContext {
 		this.#mutationObserver = null;
 		this.#intersectionObserver = null;
 		this.#sentinel = null;
+		this.#programmaticScrollGuardFrames = 0;
+		this.#programmaticScrollGuardHandle = 0;
 	}
 }
 

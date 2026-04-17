@@ -1,10 +1,26 @@
 <script lang="ts">
-	import ContextUsageRow from './ContextUsageRow.svelte';
-	import { getAiElementsContextState } from './context-state.svelte.js';
+	import { cn } from "$lib/utils";
+	import { getContextValue } from "./context-context.svelte.js";
+	import TokensWithCost from "./TokensWithCost.svelte";
 
-	const state = getAiElementsContextState();
+	interface Props {
+		children?: import("svelte").Snippet;
+		class?: string;
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
+
+	let context = getContextValue();
+
+	let inputTokens = $derived.by(() => context.usage?.inputTokens ?? 0);
 </script>
 
-{#if typeof state.usage?.inputTokens === 'number'}
-	<ContextUsageRow label="Input" description="Prompt tokens" value={state.usage.inputTokens} />
+{#if children}
+	{@render children()}
+{:else if inputTokens}
+	<div class={cn("flex items-center justify-between text-xs", className)} {...props}>
+		<span class="text-muted-foreground">Input</span>
+		<TokensWithCost tokens={inputTokens} />
+	</div>
 {/if}

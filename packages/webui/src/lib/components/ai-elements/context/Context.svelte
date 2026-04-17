@@ -1,50 +1,47 @@
 <script lang="ts">
-	import { DropdownMenu } from '$lib/components/ui/dropdown-menu/index.js';
+	import * as HoverCard from "$lib/components/ui/hover-card/index.js";
+	import { ContextClass, setContextValue, type ContextSchema } from "./context-context.svelte";
 
-	import {
-		createAiElementsContextState,
-		setAiElementsContextState,
-		type AiElementsContextUsage,
-	} from './context-state.svelte.js';
+	interface Props extends ContextSchema {
+		children?: import("svelte").Snippet;
+		// HoverCard props
+		closeDelay?: number;
+		openDelay?: number;
+		[key: string]: any;
+	}
 
 	let {
-		maxTokens = null,
-		modelId = null,
-		usage = null,
-		usedTokens = null,
+		usedTokens,
+		maxTokens,
+		usage,
+		modelId,
 		estimatedCostLabel = null,
-		disabled = false,
-		open = $bindable(false),
 		children,
-	}: {
-		maxTokens?: number | null;
-		modelId?: string | null;
-		usage?: AiElementsContextUsage | null;
-		usedTokens?: number | null;
-		estimatedCostLabel?: string | null;
-		disabled?: boolean;
-		open?: boolean;
-		children?: import('svelte').Snippet;
-	} = $props();
+		closeDelay = 0,
+		openDelay = 0,
+		...props
+	}: Props = $props();
 
-	const state = $state(createAiElementsContextState());
-	setAiElementsContextState(state);
-
-	$effect(() => {
-		state.maxTokens = maxTokens;
-		state.modelId = modelId;
-		state.usage = usage;
-		state.usedTokens = usedTokens;
-		state.estimatedCostLabel = estimatedCostLabel;
-		state.disabled = disabled;
-		state.open = open;
+	const contextInstance = new ContextClass({
+		usedTokens: 0,
+		maxTokens: 0,
+		usage: undefined,
+		modelId: undefined,
+		estimatedCostLabel: null,
 	});
 
+	// Update context when props change
 	$effect(() => {
-		open = state.open;
+		contextInstance.usedTokens = usedTokens;
+		contextInstance.maxTokens = maxTokens;
+		contextInstance.usage = usage;
+		contextInstance.modelId = modelId;
+		contextInstance.estimatedCostLabel = estimatedCostLabel;
 	});
+
+	setContextValue(contextInstance);
 </script>
 
-<DropdownMenu bind:open={state.open}>
+<HoverCard.Root {openDelay} {closeDelay} {...props}>
 	{@render children?.()}
-</DropdownMenu>
+</HoverCard.Root>

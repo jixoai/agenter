@@ -1,20 +1,16 @@
 <script lang="ts">
-	import { DropdownMenuContent } from '$lib/components/ui/dropdown-menu/index.js';
+	import HoverCardContent from "$lib/components/ui/hover-card/hover-card-content.svelte";
+	import { cn } from "$lib/utils";
 
-	let {
-		class: className = '',
-		children,
-	}: {
+	interface Props {
+		children?: import("svelte").Snippet;
 		class?: string;
-		children?: import('svelte').Snippet;
-	} = $props();
+		[key: string]: any;
+	}
+
+	let { children, class: className, ...props }: Props = $props();
 </script>
 
-<DropdownMenuContent
-	align="end"
-	class={`w-[22rem] max-w-[min(22rem,calc(100vw-2rem))] rounded-2xl p-3 ${className}`.trim()}
->
-	<div class="grid gap-3">
-		{@render children?.()}
-	</div>
-</DropdownMenuContent>
+<HoverCardContent class={cn("min-w-[240px] divide-y overflow-hidden p-0", className)} {...props}>
+	{@render children?.()}
+</HoverCardContent>

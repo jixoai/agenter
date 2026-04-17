@@ -3,7 +3,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { type VariantProps, tv } from 'tailwind-variants';
 
-	import type { MessageFrom } from './Message.svelte';
+	import type { MessageFrom } from './message.types.js';
 
 	const messageContentVariants = tv({
 		base: 'grid gap-3 overflow-hidden text-sm',

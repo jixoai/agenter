@@ -4,7 +4,9 @@ export type {
   ScrollViewProps,
   ScrollViewVirtualizer,
   ScrollVirtualConfig,
+  ScrollVirtualItemSizeAdjustHandler,
   ScrollVirtualMeasureInput,
+  ScrollVirtualOnChangeHandler,
 } from "./scroll-view.types";
 export type {
   WorkbenchSplitDetailRatioPersistence,

@@ -13,6 +13,15 @@ export interface ScrollVirtualMeasureInput<TItem> {
 }
 
 export type ScrollVirtualMeasureHandler<TItem> = (input: ScrollVirtualMeasureInput<TItem>) => number;
+export type ScrollVirtualOnChangeHandler = (
+  instance: Virtualizer<HTMLDivElement, HTMLDivElement>,
+  sync: boolean,
+) => void;
+export type ScrollVirtualItemSizeAdjustHandler = (
+  item: VirtualItem,
+  delta: number,
+  instance: Virtualizer<HTMLDivElement, HTMLDivElement>,
+) => boolean;
 
 export interface ScrollVirtualConfig<TItem> {
   items: readonly TItem[];
@@ -33,6 +42,8 @@ export interface ScrollVirtualConfig<TItem> {
   isScrollingResetDelay?: number;
   useScrollendEvent?: boolean;
   useAnimationFrameWithResizeObserver?: boolean;
+  onChange?: ScrollVirtualOnChangeHandler;
+  shouldAdjustScrollPositionOnItemSizeChange?: ScrollVirtualItemSizeAdjustHandler;
 }
 
 export interface ScrollViewProps<TItem> {
@@ -44,6 +55,7 @@ export interface ScrollViewProps<TItem> {
   contentRef?: HTMLDivElement | null;
   viewportTestId?: string;
   onViewportScroll?: (event: Event) => void;
+  onVirtualSizeChange?: (size: number) => void;
   virtual?: ScrollVirtualConfig<TItem>;
   virtualizerRef?: ScrollViewVirtualizer | null;
   children?: import("svelte").Snippet;

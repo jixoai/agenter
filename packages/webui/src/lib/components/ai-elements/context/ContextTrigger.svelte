@@ -1,45 +1,52 @@
 <script lang="ts">
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import { cn } from "$lib/utils";
+	import { Button } from "$lib/components/ui/button/index.js";
+	import { buttonVariants } from "$lib/components/ui/button/button.variants.js";
+	import HoverCardTrigger from "$lib/components/ui/hover-card/hover-card-trigger.svelte";
+	import ContextIcon from "./ContextIcon.svelte";
+	import { getContextValue } from "./context-context.svelte";
 
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { DropdownMenuTrigger } from '$lib/components/ui/dropdown-menu/index.js';
+	interface Props {
+		children?: import("svelte").Snippet;
+		variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
+		size?: "default" | "sm" | "lg" | "icon";
+		disabled?: boolean;
+		[key: string]: any;
+	}
 
-	import { formatContextInteger } from './context-format';
-	import { getAiElementsContextState } from './context-state.svelte.js';
+	let { children, variant = "ghost", size = "default", disabled = false, class: className = "", ...props }: Props =
+		$props();
 
-	let {
-		class: className = '',
-	}: {
-		class?: string;
-	} = $props();
-
-	const state = getAiElementsContextState();
-	const triggerLabel = $derived.by(() => {
-		if (state.usedTokens === null) {
-			return 'Context';
-		}
-		if (state.maxTokens !== null) {
-			return `${formatContextInteger(state.usedTokens)} / ${formatContextInteger(state.maxTokens)}`;
-		}
-		return `${formatContextInteger(state.usedTokens)} used`;
-	});
+	const context = getContextValue();
 </script>
 
-<DropdownMenuTrigger disabled={state.disabled}>
-	{#snippet child({ props })}
-		<Button
-			{...props}
-			variant="outline"
-			size="sm"
-			class={`min-w-0 rounded-full ${className}`.trim()}
-			aria-label="Context"
-			title="Context"
-		>
-			{#snippet children()}
-				<span class="truncate">Context</span>
-				<span class="truncate text-muted-foreground">{triggerLabel}</span>
-				<ChevronDown class="size-3.5 opacity-70" />
-			{/snippet}
-		</Button>
-	{/snippet}
-</DropdownMenuTrigger>
+{#snippet triggerContent()}
+	{#if children}
+		{@render children()}
+	{:else}
+		<span class="text-muted-foreground font-medium">
+			{context.displayPercent}
+		</span>
+		<ContextIcon />
+	{/if}
+{/snippet}
+
+{#if disabled}
+	<Button
+		{variant}
+		{size}
+		{disabled}
+		class={className}
+		{...props}
+	>
+		{@render triggerContent()}
+	</Button>
+{:else}
+	<HoverCardTrigger
+		class={cn(buttonVariants({ variant, size }), className)}
+		data-slot="button"
+		{...props}
+	>
+		{@render triggerContent()}
+	</HoverCardTrigger>
+{/if}

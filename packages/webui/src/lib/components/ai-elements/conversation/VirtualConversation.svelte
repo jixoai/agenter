@@ -1,7 +1,11 @@
 <script lang="ts" generics="Item">
-	import { ScrollView, type ScrollViewVirtualizer, type ScrollVirtualConfig } from '@agenter/svelte-components';
+	import {
+		ScrollView,
+		type ScrollViewVirtualizer,
+		type ScrollVirtualConfig,
+	} from '@agenter/svelte-components';
 	import type { Snippet } from 'svelte';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 
 	import { cn } from '$lib/utils.js';
 
@@ -16,6 +20,7 @@
 		initial = 'auto',
 		resize = 'auto',
 		viewportRef = $bindable<HTMLDivElement | null>(null),
+		contentRef = $bindable<HTMLDivElement | null>(null),
 		items,
 		virtual,
 		virtualizerRef = $bindable<ScrollViewVirtualizer | null>(null),
@@ -33,6 +38,7 @@
 		initial?: ScrollBehavior;
 		resize?: ScrollBehavior;
 		viewportRef?: HTMLDivElement | null;
+		contentRef?: HTMLDivElement | null;
 		items: readonly Item[];
 		virtual: Omit<ScrollVirtualConfig<Item>, 'items'>;
 		virtualizerRef?: ScrollViewVirtualizer | null;
@@ -46,26 +52,50 @@
 
 	const resolvedViewportClass = $derived(cn('conversation-scroll-viewport', viewportClass));
 
-	const virtualConfig = $derived({
-		...virtual,
-		items,
-		initialOffset: virtual.initialOffset ?? Number.MAX_SAFE_INTEGER,
-	} satisfies ScrollVirtualConfig<Item>);
-
 	const context = setStickToBottomContext({
 		observeMutations: false,
 		observeResize: false,
 	});
+	const virtualConfig = $derived.by(() => {
+		const shouldForceBottomAnchor = context.shouldStick;
+		const upstreamSizeAdjustHandler = virtual.shouldAdjustScrollPositionOnItemSizeChange;
+		const nextSizeAdjustHandler =
+			shouldForceBottomAnchor || upstreamSizeAdjustHandler
+				? (item: Parameters<NonNullable<typeof upstreamSizeAdjustHandler>>[0],
+						delta: Parameters<NonNullable<typeof upstreamSizeAdjustHandler>>[1],
+						instance: Parameters<NonNullable<typeof upstreamSizeAdjustHandler>>[2]) => {
+						if (shouldForceBottomAnchor) {
+							return true;
+						}
+						return upstreamSizeAdjustHandler?.(item, delta, instance) ?? false;
+					}
+				: undefined;
+		return {
+			...virtual,
+			items,
+			initialOffset: virtual.initialOffset ?? Number.MAX_SAFE_INTEGER,
+			shouldAdjustScrollPositionOnItemSizeChange: nextSizeAdjustHandler,
+		} satisfies ScrollVirtualConfig<Item>;
+	});
 	const TOP_THRESHOLD = 48;
+	const STICK_SETTLE_FRAME_LIMIT = 24;
 	let hasInitialStick = false;
 	let pendingStickFrame = 0;
 	let pendingStickFrameFollowUp = 0;
+	let pendingStickSettleFrame = 0;
+	let pendingStickSettleFramesRemaining = 0;
+	let pendingStickLockFrame = 0;
+	let pendingStickLockFramesRemaining = 0;
 
 	const scrollToLatest = (
 		behavior: ScrollBehavior,
 		virtualizer: ScrollViewVirtualizer | null = virtualizerRef,
 	): void => {
 		if (items.length === 0) {
+			return;
+		}
+		if (viewportRef) {
+			context.scrollToBottom(behavior);
 			return;
 		}
 		if (virtualizer) {
@@ -77,6 +107,68 @@
 
 	const syncTopState = (): void => {
 		atTop = (viewportRef?.scrollTop ?? Number.POSITIVE_INFINITY) <= TOP_THRESHOLD;
+	};
+
+	const cancelPendingStickSettle = (): void => {
+		if (pendingStickSettleFrame !== 0) {
+			cancelAnimationFrame(pendingStickSettleFrame);
+			pendingStickSettleFrame = 0;
+		}
+		pendingStickSettleFramesRemaining = 0;
+	};
+
+	const cancelPendingStickLock = (): void => {
+		if (pendingStickLockFrame !== 0) {
+			cancelAnimationFrame(pendingStickLockFrame);
+			pendingStickLockFrame = 0;
+		}
+		pendingStickLockFramesRemaining = 0;
+	};
+
+	const armStickLock = (frames = STICK_SETTLE_FRAME_LIMIT + 4): void => {
+		cancelPendingStickLock();
+		pendingStickLockFramesRemaining = frames;
+		const tickLock = (): void => {
+			if (pendingStickLockFramesRemaining <= 0) {
+				pendingStickLockFrame = 0;
+				return;
+			}
+			pendingStickLockFramesRemaining -= 1;
+			pendingStickLockFrame = requestAnimationFrame(tickLock);
+		};
+		pendingStickLockFrame = requestAnimationFrame(tickLock);
+	};
+
+	const shouldMaintainStick = (): boolean => context.shouldStick || pendingStickLockFramesRemaining > 0;
+
+	const settleScrollToLatest = (
+		behavior: ScrollBehavior,
+		virtualizer: ScrollViewVirtualizer | null = virtualizerRef,
+	): void => {
+		cancelPendingStickSettle();
+		armStickLock();
+		pendingStickSettleFramesRemaining = STICK_SETTLE_FRAME_LIMIT;
+		const run = (): void => {
+			pendingStickSettleFrame = 0;
+			if (!shouldMaintainStick()) {
+				pendingStickSettleFramesRemaining = 0;
+				return;
+			}
+			scrollToLatest(behavior, virtualizer);
+			pendingStickSettleFramesRemaining -= 1;
+			if (pendingStickSettleFramesRemaining <= 0) {
+				return;
+			}
+			pendingStickSettleFrame = requestAnimationFrame(run);
+		};
+		pendingStickSettleFrame = requestAnimationFrame(run);
+	};
+
+	const handleVirtualSizeChange = (): void => {
+		if (!hasInitialStick || !shouldMaintainStick()) {
+			return;
+		}
+		settleScrollToLatest('auto');
 	};
 
 	$effect(() => {
@@ -111,7 +203,7 @@
 		if (!viewport || itemCount === 0) {
 			return;
 		}
-		const shouldStick = !hasInitialStick || context.isAtBottom;
+		const shouldStick = !hasInitialStick || untrack(() => context.shouldStick);
 		const behavior = hasInitialStick ? resize : initial;
 		if (pendingStickFrame !== 0) {
 			cancelAnimationFrame(pendingStickFrame);
@@ -142,6 +234,8 @@
 				cancelAnimationFrame(pendingStickFrameFollowUp);
 				pendingStickFrameFollowUp = 0;
 			}
+			cancelPendingStickSettle();
+			cancelPendingStickLock();
 		};
 	});
 </script>
@@ -153,7 +247,9 @@
 		{contentClass}
 		{viewportTestId}
 		bind:viewportRef
+		bind:contentRef
 		bind:virtualizerRef
+		onVirtualSizeChange={handleVirtualSizeChange}
 		virtual={virtualConfig}
 	>
 		{#snippet before()}

@@ -53,6 +53,22 @@ const runningCallWithoutUsage: ModelCallItem = {
   isComplete: false,
 };
 
+const compactCall: ModelCallItem = {
+  ...settledCall,
+  id: 43,
+  kind: "compact",
+  response: {
+    usage: {
+      promptTokens: 4096,
+      completionTokens: 128,
+      totalTokens: 4224,
+    },
+  },
+  createdAt: 1712931980000,
+  updatedAt: 1712931990000,
+  completedAt: 1712931990000,
+};
+
 const attentionState: RuntimeAttentionState = {
   snapshot: {
     contexts: [
@@ -196,6 +212,16 @@ describe("Feature: Runtime Heartbeat statusbar selectors", () => {
       kind: "unavailable",
       modelCallId: 42,
       status: "running",
+      providerLabel: "default · gpt-test",
+      maxContextTokens: 128_000,
+    });
+  });
+
+  test("Scenario: Given the latest model call is a compact cycle When building context state Then the footer resets instead of reusing pre-compact usage", () => {
+    expect(buildHeartbeatContextState([settledCall, compactCall], providerMetadata)).toEqual({
+      kind: "unavailable",
+      modelCallId: 43,
+      status: "done",
       providerLabel: "default · gpt-test",
       maxContextTokens: 128_000,
     });

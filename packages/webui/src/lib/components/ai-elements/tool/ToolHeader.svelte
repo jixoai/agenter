@@ -5,11 +5,10 @@
 	import Clock from '@lucide/svelte/icons/clock';
 	import Wrench from '@lucide/svelte/icons/wrench';
 	import XCircle from '@lucide/svelte/icons/x-circle';
+	import type { ToolUiState } from './tool.types.js';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { cn } from '$lib/utils.js';
-
-	export type ToolUiState = 'input-streaming' | 'input-available' | 'output-available' | 'output-error';
 
 	let {
 		type,

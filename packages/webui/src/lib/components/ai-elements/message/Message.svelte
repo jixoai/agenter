@@ -1,9 +1,8 @@
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
+	import type { MessageFrom } from './message.types.js';
 
 	import { cn } from '$lib/utils.js';
-
-	export type MessageFrom = 'assistant' | 'user';
 
 	type MessageProps = HTMLAttributes<HTMLDivElement> & {
 		from: MessageFrom;

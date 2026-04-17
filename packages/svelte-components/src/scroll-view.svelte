@@ -32,6 +32,7 @@
     contentRef = $bindable<HTMLDivElement | null>(null),
     viewportTestId = undefined,
     onViewportScroll = undefined,
+    onVirtualSizeChange = undefined,
     virtual = undefined,
     virtualizerRef = $bindable<ScrollViewVirtualizer | null>(null),
     children,
@@ -322,6 +323,7 @@
     const config = virtual;
     virtualizerRef = config ? instance : null;
     if (!config) {
+      instance.shouldAdjustScrollPositionOnItemSizeChange = undefined;
       instance.setOptions({
         count: 0,
         enabled: false,
@@ -360,7 +362,17 @@
       isScrollingResetDelay: config.isScrollingResetDelay,
       useScrollendEvent: config.useScrollendEvent,
       useAnimationFrameWithResizeObserver: config.useAnimationFrameWithResizeObserver ?? Boolean(config.measureElement),
+      onChange: config.onChange,
     });
+    instance.shouldAdjustScrollPositionOnItemSizeChange =
+      config.shouldAdjustScrollPositionOnItemSizeChange;
+  });
+
+  $effect(() => {
+    if (!virtual) {
+      return;
+    }
+    onVirtualSizeChange?.(totalVirtualSize);
   });
 </script>
 

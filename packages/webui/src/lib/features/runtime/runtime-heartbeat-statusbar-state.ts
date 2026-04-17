@@ -207,6 +207,15 @@ export const buildHeartbeatContextState = (
   const providerLabel = providerMetadata
     ? [providerMetadata.providerId, providerMetadata.model].filter(Boolean).join(" · ")
     : null;
+  if (latestCall.kind === "compact") {
+    return {
+      kind: "unavailable",
+      modelCallId: latestCall.id,
+      status: latestCall.status,
+      providerLabel,
+      maxContextTokens: providerMetadata?.maxContextTokens ?? null,
+    };
+  }
   const usage = readUsage(latestCall);
   if (!usage) {
     return {
