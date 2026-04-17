@@ -51,6 +51,17 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain("inset-inline-start: 8rem;");
   });
 
+  test("Scenario: Given the first durable fact is product-facing When reading the source Then it uses distinct primary typography while lower details keep audit-style field labels", () => {
+    expect(avatarCatalogRouteSource).toContain("avatar-runtime-fact-row--primary");
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label avatar-runtime-fact-label--primary"');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all"');
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-label--primary {");
+    expect(avatarCatalogRouteSource).toContain("text-transform: none;");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--primary {");
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Global source</div>');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Private slot</div>');
+  });
+
   test("Scenario: Given compact runtime lens should stay title-first When reading the source Then passive facts stack under the title and actions use the available mobile width", () => {
     expect(avatarCatalogRouteSource).toContain(
       'class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"',

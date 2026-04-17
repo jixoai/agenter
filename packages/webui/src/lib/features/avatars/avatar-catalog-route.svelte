@@ -217,7 +217,7 @@
 			{#if runtimeError}
 				<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
 			{/if}
-			<div class="avatar-runtime-lens__hero grid gap-3 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
+			<div class="avatar-runtime-lens__hero grid gap-3 pb-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4 md:pb-3">
 				<div class="flex items-start gap-3">
 					<ProfileAvatar
 						label={selectedEntry.nickname}
@@ -282,9 +282,9 @@
 			</div>
 
 			<div class="avatar-runtime-facts grid gap-0">
-				<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-					<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Canonical runtime</div>
-					<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.runtimeId}</div>
+				<div class="avatar-runtime-facts__block avatar-runtime-fact-row avatar-runtime-fact-row--primary grid gap-1.5 py-2.5 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4 md:py-3">
+					<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
+					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
 				</div>
 				<Collapsible.Root bind:open={detailsOpen}>
 					<div class="avatar-runtime-facts__block avatar-runtime-details">
@@ -294,12 +294,12 @@
 						</Collapsible.Trigger>
 						<Collapsible.Content class="grid gap-0 pb-1">
 							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-								<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Global source</div>
-								<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.globalPath}</div>
+								<div class="avatar-runtime-fact-label">Global source</div>
+								<div class="avatar-runtime-fact-value break-all">{selectedEntry.globalPath}</div>
 							</div>
 							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-								<div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Private slot</div>
-								<div class="break-all text-[13px] font-semibold leading-5">{selectedEntry.workspacePrivatePath}</div>
+								<div class="avatar-runtime-fact-label">Private slot</div>
+								<div class="avatar-runtime-fact-value break-all">{selectedEntry.workspacePrivatePath}</div>
 							</div>
 							<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
 								<button
@@ -449,6 +449,33 @@
 		padding-block: 0.15rem 0.35rem;
 	}
 
+	.avatar-runtime-fact-label {
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 500;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+
+	.avatar-runtime-fact-label--primary {
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		text-transform: none;
+	}
+
+	.avatar-runtime-fact-value {
+		font-size: 13px;
+		line-height: 1.25rem;
+		font-weight: 600;
+	}
+
+	.avatar-runtime-fact-value--primary {
+		font-size: 0.95rem;
+		line-height: 1.4rem;
+	}
+
 	@media (min-width: 768px) {
 		.avatar-catalog-layout__rail {
 			padding-inline-end: 0.25rem;
@@ -483,6 +510,10 @@
 		.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
 			inset-inline-start: 8rem;
 			inset-inline-end: 0;
+		}
+
+		.avatar-runtime-fact-label--primary {
+			padding-block-start: 0.12rem;
 		}
 
 		.avatar-catalog-entry + .avatar-catalog-entry::before {
