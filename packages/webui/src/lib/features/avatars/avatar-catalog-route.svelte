@@ -41,7 +41,19 @@
 		selectedEntry ? controller.runtimeState.sessions.find((session) => session.id === selectedEntry.runtimeId) ?? null : null,
 	);
 	const selectedStatusLabel = $derived(selectedSession?.status ?? 'stopped');
+	const selectedSessionActive = $derived(
+		selectedSession?.status === 'running' || selectedSession?.status === 'starting',
+	);
 	const selectedOriginLabel = $derived(selectedEntry ? 'Local catalog' : null);
+	const workspaceSlotMatchesRoot = $derived(
+		selectedEntry ? selectedEntry.workspacePrivatePath === selectedEntry.globalPath : false,
+	);
+	const primaryActionLabel = $derived.by(() => {
+		if (runtimeBusy) {
+			return selectedSessionActive ? 'Opening attention…' : 'Starting avatar…';
+		}
+		return selectedSessionActive ? 'Open attention' : 'Start avatar';
+	});
 	const copyNicknameConflict = $derived(
 		copyNickname.trim().length > 0 && avatars.some((avatar) => avatar.nickname === copyNickname.trim().toLowerCase()),
 	);
@@ -141,6 +153,12 @@
 			copyBusy = false;
 		}
 	};
+
+	const openCopyAvatarDialog = (): void => {
+		copyDialogOpen = true;
+		copyNickname = '';
+		copyError = null;
+	};
 </script>
 
 {#snippet avatarCatalogEntry(entry: AvatarCatalogEntry)}
@@ -170,7 +188,7 @@
 {/snippet}
 
 <div
-	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[53rem] md:grid-cols-[minmax(12.5rem,14rem)_minmax(24rem,1fr)] md:justify-center md:items-start md:gap-5 md:p-4 lg:max-w-[55rem] lg:grid-cols-[14rem_minmax(26rem,34rem)] lg:p-5"
+	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[66rem] md:grid-cols-[15rem_minmax(0,1fr)] md:justify-center md:items-start md:gap-6 md:p-4 lg:max-w-[70rem] lg:grid-cols-[16rem_minmax(0,1fr)] lg:p-5"
 	style="min-block-size: 0;"
 	data-testid="avatar-catalog-route"
 >
@@ -260,7 +278,7 @@
 						disabled={runtimeBusy}
 					>
 						<PlayIcon class="size-4" />
-						{runtimeBusy ? 'Starting avatar…' : 'Start avatar'}
+						{primaryActionLabel}
 					</Button>
 				</div>
 			</div>
@@ -295,29 +313,78 @@
 				</button>
 			</div>
 
-			<Collapsible.Root bind:open={detailsOpen}>
+			<div class="avatar-runtime-details-desktop hidden md:grid md:gap-0">
+				<div class="avatar-runtime-details-desktop__label flex items-center justify-between gap-3 py-3">
+					<div class="text-sm font-medium text-muted-foreground">Runtime details</div>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+						onclick={() => {
+							openCopyAvatarDialog();
+						}}
+					>
+						Copy avatar
+					</button>
+				</div>
+				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
+					{#if workspaceSlotMatchesRoot}
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+							<div class="avatar-runtime-fact-label">Runtime home</div>
+							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+								{selectedEntry.globalPath}
+							</div>
+						</div>
+					{:else}
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+							<div class="avatar-runtime-fact-label">Root workspace</div>
+							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+								{selectedEntry.globalPath}
+							</div>
+						</div>
+						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start md:gap-4">
+							<div class="avatar-runtime-fact-label">Workspace slot</div>
+							<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+								{selectedEntry.workspacePrivatePath}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<Collapsible.Root bind:open={detailsOpen} class="md:hidden">
 				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
 					<Collapsible.Trigger class="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
 						<span>Runtime details</span>
 						<ChevronDownIcon class={`size-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
 					</Collapsible.Trigger>
 					<Collapsible.Content class="grid gap-0 pb-1">
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-							<div class="avatar-runtime-fact-label">Root workspace</div>
-							<div class="avatar-runtime-fact-value break-all">{selectedEntry.globalPath}</div>
-						</div>
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-							<div class="avatar-runtime-fact-label">Workspace slot</div>
-							<div class="avatar-runtime-fact-value break-all">{selectedEntry.workspacePrivatePath}</div>
-						</div>
+						{#if workspaceSlotMatchesRoot}
+							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
+								<div class="avatar-runtime-fact-label">Runtime home</div>
+								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+									{selectedEntry.globalPath}
+								</div>
+							</div>
+						{:else}
+							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
+								<div class="avatar-runtime-fact-label">Root workspace</div>
+								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+									{selectedEntry.globalPath}
+								</div>
+							</div>
+							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
+								<div class="avatar-runtime-fact-label">Workspace slot</div>
+								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
+									{selectedEntry.workspacePrivatePath}
+								</div>
+							</div>
+						{/if}
 						<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
 							<button
 								type="button"
 								class="inline-flex items-center gap-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
 								onclick={() => {
-									copyDialogOpen = true;
-									copyNickname = '';
-									copyError = null;
+									openCopyAvatarDialog();
 								}}
 							>
 								Copy avatar
@@ -486,6 +553,15 @@
 	.avatar-runtime-fact-value--primary {
 		font-size: 0.95rem;
 		line-height: 1.4rem;
+	}
+
+	.avatar-runtime-fact-value--path {
+		font-family: var(--font-mono);
+		font-size: 0.76rem;
+		line-height: 1.24rem;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		color: color-mix(in srgb, var(--foreground), transparent 18%);
 	}
 
 	@media (min-width: 768px) {

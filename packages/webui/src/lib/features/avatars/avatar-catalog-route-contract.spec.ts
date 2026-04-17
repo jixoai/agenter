@@ -31,8 +31,8 @@ describe("Feature: Avatar catalog density contract", () => {
   test("Scenario: Given compact avatar catalog should keep both surfaces readable When reading the source Then mobile renders a tighter natural list while desktop keeps a bounded measured rail without row cards", () => {
     expect(avatarCatalogRouteSource).toContain('class="avatar-catalog-list grid gap-0 md:hidden"');
     expect(avatarCatalogRouteSource).toContain('ScrollView class="max-h-52"');
-    expect(avatarCatalogRouteSource).toContain("md:mx-auto md:w-full md:max-w-[53rem]");
-    expect(avatarCatalogRouteSource).toContain("md:grid-cols-[minmax(12.5rem,14rem)_minmax(24rem,1fr)]");
+    expect(avatarCatalogRouteSource).toContain("md:mx-auto md:w-full md:max-w-[66rem]");
+    expect(avatarCatalogRouteSource).toContain("md:grid-cols-[15rem_minmax(0,1fr)]");
     expect(avatarCatalogRouteSource).not.toContain("rounded-[0.95rem] border");
     expect(avatarCatalogRouteSource).toContain("class={`avatar-catalog-entry transition-colors ${");
     expect(avatarCatalogRouteSource).toContain(".avatar-catalog-entry + .avatar-catalog-entry::before");
@@ -57,11 +57,14 @@ describe("Feature: Avatar catalog density contract", () => {
   });
 
   test("Scenario: Given the first durable fact is product-facing When reading the source Then it uses distinct primary typography while lower details keep audit-style field labels", () => {
+    expect(avatarCatalogRouteSource).toContain("const workspaceSlotMatchesRoot = $derived(");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label avatar-runtime-fact-label--primary"');
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all"');
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-label--primary {");
     expect(avatarCatalogRouteSource).toContain("text-transform: none;");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--primary {");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--path {");
+    expect(avatarCatalogRouteSource).toContain("Runtime home");
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Root workspace</div>');
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Workspace slot</div>');
   });
@@ -74,7 +77,7 @@ describe("Feature: Avatar catalog density contract", () => {
       avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions"),
     );
     expect(avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions")).toBeLessThan(
-      avatarCatalogRouteSource.indexOf('<Collapsible.Root bind:open={detailsOpen}>'),
+      avatarCatalogRouteSource.indexOf('<Collapsible.Root bind:open={detailsOpen} class="md:hidden">'),
     );
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts avatar-runtime-details grid gap-0"');
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact {");
@@ -93,15 +96,19 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).not.toContain("Origin · {selectedOriginLabel}");
     expect(avatarCatalogRouteSource).toContain('class="grid grid-cols-2 gap-1.5 md:flex md:flex-wrap md:justify-end"');
     expect(avatarCatalogRouteSource).toContain('class="w-full md:w-auto"');
+    expect(avatarCatalogRouteSource).toContain("const primaryActionLabel = $derived.by(() => {");
+    expect(avatarCatalogRouteSource).toContain("return selectedSessionActive ? 'Open attention' : 'Start avatar';");
   });
 
-  test("Scenario: Given repeated operators should not see the same explanation everywhere When reading the source Then one restrained help hint and one secondary disclosure own the low-frequency detail", () => {
+  test("Scenario: Given repeated operators should not see the same explanation everywhere When reading the source Then one restrained help hint owns the explanation while desktop keeps details inline and mobile keeps the compact disclosure", () => {
     expect(avatarCatalogRouteSource).toContain("Selected avatar");
     expect(avatarCatalogRouteSource).toContain("The selected-avatar lens stays bound to one installed avatar identity.");
-    expect(avatarCatalogRouteSource).toContain("<Collapsible.Root bind:open={detailsOpen}>");
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-details-desktop hidden md:grid md:gap-0"');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-details-desktop__label flex items-center justify-between gap-3 py-3"');
+    expect(avatarCatalogRouteSource).toContain('<Collapsible.Root bind:open={detailsOpen} class="md:hidden">');
+    expect(avatarCatalogRouteSource).toContain('class="md:hidden"');
     expect(avatarCatalogRouteSource).toContain("<span>Runtime details</span>");
-    expect(avatarCatalogRouteSource).toContain("Root workspace");
-    expect(avatarCatalogRouteSource).toContain("Workspace slot");
+    expect(avatarCatalogRouteSource).toContain("openCopyAvatarDialog");
     expect(avatarCatalogRouteSource).not.toContain("passiveOnFirstVisit={true}");
     expect(avatarCatalogRouteSource).not.toContain("The avatar catalog is the durable global identity surface.");
     expect(avatarCatalogRouteSource).not.toContain("Stable runtime identity across workspace handoffs.");
@@ -113,6 +120,7 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain("const formatStatusLabel = (status: string): string => {");
     expect(avatarCatalogRouteSource).toContain("const catalogCountLabel = $derived(`${avatars.length} installed`);");
     expect(avatarCatalogRouteSource).toContain("const selectedOriginLabel = $derived(selectedEntry ? 'Local catalog' : null);");
+    expect(avatarCatalogRouteSource).toContain("const openCopyAvatarDialog = (): void => {");
     expect(avatarCatalogRouteSource).toContain("const openAvatarDraft = async (): Promise<void> => {");
     expect(avatarCatalogRouteSource).toContain("{compactRuntimeId(entry.runtimeId)}");
     expect(avatarCatalogRouteSource).toContain("Copy avatar");
