@@ -15,11 +15,14 @@ describe("Feature: Avatar workbench toolbar density contract", () => {
     expect(avatarsWorkbenchLayoutSource).toContain("const activeTabItem = $derived");
     expect(avatarsWorkbenchLayoutSource).toContain("const activeToolbarSubtitle = $derived.by(() => {");
     expect(avatarsWorkbenchLayoutSource).toContain("activeTabItem.id === 'catalog'");
+    expect(avatarsWorkbenchLayoutSource).toContain("label: 'My avatars'");
+    expect(avatarsWorkbenchLayoutSource).toContain("title: 'My avatars'");
     expect(avatarsWorkbenchLayoutSource).toContain("<WorkbenchToolbar content={avatarsToolbarContent} />");
     expect(avatarsWorkbenchLayoutSource).toContain('data-testid="avatar-workbench-toolbar"');
     expect(avatarsWorkbenchLayoutSource).toContain("avatar-page-toolbar__identity");
     expect(avatarsWorkbenchLayoutSource).toContain("ProfileAvatar");
     expect(avatarsWorkbenchLayoutSource).toContain("New avatar");
+    expect(avatarsWorkbenchLayoutSource).toContain("{activeTabItem?.label ?? 'My avatars'}");
     expect(avatarsWorkbenchLayoutSource).toContain("{#if !toolbarState.isNarrow && activeToolbarSubtitle}");
     expect(avatarsWorkbenchLayoutSource).not.toContain('<Badge variant="outline" class="bg-background/70">');
   });

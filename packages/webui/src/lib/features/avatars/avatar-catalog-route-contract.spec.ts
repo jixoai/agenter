@@ -13,6 +13,8 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).not.toContain("WorkbenchPageToolbar");
     expect(avatarCatalogRouteSource).not.toContain("import { Badge } from '$lib/components/ui/badge/index.js';");
     expect(avatarCatalogRouteSource).not.toContain("hidden bg-background/70 text-[11px] sm:inline-flex");
+    expect(avatarCatalogRouteSource).toContain("My avatars");
+    expect(avatarCatalogRouteSource).toContain("Selected avatar");
     expect(avatarCatalogRouteSource).toContain("Canonical runtime");
   });
 
@@ -29,8 +31,8 @@ describe("Feature: Avatar catalog density contract", () => {
   test("Scenario: Given compact avatar catalog should keep both surfaces readable When reading the source Then mobile renders a tighter natural list while desktop keeps a bounded measured rail without row cards", () => {
     expect(avatarCatalogRouteSource).toContain('class="avatar-catalog-list grid gap-0 md:hidden"');
     expect(avatarCatalogRouteSource).toContain('ScrollView class="max-h-52"');
-    expect(avatarCatalogRouteSource).toContain("md:mx-auto md:w-full md:max-w-[56rem]");
-    expect(avatarCatalogRouteSource).toContain("md:grid-cols-[minmax(13rem,15rem)_minmax(22rem,36rem)]");
+    expect(avatarCatalogRouteSource).toContain("md:mx-auto md:w-full md:max-w-[53rem]");
+    expect(avatarCatalogRouteSource).toContain("md:grid-cols-[minmax(12.5rem,14rem)_minmax(24rem,1fr)]");
     expect(avatarCatalogRouteSource).not.toContain("rounded-[0.95rem] border");
     expect(avatarCatalogRouteSource).toContain("class={`avatar-catalog-entry transition-colors ${");
     expect(avatarCatalogRouteSource).toContain(".avatar-catalog-entry + .avatar-catalog-entry::before");
@@ -44,10 +46,12 @@ describe("Feature: Avatar catalog density contract", () => {
 
   test("Scenario: Given the control tower should read like product UI When reading the source Then contextual handoffs dock to the selected identity and canonical facts use semantic labels", () => {
     expect(avatarCatalogRouteSource).toContain("Canonical runtime");
+    expect(avatarCatalogRouteSource).toContain("Origin");
     expect(avatarCatalogRouteSource).toContain("avatar-runtime-primary-fact");
+    expect(avatarCatalogRouteSource).toContain("avatar-runtime-origin-fact");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-secondary-actions {");
     expect(avatarCatalogRouteSource).toContain("padding-inline-start: 4.25rem;");
-    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact::before,");
+    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-overview::before,");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-facts::before,");
     expect(avatarCatalogRouteSource).toContain("inset-inline-start: 8rem;");
   });
@@ -58,12 +62,15 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-label--primary {");
     expect(avatarCatalogRouteSource).toContain("text-transform: none;");
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-fact-value--primary {");
-    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Global source</div>');
-    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Private slot</div>');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Root workspace</div>');
+    expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-fact-label">Workspace slot</div>');
   });
 
   test("Scenario: Given the primary runtime fact should attach to the selected identity lane When reading the source Then it stays above the secondary branch actions and outside the runtime-details audit disclosure", () => {
     expect(avatarCatalogRouteSource.indexOf("avatar-runtime-primary-fact")).toBeLessThan(
+      avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions"),
+    );
+    expect(avatarCatalogRouteSource.indexOf("avatar-runtime-overview")).toBeLessThan(
       avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions"),
     );
     expect(avatarCatalogRouteSource.indexOf("avatar-runtime-secondary-actions")).toBeLessThan(
@@ -71,7 +78,6 @@ describe("Feature: Avatar catalog density contract", () => {
     );
     expect(avatarCatalogRouteSource).toContain('class="avatar-runtime-facts avatar-runtime-details grid gap-0"');
     expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact {");
-    expect(avatarCatalogRouteSource).toContain(".avatar-runtime-primary-fact::before {");
   });
 
   test("Scenario: Given compact runtime lens should stay title-first When reading the source Then passive facts stack under the title and actions use the available mobile width", () => {
@@ -84,17 +90,18 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain(
       'class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs"',
     );
+    expect(avatarCatalogRouteSource).not.toContain("Origin · {selectedOriginLabel}");
     expect(avatarCatalogRouteSource).toContain('class="grid grid-cols-2 gap-1.5 md:flex md:flex-wrap md:justify-end"');
     expect(avatarCatalogRouteSource).toContain('class="w-full md:w-auto"');
   });
 
   test("Scenario: Given repeated operators should not see the same explanation everywhere When reading the source Then one restrained help hint and one secondary disclosure own the low-frequency detail", () => {
-    expect(avatarCatalogRouteSource).toContain("Runtime lens");
-    expect(avatarCatalogRouteSource).toContain("The runtime lens stays bound to the selected avatar identity.");
+    expect(avatarCatalogRouteSource).toContain("Selected avatar");
+    expect(avatarCatalogRouteSource).toContain("The selected-avatar lens stays bound to one installed avatar identity.");
     expect(avatarCatalogRouteSource).toContain("<Collapsible.Root bind:open={detailsOpen}>");
     expect(avatarCatalogRouteSource).toContain("<span>Runtime details</span>");
-    expect(avatarCatalogRouteSource).toContain("Global source");
-    expect(avatarCatalogRouteSource).toContain("Private slot");
+    expect(avatarCatalogRouteSource).toContain("Root workspace");
+    expect(avatarCatalogRouteSource).toContain("Workspace slot");
     expect(avatarCatalogRouteSource).not.toContain("passiveOnFirstVisit={true}");
     expect(avatarCatalogRouteSource).not.toContain("The avatar catalog is the durable global identity surface.");
     expect(avatarCatalogRouteSource).not.toContain("Stable runtime identity across workspace handoffs.");
@@ -104,6 +111,8 @@ describe("Feature: Avatar catalog density contract", () => {
   test("Scenario: Given the catalog is an operational surface When reading the source Then scan-first identifiers stay compact while contextual branch actions stay secondary to runtime launch", () => {
     expect(avatarCatalogRouteSource).toContain("const compactRuntimeId = (runtimeId: string): string => {");
     expect(avatarCatalogRouteSource).toContain("const formatStatusLabel = (status: string): string => {");
+    expect(avatarCatalogRouteSource).toContain("const catalogCountLabel = $derived(`${avatars.length} installed`);");
+    expect(avatarCatalogRouteSource).toContain("const selectedOriginLabel = $derived(selectedEntry ? 'Local catalog' : null);");
     expect(avatarCatalogRouteSource).toContain("const openAvatarDraft = async (): Promise<void> => {");
     expect(avatarCatalogRouteSource).toContain("{compactRuntimeId(entry.runtimeId)}");
     expect(avatarCatalogRouteSource).toContain("Copy avatar");

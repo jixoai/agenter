@@ -179,10 +179,10 @@
 			{
 				id: 'catalog',
 				href: buildAvatarCatalogHref(),
-				label: 'Catalog',
+				label: 'My avatars',
 				icon: BotIcon,
-				title: 'Avatar catalog',
-				description: 'Inspect global avatar identities, open runtime shells, and manage addable avatar drafts.',
+				title: 'My avatars',
+				description: 'Operate installed avatars, open runtime shells, and manage addable avatar drafts.',
 			},
 		] satisfies WorkbenchTabItem[];
 
@@ -262,7 +262,7 @@
 
 {#snippet avatarsToolbarContent(toolbarState: WorkbenchToolbarRenderState)}
 	<div class="avatar-page-toolbar" data-testid="avatar-workbench-toolbar" data-toolbar-breakpoint={toolbarState.breakpoint}>
-		<div class="avatar-page-toolbar__identity" title={activeTabItem?.title ?? activeTabItem?.label ?? 'Avatar catalog'}>
+		<div class="avatar-page-toolbar__identity" title={activeTabItem?.title ?? activeTabItem?.label ?? 'My avatars'}>
 			{#if activeToolbarAvatarLabel}
 				<ProfileAvatar
 					label={activeToolbarAvatarLabel}
@@ -275,7 +275,7 @@
 				</div>
 			{/if}
 			<div class="avatar-page-toolbar__title">
-				<span class="truncate font-semibold">{activeTabItem?.label ?? 'Catalog'}</span>
+				<span class="truncate font-semibold">{activeTabItem?.label ?? 'My avatars'}</span>
 				{#if !toolbarState.isNarrow && activeToolbarSubtitle}
 					<span class="truncate text-xs text-muted-foreground">
 						{activeToolbarSubtitle}

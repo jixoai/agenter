@@ -33,6 +33,7 @@
 
 	const catalogState = $derived(controller.runtimeState.globalAvatarCatalog);
 	const avatars = $derived(catalogState.data);
+	const catalogCountLabel = $derived(`${avatars.length} installed`);
 	const selectedEntry = $derived(
 		avatars.find((entry) => entry.nickname === selectedAvatar) ?? avatars[0] ?? null,
 	);
@@ -40,6 +41,7 @@
 		selectedEntry ? controller.runtimeState.sessions.find((session) => session.id === selectedEntry.runtimeId) ?? null : null,
 	);
 	const selectedStatusLabel = $derived(selectedSession?.status ?? 'stopped');
+	const selectedOriginLabel = $derived(selectedEntry ? 'Local catalog' : null);
 	const copyNicknameConflict = $derived(
 		copyNickname.trim().length > 0 && avatars.some((avatar) => avatar.nickname === copyNickname.trim().toLowerCase()),
 	);
@@ -168,13 +170,14 @@
 {/snippet}
 
 <div
-	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[56rem] md:grid-cols-[minmax(13rem,15rem)_minmax(22rem,36rem)] md:justify-center md:items-start md:gap-5 md:p-4 lg:max-w-[58rem] lg:grid-cols-[15rem_minmax(24rem,38rem)] lg:p-5"
+	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[53rem] md:grid-cols-[minmax(12.5rem,14rem)_minmax(24rem,1fr)] md:justify-center md:items-start md:gap-5 md:p-4 lg:max-w-[55rem] lg:grid-cols-[14rem_minmax(26rem,34rem)] lg:p-5"
 	style="min-block-size: 0;"
 	data-testid="avatar-catalog-route"
 >
 	<section class="avatar-catalog-layout__rail grid gap-2.5 md:self-start">
 		<div class="grid gap-1 pb-1">
-			<h2 class="text-base font-semibold">Global catalog</h2>
+			<h2 class="text-base font-semibold">My avatars</h2>
+			<p class="text-xs text-muted-foreground">{catalogCountLabel}</p>
 		</div>
 
 		{#if avatars.length === 0}
@@ -200,11 +203,11 @@
 	<section class="avatar-catalog-layout__lens grid gap-4 pt-4 md:min-w-0 md:pt-0">
 		<div class="grid gap-1 pb-1">
 			<div class="flex items-center gap-2">
-				<h2 class="text-base font-semibold">Runtime lens</h2>
+				<h2 class="text-base font-semibold">Selected avatar</h2>
 				<HelpHint
-					textContext="The runtime lens stays bound to the selected avatar identity. It opens the canonical runtime first, while workspace entry remains a secondary handoff."
+					textContext="The selected-avatar lens stays bound to one installed avatar identity. It opens the canonical runtime first, while workspace entry remains a secondary handoff."
 				>
-					<p>Use the runtime lens to open the canonical avatar runtime first. Workspace navigation remains a secondary handoff from the same identity.</p>
+					<p>Use the selected-avatar lens to open the canonical avatar runtime first. Workspace navigation remains a secondary handoff from the same identity.</p>
 				</HelpHint>
 			</div>
 		</div>
@@ -262,9 +265,15 @@
 				</div>
 			</div>
 
-			<div class="avatar-runtime-primary-fact grid gap-1.5 py-2.5 md:gap-1 md:py-3">
-				<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
-				<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
+			<div class="avatar-runtime-overview grid gap-0 md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
+				<div class="avatar-runtime-primary-fact grid gap-1.5 py-2.5 md:gap-1 md:py-3">
+					<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
+					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
+				</div>
+				<div class="avatar-runtime-origin-fact avatar-runtime-fact-row grid gap-1 py-2.5 md:py-3">
+					<div class="avatar-runtime-fact-label">Origin</div>
+					<div class="avatar-runtime-fact-value">{selectedOriginLabel}</div>
+				</div>
 			</div>
 
 			<div class="avatar-runtime-secondary-actions flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-medium text-muted-foreground">
@@ -294,11 +303,11 @@
 					</Collapsible.Trigger>
 					<Collapsible.Content class="grid gap-0 pb-1">
 						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-							<div class="avatar-runtime-fact-label">Global source</div>
+							<div class="avatar-runtime-fact-label">Root workspace</div>
 							<div class="avatar-runtime-fact-value break-all">{selectedEntry.globalPath}</div>
 						</div>
 						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[8rem_minmax(0,1fr)] md:gap-4 md:items-start">
-							<div class="avatar-runtime-fact-label">Private slot</div>
+							<div class="avatar-runtime-fact-label">Workspace slot</div>
 							<div class="avatar-runtime-fact-value break-all">{selectedEntry.workspacePrivatePath}</div>
 						</div>
 						<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
@@ -382,7 +391,9 @@
 	.avatar-catalog-list,
 	.avatar-catalog-entry,
 	.avatar-runtime-lens__hero,
+	.avatar-runtime-overview,
 	.avatar-runtime-primary-fact,
+	.avatar-runtime-origin-fact,
 	.avatar-runtime-facts,
 	.avatar-runtime-facts__block {
 		position: relative;
@@ -429,7 +440,7 @@
 		background: color-mix(in srgb, var(--border), transparent 36%);
 	}
 
-	.avatar-runtime-primary-fact::before,
+	.avatar-runtime-overview::before,
 	.avatar-runtime-facts::before,
 	.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
 		content: '';
@@ -505,9 +516,8 @@
 			padding-inline-start: 4.25rem;
 		}
 
-		.avatar-runtime-primary-fact::before {
+		.avatar-runtime-overview::before {
 			inset-inline-start: 4.25rem;
-			inset-inline-end: 0;
 		}
 
 		.avatar-runtime-secondary-actions {
