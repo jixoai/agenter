@@ -73,6 +73,17 @@
 
 ## 5. Reactive Contract
 
+- auth-private WebUI preference persistence 由独立的 `kv` tRPC plane 提供，不并入 settings graph，也不复用 `runtime.snapshot` / `runtime.events`。
+- `kv.snapshot({ keys?, prefix? })` 返回当前 authenticated actor 分区内的匹配条目和 `lastEventId`；`keys` 与 `prefix` 互斥，后端只按 opaque key namespace 过滤。
+- `kv.set({ key, value, baseVersion? })` 与 `kv.delete({ key, baseVersion? })` 共享 optimistic concurrency law：`baseVersion` 缺省表示无条件写入，`baseVersion: null` 表示“要求 key 当前不存在”，版本冲突返回最新条目而不是隐式覆盖。
+- `kv.set` 对语义等价的 JSON 值必须 no-op：不 bump version，不产生新 event。`kv.delete` 删除缺失 key 必须幂等成功且不产生 event；同一 key 跨 delete / recreate 的 version 仍需保持单调递增。
+- `kv.events({ afterEventId?, keys?, prefix? })` 是 actor-private 的独立订阅面，支持从指定 event id 开始 replay；event filter 语义必须与 `snapshot` 保持一致。
+- auth-private 的 WebUI create/edit draft 走独立的 `drafts` tRPC plane，而不是塞进 `kv` 或 settings graph。draft resource 拥有稳定 `draftId`、typed `kind/state`、`version`、`createdAt`、`updatedAt` 与显式 delete lifecycle。
+- `drafts.create({ kind, state })` 为 authenticated actor mint 一个新的 typed draft resource；`drafts.get({ draftId })` 返回单个资源或 `null`；`drafts.list({ kind?, draftIds? })` 返回当前 actor 分区中的匹配资源与 `lastEventId`。
+- `drafts.save({ draftId, kind, state, baseVersion? })` 更新已有 draft resource；它对语义等价 state 必须 no-op；draft 不存在返回 `not_found`，版本不匹配返回 `conflict` 与最新资源。
+- `drafts.delete({ draftId, baseVersion? })` 只删除 durable draft resource，不表达 device-local tab close；删除缺失 draft 必须幂等成功且不产生 event。
+- `drafts.events({ afterEventId?, kind?, draftIds? })` 是 actor-private draft replay/subscription 面；draft lifecycle 的 live sync 与 resume 一律通过该 plane，而不是通过 runtime snapshot。
+- authenticated websocket subscription 必须接受 bearer token 的两条等价入口：标准 `Authorization` header，或 websocket `connectionParams.authorization`。
 - `runtime.attention` 是运行态 attention 投影事件，不保证 stopped session 仍然持续发事件。
 - `notification.updated` 是 shell unread/projection 事件；它可以由 runtime attention 更新触发，也可以由 stopped-session persisted mutation 触发。
 - `session.updated` 进入 `stopped` 后，消费者必须接受：

@@ -38,6 +38,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention durable fact 必须显式分层为 provenance / body / egress 三个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容，外部路由意图走 typed `egress`；不得再把 reply target、私有 blob、快捷动作塞回 metadata。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 typed coordinate law：message 依赖 `channelId + subjectId`，terminal/task 依赖最小寻址字段；不得重新打开 `meta` 逃逸口。
+- WebUI actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
+- WebUI 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
