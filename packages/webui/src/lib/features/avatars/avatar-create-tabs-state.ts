@@ -1,3 +1,4 @@
+// Device-local workbench projection only. The draft resource is durable; this tab strip is not.
 export interface AvatarCreateTabEntry {
 	draftId: string;
 	href: string;

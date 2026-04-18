@@ -1,6 +1,17 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
-import type { AppRouter, RuntimeEventEnvelope, RuntimeSnapshotPayload, SessionRuntimeModelDebug } from "@agenter/app-server";
+import type {
+  AppRouter,
+  AuthDraftEntry as AuthDraftEntryContract,
+  AuthDraftEvent as AuthDraftEventContract,
+  AuthDraftKind as AuthDraftKindContract,
+  AuthKvEvent as AuthKvEventContract,
+  JsonValue as JsonValueContract,
+  RuntimeEventEnvelope,
+  RuntimeSnapshotPayload,
+  SessionRuntimeModelDebug,
+  AvatarCreateDraftState as AvatarCreateDraftStateContract,
+} from "@agenter/app-server";
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 export type RouterInputs = inferRouterInputs<AppRouter>;
@@ -35,7 +46,21 @@ export type WorkspaceWorkbenchTreeEntry = WorkspaceWorkbenchTreeOutput["items"][
 export type WorkspaceWorkbenchPreviewOutput = RouterOutputs["workspace"]["workbenchPreview"];
 export type RuntimeWorkspaceExecOutput = RouterOutputs["workspace"]["exec"];
 export type DraftResolutionOutput = RouterOutputs["draft"]["resolve"];
+export type AuthDraftSnapshotOutput = RouterOutputs["drafts"]["list"];
+export type AuthDraftCreateOutput = RouterOutputs["drafts"]["create"];
+export type AuthDraftSaveOutput = RouterOutputs["drafts"]["save"];
+export type AuthDraftDeleteOutput = RouterOutputs["drafts"]["delete"];
+export type AuthDraftEntry<K extends AuthDraftKind = AuthDraftKind> = AuthDraftEntryContract<K>;
+export type AuthDraftEvent = AuthDraftEventContract;
+export type AuthDraftKind = AuthDraftKindContract;
+export type AvatarCreateDraftState = AvatarCreateDraftStateContract;
+export type JsonValue = JsonValueContract;
 export type GlobalSettingsFileOutput = RouterOutputs["settings"]["global"]["read"];
+export type AuthKvSnapshotOutput = RouterOutputs["kv"]["snapshot"];
+export type AuthKvEntry = AuthKvSnapshotOutput["items"][number];
+export type AuthKvSetOutput = RouterOutputs["kv"]["set"];
+export type AuthKvDeleteOutput = RouterOutputs["kv"]["delete"];
+export type AuthKvEvent = AuthKvEventContract;
 export type ChatListOutput = RouterOutputs["chat"]["list"];
 export type ChatListItem = ChatListOutput["items"][number];
 export type HistoryPageCursor = NonNullable<ChatListOutput["nextBefore"]>;

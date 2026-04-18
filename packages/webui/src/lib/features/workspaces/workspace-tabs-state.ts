@@ -1,3 +1,4 @@
+// Device-local workbench projection only. Workspaces can sync as resources without syncing this open-tab strip.
 export interface WorkspaceWorkbenchTabEntry {
 	workspacePath: string;
 	href: string;

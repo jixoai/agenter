@@ -16,8 +16,9 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import { buildAvatarNewHref, createAvatarDraftId } from '$lib/features/avatars/avatar-workbench-location';
+	import { buildAvatarNewHref } from '$lib/features/avatars/avatar-workbench-location';
 	import { buildWorkspaceIndexHref } from '$lib/features/workspaces/workspace-location';
+	import { createAvatarCreateDraft } from './avatar-create-draft-resource';
 
 	const controller = getAppControllerContext();
 	type AvatarCatalogEntry = (typeof controller.runtimeState.globalAvatarCatalog.data)[number];
@@ -25,6 +26,8 @@
 	let selectedAvatar = $state(page.url.searchParams.get('avatar') ?? '');
 	let runtimeBusy = $state(false);
 	let runtimeError = $state<string | null>(null);
+	let draftBusy = $state(false);
+	let draftError = $state<string | null>(null);
 	let copyDialogOpen = $state(false);
 	let copyNickname = $state('');
 	let copyBusy = $state(false);
@@ -92,19 +95,30 @@
 	};
 
 	const openAvatarDraft = async (): Promise<void> => {
-		if (!selectedEntry) {
+		if (!selectedEntry || draftBusy) {
 			return;
 		}
-		await goto(
-			buildAvatarNewHref({
-				draftId: createAvatarDraftId(),
+		draftBusy = true;
+		draftError = null;
+		try {
+			const created = await createAvatarCreateDraft(controller.runtimeStore, {
 				sourceAvatarNickname: selectedEntry.nickname,
-			}),
-			{
-				keepFocus: true,
-				noScroll: true,
-			},
-		);
+			});
+			await goto(
+				buildAvatarNewHref({
+					draftId: created.resource.draftId,
+					sourceAvatarNickname: selectedEntry.nickname,
+				}),
+				{
+					keepFocus: true,
+					noScroll: true,
+				},
+			);
+		} catch (error) {
+			draftError = error instanceof Error ? error.message : 'Failed to create avatar draft.';
+		} finally {
+			draftBusy = false;
+		}
 	};
 
 	const openAvatarRuntime = async (input: { autoStart: boolean; tab: 'heartbeat' | 'attention' }): Promise<void> => {
@@ -238,6 +252,9 @@
 			{#if runtimeError}
 				<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
 			{/if}
+			{#if draftError}
+				<NoticeBanner tone="warning" title="Avatar draft failed" message={draftError} />
+			{/if}
 			<div class="avatar-runtime-lens__hero grid gap-3 pb-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4 md:pb-3">
 				<div class="flex items-start gap-3">
 					<ProfileAvatar
@@ -298,10 +315,11 @@
 				<button
 					type="button"
 					class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+					disabled={draftBusy}
 					onclick={() => void openAvatarDraft()}
 				>
 					<PlusIcon class="size-3.5" />
-					Create draft from this avatar
+					{draftBusy ? 'Creating draft…' : 'Create draft from this avatar'}
 				</button>
 				<button
 					type="button"

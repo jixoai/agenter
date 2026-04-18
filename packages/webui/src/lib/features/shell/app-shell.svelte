@@ -16,8 +16,8 @@
 		upsertAvatarSessionTabId,
 	} from '$lib/features/avatars/avatar-session-tabs-state';
 	import RunningAvatarRail from '$lib/features/shell/running-avatar-rail.svelte';
+	import { RunningAvatarPinSource } from '$lib/features/shell/running-avatar-pin-source';
 	import {
-		readPinnedRunningAvatarIds,
 		reconcilePinnedRunningAvatarIds,
 		togglePinnedRunningAvatarId,
 	} from '$lib/features/shell/running-avatar-rail-state';
@@ -43,13 +43,14 @@
 		{ href: '/terminals', label: 'Terminals', icon: SquareTerminalIcon },
 	] as const;
 	const compactViewport = new IsMobile();
+	const runningAvatarPinSource = new RunningAvatarPinSource();
 
 	const activeItem = $derived(
 		navItems.find((item) => page.url.pathname === item.href || page.url.pathname.startsWith(`${item.href}/`)) ??
 			null,
 	);
 	let openedAvatarSessionIds = $state<string[]>(readAvatarSessionTabIds());
-	let pinnedAvatarSessionIds = $state<string[]>(readPinnedRunningAvatarIds());
+	let pinnedAvatarSessionIds = $state<string[]>([]);
 	const activeAvatarSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
 	const avatarSubmenuItems = $derived(
 		buildAvatarSessionRailItems(controller.runtimeState, {
@@ -84,6 +85,26 @@
 	);
 
 	$effect(() => {
+		if (!controller.authSession) {
+			pinnedAvatarSessionIds = [];
+			return;
+		}
+		let active = true;
+		const applySnapshot = (snapshot: { ids: string[] }): void => {
+			if (!active) {
+				return;
+			}
+			pinnedAvatarSessionIds = snapshot.ids;
+		};
+		void runningAvatarPinSource.hydrate(controller.runtimeStore).then(applySnapshot);
+		const unsubscribe = runningAvatarPinSource.subscribe(controller.runtimeStore, applySnapshot);
+		return () => {
+			active = false;
+			unsubscribe();
+		};
+	});
+
+	$effect(() => {
 		if (typeof window === 'undefined') {
 			return;
 		}
@@ -112,6 +133,14 @@
 		);
 		if (reconciledPinnedIds !== pinnedAvatarSessionIds) {
 			pinnedAvatarSessionIds = reconciledPinnedIds;
+			if (controller.authSession) {
+				void runningAvatarPinSource.reconcile(
+					controller.runtimeStore,
+					controller.runtimeState.sessions.map((session) => session.id),
+				).then((snapshot) => {
+					pinnedAvatarSessionIds = snapshot.ids;
+				});
+			}
 		}
 	});
 
@@ -185,6 +214,13 @@
 											sessionId,
 											nextPinned,
 										);
+										if (controller.authSession) {
+											void runningAvatarPinSource
+												.toggle(controller.runtimeStore, sessionId, nextPinned)
+												.then((snapshot) => {
+													pinnedAvatarSessionIds = snapshot.ids;
+												});
+										}
 									}}
 								/>
 							{/if}

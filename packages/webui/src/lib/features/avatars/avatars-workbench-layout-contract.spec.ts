@@ -15,6 +15,7 @@ describe("Feature: Avatar workbench toolbar density contract", () => {
     expect(avatarsWorkbenchLayoutSource).toContain("const activeTabItem = $derived");
     expect(avatarsWorkbenchLayoutSource).toContain("const activeToolbarSubtitle = $derived.by(() => {");
     expect(avatarsWorkbenchLayoutSource).toContain("activeTabItem.id === 'catalog'");
+    expect(avatarsWorkbenchLayoutSource).toContain("createAvatarCreateDraft");
     expect(avatarsWorkbenchLayoutSource).toContain("label: 'My avatars'");
     expect(avatarsWorkbenchLayoutSource).toContain("title: 'My avatars'");
     expect(avatarsWorkbenchLayoutSource).toContain("<WorkbenchToolbar content={avatarsToolbarContent} />");

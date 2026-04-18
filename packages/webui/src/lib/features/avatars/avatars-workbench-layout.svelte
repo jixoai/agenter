@@ -36,7 +36,8 @@
 		upsertAvatarCreateTab,
 		type AvatarCreateTabEntry,
 	} from './avatar-create-tabs-state';
-	import { buildAvatarCatalogHref, buildAvatarNewHref, createAvatarDraftId } from './avatar-workbench-location';
+	import { createAvatarCreateDraft } from './avatar-create-draft-resource';
+	import { buildAvatarCatalogHref, buildAvatarNewHref } from './avatar-workbench-location';
 
 	let {
 		children,
@@ -48,8 +49,7 @@
 	let avatarSessionTabIds = $state<string[]>(readAvatarSessionTabIds());
 	let avatarCreateTabs = $state<AvatarCreateTabEntry[]>(readAvatarCreateTabs());
 	let dismissedSessionIds = $state<string[]>(readDismissedWorkbenchTabIds('avatars-runtime'));
-	let nextToolbarDraftId = $state(createAvatarDraftId());
-	let lastToolbarRoute = $state('');
+	let toolbarDraftBusy = $state(false);
 
 	const activeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
 	const activeDraftId = $derived.by(() => {
@@ -165,14 +165,23 @@
 		avatarCreateTabs = removeAvatarCreateTab(avatarCreateTabs, draftId);
 	};
 
-	$effect(() => {
-		const currentRoute = `${page.url.pathname}${page.url.search}`;
-		if (currentRoute === lastToolbarRoute) {
+	const openToolbarDraft = async (): Promise<void> => {
+		if (toolbarDraftBusy) {
 			return;
 		}
-		lastToolbarRoute = currentRoute;
-		nextToolbarDraftId = createAvatarDraftId();
-	});
+		toolbarDraftBusy = true;
+		try {
+			const created = await createAvatarCreateDraft(controller.runtimeStore);
+			await goto(buildAvatarNewHref({ draftId: created.resource.draftId }), {
+				keepFocus: true,
+				noScroll: true,
+			});
+		} catch {
+			// Ignore toolbar draft failures here; route-level draft UI surfaces the durable error states.
+		} finally {
+			toolbarDraftBusy = false;
+		}
+	};
 
 	const tabs = $derived.by(() => {
 		const fixedTabs = [
@@ -257,7 +266,6 @@
 		return activeTabItem.title ?? activeTabItem.description ?? null;
 	});
 	const ActiveToolbarIcon = $derived(activeToolbarIcon ?? BotIcon);
-	const nextToolbarDraftHref = $derived(buildAvatarNewHref({ draftId: nextToolbarDraftId }));
 </script>
 
 {#snippet avatarsToolbarContent(toolbarState: WorkbenchToolbarRenderState)}
@@ -285,10 +293,15 @@
 		</div>
 
 		<div class="avatar-page-toolbar__actions">
-			<Button size={toolbarState.isNarrow ? 'icon-sm' : 'sm'} variant="outline" href={nextToolbarDraftHref}>
+			<Button
+				size={toolbarState.isNarrow ? 'icon-sm' : 'sm'}
+				variant="outline"
+				disabled={toolbarDraftBusy}
+				onclick={() => void openToolbarDraft()}
+			>
 				<PlusIcon class="size-4" />
 				{#if !toolbarState.isNarrow}
-					<span>New avatar</span>
+					<span>{toolbarDraftBusy ? 'Creating…' : 'New avatar'}</span>
 				{/if}
 			</Button>
 		</div>

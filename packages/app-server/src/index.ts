@@ -33,6 +33,31 @@ export type {
   TaskView,
 } from "@agenter/task-system";
 export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
+export { AuthDraftStore, resolveAuthDraftDbPath } from "./auth-draft-store";
+export type {
+  AuthDraftCreateResult,
+  AuthDraftDeleteResult,
+  AuthDraftEntry,
+  AuthDraftEvent,
+  AuthDraftFilter,
+  AuthDraftKind,
+  AuthDraftSaveResult,
+  AuthDraftSnapshot,
+  AuthDraftState,
+  AuthDraftWriteInput,
+  AvatarCreateDraftState,
+} from "./auth-draft-types";
+export { AuthKvStore, resolveAuthKvDbPath } from "./auth-kv-store";
+export type {
+  AuthKvDeleteResult,
+  AuthKvEntry,
+  AuthKvEvent,
+  AuthKvFilter,
+  AuthKvSetResult,
+  AuthKvSnapshot,
+  JsonPrimitive,
+  JsonValue,
+} from "./auth-kv-types";
 export {
   AgenterAI,
   type AgentModelCallRecord,

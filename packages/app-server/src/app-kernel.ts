@@ -68,6 +68,28 @@ import {
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
+import { AuthDraftStore, resolveAuthDraftDbPath } from "./auth-draft-store";
+import type {
+  AuthDraftCreateResult,
+  AuthDraftDeleteResult,
+  AuthDraftEntry,
+  AuthDraftEvent,
+  AuthDraftFilter,
+  AuthDraftKind,
+  AuthDraftSaveResult,
+  AuthDraftSnapshot,
+  AuthDraftState,
+  AuthDraftWriteInput,
+} from "./auth-draft-types";
+import { AuthKvStore, resolveAuthKvDbPath } from "./auth-kv-store";
+import type {
+  AuthKvDeleteResult,
+  AuthKvEvent,
+  AuthKvFilter,
+  AuthKvSetResult,
+  AuthKvSnapshot,
+  JsonValue,
+} from "./auth-kv-types";
 import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import {
@@ -602,6 +624,8 @@ export class AppKernel {
   private readonly eventLog: AnyRuntimeEvent[] = [];
   private readonly workspacePathSearch = new WorkspacePathSearchIndex();
   private readonly authService: AuthServiceBridge;
+  private readonly authDraftStore: AuthDraftStore;
+  private readonly authKvStore: AuthKvStore;
   private readonly avatarCatalogWatchers = new Map<string, FSWatcher>();
   private readonly avatarCatalogWatchPaths = new Map<string, string>();
   private readonly pendingAvatarCatalogInvalidations = new Set<string>();
@@ -623,6 +647,7 @@ export class AppKernel {
   private started = false;
 
   constructor(private readonly options: AppKernelOptions = {}) {
+    const homeDir = options.homeDir ?? homedir();
     this.sessions = new SessionCatalog({
       globalRoot: options.globalSessionRoot,
       archiveRoot: options.archiveSessionRoot,
@@ -640,6 +665,8 @@ export class AppKernel {
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
       outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
     });
+    this.authDraftStore = new AuthDraftStore(resolveAuthDraftDbPath(homeDir));
+    this.authKvStore = new AuthKvStore(resolveAuthKvDbPath(homeDir));
     this.authService = new AuthServiceBridge({
       ...options.profileService,
       dataDir: options.profileService?.dataDir ?? join(this.sessions.getGlobalRoot(), "..", "profile-service"),
@@ -999,6 +1026,8 @@ export class AppKernel {
     }
     this.messageControlPlane.close();
     await this.terminalControlPlane.dispose();
+    this.authDraftStore.close();
+    this.authKvStore.close();
     await this.authService.stop();
   }
 
@@ -3616,6 +3645,122 @@ export class AppKernel {
       return null;
     }
     return await this.authService.authenticateAuthToken(token);
+  }
+
+  snapshotAuthKv(authId: string, filter?: AuthKvFilter): AuthKvSnapshot {
+    return this.authKvStore.snapshot(authId, filter);
+  }
+
+  listAuthDrafts(authId: string, filter?: AuthDraftFilter): AuthDraftSnapshot {
+    return this.authDraftStore.list(authId, filter);
+  }
+
+  getAuthDraft(authId: string, draftId: string): AuthDraftEntry | null {
+    return this.authDraftStore.get(authId, draftId);
+  }
+
+  createAuthDraft(authId: string, input: AuthDraftWriteInput): AuthDraftCreateResult {
+    return this.authDraftStore.create(authId, input);
+  }
+
+  saveAuthDraft(
+    authId: string,
+    input: {
+      draftId: string;
+      kind: AuthDraftKind;
+      state: AuthDraftState;
+      baseVersion?: number;
+    },
+  ): AuthDraftSaveResult {
+    return this.authDraftStore.save(authId, input);
+  }
+
+  deleteAuthDraft(
+    authId: string,
+    input: {
+      draftId: string;
+      baseVersion?: number;
+    },
+  ): AuthDraftDeleteResult {
+    return this.authDraftStore.delete(authId, input);
+  }
+
+  getAuthDraftEventsAfter(authId: string, afterEventId = 0, filter?: AuthDraftFilter): AuthDraftEvent[] {
+    return this.authDraftStore.getEventsAfter(authId, afterEventId, filter);
+  }
+
+  onAuthDraftEvent(authId: string, listener: (event: AuthDraftEvent) => void): () => void {
+    return this.authDraftStore.onEvent((event) => {
+      if (event.authId !== authId) {
+        return;
+      }
+      if (event.kind === "upsert") {
+        listener({
+          eventId: event.eventId,
+          timestamp: event.timestamp,
+          kind: "upsert",
+          entry: event.entry,
+        });
+        return;
+      }
+      listener({
+        eventId: event.eventId,
+        timestamp: event.timestamp,
+        kind: "delete",
+        draftId: event.draftId,
+        draftKind: event.draftKind,
+        version: event.version,
+      });
+    });
+  }
+
+  setAuthKv(
+    authId: string,
+    input: {
+      key: string;
+      value: JsonValue;
+      baseVersion?: number | null;
+    },
+  ): AuthKvSetResult {
+    return this.authKvStore.set(authId, input);
+  }
+
+  deleteAuthKv(
+    authId: string,
+    input: {
+      key: string;
+      baseVersion?: number | null;
+    },
+  ): AuthKvDeleteResult {
+    return this.authKvStore.delete(authId, input);
+  }
+
+  getAuthKvEventsAfter(authId: string, afterEventId = 0, filter?: AuthKvFilter): AuthKvEvent[] {
+    return this.authKvStore.getEventsAfter(authId, afterEventId, filter);
+  }
+
+  onAuthKvEvent(authId: string, listener: (event: AuthKvEvent) => void): () => void {
+    return this.authKvStore.onEvent((event) => {
+      if (event.authId !== authId) {
+        return;
+      }
+      if (event.kind === "set") {
+        listener({
+          eventId: event.eventId,
+          timestamp: event.timestamp,
+          kind: "set",
+          entry: event.entry,
+        });
+        return;
+      }
+      listener({
+        eventId: event.eventId,
+        timestamp: event.timestamp,
+        kind: "delete",
+        key: event.key,
+        version: event.version,
+      });
+    });
   }
 
   async getProfileServiceDescriptor() {

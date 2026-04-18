@@ -121,6 +121,7 @@ describe("Feature: Avatar catalog density contract", () => {
     expect(avatarCatalogRouteSource).toContain("const formatStatusLabel = (status: string): string => {");
     expect(avatarCatalogRouteSource).toContain("const catalogCountLabel = $derived(`${avatars.length} installed`);");
     expect(avatarCatalogRouteSource).toContain("const selectedOriginLabel = $derived(selectedEntry ? 'Local catalog' : null);");
+    expect(avatarCatalogRouteSource).toContain("createAvatarCreateDraft");
     expect(avatarCatalogRouteSource).toContain("const openCopyAvatarDialog = (): void => {");
     expect(avatarCatalogRouteSource).toContain("const openAvatarDraft = async (): Promise<void> => {");
     expect(avatarCatalogRouteSource).toContain("{compactRuntimeId(entry.runtimeId)}");

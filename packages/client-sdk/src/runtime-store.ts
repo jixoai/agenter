@@ -2,8 +2,20 @@ import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
   ApiCallItem,
   AttentionQueryItem,
+  AuthDraftCreateOutput,
+  AuthDraftDeleteOutput,
+  AuthDraftEntry,
+  AuthDraftEvent,
+  AuthDraftKind,
+  AuthDraftSaveOutput,
+  AuthDraftSnapshotOutput,
   AuthServiceInfoOutput,
   AuthSessionOutput,
+  AuthKvDeleteOutput,
+  AuthKvEvent,
+  AuthKvSetOutput,
+  AuthKvSnapshotOutput,
+  AvatarCreateDraftState,
   CachedResourceState,
   ChatCycleItem,
   ChatListItem,
@@ -24,6 +36,7 @@ import type {
   HeartbeatGroupItem,
   HeartbeatPartItem,
   HistoryPageCursor,
+  JsonValue,
   MessageChannelEntry,
   MessageChannelGrantEntry,
   ModelCallItem,
@@ -653,6 +666,94 @@ export class RuntimeStore {
       }
       throw error;
     }
+  }
+
+  async listAuthDrafts(input?: {
+    kind?: AuthDraftKind;
+    draftIds?: string[];
+  }): Promise<AuthDraftSnapshotOutput> {
+    return await this.client.trpc.drafts.list.query(input);
+  }
+
+  async getAuthDraft(draftId: string): Promise<AuthDraftEntry | null> {
+    return await this.client.trpc.drafts.get.query({ draftId });
+  }
+
+  async createAuthDraft(input: {
+    kind: "avatar_create";
+    state: AvatarCreateDraftState;
+  }): Promise<AuthDraftCreateOutput> {
+    return await this.client.trpc.drafts.create.mutate(input);
+  }
+
+  async saveAuthDraft(input: {
+    draftId: string;
+    kind: "avatar_create";
+    state: AvatarCreateDraftState;
+    baseVersion?: number;
+  }): Promise<AuthDraftSaveOutput> {
+    return await this.client.trpc.drafts.save.mutate(input);
+  }
+
+  async deleteAuthDraft(input: {
+    draftId: string;
+    baseVersion?: number;
+  }): Promise<AuthDraftDeleteOutput> {
+    return await this.client.trpc.drafts.delete.mutate(input);
+  }
+
+  subscribeAuthDraftEvents(
+    input:
+      | {
+          afterEventId?: number;
+          kind?: AuthDraftKind;
+          draftIds?: string[];
+        }
+      | undefined,
+    handlers: {
+      onData: (event: AuthDraftEvent) => void;
+      onError?: (error: unknown) => void;
+    },
+  ): SubscriptionHandle {
+    return this.client.trpc.drafts.events.subscribe(input, handlers);
+  }
+
+  async snapshotAuthKv(input?: {
+    keys?: string[];
+    prefix?: string;
+  }): Promise<AuthKvSnapshotOutput> {
+    return await this.client.trpc.kv.snapshot.query(input);
+  }
+
+  async setAuthKv(input: {
+    key: string;
+    value: JsonValue;
+    baseVersion?: number | null;
+  }): Promise<AuthKvSetOutput> {
+    return await this.client.trpc.kv.set.mutate(input);
+  }
+
+  async deleteAuthKv(input: {
+    key: string;
+    baseVersion?: number | null;
+  }): Promise<AuthKvDeleteOutput> {
+    return await this.client.trpc.kv.delete.mutate(input);
+  }
+
+  subscribeAuthKvEvents(
+    input:
+      | {
+          afterEventId?: number;
+          keys?: string[];
+          prefix?: string;
+        }
+      | undefined,
+    handlers: {
+      onData: (event: AuthKvEvent) => void;
+      onError?: (error: unknown) => void;
+    },
+  ): SubscriptionHandle {
+    return this.client.trpc.kv.events.subscribe(input, handlers);
   }
 
   async getSuperadminStatus() {

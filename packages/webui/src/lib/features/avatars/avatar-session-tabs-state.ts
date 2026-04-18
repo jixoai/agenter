@@ -1,3 +1,4 @@
+// Device-local workbench projection only. Cross-device sync belongs to the underlying resource, not this tab strip.
 const AVATAR_SESSION_TABS_STORAGE_KEY = 'agenter:webui:avatars:session-tabs';
 export const AVATAR_SESSION_TABS_CHANGE_EVENT = 'agenter:avatar-session-tabs-change';
 

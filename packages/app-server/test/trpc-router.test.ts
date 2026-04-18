@@ -1196,4 +1196,233 @@ describe("Feature: app-server trpc procedures", () => {
 
     await kernel.stop();
   });
+
+  test("Scenario: Given authenticated actors When they use kv procedures Then each actor only sees private WebUI memory facts", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    await expect(caller.kv.snapshot()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+
+    const accountA = privateKeyToAccount(generatePrivateKey());
+    const challengeA = await caller.auth.challengeStart({
+      authId: accountA.address.toLowerCase(),
+    });
+    const sessionA = await caller.auth.challengeVerify({
+      challengeId: challengeA.challengeId,
+      signature: await accountA.signMessage({ message: challengeA.challengeText }),
+    });
+    const callerA = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${sessionA.token}`,
+      }),
+    );
+
+    const accountB = privateKeyToAccount(generatePrivateKey());
+    const challengeB = await caller.auth.challengeStart({
+      authId: accountB.address.toLowerCase(),
+    });
+    const sessionB = await caller.auth.challengeVerify({
+      challengeId: challengeB.challengeId,
+      signature: await accountB.signMessage({ message: challengeB.challengeText }),
+    });
+    const callerB = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${sessionB.token}`,
+      }),
+    );
+
+    const saved = await callerA.kv.set({
+      key: "webui/devtools/tab",
+      value: {
+        tab: "model",
+        pinned: true,
+      },
+    });
+    expect(saved).toMatchObject({
+      ok: true,
+      changed: true,
+      entry: {
+        key: "webui/devtools/tab",
+        value: {
+          tab: "model",
+          pinned: true,
+        },
+        version: 1,
+      },
+    });
+
+    const actorASnapshot = await callerA.kv.snapshot();
+    const actorBSnapshot = await callerB.kv.snapshot();
+    expect(actorASnapshot.items).toHaveLength(1);
+    expect(actorASnapshot.items[0]).toMatchObject({
+      key: "webui/devtools/tab",
+      value: {
+        tab: "model",
+        pinned: true,
+      },
+      version: 1,
+    });
+    expect(actorBSnapshot).toEqual({
+      lastEventId: 0,
+      items: [],
+    });
+
+    const conflict = await callerA.kv.set({
+      key: "webui/devtools/tab",
+      value: "cycle",
+      baseVersion: null,
+    });
+    expect(conflict).toMatchObject({
+      ok: false,
+      reason: "conflict",
+      latest: {
+        key: "webui/devtools/tab",
+        version: 1,
+      },
+    });
+
+    const noopDelete = await callerB.kv.delete({
+      key: "webui/devtools/tab",
+    });
+    expect(noopDelete).toEqual({
+      ok: true,
+      removed: false,
+      eventId: null,
+      key: "webui/devtools/tab",
+      version: null,
+    });
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given authenticated actors When they use draft procedures Then avatar create drafts stay private durable and resumable per actor", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+
+    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    await expect(caller.drafts.list()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+
+    const accountA = privateKeyToAccount(generatePrivateKey());
+    const challengeA = await caller.auth.challengeStart({
+      authId: accountA.address.toLowerCase(),
+    });
+    const sessionA = await caller.auth.challengeVerify({
+      challengeId: challengeA.challengeId,
+      signature: await accountA.signMessage({ message: challengeA.challengeText }),
+    });
+    const callerA = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${sessionA.token}`,
+      }),
+    );
+
+    const accountB = privateKeyToAccount(generatePrivateKey());
+    const challengeB = await caller.auth.challengeStart({
+      authId: accountB.address.toLowerCase(),
+    });
+    const sessionB = await caller.auth.challengeVerify({
+      challengeId: challengeB.challengeId,
+      signature: await accountB.signMessage({ message: challengeB.challengeText }),
+    });
+    const callerB = appRouter.createCaller(
+      await createTrpcContext({
+        kernel,
+        authorizationHeader: `Bearer ${sessionB.token}`,
+      }),
+    );
+
+    const created = await callerA.drafts.create({
+      kind: "avatar_create",
+      state: {
+        nickname: "reviewer",
+        sourceAvatarNickname: "default",
+      },
+    });
+    expect(created.entry).toMatchObject({
+      kind: "avatar_create",
+      version: 1,
+      state: {
+        nickname: "reviewer",
+        sourceAvatarNickname: "default",
+      },
+    });
+
+    const actorAList = await callerA.drafts.list({
+      kind: "avatar_create",
+    });
+    expect(actorAList.items).toEqual([created.entry]);
+    const actorBList = await callerB.drafts.list();
+    expect(actorBList).toEqual({
+      lastEventId: 0,
+      items: [],
+    });
+
+    const resumed = await callerA.drafts.get({
+      draftId: created.entry.draftId,
+    });
+    expect(resumed).toEqual(created.entry);
+
+    const saved = await callerA.drafts.save({
+      draftId: created.entry.draftId,
+      kind: "avatar_create",
+      state: {
+        nickname: "reviewer-2",
+        sourceAvatarNickname: "default",
+      },
+      baseVersion: created.entry.version,
+    });
+    expect(saved).toMatchObject({
+      ok: true,
+      changed: true,
+      entry: {
+        draftId: created.entry.draftId,
+        kind: "avatar_create",
+        version: 2,
+        state: {
+          nickname: "reviewer-2",
+          sourceAvatarNickname: "default",
+        },
+      },
+    });
+
+    const removed = await callerA.drafts.delete({
+      draftId: created.entry.draftId,
+      baseVersion: 2,
+    });
+    expect(removed).toEqual({
+      ok: true,
+      removed: true,
+      eventId: 3,
+      draftId: created.entry.draftId,
+      kind: "avatar_create",
+      version: 3,
+    });
+    expect(
+      await callerA.drafts.get({
+        draftId: created.entry.draftId,
+      }),
+    ).toBeNull();
+
+    await kernel.stop();
+  });
 });

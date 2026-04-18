@@ -6,6 +6,23 @@ import type { MessageActorId } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/profile-service";
 import type { TerminalActorId } from "@agenter/terminal-system";
+import {
+  authDraftCreateInputSchema,
+  authDraftDeleteInputSchema,
+  authDraftEventsInputSchema,
+  authDraftFilterSchema,
+  authDraftGetInputSchema,
+  authDraftSaveInputSchema,
+  matchesAuthDraftFilter,
+  type AuthDraftEvent,
+} from "../auth-draft-types";
+import {
+  authKvFilterSchema,
+  authKvKeySchema,
+  jsonValueSchema,
+  matchesAuthKvFilter,
+  type AuthKvEvent,
+} from "../auth-kv-types";
 import type { AnyRuntimeEvent } from "../realtime-types";
 import { settingsKindSchema } from "../realtime-types";
 import { t } from "./init";
@@ -110,6 +127,23 @@ const authChallengeVerifyInput = z.object({
   challengeId: z.string().uuid(),
   signature: z.string().trim().min(1),
 });
+const authKvBaseVersionSchema = z.number().int().positive().nullable().optional();
+const authKvSnapshotInputSchema = authKvFilterSchema.optional();
+const authKvSetInputSchema = z.object({
+  key: authKvKeySchema,
+  value: jsonValueSchema,
+  baseVersion: authKvBaseVersionSchema,
+});
+const authKvDeleteInputSchema = z.object({
+  key: authKvKeySchema,
+  baseVersion: authKvBaseVersionSchema,
+});
+const authKvEventsInputSchema = authKvFilterSchema
+  .extend({
+    afterEventId: z.number().int().nonnegative().optional(),
+  })
+  .optional();
+const authDraftListInputSchema = authDraftFilterSchema.optional();
 
 const requireAuth = t.procedure.use(({ ctx, next }) => {
   if (!ctx.auth) {
@@ -175,6 +209,89 @@ export const appRouter = t.router({
       ok: true,
       claims: ctx.auth.claims,
     })),
+  }),
+  kv: t.router({
+    snapshot: requireAuth.input(authKvSnapshotInputSchema).query(({ ctx, input }) => {
+      return ctx.kernel.snapshotAuthKv(ctx.auth.claims.authId, input);
+    }),
+    set: requireAuth.input(authKvSetInputSchema).mutation(({ ctx, input }) => {
+      return ctx.kernel.setAuthKv(ctx.auth.claims.authId, input);
+    }),
+    delete: requireAuth.input(authKvDeleteInputSchema).mutation(({ ctx, input }) => {
+      return ctx.kernel.deleteAuthKv(ctx.auth.claims.authId, input);
+    }),
+    events: requireAuth.input(authKvEventsInputSchema).subscription(({ ctx, input }) => {
+      return observable<AuthKvEvent>((emit) => {
+        let cursor = input?.afterEventId ?? 0;
+        const filter = input ? { keys: input.keys, prefix: input.prefix } : undefined;
+        const pushEvent = (event: AuthKvEvent): void => {
+          if (event.eventId <= cursor) {
+            return;
+          }
+          const key = event.kind === "set" ? event.entry.key : event.key;
+          if (!matchesAuthKvFilter(key, filter)) {
+            return;
+          }
+          cursor = event.eventId;
+          emit.next(event);
+        };
+
+        const unsubscribe = ctx.kernel.onAuthKvEvent(ctx.auth.claims.authId, pushEvent);
+        for (const event of ctx.kernel.getAuthKvEventsAfter(ctx.auth.claims.authId, cursor, input)) {
+          pushEvent(event);
+        }
+        return unsubscribe;
+      });
+    }),
+  }),
+  drafts: t.router({
+    list: requireAuth.input(authDraftListInputSchema).query(({ ctx, input }) => {
+      return ctx.kernel.listAuthDrafts(ctx.auth.claims.authId, input);
+    }),
+    get: requireAuth.input(authDraftGetInputSchema).query(({ ctx, input }) => {
+      return ctx.kernel.getAuthDraft(ctx.auth.claims.authId, input.draftId);
+    }),
+    create: requireAuth.input(authDraftCreateInputSchema).mutation(({ ctx, input }) => {
+      return ctx.kernel.createAuthDraft(ctx.auth.claims.authId, input);
+    }),
+    save: requireAuth.input(authDraftSaveInputSchema).mutation(({ ctx, input }) => {
+      return ctx.kernel.saveAuthDraft(ctx.auth.claims.authId, input);
+    }),
+    delete: requireAuth.input(authDraftDeleteInputSchema).mutation(({ ctx, input }) => {
+      return ctx.kernel.deleteAuthDraft(ctx.auth.claims.authId, input);
+    }),
+    events: requireAuth.input(authDraftEventsInputSchema).subscription(({ ctx, input }) => {
+      return observable<AuthDraftEvent>((emit) => {
+        let cursor = input?.afterEventId ?? 0;
+        const filter = input ? { kind: input.kind, draftIds: input.draftIds } : undefined;
+        const pushEvent = (event: AuthDraftEvent): void => {
+          if (event.eventId <= cursor) {
+            return;
+          }
+          const entry =
+            event.kind === "upsert"
+              ? {
+                  draftId: event.entry.draftId,
+                  kind: event.entry.kind,
+                }
+              : {
+                  draftId: event.draftId,
+                  kind: event.draftKind,
+                };
+          if (!matchesAuthDraftFilter(entry, filter)) {
+            return;
+          }
+          cursor = event.eventId;
+          emit.next(event);
+        };
+
+        const unsubscribe = ctx.kernel.onAuthDraftEvent(ctx.auth.claims.authId, pushEvent);
+        for (const event of ctx.kernel.getAuthDraftEventsAfter(ctx.auth.claims.authId, cursor, input)) {
+          pushEvent(event);
+        }
+        return unsubscribe;
+      });
+    }),
   }),
   avatar: t.router({
     catalog: t.procedure.query(async ({ ctx }) => ({

@@ -24,12 +24,16 @@ describe("Feature: App shell collapsed sidebar chrome", () => {
 
   test("Scenario: Given the avatars system entry When reading the app shell source Then avatar session tabs remain wired as sidebar secondary navigation", () => {
     expect(appShellSource).toContain("import RunningAvatarRail");
+    expect(appShellSource).toContain("RunningAvatarPinSource");
     expect(appShellSource).toContain("readAvatarSessionTabIds");
     expect(appShellSource).toContain("AVATAR_SESSION_TABS_CHANGE_EVENT");
     expect(appShellSource).toContain("upsertAvatarSessionTabId");
-    expect(appShellSource).toContain("readPinnedRunningAvatarIds");
     expect(appShellSource).toContain("reconcilePinnedRunningAvatarIds");
     expect(appShellSource).toContain("togglePinnedRunningAvatarId");
+    expect(appShellSource).toContain("runningAvatarPinSource.hydrate(controller.runtimeStore)");
+    expect(appShellSource).toContain("runningAvatarPinSource.subscribe(controller.runtimeStore");
+    expect(appShellSource).toContain("runningAvatarPinSource");
+    expect(appShellSource).toContain(".toggle(controller.runtimeStore, sessionId, nextPinned)");
     expect(appShellSource).toContain("buildAvatarSessionRailItems(controller.runtimeState");
     expect(appShellSource).toContain("openedSessionIds: openedAvatarSessionIds");
     expect(appShellSource).toContain("pinnedSessionIds: pinnedAvatarSessionIds");
