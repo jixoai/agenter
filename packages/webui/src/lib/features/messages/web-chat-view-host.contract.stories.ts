@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
+import type { WebChatVisibleMessageFact } from '@agenter/web-chat-view';
 import Harness from './web-chat-view-host.story-harness.svelte';
 import { containsVisibleTextDeep } from '$lib/testing/shadow-dom';
 
@@ -9,7 +10,7 @@ type HarnessState = {
 	transportAppendCount: number;
 	pageRequestCount: number;
 	pendingOlderCount: number;
-	latestVisibleMessage: { messageId: string; rowId: number } | null;
+	latestVisibleMessage: WebChatVisibleMessageFact | null;
 	clientPayloadTypes: string[];
 	viewport: {
 		scrollTop: number;
@@ -32,7 +33,7 @@ const waitForInitialTransport = async (
 	canvasElement: HTMLElement,
 	options: {
 		pendingOlderCount: number;
-		latestMessageId: string;
+		latestMessageId: number;
 	},
 ): Promise<HarnessState> => {
 	let snapshot = readHarnessState(canvas);
@@ -88,7 +89,7 @@ export const TransportAppendWhilePinnedKeepsLatestVisible = {
 		const canvas = within(canvasElement);
 		await waitForInitialTransport(canvas, canvasElement, {
 			pendingOlderCount: 0,
-			latestMessageId: 'msg-28',
+			latestMessageId: 28,
 		});
 		expect(readHarnessState(canvas).viewport?.latestAffordanceVisible).toBe('false');
 
@@ -98,12 +99,12 @@ export const TransportAppendWhilePinnedKeepsLatestVisible = {
 			const state = readHarnessState(canvas);
 			expect(state.transportAppendCount).toBe(1);
 			expect(state.loadedMessageCount).toBe(29);
-			expect(state.latestVisibleMessage?.messageId).toBe('msg-29');
+			expect(state.latestVisibleMessage?.messageId).toBe(29);
 			expect(state.viewport?.latestAffordanceVisible).toBe('false');
 			expect(containsVisibleTextDeep(canvasElement, 'Transport append #1')).toBe(true);
 		});
 
-		const latestRow = canvasElement.querySelector<HTMLElement>("[data-message-id='msg-29']");
+		const latestRow = canvasElement.querySelector<HTMLElement>("[data-view-key='29']");
 		expect(latestRow?.dataset.insertMotion).toBe('latest');
 	},
 } satisfies Story;
@@ -116,7 +117,7 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 		const canvas = within(canvasElement);
 		await waitForInitialTransport(canvas, canvasElement, {
 			pendingOlderCount: 0,
-			latestMessageId: 'msg-28',
+			latestMessageId: 28,
 		});
 		await userEvent.click(canvas.getByTestId('web-chat-story-scroll-away'));
 
@@ -133,7 +134,7 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 			const state = readHarnessState(canvas);
 			expect(state.transportAppendCount).toBe(1);
 			expect(state.loadedMessageCount).toBe(29);
-			expect(state.latestVisibleMessage?.messageId).not.toBe('msg-29');
+			expect(state.latestVisibleMessage?.messageId).not.toBe(29);
 			expect(readLatestAffordance(canvas)).toBe('true');
 		});
 
@@ -141,7 +142,7 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 
 		await waitFor(() => {
 			const state = readHarnessState(canvas);
-			expect(state.latestVisibleMessage?.messageId).toBe('msg-29');
+			expect(state.latestVisibleMessage?.messageId).toBe(29);
 			expect(readLatestAffordance(canvas)).toBe('false');
 			expect(containsVisibleTextDeep(canvasElement, 'Transport append #1')).toBe(true);
 		});
@@ -153,7 +154,7 @@ export const ReachingHistoryStartLoadsOlderPage = {
 		const canvas = within(canvasElement);
 		await waitForInitialTransport(canvas, canvasElement, {
 			pendingOlderCount: 6,
-			latestMessageId: 'msg-34',
+			latestMessageId: 34,
 		});
 		await userEvent.click(canvas.getByTestId('web-chat-story-reach-start'));
 
@@ -165,7 +166,7 @@ export const ReachingHistoryStartLoadsOlderPage = {
 			expect(containsVisibleTextDeep(canvasElement, 'Older history #1')).toBe(true);
 		});
 
-		const olderRow = canvasElement.querySelector<HTMLElement>("[data-message-id='msg-1']");
+		const olderRow = canvasElement.querySelector<HTMLElement>("[data-view-key='1']");
 		expect(olderRow?.dataset.insertMotion).toBe('older');
 	},
 } satisfies Story;
@@ -178,7 +179,7 @@ export const ScrollToLatestInterruptedByWheelKeepsTranscriptAway = {
 		const canvas = within(canvasElement);
 		await waitForInitialTransport(canvas, canvasElement, {
 			pendingOlderCount: 0,
-			latestMessageId: 'msg-28',
+			latestMessageId: 28,
 		});
 		const viewport = getViewport(canvasElement);
 		await userEvent.click(canvas.getByTestId('web-chat-story-scroll-away'));
@@ -188,7 +189,7 @@ export const ScrollToLatestInterruptedByWheelKeepsTranscriptAway = {
 			() => {
 				awayState = readHarnessState(canvas);
 				expect(readLatestAffordance(canvas)).toBe('true');
-				expect(awayState.latestVisibleMessage?.messageId).not.toBe('msg-28');
+				expect(awayState.latestVisibleMessage?.messageId).not.toBe(28);
 			},
 			{ timeout: 3_000 },
 		);
@@ -202,7 +203,7 @@ export const ScrollToLatestInterruptedByWheelKeepsTranscriptAway = {
 		await waitFor(() => {
 			const state = readHarnessState(canvas);
 			expect(readLatestAffordance(canvas)).toBe('true');
-			expect(state.latestVisibleMessage?.messageId).not.toBe('msg-28');
+			expect(state.latestVisibleMessage?.messageId).not.toBe(28);
 		});
 	},
 } satisfies Story;

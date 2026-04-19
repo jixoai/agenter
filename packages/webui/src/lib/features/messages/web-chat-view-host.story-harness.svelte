@@ -7,13 +7,14 @@
 	} from '@agenter/svelte-components';
 	import type {
 		WebChatChannel,
-		WebChatMessage,
 		WebChatSocketFactory,
 		WebChatSocketLike,
 		WebChatTransportMessage,
 		WebChatVisibleMessageFact,
 	} from '@agenter/web-chat-view';
 	import { WebChatViewHost } from '@agenter/web-chat-view';
+
+	type StoryMessageRecord = Extract<WebChatTransportMessage, { type: 'snapshot' }>['snapshot']['items'][number];
 
 	let { olderPageCount = 6 }: { olderPageCount?: number } = $props();
 
@@ -43,11 +44,11 @@
 		rowId: number;
 		content: string;
 		from: 'Bootstrap admin' | 'Analyst';
-	}): WebChatMessage => {
+	}): StoryMessageRecord => {
 		const timestamp = baseTimestamp + input.rowId * 1_000;
 		return {
 			rowId: input.rowId,
-			messageId: `msg-${input.rowId}`,
+			messageId: input.rowId,
 			chatId: channel.chatId,
 			from: input.from,
 			kind: 'text',
@@ -62,7 +63,7 @@
 		};
 	};
 
-	const createCurrentMessages = (seedOlderPageCount: number): WebChatMessage[] =>
+	const createCurrentMessages = (seedOlderPageCount: number): StoryMessageRecord[] =>
 		Array.from({ length: currentSeedCount }, (_, index) => {
 			const rowId = seedOlderPageCount + index + 1;
 			if (index === 0) {
@@ -86,7 +87,7 @@
 			});
 		});
 
-	const createOlderPage = (seedOlderPageCount: number): WebChatMessage[] =>
+	const createOlderPage = (seedOlderPageCount: number): StoryMessageRecord[] =>
 		Array.from({ length: seedOlderPageCount }, (_, index) =>
 			createMessage({
 				rowId: index + 1,
@@ -95,7 +96,7 @@
 			}),
 		);
 
-let storyRootRef = $state<HTMLDivElement | null>(null);
+	let storyRootRef = $state<HTMLDivElement | null>(null);
 	let activeSocket = $state<StorySocket | null>(null);
 	let transportAppendCount = $state(0);
 	let loadedMessageCount = $state(0);
@@ -121,8 +122,8 @@ let storyRootRef = $state<HTMLDivElement | null>(null);
 	class StorySocket implements WebChatSocketLike {
 		readyState = 0;
 		private readonly listeners = new Map<string, Array<(event: Event | MessageEvent) => void>>();
-		private currentMessages: WebChatMessage[];
-		private olderPage: WebChatMessage[];
+		private currentMessages: StoryMessageRecord[];
+		private olderPage: StoryMessageRecord[];
 		private readonly roomChannel: WebChatChannel;
 		private readonly seedOlderPageCount: number;
 

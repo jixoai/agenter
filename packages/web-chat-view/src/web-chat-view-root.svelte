@@ -707,11 +707,11 @@
           }).connect(controller, { name: seekHistoryStartTriggerName })
         : () => {};
     const disconnectTransportDelta = createCollectionDeltaTrigger({
-      getKeys: () => transcriptMessages.map((message) => message.messageId),
+      getKeys: () => transcriptMessages.map((message) => message.viewKey),
       directionFilter: ["append", "replace"],
     }).observe(observedDom).connect(controller, { name: transportDeltaTriggerName });
     const disconnectOlderPageDelta = createCollectionDeltaTrigger({
-      getKeys: () => transcriptMessages.map((message) => message.messageId),
+      getKeys: () => transcriptMessages.map((message) => message.viewKey),
       directionFilter: ["prepend"],
     }).observe(observedDom).connect(controller, { name: olderPageDeltaTriggerName });
     const disconnectLatestInsert = createInsertBatchTrigger({

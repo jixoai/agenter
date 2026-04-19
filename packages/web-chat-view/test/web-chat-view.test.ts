@@ -141,8 +141,11 @@ class IntersectionObserverMock {
       const threshold = parseBottomRootMargin(this.options.rootMargin);
       return Math.max(0, -this.options.root.scrollTop) <= threshold;
     }
-    if (target instanceof HTMLElement && target.dataset.messageId) {
-      const latestMessageElement = this.options.root.querySelector<HTMLElement>("[data-message-id]");
+    if (target instanceof HTMLElement && target.dataset.viewKey) {
+      if (!this.options.root.contains(target)) {
+        return false;
+      }
+      const latestMessageElement = this.options.root.querySelector<HTMLElement>("[data-view-key]");
       if (latestMessageElement && latestMessageElement === target) {
         return Math.max(0, -this.options.root.scrollTop) < 48;
       }
