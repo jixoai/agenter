@@ -119,18 +119,50 @@ The shared transcript SHALL render room-message revision state from the durable 
 - **THEN** the visible transcript row keeps its stable `viewKey`
 - **THEN** the transcript does not duplicate the row just because the lifecycle state changed
 
-### Requirement: Web chat view SHALL own transcript scrolling through ScrollView
-The shared chat component SHALL delegate transcript scrolling to the shared `ScrollView` contract instead of feature-local raw overflow ownership, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only scroll owner and `message_toolbar` pinned to the stage bottom.
+### Requirement: Web chat view SHALL drive transcript scrolling through named triggers and an installed program
+The shared chat component SHALL delegate transcript scrolling to the shared anchored virtual list scroll contract instead of feature-local raw overflow ownership or generic `ScrollView` semantics, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only transcript scroll owner and `message_toolbar` pinned to the stage bottom. Return-to-latest, transport append follow, older-page reveal, insert-batch affordances, and user-input interruption SHALL be driven through named trigger facts and a shared installed program rather than feature-local imperative request calls. Transcript mutation choreography such as latest follow, older reveal, insert-motion stabilization, and user-input interruption SHALL run entirely through the shared ownership-chain runtime rather than a package-local scroll state machine.
 
-#### Scenario: Transcript uses shared scroll owner
+#### Scenario: Transcript uses the shared anchored virtual list scroll law
 - **WHEN** the chat transcript exceeds the visible height
-- **THEN** the component scrolls through the shared `ScrollView` contract
+- **THEN** the component scrolls through the shared anchored virtual list scroll contract
 - **THEN** host surfaces do not need to wrap the transcript in a second competing scroll owner
 
 #### Scenario: Composer stays pinned while transcript scrolls
 - **WHEN** the transcript grows beyond the available room stage height
 - **THEN** only `messages_list` scrolls
 - **THEN** the composer stays pinned at the bottom of the shared chat stage instead of entering a second page-level scroll region
+
+#### Scenario: User input can interrupt programmatic transcript scrolling
+- **WHEN** a programmatic transcript scroll is in progress
+- **AND** the operator starts wheel, direct-manipulation, keyboard, or momentum-driven scrolling
+- **THEN** transcript ownership follows the shared anchored virtual list interruption rules
+- **AND** the component does not keep a private route-local scroll conflict state machine
+
+#### Scenario: Return-to-latest is an action trigger, not a direct request call
+- **WHEN** the operator activates the transcript's `Scroll to latest` affordance
+- **THEN** the chat surface raises an action trigger that the installed scroll program consumes
+- **AND** the feature code does not directly call the old request surface for that action
+
+#### Scenario: Transport append while pinned follows latest through the installed program
+- **WHEN** newer room messages arrive while the transcript is effectively at latest
+- **THEN** the named trigger program follows latest through the shared tx runtime
+- **AND** the transcript does not rely on route-local `scrollTop` bookkeeping
+
+#### Scenario: Older-page reveal is triggered from named query facts
+- **WHEN** older history is prepended while the operator is near history start
+- **THEN** the installed program derives reveal behavior from named query facts such as collection delta and edge state
+- **AND** the component does not keep a second feature-local scroll ownership path
+
+#### Scenario: Return-to-latest interrupted by wheel keeps the transcript away
+- **WHEN** the operator is away from latest and triggers the shared `scrollToLatest` affordance
+- **AND** wheel input starts before that semantic request completes
+- **THEN** the transcript stays away from latest under user ownership
+- **AND** the latest affordance remains visible instead of being hidden by a competing private scroll writer
+
+#### Scenario: Latest follow and older reveal do not rely on private viewport writes
+- **WHEN** room messages are appended or older pages are prepended
+- **THEN** the component contributes mutation facts to the shared transaction runtime
+- **AND** package-local render hooks do not issue their own `scrollTo`, `scrollTop`, or equivalent viewport writes
 
 ### Requirement: Web chat view SHALL support large chat histories
 The web chat view SHALL use virtualized rendering and reverse-time pagination for long-lived room conversations.

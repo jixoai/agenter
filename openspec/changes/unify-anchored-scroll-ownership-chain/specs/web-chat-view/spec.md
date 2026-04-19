@@ -1,0 +1,31 @@
+## MODIFIED Requirements
+
+### Requirement: Web chat view SHALL own transcript scrolling through the shared anchored virtual list runtime
+
+The shared chat component SHALL delegate transcript scrolling to the shared anchored virtual list scroll contract instead of feature-local raw overflow ownership or generic `ScrollView` semantics, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only transcript scroll owner and `message_toolbar` pinned to the stage bottom. Transcript mutation choreography such as latest follow, older reveal, insert-motion stabilization, and user-input interruption SHALL run entirely through the shared ownership-chain runtime rather than a package-local scroll state machine.
+
+#### Scenario: Transcript uses the shared anchored virtual list scroll law
+
+- **WHEN** the chat transcript exceeds the visible height
+- **THEN** the component scrolls through the shared anchored virtual list scroll contract
+- **AND** host surfaces do not need to wrap the transcript in a second competing scroll owner
+
+#### Scenario: User input can interrupt programmatic transcript scrolling
+
+- **WHEN** a programmatic transcript scroll is in progress
+- **AND** the operator starts wheel, direct-manipulation, keyboard, or momentum-driven scrolling
+- **THEN** transcript ownership follows the shared anchored virtual list interruption rules
+- **AND** the component does not keep a private route-local scroll conflict state machine
+
+#### Scenario: Return-to-latest interrupted by wheel keeps the transcript away
+
+- **WHEN** the operator is away from latest and triggers the shared `scrollToLatest` affordance
+- **AND** wheel input starts before that semantic request completes
+- **THEN** the transcript stays away from latest under user ownership
+- **AND** the latest affordance remains visible instead of being hidden by a competing private scroll writer
+
+#### Scenario: Latest follow and older reveal do not rely on private viewport writes
+
+- **WHEN** room messages are appended or older pages are prepended
+- **THEN** the component contributes mutation facts to the shared transaction runtime
+- **AND** package-local render hooks do not issue their own `scrollTo`, `scrollTop`, or equivalent viewport writes

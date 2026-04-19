@@ -12,6 +12,9 @@
 
 - `ScrollView` 是标准 surface 的共享滚动所有权 durable primitive。
 - `BottomAnchoredTimeline` 是 dense conversation / timeline surface 的专用 durable primitive：它把视觉底部映射为 `scrollTop = 0`，并在 primitive 边界承担 reverse-flow virtualization、visual-top older-page slot 与 latest-anchor 语义。
+- `AnchoredVirtualList` 是 `BottomAnchoredTimeline` 之上的共享 transcript primitive；它公开 `ScrollController + Named Trigger + Query + tx` scroll law，并把旧 kernel 限定为包内执行引擎。
+- anchored transcript program 只能通过 `query.<name>.*` 读取 scroll facts，只能通过 installed program controller 的 `tx(...)` 产生语义滚动副作用；`request(...)`、`notifyMutation(...)`、raw `transact(...)` 只能作为迁移期包内 shim，不能再成为 feature-path contract。
+- named trigger family 分为两层：browser-native base triggers（visibility / resize / action / user-input / optional scroll-metrics）与 anchored-list high-order triggers（edge / overflow / collection-delta / materialization / insert-batch）。它们各自拥有独立 query subtree，不得重新扁平化成一个全局 scroll state 对象。
 - 任何需要滚动的 Svelte surface，都应通过 `ScrollView` 或 `BottomAnchoredTimeline` 表达 scroll owner，而不是在 feature 层重新声明 raw scroll overflow。
 - 会话、Heartbeat、room transcript 这类“latest-first but chronologically rendered”的 surface，必须优先复用 `BottomAnchoredTimeline`，不得在 feature 层重新发明 `scrollHeight/scrollTop + RAF + prepend anchor` 粘底数学。
 

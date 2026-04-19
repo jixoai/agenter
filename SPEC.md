@@ -42,6 +42,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - WebUI 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - 共享 workbench chrome 的 `page_content` body 必须是页面级唯一 scroll owner：`tabs` 与 `page_toolbar` 永远固定在外层 chrome，route-root wrapper 只能用 `min-h-full` 等 stretch 语义填满 body，不能再用 `h-full`、raw clipping 或隐式 overflow 把 shared window body 锁死成不可滚动。
+- bottom-anchored transcript / timeline 的语义滚动法则固定为 `ScrollController + Named Trigger + Query + tx`：feature code 只能通过 installed program 读取 `query.<name>.*` 并在 `tx(...)` 中表达 scroll semantics，不得再持有第二套 `scrollTop` / `request(...)` / local observer graph ownership。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。

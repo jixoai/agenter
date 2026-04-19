@@ -1,13 +1,13 @@
 # scrollview-surface Specification
 
 ## Purpose
-TBD - created by archiving change codify-scrollview-law-and-svelte-shell-primitives. Update Purpose after archive.
+Define the shared scroll ownership contract for standard surfaces and the boundary between `ScrollView` and the dedicated anchored virtual list runtime.
 ## Requirements
-### Requirement: Frontend feature surfaces SHALL delegate scroll ownership to ScrollView
-User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any scrolling surface, and feature code or shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities. The durable Svelte `ScrollView` primitive SHALL be published from `@agenter/svelte-components`. Stretchable regions that host `ScrollView` SHALL be created through the shared scaffold-family primitives rather than page-local shell classes.
+### Requirement: Frontend feature surfaces SHALL delegate scroll ownership to shared scroll primitives
+User-facing frontend surfaces SHALL delegate scroll ownership to shared scroll primitives instead of route-local raw overflow ownership. Standard scrolling panels SHALL use `ScrollView`, while WebChat-like anchored virtual long lists SHALL use the dedicated anchored virtual list scroll contract. Each shared scroll primitive SHALL keep one effective scroll writer per viewport, even when virtualization, insert motion, or reconciliation are involved. Feature code and shared reusable surface packages SHALL NOT directly own scrolling with raw `overflow-auto`, `overflow-scroll`, or equivalent utilities, and they SHALL NOT layer additional viewport writers on top of the shared primitive. Stretchable regions that host these shared scroll primitives SHALL be created through the shared scaffold-family primitives rather than page-local shell classes.
 
 #### Scenario: Vertical system transcript
-- **WHEN** a system transcript needs vertical scrolling
+- **WHEN** a system transcript needs vertical scrolling without anchored latest-edge semantics
 - **THEN** the feature composes a `ScrollView` rather than applying raw scroll CSS directly
 
 #### Scenario: Horizontal code or JSON preview
@@ -16,8 +16,8 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 
 #### Scenario: Shared web component transcript
 - **WHEN** a reusable chat or operator component owns a stretchable transcript viewport
-- **THEN** that component still uses the shared `ScrollView` contract internally
-- **THEN** host applications do not reintroduce raw overflow to recover scrolling
+- **THEN** that component uses the shared anchored virtual list scroll law for transcript ownership
+- **AND** host applications do not reintroduce raw overflow or route-local scroll math to recover scrolling
 
 #### Scenario: Dialog management shell uses one detail scroll owner
 - **WHEN** a dialog contains a sidebar rail plus a stretchable detail stage
@@ -27,12 +27,17 @@ User-facing frontend surfaces SHALL use a shared `ScrollView` primitive for any 
 #### Scenario: Scaffold-owned route body hosts the only scroll primitive
 - **WHEN** a route panel or dialog body needs vertical scrolling
 - **THEN** the surface creates that stretch region through `Scaffold.ScrollBody` or `DialogScaffold.ScrollBody`
-- **THEN** `ScrollView` remains the only scroll owner inside that region
+- **THEN** a shared scroll primitive remains the only scroll owner inside that region
 
-#### Scenario: Shared Svelte package consumes ScrollView
-- **WHEN** a shared Svelte package needs a durable scroll owner
-- **THEN** it imports `ScrollView` from `@agenter/svelte-components`
+#### Scenario: Shared Svelte package consumes shared scroll law
+- **WHEN** a shared Svelte package needs durable scroll ownership
+- **THEN** it imports the appropriate shared scroll primitive from `@agenter/svelte-components`
 - **THEN** host packages do not need a product-local wrapper to recover the shared scroll law
+
+#### Scenario: Insert motion does not create a second writer
+- **WHEN** a shared transcript surface applies insert motion or virtualization-driven reconciliation
+- **THEN** the shared scroll primitive remains the only effective viewport writer
+- **AND** animation or measurement helpers do not mutate the viewport independently
 
 ### Requirement: ScrollView SHALL support static and virtual rendering
 The shared scrolling primitive SHALL support plain content scrolling and item virtualization through one durable component contract.
