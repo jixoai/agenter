@@ -7,10 +7,26 @@
   } from "@agenter/message-system/types";
   import {
     BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
-    BottomAnchoredTimeline,
+    AnchoredVirtualList,
+    createActionTrigger,
+    createCollectionDeltaTrigger,
+    createEdgeTrigger,
+    createInsertBatchTrigger,
+    createOverflowTrigger,
+    createUserInputTrigger,
+    defineScrollTriggerName,
     getBottomAnchoredDistanceToStart,
-    type BottomAnchoredTimelineHandle,
+    type ActionTriggerQuery,
+    type AnchoredVirtualListScrollHandle,
+    type CollectionDeltaTriggerQuery,
+    type EdgeTriggerQuery,
+    type InsertBatchTriggerQuery,
+    type OverflowTriggerQuery,
+    type ScrollController,
+    type ScrollProgramController,
+    type UserInputTriggerQuery,
     Scaffold,
+    readScrollTriggerQuery,
     type ScrollVirtualConfig,
   } from "@agenter/svelte-components";
   import { onDestroy, tick, untrack } from "svelte";
@@ -46,6 +62,57 @@
   const CONNECTING_READY_STATE = 0;
   const OPEN_READY_STATE = 1;
   const LOAD_MORE_OFFSET = 160;
+  const edgeTriggerName = defineScrollTriggerName<EdgeTriggerQuery>("edge");
+  const userInputTriggerName = defineScrollTriggerName<UserInputTriggerQuery>("userInput");
+  const returnToLatestTriggerName = defineScrollTriggerName<ActionTriggerQuery>("returnToLatest");
+  const seekHistoryStartTriggerName = defineScrollTriggerName<ActionTriggerQuery>("seekHistoryStart");
+  const transportDeltaTriggerName = defineScrollTriggerName<CollectionDeltaTriggerQuery>("transportDelta");
+  const olderPageDeltaTriggerName = defineScrollTriggerName<CollectionDeltaTriggerQuery>("olderPageDelta");
+  const latestInsertTriggerName = defineScrollTriggerName<InsertBatchTriggerQuery>("latestInsert");
+  const olderInsertTriggerName = defineScrollTriggerName<InsertBatchTriggerQuery>("olderInsert");
+  const overflowTriggerName = defineScrollTriggerName<OverflowTriggerQuery>("overflow");
+  const emptyEdgeQuery: EdgeTriggerQuery = {
+    atLatest: true,
+    atStart: true,
+    enteredLatest: false,
+    leftLatest: false,
+    enteredStart: false,
+    leftStart: false,
+    distanceToLatestPx: 0,
+    distanceToStartPx: 0,
+  };
+  const emptyUserInputQuery: UserInputTriggerQuery = {
+    active: false,
+    entered: false,
+    exited: false,
+    kind: "idle",
+    pointerType: null,
+    momentum: false,
+    startedAt: null,
+    lastEventAt: null,
+  };
+  const emptyCollectionDeltaQuery: CollectionDeltaTriggerQuery = {
+    changed: false,
+    direction: "unknown",
+    insertedKeys: [],
+    removedKeys: [],
+    anchorKey: null,
+  };
+  const emptyInsertBatchQuery: InsertBatchTriggerQuery = {
+    changed: false,
+    motion: "latest",
+    elements: [],
+    extentPx: 0,
+    nearestElement: null,
+  };
+  const emptyOverflowQuery: OverflowTriggerQuery = {
+    overflowing: false,
+    becameOverflowing: false,
+    becameContained: false,
+    overflowPx: 0,
+    visibleExtentPx: 0,
+    contentExtentPx: 0,
+  };
 
   let {
     channel,
@@ -69,12 +136,16 @@
     submitMessage,
     latestVisibleAssistantViewKeyHandler,
     latestVisibleMessageIdHandler,
+    scrollControllerRef = $bindable<ScrollController | null>(null),
+    historyStartActionRef = $bindable<HTMLButtonElement | null>(null),
     socketFactory,
   }: WebChatRootProps = $props();
 
   let viewportRef: HTMLDivElement | null = $state(null as HTMLDivElement | null);
   let contentRef: HTMLDivElement | null = $state(null as HTMLDivElement | null);
-  let timelineRef: BottomAnchoredTimelineHandle | null = $state(null as BottomAnchoredTimelineHandle | null);
+  let timelineRef: AnchoredVirtualListScrollHandle | null = $state(null as AnchoredVirtualListScrollHandle | null);
+  let internalScrollControllerRef: ScrollController | null = $state(null as ScrollController | null);
+  let scrollToLatestButtonRef: HTMLButtonElement | null = $state(null as HTMLButtonElement | null);
   let messages: WebChatMessage[] = $state([] as WebChatMessage[]);
   let connectionState: WebChatConnectionState = $state("idle" as WebChatConnectionState);
   let errorMessage: string | null = $state(null as string | null);
@@ -85,12 +156,8 @@
   let sending = $state(false);
   let timelineAtLatest = $state(true);
   let visibilityChatId = $state<string | null>(null);
-  let activeTimelineChatId = $state<string | null>(null);
   let insertMotionByViewKey = $state<Record<string, "latest" | "older">>({});
   let insertMotionClearHandle = 0;
-  let pendingOlderRevealPx = $state<number | null>(null);
-  let pendingOlderRevealBaseScrollTop = $state<number | null>(null);
-  let pendingLatestIntent = $state(false);
 
   let nextBefore: ReverseTimeCursor | null = null;
   let socketRef: WebChatSocketLike | null = null;
@@ -99,6 +166,7 @@
   const visibleAssistantViewKeys = new Map<string, boolean>();
   let latestVisibleMessage: WebChatVisibleMessageFact | null = null;
   let latestVisibleAssistantViewKey: string | null = null;
+  let latestTranscriptMessageVisible = $state(false);
   let latestVisibleMessageEmission = $state<{
     chatId: string | null;
     viewerActorId: string | null;
@@ -171,42 +239,6 @@
       .filter((message) => !currentIds.has(resolveMessageIdentityKey(message)))
       .map((message) => message.viewKey);
   };
-  const waitForTimelineSettle = async (): Promise<void> => {
-    await tick();
-    if (typeof window === "undefined" || !viewportRef) {
-      return;
-    }
-    let stableFrames = 0;
-    let lastSignature = "";
-    for (let index = 0; index < 12; index += 1) {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          resolve();
-        });
-      });
-      const currentViewport = viewportRef;
-      if (!currentViewport) {
-        return;
-      }
-      const nextSignature = `${currentViewport.scrollTop}:${currentViewport.scrollHeight}`;
-      if (nextSignature === lastSignature) {
-        stableFrames += 1;
-        if (stableFrames >= 2) {
-          return;
-        }
-        continue;
-      }
-      lastSignature = nextSignature;
-      stableFrames = 0;
-    }
-  };
-  const getOlderRevealPx = (): number => {
-    if (!viewportRef) {
-      return 0;
-    }
-    return Math.min(96, viewportRef.clientHeight * 0.2);
-  };
-
   const transcriptMessages = $derived([...messages].sort(compareMessages));
   const effectiveSocketFactory = $derived(socketFactory ?? defaultSocketFactory);
   const effectiveViewerActorId = $derived(resolveViewerActorId(channel, viewerActorId));
@@ -292,7 +324,18 @@
   const syncLatestVisibleIds = (): void => {
     let nextMessage: WebChatVisibleMessageFact | null = null;
     let nextAssistantViewKey: string | null = null;
-    const stickyBottomMessage = timelineAtLatest ? transcriptMessages[transcriptMessages.length - 1] : null;
+    const latestTranscriptMessage = transcriptMessages[transcriptMessages.length - 1] ?? null;
+    latestTranscriptMessageVisible = latestTranscriptMessage
+      ? visibleMessageViewKeys.get(latestTranscriptMessage.viewKey) === true
+      : false;
+    const stickyBottomMessage =
+      timelineAtLatest && latestTranscriptMessageVisible ? latestTranscriptMessage : null;
+    const isVisibleMessage = (message: WebChatMessage): boolean => {
+      if (message.viewKey === latestTranscriptMessage?.viewKey) {
+        return latestTranscriptMessageVisible;
+      }
+      return visibleMessageViewKeys.get(message.viewKey) === true;
+    };
     if (stickyBottomMessage) {
       nextMessage = {
         viewKey: stickyBottomMessage.viewKey,
@@ -305,7 +348,7 @@
       if (!message) {
         continue;
       }
-      if (nextMessage === null && visibleMessageViewKeys.get(message.viewKey) === true) {
+      if (nextMessage === null && isVisibleMessage(message)) {
         nextMessage = {
           viewKey: message.viewKey,
           ...(typeof message.messageId === "number" ? { messageId: message.messageId } : {}),
@@ -344,6 +387,7 @@
     const hadVisibleAssistantMessage = latestVisibleAssistantViewKey !== null;
     visibleMessageViewKeys.clear();
     visibleAssistantViewKeys.clear();
+    latestTranscriptMessageVisible = false;
     latestVisibleMessage = null;
     latestVisibleAssistantViewKey = null;
     if (hadVisibleMessage) {
@@ -390,9 +434,6 @@
     hasMoreBefore = false;
     nextBefore = null;
     loadingMore = false;
-    pendingOlderRevealPx = null;
-    pendingOlderRevealBaseScrollTop = null;
-    pendingLatestIntent = false;
     clearInsertMotion();
 
     if (!input.chatId) {
@@ -462,11 +503,6 @@
           hasMoreBefore = serverMessage.page.hasMoreBefore;
           messages = mergeMessages(messages, nextItems);
           markInsertedMessages(nextMessageViewKeys, "older");
-          if (nextMessageViewKeys.length > 0) {
-            pendingOlderRevealPx = getOlderRevealPx();
-            return;
-          }
-          pendingOlderRevealBaseScrollTop = null;
           loadingMore = false;
           return;
         }
@@ -486,8 +522,6 @@
         }
         loadingInitial = false;
         loadingMore = false;
-        pendingOlderRevealPx = null;
-        pendingOlderRevealBaseScrollTop = null;
         connectionState = "closed";
       };
 
@@ -497,8 +531,6 @@
         }
         loadingInitial = false;
         loadingMore = false;
-        pendingOlderRevealPx = null;
-        pendingOlderRevealBaseScrollTop = null;
         connectionState = "error";
         errorMessage = "chat transport failed";
       };
@@ -562,7 +594,6 @@
       return;
     }
     loadingMore = true;
-    pendingOlderRevealBaseScrollTop = viewportRef?.scrollTop ?? null;
     const payload: MessageTransportClientMessage = {
       type: "page",
       before: nextBefore,
@@ -571,19 +602,25 @@
     socketRef.send(JSON.stringify(payload));
   };
 
-  const requestScrollToLatest = (): void => {
-    pendingLatestIntent = true;
-    timelineRef?.scrollToLatest("smooth");
-  };
-
   const handleScroll = (): void => {
-    if (!viewportRef || pendingLatestIntent) {
+    if (!viewportRef) {
       return;
     }
     const distanceFromStart = getBottomAnchoredDistanceToStart(viewportRef);
     if (distanceFromStart <= LOAD_MORE_OFFSET && hasMoreBefore && !loadingMore) {
       loadOlder();
     }
+  };
+
+  const runProgramTx = async (
+    program: ScrollProgramController,
+    effect: Parameters<ScrollProgramController["tx"]>[0],
+    options: Parameters<ScrollProgramController["tx"]>[1],
+  ): Promise<void> => {
+    const transaction = await program.tx(effect, options);
+    void transaction.finished.catch(() => {
+      /* shared tx interruption is an expected control-flow outcome */
+    });
   };
 
   $effect(() => {
@@ -636,73 +673,156 @@
   });
 
   $effect(() => {
-    const chatId = channel?.chatId ?? null;
-    const handle = timelineRef;
-    if (!chatId) {
-      activeTimelineChatId = null;
+    scrollControllerRef = internalScrollControllerRef;
+  });
+
+  $effect(() => {
+    const controller = internalScrollControllerRef;
+    const viewport = viewportRef;
+    const content = contentRef;
+    const latestButton = scrollToLatestButtonRef;
+    if (!controller || !viewport || !content || !latestButton) {
       return;
     }
-    if (chatId === activeTimelineChatId || !handle) {
-      return;
-    }
-    activeTimelineChatId = chatId;
-    void tick().then(() => {
-      if (channel?.chatId !== chatId) {
-        return;
-      }
-      handle.scrollToLatest("auto");
+
+    const observedDom = {
+      viewport,
+      content,
+    } satisfies Parameters<ReturnType<typeof createEdgeTrigger>["observe"]>[0];
+
+    const disconnectEdge = createEdgeTrigger({
+      latestThreshold: 48,
+      startThreshold: LOAD_MORE_OFFSET,
+    }).observe(observedDom).connect(controller, { name: edgeTriggerName });
+    const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
+      name: userInputTriggerName,
     });
-  });
+    const disconnectReturnToLatest = createActionTrigger().observe({
+      element: latestButton,
+    }).connect(controller, { name: returnToLatestTriggerName });
+    const disconnectSeekHistoryStart =
+      historyStartActionRef instanceof HTMLButtonElement
+        ? createActionTrigger().observe({
+            element: historyStartActionRef,
+          }).connect(controller, { name: seekHistoryStartTriggerName })
+        : () => {};
+    const disconnectTransportDelta = createCollectionDeltaTrigger({
+      getKeys: () => transcriptMessages.map((message) => message.messageId),
+      directionFilter: ["append", "replace"],
+    }).observe(observedDom).connect(controller, { name: transportDeltaTriggerName });
+    const disconnectOlderPageDelta = createCollectionDeltaTrigger({
+      getKeys: () => transcriptMessages.map((message) => message.messageId),
+      directionFilter: ["prepend"],
+    }).observe(observedDom).connect(controller, { name: olderPageDeltaTriggerName });
+    const disconnectLatestInsert = createInsertBatchTrigger({
+      motion: "latest",
+    }).observe(observedDom).connect(controller, { name: latestInsertTriggerName });
+    const disconnectOlderInsert = createInsertBatchTrigger({
+      motion: "older",
+    }).observe(observedDom).connect(controller, { name: olderInsertTriggerName });
+      const disconnectOverflow = createOverflowTrigger().observe(observedDom).connect(controller, {
+        name: overflowTriggerName,
+      });
+      let previousEdgeAtLatest = true;
+      let previousEdgeAtStart = false;
 
-  $effect(() => {
-    const revealPx = pendingOlderRevealPx;
-    const preLoadScrollTop = pendingOlderRevealBaseScrollTop;
-    const handle = timelineRef;
-    if (revealPx === null || !handle || !loadingMore) {
-      return;
-    }
-    void (async () => {
-      await waitForTimelineSettle();
-      if (pendingOlderRevealPx !== revealPx || !timelineRef) {
-        return;
-      }
-      if (pendingLatestIntent) {
-        timelineRef.scrollToLatest("smooth");
-        pendingOlderRevealPx = null;
-        pendingOlderRevealBaseScrollTop = null;
-        loadingMore = false;
-        return;
-      }
-      const autoRevealPx =
-        preLoadScrollTop === null || !viewportRef ? 0 : Math.max(0, preLoadScrollTop - viewportRef.scrollTop);
-      const revealCorrectionPx = revealPx - autoRevealPx;
-      if (revealCorrectionPx !== 0) {
-        timelineRef.scrollTowardStart(revealCorrectionPx, "smooth");
-      }
-      pendingOlderRevealPx = null;
-      pendingOlderRevealBaseScrollTop = null;
-      loadingMore = false;
-    })();
-  });
+      const uninstallProgram = controller.install((program) => {
+      const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
+      const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
+      const transportDelta = readScrollTriggerQuery(
+        program.query,
+        transportDeltaTriggerName,
+        emptyCollectionDeltaQuery,
+      );
+      const olderPageDelta = readScrollTriggerQuery(
+        program.query,
+        olderPageDeltaTriggerName,
+        emptyCollectionDeltaQuery,
+      );
+      const latestInsert = readScrollTriggerQuery(program.query, latestInsertTriggerName, emptyInsertBatchQuery);
+      const olderInsert = readScrollTriggerQuery(program.query, olderInsertTriggerName, {
+        ...emptyInsertBatchQuery,
+        motion: "older",
+      });
+      const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
+      const returnToLatest = readScrollTriggerQuery(program.query, returnToLatestTriggerName, {
+        fired: false,
+        count: 0,
+        sourceElement: null,
+        lastFiredAt: null,
+      });
+      const seekHistoryStart = readScrollTriggerQuery(program.query, seekHistoryStartTriggerName, {
+        fired: false,
+        count: 0,
+        sourceElement: null,
+        lastFiredAt: null,
+      });
+      const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
+      const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
+      previousEdgeAtLatest = edge.atLatest;
+      previousEdgeAtStart = edge.atStart;
 
-  $effect(() => {
-    if (!pendingLatestIntent || loadingMore || !timelineAtLatest) {
-      return;
-    }
-    pendingLatestIntent = false;
-  });
-
-  $effect(() => {
-    if (!pendingLatestIntent || loadingMore || timelineAtLatest || !timelineRef) {
-      return;
-    }
-    void (async () => {
-      await waitForTimelineSettle();
-      if (!pendingLatestIntent || loadingMore || timelineAtLatest || !timelineRef) {
-        return;
+      switch (true) {
+        case returnToLatest.fired:
+          return runProgramTx(
+            program,
+            async (tx) => {
+              await tx.scroll.pinLatest({
+                behavior: "smooth",
+                debugLabel: "web-chat-scroll-to-latest",
+              });
+            },
+            {
+              priority: "user-blocking",
+              debugLabel: "web-chat-scroll-to-latest",
+            },
+          );
+        case seekHistoryStart.fired:
+          return runProgramTx(
+            program,
+            async (tx) => {
+              await tx.scroll.seekStart({
+                behavior: "smooth",
+                debugLabel: "web-chat-seek-history-start",
+              });
+            },
+            {
+              priority: "user-blocking",
+              debugLabel: "web-chat-seek-history-start",
+            },
+          );
+        case transportDelta.changed && transportDelta.direction === "replace" && wasAtLatest:
+          return runProgramTx(
+            program,
+            async (tx) => {
+              await tx.scroll.pinLatest({
+                behavior: "auto",
+                debugLabel: "web-chat-initial-seek-latest",
+              });
+            },
+            {
+              priority: "background",
+              debugLabel: "web-chat-initial-seek-latest",
+            },
+          );
+        case overflow.becameOverflowing || overflow.becameContained:
+        case userInput.entered:
+          return;
       }
-      timelineRef.scrollToLatest("smooth");
-    })();
+    });
+
+    return () => {
+      disconnectEdge();
+      disconnectUserInput();
+      disconnectReturnToLatest();
+      disconnectSeekHistoryStart();
+      disconnectTransportDelta();
+      disconnectOlderPageDelta();
+      disconnectLatestInsert();
+      disconnectOlderInsert();
+      disconnectOverflow();
+      uninstallProgram();
+    };
   });
 
   $effect(() => {
@@ -877,10 +997,11 @@
                 {transcriptPreambleNotice.message}
               </div>
             {/if}
-            <BottomAnchoredTimeline
+            <AnchoredVirtualList
               bind:viewportRef
               bind:contentRef
-              bind:timelineRef
+              bind:scrollHandleRef={timelineRef}
+              bind:scrollControllerRef={internalScrollControllerRef}
               bind:atLatest={timelineAtLatest}
               class="chat-scroll"
               viewportClass={`chat-scroll-viewport ${showHeader ? "" : "chat-scroll-viewport-embedded"}`}
@@ -917,6 +1038,7 @@
                   data-view-key={message.viewKey}
                   data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
                   data-insert-motion={insertMotionByViewKey[message.viewKey] ?? "none"}
+                  data-insert-motion-key={message.viewKey}
                 >
                   <MessageRow
                     {channel}
@@ -931,19 +1053,19 @@
                   />
                 </section>
               {/snippet}
-            </BottomAnchoredTimeline>
-            <div class="chat-scroll-latest" data-visible={!timelineAtLatest}>
+            </AnchoredVirtualList>
+            <div class="chat-scroll-latest" data-visible={!latestTranscriptMessageVisible}>
               <Button
+                bind:ref={scrollToLatestButtonRef}
                 aria-label="Scroll to latest"
-                aria-hidden={timelineAtLatest}
+                aria-hidden={latestTranscriptMessageVisible}
                 class="chat-scroll-latest-button"
                 part="scroll-latest"
                 size="icon"
-                tabindex={timelineAtLatest ? -1 : undefined}
+                tabindex={latestTranscriptMessageVisible ? -1 : undefined}
                 title="Scroll to latest"
                 type="button"
                 variant="outline"
-                onclick={requestScrollToLatest}
               >
                 <ArrowDown class="size-4" />
               </Button>

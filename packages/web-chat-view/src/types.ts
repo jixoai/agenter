@@ -4,6 +4,7 @@ import type {
   MessageTransportServerMessage,
   ReverseTimeCursor,
 } from "@agenter/message-system/types";
+import type { ScrollController } from "@agenter/svelte-components";
 
 export type WebChatChannel = MessageControlPlaneEntry;
 export interface WebChatMessage extends Omit<MessageRecord, "messageId"> {
@@ -159,10 +160,14 @@ export interface WebChatRootProps extends WebChatViewBaseProps {
   submitMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantViewKeyHandler?: (viewKey: string | null) => void;
   latestVisibleMessageIdHandler?: (message: WebChatVisibleMessageFact | null) => void;
+  scrollControllerRef?: ScrollController | null;
+  historyStartActionRef?: HTMLButtonElement | null;
 }
 
 export interface WebChatViewHostProps extends WebChatViewBaseProps {
   onSendMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
   onLatestVisibleAssistantViewKeyChange?: (viewKey: string | null) => void;
   onLatestVisibleMessageIdChange?: (message: WebChatVisibleMessageFact | null) => void;
+  scrollControllerRef?: ScrollController | null;
+  historyStartActionRef?: HTMLButtonElement | null;
 }

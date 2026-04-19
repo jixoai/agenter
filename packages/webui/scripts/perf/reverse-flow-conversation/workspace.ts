@@ -23,7 +23,7 @@ const appSveltePackages = [
 ];
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const harnessTemplateRoot = path.join(moduleDir, "harness");
+const resolveHarnessTemplateRoot = (templateDirName: string): string => path.join(moduleDir, templateDirName);
 
 const runCommand = async (cwd: string, command: string[]): Promise<string> => {
   const proc = Bun.spawn(command, {
@@ -108,6 +108,7 @@ export const createBaselineWorktree = async (
 export const prepareHarnessRoot = async (input: {
   label: string;
   targetRoot: string;
+  templateDirName?: string;
 }): Promise<string> => {
   const harnessRoot = path.join(
     input.targetRoot,
@@ -119,7 +120,7 @@ export const prepareHarnessRoot = async (input: {
   );
   await rm(harnessRoot, { force: true, recursive: true });
   await mkdir(harnessRoot, { recursive: true });
-  await cp(harnessTemplateRoot, harnessRoot, { recursive: true });
+  await cp(resolveHarnessTemplateRoot(input.templateDirName ?? "harness"), harnessRoot, { recursive: true });
   await writeFile(path.join(harnessRoot, "vite.config.ts"), renderViteConfig(input.targetRoot));
   return harnessRoot;
 };

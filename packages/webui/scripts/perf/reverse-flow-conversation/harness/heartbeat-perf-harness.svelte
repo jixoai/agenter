@@ -77,15 +77,6 @@
     if (viewport) {
       await scrollViewportToHistoryStart(viewport);
     }
-
-    const loadOlderButton = Array.from(document.querySelectorAll("button")).find((button) => {
-      return button.textContent?.includes("Load older");
-    });
-    if (loadOlderButton instanceof HTMLButtonElement) {
-      loadOlderButton.click();
-      return;
-    }
-
     await handleLoadOlder();
     if (viewport) {
       await waitForAnimationFrames();

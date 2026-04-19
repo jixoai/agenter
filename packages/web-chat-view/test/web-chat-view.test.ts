@@ -87,9 +87,7 @@ class IntersectionObserverMock {
   private readonly observed = new Set<Element>();
   private readonly rootScrollHandler = (): void => {
     for (const target of this.observed) {
-      if (isLatestSentinel(target)) {
-        this.emit(target);
-      }
+      this.emit(target);
     }
   };
 
@@ -136,14 +134,20 @@ class IntersectionObserverMock {
   }
 
   private resolveVisibility(target: Element): boolean {
-    if (!isLatestSentinel(target)) {
-      return true;
-    }
     if (!(this.options.root instanceof HTMLElement)) {
       return true;
     }
-    const threshold = parseBottomRootMargin(this.options.rootMargin);
-    return Math.max(0, -this.options.root.scrollTop) <= threshold;
+    if (isLatestSentinel(target)) {
+      const threshold = parseBottomRootMargin(this.options.rootMargin);
+      return Math.max(0, -this.options.root.scrollTop) <= threshold;
+    }
+    if (target instanceof HTMLElement && target.dataset.messageId) {
+      const latestMessageElement = this.options.root.querySelector<HTMLElement>("[data-message-id]");
+      if (latestMessageElement && latestMessageElement === target) {
+        return Math.max(0, -this.options.root.scrollTop) < 48;
+      }
+    }
+    return true;
   }
 }
 

@@ -15,6 +15,7 @@
 
 	type InteractiveHeartbeatGroupFactory = (input: {
 		count: number;
+		sequence: number;
 		groups: readonly HeartbeatGroupItem[];
 	}) => HeartbeatGroupItem;
 	type InteractiveHeartbeatControls = {
@@ -79,6 +80,8 @@
 	let appendCount = $state(0);
 	let prependCount = $state(0);
 	let replaceCount = $state(0);
+	let interactiveSequence = $state(0);
+	let interactiveMutationPending = $state(false);
 	let scheduledUpdateTimers: number[] = [];
 	const configBinding = createEmptyRuntimeHeartbeatConfigBinding();
 	const cloneGroup = (group: HeartbeatGroupItem): HeartbeatGroupItem => structuredClone(group);
@@ -88,6 +91,8 @@
 		appendCount = 0;
 		prependCount = 0;
 		replaceCount = 0;
+		interactiveSequence = 0;
+		interactiveMutationPending = false;
 	};
 	const clearScheduledUpdates = (): void => {
 		if (typeof window === 'undefined') {
@@ -158,38 +163,53 @@
 		return { items: olderGroups.length, hasMore: false };
 	};
 
-	const applyInteractiveGroup = (
+	const applyInteractiveGroup = async (
 		factory: InteractiveHeartbeatGroupFactory | undefined,
 		mode: 'append' | 'prepend' | 'replace',
-	): void => {
-		if (!factory) {
+	): Promise<void> => {
+		if (!factory || interactiveMutationPending) {
 			return;
 		}
 		const nextCount =
 			mode === 'append' ? appendCount + 1 : mode === 'prepend' ? prependCount + 1 : replaceCount + 1;
+		const nextSequence = interactiveSequence + 1;
 		const nextGroup = cloneGroup(
 			factory({
 				count: nextCount,
+				sequence: nextSequence,
 				groups,
 			}),
 		);
-		switch (mode) {
-			case 'append':
-				appendCount = nextCount;
-				groups = [...groups, nextGroup];
-				return;
-			case 'prepend':
-				prependCount = nextCount;
-				groups = [nextGroup, ...groups];
-				return;
-			case 'replace':
-				replaceCount = nextCount;
-				if (groups.length === 0) {
-					groups = [nextGroup];
+		const applyGroupMutation = (): void => {
+			switch (mode) {
+				case 'append':
+					appendCount = nextCount;
+					interactiveSequence = nextSequence;
+					groups = [...groups, nextGroup];
 					return;
-				}
-				groups = [...groups.slice(0, -1), nextGroup];
-				return;
+				case 'prepend':
+					prependCount = nextCount;
+					interactiveSequence = nextSequence;
+					groups = [nextGroup, ...groups];
+					return;
+				case 'replace':
+					replaceCount = nextCount;
+					interactiveSequence = nextSequence;
+					if (groups.length === 0) {
+						groups = [nextGroup];
+						return;
+					}
+					groups = [...groups.slice(0, -1), nextGroup];
+					return;
+			}
+		};
+		interactiveMutationPending = true;
+		try {
+			applyGroupMutation();
+		} catch (error) {
+			throw error;
+		} finally {
+			interactiveMutationPending = false;
 		}
 	};
 </script>
@@ -208,8 +228,9 @@
 					<Button
 						size="sm"
 						variant="outline"
+						disabled={interactiveMutationPending}
 						data-testid="runtime-heartbeat-playground-append-latest"
-						onclick={() => applyInteractiveGroup(interactiveControls.appendLatest, 'append')}
+						onclick={() => void applyInteractiveGroup(interactiveControls.appendLatest, 'append')}
 					>
 						Append latest
 					</Button>
@@ -218,8 +239,9 @@
 					<Button
 						size="sm"
 						variant="outline"
+						disabled={interactiveMutationPending}
 						data-testid="runtime-heartbeat-playground-prepend-older"
-						onclick={() => applyInteractiveGroup(interactiveControls.prependOlder, 'prepend')}
+						onclick={() => void applyInteractiveGroup(interactiveControls.prependOlder, 'prepend')}
 					>
 						Prepend older
 					</Button>
@@ -228,8 +250,9 @@
 					<Button
 						size="sm"
 						variant="outline"
+						disabled={interactiveMutationPending}
 						data-testid="runtime-heartbeat-playground-grow-latest"
-						onclick={() => applyInteractiveGroup(interactiveControls.replaceLatest, 'replace')}
+						onclick={() => void applyInteractiveGroup(interactiveControls.replaceLatest, 'replace')}
 					>
 						Grow latest
 					</Button>

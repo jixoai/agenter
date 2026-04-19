@@ -9,7 +9,23 @@
 	} from '@agenter/client-sdk';
 	import {
 		BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
-		type BottomAnchoredTimelineHandle,
+		createActionTrigger,
+		createCollectionDeltaTrigger,
+		createEdgeTrigger,
+		createInsertBatchTrigger,
+		createOverflowTrigger,
+		createUserInputTrigger,
+		defineScrollTriggerName,
+		type ActionTriggerQuery,
+		type AnchoredVirtualListScrollHandle,
+		type CollectionDeltaTriggerQuery,
+		type EdgeTriggerQuery,
+		type InsertBatchTriggerQuery,
+		type OverflowTriggerQuery,
+		type ScrollController,
+		type ScrollProgramController,
+		type UserInputTriggerQuery,
+		readScrollTriggerQuery,
 	} from '@agenter/svelte-components';
 	import { tick, onDestroy } from 'svelte';
 
@@ -33,6 +49,56 @@
 	import { buildHeartbeatDisplayGroups, estimateHeartbeatGroupSize } from './runtime-heartbeat-parts';
 	import RuntimeHeartbeatGroup from './runtime-heartbeat-group.svelte';
 
+	const edgeTriggerName = defineScrollTriggerName<EdgeTriggerQuery>('edge');
+	const userInputTriggerName = defineScrollTriggerName<UserInputTriggerQuery>('userInput');
+	const scrollToLatestTriggerName = defineScrollTriggerName<ActionTriggerQuery>('scrollToLatest');
+	const groupDeltaTriggerName = defineScrollTriggerName<CollectionDeltaTriggerQuery>('groupDelta');
+	const groupInsertLatestTriggerName = defineScrollTriggerName<InsertBatchTriggerQuery>('groupInsertLatest');
+	const groupInsertOlderTriggerName = defineScrollTriggerName<InsertBatchTriggerQuery>('groupInsertOlder');
+	const overflowTriggerName = defineScrollTriggerName<OverflowTriggerQuery>('overflow');
+	const emptyEdgeQuery: EdgeTriggerQuery = {
+		atLatest: true,
+		atStart: true,
+		enteredLatest: false,
+		leftLatest: false,
+		enteredStart: false,
+		leftStart: false,
+		distanceToLatestPx: 0,
+		distanceToStartPx: 0,
+	};
+	const emptyUserInputQuery: UserInputTriggerQuery = {
+		active: false,
+		entered: false,
+		exited: false,
+		kind: 'idle',
+		pointerType: null,
+		momentum: false,
+		startedAt: null,
+		lastEventAt: null,
+	};
+	const emptyDeltaQuery: CollectionDeltaTriggerQuery = {
+		changed: false,
+		direction: 'unknown',
+		insertedKeys: [],
+		removedKeys: [],
+		anchorKey: null,
+	};
+	const emptyInsertQuery = (motion: 'latest' | 'older'): InsertBatchTriggerQuery => ({
+		changed: false,
+		motion,
+		elements: [],
+		extentPx: 0,
+		nearestElement: null,
+	});
+	const emptyOverflowQuery: OverflowTriggerQuery = {
+		overflowing: false,
+		becameOverflowing: false,
+		becameContained: false,
+		overflowPx: 0,
+		visibleExtentPx: 0,
+		contentExtentPx: 0,
+	};
+
 	let {
 		sessionStatus,
 		schedulerState = null,
@@ -51,6 +117,9 @@
 		onSaveConfig,
 		sessionIconUrl = null,
 		avatarLabel = 'Avatar',
+		viewportRef = $bindable<HTMLDivElement | null>(null),
+		timelineRef = $bindable<AnchoredVirtualListScrollHandle | null>(null),
+		scrollControllerRef = $bindable<ScrollController | null>(null),
 	}: {
 		sessionStatus: SessionEntry['status'];
 		schedulerState?: RuntimeSchedulerState | null;
@@ -69,13 +138,16 @@
 		onSaveConfig: (draft: RuntimeHeartbeatConfigDraft) => boolean | Promise<boolean>;
 		sessionIconUrl?: string | null;
 		avatarLabel?: string;
+		viewportRef?: HTMLDivElement | null;
+		timelineRef?: AnchoredVirtualListScrollHandle | null;
+		scrollControllerRef?: ScrollController | null;
 	} = $props();
 
 	let loadingOlder = $state(false);
 	let hasMoreOlder = $state(true);
 	let viewportAtTop = $state(false);
-	let viewportRef = $state<HTMLDivElement | null>(null);
-	let timelineRef = $state<BottomAnchoredTimelineHandle | null>(null);
+	let internalScrollControllerRef = $state<ScrollController | null>(null);
+	let scrollToLatestButtonRef = $state<HTMLButtonElement | null>(null);
 	let insertMotionByGroupId = $state<Record<string, 'latest' | 'older'>>({});
 	let insertMotionClearHandle = 0;
 	let previousGroupIds: string[] = [];
@@ -160,32 +232,10 @@
 
 	const waitForTimelineSettle = async (): Promise<void> => {
 		await tick();
-		if (typeof window === 'undefined' || !viewportRef) {
+		if (!timelineRef) {
 			return;
 		}
-		let stableFrames = 0;
-		let lastSignature = '';
-		for (let index = 0; index < 12; index += 1) {
-			await new Promise<void>((resolve) => {
-				requestAnimationFrame(() => {
-					resolve();
-				});
-			});
-			const currentViewport = viewportRef;
-			if (!currentViewport) {
-				return;
-			}
-			const nextSignature = `${currentViewport.scrollTop}:${currentViewport.scrollHeight}`;
-			if (nextSignature === lastSignature) {
-				stableFrames += 1;
-				if (stableFrames >= 2) {
-					return;
-				}
-				continue;
-			}
-			lastSignature = nextSignature;
-			stableFrames = 0;
-		}
+		await timelineRef.awaitSettle();
 	};
 
 	const waitForGroupCount = async (minimumCount: number): Promise<void> => {
@@ -225,6 +275,132 @@
 			loadingOlder = false;
 		}
 	};
+
+	const resolveGroupSelector = (groupId: string): string => `[data-testid="runtime-heartbeat-group-${groupId}"]`;
+
+	const runProgramTx = async (
+		program: ScrollProgramController,
+		effect: Parameters<ScrollProgramController['tx']>[0],
+		options: Parameters<ScrollProgramController['tx']>[1],
+	): Promise<void> => {
+		const transaction = await program.tx(effect, options);
+		void transaction.finished.catch(() => {
+			/* interruption is an expected semantic outcome */
+		});
+	};
+
+	$effect(() => {
+		scrollControllerRef = internalScrollControllerRef;
+	});
+
+	$effect(() => {
+		const controller = internalScrollControllerRef;
+		const viewport = viewportRef;
+		const latestButton = scrollToLatestButtonRef;
+		if (!controller || !viewport || !latestButton) {
+			return;
+		}
+		const observedDom = {
+			viewport,
+			content: viewport,
+		} satisfies Parameters<ReturnType<typeof createEdgeTrigger>['observe']>[0];
+		const disconnectEdge = createEdgeTrigger({
+			latestThreshold: 48,
+			startThreshold: 72,
+		})
+			.observe(observedDom)
+			.connect(controller, { name: edgeTriggerName });
+		const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
+			name: userInputTriggerName,
+		});
+		const disconnectScrollToLatest = createActionTrigger()
+			.observe({ element: latestButton })
+			.connect(controller, { name: scrollToLatestTriggerName });
+		const disconnectGroupDelta = createCollectionDeltaTrigger({
+			getKeys: () => groups.map((group) => group.groupId),
+		})
+			.observe(observedDom)
+			.connect(controller, { name: groupDeltaTriggerName });
+		const disconnectLatestInsert = createInsertBatchTrigger({
+			motion: 'latest',
+		})
+			.observe(observedDom)
+			.connect(controller, { name: groupInsertLatestTriggerName });
+		const disconnectOlderInsert = createInsertBatchTrigger({
+			motion: 'older',
+		})
+			.observe(observedDom)
+			.connect(controller, { name: groupInsertOlderTriggerName });
+		const disconnectOverflow = createOverflowTrigger().observe(observedDom).connect(controller, {
+			name: overflowTriggerName,
+		});
+		let previousEdgeAtLatest = true;
+		let previousEdgeAtStart = false;
+
+		const uninstallProgram = controller.install((program) => {
+			const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
+			const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
+			const scrollToLatest = readScrollTriggerQuery(program.query, scrollToLatestTriggerName, {
+				fired: false,
+				count: 0,
+				sourceElement: null,
+				lastFiredAt: null,
+			});
+			const groupDelta = readScrollTriggerQuery(program.query, groupDeltaTriggerName, emptyDeltaQuery);
+			const groupInsertLatest = readScrollTriggerQuery(program.query, groupInsertLatestTriggerName, emptyInsertQuery('latest'));
+			const groupInsertOlder = readScrollTriggerQuery(program.query, groupInsertOlderTriggerName, emptyInsertQuery('older'));
+			const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
+			const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
+			const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
+			previousEdgeAtLatest = edge.atLatest;
+			previousEdgeAtStart = edge.atStart;
+
+			switch (true) {
+				case scrollToLatest.fired:
+					return runProgramTx(
+						program,
+						async (tx) => {
+							await tx.scroll.pinLatest({
+								behavior: 'smooth',
+								debugLabel: 'runtime-heartbeat-scroll-to-latest',
+							});
+						},
+						{
+							priority: 'user-blocking',
+							debugLabel: 'runtime-heartbeat-scroll-to-latest',
+						},
+					);
+				case groupDelta.changed && groupDelta.direction === 'replace' && wasAtLatest:
+					return runProgramTx(
+						program,
+						async (tx) => {
+							await tx.scroll.pinLatest({
+								behavior: 'auto',
+								debugLabel: 'runtime-heartbeat-replace-latest',
+							});
+						},
+						{
+							priority: 'background',
+							debugLabel: 'runtime-heartbeat-replace-latest',
+						},
+					);
+				case overflow.becameOverflowing || overflow.becameContained:
+				case userInput.entered:
+					return;
+			}
+		});
+
+		return () => {
+			disconnectEdge();
+			disconnectUserInput();
+			disconnectScrollToLatest();
+			disconnectGroupDelta();
+			disconnectLatestInsert();
+			disconnectOlderInsert();
+			disconnectOverflow();
+			uninstallProgram();
+		};
+	});
 
 	$effect(() => {
 		const currentGroupIds = groups.map((group) => group.groupId);
@@ -297,6 +473,8 @@
 		bind:atTop={viewportAtTop}
 		bind:viewportRef
 		bind:timelineRef
+		bind:scrollControllerRef={internalScrollControllerRef}
+		bind:scrollButtonRef={scrollToLatestButtonRef}
 		items={groups}
 		virtual={{
 			estimateSize: (_, group) => estimateHeartbeatGroupSize(group),
@@ -335,7 +513,10 @@
 		{/snippet}
 
 		{#snippet renderItem(group)}
-			<div data-insert-motion={insertMotionByGroupId[group.groupId] ?? 'none'}>
+			<div
+				data-insert-motion={insertMotionByGroupId[group.groupId] ?? 'none'}
+				data-insert-motion-key={group.groupId}
+			>
 				<RuntimeHeartbeatGroup {group} {sessionIconUrl} {avatarLabel} />
 			</div>
 		{/snippet}

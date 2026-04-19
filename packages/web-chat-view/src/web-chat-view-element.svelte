@@ -26,6 +26,8 @@
     submitMessage,
     latestVisibleAssistantViewKeyHandler,
     latestVisibleMessageIdHandler,
+    scrollControllerRef = $bindable(null),
+    historyStartActionRef = $bindable(null),
     socketFactory,
   }: WebChatRootProps = $props();
 </script>
@@ -52,5 +54,7 @@
   {submitMessage}
   {latestVisibleAssistantViewKeyHandler}
   {latestVisibleMessageIdHandler}
+  bind:scrollControllerRef
+  bind:historyStartActionRef
   {socketFactory}
 />

@@ -1,7 +1,8 @@
 <script lang="ts" generics="Item">
 	import {
-		BottomAnchoredTimeline,
-		type BottomAnchoredTimelineHandle,
+		AnchoredVirtualList,
+		type AnchoredVirtualListScrollHandle,
+		type ScrollController,
 		type ScrollViewVirtualizer,
 		type ScrollVirtualConfig,
 	} from '@agenter/svelte-components';
@@ -20,7 +21,9 @@
 		resize = 'auto',
 		viewportRef = $bindable<HTMLDivElement | null>(null),
 		contentRef = $bindable<HTMLDivElement | null>(null),
-		timelineRef = $bindable<BottomAnchoredTimelineHandle | null>(null),
+		timelineRef = $bindable<AnchoredVirtualListScrollHandle | null>(null),
+		scrollControllerRef = $bindable<ScrollController | null>(null),
+		scrollButtonRef = $bindable<HTMLButtonElement | null>(null),
 		items,
 		virtual,
 		virtualizerRef = $bindable<ScrollViewVirtualizer | null>(null),
@@ -39,7 +42,9 @@
 		resize?: ScrollBehavior;
 		viewportRef?: HTMLDivElement | null;
 		contentRef?: HTMLDivElement | null;
-		timelineRef?: BottomAnchoredTimelineHandle | null;
+		timelineRef?: AnchoredVirtualListScrollHandle | null;
+		scrollControllerRef?: ScrollController | null;
+		scrollButtonRef?: HTMLButtonElement | null;
 		items: readonly Item[];
 		virtual: Omit<ScrollVirtualConfig<Item>, 'items'>;
 		virtualizerRef?: ScrollViewVirtualizer | null;
@@ -58,7 +63,7 @@
 </script>
 
 <div class={cn('relative flex h-full min-h-0 flex-col overflow-hidden', className)} role="log">
-	<BottomAnchoredTimeline
+	<AnchoredVirtualList
 		class="h-full"
 		viewportClass={resolvedViewportClass}
 		contentClass={contentClass}
@@ -68,7 +73,8 @@
 		bind:contentRef
 		bind:virtualizerRef
 		virtual={virtualConfig}
-		bind:timelineRef
+		bind:scrollHandleRef={timelineRef}
+		bind:scrollControllerRef
 		bind:atLatest
 		bind:atStart={atTop}
 	>
@@ -87,16 +93,14 @@
 		{#snippet end()}
 			{@render renderAfter?.()}
 		{/snippet}
-	</BottomAnchoredTimeline>
+	</AnchoredVirtualList>
 
 	<ConversationScrollButton
+		bind:buttonRef={scrollButtonRef}
 		aria-label="Scroll to latest"
 		class={scrollButtonClass}
 		data-scroll-aware="true"
 		title="Scroll to latest"
 		visible={!atLatest}
-		onScrollToLatest={() => {
-			timelineRef?.scrollToLatest('smooth');
-		}}
 	/>
 </div>

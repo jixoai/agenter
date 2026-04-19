@@ -3,6 +3,7 @@
 
 	export interface ConversationScrollButtonProps extends ButtonProps {
 		visible?: boolean;
+		buttonRef?: HTMLButtonElement | null;
 		onScrollToLatest?: (() => void) | undefined;
 	}
 </script>
@@ -16,6 +17,7 @@
 	let {
 		class: className = '',
 		visible = false,
+		buttonRef = $bindable<HTMLButtonElement | null>(null),
 		onScrollToLatest = undefined,
 		onclick,
 		...restProps
@@ -36,6 +38,7 @@
 	data-visible={visible}
 >
 	<Button
+		bind:ref={buttonRef}
 		aria-hidden={!visible}
 		class={cn(
 			'pointer-events-auto rounded-full border border-border/70 bg-background/85 shadow-lg backdrop-blur-sm transition-opacity',

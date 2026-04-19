@@ -14,6 +14,7 @@
     type BottomAnchoredInsertMotion,
     type BottomAnchoredInsertMotionBatchEntry,
   } from "./bottom-anchored-insert-motion";
+  import { isAnchoredVirtualListKeyboardScrollEvent } from "./anchored-virtual-list-scroll-arbitration";
   import {
     getBottomAnchoredDistanceToLatest,
     getBottomAnchoredDistanceToStart,
@@ -24,8 +25,11 @@
   } from "./bottom-anchored-scroll";
   import type {
     BottomAnchoredTimelineHandle,
+    BottomAnchoredTimelineInsertMotionBatch,
     BottomAnchoredTimelineProps,
+    BottomAnchoredTimelineScrollCommand,
     BottomAnchoredTimelineVirtualRow,
+    BottomAnchoredTimelineViewportSnapshot,
   } from "./bottom-anchored-timeline.types";
   import type { ScrollViewVirtualizer, ScrollVirtualMeasureInput } from "./scroll-view.types";
 
@@ -35,7 +39,7 @@
     entry: ResizeObserverEntry | undefined,
     instance: ScrollVirtualCoreInstance,
   ) => number;
-  type StaticRow<TItem> = { value: TItem; sourceIndex: number; displayIndex: number };
+  type StaticRow<TItem> = { key: string; value: TItem; sourceIndex: number; displayIndex: number };
   type ScrollAnimationOptions = { durationMs?: number };
   type ScrollIntentKind = "latest" | "toward-start";
   type ScrollIntent = {
@@ -54,6 +58,15 @@
     atStart: boolean;
   };
 
+  const toViewportSnapshot = (snapshot: ViewportSnapshot): BottomAnchoredTimelineViewportSnapshot => ({
+    scrollTop: snapshot.scrollTop,
+    clientHeight: snapshot.clientHeight,
+    scrollHeight: snapshot.scrollHeight,
+    virtualOffset: snapshot.virtualOffset,
+    atLatest: snapshot.atLatest,
+    atStart: snapshot.atStart,
+  });
+
   let {
     class: className = "",
     viewportClass = "",
@@ -62,6 +75,9 @@
     contentRef = $bindable<HTMLDivElement | null>(null),
     viewportTestId = undefined,
     onViewportScroll = undefined,
+    onInsertMotionPrepare = undefined,
+    onScrollCommand = undefined,
+    onInsertMotionBatch = undefined,
     items,
     virtual = undefined,
     virtualizerRef = $bindable<ScrollViewVirtualizer | null>(null),
@@ -84,6 +100,8 @@
   const resolveDisplayIndex = (sourceIndex: number): number => items.length - sourceIndex - 1;
   const resolveSourceIndex = (displayIndex: number): number => items.length - displayIndex - 1;
   const resolveDisplayItem = (displayIndex: number): Item | undefined => items[resolveSourceIndex(displayIndex)];
+  const resolveStableRowKey = (sourceIndex: number, value: Item): string =>
+    String(virtual?.getItemKey?.(sourceIndex, value) ?? sourceIndex);
 
   const displayedRows = $derived.by(() => {
     const rows: Array<StaticRow<Item>> = [];
@@ -93,6 +111,7 @@
         continue;
       }
       rows.push({
+        key: resolveStableRowKey(sourceIndex, value),
         value,
         sourceIndex,
         displayIndex: resolveDisplayIndex(sourceIndex),
@@ -218,6 +237,16 @@
     scrollIntentFinalizeHandle = 0;
   };
 
+  const clearScrollIntent = (): void => {
+    cancelScrollIntentFinalize();
+    scrollIntent = null;
+  };
+
+  const interruptUserFacingScrollOwnership = (): void => {
+    cancelDeferredSmoothScroll();
+    clearScrollIntent();
+  };
+
   const finalizeScrollIntent = (intentToken: number): void => {
     scrollIntentFinalizeHandle = 0;
     const activeIntent = scrollIntent;
@@ -286,7 +315,7 @@
     if (now <= activeIntent.deadline) {
       return activeIntent;
     }
-    scrollIntent = null;
+    clearScrollIntent();
     return null;
   };
 
@@ -418,6 +447,17 @@
       syncEdgeState();
       return;
     }
+    const command: BottomAnchoredTimelineScrollCommand = {
+      kind: "position",
+      top: targetTop,
+      left: viewport.scrollLeft,
+      behavior: behavior ?? "auto",
+      source: "virtualizer",
+    };
+    if (onScrollCommand) {
+      onScrollCommand(command);
+      return;
+    }
     applyScrollTop(viewport, targetTop, behavior ?? "auto");
   };
 
@@ -507,6 +547,7 @@
         continue;
       }
       rows.push({
+        key: String(virtualItem.key),
         value,
         sourceIndex: resolveSourceIndex(virtualItem.index),
         displayIndex: virtualItem.index,
@@ -606,7 +647,11 @@
     const previousAtStart = atStart;
     const distanceToLatest = getBottomAnchoredDistanceToLatest(viewport);
     const distanceToStart = getBottomAnchoredDistanceToStart(viewport);
-    atLatest = latestSentinelVisible ?? distanceToLatest <= latestThreshold;
+    const withinLatestThreshold = distanceToLatest <= latestThreshold;
+    atLatest =
+      latestSentinelVisible === null
+        ? withinLatestThreshold
+        : latestSentinelVisible && withinLatestThreshold;
     atStart = distanceToStart <= startThreshold;
     if (diagnosticsEnabled && (previousAtLatest !== atLatest || previousAtStart !== atStart)) {
       console.debug("[BottomAnchoredTimeline]", "edge-state", {
@@ -655,18 +700,42 @@
     behavior: ScrollBehavior,
   ): void => {
     const nextBehavior = resolveScrollBehavior(viewport, behavior);
-    if (nextBehavior === "smooth") {
-      if (typeof viewport.scrollTo === "function") {
-        viewport.scrollTo({
-          top,
-          behavior: nextBehavior,
-        });
-        return;
-      }
-      setViewportScrollTop(viewport, top);
+    if (typeof viewport.scrollTo === "function") {
+      viewport.scrollTo({
+        top,
+        behavior: nextBehavior,
+      });
       return;
     }
     setViewportScrollTop(viewport, top);
+  };
+
+  const driveScrollPosition = (
+    viewport: HTMLDivElement,
+    top: number,
+    behavior: ScrollBehavior,
+    intentKind: ScrollIntentKind | null = null,
+  ): void => {
+    cancelDeferredSmoothScroll();
+    if (intentKind) {
+      setScrollIntent(viewport, intentKind, top, behavior);
+    } else {
+      clearScrollIntent();
+    }
+    applyScrollTop(viewport, top, behavior);
+    syncEdgeState();
+  };
+
+  const driveScrollEdge = (
+    viewport: HTMLDivElement,
+    edge: "latest" | "start",
+    behavior: ScrollBehavior,
+  ): void => {
+    if (edge === "latest") {
+      driveScrollPosition(viewport, 0, behavior, "latest");
+      return;
+    }
+    driveScrollPosition(viewport, getBottomAnchoredStartScrollTop(viewport), behavior, "toward-start");
   };
 
   const resolveMeasuredInsertBlockSize = (element: HTMLElement): number => {
@@ -702,10 +771,64 @@
       return total + resolveMeasuredInsertBlockSize(entry.element);
     }, 0);
 
+  const handleInsertMotionPrepare = (entries: readonly BottomAnchoredInsertMotionBatchEntry[]): void => {
+    const viewport = viewportRef;
+    const snapshot = lastViewportSnapshot;
+    if (!viewport || !snapshot || entries.length === 0) {
+      return;
+    }
+    const hasLatest = entries.some((entry) => entry.motion === "latest");
+    const hasOlder = entries.some((entry) => entry.motion === "older");
+    const batch: BottomAnchoredTimelineInsertMotionBatch = {
+      entries,
+      snapshot: toViewportSnapshot(snapshot),
+    };
+    const shouldFreezeForPinnedEdge = (hasLatest && snapshot.atLatest) || (hasOlder && snapshot.atStart);
+    const activeIntent = resolveActiveScrollIntent(viewport);
+    const hasDeferredSmooth =
+      deferredSmoothScrollFrame !== 0 && Object.is(deferredSmoothScrollViewport, viewport);
+    const shouldFreezeActiveScroll =
+      shouldFreezeForPinnedEdge &&
+      hasDeferredSmooth ||
+      (shouldFreezeForPinnedEdge &&
+        activeIntent !== null &&
+        Math.abs(viewport.scrollTop - activeIntent.targetTop) > 1);
+    if (!shouldFreezeActiveScroll) {
+      onInsertMotionPrepare?.(batch);
+      return;
+    }
+    if (diagnosticsEnabled) {
+      console.debug("[BottomAnchoredTimeline]", "insert-motion-prepare-freeze", {
+        hasLatest,
+        hasOlder,
+        activeIntent,
+        hasDeferredSmooth,
+        snapshot,
+        scrollTop: viewport.scrollTop,
+        clientHeight: viewport.clientHeight,
+        scrollHeight: viewport.scrollHeight,
+      });
+    }
+    cancelDeferredSmoothScroll();
+    clearScrollIntent();
+    applyScrollTop(viewport, viewport.scrollTop, "auto");
+    syncEdgeState();
+    onInsertMotionPrepare?.(batch);
+  };
+
   const handleInsertMotionBatch = (entries: readonly BottomAnchoredInsertMotionBatchEntry[]): void => {
     const viewport = viewportRef;
     const snapshot = lastViewportSnapshot;
     if (!viewport || !snapshot || entries.length === 0) {
+      return;
+    }
+
+    const batch: BottomAnchoredTimelineInsertMotionBatch = {
+      entries,
+      snapshot: toViewportSnapshot(snapshot),
+    };
+    if (onInsertMotionBatch) {
+      onInsertMotionBatch(batch);
       return;
     }
 
@@ -716,7 +839,7 @@
       const preserveOffset = snapshot.virtualOffset + latestHeight;
       const preserveTop = resolveTargetTopFromVirtualOffset(viewport, preserveOffset);
       if (diagnosticsEnabled) {
-        console.debug("[BottomAnchoredTimeline]", "insert-motion-latest", {
+        console.debug("[BottomAnchoredTimeline]", "insert-motion-latest-anchor-preserve", {
           latestHeight,
           preserveOffset,
           preserveTop,
@@ -727,9 +850,6 @@
         });
       }
       applyScrollTop(viewport, preserveTop, "auto");
-      scheduleDeferredSmoothScroll(viewport, "latest", 0, {
-        durationMs: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
-      });
       syncEdgeState();
       return;
     }
@@ -776,10 +896,17 @@
         itemCount: items.length,
       });
     }
-    cancelDeferredSmoothScroll();
-    setScrollIntent(viewport, "latest", 0, behavior);
-    applyScrollTop(viewport, 0, behavior);
-    syncEdgeState();
+    const command: BottomAnchoredTimelineScrollCommand = {
+      kind: "edge",
+      edge: "latest",
+      behavior,
+      source: "imperative",
+    };
+    if (onScrollCommand) {
+      onScrollCommand(command);
+      return;
+    }
+    driveScrollEdge(viewport, "latest", behavior);
   };
 
   const scrollTowardStart = (deltaPx: number, behavior: ScrollBehavior = "auto"): void => {
@@ -802,10 +929,18 @@
         itemCount: items.length,
       });
     }
-    cancelDeferredSmoothScroll();
-    setScrollIntent(viewport, "toward-start", targetTop, behavior);
-    applyScrollTop(viewport, targetTop, behavior);
-    syncEdgeState();
+    const command: BottomAnchoredTimelineScrollCommand = {
+      kind: "position",
+      top: targetTop,
+      left: viewport.scrollLeft,
+      behavior,
+      source: "imperative",
+    };
+    if (onScrollCommand) {
+      onScrollCommand(command);
+      return;
+    }
+    driveScrollPosition(viewport, targetTop, behavior, "toward-start");
   };
 
   const scrollToStart = (behavior: ScrollBehavior = "auto"): void => {
@@ -824,16 +959,42 @@
         itemCount: items.length,
       });
     }
-    cancelDeferredSmoothScroll();
-    setScrollIntent(viewport, "toward-start", targetTop, behavior);
-    applyScrollTop(viewport, targetTop, behavior);
-    syncEdgeState();
+    const command: BottomAnchoredTimelineScrollCommand = {
+      kind: "edge",
+      edge: "start",
+      behavior,
+      source: "imperative",
+    };
+    if (onScrollCommand) {
+      onScrollCommand(command);
+      return;
+    }
+    driveScrollEdge(viewport, "start", behavior);
   };
 
   const handle: BottomAnchoredTimelineHandle = {
     scrollToLatest,
     scrollToStart,
     scrollTowardStart,
+    driver: {
+      scrollToEdge: (edge, behavior = "auto") => {
+        const viewport = viewportRef;
+        if (!viewport) {
+          return;
+        }
+        driveScrollEdge(viewport, edge, behavior);
+      },
+      scrollToPosition: (top, left, behavior = "auto", intentKind = null) => {
+        const viewport = viewportRef;
+        if (!viewport) {
+          return;
+        }
+        if (left !== viewport.scrollLeft) {
+          viewport.scrollLeft = left;
+        }
+        driveScrollPosition(viewport, top, behavior, intentKind);
+      },
+    },
     get atLatest() {
       return atLatest;
     },
@@ -848,6 +1009,29 @@
   const handleScroll = (event: Event): void => {
     syncEdgeState();
     onViewportScroll?.(event);
+  };
+
+  const handleWheel = (): void => {
+    interruptUserFacingScrollOwnership();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    if (!isAnchoredVirtualListKeyboardScrollEvent(event)) {
+      return;
+    }
+    interruptUserFacingScrollOwnership();
+  };
+
+  const handlePointerDown = (): void => {
+    interruptUserFacingScrollOwnership();
+  };
+
+  const handleTouchStart = (): void => {
+    interruptUserFacingScrollOwnership();
+  };
+
+  const handleMouseDown = (): void => {
+    interruptUserFacingScrollOwnership();
   };
 
   const resolveVirtualItemStyle = (
@@ -952,6 +1136,7 @@
       return;
     }
     const controller = createBottomAnchoredInsertMotionController(content, {
+      onPrepare: handleInsertMotionPrepare,
       onBeforePlay: handleInsertMotionBatch,
     });
     insertMotionDisconnect = controller.disconnect;
@@ -960,6 +1145,31 @@
         insertMotionDisconnect = null;
       }
       controller.disconnect();
+    };
+  });
+
+  $effect(() => {
+    const viewport = viewportRef;
+    if (!viewport) {
+      return;
+    }
+    viewport.addEventListener("wheel", handleWheel, { passive: true });
+    viewport.addEventListener("keydown", handleKeyDown);
+    viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
+    if (typeof PointerEvent !== "undefined") {
+      viewport.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    } else {
+      viewport.addEventListener("mousedown", handleMouseDown);
+    }
+    return () => {
+      viewport.removeEventListener("wheel", handleWheel);
+      viewport.removeEventListener("keydown", handleKeyDown);
+      viewport.removeEventListener("touchstart", handleTouchStart);
+      if (typeof PointerEvent !== "undefined") {
+        viewport.removeEventListener("pointerdown", handlePointerDown);
+      } else {
+        viewport.removeEventListener("mousedown", handleMouseDown);
+      }
     };
   });
 
@@ -1046,12 +1256,14 @@
             class="bottom-anchored-timeline-virtual-host"
             style={`height:${totalVirtualSize}px;`}
           >
-            {#each virtualRows as row (row.virtualItem.key)}
+            {#each virtualRows as row (row.key)}
               <div
                 class="bottom-anchored-timeline-virtual-item scroll-view-virtual-item"
                 data-display-index={row.displayIndex}
                 data-index={row.displayIndex}
                 data-source-index={row.sourceIndex}
+                data-anchored-row-key={row.key}
+                data-virtual-key={row.key}
                 style={resolveVirtualItemStyle(row.virtualItem, virtualUsesDynamicMeasurement)}
                 use:measureVirtualItem={measureVirtualInput}
               >
@@ -1064,11 +1276,12 @@
         {#if items.length === 0}
           {@render empty?.()}
         {:else}
-          {#each displayedRows as row (row.sourceIndex)}
+          {#each displayedRows as row (row.key)}
             <div
               class="bottom-anchored-timeline-static-item"
               data-display-index={row.displayIndex}
               data-source-index={row.sourceIndex}
+              data-anchored-row-key={row.key}
             >
               {@render item(row.value, row.sourceIndex)}
             </div>

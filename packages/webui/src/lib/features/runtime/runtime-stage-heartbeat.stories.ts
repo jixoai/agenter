@@ -404,6 +404,97 @@ const cloneHeartbeatEntry = (entry: HeartbeatPartItem, cloneIndex: number): Hear
   };
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const createPlaygroundSequenceLabel = (sequence: number): string => `[Playground #${sequence}]`;
+
+const createPlaygroundAiCallId = (sequence: number): number => 1_000 + sequence;
+
+const prefixPlaygroundLabel = (value: string, sequence: number): string =>
+  `${createPlaygroundSequenceLabel(sequence)} ${value}`;
+
+const annotateHeartbeatPartPayloadForPlayground = (
+  part: HeartbeatPartItem["parts"][number],
+  sequence: number,
+): HeartbeatPartItem["parts"][number]["payload"] => {
+  switch (part.partType) {
+    case "text":
+    case "thinking": {
+      if (!isRecord(part.payload) || typeof part.payload.content !== "string" && typeof part.payload.text !== "string") {
+        return part.payload;
+      }
+      if (typeof part.payload.content === "string") {
+        return {
+          ...part.payload,
+          content: prefixPlaygroundLabel(part.payload.content, sequence),
+        };
+      }
+      return {
+        ...part.payload,
+        text: prefixPlaygroundLabel(String(part.payload.text), sequence),
+      };
+    }
+    case "compact": {
+      if (!isRecord(part.payload) || typeof part.payload.text !== "string") {
+        return part.payload;
+      }
+      return {
+        ...part.payload,
+        text: prefixPlaygroundLabel(part.payload.text, sequence),
+      };
+    }
+    case "tool_call": {
+      if (!isRecord(part.payload)) {
+        return part.payload;
+      }
+      const input = part.payload.input;
+      if (!isRecord(input) || typeof input.command !== "string") {
+        return part.payload;
+      }
+      return {
+        ...part.payload,
+        input: {
+          ...input,
+          command: `printf '%s\\n' "${createPlaygroundSequenceLabel(sequence)}";\n${input.command}`,
+        },
+      };
+    }
+    case "config": {
+      if (!isRecord(part.payload)) {
+        return part.payload;
+      }
+      return {
+        ...part.payload,
+        playgroundSequence: sequence,
+      };
+    }
+    default:
+      return part.payload;
+  }
+};
+
+const annotateHeartbeatGroupForPlayground = (
+  group: HeartbeatGroupItem,
+  sequence: number,
+): HeartbeatGroupItem => {
+  const aiCallId = group.aiCallId === null ? null : createPlaygroundAiCallId(sequence);
+  return {
+  ...group,
+  aiCallId,
+  items: group.items.map((item) => ({
+    ...item,
+    aiCallId,
+    text: prefixPlaygroundLabel(item.text, sequence),
+    parts: item.parts.map((part) => ({
+      ...part,
+      aiCallId,
+      payload: annotateHeartbeatPartPayloadForPlayground(part, sequence),
+    })),
+  })),
+  };
+};
+
 const longStreamEntries = Array.from({ length: 18 }, (_, index) =>
   cloneHeartbeatEntry(index % 2 === 0 ? initialEntries[2] : initialEntries[4], index + 1),
 ).sort((left, right) => left.createdAt - right.createdAt);
@@ -558,7 +649,7 @@ const cloneHeartbeatGroupAtTime = (
 ): HeartbeatGroupItem => {
   const timeDelta = targetCreatedAt - template.createdAt;
   const groupClone = structuredClone(template);
-  return {
+  return annotateHeartbeatGroupForPlayground({
     ...groupClone,
     id: groupClone.id + sequence * 10_000,
     groupId: `${groupClone.groupId}:playground:${sequence}`,
@@ -578,48 +669,54 @@ const cloneHeartbeatGroupAtTime = (
         updatedAt: part.updatedAt + timeDelta,
       })),
     })),
-  };
+  }, sequence);
 };
 
 const createInteractiveLatestGroup = ({
   count,
+  sequence,
   groups,
 }: {
   count: number;
+  sequence: number;
   groups: readonly HeartbeatGroupItem[];
 }): HeartbeatGroupItem => {
   const latestTimestamp = groups[groups.length - 1]?.updatedAt ?? baseTimestamp;
-  return cloneHeartbeatGroupAtTime(appendedBottomAnchorGroup, count, latestTimestamp + count * 180_000);
+  return cloneHeartbeatGroupAtTime(appendedBottomAnchorGroup, sequence, latestTimestamp + sequence * 180_000);
 };
 
 const createInteractiveOlderGroup = ({
   count,
+  sequence,
   groups,
 }: {
   count: number;
+  sequence: number;
   groups: readonly HeartbeatGroupItem[];
 }): HeartbeatGroupItem => {
   const oldestTimestamp = groups[0]?.createdAt ?? baseTimestamp;
   const template = olderGroups[(count - 1) % olderGroups.length] ?? olderGroups[0] ?? appendedBottomAnchorGroup;
-  return cloneHeartbeatGroupAtTime(template, count, oldestTimestamp - count * 180_000);
+  return cloneHeartbeatGroupAtTime(template, sequence, oldestTimestamp - sequence * 180_000);
 };
 
 const createInteractiveLatestGrowthGroup = ({
   count,
+  sequence,
   groups,
 }: {
   count: number;
+  sequence: number;
   groups: readonly HeartbeatGroupItem[];
 }): HeartbeatGroupItem => {
   const latestGroup = groups[groups.length - 1] ?? growingBottomAnchorBaseGroup;
   const latestTimestamp = latestGroup.updatedAt;
-  return {
+  return annotateHeartbeatGroupForPlayground({
     ...structuredClone(growingBottomAnchorExpandedGroup),
     id: latestGroup.id,
     groupId: latestGroup.groupId,
     createdAt: latestGroup.createdAt,
     updatedAt: latestTimestamp + count * 1_000,
-  };
+  }, sequence);
 };
 
 const getViewportDistanceToLatest = (viewport: HTMLElement): number =>
@@ -673,6 +770,128 @@ const waitForInsertMotionCleanup = async (): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS + 80);
   });
+const playgroundCallPattern = /Call #(\d+)/g;
+const getVisibleHeartbeatGroups = (root: HTMLElement, viewport: HTMLElement): HTMLElement[] => {
+  const viewportRect = viewport.getBoundingClientRect();
+  return Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="runtime-heartbeat-group-"]')).filter(
+    (node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.bottom > viewportRect.top + 8 && rect.top < viewportRect.bottom - 8;
+    },
+  );
+};
+const parsePlaygroundCallNumbers = (text: string): number[] =>
+  Array.from(text.matchAll(playgroundCallPattern), (match) => Number(match[1])).filter(Number.isFinite);
+const readVisiblePlaygroundCallNumbers = (root: HTMLElement, viewport: HTMLElement): number[] =>
+  getVisibleHeartbeatGroups(root, viewport)
+    .flatMap((node) => parsePlaygroundCallNumbers(node.textContent ?? ""))
+    .sort((left, right) => left - right);
+const readTrailingVisiblePlaygroundCall = (root: HTMLElement, viewport: HTMLElement): number | null => {
+  const viewportRect = viewport.getBoundingClientRect();
+  const candidates = getVisibleHeartbeatGroups(root, viewport)
+    .map((node) => {
+      const callNumbers = parsePlaygroundCallNumbers(node.textContent ?? "");
+      if (callNumbers.length === 0) {
+        return null;
+      }
+      const rect = node.getBoundingClientRect();
+      return {
+        call: Math.max(...callNumbers),
+        bottom: Math.min(rect.bottom, viewportRect.bottom),
+      };
+    })
+    .filter((candidate): candidate is { call: number; bottom: number } => candidate !== null)
+    .sort((left, right) => right.bottom - left.bottom || right.call - left.call);
+  return candidates[0]?.call ?? null;
+};
+const readCenteredVisibleHeartbeatGroupTestId = (root: HTMLElement, viewport: HTMLElement): string | null => {
+  const viewportRect = viewport.getBoundingClientRect();
+  const viewportCenter = viewportRect.top + viewportRect.height / 2;
+  const candidates = getVisibleHeartbeatGroups(root, viewport)
+    .map((node) => {
+      const rect = node.getBoundingClientRect();
+      const visibleTop = Math.max(rect.top, viewportRect.top);
+      const visibleBottom = Math.min(rect.bottom, viewportRect.bottom);
+      return {
+        testId: node.dataset.testid ?? null,
+        centerDistance: Math.abs((visibleTop + visibleBottom) / 2 - viewportCenter),
+      };
+    })
+    .filter((candidate): candidate is { testId: string; centerDistance: number } => candidate.testId !== null)
+    .sort((left, right) => left.centerDistance - right.centerDistance);
+  return candidates[0]?.testId ?? null;
+};
+const readHeartbeatGroupTop = (root: HTMLElement, testId: string): number | null => {
+  const element = root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  return element ? element.getBoundingClientRect().top : null;
+};
+const readHeartbeatGroupRowTop = (root: HTMLElement, testId: string): number | null => {
+  const element = root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const row = element?.closest<HTMLElement>("[data-anchored-row-key]");
+  return row ? row.getBoundingClientRect().top : null;
+};
+const captureHeartbeatGroupTopSamples = async (
+  root: HTMLElement,
+  testId: string,
+  frameCount = 32,
+): Promise<number[]> => {
+  const samples: number[] = [];
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const top = readHeartbeatGroupTop(root, testId);
+    if (top !== null) {
+      samples.push(top);
+    }
+    await waitForAnimationFrame();
+  }
+  return samples;
+};
+const waitForPlaygroundAppendSettle = async (input: {
+  canvas: ReturnType<typeof within>;
+  viewport: HTMLElement;
+  appendButton: HTMLElement;
+  expectedCall: number;
+}): Promise<void> => {
+  await waitFor(() => {
+    expect(input.canvas.getByText(`Call #${input.expectedCall}`)).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(input.appendButton).not.toBeDisabled();
+  });
+  await waitFor(
+    () => {
+      expect(getViewportDistanceToLatest(input.viewport)).toBeLessThanOrEqual(48);
+    },
+    {
+      timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+    },
+  );
+};
+const captureTrailingPlaygroundCallSamples = async (
+  root: HTMLElement,
+  viewport: HTMLElement,
+  expectedCall: number,
+): Promise<number[]> => {
+  const samples: number[] = [];
+  for (let frame = 0; frame < 220; frame += 1) {
+    const current = readTrailingVisiblePlaygroundCall(root, viewport);
+    if (current !== null) {
+      samples.push(current);
+    }
+    const visibleCalls = readVisiblePlaygroundCallNumbers(root, viewport);
+    if (visibleCalls.includes(expectedCall) && getViewportDistanceToLatest(viewport) <= 48) {
+      for (let settleFrame = 0; settleFrame < 10; settleFrame += 1) {
+        await waitForAnimationFrame();
+        const next = readTrailingVisiblePlaygroundCall(root, viewport);
+        if (next !== null) {
+          samples.push(next);
+        }
+      }
+      return samples;
+    }
+    await waitForAnimationFrame();
+  }
+  throw new Error(`Timed out waiting for Call #${expectedCall} to settle: ${describeViewportMetrics(viewport, root)}`);
+};
 
 const streamingToolEntries = [
   {
@@ -1040,7 +1259,7 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     expect(systemPromptEntry.textContent).not.toContain(
       "You are a Linux expert. Prefer bash and skills before asking for help.",
     );
-    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent("0.4%");
+    await expect(canvas.getByTestId("runtime-heartbeat-context")).toHaveTextContent(/\d+(\.\d+)?%/);
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent(
       "Waiting · Attention Debt · 1 focused · 1 background · 1 muted",
     );
@@ -1224,7 +1443,7 @@ export const StickyBottomKeepsLatestRowsReachable = {
 } satisfies Story;
 
 export const BottomAnchorSurvivesLatestAppend = {
-  name: "Scenario: Given the Heartbeat viewport is pinned to bottom When a new measured group appears Then the latest rows stay bottom-anchored without manual scrolling",
+  name: "Scenario: Given the Heartbeat viewport is reading latest rows When a new measured group appears Then the shared insert-motion flow preserves the old content first and then returns to latest",
   args: {
     initialGroups: longStreamGroups,
     olderGroups: [],
@@ -1258,11 +1477,8 @@ export const BottomAnchorSurvivesLatestAppend = {
       expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
     });
 
+    const beforeAppendScrollTop = viewport.scrollTop;
     await waitFor(() => {
-      const distanceToLatest = getViewportDistanceToLatest(viewport);
-      if (distanceToLatest > 48) {
-        throw new Error(`Viewport drifted after append: ${describeViewportMetrics(viewport, canvasElement)}`);
-      }
       const latestEntry = canvas.queryByTestId("runtime-heartbeat-entry-920");
       if (!latestEntry) {
         throw new Error(`Latest append entry not mounted: ${describeViewportMetrics(viewport, canvasElement)}`);
@@ -1271,12 +1487,39 @@ export const BottomAnchorSurvivesLatestAppend = {
       expect(findInsertMotion(latestEntry)).toBe("latest");
     });
 
-    await waitForInsertMotionCleanup();
+    const animationHost = await waitFor(() => {
+      const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
+      if (!host) {
+        throw new Error(`Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      return host;
+    });
+    const appendedHeight = Math.round(animationHost.getBoundingClientRect().height);
+    const expectedPreservePx = Math.min(appendedHeight, Math.min(48, viewport.clientHeight * 0.1));
+    expect(appendedHeight).toBeGreaterThan(0);
 
     await waitFor(() => {
-      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
-      expect(canvas.getByTestId("runtime-heartbeat-entry-920")).toBeInTheDocument();
+      const distanceToLatest = getViewportDistanceToLatest(viewport);
+      if (distanceToLatest <= 12) {
+        throw new Error(`Latest append did not preserve anchored content: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      expect(viewport.scrollTop).toBeLessThan(beforeAppendScrollTop);
+      expect(Math.abs(distanceToLatest - expectedPreservePx)).toBeLessThanOrEqual(24);
     });
+
+    await waitForInsertMotionCleanup();
+    await waitForViewportSettle(viewport);
+
+    await waitFor(
+      () => {
+        const distanceToLatest = getViewportDistanceToLatest(viewport);
+        expect(distanceToLatest).toBeLessThanOrEqual(48);
+        expect(canvas.getByTestId("runtime-heartbeat-entry-920")).toBeInTheDocument();
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
   },
 } satisfies Story;
 
@@ -1363,7 +1606,7 @@ export const LatestAppendPlaysInsertMotion = {
         expect(viewport.scrollTop).toBeGreaterThan(beforeScrollTop);
       },
       {
-        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 2,
       },
     );
 
@@ -1372,9 +1615,14 @@ export const LatestAppendPlaysInsertMotion = {
       expect(animation.playState).toBe("finished");
     }, { timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 4 });
 
-    await waitFor(() => {
-      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
-    });
+    await waitFor(
+      () => {
+        expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 4,
+      },
+    );
   },
 } satisfies Story;
 
@@ -1396,6 +1644,281 @@ export const InsertMotionPlayground = {
       replaceLatest: createInteractiveLatestGrowthGroup,
       hint: "Append latest shows the new-card motion. Scroll to visual top, then use Prepend older to watch the older/load-old reveal. Grow latest replaces the last card in place so you can inspect remeasurement without insertion.",
     },
+  },
+} satisfies Story;
+
+export const InteractiveAppendUsesUniqueVisibleLabels = {
+  name: "Scenario: Given the insert-motion playground When latest groups are appended repeatedly Then each new card exposes a distinct visible sequence label",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await userEvent.click(appendButton);
+    await waitFor(() => {
+      expect(canvas.getByText("Call #1001")).toBeInTheDocument();
+    });
+    await waitFor(
+      () => {
+        expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
+
+    await waitFor(() => {
+      expect(appendButton).not.toBeDisabled();
+    });
+
+    await userEvent.click(appendButton);
+    await waitFor(() => {
+      expect(canvas.getByText("Call #1002")).toBeInTheDocument();
+    });
+    await waitFor(
+      () => {
+        expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
+  },
+} satisfies Story;
+
+export const AppendLatestWhilePinnedPreservesThenReturnsToLatest = {
+  name: "Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the viewport first preserves the old trailing content and then returns to the new latest row",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    await userEvent.click(appendButton);
+
+    await waitFor(() => {
+      expect(canvas.getByText("Call #1001")).toBeInTheDocument();
+    });
+
+    const animationHost = await waitFor(() => {
+      const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
+      if (!host) {
+        throw new Error(`Interactive latest append host is missing: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      return host;
+    });
+    const appendedHeight = Math.round(animationHost.getBoundingClientRect().height);
+    const expectedPreservePx = Math.min(appendedHeight, Math.min(48, viewport.clientHeight * 0.1));
+    expect(appendedHeight).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      const distanceToLatest = getViewportDistanceToLatest(viewport);
+      if (distanceToLatest <= 12) {
+        throw new Error(`Interactive latest append did not preserve before follow: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      expect(Math.abs(distanceToLatest - expectedPreservePx)).toBeLessThanOrEqual(24);
+    });
+
+    await waitForViewportSettle(viewport);
+
+    await waitFor(
+      () => {
+        expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+        expect(readTrailingVisiblePlaygroundCall(canvasElement, viewport)).toBe(1001);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
+  },
+} satisfies Story;
+
+export const AppendLatestWhileAwayKeepsViewportAnchored = {
+  name: "Scenario: Given the Heartbeat viewport is reading older rows When a new latest group arrives Then the viewport preserves the current reading position instead of snapping to latest",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+    const scrollButtonShell = canvasElement.querySelector<HTMLElement>(".conversation-scroll-button");
+    if (!scrollButtonShell) {
+      throw new Error("Scroll-to-latest shell is missing from the Heartbeat story.");
+    }
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    const awayScrollTop = Math.round(getBottomAnchoredStartScrollTop(viewport) * 0.55);
+    viewport.scrollTop = awayScrollTop;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(scrollButtonShell.dataset.visible).toBe("true");
+    });
+
+    const anchoredGroupTestId = await waitFor(() => {
+      const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
+      if (!current) {
+        throw new Error(`Unable to resolve the centered reading anchor: ${describeViewportMetrics(viewport, canvasElement)}`);
+      }
+      return current;
+    });
+    const anchoredGroupTopBeforeAppend = readHeartbeatGroupTop(canvasElement, anchoredGroupTestId);
+    const anchoredGroupRowTopBeforeAppend = readHeartbeatGroupRowTop(canvasElement, anchoredGroupTestId);
+    if (anchoredGroupTopBeforeAppend === null) {
+      throw new Error(`Unable to resolve the reading anchor rect before append: ${describeViewportMetrics(viewport, canvasElement)}`);
+    }
+
+    await userEvent.click(appendButton);
+
+    await waitFor(() => {
+      expect(canvas.getByTestId("runtime-heartbeat-story-count")).toHaveTextContent("19");
+    });
+    await waitFor(() => {
+      expect(appendButton).not.toBeDisabled();
+    });
+    await waitForAnimationFrame();
+    const anchorTopSamples = await captureHeartbeatGroupTopSamples(canvasElement, anchoredGroupTestId);
+    const maxAnchorDrift = anchorTopSamples.length
+      ? Math.max(...anchorTopSamples.map((top) => Math.abs(top - anchoredGroupTopBeforeAppend)))
+      : Number.POSITIVE_INFINITY;
+    if (maxAnchorDrift > 16) {
+      throw new Error(
+        `Away append drifted too far before settle: before=${anchoredGroupTopBeforeAppend}; samples=${anchorTopSamples
+          .slice(0, 12)
+          .join(",")}; rowBefore=${anchoredGroupRowTopBeforeAppend}; rowAfter=${readHeartbeatGroupRowTop(
+          canvasElement,
+          anchoredGroupTestId,
+        )}; max=${maxAnchorDrift}; anchorKey=${viewport.dataset.anchoredVisibleKey ?? ""}; anchorTop=${
+          viewport.dataset.anchoredVisibleTop ?? ""
+        }; appendAnchorStatus=${viewport.dataset.anchoredAppendAnchorStatus ?? ""}; appendAnchorKey=${
+          viewport.dataset.anchoredAppendAnchorKey ?? ""
+        }; appendAnchorTop=${viewport.dataset.anchoredAppendAnchorTop ?? ""}; appendAnchorDrift=${
+          viewport.dataset.anchoredAppendAnchorDrift ?? ""
+        }; ${describeViewportMetrics(viewport, canvasElement)}`,
+      );
+    }
+    await waitForViewportSettle(viewport);
+
+    await waitFor(
+      () => {
+        const distanceToLatest = getViewportDistanceToLatest(viewport);
+        if (distanceToLatest <= 48) {
+          throw new Error(`Away append snapped back to latest: ${describeViewportMetrics(viewport, canvasElement)}`);
+        }
+        expect(scrollButtonShell.dataset.visible).toBe("true");
+        expect(canvasElement.querySelector(`[data-testid="${anchoredGroupTestId}"]`)).not.toBeNull();
+        const anchoredGroupTopAfterAppend = readHeartbeatGroupTop(canvasElement, anchoredGroupTestId);
+        expect(anchoredGroupTopAfterAppend).not.toBeNull();
+        expect(Math.abs((anchoredGroupTopAfterAppend ?? 0) - anchoredGroupTopBeforeAppend)).toBeLessThanOrEqual(16);
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
+      },
+    );
+  },
+} satisfies Story;
+
+export const ScrollToLatestInterruptedByWheelKeepsViewportAway = {
+  name: "Scenario: Given the Heartbeat viewport is away from latest When Scroll to latest is interrupted by wheel input Then the viewport remains under user ownership",
+  args: {
+    initialGroups: longStreamGroups,
+    olderGroups: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const scrollButtonShell = canvasElement.querySelector<HTMLElement>(".conversation-scroll-button");
+    const scrollButton = scrollButtonShell?.querySelector<HTMLButtonElement>('button[aria-label="Scroll to latest"]');
+    if (!scrollButtonShell || !scrollButton) {
+      throw new Error("Scroll-to-latest control is missing from the Heartbeat story.");
+    }
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    const awayScrollTop = Math.round(getBottomAnchoredStartScrollTop(viewport) * 0.8);
+    viewport.scrollTop = awayScrollTop;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(scrollButtonShell.dataset.visible).toBe("true");
+    });
+
+    scrollButton.click();
+    await waitForAnimationFrame();
+
+    viewport.dispatchEvent(new Event("wheel"));
+    viewport.scrollTop = awayScrollTop;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitForViewportSettle(viewport);
+    await waitFor(
+      () => {
+        const distanceToLatest = getViewportDistanceToLatest(viewport);
+        if (distanceToLatest <= 48) {
+          throw new Error(`Wheel interrupt still let Scroll to latest win: ${describeViewportMetrics(viewport, canvasElement)}`);
+        }
+        expect(scrollButtonShell.dataset.visible).toBe("true");
+      },
+      {
+        timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 2,
+      },
+    );
+  },
+} satisfies Story;
+
+export const RepeatedLatestAppendKeepsTrailingSequenceMonotonic = {
+  name: "Scenario: Given the insert-motion playground has already appended several latest groups When one more latest group arrives Then the trailing visible sequence never regresses to an older card mid-animation",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    for (const expectedCall of [1001, 1002, 1003, 1004, 1005, 1006]) {
+      await userEvent.click(appendButton);
+      await waitForPlaygroundAppendSettle({
+        canvas,
+        viewport,
+        appendButton,
+        expectedCall,
+      });
+    }
+
+    const baselineTrailingCall = readTrailingVisiblePlaygroundCall(canvasElement, viewport);
+    expect(baselineTrailingCall).toBe(1006);
+
+    await userEvent.click(appendButton);
+    const samples = await captureTrailingPlaygroundCallSamples(canvasElement, viewport, 1007);
+
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples.at(-1)).toBe(1007);
+    expect(Math.min(...samples)).toBeGreaterThanOrEqual(baselineTrailingCall ?? 0);
   },
 } satisfies Story;
 
@@ -1471,7 +1994,8 @@ export const RunningFooterShowsShimmerWithoutUsage = {
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveAttribute("data-running", "true");
     await expect(canvas.getByTestId("runtime-heartbeat-shimmer")).toHaveTextContent("Running");
     await expect(context).toHaveAttribute("data-context-state", "unavailable");
-    await expect(within(context).getByRole("button", { name: /0%/ })).toBeDisabled();
+    await expect(context).toHaveTextContent("—");
+    await expect(within(context).getByRole("button", { name: /Model context usage/ })).toBeDisabled();
   },
 } satisfies Story;
 

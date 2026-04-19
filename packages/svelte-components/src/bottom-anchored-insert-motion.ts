@@ -4,10 +4,12 @@ export interface BottomAnchoredInsertMotionBatchEntry {
   motion: BottomAnchoredInsertMotion;
 }
 interface BottomAnchoredInsertMotionControllerOptions {
+  onPrepare?: (entries: readonly BottomAnchoredInsertMotionBatchEntry[]) => void;
   onBeforePlay?: (entries: readonly BottomAnchoredInsertMotionBatchEntry[]) => void;
 }
 
 const INSERT_MOTION_ATTRIBUTE = "data-insert-motion";
+const INSERT_MOTION_KEY_ATTRIBUTE = "data-insert-motion-key";
 const INSERT_MOTION_SELECTOR = `[${INSERT_MOTION_ATTRIBUTE}]`;
 export const BOTTOM_ANCHORED_INSERT_MOTION_OFFSET_PX = 18;
 export const BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS = 1_600;
@@ -49,11 +51,30 @@ export const createBottomAnchoredInsertMotionController = (
     {
       motion: BottomAnchoredInsertMotion;
       playToken: number;
+      beforePlayNotified: boolean;
     }
   >();
   const lastObservedState = new WeakMap<HTMLElement, string>();
+  const observedMotionByKey = new Map<string, BottomAnchoredInsertMotion>();
+  const pendingElementByKey = new Map<string, HTMLElement>();
   let flushAnimationFrame = 0;
+  let flushBeforePlayMicrotaskQueued = false;
   let nextPlayToken = 1;
+
+  const resolveInsertMotionKey = (element: HTMLElement): string | null => {
+    const candidate = element.getAttribute(INSERT_MOTION_KEY_ATTRIBUTE)?.trim() ?? "";
+    return candidate.length > 0 ? candidate : null;
+  };
+
+  const clearPendingKeyOwner = (element: HTMLElement): void => {
+    const logicalKey = resolveInsertMotionKey(element);
+    if (!logicalKey) {
+      return;
+    }
+    if (Object.is(pendingElementByKey.get(logicalKey), element)) {
+      pendingElementByKey.delete(logicalKey);
+    }
+  };
 
   const cancelFlushAnimationFrame = (): void => {
     if (flushAnimationFrame === 0) {
@@ -78,6 +99,7 @@ export const createBottomAnchoredInsertMotionController = (
 
   const clearAnimation = (element: HTMLElement): void => {
     pendingAnimations.delete(element);
+    clearPendingKeyOwner(element);
     cancelActiveAnimation(element);
   };
 
@@ -94,6 +116,10 @@ export const createBottomAnchoredInsertMotionController = (
     if (!element.isConnected || lastObservedState.get(element) !== `${motion}:${playToken}`) {
       element.style.removeProperty("will-change");
       return;
+    }
+    const logicalKey = resolveInsertMotionKey(element);
+    if (logicalKey) {
+      observedMotionByKey.set(logicalKey, motion);
     }
     element.style.willChange = "transform, opacity";
     const animation = element.animate(buildInsertMotionKeyframes(motion), {
@@ -115,8 +141,44 @@ export const createBottomAnchoredInsertMotionController = (
       }
     };
     animation.onfinish = cleanup;
-    animation.oncancel = cleanup;
+    animation.oncancel = () => {
+      if (!Object.is(activeAnimations.get(element), animation)) {
+        return;
+      }
+      activeAnimations.delete(element);
+      animation.onfinish = null;
+      animation.oncancel = null;
+      element.style.removeProperty("will-change");
+    };
     activeAnimations.set(element, animation);
+  };
+
+  const flushPendingPrepare = (): void => {
+    flushBeforePlayMicrotaskQueued = false;
+    if (pendingAnimations.size === 0) {
+      return;
+    }
+    const batch: BottomAnchoredInsertMotionBatchEntry[] = [];
+    for (const [element, pendingAnimation] of pendingAnimations) {
+      if (pendingAnimation.beforePlayNotified) {
+        continue;
+      }
+      if (!element.isConnected || lastObservedState.get(element) !== `${pendingAnimation.motion}:${pendingAnimation.playToken}`) {
+        element.style.removeProperty("will-change");
+        pendingAnimations.delete(element);
+        clearPendingKeyOwner(element);
+        continue;
+      }
+      pendingAnimation.beforePlayNotified = true;
+      batch.push({
+        element,
+        motion: pendingAnimation.motion,
+      });
+    }
+    if (batch.length === 0) {
+      return;
+    }
+    options.onPrepare?.(batch);
   };
 
   const flushPendingAnimations = (): void => {
@@ -127,6 +189,7 @@ export const createBottomAnchoredInsertMotionController = (
     const batch: Array<BottomAnchoredInsertMotionBatchEntry & { playToken: number }> = [];
     for (const [element, pendingAnimation] of pendingAnimations) {
       pendingAnimations.delete(element);
+      clearPendingKeyOwner(element);
       if (!element.isConnected || lastObservedState.get(element) !== `${pendingAnimation.motion}:${pendingAnimation.playToken}`) {
         element.style.removeProperty("will-change");
         continue;
@@ -147,10 +210,25 @@ export const createBottomAnchoredInsertMotionController = (
   };
 
   const scheduleInsertMotion = (element: HTMLElement, motion: BottomAnchoredInsertMotion): void => {
+    const logicalKey = resolveInsertMotionKey(element);
+    if (logicalKey) {
+      const existingPendingElement = pendingElementByKey.get(logicalKey);
+      if (existingPendingElement && !Object.is(existingPendingElement, element)) {
+        pendingAnimations.delete(existingPendingElement);
+        clearPendingKeyOwner(existingPendingElement);
+      }
+      pendingElementByKey.set(logicalKey, element);
+    }
     const playToken = nextPlayToken;
     nextPlayToken += 1;
     lastObservedState.set(element, `${motion}:${playToken}`);
-    pendingAnimations.set(element, { motion, playToken });
+    pendingAnimations.set(element, { motion, playToken, beforePlayNotified: false });
+    if (!flushBeforePlayMicrotaskQueued) {
+      flushBeforePlayMicrotaskQueued = true;
+      queueMicrotask(() => {
+        flushPendingPrepare();
+      });
+    }
     if (flushAnimationFrame !== 0) {
       return;
     }
@@ -167,12 +245,17 @@ export const createBottomAnchoredInsertMotionController = (
     const motion = resolveInsertMotion(element.dataset.insertMotion);
     const nextState = motion ?? "none";
     const previousState = lastObservedState.get(element);
+    const logicalKey = resolveInsertMotionKey(element);
     if (previousState === nextState || previousState?.startsWith(`${nextState}:`)) {
       return;
     }
     if (!motion) {
       lastObservedState.set(element, nextState);
       clearAnimation(element);
+      return;
+    }
+    if (logicalKey && observedMotionByKey.get(logicalKey) === motion) {
+      lastObservedState.set(element, motion);
       return;
     }
     scheduleInsertMotion(element, motion);
@@ -208,6 +291,7 @@ export const createBottomAnchoredInsertMotionController = (
     return {
       disconnect: () => {
         cancelFlushAnimationFrame();
+        flushBeforePlayMicrotaskQueued = false;
         cleanupNode(root);
       },
     };
@@ -239,6 +323,7 @@ export const createBottomAnchoredInsertMotionController = (
     disconnect: () => {
       observer.disconnect();
       cancelFlushAnimationFrame();
+      flushBeforePlayMicrotaskQueued = false;
       cleanupNode(root);
     },
   };

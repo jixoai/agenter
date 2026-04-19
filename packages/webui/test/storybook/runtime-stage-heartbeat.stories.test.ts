@@ -8,6 +8,23 @@ const LayoutActionSwitchesGroupPresentation = getPortableStory(stories, "LayoutA
 const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBottomKeepsLatestRowsReachable");
 const BottomAnchorSurvivesLatestAppend = getPortableStory(stories, "BottomAnchorSurvivesLatestAppend");
 const LatestAppendPlaysInsertMotion = getPortableStory(stories, "LatestAppendPlaysInsertMotion");
+const InteractiveAppendUsesUniqueVisibleLabels = getPortableStory(stories, "InteractiveAppendUsesUniqueVisibleLabels");
+const AppendLatestWhilePinnedPreservesThenReturnsToLatest = getPortableStory(
+  stories,
+  "AppendLatestWhilePinnedPreservesThenReturnsToLatest",
+);
+const AppendLatestWhileAwayKeepsViewportAnchored = getPortableStory(
+  stories,
+  "AppendLatestWhileAwayKeepsViewportAnchored",
+);
+const ScrollToLatestInterruptedByWheelKeepsViewportAway = getPortableStory(
+  stories,
+  "ScrollToLatestInterruptedByWheelKeepsViewportAway",
+);
+const RepeatedLatestAppendKeepsTrailingSequenceMonotonic = getPortableStory(
+  stories,
+  "RepeatedLatestAppendKeepsTrailingSequenceMonotonic",
+);
 const BottomAnchorSurvivesLatestGrowth = getPortableStory(stories, "BottomAnchorSurvivesLatestGrowth");
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
 const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
@@ -33,6 +50,26 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given a new latest Heartbeat group When it mounts Then the shared WAAPI insert motion actually advances over animation frames", async () => {
     await LatestAppendPlaysInsertMotion.run();
+  });
+
+  test("Scenario: Given the insert-motion playground When latest groups are appended repeatedly Then each new card exposes a distinct visible sequence label", async () => {
+    await InteractiveAppendUsesUniqueVisibleLabels.run();
+  });
+
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the viewport first preserves the old trailing content and then returns to the new latest row", async () => {
+    await AppendLatestWhilePinnedPreservesThenReturnsToLatest.run();
+  });
+
+  test("Scenario: Given the Heartbeat viewport is reading older rows When a new latest group arrives Then the viewport preserves the current reading position instead of snapping to latest", async () => {
+    await AppendLatestWhileAwayKeepsViewportAnchored.run();
+  });
+
+  test("Scenario: Given the Heartbeat viewport is away from latest When Scroll to latest is interrupted by wheel input Then the viewport remains under user ownership", async () => {
+    await ScrollToLatestInterruptedByWheelKeepsViewportAway.run();
+  });
+
+  test("Scenario: Given the insert-motion playground has already appended several latest groups When one more latest group arrives Then the trailing visible sequence never regresses to an older card mid-animation", async () => {
+    await RepeatedLatestAppendKeepsTrailingSequenceMonotonic.run();
   });
 
   test("Scenario: Given the Heartbeat viewport is pinned to bottom When the last group grows without changing item count Then the viewport keeps the latest rows anchored", async () => {

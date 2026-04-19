@@ -186,13 +186,15 @@ const mountHarness = (
   const towardStartButton = target.querySelector("[data-testid='scroll-toward-start']");
   const toLatestButton = target.querySelector("[data-testid='scroll-to-latest']");
   const toLatestSmoothButton = target.querySelector("[data-testid='scroll-to-latest-smooth']");
+  const appendLatestButton = target.querySelector("[data-testid='append-latest']");
 
   if (
     !(viewport instanceof HTMLDivElement) ||
     !(state instanceof HTMLDivElement) ||
     !(towardStartButton instanceof HTMLButtonElement) ||
     !(toLatestButton instanceof HTMLButtonElement) ||
-    !(toLatestSmoothButton instanceof HTMLButtonElement)
+    !(toLatestSmoothButton instanceof HTMLButtonElement) ||
+    !(appendLatestButton instanceof HTMLButtonElement)
   ) {
     throw new Error("Failed to mount bottom-anchored timeline harness.");
   }
@@ -201,7 +203,16 @@ const mountHarness = (
   viewport.dataset.scrollHeight = "720";
   viewport.dataset.scrollTop = "0";
 
-  return { component, target, viewport, state, towardStartButton, toLatestButton, toLatestSmoothButton };
+  return {
+    component,
+    target,
+    viewport,
+    state,
+    towardStartButton,
+    toLatestButton,
+    toLatestSmoothButton,
+    appendLatestButton,
+  };
 };
 
 describe("Feature: bottom-anchored timeline", () => {
@@ -283,6 +294,92 @@ describe("Feature: bottom-anchored timeline", () => {
     expect(viewport.scrollTop).toBe(0);
 
     unmount(component);
+  });
+
+  test("Scenario: Given a smooth pin-to-latest is active When wheel input scrolls away before finalize Then the viewport does not snap back to latest", async () => {
+    const { component, viewport, towardStartButton, toLatestSmoothButton } = mountHarness(true);
+
+    try {
+      await settle();
+      vi.useFakeTimers();
+      towardStartButton.click();
+      flushSync();
+      expect(viewport.scrollTop).toBe(-96);
+
+      toLatestSmoothButton.click();
+      flushSync();
+      expect(viewport.scrollTop).toBe(0);
+
+      viewport.dispatchEvent(new WheelEvent("wheel"));
+      viewport.scrollTop = -144;
+      viewport.dispatchEvent(new Event("scroll"));
+      flushSync();
+
+      vi.advanceTimersByTime(BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 400);
+      flushSync();
+
+      expect(viewport.scrollTop).toBe(-144);
+    } finally {
+      unmount(component);
+      vi.useRealTimers();
+    }
+  });
+
+  test("Scenario: Given the viewport is pinned at latest When a latest row appends Then insert motion preserves the anchored content instead of snapping back to latest", async () => {
+    const { component, target, viewport, appendLatestButton } = mountHarness(true);
+
+    const scrollTopWrites: number[] = [];
+    let scrollTopValue = 0;
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get() {
+        return scrollTopValue;
+      },
+      set(value: number) {
+        scrollTopValue = value;
+        scrollTopWrites.push(value);
+        this.dataset.scrollTop = String(value);
+      },
+    });
+    viewport.dataset.scrollTop = "0";
+
+    try {
+      await settle();
+      scrollTopWrites.length = 0;
+
+      appendLatestButton.click();
+      flushSync();
+      const insertedMotionRow = target.querySelector("[data-insert-motion='latest']");
+      if (!(insertedMotionRow instanceof HTMLDivElement)) {
+        throw new Error("Failed to locate the appended latest insert-motion row.");
+      }
+      Object.defineProperty(insertedMotionRow, "offsetHeight", {
+        configurable: true,
+        get() {
+          return 120;
+        },
+      });
+      insertedMotionRow.getBoundingClientRect = () =>
+        ({
+          width: 0,
+          height: 120,
+          top: 0,
+          right: 0,
+          bottom: 120,
+          left: 0,
+          x: 0,
+          y: 0,
+          toJSON() {
+            return {};
+          },
+        }) as DOMRect;
+      await settle();
+
+      expect(viewport.scrollTop).toBe(-120);
+      expect(scrollTopWrites).toEqual([-120]);
+    } finally {
+      unmount(component);
+    }
   });
 
   test("Scenario: Given rows are marked with insert motion When the timeline renders them Then it uses Web Animations API with direction-specific keyframes", async () => {
