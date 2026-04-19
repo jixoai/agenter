@@ -69,7 +69,7 @@
 		contentClass={scrollContentClass}
 	>
 		<section
-			class="grid overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,#2b2b2d,#1f1f21_12%,#1a1a1c)] text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)] transition-[box-shadow,border-color,background-color,width] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]"
+			class="grid overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,#2b2b2d,#1f1f21_12%,#1a1a1c)] text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)]"
 			style={windowShellStyle}
 			data-terminal-window-surface="true"
 			data-terminal-window-mode={viewportMode}
@@ -157,15 +157,10 @@
 		box-shadow:
 			0 0.5px 0 rgba(255, 255, 255, 0.55) inset,
 			0 1px 1px rgba(15, 23, 42, 0.12);
-		transition:
-			transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
-			filter 160ms cubic-bezier(0.22, 1, 0.36, 1),
-			opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.window-control-button:hover:not(:disabled),
 	.window-control-button:focus-visible {
-		transform: translateY(-0.5px);
 		filter: saturate(1.04);
 	}
 
@@ -188,15 +183,10 @@
 		height: 0.5rem;
 		width: 0.5rem;
 		opacity: 0;
-		transform: scale(0.92);
-		transition:
-			opacity 120ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.window-control-button:hover :global(.window-control-icon),
 	.window-control-button:focus-visible :global(.window-control-icon) {
 		opacity: 1;
-		transform: scale(1);
 	}
 </style>
