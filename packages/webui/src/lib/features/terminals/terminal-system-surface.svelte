@@ -2,11 +2,10 @@
 	import FileClockIcon from '@lucide/svelte/icons/file-clock';
 	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
 	import ShieldUserIcon from '@lucide/svelte/icons/shield-user';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
 	import { tick } from 'svelte';
 
-	import { ClipSurface, Scaffold, SplitView } from '@agenter/svelte-components';
+	import { Scaffold, SplitView } from '@agenter/svelte-components';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import AsyncSurface from '$lib/components/web-components/async-surface.svelte';
 	import HelpHint from '$lib/components/web-components/help-hint.svelte';
@@ -14,10 +13,12 @@
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 
+	import TerminalWindowSurface from './terminal-window-surface.svelte';
 	import type { TerminalSystemSurfaceProps } from './terminal-system-surface.types';
 	import { resolveTerminalUsersPaneLayout } from './terminal-system-surface-layout';
 
@@ -44,6 +45,7 @@
 	}: TerminalSystemSurfaceProps = $props();
 
 	let deleteBusy = $state(false);
+	let deleteDialogOpen = $state(false);
 	let actionToolTab: 'write' | 'read' = $state('write');
 	let sidePanelTab: 'actions' | 'users' = $state('actions');
 	let grantParticipantId = $state('');
@@ -54,6 +56,7 @@
 	let writeBusy = $state(false);
 	let readMode: 'auto' | 'diff' | 'snapshot' = $state('snapshot');
 	let readBusy = $state(false);
+	let viewportModeByTerminalId = $state<Record<string, 'fit' | 'cover'>>({});
 	let actionsPanelRef: HTMLElement | null = $state(null);
 	let usersPanelRef = $state<HTMLElement | null>(null);
 	let usersPanelWidth = $state(0);
@@ -111,8 +114,16 @@
 	const selectedGrantRoleLabel = $derived(
 		grantRoleItems.find((item) => item.value === grantRole)?.label ?? 'writer',
 	);
+	const selectedViewportMode = $derived(
+		selectedTerminal ? (viewportModeByTerminalId[selectedTerminal.terminalId] ?? 'fit') : 'fit',
+	);
 	const latestActionEventId = $derived(actionEvents[0]?.id ?? null);
 	const usersPaneCompact = $derived(resolveTerminalUsersPaneLayout(usersPanelWidth) === 'compact');
+	const seatCardTestId = (actorId: string): string => `terminal-seat-${actorId}`;
+	const seatFocusButtonTestId = (actorId: string): string => `terminal-seat-focus-${actorId}`;
+	const seatRevokeButtonTestId = (actorId: string): string => `terminal-seat-revoke-${actorId}`;
+	const approvalApproveButtonTestId = (requestId: string): string => `terminal-approval-approve-${requestId}`;
+	const approvalDenyButtonTestId = (requestId: string): string => `terminal-approval-deny-${requestId}`;
 
 	const formatTimestamp = (value?: number): string => {
 		if (!value) {
@@ -142,9 +153,28 @@
 		deleteBusy = true;
 		try {
 			await onDeleteTerminal();
+			deleteDialogOpen = false;
 		} finally {
 			deleteBusy = false;
 		}
+	};
+
+	const handleRequestDeleteTerminal = (): void => {
+		if (!selectedTerminal || deleteBusy) {
+			return;
+		}
+		deleteDialogOpen = true;
+	};
+
+	const handleToggleViewportMode = (): void => {
+		if (!selectedTerminal) {
+			return;
+		}
+		const nextMode = selectedViewportMode === 'cover' ? 'fit' : 'cover';
+		viewportModeByTerminalId = {
+			...viewportModeByTerminalId,
+			[selectedTerminal.terminalId]: nextMode,
+		};
 	};
 
 	const handleGrantSeat = async (): Promise<void> => {
@@ -172,8 +202,10 @@
 		}
 		writeBusy = true;
 		try {
-			await onWriteToolCall({ text: writeText });
-			writeText = '';
+			const result = await onWriteToolCall({ text: writeText });
+			if (result?.ok) {
+				writeText = '';
+			}
 		} finally {
 			writeBusy = false;
 		}
@@ -304,10 +336,16 @@
 			observer.disconnect();
 		};
 	});
+
+	$effect(() => {
+		if (!selectedTerminal) {
+			deleteDialogOpen = false;
+		}
+	});
 </script>
 
 {#snippet terminalStagePanel()}
-	<WorkbenchScaffold tone="pane" bodyClass="p-4">
+	<WorkbenchScaffold tone="pane" body="scroll" data-testid="terminal-stage-pane">
 		{#snippet header()}
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div class="min-w-0">
@@ -319,16 +357,6 @@
 						<div class="text-xs text-muted-foreground">{selectedTerminal.title}</div>
 					{/if}
 				</div>
-				<Button
-					variant="outline"
-					size="icon-sm"
-					class="shrink-0"
-					disabled={!selectedTerminal || deleteBusy}
-					onclick={() => void handleDeleteTerminal()}
-					aria-label="Delete terminal"
-				>
-					<Trash2Icon class="size-4" />
-				</Button>
 			</div>
 			{#if routeNotice}
 				<NoticeBanner tone={routeNotice.tone} message={routeNotice.message} />
@@ -336,23 +364,21 @@
 		{/snippet}
 
 		{#if selectedTerminal}
-			<div class="grid gap-3 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
-				<ClipSurface class="rounded-2xl border bg-slate-950 text-white">
-					<TerminalViewport
-						class="block h-full min-h-[22rem] w-full"
-						terminalId={selectedTerminal.terminalId}
-						terminalTitle={selectedTerminal.title}
-						cwd={selectedTerminal.cwd}
-						status={selectedTerminal.status}
-						viewportMode="fit"
-						transportUrl={selectedTerminal.transportUrl}
-						snapshot={selectedTerminal.snapshot ?? null}
-					/>
-				</ClipSurface>
+			<div class="grid gap-3 lg:min-h-full lg:grid-rows-[minmax(0,1fr)_auto]">
+				<TerminalWindowSurface
+					terminal={selectedTerminal}
+					terminalViewportComponent={TerminalViewport}
+					viewportMode={selectedViewportMode}
+					deleteBusy={deleteBusy}
+					onRequestDelete={handleRequestDeleteTerminal}
+					onToggleViewportMode={handleToggleViewportMode}
+				/>
 				<div class="grid gap-2 text-xs text-muted-foreground">
 					<div>Absolute cwd: {selectedTerminal.cwd}</div>
-					<div>Process kind: {selectedTerminal.processKind}</div>
-					<div>Renderer: {selectedTerminal.rendererEngine ?? 'xterm'}</div>
+					<div>
+						Projection mode: {selectedViewportMode === 'cover' ? 'cover window' : 'fit window'}
+					</div>
+					<div>Transport: {selectedTerminal.transportUrl ? 'live websocket mirror' : 'snapshot only'}</div>
 				</div>
 			</div>
 		{:else}
@@ -388,8 +414,14 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
-						<Textarea bind:value={writeText} class="min-h-24" placeholder="Type terminal input…" />
+						<Textarea
+							bind:value={writeText}
+							class="min-h-24"
+							placeholder="Type terminal input…"
+							data-testid="terminal-write-draft"
+						/>
 						<Button
+							data-testid="terminal-write-submit"
 							class="shrink-0 self-start xl:justify-self-end"
 							disabled={!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy}
 							onclick={() => void handleWriteToolCall()}
@@ -451,6 +483,48 @@
 		{/snippet}
 	</WorkbenchScaffold>
 {/snippet}
+
+<Dialog.Root bind:open={deleteDialogOpen}>
+	<Dialog.Content
+		class="max-w-md gap-0 rounded-[1.5rem] border-white/60 bg-[linear-gradient(180deg,rgba(252,252,253,0.96),rgba(236,240,246,0.92))] p-0 shadow-[0_28px_72px_rgba(15,23,42,0.22),0_1px_0_rgba(255,255,255,0.6)_inset] backdrop-blur-2xl"
+		showCloseButton={false}
+		data-testid="terminal-delete-confirm-dialog"
+	>
+		<div class="grid gap-0">
+			<Dialog.Header class="border-b border-slate-200/85 px-6 py-5">
+				<Dialog.Title class="text-base font-semibold text-slate-900">Delete terminal?</Dialog.Title>
+				<Dialog.Description class="text-sm text-slate-600">
+					This closes the shared terminal window and removes its catalog entry.
+					{#if selectedTerminal}
+						<span class="mt-2 block rounded-[0.85rem] border border-white/70 bg-white/75 px-3 py-2 text-xs text-slate-500 shadow-[0_1px_0_rgba(255,255,255,0.65)_inset]">
+							{selectedTerminal.terminalId} · {selectedTerminal.cwd}
+						</span>
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<Dialog.Footer class="border-t border-slate-200/80 px-6 py-4">
+				<Button
+					variant="outline"
+					disabled={deleteBusy}
+					onclick={() => {
+						deleteDialogOpen = false;
+					}}
+				>
+					Cancel
+				</Button>
+				<Button
+					variant="destructive"
+					disabled={deleteBusy}
+					data-testid="terminal-delete-confirm-submit"
+					onclick={() => void handleDeleteTerminal()}
+				>
+					{deleteBusy ? 'Deleting…' : 'Delete terminal'}
+				</Button>
+			</Dialog.Footer>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>
 
 {#snippet terminalActivityPanel()}
 	<WorkbenchScaffold tone="pane">
@@ -560,6 +634,7 @@
 									</Select.Content>
 								</Select.Root>
 								<Button
+									data-testid="terminal-seat-grant"
 									class="relative z-10"
 									disabled={!selectedTerminal || !grantParticipantId || grantBusy}
 									onclick={() => void handleGrantSeat()}
@@ -583,6 +658,7 @@
 											</div>
 											<div class="mt-3 flex flex-wrap gap-2">
 												<Button
+													data-testid={approvalApproveButtonTestId(approval.requestId)}
 													size="sm"
 													onclick={() =>
 														void onApproveRequest({ requestId: approval.requestId, durationMs: 30 * 60 * 1000 })}
@@ -590,6 +666,7 @@
 													Approve 30m
 												</Button>
 												<Button
+													data-testid={approvalDenyButtonTestId(approval.requestId)}
 													size="sm"
 													variant="outline"
 													onclick={() => void onDenyRequest({ requestId: approval.requestId })}
@@ -604,7 +681,7 @@
 
 							<div class="grid gap-3">
 								{#each seatStates as seat (seat.actorId)}
-									<div class="rounded-2xl border p-3">
+									<div class="rounded-2xl border p-3" data-testid={seatCardTestId(seat.actorId)}>
 										<div class="flex items-start justify-between gap-3">
 											<div class="flex items-center gap-3">
 												<ProfileAvatar label={seat.label} src={seat.iconUrl} class="size-9" />
@@ -617,6 +694,7 @@
 										</div>
 										<div class="mt-3 flex flex-wrap gap-2">
 											<Button
+												data-testid={seatFocusButtonTestId(seat.actorId)}
 												size="sm"
 												variant="outline"
 												disabled={!seat.accessToken}
@@ -632,7 +710,12 @@
 												{seat.focused ? 'Unfocus' : 'Focus'}
 											</Button>
 											{#if seat.grantId}
-												<Button size="sm" variant="outline" onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seat.grantId! })}>
+												<Button
+													data-testid={seatRevokeButtonTestId(seat.actorId)}
+													size="sm"
+													variant="outline"
+													onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seat.grantId! })}
+												>
 													Revoke
 												</Button>
 											{/if}
@@ -687,6 +770,7 @@
 									</Select.Root>
 
 									<Button
+										data-testid="terminal-seat-grant"
 										class="xl:justify-self-end"
 										disabled={!selectedTerminal || !grantParticipantId || grantBusy}
 										onclick={() => void handleGrantSeat()}
@@ -712,6 +796,7 @@
 												</div>
 												<div class="mt-3 flex flex-wrap gap-2">
 													<Button
+														data-testid={approvalApproveButtonTestId(approval.requestId)}
 														size="sm"
 														onclick={() =>
 															void onApproveRequest({ requestId: approval.requestId, durationMs: 30 * 60 * 1000 })}
@@ -719,6 +804,7 @@
 														Approve 30m
 													</Button>
 													<Button
+														data-testid={approvalDenyButtonTestId(approval.requestId)}
 														size="sm"
 														variant="outline"
 														onclick={() => void onDenyRequest({ requestId: approval.requestId })}
@@ -732,7 +818,7 @@
 								{/if}
 
 								{#each seatStates as seat (seat.actorId)}
-									<div class="rounded-2xl border p-3">
+									<div class="rounded-2xl border p-3" data-testid={seatCardTestId(seat.actorId)}>
 										<div class="flex items-center justify-between gap-3">
 											<div class="flex min-w-0 items-center gap-3">
 												<ProfileAvatar label={seat.label} src={seat.iconUrl} class="size-9" />
@@ -745,6 +831,7 @@
 										</div>
 										<div class="mt-3 flex flex-wrap gap-2">
 											<Button
+												data-testid={seatFocusButtonTestId(seat.actorId)}
 												size="sm"
 												variant="outline"
 												disabled={!seat.accessToken}
@@ -761,6 +848,7 @@
 											</Button>
 											{#if seat.grantId}
 												<Button
+													data-testid={seatRevokeButtonTestId(seat.actorId)}
 													size="sm"
 													variant="outline"
 													onclick={() => void onRevokeSeat({ actorId: seat.actorId, grantId: seat.grantId! })}

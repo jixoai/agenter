@@ -20,6 +20,22 @@
 	const showAuthNotice = $derived(authReady && !isAuthenticated);
 	const routeErrorMessage = $derived(errorMessage ?? (showAuthNotice ? AUTH_REQUIRED_MESSAGE : null));
 
+	const runtimeEndpointErrorHints = [
+		'The string did not match the expected pattern.',
+		"Failed to execute 'json' on 'Response': Unexpected end of JSON input",
+		'Failed to fetch',
+		'fetch failed',
+		'NetworkError when attempting to fetch resource.',
+	] as const;
+
+	const describeCreateTerminalError = (error: unknown): string => {
+		const message = error instanceof Error ? error.message : String(error);
+		if (runtimeEndpointErrorHints.some((hint) => message.includes(hint))) {
+			return 'Create terminal failed because this WebUI cannot reach a healthy agenter runtime endpoint. You are likely on a stale dev server or a proxy that no longer serves `/trpc`. Use the verified `agenter web --dev` stack or set `PUBLIC_AGENTER_WS_URL` to the live daemon `/trpc` endpoint.';
+		}
+		return message;
+	};
+
 	const handleSubmit = async (event: SubmitEvent): Promise<void> => {
 		event.preventDefault();
 		if (createBusy) {
@@ -48,7 +64,7 @@
 				keepFocus: true,
 			});
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : String(error);
+			errorMessage = describeCreateTerminalError(error);
 		} finally {
 			createBusy = false;
 		}
@@ -68,7 +84,7 @@
 		</div>
 	{/snippet}
 
-	<form class="grid gap-6 md:max-w-3xl" onsubmit={handleSubmit}>
+	<form class="grid gap-6 md:max-w-3xl" novalidate onsubmit={handleSubmit}>
 		<section class="grid gap-4 rounded-[1rem] border border-border/60 bg-background/45 p-4 md:p-5">
 			<label class="grid gap-2 text-sm font-medium">
 				<span>Terminal id</span>

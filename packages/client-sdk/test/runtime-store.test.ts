@@ -827,6 +827,7 @@ const createMockClient = (input: {
     accessToken?: string;
     mode?: "auto" | "diff" | "snapshot";
     remark?: boolean;
+    recordActivity?: boolean;
   }) => Promise<unknown>;
   terminalGlobalWriteMutate?: (input: {
     terminalId: string;
@@ -837,6 +838,7 @@ const createMockClient = (input: {
     submitGapMs?: number;
     createApprovalRequest?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
+    readRecordActivity?: boolean;
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   }) => Promise<unknown>;
   terminalListGrantsQuery?: (input: { terminalId: string }) => Promise<{ items: unknown[] }>;
@@ -1467,6 +1469,7 @@ const createMockClient = (input: {
             accessToken?: string;
             mode?: "auto" | "diff" | "snapshot";
             remark?: boolean;
+            recordActivity?: boolean;
           }) =>
             input.terminalGlobalReadQuery
               ? await input.terminalGlobalReadQuery(payload)
@@ -1479,6 +1482,14 @@ const createMockClient = (input: {
                   rows: 24,
                   cursor: { x: 0, y: 0 },
                   tail: "",
+                  snapshot: {
+                    seq: 0,
+                    timestamp: 0,
+                    cols: 80,
+                    rows: 24,
+                    lines: Array.from({ length: 24 }, () => ""),
+                    cursor: { x: 0, y: 0 },
+                  },
                   status: "IDLE",
                   title: payload.terminalId,
                   running: true,
@@ -1494,6 +1505,7 @@ const createMockClient = (input: {
             submitGapMs?: number;
             createApprovalRequest?: boolean;
             readMode?: "auto" | "diff" | "snapshot";
+            readRecordActivity?: boolean;
             returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
           }) =>
             input.terminalGlobalWriteMutate
@@ -6599,13 +6611,20 @@ describe("Feature: runtime store synchronization", () => {
         cwd?: string;
       };
       focus?: { op: string; terminalIds: string[]; accessToken?: string };
-      read?: { terminalId: string; accessToken?: string; mode?: "auto" | "diff" | "snapshot"; remark?: boolean };
+      read?: {
+        terminalId: string;
+        accessToken?: string;
+        mode?: "auto" | "diff" | "snapshot";
+        remark?: boolean;
+        recordActivity?: boolean;
+      };
       write?: {
         terminalId: string;
         accessToken?: string;
         text: string;
         submit?: boolean;
         createApprovalRequest?: boolean;
+        readRecordActivity?: boolean;
         returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
       };
       listGrants?: { terminalId: string };
@@ -7288,6 +7307,63 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given a watched global terminal activity slice When a pure read returns a full snapshot without an event id Then runtime store preserves the snapshot but does not synthesize activity", async () => {
+    const terminalId = "term-pure-read";
+    let activityCalls = 0;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalReadQuery: async (input) => ({
+          kind: "terminal-snapshot",
+          representation: "snapshot",
+          terminalId: input.terminalId,
+          recordedActivity: false,
+          seq: 2,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 1 },
+          tail: "line 2",
+          snapshot: {
+            seq: 2,
+            timestamp: 2,
+            cols: 80,
+            rows: 24,
+            lines: ["hello snapshot", "line 2"],
+            cursor: { x: 0, y: 1 },
+          },
+          status: "IDLE",
+          title: "Pure read terminal",
+          running: true,
+        }),
+        terminalActivityPageQuery: async () => {
+          activityCalls += 1;
+          return {
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalId);
+    await store.hydrateGlobalTerminalActivity({ terminalId });
+
+    const output = await store.readGlobalTerminal({
+      terminalId,
+      accessToken: "token-admin",
+      mode: "snapshot",
+    });
+
+    expect(output.snapshot?.lines.join("\n")).toContain("hello snapshot");
+    expect(output.recordedActivity).toBeFalse();
+    expect(activityCalls).toBe(2);
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data).toEqual([]);
+
+    releaseActivity();
+    store.disconnect();
+  });
+
   test("Scenario: Given a stale inflight terminal activity refresh When a forced read lands newer facts Then runtime store bypasses the stale query and keeps the newest activity", async () => {
     const terminalId = "term-force-refresh";
     let activityCalls = 0;
@@ -7402,6 +7478,18 @@ describe("Feature: runtime store synchronization", () => {
       lines: ["prompt$", "echo keep-rendered", "keep-rendered", "prompt$"],
       cursor: { x: 7, y: 3 },
     };
+    const reviewerSeat = {
+      actorId: "session:reviewer",
+      role: "writer" as const,
+      label: "Reviewer Session",
+      currentAdmin: false,
+      online: true,
+      focused: true,
+      invalidCredential: false,
+      adminCandidateRank: 1,
+      leaseId: "lease-reviewer",
+      leaseExpiresAt: 123_000,
+    };
     const fullEntry = {
       terminalId,
       processKind: "shell",
@@ -7427,7 +7515,7 @@ describe("Feature: runtime store synchronization", () => {
         participantId: "system:trusted-terminal-bootstrap",
         currentAdmin: true,
       },
-      actors: [],
+      actors: [reviewerSeat],
     };
     const degradedEntry = {
       ...fullEntry,
@@ -7436,6 +7524,7 @@ describe("Feature: runtime store synchronization", () => {
       rendererEngine: undefined,
       transportUrl: undefined,
       access: undefined,
+      actors: undefined,
     };
     const store = new RuntimeStore(
       createMockClient({
@@ -7461,6 +7550,7 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
     expect(store.getState().globalTerminals.data[0]?.snapshot).toEqual(durableSnapshot);
+    expect(store.getState().globalTerminals.data[0]?.actors).toEqual([reviewerSeat]);
 
     await store.hydrateGlobalTerminals({ force: true });
 
@@ -7474,6 +7564,7 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
     expect(store.getState().globalTerminals.data[0]?.snapshot).toEqual(durableSnapshot);
+    expect(store.getState().globalTerminals.data[0]?.actors).toEqual([reviewerSeat]);
 
     releaseCatalog();
     store.disconnect();

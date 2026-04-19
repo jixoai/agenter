@@ -61,3 +61,19 @@ export const CompactDetailTakeoverRestoresRouteToolbar = {
 		await expect(within(toolbar).getByText('Route toolbar')).toBeInTheDocument();
 	},
 } satisfies Story;
+
+export const BodyScrollOwnsOverflowingPageContent = {
+	name: 'Scenario: Given overflowing route content When the shared workbench body renders Then the chrome body viewport owns scrolling instead of clipping the page band',
+	args: {
+		overflowBodyDemo: true,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const bodyScrollViewport = canvas.getByTestId('workbench-window-body-scroll-viewport');
+
+		await expect(canvas.getByText('Overflow Body Surface')).toBeInTheDocument();
+		await expect(canvas.getByTestId('workbench-window-overflow-card-14')).toBeInTheDocument();
+		expect(getComputedStyle(bodyScrollViewport).overflowY).not.toBe('hidden');
+		expect(bodyScrollViewport.scrollHeight).toBeGreaterThan(bodyScrollViewport.clientHeight);
+	},
+} satisfies Story;

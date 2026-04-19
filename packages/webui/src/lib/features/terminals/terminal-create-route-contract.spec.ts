@@ -24,4 +24,12 @@ describe('Feature: Terminal create route focus handoff', () => {
 		expect(createRouteSource).toContain('disabled={createBusy || !authReady || !isAuthenticated}');
 		expect(createRouteSource).toContain('<NoticeBanner tone="destructive" message={routeErrorMessage} />');
 	});
+
+	test('Scenario: Given the terminal create route owns submission validation When reading the form source Then native browser validation is disabled and invalid runtime endpoint errors are translated into actionable diagnostics', () => {
+		expect(createRouteSource).toContain('<form class="grid gap-6 md:max-w-3xl" novalidate onsubmit={handleSubmit}>');
+		expect(createRouteSource).toContain('runtimeEndpointErrorHints');
+		expect(createRouteSource).toContain("'The string did not match the expected pattern.'");
+		expect(createRouteSource).toContain("Failed to execute 'json' on 'Response': Unexpected end of JSON input");
+		expect(createRouteSource).toContain('cannot reach a healthy agenter runtime endpoint');
+	});
 });

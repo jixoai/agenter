@@ -81,6 +81,7 @@ export interface TerminalWriteInput {
   submitKey?: "enter" | "linefeed";
   submitGapMs?: number;
   returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  readRecordActivity?: boolean;
   readMode?: TerminalReadMode;
   actorId?: TerminalActorId;
   accessToken?: string;
@@ -93,6 +94,7 @@ export interface TerminalReadResult {
   representation: "diff" | "snapshot";
   terminalId: string;
   eventId?: number;
+  recordedActivity?: boolean;
   fromHash?: string | null;
   toHash?: string | null;
   seq?: number;
@@ -100,6 +102,7 @@ export interface TerminalReadResult {
   rows?: number;
   cursor?: { x: number; y: number };
   tail?: string;
+  snapshot?: ManagedTerminalSnapshot;
   diff?: string;
   bytes?: number;
   status: "IDLE" | "BUSY";

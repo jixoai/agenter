@@ -457,17 +457,46 @@ export class TerminalDb {
     return row ? mapApprovalRequest(row) : undefined;
   }
 
-  listPendingApprovalRequests(terminalId: string): TerminalApprovalRequestRecord[] {
+  listApprovalRequests(
+    terminalId: string,
+    input: {
+      assignedAdminId?: string;
+      participantId?: string;
+      statuses?: TerminalApprovalStatus[];
+    } = {},
+  ): TerminalApprovalRequestRecord[] {
+    const clauses = ["terminal_id = ?"];
+    const values: Array<string> = [terminalId];
+
+    if (input.assignedAdminId !== undefined) {
+      clauses.push("assigned_admin_id = ?");
+      values.push(input.assignedAdminId);
+    }
+    if (input.participantId !== undefined) {
+      clauses.push("participant_id = ?");
+      values.push(input.participantId);
+    }
+    if ((input.statuses?.length ?? 0) > 0) {
+      const placeholders = input.statuses!.map(() => "?").join(", ");
+      clauses.push(`status in (${placeholders})`);
+      values.push(...input.statuses!);
+    }
+
     const rows = this.db
       .query(
         `select request_id, terminal_id, participant_id, assigned_admin_id, created_at, expires_at, status, requested_input_json, decided_at, decided_by, lease_id
          from terminal_approval_request
-         where terminal_id = ?
-           and status = 'pending'
+         where ${clauses.join(" and ")}
          order by created_at asc, request_id asc`,
       )
-      .all(terminalId) as Array<Parameters<typeof mapApprovalRequest>[0]>;
+      .all(...values) as Array<Parameters<typeof mapApprovalRequest>[0]>;
     return rows.map(mapApprovalRequest);
+  }
+
+  listPendingApprovalRequests(terminalId: string): TerminalApprovalRequestRecord[] {
+    return this.listApprovalRequests(terminalId, {
+      statuses: ["pending"],
+    });
   }
 
   updateApprovalRequest(

@@ -1,0 +1,74 @@
+import { describe, test } from 'vitest';
+
+import * as stories from '../../src/lib/features/terminals/terminal-system-surface.stories';
+import { getPortableStory } from './portable-stories';
+
+const WriteSuccessClearsDraft = getPortableStory(stories, 'WriteSuccessClearsDraft');
+const ApprovalRequestedKeepsDraft = getPortableStory(stories, 'ApprovalRequestedKeepsDraft');
+const FailedWriteKeepsDraft = getPortableStory(stories, 'FailedWriteKeepsDraft');
+const UsersPaneWideActionsStayBehaviorallyAligned = getPortableStory(
+	stories,
+	'UsersPaneWideActionsStayBehaviorallyAligned',
+);
+const UsersPaneCompactActionsStayBehaviorallyAligned = getPortableStory(
+	stories,
+	'UsersPaneCompactActionsStayBehaviorallyAligned',
+);
+const ApprovalLifecycleStaysInUsersPane = getPortableStory(stories, 'ApprovalLifecycleStaysInUsersPane');
+const DeniedApprovalLeavesSeatWithoutLease = getPortableStory(stories, 'DeniedApprovalLeavesSeatWithoutLease');
+const AuthoritativeProjectionOmitsBootstrapSeat = getPortableStory(
+	stories,
+	'AuthoritativeProjectionOmitsBootstrapSeat',
+);
+const SnapshotHydratesViewportBeforeTransportReconnect = getPortableStory(
+	stories,
+	'SnapshotHydratesViewportBeforeTransportReconnect',
+);
+const WindowChromeTogglesProjectionMode = getPortableStory(stories, 'WindowChromeTogglesProjectionMode');
+const WindowCloseRequiresConfirmation = getPortableStory(stories, 'WindowCloseRequiresConfirmation');
+
+describe('Feature: Storybook DOM contract for terminal system surface', () => {
+	test('Scenario: Given a successful terminal write When the tool call resolves Then the editor draft clears and the terminal facts stay visible', async () => {
+		await WriteSuccessClearsDraft.run();
+	});
+
+	test('Scenario: Given a terminal write requires approval When the tool call resolves Then the draft stays in the editor and the approval notice is visible', async () => {
+		await ApprovalRequestedKeepsDraft.run();
+	});
+
+	test('Scenario: Given a terminal write fails When the tool call resolves Then the draft stays in the editor and the error notice remains visible', async () => {
+		await FailedWriteKeepsDraft.run();
+	});
+
+	test('Scenario: Given a wide users pane with an existing grant When focus and revoke actions run Then the shared seat behavior model stays consistent', async () => {
+		await UsersPaneWideActionsStayBehaviorallyAligned.run();
+	});
+
+	test('Scenario: Given a compact users pane When focus actions run Then the shared seat behavior model stays consistent', async () => {
+		await UsersPaneCompactActionsStayBehaviorallyAligned.run();
+	});
+
+	test('Scenario: Given a pending write approval When the users pane approves it Then the requester lease surfaces without rebuilding local seat truth', async () => {
+		await ApprovalLifecycleStaysInUsersPane.run();
+	});
+
+	test('Scenario: Given a pending write approval When the users pane denies it Then the requester seat stays lease-free and the denial remains visible', async () => {
+		await DeniedApprovalLeavesSeatWithoutLease.run();
+	});
+
+	test('Scenario: Given a terminal surface projection without a system actor seat When the users pane renders Then the route does not fabricate a bootstrap seat row', async () => {
+		await AuthoritativeProjectionOmitsBootstrapSeat.run();
+	});
+
+	test('Scenario: Given durable snapshot truth When the terminal route hydrates before transport reconnect Then the viewport renders without product chrome and stays readable', async () => {
+		await SnapshotHydratesViewportBeforeTransportReconnect.run();
+	});
+
+	test('Scenario: Given a terminal window chrome When the maximize control toggles Then the projection switches between fit and cover inside the shared scroll container', async () => {
+		await WindowChromeTogglesProjectionMode.run();
+	});
+
+	test('Scenario: Given a terminal window close control When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it', async () => {
+		await WindowCloseRequiresConfirmation.run();
+	});
+});

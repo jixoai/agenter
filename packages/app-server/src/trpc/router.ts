@@ -1041,6 +1041,7 @@ export const appRouter = t.router({
           accessToken: z.string().min(1).optional(),
           mode: z.enum(["auto", "diff", "snapshot"]).optional(),
           remark: z.boolean().optional(),
+          recordActivity: z.boolean().optional(),
         }),
       )
       .query(({ ctx, input }) =>
@@ -1060,6 +1061,7 @@ export const appRouter = t.router({
           submitGapMs: z.number().int().nonnegative().optional(),
           createApprovalRequest: z.boolean().optional(),
           readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          readRecordActivity: z.boolean().optional(),
           returnRead: z
             .union([
               z.boolean(),

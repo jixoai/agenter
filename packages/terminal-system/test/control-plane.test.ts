@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -179,6 +180,7 @@ describe("Feature: terminal control plane", () => {
     expect(result.ok).toBe(true);
     expect(result.read?.representation).toBe("snapshot");
     expect(result.read?.kind).toBe("terminal-snapshot");
+    expect(result.read?.snapshot?.lines.join("\n")).toContain("hello control plane");
 
     await plane.dispose();
   });
@@ -195,12 +197,115 @@ describe("Feature: terminal control plane", () => {
     });
     await Bun.sleep(200);
 
-    const snapshot = plane.getSnapshot(created.terminalId);
-    const rendered = snapshot.lines.join("\n");
+    const result = await plane.snapshot(created.terminalId);
+    const snapshot = result.snapshot;
+    const rendered = snapshot?.lines.join("\n") ?? "";
 
-    expect(snapshot.lines.length).toBeGreaterThan(snapshot.rows);
+    expect(result.representation).toBe("snapshot");
+    expect(snapshot?.lines.length).toBeGreaterThan(snapshot?.rows ?? 0);
     expect(rendered).toContain("line 1");
     expect(rendered).toContain("line 48");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a stopped terminal When snapshot is requested Then inspection does not auto-start the process", async () => {
+    const plane = createPlane();
+    const created = await plane.create({
+      terminalId: "stopped-read",
+      start: false,
+    });
+
+    expect(plane.isRunning(created.terminalId)).toBe(false);
+    await expect(plane.snapshot(created.terminalId)).rejects.toThrow("terminal is not running");
+    expect(plane.isRunning(created.terminalId)).toBe(false);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a terminal with no trusted bootstrap grant When read-only inspection runs Then no hidden bootstrap access is created", async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-"));
+    workspaces.push(outputRoot);
+    const dbPath = join(outputRoot, "terminal.db");
+    const plane = new TerminalControlPlane({
+      dbPath,
+      outputRoot,
+      defaultShellCommand: ["sh", "-lc", "cat"],
+      initialConfig: {
+        defaults: {
+          cols: 80,
+          rows: 20,
+        },
+        transport: {
+          port: null,
+        },
+      },
+    });
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "inspection-no-bootstrap",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+
+    const countGrants = () => {
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const row = db
+          .query("select count(*) as count from terminal_grant where terminal_id = ? and revoked_at is null")
+          .get(created.terminalId) as { count: number };
+        return row.count;
+      } finally {
+        db.close();
+      }
+    };
+
+    expect(countGrants()).toBe(1);
+    await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      mode: "snapshot",
+    });
+    expect(countGrants()).toBe(1);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given pure reads and explicit observations When inspection runs Then activity history only records explicit observations", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "read-activity",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+
+    await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      mode: "snapshot",
+    });
+    expect(
+      plane.pageEventsAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:owner",
+        limit: 10,
+      }).items,
+    ).toHaveLength(0);
+
+    await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      mode: "snapshot",
+      recordActivity: true,
+    });
+    const items = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      limit: 10,
+    }).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe("terminal_read");
 
     await plane.dispose();
   });
@@ -289,6 +394,48 @@ describe("Feature: terminal control plane", () => {
     });
     await plane.kill(created.terminalId);
     await closed;
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a transport client is attached When terminal state changes after connect Then websocket subscribers receive fresh snapshot frames without requiring an explicit read", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-snapshot-updates" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      messages.push(JSON.parse(String(event.data)) as TerminalTransportServerMessage);
+    });
+
+    await opened;
+    const initialSnapshotCount = messages.filter((message) => message.type === "snapshot").length;
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "snapshot after connect\n",
+      submit: false,
+    });
+    await Bun.sleep(150);
+
+    const snapshotMessages = messages.filter(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "snapshot" }> => message.type === "snapshot",
+    );
+
+    expect(snapshotMessages.length).toBeGreaterThan(initialSnapshotCount);
+    expect(snapshotMessages.some((message) => message.snapshot.lines.join("\n").includes("snapshot after connect"))).toBe(true);
+    expect(messages.some((message) => message.type === "output" && message.data.includes("snapshot after connect"))).toBe(true);
+
+    socket.close();
     plane.stopTransport();
     await plane.dispose();
   });
@@ -415,6 +562,85 @@ describe("Feature: terminal control plane", () => {
       participantId: "session:charlie",
     });
     expect(preempted[0]?.assignedAdminId).toBe("session:alpha");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given approved and denied requests When approval history is queried by status Then durable state transitions remain visible", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "approval-history",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:requester-a",
+      role: "requester",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:requester-b",
+      role: "requester",
+    });
+
+    const pendingA = await plane.write({
+      terminalId: created.terminalId,
+      text: "approved request",
+      submit: false,
+      actorId: "session:requester-a",
+      createApprovalRequest: true,
+    });
+    const pendingB = await plane.write({
+      terminalId: created.terminalId,
+      text: "denied request",
+      submit: false,
+      actorId: "session:requester-b",
+      createApprovalRequest: true,
+    });
+    const approvedRequestId = pendingA.approvalRequest?.requestId;
+    const deniedRequestId = pendingB.approvalRequest?.requestId;
+    if (!approvedRequestId || !deniedRequestId) {
+      throw new Error("expected approval requests");
+    }
+
+    plane.approveRequestAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      requestId: approvedRequestId,
+      durationMs: 60_000,
+    });
+    plane.denyRequestAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      requestId: deniedRequestId,
+    });
+
+    expect(
+      plane
+        .listApprovalRequests({
+          terminalId: created.terminalId,
+          statuses: ["approved"],
+        })
+        .map((request) => request.requestId),
+    ).toEqual([approvedRequestId]);
+    expect(
+      plane
+        .listApprovalRequests({
+          terminalId: created.terminalId,
+          statuses: ["denied"],
+        })
+        .map((request) => request.requestId),
+    ).toEqual([deniedRequestId]);
+    expect(
+      plane.listApprovalRequests({
+        terminalId: created.terminalId,
+        statuses: ["pending"],
+      }),
+    ).toHaveLength(0);
 
     await plane.dispose();
   });

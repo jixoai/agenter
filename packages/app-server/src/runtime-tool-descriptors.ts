@@ -58,6 +58,7 @@ export interface RuntimeLocalApiHandlers {
   terminalRead: (input: {
     terminalId: string;
     mode?: "auto" | "diff" | "snapshot";
+    recordActivity?: boolean;
   }) => Promise<unknown>;
   terminalWrite: (input: {
     terminalId: string;
@@ -199,6 +200,7 @@ const terminalCreateSchema = z.object({
 const terminalReadSchema = z.object({
   terminalId: z.string(),
   mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+  recordActivity: z.boolean().optional(),
 });
 
 const terminalWriteSchema = z.object({

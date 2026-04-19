@@ -3148,6 +3148,7 @@ export class AppKernel {
     terminalId: string;
     mode?: TerminalReadMode;
     remark?: boolean;
+    recordActivity?: boolean;
     accessToken?: string;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
@@ -3157,6 +3158,7 @@ export class AppKernel {
       terminalId: input.terminalId,
       mode: input.mode,
       remark: input.remark,
+      recordActivity: input.recordActivity,
       accessToken: access.accessToken,
       ...(access.accessToken
         ? {}
@@ -3174,6 +3176,7 @@ export class AppKernel {
     submitKey?: "enter" | "linefeed";
     submitGapMs?: number;
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readRecordActivity?: boolean;
     readMode?: TerminalReadMode;
     createApprovalRequest?: boolean;
     accessToken?: string;
@@ -3188,6 +3191,7 @@ export class AppKernel {
       submitKey: input.submitKey,
       submitGapMs: input.submitGapMs,
       returnRead: input.returnRead,
+      readRecordActivity: input.readRecordActivity,
       readMode: input.readMode,
       createApprovalRequest: input.createApprovalRequest,
       accessToken: access.accessToken,

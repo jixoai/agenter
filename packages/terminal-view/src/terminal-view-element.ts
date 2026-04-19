@@ -76,8 +76,6 @@ interface XtermInternalShape {
   };
 }
 
-const TITLEBAR_HEIGHT = 34;
-const STATUSBAR_HEIGHT = 26;
 const VIEWPORT_PADDING_X = 16;
 const VIEWPORT_PADDING_Y = 14;
 const FALLBACK_CELL_WIDTH = 8.2;
@@ -122,30 +120,15 @@ const templateStyles = `
     display: block;
     height: 100%;
     min-height: 0;
-    color: #e2e8f0;
   }
 
   .terminal-stage {
     display: flex;
     height: 100%;
     min-height: 0;
-    overflow: auto;
-    padding: 10px;
-    background:
-      radial-gradient(circle at top, rgba(30, 41, 59, 0.92), rgba(2, 6, 23, 0.98) 62%),
-      #020617;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
-  }
-
-  .terminal-stage[data-viewport-mode="fit"] {
-    justify-content: center;
     align-items: center;
-  }
-
-  .terminal-stage[data-viewport-mode="cover"] {
-    justify-content: flex-start;
-    align-items: flex-start;
+    justify-content: center;
+    overflow: hidden;
   }
 
   .terminal-frame-shell {
@@ -157,103 +140,16 @@ const templateStyles = `
 
   .terminal-frame {
     position: relative;
-    overflow: hidden;
-    border-radius: 18px;
-    border: 1px solid rgba(148, 163, 184, 0.28);
-    background: linear-gradient(180deg, #0f172a, #020617);
-    box-shadow: 0 22px 80px rgba(15, 23, 42, 0.28);
     transform-origin: top left;
     transition: transform 140ms ease;
   }
 
-  .terminal-toolbar,
-  .terminal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 0 14px;
-    font-family: var(--font-sans, sans-serif);
-    font-size: 11px;
-    line-height: 1.2;
-  }
-
-  .terminal-toolbar {
-    height: 34px;
-    border-bottom: 1px solid rgba(51, 65, 85, 0.9);
-    background: linear-gradient(180deg, #1f2937, #111827);
-  }
-
-  .terminal-footer {
-    height: 26px;
-    border-top: 1px solid rgba(30, 41, 59, 0.9);
-    background: rgba(15, 23, 42, 0.94);
-    color: #94a3b8;
-  }
-
-  .terminal-dots {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .terminal-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-  }
-
-  .terminal-title,
-  .terminal-meta,
-  .terminal-path {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .terminal-title {
-    color: #e2e8f0;
-  }
-
-  .terminal-status[data-state="BUSY"] {
-    color: #fbbf24;
-  }
-
-  .terminal-status[data-state="IDLE"] {
-    color: #34d399;
-  }
-
-  .terminal-body {
-    position: relative;
-    background: #020617;
-    padding: 4px 6px;
-  }
-
   .terminal-screen {
     overflow: hidden;
+    background: #020617;
     font-variant-ligatures: normal;
     font-feature-settings: "liga" 1, "calt" 1;
     text-rendering: optimizeLegibility;
-  }
-
-  .terminal-connection-badge {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    z-index: 1;
-    border-radius: 999px;
-    padding: 2px 8px;
-    background: rgba(15, 23, 42, 0.72);
-    font-family: var(--font-sans, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #94a3b8;
-  }
-
-  .terminal-connection-badge[hidden] {
-    display: none;
   }
 
   .xterm,
@@ -268,19 +164,16 @@ const templateStyles = `
     scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
   }
 
-  .xterm-viewport::-webkit-scrollbar,
-  .terminal-stage::-webkit-scrollbar {
+  .xterm-viewport::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
 
-  .xterm-viewport::-webkit-scrollbar-track,
-  .terminal-stage::-webkit-scrollbar-track {
+  .xterm-viewport::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .xterm-viewport::-webkit-scrollbar-thumb,
-  .terminal-stage::-webkit-scrollbar-thumb {
+  .xterm-viewport::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: color-mix(in srgb, #cbd5e1 24%, transparent);
   }
@@ -367,26 +260,25 @@ const buildViewportMetrics = (input: {
   mode: "fit" | "cover";
 }): TerminalViewportMetrics => {
   const width = input.screenWidth + VIEWPORT_PADDING_X * 2;
-  const height = input.screenHeight + VIEWPORT_PADDING_Y * 2 + TITLEBAR_HEIGHT + STATUSBAR_HEIGHT;
-  const fitScale = Math.min(input.availableWidth / width, input.availableHeight / height, 1);
-  const coverScale = Math.max(input.availableWidth / width, input.availableHeight / height, 1);
+  const height = input.screenHeight + VIEWPORT_PADDING_Y * 2;
+  const fitScale = Math.min(input.availableWidth / width, input.availableHeight / height);
+  const coverScale = Math.max(input.availableWidth / width, input.availableHeight / height);
   const rawScale = input.mode === "cover" ? coverScale : fitScale;
   const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
+  const scaledWidth = width * scale;
+  const scaledHeight = height * scale;
   return {
     scale,
     width,
     height,
-    scaledWidth: width * scale,
-    scaledHeight: height * scale,
+    scaledWidth,
+    scaledHeight,
   };
 };
 
 export class TerminalViewElement extends LitElement {
   @property({ attribute: "transport-url" }) accessor transportUrl = "";
   @property({ attribute: "terminal-id" }) accessor terminalId = "";
-  @property({ attribute: "terminal-title" }) accessor terminalTitle = "";
-  @property({ attribute: "cwd" }) accessor cwd = "";
-  @property({ attribute: "status" }) accessor status: "IDLE" | "BUSY" = "IDLE";
   @property({ attribute: "viewport-mode" }) accessor viewportMode: "fit" | "cover" = "fit";
   @property({ attribute: false }) accessor snapshot: TerminalViewSnapshot | null = null;
   @property({ attribute: false }) accessor connectionState: TerminalViewConnectionState = "idle";
@@ -397,7 +289,6 @@ export class TerminalViewElement extends LitElement {
 
   private terminal: Terminal | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  private screenResizeObserver: ResizeObserver | null = null;
   private socket: WebSocket | null = null;
   private ligatureJoinerId: number | null = null;
   private hydratedSnapshotSeq = -1;
@@ -407,6 +298,7 @@ export class TerminalViewElement extends LitElement {
   private screenWidth = 0;
   private screenHeight = 0;
   private firstUpdateFramePending = false;
+  private stageResizeFrame = 0;
 
   private scheduleAfterUpdate(callback: () => void): void {
     const run = () => {
@@ -428,9 +320,6 @@ export class TerminalViewElement extends LitElement {
     super.connectedCallback();
     this.upgradeProperty("transportUrl");
     this.upgradeProperty("terminalId");
-    this.upgradeProperty("terminalTitle");
-    this.upgradeProperty("cwd");
-    this.upgradeProperty("status");
     this.upgradeProperty("viewportMode");
     this.upgradeProperty("snapshot");
     this.syncSocket();
@@ -440,8 +329,10 @@ export class TerminalViewElement extends LitElement {
     this.disconnectSocket();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.screenResizeObserver?.disconnect();
-    this.screenResizeObserver = null;
+    if (this.stageResizeFrame !== 0) {
+      cancelAnimationFrame(this.stageResizeFrame);
+      this.stageResizeFrame = 0;
+    }
     if (this.terminal && this.ligatureJoinerId !== null) {
       this.terminal.deregisterCharacterJoiner(this.ligatureJoinerId);
       this.ligatureJoinerId = null;
@@ -475,7 +366,7 @@ export class TerminalViewElement extends LitElement {
         this.hydrateSnapshot(this.snapshot, "prop");
       });
     }
-    if (changed.has("transportUrl") && !changed.has("snapshot")) {
+    if (changed.has("transportUrl")) {
       queueMicrotask(() => {
         if (!this.isConnected) {
           return;
@@ -486,21 +377,13 @@ export class TerminalViewElement extends LitElement {
   }
 
   render() {
-    const connectionLabel =
-      this.connectionState === "error"
-        ? this.errorMessage || "connection error"
-        : this.connectionState === "connecting"
-          ? "connecting"
-          : this.connectionState === "closed"
-            ? "disconnected"
-            : "";
     const cols = this.snapshot?.cols ?? this.terminal?.cols ?? DEFAULT_COLS;
     const rows = this.snapshot?.rows ?? this.terminal?.rows ?? DEFAULT_ROWS;
     const screenWidth = this.screenWidth > 0 ? this.screenWidth : Math.round(cols * FALLBACK_CELL_WIDTH);
     const screenHeight = this.screenHeight > 0 ? this.screenHeight : Math.round(rows * FALLBACK_LINE_HEIGHT);
     const metrics = buildViewportMetrics({
-      availableWidth: Math.max(this.stageWidth - 8, 320),
-      availableHeight: Math.max(this.stageHeight - 8, 200),
+      availableWidth: Math.max(this.stageWidth, 320),
+      availableHeight: Math.max(this.stageHeight, 200),
       screenWidth,
       screenHeight,
       mode: this.viewportMode,
@@ -524,32 +407,11 @@ export class TerminalViewElement extends LitElement {
             data-viewport-mode=${this.viewportMode}
             style=${`width:${metrics.width}px;height:${metrics.height}px;transform:scale(${metrics.scale});`}
           >
-            <header class="terminal-toolbar">
-              <div class="terminal-dots" aria-hidden="true">
-                <span class="terminal-dot" style="background:#f87171"></span>
-                <span class="terminal-dot" style="background:#fbbf24"></span>
-                <span class="terminal-dot" style="background:#34d399"></span>
-              </div>
-              <div class="terminal-title">${this.terminalTitle || this.terminalId || "terminal"}</div>
-              <div class="terminal-status" data-state=${this.status}>${this.status}</div>
-            </header>
-            <div class="terminal-body">
-              <div class="terminal-connection-badge" ?hidden=${connectionLabel.length === 0}>${connectionLabel}</div>
-              <div
-                class="terminal-screen"
-                data-terminal-viewport
-                style=${`width:${screenWidth}px;height:${screenHeight}px;`}
-              ></div>
-            </div>
-            <footer class="terminal-footer">
-              <div class="terminal-path">${this.cwd || "No working directory"}</div>
-              <div class="terminal-meta">
-                ${this.terminalId || "Detached"} · cursor
-                ${this.snapshot?.cursor.x ?? 0}:${this.snapshot?.cursor.y ?? 0}${this.snapshot?.cursorVisible === false
-                  ? " · hidden"
-                  : ""}
-              </div>
-            </footer>
+            <div
+              class="terminal-screen"
+              data-terminal-viewport
+              style=${`width:${screenWidth}px;height:${screenHeight}px;`}
+            ></div>
           </section>
         </div>
       </div>
@@ -582,7 +444,6 @@ export class TerminalViewElement extends LitElement {
     terminal.open(this.viewportHost);
     this.ligatureJoinerId = terminal.registerCharacterJoiner(collectProgrammingLigatureRanges);
     this.terminal = terminal;
-    this.observeTerminalScreen();
     this.syncMeasuredScreen();
     if (this.snapshot) {
       const source = this.connectionState === "connected" && !this.liveSnapshotHydrated ? "transport" : "prop";
@@ -594,7 +455,7 @@ export class TerminalViewElement extends LitElement {
   }
 
   private upgradeProperty(
-    name: "transportUrl" | "terminalId" | "terminalTitle" | "cwd" | "status" | "viewportMode" | "snapshot",
+    name: "transportUrl" | "terminalId" | "viewportMode" | "snapshot",
   ): void {
     if (!Object.prototype.hasOwnProperty.call(this, name)) {
       return;
@@ -618,9 +479,19 @@ export class TerminalViewElement extends LitElement {
       this.requestUpdate();
     };
 
+    const scheduleStageCommit = (width: number, height: number) => {
+      if (this.stageResizeFrame !== 0) {
+        cancelAnimationFrame(this.stageResizeFrame);
+      }
+      this.stageResizeFrame = requestAnimationFrame(() => {
+        this.stageResizeFrame = 0;
+        updateStageSize(width, height);
+      });
+    };
+
     const rect = this.stageHost.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      updateStageSize(rect.width, rect.height);
+      scheduleStageCommit(rect.width, rect.height);
     }
 
     this.resizeObserver = new ResizeObserver((entries) => {
@@ -628,26 +499,9 @@ export class TerminalViewElement extends LitElement {
       if (!next) {
         return;
       }
-      updateStageSize(next.width, next.height);
+      scheduleStageCommit(next.width, next.height);
     });
     this.resizeObserver.observe(this.stageHost);
-  }
-
-  private observeTerminalScreen(): void {
-    const screen = this.getTerminalScreenElement();
-    if (this.screenResizeObserver || !screen || typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    this.screenResizeObserver = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect;
-      if (next && next.width > 0 && next.height > 0) {
-        this.setScreenMetrics(next.width, next.height);
-        return;
-      }
-      this.syncMeasuredScreen();
-    });
-    this.screenResizeObserver.observe(screen);
   }
 
   private resizeTerminal(cols: number, rows: number): void {
@@ -735,7 +589,6 @@ export class TerminalViewElement extends LitElement {
     try {
       const message = JSON.parse(raw) as TerminalViewServerMessage;
       if (message.type === "snapshot") {
-        this.status = message.status;
         this.snapshot = message.snapshot;
         const geometryChanged =
           this.terminal === null ||
@@ -751,7 +604,6 @@ export class TerminalViewElement extends LitElement {
         return;
       }
       if (message.type === "status") {
-        this.status = message.status;
         if (!message.running) {
           this.connectionState = "closed";
         }
@@ -781,14 +633,14 @@ export class TerminalViewElement extends LitElement {
   }
 
   private syncMeasuredScreen(): void {
-    const screenRect = this.getTerminalScreenElement()?.getBoundingClientRect();
-    if (screenRect && screenRect.width > 0 && screenRect.height > 0) {
-      this.setScreenMetrics(screenRect.width, screenRect.height);
-      return;
-    }
     const measured = this.readMeasuredScreenFromXterm();
     if (measured) {
       this.setScreenMetrics(measured.width, measured.height);
+      return;
+    }
+    const screenRect = this.getTerminalScreenElement()?.getBoundingClientRect();
+    if (screenRect && screenRect.width > 0 && screenRect.height > 0) {
+      this.setScreenMetrics(screenRect.width, screenRect.height);
     }
   }
 

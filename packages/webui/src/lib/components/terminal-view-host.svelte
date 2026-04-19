@@ -12,18 +12,12 @@
 
 	let {
 		terminalId,
-		terminalTitle,
-		cwd,
-		status,
 		viewportMode = 'fit',
 		transportUrl,
 		snapshot = null,
 		class: className = '',
 	}: {
 		terminalId: string;
-		terminalTitle?: string;
-		cwd?: string;
-		status: 'IDLE' | 'BUSY';
 		viewportMode?: 'fit' | 'cover';
 		transportUrl?: string;
 		snapshot?: TerminalViewSnapshot | null;
@@ -31,10 +25,7 @@
 	} = $props();
 
 	type TerminalViewHostElement = HTMLElement &
-		Pick<
-			TerminalViewElement,
-			'transportUrl' | 'terminalId' | 'terminalTitle' | 'cwd' | 'status' | 'viewportMode' | 'snapshot'
-		>;
+		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'viewportMode' | 'snapshot'>;
 
 	let element = $state<TerminalViewHostElement | null>(null);
 
@@ -44,9 +35,6 @@
 		}
 		element.transportUrl = transportUrl ?? '';
 		element.terminalId = terminalId;
-		element.terminalTitle = terminalTitle ?? terminalId;
-		element.cwd = cwd ?? '';
-		element.status = status;
 		element.viewportMode = viewportMode;
 		element.snapshot = snapshot ?? null;
 	};

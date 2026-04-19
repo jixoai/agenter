@@ -536,6 +536,7 @@ const buildTerminalSnapshotPayload = (
   rows: snapshot.rows,
   cursor: snapshot.cursor,
   tail: snapshot.lines.slice(-20).join("\n"),
+  snapshot,
   status,
 });
 
@@ -2653,10 +2654,15 @@ export class SessionRuntime {
     return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
   }
 
-  async readRuntimeTerminal(input: { terminalId: string; mode?: TerminalReadMode }): Promise<TerminalReadPayload> {
+  async readRuntimeTerminal(input: {
+    terminalId: string;
+    mode?: TerminalReadMode;
+    recordActivity?: boolean;
+  }): Promise<TerminalReadPayload> {
     return await this.readTerminalRepresentation(input.terminalId, {
       mode: input.mode ?? "auto",
       remark: false,
+      recordActivity: input.recordActivity ?? false,
     });
   }
 
@@ -6443,8 +6449,10 @@ export class SessionRuntime {
     input: {
       mode: TerminalReadMode;
       remark: boolean;
+      recordActivity?: boolean;
     },
   ): Promise<TerminalReadPayload> {
+    const recordActivity = input.recordActivity ?? false;
     const controlPlane = this.terminalControlPlane;
     if (!controlPlane || !controlPlane.has(terminalId)) {
       const terminal = this.terminals.get(terminalId);
@@ -6477,19 +6485,7 @@ export class SessionRuntime {
               this.terminalDirtyState[terminalId] = false;
               this.dirtyQueue.delete(terminalId);
             }
-            this.terminalReads[terminalId] = diffPayload;
-            this.emit("terminalRead", { terminalId, result: diffPayload });
-            this.appendTerminalActivity({
-              terminalId,
-              kind: "terminal_read",
-              cycleId: this.activeCycleId,
-              title: "Terminal read",
-              content: diffPayload.eventId ? "" : JSON.stringify(diffPayload),
-              detail: diffPayload.eventId
-                ? this.createTerminalActivityRefDetail(terminalId, diffPayload.eventId, "terminal_read")
-                : diffPayload,
-            });
-            return diffPayload;
+            return this.publishTerminalReadPayload(terminalId, diffPayload, recordActivity);
           }
         }
       }
@@ -6498,43 +6494,46 @@ export class SessionRuntime {
         this.terminalDirtyState[terminalId] = false;
         this.dirtyQueue.delete(terminalId);
       }
-      this.terminalReads[terminalId] = snapshotPayload;
-      this.emit("terminalRead", { terminalId, result: snapshotPayload });
-      this.appendTerminalActivity({
-        terminalId,
-        kind: "terminal_read",
-        cycleId: this.activeCycleId,
-        title: "Terminal read",
-        content: snapshotPayload.eventId ? "" : JSON.stringify(snapshotPayload),
-        detail: snapshotPayload.eventId
-          ? this.createTerminalActivityRefDetail(terminalId, snapshotPayload.eventId, "terminal_read")
-          : snapshotPayload,
-      });
-      return snapshotPayload;
+      return this.publishTerminalReadPayload(terminalId, snapshotPayload, recordActivity);
     }
     const payload = await controlPlane.readAuthorized({
       terminalId,
       mode: input.mode,
       remark: input.remark,
+      recordActivity,
       actorId: this.terminalActorId,
     });
     if (input.remark) {
       this.terminalDirtyState[terminalId] = false;
       this.dirtyQueue.delete(terminalId);
     }
-    this.terminalReads[terminalId] = payload;
-    this.emit("terminalRead", { terminalId, result: payload });
-    this.appendTerminalActivity({
-      terminalId,
-      kind: "terminal_read",
-      cycleId: this.activeCycleId,
-      title: "Terminal read",
-      content: payload.eventId ? "" : JSON.stringify(payload),
-      detail: payload.eventId
-        ? this.createTerminalActivityRefDetail(terminalId, payload.eventId, "terminal_read")
-        : payload,
-    });
-    return payload;
+    return this.publishTerminalReadPayload(terminalId, payload, recordActivity);
+  }
+
+  private publishTerminalReadPayload(
+    terminalId: string,
+    payload: ControlPlaneTerminalReadResult,
+    recordActivity: boolean,
+  ): ControlPlaneTerminalReadResult {
+    const normalizedPayload: ControlPlaneTerminalReadResult = {
+      ...payload,
+      recordedActivity: payload.recordedActivity ?? recordActivity,
+    };
+    this.terminalReads[terminalId] = normalizedPayload;
+    this.emit("terminalRead", { terminalId, result: normalizedPayload });
+    if (normalizedPayload.recordedActivity) {
+      this.appendTerminalActivity({
+        terminalId,
+        kind: "terminal_read",
+        cycleId: this.activeCycleId,
+        title: "Terminal read",
+        content: normalizedPayload.eventId ? "" : JSON.stringify(normalizedPayload),
+        detail: normalizedPayload.eventId
+          ? this.createTerminalActivityRefDetail(terminalId, normalizedPayload.eventId, "terminal_read")
+          : normalizedPayload,
+      });
+    }
+    return normalizedPayload;
   }
 
   private async createTerminal(

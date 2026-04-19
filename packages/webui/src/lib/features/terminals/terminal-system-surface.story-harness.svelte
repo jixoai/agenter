@@ -15,7 +15,13 @@
 		TerminalSystemCallAsOption,
 		TerminalSystemNotice,
 		TerminalSystemSeatState,
+		TerminalSystemWriteToolResult,
 	} from './terminal-system-surface.types';
+
+	type StorySeatGrantSeed = {
+		participantId: string;
+		role: 'admin' | 'writer' | 'requester' | 'readonly';
+	};
 
 	const actorCatalog: ActorDirectoryEntry[] = [
 		{
@@ -47,14 +53,18 @@
 		cwd: string,
 		lines: string[] = [buildTerminalPrompt(cwd)],
 		seq = 1,
+		geometry: {
+			cols?: number;
+			rows?: number;
+		} = {},
 	) => {
 		const nextLines = lines.length > 0 ? lines : [buildTerminalPrompt(cwd)];
 		const cursorLine = nextLines.at(-1) ?? buildTerminalPrompt(cwd);
 		return {
 			seq,
 			timestamp: 1_710_000_000_000 + seq,
-			cols: 80,
-			rows: 24,
+			cols: geometry.cols ?? 80,
+			rows: geometry.rows ?? 24,
 			lines: nextLines,
 			richLines: nextLines.map((line) => ({
 				spans: [{ text: line }],
@@ -70,6 +80,8 @@
 		cwd: string;
 		seatCount: number;
 		pendingRequestCount: number;
+		snapshotCols: number;
+		snapshotRows: number;
 	}): GlobalTerminalEntry => ({
 		terminalId: input.terminalId,
 		processKind: 'shell',
@@ -79,7 +91,10 @@
 		running: true,
 		status: 'IDLE',
 		seq: 1,
-		snapshot: buildTerminalSnapshot(input.cwd),
+		snapshot: buildTerminalSnapshot(input.cwd, undefined, 1, {
+			cols: input.snapshotCols,
+			rows: input.snapshotRows,
+		}),
 		focused: false,
 		icon: undefined,
 		title: input.title,
@@ -112,43 +127,114 @@
 	});
 
 	const initialTerminalId = 'term-story';
+	const defaultAdminToken = `token:${initialTerminalId}:admin`;
 	const terminalFallbackActor = (actorId: string) => actorCatalog.find((actor) => actor.actorId === actorId);
+	const toGrantId = (participantId: string): string => `grant-${participantId.replaceAll(':', '-')}`;
+	const toSeedAccessToken = (terminalId: string, participantId: string): string =>
+		participantId === 'session:reviewer' ? `token:${terminalId}:reviewer` : `token:${terminalId}:${participantId}`;
+	const createInitialGrantEntries = (input: {
+		terminalId: string;
+		initialGrantedSeats: StorySeatGrantSeed[];
+	}): GlobalTerminalGrantEntry[] => {
+		const seeds = new Map<string, StorySeatGrantSeed>();
+		seeds.set('session:reviewer', {
+			participantId: 'session:reviewer',
+			role: 'writer',
+		});
+		for (const seat of input.initialGrantedSeats) {
+			seeds.set(seat.participantId, seat);
+		}
+		return Array.from(seeds.values()).map((seat, index) => {
+			const actor = terminalFallbackActor(seat.participantId);
+			return {
+				grantId: seat.participantId === 'session:reviewer' ? 'grant-reviewer' : toGrantId(seat.participantId),
+				terminalId: input.terminalId,
+				role: seat.role,
+				label: actor?.label,
+				participantId: seat.participantId as `auth:${string}` | `session:${string}` | `system:${string}`,
+				accessToken: toSeedAccessToken(input.terminalId, seat.participantId),
+				createdAt: 1_710_000_000_100 + index,
+			};
+		});
+	};
+	const createInitialSeatStates = (input: {
+		includeBootstrapSeat: boolean;
+		terminalId: string;
+		initialGrantedSeats: StorySeatGrantSeed[];
+	}): Record<string, TerminalSystemSeatState[]> => ({
+		[input.terminalId]: [
+			...(input.includeBootstrapSeat
+				? [
+						{
+							actorId: 'system:trusted-terminal-bootstrap',
+							actorKind: 'system',
+							label: 'Bootstrap admin',
+							subtitle: 'System seat',
+							iconUrl: null,
+							role: 'admin',
+							currentAdmin: true,
+							online: true,
+							focused: false,
+							invalidCredential: false,
+							accessToken: `token:${input.terminalId}:admin`,
+						} satisfies TerminalSystemSeatState,
+					]
+				: []),
+			...createInitialGrantEntries(input).map((grant) => {
+				const participantId = grant.participantId ?? 'auth:unknown';
+				const actor = terminalFallbackActor(participantId);
+				return {
+					actorId: participantId,
+					actorKind: actor?.actorKind ?? 'auth',
+					label: actor?.label ?? participantId,
+					subtitle: actor?.subtitle ?? participantId,
+					iconUrl: actor?.iconUrl ?? null,
+					role: grant.role,
+					currentAdmin: false,
+					online: participantId === 'session:reviewer',
+					focused: false,
+					invalidCredential: false,
+					accessToken: grant.accessToken ?? toSeedAccessToken(input.terminalId, participantId),
+					grantId: grant.grantId,
+					adminCandidateRank: participantId === 'session:reviewer' ? 1 : undefined,
+				} satisfies TerminalSystemSeatState;
+			}),
+		],
+	});
+
+	let {
+		writeBehavior = 'success',
+		initialCallerToken = defaultAdminToken,
+		surfaceWidthPx = 1280,
+		surfaceHeightPx = 864,
+		snapshotCols = 80,
+		snapshotRows = 24,
+		includeBootstrapSeat = true,
+		initialGrantedSeats = [],
+	}: {
+		writeBehavior?: 'success' | 'approval' | 'failure';
+		initialCallerToken?: string | null;
+		surfaceWidthPx?: number;
+		surfaceHeightPx?: number;
+		snapshotCols?: number;
+		snapshotRows?: number;
+		includeBootstrapSeat?: boolean;
+		initialGrantedSeats?: StorySeatGrantSeed[];
+	} = $props();
 
 	let activityCounter = $state(2);
 	let selectedTerminalId = $state(initialTerminalId);
 	let routeNotice: TerminalSystemNotice | null = $state(null);
-	let selectedCallerTokenByTerminalId: Record<string, string> = $state({
-		[initialTerminalId]: `token:${initialTerminalId}:admin`,
-	});
+	let selectedCallerTokenByTerminalId: Record<string, string> = $state({});
 	let terminalsState: CachedResourceState<GlobalTerminalEntry[]> = $state({
-		data: [
-			createTerminalEntry({
-				terminalId: initialTerminalId,
-				title: 'Ops terminal',
-				cwd: '/repo/ops',
-				seatCount: 1,
-				pendingRequestCount: 0,
-			}),
-		],
+		data: [],
 		loaded: true,
 		loading: false,
 		refreshing: false,
 		error: null,
 		refreshedAt: 1_710_000_000_000,
 	});
-	let terminalGrantsById: Record<string, GlobalTerminalGrantEntry[]> = $state({
-		[initialTerminalId]: [
-			{
-				grantId: 'grant-reviewer',
-				terminalId: initialTerminalId,
-				role: 'writer',
-				label: 'Reviewer Session',
-				participantId: 'session:reviewer',
-				accessToken: `token:${initialTerminalId}:reviewer`,
-				createdAt: 1_710_000_000_100,
-			},
-		],
-	});
+	let terminalGrantsById: Record<string, GlobalTerminalGrantEntry[]> = $state({});
 	let terminalApprovalsById: Record<string, GlobalTerminalApprovalRequest[]> = $state({
 		[initialTerminalId]: [],
 	});
@@ -167,37 +253,63 @@
 			},
 		],
 	});
-	let terminalSeatStatesById: Record<string, TerminalSystemSeatState[]> = $state({
-		[initialTerminalId]: [
-			{
-				actorId: 'system:trusted-terminal-bootstrap',
-				actorKind: 'system',
-				label: 'Bootstrap admin',
-				subtitle: 'System seat',
-				iconUrl: null,
-				role: 'admin',
-				currentAdmin: true,
-				online: true,
-				focused: false,
-				invalidCredential: false,
-				accessToken: `token:${initialTerminalId}:admin`,
-			},
-			{
-				actorId: 'session:reviewer',
-				actorKind: 'session',
-				label: 'Reviewer Session',
-				subtitle: '/repo/reviewer',
-				iconUrl: null,
-				role: 'writer',
-				currentAdmin: false,
-				online: true,
-				focused: false,
-				invalidCredential: false,
-				accessToken: `token:${initialTerminalId}:reviewer`,
-				grantId: 'grant-reviewer',
-				adminCandidateRank: 1,
-			},
-		],
+	let terminalSeatStatesById: Record<string, TerminalSystemSeatState[]> = $state({});
+
+	$effect(() => {
+		const initialGrants = createInitialGrantEntries({
+			terminalId: initialTerminalId,
+			initialGrantedSeats,
+		});
+		activityCounter = 2;
+		selectedTerminalId = initialTerminalId;
+		routeNotice = null;
+		selectedCallerTokenByTerminalId = {
+			[initialTerminalId]: initialCallerToken ?? defaultAdminToken,
+		};
+		terminalsState = {
+			data: [
+				createTerminalEntry({
+					terminalId: initialTerminalId,
+					title: 'Ops terminal',
+					cwd: '/repo/ops',
+					seatCount: 1,
+					pendingRequestCount: 0,
+					snapshotCols,
+					snapshotRows,
+				}),
+			],
+			loaded: true,
+			loading: false,
+			refreshing: false,
+			error: null,
+			refreshedAt: 1_710_000_000_000,
+		};
+		terminalGrantsById = {
+			[initialTerminalId]: initialGrants,
+		};
+		terminalApprovalsById = {
+			[initialTerminalId]: [],
+		};
+		terminalActivityById = {
+			[initialTerminalId]: [
+				{
+					id: 1,
+					terminalId: initialTerminalId,
+					createdAt: 1_710_000_000_100,
+					kind: 'terminal_write',
+					cycleId: null,
+					actorId: 'system:trusted-terminal-bootstrap',
+					title: 'Terminal write + submit',
+					content: 'echo bootstrap',
+					detail: { submit: true, submitKey: 'enter' },
+				},
+			],
+		};
+		terminalSeatStatesById = createInitialSeatStates({
+			includeBootstrapSeat,
+			initialGrantedSeats,
+			terminalId: initialTerminalId,
+		});
 	});
 
 	const selectedTerminal = $derived(terminalsState.data.find((terminal) => terminal.terminalId === selectedTerminalId) ?? null);
@@ -271,7 +383,10 @@
 			return {
 				...terminal,
 				seq: nextSeq,
-				snapshot: buildTerminalSnapshot(terminal.cwd, nextLines, nextSeq),
+				snapshot: buildTerminalSnapshot(terminal.cwd, nextLines, nextSeq, {
+					cols: currentSnapshot.cols,
+					rows: currentSnapshot.rows,
+				}),
 			};
 		});
 	};
@@ -463,15 +578,29 @@
 		syncSeatFacts(terminal.terminalId);
 	};
 
-	const handleWriteToolCall = async (input: { text: string }) => {
+	const handleWriteToolCall = async (input: { text: string }): Promise<TerminalSystemWriteToolResult> => {
 		const terminal = selectedTerminal;
 		const caller = callAsOptions.find((option) => option.accessToken === selectedCallerToken);
 		if (!terminal || !caller) {
-			return;
+			return {
+				ok: false,
+				message: 'terminal-system seat token is unavailable',
+			};
+		}
+		if (writeBehavior === 'failure') {
+			routeNotice = {
+				tone: 'destructive',
+				message: 'Terminal write failed: mock rejection',
+			};
+			return {
+				ok: false,
+				approvalRequested: false,
+				message: 'Terminal write failed: mock rejection',
+			};
 		}
 		const lease = (terminalSeatStatesById[terminal.terminalId] ?? []).find((seat) => seat.actorId === caller.participantId)
 			?.leaseExpiresAt;
-		if (caller.role === 'requester' && (!lease || lease <= Date.now())) {
+		if (writeBehavior === 'approval' || (caller.role === 'requester' && (!lease || lease <= Date.now()))) {
 			const requestId = `approval-${Date.now()}`;
 			terminalApprovalsById = {
 				...terminalApprovalsById,
@@ -499,6 +628,7 @@
 			};
 			syncSeatFacts(terminal.terminalId);
 			return {
+				ok: false,
 				approvalRequested: true,
 				message: requestId,
 			};
@@ -519,6 +649,7 @@
 		appendViewportTranscript(terminal.terminalId, input.text);
 		routeNotice = null;
 		return {
+			ok: true,
 			approvalRequested: false,
 		};
 	};
@@ -552,7 +683,10 @@
 	};
 </script>
 
-<div class="h-[54rem] w-full min-w-[76rem] bg-background">
+<div
+	class="bg-background"
+	style={`width:${surfaceWidthPx}px;min-width:${surfaceWidthPx}px;height:${surfaceHeightPx}px;min-height:${surfaceHeightPx}px;`}
+>
 	<TerminalSystemSurface
 		{selectedTerminal}
 		terminalViewportComponent={TerminalViewHost}

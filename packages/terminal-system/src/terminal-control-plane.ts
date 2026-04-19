@@ -185,6 +185,7 @@ const buildSnapshotPayload = (
   rows: snapshot.rows,
   cursor: snapshot.cursor,
   tail: snapshot.lines.slice(-20).join("\n"),
+  snapshot,
   status: projection.status,
   title: projection.title,
   running: projection.running,
@@ -383,7 +384,7 @@ export class TerminalControlPlane {
     return this.db.listTerminals().map((record) =>
       this.describeEntry(record, {
         focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(record.terminalId),
-        access: this.issueTrustedBootstrapAccess(record.terminalId),
+        access: this.getTrustedBootstrapAccess(record.terminalId),
       }),
     );
   }
@@ -455,7 +456,7 @@ export class TerminalControlPlane {
     }
     return this.describeEntry(entry.record, {
       focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(terminalId),
-      access: this.issueTrustedBootstrapAccess(terminalId),
+      access: this.getTrustedBootstrapAccess(terminalId),
     });
   }
 
@@ -561,7 +562,10 @@ export class TerminalControlPlane {
     if (!transport?.port) {
       return null;
     }
-    const resolvedAccessToken = accessToken ?? this.issueTrustedBootstrapAccess(terminalId).accessToken;
+    const resolvedAccessToken = accessToken ?? this.getTrustedBootstrapAccess(terminalId)?.accessToken;
+    if (!resolvedAccessToken) {
+      return null;
+    }
     const host = transport.host ?? "127.0.0.1";
     const path = toTransportPath(transport.pathPrefix ?? "/pty", terminalId);
     const baseUrl = `ws://${host}:${transport.port}${path}`;
@@ -621,10 +625,19 @@ export class TerminalControlPlane {
             return;
           }
           const entry = this.ensureManagedEntry(record.terminalId);
-          if (!entry.terminal.isRunning()) {
-            entry.terminal.start();
-          }
           const cleanup: Array<() => void> = [];
+          cleanup.push(
+            entry.terminal.onSnapshot((snapshot) => {
+              socket.send(
+                JSON.stringify({
+                  type: "snapshot",
+                  terminalId: record.terminalId,
+                  snapshot,
+                  status: entry.terminal.getStatus(),
+                } satisfies TerminalTransportServerMessage),
+              );
+            }),
+          );
           cleanup.push(
             entry.terminal.onOutput((data) => {
               socket.send(JSON.stringify({ type: "output", terminalId: record.terminalId, data } satisfies TerminalTransportServerMessage));
@@ -639,6 +652,9 @@ export class TerminalControlPlane {
             }),
           );
           socket.data.cleanup = cleanup;
+          if (!entry.terminal.isRunning()) {
+            entry.terminal.start();
+          }
           socket.send(
             JSON.stringify({
               type: "snapshot",
@@ -713,13 +729,16 @@ export class TerminalControlPlane {
     };
   }
 
-  async read(terminalId: string, mode: TerminalReadMode = "auto", options: { remark?: boolean } = {}): Promise<TerminalReadResult> {
-    this.issueTrustedBootstrapAccess(terminalId);
+  async read(
+    terminalId: string,
+    mode: TerminalReadMode = "auto",
+    options: { remark?: boolean; recordActivity?: boolean } = {},
+  ): Promise<TerminalReadResult> {
     return await this.readAuthorized({
       terminalId,
-      actorId: TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
       mode,
       remark: options.remark ?? false,
+      recordActivity: options.recordActivity ?? false,
     });
   }
 
@@ -727,6 +746,7 @@ export class TerminalControlPlane {
     terminalId: string;
     mode?: TerminalReadMode;
     remark?: boolean;
+    recordActivity?: boolean;
     actorId?: TerminalActorId;
     accessToken?: string;
     superadminActorId?: TerminalActorId;
@@ -734,9 +754,6 @@ export class TerminalControlPlane {
     this.authorizeRead(input);
     const actorId = this.resolveEventActorId(input);
     const entry = this.ensureManagedEntry(input.terminalId);
-    if (!entry.terminal.isRunning()) {
-      entry.terminal.start();
-    }
     const mode = input.mode ?? "auto";
     const snapshot = await entry.terminal.read();
     const projection = this.describeReadProjection(entry.record, entry.terminal);
@@ -756,14 +773,14 @@ export class TerminalControlPlane {
         );
         const shouldUseDiff = mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
         if (shouldUseDiff) {
-          return this.attachReadEvent(diffPayload, actorId);
+          return this.finalizeReadResult(diffPayload, actorId, input.recordActivity ?? false);
         }
       }
     }
-    return this.attachReadEvent(snapshotPayload, actorId);
+    return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? false);
   }
 
-  async snapshot(terminalId: string, options: { remark?: boolean } = {}): Promise<TerminalReadResult> {
+  async snapshot(terminalId: string, options: { remark?: boolean; recordActivity?: boolean } = {}): Promise<TerminalReadResult> {
     return await this.read(terminalId, "snapshot", options);
   }
 
@@ -832,6 +849,7 @@ export class TerminalControlPlane {
     const read = await this.readAuthorized({
       terminalId: input.terminalId,
       mode: input.readMode ?? "auto",
+      recordActivity: input.readRecordActivity ?? false,
       actorId: input.actorId,
       accessToken: input.accessToken,
       superadminActorId: input.superadminActorId,
@@ -960,7 +978,9 @@ export class TerminalControlPlane {
     this.emitChange({ terminalId: input.terminalId, reason: "updated", actorId: input.actorId });
     return this.describeEntry(record, {
       focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(input.terminalId),
-      access: input.actorId ? this.createAccessProjection(input.terminalId, this.requireGrantForActor(input.terminalId, input.actorId)) : this.issueTrustedBootstrapAccess(input.terminalId),
+      access: input.actorId
+        ? this.createAccessProjection(input.terminalId, this.requireGrantForActor(input.terminalId, input.actorId))
+        : this.getTrustedBootstrapAccess(input.terminalId),
     });
   }
 
@@ -1047,11 +1067,11 @@ export class TerminalControlPlane {
     this.expireApprovalsAndLeases();
     const terminalIds = input.terminalId ? [input.terminalId] : this.db.listTerminals().map((record) => record.terminalId);
     return terminalIds.flatMap((terminalId) =>
-      this.db
-        .listPendingApprovalRequests(terminalId)
-        .filter((request) => (input.assignedAdminId ? request.assignedAdminId === input.assignedAdminId : true))
-        .filter((request) => (input.participantId ? request.participantId === input.participantId : true))
-        .filter((request) => (input.statuses ? input.statuses.includes(request.status) : true)),
+      this.db.listApprovalRequests(terminalId, {
+        assignedAdminId: input.assignedAdminId,
+        participantId: input.participantId,
+        statuses: input.statuses,
+      }),
     );
   }
 
@@ -1486,6 +1506,11 @@ export class TerminalControlPlane {
     return this.ensureActorAccess(terminalId, TRUSTED_BOOTSTRAP_PARTICIPANT_ID, "admin", undefined, TRUSTED_BOOTSTRAP_LABEL);
   }
 
+  private getTrustedBootstrapAccess(terminalId: string): TerminalAccessProjection | undefined {
+    const grant = this.getTrustedBootstrapGrant(terminalId);
+    return grant ? this.createAccessProjection(terminalId, grant) : undefined;
+  }
+
   private emitPresenceChanged(actorId: TerminalActorId): void {
     for (const record of this.db.listTerminals()) {
       if (!this.getGrantForActor(record.terminalId, actorId)) {
@@ -1551,11 +1576,15 @@ export class TerminalControlPlane {
       this.touchActorPresence(input.actorId);
       return this.requireGrantForActor(input.terminalId, input.actorId);
     }
-    return this.requireAccess(
-      input.terminalId,
-      this.issueTrustedBootstrapAccess(input.terminalId).accessToken,
-      "readonly",
-    );
+    const trustedBootstrapGrant = this.getTrustedBootstrapGrant(input.terminalId);
+    if (!trustedBootstrapGrant) {
+      throw new Error(`terminal access denied: ${input.terminalId}`);
+    }
+    return trustedBootstrapGrant;
+  }
+
+  private getTrustedBootstrapGrant(terminalId: string): TerminalGrantRecord | undefined {
+    return this.db.listActiveGrants(terminalId).find((grant) => this.isTrustedBootstrapGrant(grant));
   }
 
   private resolveEventActorId(input: {
@@ -1570,6 +1599,9 @@ export class TerminalControlPlane {
     if (input.actorId) {
       return input.actorId;
     }
+    if (!input.accessToken) {
+      return undefined;
+    }
     return this.resolveGrant({
       terminalId: input.terminalId,
       accessToken: input.accessToken,
@@ -1582,8 +1614,12 @@ export class TerminalControlPlane {
     accessToken?: string;
     superadminActorId?: TerminalActorId;
   }): void {
+    this.requireRecord(input.terminalId);
     if (input.superadminActorId) {
       this.assertActorId(input.superadminActorId);
+      return;
+    }
+    if (!input.actorId && !input.accessToken) {
       return;
     }
     this.resolveGrant(input);
@@ -1707,6 +1743,17 @@ export class TerminalControlPlane {
     return {
       ...payload,
       eventId: event.eventId,
+      recordedActivity: true,
     };
+  }
+
+  private finalizeReadResult(payload: TerminalReadResult, actorId: TerminalActorId | undefined, recordActivity: boolean): TerminalReadResult {
+    if (!recordActivity) {
+      return {
+        ...payload,
+        recordedActivity: false,
+      };
+    }
+    return this.attachReadEvent(payload, actorId);
   }
 }

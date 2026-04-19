@@ -25,8 +25,10 @@
 
 	let {
 		compactSplitDetailDemo = false,
+		overflowBodyDemo = false,
 	}: {
 		compactSplitDetailDemo?: boolean;
+		overflowBodyDemo?: boolean;
 	} = $props();
 
 	let activeTabId = $state('workspace');
@@ -139,6 +141,31 @@
 							</WorkbenchDetailDrawer>
 						{/snippet}
 					</WorkbenchPageContent>
+				</WorkbenchScaffold>
+			{:else if overflowBodyDemo}
+				<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
+					{#snippet header()}
+						<div class="grid gap-1">
+							<h2 class="text-sm font-semibold text-foreground">Overflow Body Surface</h2>
+							<p class="text-sm text-muted-foreground">
+								The shared window body should own page-level scrolling when route content exceeds the available height.
+							</p>
+						</div>
+					{/snippet}
+
+					<div class="grid gap-4 px-5 py-6 md:px-7">
+						{#each Array.from({ length: 14 }, (_, index) => index + 1) as sectionId}
+							<div
+								class="grid gap-2 rounded-[1rem] border border-border/60 bg-background/55 p-5"
+								data-testid={`workbench-window-overflow-card-${sectionId}`}
+							>
+								<div class="text-sm font-semibold text-foreground">Section {sectionId}</div>
+								<p class="text-sm leading-6 text-muted-foreground">
+									This intentionally tall route section exists to verify that the shared chrome body scrolls as one band instead of clipping page content under the window frame.
+								</p>
+							</div>
+						{/each}
+					</div>
 				</WorkbenchScaffold>
 			{:else}
 				<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">

@@ -291,6 +291,9 @@ const isTerminalMeta = (meta: AttentionCommitMeta, terminalId?: string): boolean
   return terminalId ? parsed?.terminalId === terminalId : parsed !== null;
 };
 
+const getItemsInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undefined =>
+  inputs?.find((item) => item.meta?.attentionProtocolKind === "items");
+
 const stringifyAttentionQuery = async (runtime: SessionRuntime, query: string): Promise<string> =>
   JSON.stringify(await runtime.queryAttention({ query }));
 
@@ -451,7 +454,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
     expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(firstRound);
+    const itemsInput = getItemsInput(firstRound);
     expect(contextInput).toBeDefined();
+    expect(itemsInput).toBeDefined();
     if (!contextInput) {
       return;
     }
@@ -467,6 +472,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(typeof contextInput.meta?.attentionHeadCommitId).toBe("string");
     expect(internal.resolveCycleReplyChatId([contextInput])).toBe(PRIMARY_ROOM_ID);
     expect(await stringifyAttentionQuery(runtime, "Please continue the task")).toContain("Please continue the task");
+    expect(itemsInput?.text).toContain("Please continue the task");
+    expect(itemsInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
 
     const secondRound = await internal.collectLoopInputs();
     expect(secondRound).toBeUndefined();
@@ -483,7 +490,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
     expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(interleaved);
+    const itemsInput = getItemsInput(interleaved);
     expect(contextInput).toBeDefined();
+    expect(itemsInput).toBeDefined();
     if (!contextInput) {
       return;
     }
@@ -492,6 +501,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(contextInput.meta?.chatId).toBe(PRIMARY_ROOM_ID);
     expect(contextInput.text).toContain("## AttentionContexts.metadata");
     expect(contextInput.text).not.toContain("再补充一个条件");
+    expect(itemsInput?.text).toContain("再补充一个条件");
     expect(await stringifyAttentionQuery(runtime, "再补充一个条件")).toContain("再补充一个条件");
 
     const nextRound = await internal.collectInterleavedAgentInputs();
@@ -1717,8 +1727,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       inputContextIds: [PRIMARY_CONTEXT_ID],
     });
     expect(firstFrame?.inputCommitRefs).toHaveLength(1);
-    expect(firstFrame?.inputCommitRefs?.[0]?.contextId).toBe(PRIMARY_CONTEXT_ID);
-    expect(typeof firstFrame?.inputCommitRefs?.[0]?.commitId).toBe("string");
+    expect(firstFrame?.inputCommitRefs?.[0]).toMatchObject({
+      contextId: PRIMARY_CONTEXT_ID,
+      commitId: expect.any(String),
+    });
     expect(compactFrame).toMatchObject({
       protocolMode: "compact",
     });
@@ -2029,6 +2041,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     runtime.pushUserChat("plugin-backed message");
+    internal.collectUnreadRoomIngress();
 
     internal.collectUnreadRoomIngress();
     const changed = await internal.flushPluginAttentionDrafts();
@@ -2405,8 +2418,20 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
 
     const payload = await internal.readTerminalRepresentation("main", { mode: "snapshot", remark: false });
-    expect("kind" in payload && payload.kind).toBe("terminal-snapshot");
+    const readPayload = payload as {
+      kind: string;
+      snapshot?: { lines?: string[] };
+      recordedActivity?: boolean;
+    };
+    const terminalActivityView = internal as RuntimeInternal & {
+      pageTerminalActivity: (terminalId: string, input?: { limit?: number }) => { items: unknown[] };
+    };
+
+    expect(readPayload.kind).toBe("terminal-snapshot");
+    expect(readPayload.snapshot?.lines).toEqual(["echo ready"]);
+    expect(readPayload.recordedActivity).toBeFalse();
     expect(internal.terminalReads.main?.representation).toBe("snapshot");
+    expect(terminalActivityView.pageTerminalActivity("main", { limit: 10 }).items).toEqual([]);
   });
 
   test("Scenario: Given source-driven drafts When a cycle policy hook defers Then terminal history still commits while cycle start stays deferred", async () => {

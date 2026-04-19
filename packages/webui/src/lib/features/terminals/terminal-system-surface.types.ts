@@ -65,15 +65,13 @@ export interface TerminalSystemApprovalDecisionInput {
 }
 
 export interface TerminalSystemWriteToolResult {
+	ok: boolean;
 	approvalRequested?: boolean;
 	message?: string;
 }
 
 export interface TerminalViewportProps {
 	terminalId: string;
-	terminalTitle?: string;
-	cwd?: string;
-	status: 'IDLE' | 'BUSY';
 	viewportMode?: 'fit' | 'cover';
 	transportUrl?: string;
 	snapshot?: TerminalViewSnapshot | null;

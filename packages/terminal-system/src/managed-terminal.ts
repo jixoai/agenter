@@ -256,6 +256,9 @@ export class ManagedTerminal {
   }
 
   async read(): Promise<ManagedTerminalSnapshot> {
+    if (!this.terminal || !this.running) {
+      throw new Error("terminal is not running");
+    }
     return this.snapshot;
   }
 

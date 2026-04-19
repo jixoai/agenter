@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ClipSurface } from '@agenter/svelte-components';
+	import { ClipSurface, ScrollView } from '@agenter/svelte-components';
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { Snippet } from 'svelte';
 
@@ -81,11 +81,18 @@
 		)}
 		data-workbench-window-body
 	>
-		<div class="workbench-window-content h-full" data-workbench-window-content>
-			{#key value}
-				{@render children?.()}
-			{/key}
-		</div>
+		<ScrollView
+			class="workbench-window-scroll"
+			viewportClass="workbench-window-scroll-viewport"
+			contentClass="workbench-window-scroll-content"
+			viewportTestId="workbench-window-body-scroll-viewport"
+		>
+			<div class="workbench-window-content" data-workbench-window-content>
+				{#key value}
+					{@render children?.()}
+				{/key}
+			</div>
+		</ScrollView>
 	</ClipSurface>
 </div>
 
@@ -98,6 +105,8 @@
 
 	.workbench-page-toolbar,
 	.workbench-window-body,
+	.workbench-window-scroll,
+	.workbench-window-scroll-content,
 	.workbench-window-content {
 		min-block-size: 0;
 		min-inline-size: 0;
@@ -149,7 +158,13 @@
 	}
 
 	.workbench-window-body,
-	.workbench-window-content {
+	.workbench-window-scroll {
 		block-size: 100%;
+	}
+
+	.workbench-window-scroll-content,
+	.workbench-window-content {
+		display: grid;
+		min-block-size: 100%;
 	}
 </style>

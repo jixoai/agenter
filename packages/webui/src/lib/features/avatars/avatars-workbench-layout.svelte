@@ -319,7 +319,7 @@
 		{tabs}
 		toolbar={avatarsToolbar}
 	>
-		<div class="h-full">{@render children?.()}</div>
+		<div class="min-h-full">{@render children?.()}</div>
 	</WorkbenchWindow>
 </div>
 

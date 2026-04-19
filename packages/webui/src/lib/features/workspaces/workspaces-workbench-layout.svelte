@@ -143,6 +143,6 @@
 
 <div class="h-full" data-testid="workspaces-workbench">
 	<WorkbenchWindow ariaLabel="Workspace tabs" value={activeTabValue} {tabs} toolbar={workspacesToolbar}>
-		<div class="h-full">{@render children?.()}</div>
+		<div class="min-h-full">{@render children?.()}</div>
 	</WorkbenchWindow>
 </div>

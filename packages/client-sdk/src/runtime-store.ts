@@ -1891,6 +1891,82 @@ export class RuntimeStore {
     return Boolean(resource?.loaded || this.globalTerminalActivityWatchCountById.has(terminalId));
   }
 
+  private collectGlobalTerminalSurfaceRefreshes(input: {
+    terminalIds?: string[];
+    grants?: boolean;
+    approvals?: boolean;
+    activity?: boolean;
+    catalog?: boolean;
+    force?: boolean;
+  }): Array<Promise<unknown>> {
+    const refreshes: Array<Promise<unknown>> = [];
+    const force = input.force ?? false;
+    const terminalIds = [...new Set(input.terminalIds ?? [])];
+
+    for (const terminalId of terminalIds) {
+      if (input.grants && this.shouldRefreshGlobalTerminalGrants(terminalId)) {
+        refreshes.push(
+          this.hydrateGlobalTerminalGrants({
+            terminalId,
+            force,
+          }),
+        );
+      }
+      if (input.approvals && this.shouldRefreshGlobalTerminalApprovals(terminalId)) {
+        refreshes.push(
+          this.hydrateGlobalTerminalApprovals({
+            terminalId,
+            force,
+          }),
+        );
+      }
+      if (input.activity && this.shouldRefreshGlobalTerminalActivity(terminalId)) {
+        refreshes.push(
+          this.hydrateGlobalTerminalActivity({
+            terminalId,
+            force,
+          }),
+        );
+      }
+    }
+
+    if (input.catalog && (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0)) {
+      refreshes.push(this.hydrateGlobalTerminals({ force }));
+    }
+
+    return refreshes;
+  }
+
+  private async refreshGlobalTerminalSurface(input: {
+    terminalIds?: string[];
+    grants?: boolean;
+    approvals?: boolean;
+    activity?: boolean;
+    catalog?: boolean;
+    force?: boolean;
+  }): Promise<void> {
+    const refreshes = this.collectGlobalTerminalSurfaceRefreshes(input);
+    if (refreshes.length === 0) {
+      return;
+    }
+    await Promise.allSettled(refreshes);
+  }
+
+  private invalidateGlobalTerminalSurface(input: {
+    terminalIds?: string[];
+    grants?: boolean;
+    approvals?: boolean;
+    activity?: boolean;
+    catalog?: boolean;
+    force?: boolean;
+  }): void {
+    const refreshes = this.collectGlobalTerminalSurfaceRefreshes(input);
+    if (refreshes.length === 0) {
+      return;
+    }
+    void Promise.allSettled(refreshes).catch(() => undefined);
+  }
+
   private async refreshGlobalTerminalsInternal(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
     const current = this.ensureGlobalTerminalsState();
     if (!input.force && current.loaded && !current.refreshing && !current.loading) {
@@ -4222,9 +4298,10 @@ export class RuntimeStore {
     accessToken?: string;
   }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
     const output = await this.client.trpc.terminal.globalFocus.mutate(input);
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      void this.hydrateGlobalTerminals({ force: true }).catch(() => undefined);
-    }
+    this.invalidateGlobalTerminalSurface({
+      catalog: true,
+      force: true,
+    });
     return output;
   }
 
@@ -4269,6 +4346,7 @@ export class RuntimeStore {
     accessToken?: string;
     mode?: "auto" | "diff" | "snapshot";
     remark?: boolean;
+    recordActivity?: boolean;
   }) {
     const output = await this.client.trpc.terminal.read.query(input);
     const readFact =
@@ -4288,18 +4366,11 @@ export class RuntimeStore {
     if (readFact) {
       this.projectTerminalActivityFact(readFact);
     }
-    const refreshes: Array<Promise<unknown>> = [];
-    if (this.shouldRefreshGlobalTerminalActivity(input.terminalId)) {
-      refreshes.push(
-        this.hydrateGlobalTerminalActivity({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      activity: true,
+      force: true,
+    });
     if (readFact) {
       this.projectTerminalActivityFact(readFact);
     }
@@ -4315,6 +4386,7 @@ export class RuntimeStore {
     submitGapMs?: number;
     createApprovalRequest?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
+    readRecordActivity?: boolean;
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   }) {
     const output = await this.client.trpc.terminal.write.mutate(input);
@@ -4358,29 +4430,13 @@ export class RuntimeStore {
     if (readFact) {
       this.projectTerminalActivityFact(readFact);
     }
-    const refreshes: Array<Promise<unknown>> = [];
-    if (this.shouldRefreshGlobalTerminalActivity(input.terminalId)) {
-      refreshes.push(
-        this.hydrateGlobalTerminalActivity({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
-      refreshes.push(
-        this.hydrateGlobalTerminalApprovals({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      activity: true,
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
     if (writeFact) {
       this.projectTerminalActivityFact(writeFact);
     }
@@ -4441,24 +4497,12 @@ export class RuntimeStore {
       refreshedAt: Date.now(),
     }));
     this.emit();
-    const refreshes: Array<Promise<unknown>> = [];
-    if (
-      this.ensureGlobalTerminalGrantsState(input.terminalId).loaded ||
-      this.globalTerminalGrantWatchCountById.has(input.terminalId)
-    ) {
-      refreshes.push(
-        this.hydrateGlobalTerminalGrants({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      grants: true,
+      catalog: true,
+      force: true,
+    });
     return output.grant;
   }
 
@@ -4474,24 +4518,12 @@ export class RuntimeStore {
       refreshedAt: Date.now(),
     }));
     this.emit();
-    const refreshes: Array<Promise<unknown>> = [];
-    if (
-      this.ensureGlobalTerminalGrantsState(input.terminalId).loaded ||
-      this.globalTerminalGrantWatchCountById.has(input.terminalId)
-    ) {
-      refreshes.push(
-        this.hydrateGlobalTerminalGrants({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      grants: true,
+      catalog: true,
+      force: true,
+    });
     return output;
   }
 
@@ -4545,21 +4577,12 @@ export class RuntimeStore {
         expiresAt: output.expiresAt,
       },
     });
-    const refreshes: Array<Promise<unknown>> = [];
-    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
-      refreshes.push(
-        this.hydrateGlobalTerminalApprovals({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
     this.projectGlobalTerminalLeaseFact({
       terminalId: input.terminalId,
       requestId: input.requestId,
@@ -4574,21 +4597,12 @@ export class RuntimeStore {
 
   async denyGlobalTerminalRequest(input: { terminalId: string; requestId: string }) {
     const output = await this.client.trpc.terminal.denyRequest.mutate(input);
-    const refreshes: Array<Promise<unknown>> = [];
-    if (this.shouldRefreshGlobalTerminalApprovals(input.terminalId)) {
-      refreshes.push(
-        this.hydrateGlobalTerminalApprovals({
-          terminalId: input.terminalId,
-          force: true,
-        }),
-      );
-    }
-    if (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-      refreshes.push(this.hydrateGlobalTerminals({ force: true }));
-    }
-    if (refreshes.length > 0) {
-      await Promise.allSettled(refreshes);
-    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
     return output;
   }
 
@@ -5551,27 +5565,25 @@ export class RuntimeStore {
         approvalTerminalIds?: string[];
         activityTerminalIds?: string[];
       };
-      if (payload.catalogChanged && (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0)) {
-        void this.hydrateGlobalTerminals({ force: true });
-      }
-      for (const terminalId of payload.grantTerminalIds ?? []) {
-        if (!this.shouldRefreshGlobalTerminalGrants(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalGrants({ terminalId, force: true }).catch(() => undefined);
-      }
-      for (const terminalId of payload.approvalTerminalIds ?? []) {
-        if (!this.shouldRefreshGlobalTerminalApprovals(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalApprovals({ terminalId, force: true }).catch(() => undefined);
-      }
-      for (const terminalId of payload.activityTerminalIds ?? []) {
-        if (!this.shouldRefreshGlobalTerminalActivity(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalActivity({ terminalId, force: true }).catch(() => undefined);
-      }
+      this.invalidateGlobalTerminalSurface({
+        catalog: payload.catalogChanged ?? false,
+        force: true,
+      });
+      this.invalidateGlobalTerminalSurface({
+        terminalIds: payload.grantTerminalIds,
+        grants: true,
+        force: true,
+      });
+      this.invalidateGlobalTerminalSurface({
+        terminalIds: payload.approvalTerminalIds,
+        approvals: true,
+        force: true,
+      });
+      this.invalidateGlobalTerminalSurface({
+        terminalIds: payload.activityTerminalIds,
+        activity: true,
+        force: true,
+      });
       return;
     }
 

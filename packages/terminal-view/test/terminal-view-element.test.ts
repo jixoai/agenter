@@ -99,19 +99,33 @@ class ResizeObserverMock {
   constructor(private readonly callback: ResizeObserverCallback) {}
 
   observe(target: Element): void {
+    const contentRect =
+      target instanceof HTMLElement && target.classList.contains("xterm-screen")
+        ? {
+            width: 2400,
+            height: 1800,
+            top: 0,
+            left: 0,
+            right: 2400,
+            bottom: 1800,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          }
+        : {
+            width: 960,
+            height: 420,
+            top: 0,
+            left: 0,
+            right: 960,
+            bottom: 420,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          };
     const entry = {
       target,
-      contentRect: {
-        width: 960,
-        height: 420,
-        top: 0,
-        left: 0,
-        right: 960,
-        bottom: 420,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      },
+      contentRect,
     } satisfies ResizeEntry;
     this.callback([entry as ResizeObserverEntry], this as unknown as ResizeObserver);
   }
@@ -196,6 +210,15 @@ const requireShadowRoot = (element: HTMLElement): ShadowRoot => {
   return shadowRoot;
 };
 
+const readTerminalScale = (shadowRoot: ShadowRoot): number => {
+  const transform = shadowRoot.querySelector(".terminal-frame")?.style.transform ?? "";
+  const match = /scale\(([^)]+)\)/.exec(transform);
+  if (!match) {
+    throw new Error(`terminal scale transform not found: ${transform}`);
+  }
+  return Number(match[1]);
+};
+
 describe("Feature: terminal-view WebComponent", () => {
   beforeEach(() => {
     mockTerminals.length = 0;
@@ -217,9 +240,6 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "iflow";
-    element.terminalTitle = "Flow shell";
-    element.cwd = "/repo/demo";
-    element.status = "BUSY";
     element.viewportMode = "cover";
     element.snapshot = {
       seq: 8,
@@ -239,6 +259,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     document.body.append(element);
     await element.updateComplete;
+    await waitForLifecycleFrame();
     await waitForLifecycleFrame();
     await element.updateComplete;
 
@@ -268,8 +289,122 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(shadowRoot.querySelector('[data-terminal-scroll-contract="terminal-stage"]')).not.toBeNull();
     expect(shadowRoot.querySelector('[data-terminal-scroll-owner="terminal-stage"]')).not.toBeNull();
     expect(shadowRoot.querySelector('[data-viewport-mode="cover"]')).not.toBeNull();
-    expect(shadowRoot.textContent).toContain("Flow shell");
-    expect(shadowRoot.textContent).toContain("/repo/demo");
+    expect(shadowRoot.querySelector(".terminal-toolbar")).toBeNull();
+    expect(shadowRoot.querySelector(".terminal-footer")).toBeNull();
+    expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
+  });
+
+  test("Scenario: Given fit mode and deep scrollback When screen metrics sync Then the viewport fits the visible canvas instead of shrinking against scrollback DOM height", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "fit-scrollback";
+    element.viewportMode = "fit";
+    element.snapshot = {
+      seq: 3,
+      cols: 80,
+      rows: 24,
+      lines: Array.from({ length: 240 }, (_, index) => `line ${index + 1}`),
+      cursor: { x: 0, y: 239 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:720px");
+  });
+
+  test("Scenario: Given fit mode on a wide remote terminal When stage metrics settle Then the viewport keeps the full remote geometry by shrinking the projection instead of falling back to overflow", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "fit-readable-floor";
+    element.viewportMode = "fit";
+    element.snapshot = {
+      seq: 9,
+      cols: 132,
+      rows: 40,
+      lines: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`),
+      cursor: { x: 0, y: 39 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    expect(readTerminalScale(shadowRoot)).toBeCloseTo(0.533, 3);
+    expect(shadowRoot.querySelector('[data-terminal-stage]')?.hasAttribute("data-terminal-overflow")).toBe(false);
+  });
+
+  test("Scenario: Given fit mode on a small remote terminal When stage metrics settle Then the viewport can scale up the projection without mutating remote rows or cols", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "fit-upscale";
+    element.viewportMode = "fit";
+    element.snapshot = {
+      seq: 12,
+      cols: 40,
+      rows: 10,
+      lines: Array.from({ length: 10 }, (_, index) => `line ${index + 1}`),
+      cursor: { x: 0, y: 9 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const terminal = mockTerminals.at(-1);
+    expect(readTerminalScale(shadowRoot)).toBeCloseTo(1.93, 2);
+    expect(terminal?.cols).toBe(40);
+    expect(terminal?.rows).toBe(10);
+  });
+
+  test("Scenario: Given transport url and bootstrap snapshot are assigned together after mount When the element updates Then websocket transport still connects instead of staying idle", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    element.transportUrl = "ws://127.0.0.1:4900/pty/bootstrap";
+    element.snapshot = {
+      seq: 1,
+      cols: 80,
+      rows: 24,
+      lines: ["bootstrap snapshot"],
+      cursor: { x: 0, y: 0 },
+    };
+
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    expect(WebSocketMock.instances.at(-1)?.url).toBe("ws://127.0.0.1:4900/pty/bootstrap");
+    expect(element.connectionState).toBe("connecting");
   });
 
   test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component keeps fixed geometry and reflects connection lifecycle without auto-resizing the PTY", async () => {
@@ -355,9 +490,8 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     expect(terminal?.writes).toContain("bun test\r\n");
-    expect(element.status).toBe("IDLE");
     expect(element.connectionState).toBe("closed");
-    expect(shadowRoot.querySelector(".terminal-connection-badge")?.textContent).toContain("disconnected");
+    expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
 
     element.remove();
     expect(terminal?.deregisteredJoinerIds).toContain(0);
@@ -402,5 +536,33 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.writes).toContain("boot output");
     expect(terminal?.cols).toBe(120);
     expect(terminal?.rows).toBe(30);
+  });
+
+  test("Scenario: Given a transport-backed viewport When the socket sends an invalid payload Then the primitive enters error state without reintroducing host chrome", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "iflow";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/iflow";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    socket?.message("{invalid-json");
+    await element.updateComplete;
+
+    expect(element.connectionState).toBe("error");
+    expect(element.errorMessage).toBe("invalid transport payload");
+    expect(shadowRoot.querySelector(".terminal-toolbar")).toBeNull();
+    expect(shadowRoot.querySelector(".terminal-footer")).toBeNull();
+    expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
   });
 });

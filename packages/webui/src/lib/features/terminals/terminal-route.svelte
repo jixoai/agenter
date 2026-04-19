@@ -11,20 +11,23 @@
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import {
-		buildActorDirectory,
-		buildActorDirectoryMap,
-		fallbackActorLabel,
-		isPrincipalActorId,
-		resolveActorKind,
-		type ActorDirectoryEntry,
-	} from '$lib/features/collaboration/actor-directory';
+	buildActorDirectory,
+	buildActorDirectoryMap,
+	isPrincipalActorId,
+} from '$lib/features/collaboration/actor-directory';
 	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
 
-	import TerminalSystemSurface from './terminal-system-surface.svelte';
-	import type {
-		TerminalSystemCallAsOption,
-		TerminalSystemNotice,
+import TerminalSystemSurface from './terminal-system-surface.svelte';
+import {
+	buildTerminalCallAsOptions,
+	buildTerminalSeatStates,
+	resolveSelectedCallerToken,
+} from './terminal-route.projection';
+import type {
+	TerminalSystemCallAsOption,
+	TerminalSystemNotice,
 		TerminalSystemSeatState,
+		TerminalSystemWriteToolResult,
 	} from './terminal-system-surface.types';
 
 	let {
@@ -59,20 +62,6 @@
 		refreshing: false,
 		error: null,
 		refreshedAt: null,
-	};
-
-	type TerminalSeatState = {
-		actorId: string;
-		role: 'admin' | 'writer' | 'requester' | 'readonly';
-		label?: string;
-		currentAdmin: boolean;
-		online: boolean;
-		focused: boolean;
-		invalidCredential: boolean;
-		accessToken?: string;
-		grantId?: string;
-		adminCandidateRank?: number;
-		leaseExpiresAt?: number;
 	};
 
 	let selectedCallerTokenByTerminalId = $state<Record<string, string>>({});
@@ -112,173 +101,38 @@
 			? (value as GlobalTerminalActorId)
 			: null;
 
-	const describeActor = (actorId: string | undefined, fallback: string): ActorDirectoryEntry => {
-		if (actorId && actorDirectoryMap.has(actorId)) {
-			return actorDirectoryMap.get(actorId)!;
-		}
-		return {
-			actorId: actorId ?? fallback,
-			actorKind: resolveActorKind(actorId ?? fallback),
-			label: fallbackActorLabel(actorId ?? fallback),
-			subtitle: actorId,
-			iconUrl: null,
-		};
-	};
-
 	const describeTerminalError = (error: unknown, fallback: string): TerminalSystemNotice => ({
 		tone: 'destructive',
 		message: error instanceof Error ? error.message : fallback,
 	});
 
-	const callAsOptions = $derived.by(() => {
-		const terminal = selectedTerminal;
-		if (!terminal) {
-			return [] as TerminalSystemCallAsOption[];
-		}
-		const options: TerminalSystemCallAsOption[] = [];
-		if (terminal.access?.accessToken) {
-			options.push({
-				accessToken: terminal.access.accessToken,
-				participantId: terminal.access.participantId,
-				role: terminal.access.role,
-				label:
-					(terminal.access.participantId
-						? actorDirectoryMap.get(terminal.access.participantId)?.label ??
-							fallbackActorLabel(terminal.access.participantId)
-						: undefined) ?? 'Bootstrap admin',
-			});
-		}
-		for (const grant of selectedTerminalGrantsState.data) {
-			if (!grant.accessToken) {
-				continue;
-			}
-			options.push({
-				accessToken: grant.accessToken,
-				participantId: grant.participantId,
-				role: grant.role,
-				label:
-					(grant.participantId ? actorDirectoryMap.get(grant.participantId)?.label : undefined) ??
-					grant.label ??
-					fallbackActorLabel(grant.participantId ?? grant.grantId),
-			});
-		}
-		return options;
-	});
+	const callAsOptions = $derived.by(
+		() =>
+			buildTerminalCallAsOptions({
+				terminal: selectedTerminal,
+				grants: selectedTerminalGrantsState.data,
+				actorDirectoryMap,
+			}) as TerminalSystemCallAsOption[],
+	);
 
-	const selectedCallerToken = $derived.by(() => {
-		if (!isAuthenticated) {
-			return null;
-		}
-		const terminal = selectedTerminal;
-		if (!terminal) {
-			return null;
-		}
-		const selected = selectedCallerTokenByTerminalId[terminal.terminalId];
-		if (selected && callAsOptions.some((option) => option.accessToken === selected)) {
-			return selected;
-		}
-		return callAsOptions[0]?.accessToken ?? terminal.access?.accessToken ?? null;
-	});
+	const selectedCallerToken = $derived.by(() =>
+		isAuthenticated
+			? resolveSelectedCallerToken({
+					terminal: selectedTerminal,
+					selectedCallerTokenByTerminalId,
+					callAsOptions,
+				})
+			: null,
+	);
 
-	const terminalSeatStates = $derived.by(() => {
-		const terminal = selectedTerminal;
-		if (!terminal) {
-			return [] as TerminalSeatState[];
-		}
-
-		const seats = new Map<string, TerminalSeatState>();
-		const mergeSeat = (seat: TerminalSeatState): void => {
-			const current = seats.get(seat.actorId);
-			seats.set(seat.actorId, {
-				...current,
-				...seat,
-				accessToken: seat.accessToken ?? current?.accessToken,
-				grantId: seat.grantId ?? current?.grantId,
-				adminCandidateRank: seat.adminCandidateRank ?? current?.adminCandidateRank,
-				leaseExpiresAt: seat.leaseExpiresAt ?? current?.leaseExpiresAt,
-			});
-		};
-
-		if (terminal.access?.participantId) {
-			mergeSeat({
-				actorId: terminal.access.participantId,
-				role: terminal.access.role,
-				label: actorDirectoryMap.get(terminal.access.participantId)?.label ?? fallbackActorLabel(terminal.access.participantId),
-				currentAdmin: terminal.access.currentAdmin,
-				online: false,
-				focused: false,
-				invalidCredential: false,
-				accessToken: terminal.access.accessToken,
-				adminCandidateRank: terminal.access.adminCandidateRank,
-				leaseExpiresAt: terminal.access.leaseExpiresAt,
-			});
-		}
-
-		for (const grant of selectedTerminalGrantsState.data) {
-			if (!grant.participantId) {
-				continue;
-			}
-			mergeSeat({
-				actorId: grant.participantId,
-				role: grant.role,
-				label: grant.label,
-				currentAdmin: false,
-				online: false,
-				focused: false,
-				invalidCredential: !grant.accessToken,
-				accessToken: grant.accessToken,
-				grantId: grant.grantId,
-			});
-		}
-
-		for (const state of terminal.actors ?? []) {
-			mergeSeat({
-				actorId: state.actorId,
-				role: state.role,
-				label: state.label,
-				currentAdmin: state.currentAdmin,
-				online: state.online,
-				focused: state.focused,
-				invalidCredential: state.invalidCredential ?? false,
-				adminCandidateRank: state.adminCandidateRank,
-				leaseExpiresAt: state.leaseExpiresAt,
-			});
-		}
-
-		const roleRank = {
-			admin: 0,
-			writer: 1,
-			requester: 2,
-			readonly: 3,
-		} as const;
-		return [...seats.values()].sort((left, right) => {
-			if (left.currentAdmin !== right.currentAdmin) {
-				return left.currentAdmin ? -1 : 1;
-			}
-			const leftCandidateRank = left.adminCandidateRank ?? Number.MAX_SAFE_INTEGER;
-			const rightCandidateRank = right.adminCandidateRank ?? Number.MAX_SAFE_INTEGER;
-			if (leftCandidateRank !== rightCandidateRank) {
-				return leftCandidateRank - rightCandidateRank;
-			}
-			if (roleRank[left.role] !== roleRank[right.role]) {
-				return roleRank[left.role] - roleRank[right.role];
-			}
-			return (left.label ?? left.actorId).localeCompare(right.label ?? right.actorId);
-		});
-	});
-
-	const resolvedTerminalSeatStates = $derived.by(() => {
-		return terminalSeatStates.map((state) => {
-			const actor = describeActor(state.actorId, state.label ?? state.actorId);
-			return {
-				...state,
-				actorKind: actor.actorKind,
-				label: actor.label,
-				subtitle: actor.subtitle,
-				iconUrl: actor.iconUrl,
-			} satisfies TerminalSystemSeatState;
-		});
-	});
+	const terminalSeatStates = $derived.by(
+		() =>
+			buildTerminalSeatStates({
+				terminal: selectedTerminal,
+				grants: selectedTerminalGrantsState.data,
+				actorDirectoryMap,
+			}) as TerminalSystemSeatState[],
+	);
 
 	const terminalNotice = $derived.by(() => {
 		if (routeNotice) {
@@ -469,7 +323,7 @@
 		return Boolean(value && typeof value === 'object');
 	};
 
-	const handleWriteToolCall = async (input: { text: string }): Promise<{ approvalRequested?: boolean; message?: string } | void> => {
+	const handleWriteToolCall = async (input: { text: string }): Promise<TerminalSystemWriteToolResult> => {
 		ensureAuthenticated();
 		const terminal = selectedTerminal;
 		const accessToken = selectedCallerToken;
@@ -491,6 +345,7 @@
 					message: `Write approval requested: ${result.approvalRequest.requestId}`,
 				};
 				return {
+					ok: false,
 					approvalRequested: true,
 					message: result.message,
 				};
@@ -500,12 +355,14 @@
 			}
 			routeNotice = null;
 			return {
+				ok: true,
 				approvalRequested: false,
 				message: isTerminalWriteResult(result) ? result.message : undefined,
 			};
 		} catch (error) {
 			routeNotice = describeTerminalError(error, 'terminal write failed');
 			return {
+				ok: false,
 				approvalRequested: false,
 				message: error instanceof Error ? error.message : 'terminal write failed',
 			};
@@ -574,7 +431,7 @@
 	{selectableActors}
 	{callAsOptions}
 	{selectedCallerToken}
-	seatStates={resolvedTerminalSeatStates}
+	seatStates={terminalSeatStates}
 	onChangeCallerToken={handleChangeCallerToken}
 	onDeleteTerminal={handleDeleteTerminal}
 	onGrantSeat={handleGrantSeat}
