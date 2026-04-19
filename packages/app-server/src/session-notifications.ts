@@ -5,26 +5,19 @@ import type {
   AttentionSystemSnapshot,
 } from "@agenter/attention-system";
 
-const toMessageSeq = (messageId: string): number => {
-  const value = Number(messageId);
-  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
-};
-
-export type SessionNotificationSourceType = "chat" | "terminal";
+import { appAttentionSourceRegistry } from "./attention-src";
 
 export interface SessionNotificationItem {
   id: string;
   sessionId: string;
-  sourceType: SessionNotificationSourceType;
+  src: string;
+  sourceNamespace: string;
   sourceId: string;
+  bucketKey: string;
   attentionContextId: string;
   attentionCommitId: string;
-  chatId?: string;
-  terminalId?: string;
   workspacePath: string;
   sessionName: string;
-  messageId?: string;
-  messageSeq?: number;
   content: string;
   timestamp: number;
 }
@@ -32,24 +25,22 @@ export interface SessionNotificationItem {
 export interface SessionNotificationSnapshot {
   items: SessionNotificationItem[];
   unreadBySession: Record<string, number>;
-  unreadByChat: Record<string, Record<string, number>>;
-  unreadByTerminal: Record<string, Record<string, number>>;
+  unreadByBucket: Record<string, Record<string, number>>;
 }
 
 const EMPTY_SNAPSHOT: SessionNotificationSnapshot = {
   items: [],
   unreadBySession: {},
-  unreadByChat: {},
-  unreadByTerminal: {},
+  unreadByBucket: {},
 };
 
 const bumpNestedCount = (
   target: Record<string, Record<string, number>>,
   sessionId: string,
-  sourceId: string,
+  bucketKey: string,
 ): void => {
   const nextSessionCounts = target[sessionId] ?? {};
-  nextSessionCounts[sourceId] = (nextSessionCounts[sourceId] ?? 0) + 1;
+  nextSessionCounts[bucketKey] = (nextSessionCounts[bucketKey] ?? 0) + 1;
   target[sessionId] = nextSessionCounts;
 };
 
@@ -67,57 +58,25 @@ const isCommitConsumed = (
   return focusState === "focused";
 };
 
-const resolveSource = (
-  context: AttentionContextSnapshot,
+const resolveNotificationSource = (
   commit: AttentionCommit,
-):
-  | {
-      sourceType: SessionNotificationSourceType;
-      sourceId: string;
-      chatId?: string;
-      terminalId?: string;
-      messageId?: string;
-      messageSeq?: number;
-    }
-  | null => {
-  const systemId = typeof commit.meta.systemId === "string" ? commit.meta.systemId : undefined;
-  if (systemId === "message") {
-    const chatId =
-      typeof commit.meta.channelId === "string" && commit.meta.channelId.length > 0
-        ? commit.meta.channelId
-        : context.contextId.startsWith("ctx-")
-          ? context.contextId.slice(4)
-          : undefined;
-    if (!chatId) {
-      return null;
-    }
-    const messageId =
-      typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0 ? commit.meta.subjectId : undefined;
-    return {
-      sourceType: "chat",
-      sourceId: chatId,
-      chatId,
-      messageId,
-      messageSeq: messageId ? toMessageSeq(messageId) : undefined,
-    };
+): {
+  src: string;
+  sourceNamespace: string;
+  sourceId: string;
+  bucketKey: string;
+} | null => {
+  const src = typeof commit.meta.src === "string" ? commit.meta.src.trim() : "";
+  if (src.length === 0) {
+    return null;
   }
-  if (systemId === "terminal") {
-    const terminalId =
-      typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0
-        ? commit.meta.subjectId
-        : context.contextId.startsWith("ctx-terminal-")
-          ? context.contextId.slice("ctx-terminal-".length)
-          : undefined;
-    if (!terminalId) {
-      return null;
-    }
-    return {
-      sourceType: "terminal",
-      sourceId: terminalId,
-      terminalId,
-    };
-  }
-  return null;
+  const resolved = appAttentionSourceRegistry.resolve(src);
+  return {
+    src,
+    sourceNamespace: resolved?.namespace ?? "source",
+    sourceId: appAttentionSourceRegistry.sourceId(src) ?? (appAttentionSourceRegistry.bucket(src) ?? src),
+    bucketKey: appAttentionSourceRegistry.bucket(src) ?? src,
+  };
 };
 
 const resolveNotificationContent = (commit: AttentionCommit): string => {
@@ -145,23 +104,21 @@ export const projectSessionNotificationSnapshot = (input: {
       if (isCommitConsumed(context, commit, context.focusState)) {
         continue;
       }
-      const source = resolveSource(context, commit);
+      const source = resolveNotificationSource(commit);
       if (!source) {
         continue;
       }
       items.push({
         id: `${input.sessionId}:${context.contextId}:${commit.commitId}`,
         sessionId: input.sessionId,
-        sourceType: source.sourceType,
+        src: source.src,
+        sourceNamespace: source.sourceNamespace,
         sourceId: source.sourceId,
+        bucketKey: source.bucketKey,
         attentionContextId: context.contextId,
         attentionCommitId: commit.commitId,
-        chatId: source.chatId,
-        terminalId: source.terminalId,
         workspacePath: input.workspacePath,
         sessionName: input.sessionName,
-        messageId: source.messageId,
-        messageSeq: source.messageSeq,
         content: resolveNotificationContent(commit),
         timestamp: Date.parse(commit.createdAt),
       });
@@ -174,23 +131,16 @@ export const projectSessionNotificationSnapshot = (input: {
   }
 
   const unreadCounts = new Map<string, number>();
-  const unreadByChat: Record<string, Record<string, number>> = {};
-  const unreadByTerminal: Record<string, Record<string, number>> = {};
+  const unreadByBucket: Record<string, Record<string, number>> = {};
   for (const item of items) {
     unreadCounts.set(item.sessionId, (unreadCounts.get(item.sessionId) ?? 0) + 1);
-    if (item.sourceType === "chat" && item.chatId) {
-      bumpNestedCount(unreadByChat, item.sessionId, item.chatId);
-    }
-    if (item.sourceType === "terminal" && item.terminalId) {
-      bumpNestedCount(unreadByTerminal, item.sessionId, item.terminalId);
-    }
+    bumpNestedCount(unreadByBucket, item.sessionId, item.bucketKey);
   }
 
   return {
     items,
     unreadBySession: Object.fromEntries(unreadCounts),
-    unreadByChat,
-    unreadByTerminal,
+    unreadByBucket,
   };
 };
 
@@ -202,23 +152,16 @@ export const mergeSessionNotificationSnapshots = (
   }
   const items = snapshots.flatMap((snapshot) => snapshot.items).sort((left, right) => left.timestamp - right.timestamp);
   const unreadBySession: Record<string, number> = {};
-  const unreadByChat: Record<string, Record<string, number>> = {};
-  const unreadByTerminal: Record<string, Record<string, number>> = {};
+  const unreadByBucket: Record<string, Record<string, number>> = {};
 
   for (const snapshot of snapshots) {
     for (const [sessionId, count] of Object.entries(snapshot.unreadBySession)) {
       unreadBySession[sessionId] = (unreadBySession[sessionId] ?? 0) + count;
     }
-    for (const [sessionId, byChat] of Object.entries(snapshot.unreadByChat)) {
-      for (const [chatId, count] of Object.entries(byChat)) {
-        bumpNestedCount(unreadByChat, sessionId, chatId);
-        unreadByChat[sessionId]![chatId] = (unreadByChat[sessionId]![chatId] ?? 0) + count - 1;
-      }
-    }
-    for (const [sessionId, byTerminal] of Object.entries(snapshot.unreadByTerminal)) {
-      for (const [terminalId, count] of Object.entries(byTerminal)) {
-        bumpNestedCount(unreadByTerminal, sessionId, terminalId);
-        unreadByTerminal[sessionId]![terminalId] = (unreadByTerminal[sessionId]![terminalId] ?? 0) + count - 1;
+    for (const [sessionId, byBucket] of Object.entries(snapshot.unreadByBucket)) {
+      for (const [bucketKey, count] of Object.entries(byBucket)) {
+        bumpNestedCount(unreadByBucket, sessionId, bucketKey);
+        unreadByBucket[sessionId]![bucketKey] = (unreadByBucket[sessionId]![bucketKey] ?? 0) + count - 1;
       }
     }
   }
@@ -226,8 +169,7 @@ export const mergeSessionNotificationSnapshots = (
   return {
     items,
     unreadBySession,
-    unreadByChat,
-    unreadByTerminal,
+    unreadByBucket,
   };
 };
 

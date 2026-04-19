@@ -30,6 +30,7 @@ export interface TrpcServerOptions {
   workspacesPath?: string;
   workspaceCwd?: string;
   staticDir?: string;
+  homeDir?: string;
   profileService?: AppKernelOptions["profileService"];
 }
 
@@ -133,6 +134,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   const kernel = new AppKernel({
     globalSessionRoot: options.globalSessionRoot,
     workspacesPath: options.workspacesPath,
+    homeDir: options.homeDir,
     initialWorkspace: options.workspaceCwd,
     profileService: options.profileService,
   });
@@ -297,10 +299,13 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   const wsHandler = applyWSSHandler({
     wss,
     router: appRouter,
-    createContext: async ({ req }) =>
+    createContext: async ({ req, info }) =>
       await createTrpcContext({
         kernel,
-        authorizationHeader: req.headers.authorization ?? null,
+        authorizationHeader:
+          (typeof info.connectionParams?.authorization === "string" ? info.connectionParams.authorization : null) ??
+          req.headers.authorization ??
+          null,
       }),
   });
 

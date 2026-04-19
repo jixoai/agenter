@@ -1,5 +1,14 @@
 export { MessageControlPlane } from "./message-control-plane";
 export { MessageControlPlane as MessageSystem } from "./message-control-plane";
+export {
+  MESSAGE_CONTROL_DB_FILENAME,
+  MESSAGE_STORAGE_DIRNAME,
+  ROOM_MESSAGE_DB_DIRNAME,
+  ROOM_MESSAGE_DB_PREFIX,
+  resolveDefaultMessageControlDbPath,
+  resolveDefaultMessageRoot,
+  resolveMessageControlDbPath,
+} from "./message-paths";
 export type {
   CommitWaitHandle,
   MessageAppendInput,

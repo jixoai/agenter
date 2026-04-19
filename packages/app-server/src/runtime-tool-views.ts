@@ -2,7 +2,9 @@ import type { AttentionActiveContextMatch } from "@agenter/attention-system";
 import type {
   MessageAttachment,
   MessageControlPlaneEntry,
+  MessageKind,
   MessagePayload,
+  MessageRecord,
   MessageSnapshot,
 } from "@agenter/message-system";
 import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
@@ -18,6 +20,85 @@ const clipPreview = (value: string, maxChars = 240): string | undefined => {
     return value;
   }
   return `${value.slice(0, maxChars)}\n...<clipped ${value.length - maxChars} chars>`;
+};
+
+const MESSAGE_OVERVIEW_MAX_CHARS = 120;
+const MESSAGE_OVERVIEW_MAX_WORD_SEGMENTS = 20;
+const messagePreviewSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
+const normalizeInlineWhitespace = (value: string): string => value.replace(/\s+/gu, " ").trim();
+const padTimePart = (value: number, width: number): string => value.toString().padStart(width, "0");
+const toRuntimeMessageId = (value: number): number => value;
+const formatRuntimeMessageTime = (value: number): string => {
+  const date = new Date(value);
+  return [
+    padTimePart(date.getFullYear(), 4),
+    padTimePart(date.getMonth() + 1, 2),
+    padTimePart(date.getDate(), 2),
+    padTimePart(date.getHours(), 2),
+    padTimePart(date.getMinutes(), 2),
+    padTimePart(date.getSeconds(), 2),
+    padTimePart(date.getMilliseconds(), 3),
+  ].join("");
+};
+
+const appendEllipsis = (value: string, maxChars = MESSAGE_OVERVIEW_MAX_CHARS): string => {
+  const clippedValue =
+    value.length <= Math.max(0, maxChars - 3) ? value : value.slice(0, Math.max(0, maxChars - 3)).trimEnd();
+  return `${clippedValue}...`;
+};
+
+const clipInlinePreview = (value: string, maxChars = MESSAGE_OVERVIEW_MAX_CHARS): string =>
+  value.length <= maxChars ? value : appendEllipsis(value, maxChars);
+
+const clipMessagePreview = (value: string): string => {
+  const normalized = normalizeInlineWhitespace(value);
+  if (normalized.length === 0) {
+    return normalized;
+  }
+  let wordLikeCount = 0;
+  let preview = "";
+  for (const segment of messagePreviewSegmenter.segment(normalized)) {
+    const isWordLike = segment.isWordLike !== false;
+    if (isWordLike && wordLikeCount >= MESSAGE_OVERVIEW_MAX_WORD_SEGMENTS) {
+      return appendEllipsis(preview.trimEnd());
+    }
+    preview += segment.segment;
+    if (isWordLike) {
+      wordLikeCount += 1;
+    }
+  }
+  return clipInlinePreview(preview.trimEnd());
+};
+
+const readMessageContentPreview = (message: {
+  kind: MessageKind;
+  content: string;
+  attachments?: MessageAttachment[];
+  payload?: MessagePayload;
+  recalledAt?: number;
+}): string => {
+  if (message.recalledAt) {
+    return "[recalled]";
+  }
+  const firstNonEmptyLine = message.content
+    .split(/\r?\n/gu)
+    .map((line) => normalizeInlineWhitespace(line))
+    .find((line) => line.length > 0);
+  if (firstNonEmptyLine) {
+    return clipMessagePreview(firstNonEmptyLine);
+  }
+  if (message.kind === "error") {
+    return clipMessagePreview(message.payload?.error?.title ?? "[error]");
+  }
+  if (message.kind === "interactive") {
+    return clipMessagePreview(message.payload?.interactive?.title ?? "[interactive]");
+  }
+  const attachmentCount = message.attachments?.length ?? 0;
+  if (attachmentCount > 0) {
+    return attachmentCount === 1 ? "[1 attachment]" : `[${attachmentCount} attachments]`;
+  }
+  return "[empty message]";
 };
 
 const projectRuntimeMessageAttachment = (
@@ -56,9 +137,7 @@ export interface RuntimeAttentionActiveView {
     createdAt: string;
     ingressType: AttentionActiveContextMatch["recentCommits"][number]["ingressType"];
     scores: Record<string, number>;
-    systemId?: string;
-    subjectId?: string;
-    channelId?: string;
+    src?: string;
     egress?: AttentionActiveContextMatch["recentCommits"][number]["egress"];
     changeType: AttentionActiveContextMatch["recentCommits"][number]["change"]["type"];
   }>;
@@ -86,7 +165,7 @@ export interface RuntimeMessageChannelView {
     label?: string;
   }>;
   readProgress?: {
-    latestVisibleMessageId?: string;
+    latestVisibleMessageId?: number;
     latestVisibleMessageRowId?: number;
     latestVisibleAt?: number;
     totalSeatCount: number;
@@ -118,6 +197,24 @@ export interface RuntimeReachableParticipantView {
   rooms: RuntimeVisibleMessageRoomView[];
 }
 
+/**
+ * Compact transcript row returned by room-message mutation acknowledgements.
+ */
+export interface RuntimeMessageOverviewItem {
+  messageId: number;
+  from: string;
+  contentPreview: string;
+  sendTime: string;
+  editedTime?: string;
+  recalledTime?: string;
+}
+
+export interface RuntimeMessageSendResult {
+  ok: true;
+  messageId: number;
+  recentMessages: RuntimeMessageOverviewItem[];
+}
+
 export interface RuntimeMessageSnapshotView {
   channel: RuntimeMessageChannelView;
   directory?: {
@@ -126,10 +223,9 @@ export interface RuntimeMessageSnapshotView {
   };
   items: Array<{
     rowId: number;
-    messageId: string;
+    messageId: number;
     rootId?: string;
     from: string;
-    to?: string;
     kind: "text" | "error" | "interactive";
     content: string;
     createdAt: number;
@@ -182,9 +278,7 @@ export const projectRuntimeAttentionActiveMatch = (match: AttentionActiveContext
     createdAt: commit.createdAt,
     ingressType: commit.ingressType,
     scores: { ...commit.scores },
-    systemId: commit.meta.systemId,
-    subjectId: commit.meta.subjectId,
-    channelId: commit.meta.channelId,
+    src: commit.meta.src,
     egress: commit.egress ? { ...commit.egress } : undefined,
     changeType: commit.change.type,
   })),
@@ -220,6 +314,9 @@ export const projectRuntimeMessageChannel = (channel: MessageControlPlaneEntry):
     readProgress: channel.readProgress
       ? {
           ...channel.readProgress,
+          latestVisibleMessageId: channel.readProgress.latestVisibleMessageId
+            ? toRuntimeMessageId(channel.readProgress.latestVisibleMessageId)
+            : undefined,
         }
       : undefined,
     presence,
@@ -246,10 +343,9 @@ export const projectRuntimeMessageSnapshot = (
       : undefined,
   items: snapshot.items.map((item) => ({
     rowId: item.rowId,
-    messageId: item.messageId,
+    messageId: toRuntimeMessageId(item.messageId),
     rootId: item.rootId,
     from: item.from,
-    to: item.to,
     kind: item.kind,
     content: item.content,
     createdAt: item.createdAt,
@@ -262,6 +358,22 @@ export const projectRuntimeMessageSnapshot = (
   hasMoreBefore: snapshot.hasMoreBefore,
   headVersion: snapshot.headVersion,
 });
+
+export const projectRuntimeMessageOverview = (
+  messages: readonly MessageRecord[],
+  limit = 5,
+): RuntimeMessageOverviewItem[] =>
+  messages.slice(-Math.max(0, limit)).map((message) => ({
+    messageId: toRuntimeMessageId(message.messageId),
+    from: message.from,
+    contentPreview: readMessageContentPreview(message),
+    sendTime: formatRuntimeMessageTime(message.visibleAt ?? message.createdAt),
+    editedTime:
+      !message.recalledAt && message.updatedAt > message.createdAt
+        ? formatRuntimeMessageTime(message.updatedAt)
+        : undefined,
+    recalledTime: message.recalledAt ? formatRuntimeMessageTime(message.recalledAt) : undefined,
+  }));
 
 export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): RuntimeTerminalView => ({
   terminalId: terminal.terminalId,

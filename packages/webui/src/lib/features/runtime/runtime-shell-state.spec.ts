@@ -83,8 +83,7 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession,
-  unreadByChat: {},
-  unreadByTerminal: {},
+  unreadByBucket: {},
 });
 
 describe("Feature: Avatar submenu navigation order", () => {

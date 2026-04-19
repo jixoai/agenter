@@ -27,6 +27,12 @@ type AttentionContextItem = RuntimeAttentionState["snapshot"]["contexts"][number
 type AttentionCommitItem = AttentionContextItem["commits"][number];
 type SubscriptionHandlers = { onData?: (event: unknown) => void; onError?: () => void };
 
+const createUnauthorizedTrpcError = (): Error & { data: { code: string } } => {
+  const error = new Error("auth token required") as Error & { data: { code: string } };
+  error.data = { code: "UNAUTHORIZED" };
+  return error;
+};
+
 const createTraceEntry = (input: {
   id: number;
   cycleId: number;
@@ -308,8 +314,7 @@ const emitSubscriptionEvent = (handlers: SubscriptionHandlers | null, event: unk
 const emptyNotificationSnapshot = () => ({
   items: [],
   unreadBySession: {},
-  unreadByChat: {},
-  unreadByTerminal: {},
+  unreadByBucket: {},
 });
 
 const createAvatarCatalogEntry = (
@@ -396,22 +401,21 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
-      sourceType: "chat" | "terminal";
+      src: string;
+      sourceNamespace: string;
       sourceId: string;
-      chatId?: string;
-      terminalId?: string;
+      bucketKey: string;
+      attentionContextId: string;
+      attentionCommitId: string;
       workspacePath: string;
       sessionName: string;
-      messageId?: string;
-      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
-    unreadByChat: Record<string, Record<string, number>>;
-    unreadByTerminal: Record<string, Record<string, number>>;
+    unreadByBucket: Record<string, Record<string, number>>;
   }>;
-  messageGlobalMarkReadMutate?: (input: { chatId: string; accessToken?: string; messageId?: string }) => Promise<{
+  messageGlobalMarkReadMutate?: (input: { chatId: string; accessToken?: string; messageId?: number }) => Promise<{
     channel: {
       chatId: string;
       kind: "room";
@@ -426,7 +430,7 @@ const createMockClient = (input: {
       participantId?: string;
       transportUrl?: string;
       readProgress?: {
-        latestVisibleMessageId?: string;
+        latestVisibleMessageId?: number;
         latestVisibleMessageRowId?: number;
         latestVisibleAt?: number;
         totalSeatCount: number;
@@ -456,20 +460,19 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
-      sourceType: "chat" | "terminal";
+      src: string;
+      sourceNamespace: string;
       sourceId: string;
-      chatId?: string;
-      terminalId?: string;
+      bucketKey: string;
+      attentionContextId: string;
+      attentionCommitId: string;
       workspacePath: string;
       sessionName: string;
-      messageId?: string;
-      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
-    unreadByChat: Record<string, Record<string, number>>;
-    unreadByTerminal: Record<string, Record<string, number>>;
+    unreadByBucket: Record<string, Record<string, number>>;
   }>;
   setTerminalVisibilityMutate?: (input: {
     sessionId: string;
@@ -480,44 +483,42 @@ const createMockClient = (input: {
     items: Array<{
       id: string;
       sessionId: string;
-      sourceType: "chat" | "terminal";
+      src: string;
+      sourceNamespace: string;
       sourceId: string;
-      chatId?: string;
-      terminalId?: string;
+      bucketKey: string;
+      attentionContextId: string;
+      attentionCommitId: string;
       workspacePath: string;
       sessionName: string;
-      messageId?: string;
-      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
-    unreadByChat: Record<string, Record<string, number>>;
-    unreadByTerminal: Record<string, Record<string, number>>;
+    unreadByBucket: Record<string, Record<string, number>>;
   }>;
   consumeNotificationsMutate?: (input: {
     sessionId: string;
     chatId?: string;
     terminalId?: string;
-    upToMessageId?: string;
+    upToSrc?: string;
   }) => Promise<{
     items: Array<{
       id: string;
       sessionId: string;
-      sourceType: "chat" | "terminal";
+      src: string;
+      sourceNamespace: string;
       sourceId: string;
-      chatId?: string;
-      terminalId?: string;
+      bucketKey: string;
+      attentionContextId: string;
+      attentionCommitId: string;
       workspacePath: string;
       sessionName: string;
-      messageId?: string;
-      messageSeq?: number;
       content: string;
       timestamp: number;
     }>;
     unreadBySession: Record<string, number>;
-    unreadByChat: Record<string, Record<string, number>>;
-    unreadByTerminal: Record<string, Record<string, number>>;
+    unreadByBucket: Record<string, Record<string, number>>;
   }>;
   listSettingsLayersQuery?: (input: { workspacePath: string }) => Promise<{
     effective: { content: string };
@@ -662,15 +663,15 @@ const createMockClient = (input: {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
+    messageId: number;
     text: string;
-  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }>;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number }>;
   messageRecallMutate?: (input: {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
-  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }>;
+    messageId: number;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number }>;
   messageUpdateChannelMutate?: (input: {
     sessionId: string;
     chatId: string;
@@ -748,14 +749,14 @@ const createMockClient = (input: {
   messageGlobalEditMutate?: (input: {
     chatId: string;
     accessToken?: string;
-    messageId: string;
+    messageId: number;
     text: string;
-  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }>;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number }>;
   messageGlobalRecallMutate?: (input: {
     chatId: string;
     accessToken?: string;
-    messageId: string;
-  }) => Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }>;
+    messageId: number;
+  }) => Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number }>;
   messageGlobalUpdateMutate?: (input: {
     chatId: string;
     accessToken?: string;
@@ -1199,7 +1200,7 @@ const createMockClient = (input: {
             sessionId: string;
             chatId: string;
             accessToken: string;
-            messageId: string;
+            messageId: number;
             text: string;
           }) =>
             input.messageEditMutate
@@ -1211,7 +1212,7 @@ const createMockClient = (input: {
             sessionId: string;
             chatId: string;
             accessToken: string;
-            messageId: string;
+            messageId: number;
           }) =>
             input.messageRecallMutate
               ? await input.messageRecallMutate(payload)
@@ -1296,7 +1297,7 @@ const createMockClient = (input: {
                 },
         },
         globalMarkRead: {
-          mutate: async (payload: { chatId: string; accessToken?: string; messageId?: string }) =>
+          mutate: async (payload: { chatId: string; accessToken?: string; messageId?: number }) =>
             input.messageGlobalMarkReadMutate ? await input.messageGlobalMarkReadMutate(payload) : { channel: null },
         },
         globalPage: {
@@ -1323,7 +1324,7 @@ const createMockClient = (input: {
           mutate: async (payload: {
             chatId: string;
             accessToken?: string;
-            messageId: string;
+            messageId: number;
             text: string;
           }) =>
             input.messageGlobalEditMutate
@@ -1334,7 +1335,7 @@ const createMockClient = (input: {
           mutate: async (payload: {
             chatId: string;
             accessToken?: string;
-            messageId: string;
+            messageId: number;
           }) =>
             input.messageGlobalRecallMutate
               ? await input.messageGlobalRecallMutate(payload)
@@ -1801,7 +1802,7 @@ const createMockClient = (input: {
             sessionId: string;
             chatId?: string;
             terminalId?: string;
-            upToMessageId?: string;
+            upToSrc?: string;
           }) =>
             input.consumeNotificationsMutate
               ? await input.consumeNotificationsMutate(payload)
@@ -2313,20 +2314,19 @@ describe("Feature: runtime store synchronization", () => {
       items: Array<{
         id: string;
         sessionId: string;
-        sourceType: "chat" | "terminal";
+        src: string;
+        sourceNamespace: string;
         sourceId: string;
-        chatId?: string;
-        terminalId?: string;
+        bucketKey: string;
+        attentionContextId: string;
+        attentionCommitId: string;
         workspacePath: string;
         sessionName: string;
-        messageId?: string;
-        messageSeq?: number;
         content: string;
         timestamp: number;
       }>;
       unreadBySession: Record<string, number>;
-      unreadByChat: Record<string, Record<string, number>>;
-      unreadByTerminal: Record<string, Record<string, number>>;
+      unreadByBucket: Record<string, Record<string, number>>;
     }>();
     const client = createMockClient({
       snapshotQuery: async () =>
@@ -2378,20 +2378,20 @@ describe("Feature: runtime store synchronization", () => {
         {
           id: "notif-1",
           sessionId: "i-1",
-          sourceType: "chat",
+          src: "msg:chat-main/1",
+          sourceNamespace: "msg",
           sourceId: "chat-main",
-          chatId: "chat-main",
+          bucketKey: "msg:chat-main",
+          attentionContextId: "ctx-chat-main",
+          attentionCommitId: "commit-1",
           workspacePath: process.cwd(),
           sessionName: "workspace",
-          messageId: "msg-1",
-          messageSeq: 1,
           content: "reply pending",
           timestamp: Date.now(),
         },
       ],
       unreadBySession: { "i-1": 1 },
-      unreadByChat: { "i-1": { "chat-main": 1 } },
-      unreadByTerminal: {},
+      unreadByBucket: { "i-1": { "msg:chat-main": 1 } },
     });
 
     await waitFor(() => store.getState().workspaces.length === 1 && store.getState().notifications.length === 1);
@@ -4281,7 +4281,7 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];
-    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToMessageId?: string }> =
+    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToSrc?: string }> =
       [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(800),
@@ -4290,20 +4290,20 @@ describe("Feature: runtime store synchronization", () => {
           {
             id: "i-1:9",
             sessionId: "i-1",
-            sourceType: "chat",
+            src: "msg:chat-main/9",
+            sourceNamespace: "msg",
             sourceId: "chat-main",
-            chatId: "chat-main",
+            bucketKey: "msg:chat-main",
+            attentionContextId: "ctx-chat-main",
+            attentionCommitId: "commit-9",
             workspacePath: "/repo/demo",
             sessionName: "workspace",
-            messageId: "9",
-            messageSeq: 9,
             content: "hello",
             timestamp: Date.now(),
           },
         ],
         unreadBySession: { "i-1": 1 },
-        unreadByChat: { "i-1": { "chat-main": 1 } },
-        unreadByTerminal: {},
+        unreadByBucket: { "i-1": { "msg:chat-main": 1 } },
       }),
       setChatVisibilityMutate: async (input) => {
         visibilityInputs.push(input);
@@ -4312,20 +4312,20 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:9",
               sessionId: "i-1",
-              sourceType: "chat",
+              src: "msg:chat-main/9",
+              sourceNamespace: "msg",
               sourceId: "chat-main",
-              chatId: "chat-main",
+              bucketKey: "msg:chat-main",
+              attentionContextId: "ctx-chat-main",
+              attentionCommitId: "commit-9",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
-              messageId: "9",
-              messageSeq: 9,
               content: "hello",
               timestamp: Date.now(),
             },
           ],
           unreadBySession: { "i-1": 1 },
-          unreadByChat: { "i-1": { "chat-main": 1 } },
-          unreadByTerminal: {},
+          unreadByBucket: { "i-1": { "msg:chat-main": 1 } },
         };
       },
       consumeNotificationsMutate: async (input) => {
@@ -4341,7 +4341,7 @@ describe("Feature: runtime store synchronization", () => {
     await store.connect();
     await waitFor(() => store.getState().unreadBySession["i-1"] === 1);
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
-    expect(store.getState().notifications[0]?.messageId).toBe("9");
+    expect(store.getState().notifications[0]?.src).toBe("msg:chat-main/9");
 
     await store.setChatVisibility({ sessionId: "i-1", chatId: "chat-main", visible: true, focused: true });
     expect(visibilityInputs).toEqual([{ sessionId: "i-1", chatId: "chat-main", visible: true, focused: true }]);
@@ -4359,27 +4359,27 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:10",
               sessionId: "i-1",
-              sourceType: "chat",
+              src: "msg:chat-main/10",
+              sourceNamespace: "msg",
               sourceId: "chat-main",
-              chatId: "chat-main",
+              bucketKey: "msg:chat-main",
+              attentionContextId: "ctx-chat-main",
+              attentionCommitId: "commit-10",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
-              messageId: "10",
-              messageSeq: 10,
               content: "new reply",
               timestamp: Date.now(),
             },
           ],
           unreadBySession: { "i-1": 1 },
-          unreadByChat: { "i-1": { "chat-main": 1 } },
-          unreadByTerminal: {},
+          unreadByBucket: { "i-1": { "msg:chat-main": 1 } },
         },
       },
     });
-    expect(store.getState().notifications[0]?.messageId).toBe("10");
+    expect(store.getState().notifications[0]?.src).toBe("msg:chat-main/10");
 
-    await store.consumeNotifications({ sessionId: "i-1", chatId: "chat-main", upToMessageId: "10" });
-    expect(consumeInputs).toEqual([{ sessionId: "i-1", chatId: "chat-main", upToMessageId: "10" }]);
+    await store.consumeNotifications({ sessionId: "i-1", chatId: "chat-main", upToSrc: "msg:chat-main/10" });
+    expect(consumeInputs).toEqual([{ sessionId: "i-1", chatId: "chat-main", upToSrc: "msg:chat-main/10" }]);
     expect(store.getState().notifications).toEqual([]);
     expect(store.getState().unreadBySession["i-1"]).toBeUndefined();
     store.disconnect();
@@ -5171,20 +5171,20 @@ describe("Feature: runtime store synchronization", () => {
           {
             id: "push-1",
             sessionId: "i-2",
-            sourceType: "chat" as const,
+            src: "msg:room-main/21",
+            sourceNamespace: "msg" as const,
             sourceId: "room-main",
-            chatId: "room-main",
+            bucketKey: "msg:room-main",
+            attentionContextId: "ctx-room-main",
+            attentionCommitId: "commit-21",
             workspacePath: stoppedSession.cwd,
             sessionName: stoppedSession.name,
-            messageId: "msg-21",
-            messageSeq: 21,
             content: "persisted unread room message",
             timestamp: 21,
           },
         ],
         unreadBySession: { "i-2": 1 },
-        unreadByChat: { "i-2": { "room-main": 1 } },
-        unreadByTerminal: {},
+        unreadByBucket: { "i-2": { "msg:room-main": 1 } },
       }),
     });
 
@@ -5431,14 +5431,14 @@ describe("Feature: runtime store synchronization", () => {
         sessionId: string;
         chatId: string;
         accessToken: string;
-        messageId: string;
+        messageId: number;
         text: string;
       };
       recall?: {
         sessionId: string;
         chatId: string;
         accessToken: string;
-        messageId: string;
+        messageId: number;
       };
       update?: {
         sessionId: string;
@@ -5486,7 +5486,24 @@ describe("Feature: runtime store synchronization", () => {
         },
         messageSendMutate: async (input) => {
           requests.send = input;
-          return { ok: true };
+          return {
+            ok: true,
+            messageId: 8,
+            recentMessages: [
+              {
+                messageId: 7,
+                from: "teammate",
+                contentPreview: "previous room state",
+                sendTime: "20260418010101003",
+              },
+              {
+                messageId: 8,
+                from: "User",
+                contentPreview: input.text,
+                sendTime: "20260418010101004",
+              },
+            ],
+          };
         },
         messageEditMutate: async (input) => {
           requests.edit = input;
@@ -5549,7 +5566,7 @@ describe("Feature: runtime store synchronization", () => {
       op: "replace",
       channels: [{ chatId: "chat-main", accessToken: "msgtok_admin" }],
     });
-    await store.sendMessageChannel({
+    const sent = await store.sendMessageChannel({
       sessionId: "i-1",
       chatId: "chat-main",
       accessToken: "msgtok_admin",
@@ -5560,14 +5577,14 @@ describe("Feature: runtime store synchronization", () => {
       sessionId: "i-1",
       chatId: "chat-main",
       accessToken: "msgtok_admin",
-      messageId: "msg-1",
+      messageId: 1,
       text: "hello again",
     });
     const recalled = await store.recallMessageChannel({
       sessionId: "i-1",
       chatId: "chat-main",
       accessToken: "msgtok_admin",
-      messageId: "msg-2",
+      messageId: 2,
     });
     const updated = await store.updateMessageChannel({
       sessionId: "i-1",
@@ -5602,21 +5619,23 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(requests.send?.accessToken).toBe("msgtok_admin");
     expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(sent.recentMessages.at(-1)?.contentPreview).toBe("hello");
+    expect(sent.recentMessages.at(-1)?.sendTime).toBe("20260418010101004");
     expect(requests.edit).toEqual({
       sessionId: "i-1",
       chatId: "chat-main",
       accessToken: "msgtok_admin",
-      messageId: "msg-1",
+      messageId: 1,
       text: "hello again",
     });
-    expect(edited).toMatchObject({ ok: true, messageId: "msg-1", updatedAt: 5 });
+    expect(edited).toMatchObject({ ok: true, messageId: 1, updatedAt: 5 });
     expect(requests.recall).toEqual({
       sessionId: "i-1",
       chatId: "chat-main",
       accessToken: "msgtok_admin",
-      messageId: "msg-2",
+      messageId: 2,
     });
-    expect(recalled).toMatchObject({ ok: true, messageId: "msg-2", updatedAt: 6, recalledAt: 6 });
+    expect(recalled).toMatchObject({ ok: true, messageId: 2, updatedAt: 6, recalledAt: 6 });
     expect(requests.update?.patch.title).toBe("Updated chat");
     expect(requests.listGrants?.accessToken).toBe("msgtok_admin");
     expect(requests.issue?.participantId).toBe("user:gaubee");
@@ -5662,7 +5681,7 @@ describe("Feature: runtime store synchronization", () => {
       recall?: {
         chatId: string;
         accessToken?: string;
-        messageId: string;
+        messageId: number;
       };
       update?: {
         chatId: string;
@@ -5725,7 +5744,7 @@ describe("Feature: runtime store synchronization", () => {
             items: [
               {
                 rowId: 11,
-                messageId: "11",
+                messageId: 11,
                 chatId: room.chatId,
                 from: "ops-bot",
                 kind: "text" as const,
@@ -5747,7 +5766,7 @@ describe("Feature: runtime store synchronization", () => {
             items: [
               {
                 rowId: 10,
-                messageId: "10",
+                messageId: 10,
                 chatId: room.chatId,
                 from: "ops-bot",
                 kind: "text" as const,
@@ -5854,7 +5873,7 @@ describe("Feature: runtime store synchronization", () => {
       items: [
         {
           rowId: 11,
-          messageId: "11",
+          messageId: 11,
           chatId: room.chatId,
           from: "ops-bot",
           kind: "text",
@@ -5880,7 +5899,7 @@ describe("Feature: runtime store synchronization", () => {
       items: [
         {
           rowId: 10,
-          messageId: "10",
+          messageId: 10,
           chatId: room.chatId,
           from: "ops-bot",
           kind: "text",
@@ -5906,9 +5925,9 @@ describe("Feature: runtime store synchronization", () => {
       await store.recallGlobalRoomMessage({
         chatId: room.chatId,
         accessToken: room.accessToken,
-        messageId: "11",
+        messageId: 11,
       }),
-    ).toEqual({ ok: true, messageId: "11", updatedAt: 8, recalledAt: 8 });
+    ).toEqual({ ok: true, messageId: 11, updatedAt: 8, recalledAt: 8 });
     const updated = await store.updateGlobalRoom({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -5968,7 +5987,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(requests.recall).toEqual({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: "11",
+      messageId: 11,
     });
     expect(requests.update?.patch.adminGroupCandidateIds).toEqual(["auth:admin-a"]);
     expect(requests.listGrants?.accessToken).toBe(room.accessToken);
@@ -6277,6 +6296,89 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given unauthenticated browser global room hydration When room catalog and room slices are requested Then runtime store resolves explicit auth-required states instead of throwing", async () => {
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalListQuery: async () => {
+          throw createUnauthorizedTrpcError();
+        },
+        messageGlobalSnapshotQuery: async () => {
+          throw createUnauthorizedTrpcError();
+        },
+        messageGlobalListGrantsQuery: async () => {
+          throw createUnauthorizedTrpcError();
+        },
+        messageGlobalListAssetsQuery: async () => {
+          throw createUnauthorizedTrpcError();
+        },
+      }),
+    );
+
+    await store.connect();
+
+    await expect(store.hydrateGlobalRooms()).resolves.toEqual([]);
+    expect(store.getState().globalRooms).toMatchObject({
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: "auth token required",
+    });
+
+    const releaseSnapshot = store.retainGlobalRoomSnapshot("room-auth");
+    const releaseGrants = store.retainGlobalRoomGrants("room-auth");
+    const releaseAssets = store.retainGlobalRoomAssets("room-auth");
+
+    await expect(
+      store.hydrateGlobalRoomSnapshot({
+        chatId: "room-auth",
+        accessToken: "msgtok_auth",
+        limit: 20,
+      }),
+    ).resolves.toBeNull();
+    expect(store.getState().globalRoomSnapshotsById["room-auth"]).toMatchObject({
+      data: null,
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: "auth token required",
+    });
+
+    await expect(
+      store.hydrateGlobalRoomGrants({
+        chatId: "room-auth",
+        accessToken: "msgtok_auth",
+      }),
+    ).resolves.toEqual([]);
+    expect(store.getState().globalRoomGrantsById["room-auth"]).toMatchObject({
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: "auth token required",
+    });
+
+    await expect(
+      store.hydrateGlobalRoomAssets({
+        chatId: "room-auth",
+        accessToken: "msgtok_auth",
+      }),
+    ).resolves.toEqual([]);
+    expect(store.getState().globalRoomAssetsById["room-auth"]).toMatchObject({
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: "auth token required",
+    });
+
+    releaseAssets();
+    releaseGrants();
+    releaseSnapshot();
+    store.disconnect();
+  });
+
   test("Scenario: Given retained terminal slices When a live terminal invalidation arrives Then runtime store refreshes only the retained terminal resources", async () => {
     const createTerminalEntry = (
       terminalId: string,
@@ -6461,6 +6563,30 @@ describe("Feature: runtime store synchronization", () => {
     releaseApprovals();
     releaseGrants();
     releaseCatalog();
+    store.disconnect();
+  });
+
+  test("Scenario: Given unauthenticated browser global terminal hydration When the terminal catalog is requested Then runtime store resolves an explicit auth-required state instead of throwing", async () => {
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalListQuery: async () => {
+          throw createUnauthorizedTrpcError();
+        },
+      }),
+    );
+
+    await store.connect();
+
+    await expect(store.hydrateGlobalTerminals()).resolves.toEqual([]);
+    expect(store.getState().globalTerminals).toMatchObject({
+      data: [],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: "auth token required",
+    });
+
     store.disconnect();
   });
 
@@ -7355,7 +7481,7 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
     const requests: {
-      markRead?: { chatId: string; accessToken?: string; messageId?: string };
+      markRead?: { chatId: string; accessToken?: string; messageId?: number };
     } = {};
     const room = {
       chatId: "room-ops",
@@ -7374,7 +7500,7 @@ describe("Feature: runtime store synchronization", () => {
       participantId: "session:relay",
       transportUrl: "ws://127.0.0.1:7777/room/room-ops?token=msgtok_member",
       readProgress: {
-        latestVisibleMessageId: "12",
+        latestVisibleMessageId: 12,
         latestVisibleMessageRowId: 12,
         latestVisibleAt: 12,
         totalSeatCount: 2,
@@ -7409,11 +7535,10 @@ describe("Feature: runtime store synchronization", () => {
     };
     const staleLatestVisibleMessage = {
       rowId: 12,
-      messageId: "12",
+      messageId: 12,
       chatId: room.chatId,
       senderActorId: "session:ops-bot",
       from: "ops-bot",
-      to: "Relay",
       kind: "text" as const,
       content: "hello ops",
       createdAt: 12,
@@ -7430,20 +7555,20 @@ describe("Feature: runtime store synchronization", () => {
             {
               id: "i-1:9",
               sessionId: "i-1",
-              sourceType: "chat",
+              src: "msg:chat-main/9",
+              sourceNamespace: "msg",
               sourceId: "chat-main",
-              chatId: "chat-main",
+              bucketKey: "msg:chat-main",
+              attentionContextId: "ctx-chat-main",
+              attentionCommitId: "commit-9",
               workspacePath: "/repo/demo",
               sessionName: "workspace",
-              messageId: "9",
-              messageSeq: 9,
               content: "assistant unread",
               timestamp: Date.now(),
             },
           ],
           unreadBySession: { "i-1": 1 },
-          unreadByChat: { "i-1": { "chat-main": 1 } },
-          unreadByTerminal: {},
+          unreadByBucket: { "i-1": { "msg:chat-main": 1 } },
         }),
         messageGlobalSnapshotQuery: async () => ({
           channel: room,
@@ -7470,16 +7595,16 @@ describe("Feature: runtime store synchronization", () => {
     const readChannel = await store.markGlobalRoomRead({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: "12",
+      messageId: 12,
     });
 
     expect(requests.markRead).toEqual({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: "12",
+      messageId: 12,
     });
     expect(readChannel.readProgress).toMatchObject({
-      latestVisibleMessageId: "12",
+      latestVisibleMessageId: 12,
       readSeatCount: 1,
       unreadSeatCount: 1,
     });
@@ -7489,12 +7614,12 @@ describe("Feature: runtime store synchronization", () => {
       hasReadLatestVisible: true,
     });
     expect(store.getState().globalRoomSnapshotsById[room.chatId]?.data?.items[0]).toMatchObject({
-      messageId: "12",
+      messageId: 12,
       readActorIds: ["session:relay"],
       unreadActorIds: ["auth:viewer"],
     });
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
-    expect(store.getState().notifications[0]?.messageId).toBe("9");
+    expect(store.getState().notifications[0]?.src).toBe("msg:chat-main/9");
     store.disconnect();
   });
 
@@ -7529,12 +7654,12 @@ describe("Feature: runtime store synchronization", () => {
     const first = store.markGlobalRoomRead({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: "12",
+      messageId: 12,
     });
     const second = store.markGlobalRoomRead({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: "12",
+      messageId: 12,
     });
 
     expect(requestCount).toBe(1);

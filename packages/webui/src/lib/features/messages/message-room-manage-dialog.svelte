@@ -121,6 +121,7 @@
 <Dialog.Root bind:open>
 	<Dialog.Content
 		class="left-0 top-0 h-svh w-svw max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-0 sm:left-[50%] sm:top-[50%] sm:h-auto sm:w-full sm:max-w-6xl sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg"
+		preventScroll={false}
 		portalProps={disableManageDialogPortal ? { disabled: true } : undefined}
 		showCloseButton={false}
 	>

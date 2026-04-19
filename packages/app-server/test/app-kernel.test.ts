@@ -1,5 +1,5 @@
 import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
-import { MessageControlPlane } from "@agenter/message-system";
+import { MessageControlPlane, resolveMessageControlDbPath } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { MessageDb } from "../../message-system/src/message-db";
+import { formatMessageAttentionSrc } from "../src/attention-src";
 import { AppKernel } from "../src";
 
 const tempDirs: string[] = [];
@@ -634,9 +635,7 @@ describe("Feature: app kernel event replay", () => {
       meta: {
         author: "assistant",
         source: "message",
-        systemId: "message",
-        channelId: sessionMeta.primaryRoomId,
-        subjectId: "persisted-1",
+        src: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
       },
       scores: { persisted_ping: 100 },
       summary: "Persisted background ping",
@@ -649,15 +648,15 @@ describe("Feature: app kernel event replay", () => {
 
     const unreadSnapshot = await kernel.getNotificationSnapshot();
     expect(unreadSnapshot.unreadBySession[session.id]).toBe(1);
-    expect(unreadSnapshot.unreadByChat[session.id]?.[sessionMeta.primaryRoomId]).toBe(1);
-    expect(unreadSnapshot.items[0]?.messageId).toBe("persisted-1");
+    expect(unreadSnapshot.unreadByBucket[session.id]?.[`msg:${sessionMeta.primaryRoomId}`]).toBe(1);
+    expect(unreadSnapshot.items[0]?.src).toBe(formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }));
 
     const consumedSnapshot = await kernel.consumeNotifications({
       sessionId: session.id,
-      chatId: sessionMeta.primaryRoomId,
+      upToSrc: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
     });
     expect(consumedSnapshot.unreadBySession[session.id] ?? 0).toBe(0);
-    expect(consumedSnapshot.unreadByChat[session.id]?.[sessionMeta.primaryRoomId]).toBeUndefined();
+    expect(consumedSnapshot.unreadByBucket[session.id]?.[`msg:${sessionMeta.primaryRoomId}`]).toBeUndefined();
   });
 
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {
@@ -1069,7 +1068,7 @@ describe("Feature: app kernel event replay", () => {
     await kernel.deleteSession(session.id);
 
     const globalPlane = new MessageControlPlane({
-      dbPath: join(root, ".message", "message.db"),
+      dbPath: resolveMessageControlDbPath(join(root, ".message")),
     });
     try {
       const persistedRoom = globalPlane.getChannel(room.chatId, { includeArchived: true });
@@ -1417,7 +1416,7 @@ describe("Feature: app kernel event replay", () => {
       throw new Error("expected primary room");
     }
 
-    const db = new MessageDb(join(root, ".message", "message.db"));
+    const db = new MessageDb(resolveMessageControlDbPath(join(root, ".message")));
     try {
       db.updateChannel(room.chatId, {
         participants: [
@@ -1438,7 +1437,7 @@ describe("Feature: app kernel event replay", () => {
     const repaired = await kernel.attachSessionPrimaryRoom(session.id, { focus: false });
     expect(repaired?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
 
-    const repairedDb = new MessageDb(join(root, ".message", "message.db"));
+    const repairedDb = new MessageDb(resolveMessageControlDbPath(join(root, ".message")));
     try {
       expect(repairedDb.getChannel(room.chatId)?.participants).toEqual([{ id: "session:observer", label: "Observer" }]);
     } finally {

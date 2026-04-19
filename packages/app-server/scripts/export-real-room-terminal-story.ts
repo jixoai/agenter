@@ -21,7 +21,7 @@ const toChatMessage = (
   harness: NonNullable<Awaited<ReturnType<typeof createRealKernelHarness>>>,
   message: MessageRecord,
 ): ChatMessage => ({
-  id: message.messageId,
+  id: String(message.messageId),
   chatId: message.chatId,
   role: message.from === harness.session.avatar ? "assistant" : "user",
   content: message.content,

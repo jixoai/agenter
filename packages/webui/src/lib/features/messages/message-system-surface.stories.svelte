@@ -162,6 +162,68 @@
 </Story>
 
 <Story
+	name="Scenario: Given room management was dismissed When the operator presses manage again Then the same dialog shell reopens without leaving the page inert"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
+
+		await userEvent.click(toolbar.getByRole('button', { name: 'Manage room' }));
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+		});
+
+		await userEvent.click(canvas.getByRole('button', { name: 'Close' }));
+		await waitFor(() => {
+			expect(canvas.queryByTestId('room-manage-shell')).toBeNull();
+		});
+		await waitFor(() => {
+			expect(document.body.style.pointerEvents).not.toBe('none');
+		});
+
+		await userEvent.click(toolbar.getByRole('button', { name: 'Manage room' }));
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+			await expect(canvas.getByTestId('room-manage-nav-overview')).toHaveAttribute('aria-pressed', 'true');
+		});
+	}}
+>
+	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
+	name="Scenario: Given room search was dismissed When the operator presses search again Then the search dialog reopens without leaving the page inert"
+	asChild
+	play={async ({ canvasElement }) => {
+		const toolbar = getRoomToolbar(canvasElement);
+
+		await userEvent.click(toolbar.getByRole('button', { name: 'Search messages' }));
+		await waitFor(async () => {
+			const dialog = screen.getByTestId('room-search-dialog');
+			await expect(dialog).toBeInTheDocument();
+			await expect(within(dialog).getByLabelText('Search messages')).toBeInTheDocument();
+		});
+
+		await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+		await waitFor(() => {
+			expect(screen.queryByTestId('room-search-dialog')).toBeNull();
+		});
+		await waitFor(() => {
+			expect(document.body.style.pointerEvents).not.toBe('none');
+		});
+
+		await userEvent.click(toolbar.getByRole('button', { name: 'Search messages' }));
+		await waitFor(async () => {
+			const dialog = screen.getByTestId('room-search-dialog');
+			await expect(dialog).toBeInTheDocument();
+			await expect(within(dialog).getByLabelText('Search messages')).toBeInTheDocument();
+		});
+	}}
+>
+	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
 	name="Scenario: Given a fixed 48px room toolbar When compact width is applied Then the viewer trigger, actions, and mode chips stay fully visible inside the toolbar"
 	asChild
 	play={async ({ canvasElement }) => {

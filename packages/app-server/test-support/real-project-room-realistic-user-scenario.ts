@@ -1,9 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { MessageRecord } from "@agenter/message-system";
-
-import type { SessionRuntimeAttentionState } from "../src";
+import type { PublicRoomMessageRecord, SessionRuntimeAttentionState } from "../src";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import { waitForRealValue } from "./real-kernel-harness";
 import {
@@ -25,30 +23,35 @@ const API_MARKERS = ["READY-API", "PROJECT-BOARD-V1"] as const;
 
 type ParticipantModelCall = Awaited<ReturnType<RealTeamKernelHarness["kernel"]["inspectModelDebug"]>>["recentModelCalls"][number];
 
-const isFrontendCoordinationMessage = (message: MessageRecord, actorId: string, afterTimestamp: number): boolean =>
+const isFrontendCoordinationMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   /页面|设计|草图|svg|\/api\/status|小队项目看板|接口状态/iu.test(message.content);
 
-const isApiQuestionMessage = (message: MessageRecord, actorId: string, afterTimestamp: number): boolean =>
+const isApiQuestionMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   /\/api\/status/iu.test(message.content) &&
   /(接口|字段|返回|响应|status|json|contract|read)/iu.test(message.content) &&
   (/[?？]/u.test(message.content) || /(请问|想确认|能否|麻烦|告诉我|告诉下)/iu.test(message.content));
 
-const isBackendCoordinationMessage = (message: MessageRecord, actorId: string, afterTimestamp: number): boolean =>
+const isBackendCoordinationMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   /(服务|接口|后端|server|\/api\/status|READY-API|PROJECT-BOARD-V1|地址|url)/iu.test(message.content);
 
-const isUrlMessage = (message: MessageRecord, actorId: string, expectedUrl: string, afterTimestamp: number): boolean =>
+const isUrlMessage = (message: PublicRoomMessageRecord, actorId: string, expectedUrl: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   message.content.includes(expectedUrl) &&
   extractProjectUrl(message.content) === expectedUrl;
 
-const isFinalProjectUrlMessage = (message: MessageRecord, actorId: string, expectedUrl: string, afterTimestamp: number): boolean =>
+const isFinalProjectUrlMessage = (
+  message: PublicRoomMessageRecord,
+  actorId: string,
+  expectedUrl: string,
+  afterTimestamp: number,
+): boolean =>
   isUrlMessage(message, actorId, expectedUrl, afterTimestamp) &&
   /(可打开|可以打开|打开这个地址|最终地址|最终结果|已完成|完成了|交付|ready|done|available|visit)/iu.test(message.content);
 
@@ -60,7 +63,7 @@ export const isRealisticBackendApiAnswerContent = (content: string): boolean =>
     /json/iu.test(content) ||
     /https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/status/iu.test(content));
 
-const isBackendApiAnswerMessage = (message: MessageRecord, actorId: string, afterTimestamp: number): boolean =>
+const isBackendApiAnswerMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   isRealisticBackendApiAnswerContent(message.content);
@@ -72,10 +75,10 @@ const waitForRoomMessage = async (
   room: Pick<RealTeamProjectRoom, "room">,
   input: {
     label: string;
-    predicate: (message: MessageRecord) => boolean;
+    predicate: (message: PublicRoomMessageRecord) => boolean;
     timeoutMs?: number;
   },
-): Promise<MessageRecord> =>
+): Promise<PublicRoomMessageRecord> =>
   await waitForRealValue(
     () => harness.listProjectRoomMessages(room, 120).filter(input.predicate).at(-1) ?? null,
     {
@@ -163,7 +166,7 @@ const readWorkspaceTextIfExists = async (workspacePath: string, relativePath: st
   }
 };
 
-const mapMessages = (messages: MessageRecord[]) =>
+const mapMessages = (messages: PublicRoomMessageRecord[]) =>
   messages.map((message) => ({
     messageId: message.messageId,
     senderActorId: message.senderActorId ?? null,
@@ -203,17 +206,17 @@ export interface RealProjectRoomRealisticUserDiagnostics {
 
 export interface RealProjectRoomRealisticUserScenarioResult {
   projectRoom: RealTeamProjectRoom;
-  frontendCoordinationMessage: MessageRecord;
-  backendCoordinationMessage: MessageRecord;
-  apiQuestionMessage: MessageRecord | null;
-  apiAnswerMessage: MessageRecord;
+  frontendCoordinationMessage: PublicRoomMessageRecord;
+  backendCoordinationMessage: PublicRoomMessageRecord;
+  apiQuestionMessage: PublicRoomMessageRecord | null;
+  apiAnswerMessage: PublicRoomMessageRecord;
   designSvg: string;
-  designAttachmentMessage: MessageRecord;
-  finalUrlMessage: MessageRecord;
+  designAttachmentMessage: PublicRoomMessageRecord;
+  finalUrlMessage: PublicRoomMessageRecord;
   deliveryUrl: string;
   htmlBody: string;
   apiBody: string;
-  userAcceptanceMessage: MessageRecord;
+  userAcceptanceMessage: PublicRoomMessageRecord;
   backendAttention: SessionRuntimeAttentionState;
   frontendAttention: SessionRuntimeAttentionState;
   backendModelCalls: Array<{ id: number; cycleId: number | null; status: string; outcome: string | null; tools: string[] }>;

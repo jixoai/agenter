@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveRoomViewerActorId } from "./message-room-viewer";
+import { resolveRoomViewerActorId, resolveRoomViewerResolution } from "./message-room-viewer";
 
 describe("Feature: message room viewer selection", () => {
   test("Scenario: Given a stored viewer selection When that actor is still present Then the route keeps the explicit selection", () => {
@@ -45,5 +45,35 @@ describe("Feature: message room viewer selection", () => {
         seatActorIds: ["auth:operator", "session:jane"],
       }),
     ).toBe("auth:operator");
+  });
+
+  test("Scenario: Given a stored viewer is not yet present while room seat truth is still loading When resolving the viewer Then the route keeps that stored actor provisionally instead of overwriting it with a fallback seat", () => {
+    expect(
+      resolveRoomViewerResolution({
+        storedViewerActorId: "session:gaubee",
+        roomParticipantId: "auth:default",
+        currentAuthActorId: "auth:default",
+        seatActorIds: ["auth:default"],
+        seatTruthLoaded: false,
+      }),
+    ).toEqual({
+      actorId: "session:gaubee",
+      storedViewerState: "pending_truth",
+    });
+  });
+
+  test("Scenario: Given a stored viewer is absent after room seat truth is loaded When resolving the viewer Then the route falls back and marks the stored preference invalid", () => {
+    expect(
+      resolveRoomViewerResolution({
+        storedViewerActorId: "session:gaubee",
+        roomParticipantId: "auth:default",
+        currentAuthActorId: "auth:default",
+        seatActorIds: ["auth:default"],
+        seatTruthLoaded: true,
+      }),
+    ).toEqual({
+      actorId: "auth:default",
+      storedViewerState: "invalid",
+    });
   });
 });

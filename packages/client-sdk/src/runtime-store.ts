@@ -39,6 +39,7 @@ import type {
   JsonValue,
   MessageChannelEntry,
   MessageChannelGrantEntry,
+  MessageSendSuccessOutput,
   ModelCallItem,
   NotificationSnapshotOutput,
   RuntimeAttentionState,
@@ -118,8 +119,7 @@ const createInitialState = (): RuntimeClientState => ({
   apiCallRecordingBySession: {},
   notifications: [],
   unreadBySession: {},
-  unreadByChat: {},
-  unreadByTerminal: {},
+  unreadByBucket: {},
 });
 
 type Listener = (state: RuntimeClientState) => void;
@@ -286,8 +286,8 @@ const mergeTerminalSnapshot = (
 const normalizeOptionalAccessToken = (value: string | null | undefined): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
-const buildGlobalRoomReadInflightKey = (input: { chatId: string; accessToken?: string; messageId?: string }): string =>
-  [input.chatId, input.accessToken ?? "", input.messageId ?? ""].join("\u0000");
+const buildGlobalRoomReadInflightKey = (input: { chatId: string; accessToken?: string; messageId?: number }): string =>
+  [input.chatId, input.accessToken ?? "", input.messageId === undefined ? "" : String(input.messageId)].join("\u0000");
 
 const sameActorIdSet = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean => {
   if ((left?.length ?? 0) !== (right?.length ?? 0)) {
@@ -331,6 +331,10 @@ const isTrpcErrorCode = (error: unknown, code: string): boolean =>
     "code" in error.data &&
     error.data.code === code,
   );
+
+const AUTH_REQUIRED_MESSAGE = "auth token required";
+const unauthorizedErrorMessage = (error: unknown): string | null =>
+  isTrpcErrorCode(error, "UNAUTHORIZED") ? AUTH_REQUIRED_MESSAGE : null;
 
 const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
   if (left.timestamp !== right.timestamp) {
@@ -1447,6 +1451,20 @@ export class RuntimeStore {
         return data;
       })
       .catch((error) => {
+        const unauthorizedMessage = unauthorizedErrorMessage(error);
+        if (unauthorizedMessage) {
+          this.setGlobalRoomsState((resource) => ({
+            ...resource,
+            data: [],
+            loaded: true,
+            loading: false,
+            refreshing: false,
+            error: unauthorizedMessage,
+            refreshedAt: Date.now(),
+          }));
+          this.emit();
+          return [];
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.setGlobalRoomsState((resource) => ({
           ...resource,
@@ -1507,6 +1525,20 @@ export class RuntimeStore {
         return snapshot;
       })
       .catch((error) => {
+        const unauthorizedMessage = unauthorizedErrorMessage(error);
+        if (unauthorizedMessage) {
+          this.setGlobalRoomSnapshotState(chatId, (resource) => ({
+            ...resource,
+            data: null,
+            loaded: true,
+            loading: false,
+            refreshing: false,
+            error: unauthorizedMessage,
+            refreshedAt: Date.now(),
+          }));
+          this.emit();
+          return null;
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.setGlobalRoomSnapshotState(chatId, (resource) => ({
           ...resource,
@@ -1569,6 +1601,20 @@ export class RuntimeStore {
         return output.items;
       })
       .catch((error) => {
+        const unauthorizedMessage = unauthorizedErrorMessage(error);
+        if (unauthorizedMessage) {
+          this.setGlobalRoomGrantsState(chatId, (resource) => ({
+            ...resource,
+            data: [],
+            loaded: true,
+            loading: false,
+            refreshing: false,
+            error: unauthorizedMessage,
+            refreshedAt: Date.now(),
+          }));
+          this.emit();
+          return [];
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.setGlobalRoomGrantsState(chatId, (resource) => ({
           ...resource,
@@ -1629,6 +1675,20 @@ export class RuntimeStore {
         return data;
       })
       .catch((error) => {
+        const unauthorizedMessage = unauthorizedErrorMessage(error);
+        if (unauthorizedMessage) {
+          this.setGlobalRoomAssetsState(chatId, (resource) => ({
+            ...resource,
+            data: [],
+            loaded: true,
+            loading: false,
+            refreshing: false,
+            error: unauthorizedMessage,
+            refreshedAt: Date.now(),
+          }));
+          this.emit();
+          return [];
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.setGlobalRoomAssetsState(chatId, (resource) => ({
           ...resource,
@@ -1869,6 +1929,20 @@ export class RuntimeStore {
         return output.items;
       })
       .catch((error) => {
+        const unauthorizedMessage = unauthorizedErrorMessage(error);
+        if (unauthorizedMessage) {
+          this.setGlobalTerminalsState((resource) => ({
+            ...resource,
+            data: [],
+            loaded: true,
+            loading: false,
+            refreshing: false,
+            error: unauthorizedMessage,
+            refreshedAt: Date.now(),
+          }));
+          this.emit();
+          return [];
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.setGlobalTerminalsState((resource) => ({
           ...resource,
@@ -2360,8 +2434,7 @@ export class RuntimeStore {
   private applyNotificationSnapshot(snapshot: NotificationSnapshotOutput): void {
     this.state.notifications = snapshot.items;
     this.state.unreadBySession = snapshot.unreadBySession;
-    this.state.unreadByChat = snapshot.unreadByChat;
-    this.state.unreadByTerminal = snapshot.unreadByTerminal;
+    this.state.unreadByBucket = snapshot.unreadByBucket;
   }
 
   private async refreshNotifications(): Promise<NotificationSnapshotOutput> {
@@ -2692,8 +2765,7 @@ export class RuntimeStore {
         globalTerminalActivityById: previousState.globalTerminalActivityById,
         notifications: previousState.notifications,
         unreadBySession: previousState.unreadBySession,
-        unreadByChat: previousState.unreadByChat,
-        unreadByTerminal: previousState.unreadByTerminal,
+        unreadByBucket: previousState.unreadByBucket,
       };
       this.setConnectionStatus("connected");
       for (const session of this.state.sessions) {
@@ -3430,7 +3502,7 @@ export class RuntimeStore {
       assetIds?: string[];
     },
     attachments: UploadedSessionAsset[] = [],
-  ): Promise<void> {
+  ): Promise<MessageSendSuccessOutput> {
     const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const result = await this.client.trpc.message.send.mutate({
       sessionId: input.sessionId,
@@ -3444,15 +3516,16 @@ export class RuntimeStore {
       throw new Error(result.reason ?? "message send failed");
     }
     void attachments;
+    return result;
   }
 
   async editMessageChannel(input: {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
+    messageId: number;
     text: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number }> {
     return await this.client.trpc.message.edit.mutate(input);
   }
 
@@ -3460,8 +3533,8 @@ export class RuntimeStore {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    messageId: number;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number }> {
     return await this.client.trpc.message.recall.mutate(input);
   }
 
@@ -3743,6 +3816,10 @@ export class RuntimeStore {
       force: true,
     });
     if (!snapshot) {
+      const state = this.ensureGlobalRoomSnapshotState(input.chatId);
+      if (state.error === AUTH_REQUIRED_MESSAGE) {
+        throw new Error(AUTH_REQUIRED_MESSAGE);
+      }
       throw new Error(`global room snapshot missing: ${input.chatId}`);
     }
     return snapshot;
@@ -3751,7 +3828,7 @@ export class RuntimeStore {
   async markGlobalRoomRead(input: {
     chatId: string;
     accessToken?: string;
-    messageId?: string;
+    messageId?: number;
   }): Promise<GlobalRoomEntry> {
     const accessToken = normalizeOptionalAccessToken(input.accessToken);
     const key = buildGlobalRoomReadInflightKey({
@@ -3832,9 +3909,9 @@ export class RuntimeStore {
   async editGlobalRoomMessage(input: {
     chatId: string;
     accessToken?: string;
-    messageId: string;
+    messageId: number;
     text: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number }> {
     return await this.client.trpc.message.globalEdit.mutate({
       ...input,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
@@ -3844,8 +3921,8 @@ export class RuntimeStore {
   async recallGlobalRoomMessage(input: {
     chatId: string;
     accessToken?: string;
-    messageId: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    messageId: number;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number }> {
     return await this.client.trpc.message.globalRecall.mutate({
       ...input,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
@@ -4721,13 +4798,13 @@ export class RuntimeStore {
     sessionId: string;
     chatId?: string;
     terminalId?: string;
-    upToMessageId?: string | null;
+    upToSrc?: string | null;
   }) {
     const snapshot = await this.client.trpc.notification.consume.mutate({
       sessionId: input.sessionId,
       chatId: input.chatId,
       terminalId: input.terminalId,
-      upToMessageId: input.upToMessageId ?? undefined,
+      upToSrc: input.upToSrc ?? undefined,
     });
     this.applyNotificationSnapshot(snapshot);
     this.emit();

@@ -9,6 +9,7 @@ import { toJSONSchema, z, type ZodTypeAny } from "zod";
 import type {
   RuntimeAttentionActiveView,
   RuntimeMessageChannelView,
+  RuntimeMessageSendResult,
   RuntimeMessageSnapshotView,
   RuntimeTerminalView,
   RuntimeWorkspaceSurface,
@@ -33,18 +34,17 @@ export interface RuntimeLocalApiHandlers {
     content: string;
     rootId?: string;
     from?: string;
-    to?: string;
     originAckFallback?: string;
-  }) => Promise<{ ok: boolean; messageId: string }>;
+  }) => Promise<RuntimeMessageSendResult>;
   messageEdit: (input: {
     chatId: string;
-    messageId: string;
+    messageId: number;
     content: string;
-  }) => Promise<{ ok: boolean; messageId: string; updatedAt: number }>;
+  }) => Promise<{ ok: boolean; messageId: number; updatedAt: number }>;
   messageRecall: (input: {
     chatId: string;
-    messageId: string;
-  }) => Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }>;
+    messageId: number;
+  }) => Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }>;
   workspaceList: () => Array<RuntimeWorkspaceSurface>;
   terminalList: () => RuntimeTerminalView[];
   terminalCreate: (input: {
@@ -111,6 +111,7 @@ export interface RuntimeToolDescriptor<TInput extends ZodTypeAny = ZodTypeAny> {
 export type RuntimeToolCliInputMode = "object" | "compact";
 
 const emptyObjectSchema = z.object({}).strict();
+const runtimeMessageIdSchema = z.number().int().positive();
 
 const attentionQuerySchema = z.object({
   query: z.string(),
@@ -139,7 +140,6 @@ const attentionCommitEgressSchema = z.object({
   chatId: z.string(),
   rootId: z.string().optional(),
   from: z.string().optional(),
-  to: z.string().optional(),
 });
 
 const attentionCommitSchema = z
@@ -173,19 +173,18 @@ const messageSendSchema = z.object({
   content: z.string(),
   rootId: z.string().optional(),
   from: z.string().optional(),
-  to: z.string().optional(),
   originAckFallback: z.string().optional(),
 });
 
 const messageEditSchema = z.object({
   chatId: z.string(),
-  messageId: z.string(),
+  messageId: runtimeMessageIdSchema,
   content: z.string(),
 });
 
 const messageRecallSchema = z.object({
   chatId: z.string(),
-  messageId: z.string(),
+  messageId: runtimeMessageIdSchema,
 });
 
 const terminalCreateSchema = z.object({
@@ -350,7 +349,7 @@ export const runtimeToolDescriptors = [
         kind: "stdin",
         payload: {
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
           content: "更正：新的交付 URL 是 /preview/42。",
         },
       },
@@ -358,7 +357,7 @@ export const runtimeToolDescriptors = [
         kind: "argv",
         payload: {
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
           content: "Correction: use /preview/42 instead.",
         },
       },
@@ -378,14 +377,14 @@ export const runtimeToolDescriptors = [
         kind: "stdin",
         payload: {
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
         },
       },
       {
         kind: "argv",
         payload: {
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
         },
       },
     ],

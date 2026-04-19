@@ -1,6 +1,29 @@
 import type { MessageActorId } from "@agenter/message-system/types";
 
-import type { WebChatChannel, WebChatMessage } from "./types";
+import type { WebChatChannel, WebChatMessage, WebChatMessageInput } from "./types";
+
+const hasViewKey = (message: WebChatMessageInput): message is WebChatMessage =>
+  "viewKey" in message && typeof message.viewKey === "string";
+
+export const resolveMessageIdentityKey = (message: WebChatMessage): string =>
+  typeof message.messageId === "number" ? `durable:${message.messageId}` : `view:${message.viewKey}`;
+
+export const toWebChatMessage = (message: WebChatMessageInput): WebChatMessage => {
+  const normalized = hasViewKey(message)
+    ? message
+    : {
+        ...message,
+        viewKey: String(message.messageId),
+        messageId: typeof message.messageId === "number" ? message.messageId : undefined,
+      };
+  return {
+    ...normalized,
+    visibleAt: normalized.visibleAt ?? normalized.createdAt,
+  };
+};
+
+export const toWebChatMessages = (messages: readonly WebChatMessageInput[]): WebChatMessage[] =>
+  messages.map(toWebChatMessage);
 
 export const compareMessages = (left: WebChatMessage, right: WebChatMessage): number => {
   if (left.createdAt !== right.createdAt) {
@@ -9,10 +32,8 @@ export const compareMessages = (left: WebChatMessage, right: WebChatMessage): nu
   if (left.rowId !== right.rowId) {
     return left.rowId - right.rowId;
   }
-  return left.messageId.localeCompare(right.messageId);
+  return left.viewKey.localeCompare(right.viewKey);
 };
-
-const isBootstrapMessageId = (messageId: string): boolean => /^\d+$/u.test(messageId);
 
 const sameAttachmentSet = (
   left: WebChatMessage["attachments"],
@@ -38,7 +59,6 @@ const sameSemanticMessage = (left: WebChatMessage, right: WebChatMessage): boole
     left.chatId === right.chatId &&
     (left.senderActorId ?? null) === (right.senderActorId ?? null) &&
     left.from === right.from &&
-    (left.to ?? null) === (right.to ?? null) &&
     left.content === right.content &&
     left.createdAt === right.createdAt &&
     sameAttachmentSet(left.attachments, right.attachments)
@@ -48,7 +68,7 @@ const sameSemanticMessage = (left: WebChatMessage, right: WebChatMessage): boole
 const messageAuthority = (message: WebChatMessage): number => {
   const metadataSize = Object.keys(message.metadata ?? {}).length;
   return (
-    (isBootstrapMessageId(message.messageId) ? 0 : 100) +
+    (typeof message.messageId === "number" ? 1_000 : 0) +
     (message.rootId ? 10 : 0) +
     metadataSize +
     (message.attachments?.length ?? 0)
@@ -73,23 +93,17 @@ const collapseSemanticDuplicates = (messages: WebChatMessage[]): WebChatMessage[
 export const mergeMessages = (current: WebChatMessage[], incoming: WebChatMessage[]): WebChatMessage[] => {
   const byId = new Map<string, WebChatMessage>();
   for (const message of current) {
-    byId.set(message.messageId, message);
+    byId.set(resolveMessageIdentityKey(message), message);
   }
   for (const message of incoming) {
-    byId.set(message.messageId, message);
+    byId.set(resolveMessageIdentityKey(message), message);
   }
   return collapseSemanticDuplicates([...byId.values()]);
 };
 
-export const normalizeMessageRecord = (message: WebChatMessage): WebChatMessage => {
-  const visibleAt = message.visibleAt ?? message.createdAt;
-  return {
-    ...message,
-    visibleAt,
-  };
-};
+export const normalizeMessageRecord = (message: WebChatMessageInput): WebChatMessage => toWebChatMessage(message);
 
-export const normalizeMessageRecords = (messages: WebChatMessage[]): WebChatMessage[] => {
+export const normalizeMessageRecords = (messages: readonly WebChatMessageInput[]): WebChatMessage[] => {
   return messages.map(normalizeMessageRecord);
 };
 
@@ -108,7 +122,7 @@ export const resolveViewerActorId = (
 export const resolveUserSender = (
   channel: WebChatChannel,
   viewerActorId?: string | null,
-): { from?: string; senderActorId?: MessageActorId; to?: string } => {
+): { from?: string; senderActorId?: MessageActorId } => {
   const effectiveViewerActorId = resolveViewerActorId(channel, viewerActorId);
   const currentParticipant = effectiveViewerActorId
     ? channel.participants.find((participant) => participant.id === effectiveViewerActorId)
@@ -120,7 +134,6 @@ export const resolveUserSender = (
   return {
     from: fallbackParticipant?.label,
     senderActorId: (effectiveViewerActorId ?? fallbackParticipant?.id) as MessageActorId | undefined,
-    to: channel.owner,
   };
 };
 

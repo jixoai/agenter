@@ -1,7 +1,7 @@
 import { basename, join, relative, resolve } from "node:path";
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 
-import type { MessageRecord } from "@agenter/message-system";
+import type { PublicRoomMessageRecord } from "../src";
 
 import { createRealTeamKernelHarness } from "../test-support/real-team-kernel-harness";
 import { runRealProjectRoomCollaborationScenario } from "../test-support/real-project-room-collaboration-scenario";
@@ -16,7 +16,7 @@ const EXCLUDED_COPY_NAMES = new Set([".agenter", ".git", "node_modules", ".turbo
 const formatTimestamp = (value: number): string => new Date(value).toISOString();
 const escapeFence = (value: string): string => value.replace(/```/g, "``\\`");
 
-const buildTranscriptMarkdown = (messages: MessageRecord[]): string =>
+const buildTranscriptMarkdown = (messages: PublicRoomMessageRecord[]): string =>
   messages
     .map((message, index) =>
       [

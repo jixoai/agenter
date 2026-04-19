@@ -2,9 +2,7 @@ import { createServer as createNetServer } from "node:net";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { MessageRecord } from "@agenter/message-system";
-
-import type { SessionRuntimeAttentionState } from "../src";
+import type { PublicRoomMessageRecord, SessionRuntimeAttentionState } from "../src";
 import { excludeActiveContextPrefixes, waitForScopedAttentionSettled } from "./attention-test-primitive";
 import { waitForRealValue } from "./real-kernel-harness";
 import type {
@@ -156,10 +154,10 @@ const waitForRoomMessage = async (
   room: Pick<RealTeamProjectRoom, "room">,
   input: {
     label: string;
-    predicate: (message: MessageRecord) => boolean;
+    predicate: (message: PublicRoomMessageRecord) => boolean;
     timeoutMs?: number;
   },
-): Promise<MessageRecord> =>
+): Promise<PublicRoomMessageRecord> =>
   await waitForRealValue(
     () => harness.listProjectRoomMessages(room, 120).filter(input.predicate).at(-1) ?? null,
     {
@@ -524,7 +522,7 @@ const buildPrivateDeliveryCorrectionReminder = (input: {
   ].join("\n");
 
 const extractProjectUrl = (content: string): string | null => content.match(PROJECT_URL_PATTERN)?.[0] ?? null;
-const isProjectUrlMessage = (message: MessageRecord, actorId: string, afterTimestamp: number): boolean =>
+const isProjectUrlMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
   message.senderActorId === actorId &&
   message.content.includes("PROJECT-URL") &&
@@ -578,7 +576,7 @@ const buildPrivateProjectUrlReminder = (input: {
     "不要继续使用 terminal 之外的工具解释过程，不要回复别的内容。",
   ].join("\n");
 
-const projectRoomMessagesWithActors = (messages: MessageRecord[]) =>
+const projectRoomMessagesWithActors = (messages: PublicRoomMessageRecord[]) =>
   messages.map((message) => ({
     messageId: message.messageId,
     senderActorId: message.senderActorId ?? null,
@@ -683,13 +681,13 @@ export interface RealProjectRoomCollaborationDiagnostics {
 
 export interface RealProjectRoomCollaborationScenarioResult {
   projectRoom: RealTeamProjectRoom;
-  backendContract: MessageRecord;
-  frontendPlan: MessageRecord;
-  apiQuestion: MessageRecord;
-  apiAnswer: MessageRecord;
-  designAttachmentMessage: MessageRecord;
-  projectUrlMessage: MessageRecord;
-  userAcceptanceMessage: MessageRecord;
+  backendContract: PublicRoomMessageRecord;
+  frontendPlan: PublicRoomMessageRecord;
+  apiQuestion: PublicRoomMessageRecord;
+  apiAnswer: PublicRoomMessageRecord;
+  designAttachmentMessage: PublicRoomMessageRecord;
+  projectUrlMessage: PublicRoomMessageRecord;
+  userAcceptanceMessage: PublicRoomMessageRecord;
   designSvg: string;
   attachedAssetId: string;
   deliveryUrl: string;
@@ -911,7 +909,7 @@ export const runRealProjectRoomCollaborationScenario = async (
       throw new Error(`failed to send project room kickoff: ${kickoffSent.reason ?? "unknown"}`);
     }
 
-    let backendContract: MessageRecord | null = null;
+    let backendContract: PublicRoomMessageRecord | null = null;
     let backendContractSearchAfter = kickoffAt;
     let backendContractFailureReason = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -970,7 +968,7 @@ export const runRealProjectRoomCollaborationScenario = async (
         message.senderActorId === harness.frontendActorId &&
         message.content.includes("FRONTEND-PLAN:"),
     });
-    let apiQuestion: MessageRecord | null = null;
+    let apiQuestion: PublicRoomMessageRecord | null = null;
     let apiQuestionSearchAfter = frontendPlan.createdAt;
     let apiQuestionFailureReason = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1022,7 +1020,7 @@ export const runRealProjectRoomCollaborationScenario = async (
       throw new Error(`failed to send backend answer prompt: ${backendAnswerSent.reason ?? "unknown"}`);
     }
 
-    let apiAnswer: MessageRecord | null = null;
+    let apiAnswer: PublicRoomMessageRecord | null = null;
     let apiAnswerSearchAfter = apiQuestion.createdAt;
     let apiAnswerFailureReason = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1180,7 +1178,7 @@ export const runRealProjectRoomCollaborationScenario = async (
     }
     await focusLatestParticipantTerminal(harness, "backend");
 
-    let projectUrlMessage: MessageRecord | null = null;
+    let projectUrlMessage: PublicRoomMessageRecord | null = null;
     let projectUrlFailureReason = "";
     let projectUrlSearchAfter = designAttachmentMessage.createdAt;
 

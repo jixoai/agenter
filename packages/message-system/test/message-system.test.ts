@@ -1,17 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
 
-import { MessageControlPlane, type MessageTransportServerMessage } from "../src";
+import { MessageControlPlane, resolveMessageControlDbPath, type MessageTransportServerMessage } from "../src";
 
-const createPlane = (): MessageControlPlane => {
+const createPlaneHarness = (): { root: string; dbPath: string; plane: MessageControlPlane } => {
   const root = mkdtempSync(join(tmpdir(), "agenter-message-system-"));
-  return new MessageControlPlane({ dbPath: join(root, ".message", "message.db") });
+  const dbPath = resolveMessageControlDbPath(join(root, ".message"));
+  return {
+    root,
+    dbPath,
+    plane: new MessageControlPlane({ dbPath }),
+  };
 };
+
+const createPlane = (): MessageControlPlane => createPlaneHarness().plane;
 
 const createRoomId = (): PrincipalId => generatePrincipalKeyPair().principalId;
 
@@ -505,7 +512,7 @@ describe("Feature: message-chat-control-plane", () => {
   });
 
   test("Scenario: Given a room with grants transcript and read state When it is dissolved Then the room and its dependent facts disappear together", () => {
-    const plane = createPlane();
+    const { root, plane } = createPlaneHarness();
     const room = createRoom(plane, { chatId: createRoomId() });
     const relay = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
@@ -543,6 +550,25 @@ describe("Feature: message-chat-control-plane", () => {
         accessToken: relay.accessToken,
       }),
     ).toThrow("message channel access denied");
+    const roomDbRoot = join(root, ".message", "rooms");
+    if (existsSync(roomDbRoot)) {
+      expect(readdirSync(roomDbRoot).some((entry) => entry.includes(room.chatId))).toBeFalse();
+    }
+  });
+
+  test("Scenario: Given no durable room exists When a raw send targets an unknown chatId Then message-system rejects it without creating an orphan room database", () => {
+    const { root, plane } = createPlaneHarness();
+    const unknownRoomId = createRoomId();
+    const roomDbRoot = join(root, ".message", "rooms");
+
+    expect(() =>
+      plane.send({
+        chatId: unknownRoomId,
+        from: "ghost",
+        content: "should not materialize",
+      }),
+    ).toThrow(`unknown chat channel: ${unknownRoomId}`);
+    expect(readdirSync(roomDbRoot).some((entry) => entry.includes(unknownRoomId))).toBeFalse();
   });
 
   test("Scenario: Given a user joins after historical room traffic When they explicitly read old history Then frozen unread membership stays intact and read membership can still grow", () => {
@@ -1167,7 +1193,7 @@ describe("Feature: message-chat-control-plane", () => {
 
   test("Scenario: Given schema-2 legacy room durability When the control plane reopens Then the breaking reset clears legacy room rows", () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-message-system-legacy-reset-"));
-    const dbPath = join(root, ".message", "message.db");
+    const dbPath = resolveMessageControlDbPath(join(root, ".message"));
     mkdirSync(join(root, ".message"), { recursive: true });
     const db = new Database(dbPath, { create: true, strict: true });
     const now = Date.now();
@@ -1201,9 +1227,37 @@ describe("Feature: message-chat-control-plane", () => {
     plane.close();
   });
 
+  test("Scenario: Given a crashed control-plane delete leaves an orphan room database When the control plane reopens Then startup prunes the orphan room files", () => {
+    const { root, dbPath, plane } = createPlaneHarness();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderActorId: "auth:owner",
+      content: "orphan me",
+    });
+    plane.close();
+
+    const controlDb = new Database(dbPath, { create: true, strict: true });
+    controlDb.exec(`pragma foreign_keys = on;`);
+    controlDb.query(`delete from chat_channel where chat_id = ?`).run(room.chatId);
+    controlDb.close();
+
+    const roomDbRoot = join(root, ".message", "rooms");
+    expect(readdirSync(roomDbRoot).some((entry) => entry.includes(room.chatId))).toBeTrue();
+
+    const reopened = new MessageControlPlane({ dbPath });
+    try {
+      expect(reopened.listChannels()).toEqual([]);
+      expect(readdirSync(roomDbRoot).some((entry) => entry.includes(room.chatId))).toBeFalse();
+    } finally {
+      reopened.close();
+    }
+  });
+
   test("Scenario: Given a persisted actor-room unread hole When the control plane reopens Then startup repair recomputes the durable room floor from message truth", () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-message-system-repair-"));
-    const dbPath = join(root, ".message", "message.db");
+    const dbPath = resolveMessageControlDbPath(join(root, ".message"));
     const plane = new MessageControlPlane({ dbPath });
     const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({

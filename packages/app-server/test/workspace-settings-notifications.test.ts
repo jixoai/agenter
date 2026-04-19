@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AttentionSystem } from "@agenter/attention-system";
 
+import { formatMessageAttentionSrc, formatTerminalAttentionSrc } from "../src/attention-src";
 import {
   listWorkspaceSettingsLayers,
   projectSessionNotificationSnapshot,
@@ -80,7 +81,7 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-chat-main", owner: "demo", focusState: "background" });
     const mainPush = attention.commit("ctx-chat-main", {
       ingressType: "push",
-      meta: { author: "assistant", source: "message", systemId: "message", channelId: "chat-main", subjectId: "9" },
+      meta: { author: "assistant", source: "message", src: formatMessageAttentionSrc({ chatId: "chat-main", messageId: 9 }) },
       scores: { hash1: 100 },
       summary: "hello",
       change: { type: "update", value: "hello" },
@@ -94,8 +95,10 @@ describe("Feature: workspace settings and session notifications", () => {
     });
 
     expect(hiddenSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(hiddenSnapshot.unreadByChat["session-1"]?.["chat-main"]).toBe(1);
-    expect(hiddenSnapshot.items[0]?.messageId).toBe("9");
+    expect(hiddenSnapshot.unreadByBucket["session-1"]?.["msg:chat-main"]).toBe(1);
+    expect(hiddenSnapshot.items[0]?.src).toBe(formatMessageAttentionSrc({ chatId: "chat-main", messageId: 9 }));
+    expect(hiddenSnapshot.items[0]?.sourceNamespace).toBe("msg");
+    expect(hiddenSnapshot.items[0]?.sourceId).toBe("chat-main");
 
     attention.setContextFocusState("ctx-chat-main", "focused");
     const focusedSnapshot = projectSessionNotificationSnapshot({
@@ -110,7 +113,7 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-room-team", owner: "demo", focusState: "background" });
     attention.commit("ctx-room-team", {
       ingressType: "push",
-      meta: { author: "assistant", source: "message", systemId: "message", channelId: "room-team", subjectId: "11" },
+      meta: { author: "assistant", source: "message", src: formatMessageAttentionSrc({ chatId: "room-team", messageId: 11 }) },
       scores: { hash2: 100 },
       summary: "team reply",
       change: { type: "update", value: "team reply" },
@@ -122,9 +125,9 @@ describe("Feature: workspace settings and session notifications", () => {
       sessionName: "Demo",
       attention: attention.snapshot(),
     });
-    expect(consumedSnapshot.items.map((item) => item.chatId)).toEqual(["room-team"]);
+    expect(consumedSnapshot.items.map((item) => item.bucketKey)).toEqual(["msg:room-team"]);
     expect(consumedSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(consumedSnapshot.unreadByChat["session-1"]?.["room-team"]).toBe(1);
+    expect(consumedSnapshot.unreadByBucket["session-1"]?.["msg:room-team"]).toBe(1);
   });
 
   test("Scenario: Given hidden terminal completion notifications When terminal visibility and consume change Then unread terminal badges stay scoped to that terminal", () => {
@@ -132,7 +135,7 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-terminal-shell-main", owner: "demo", focusState: "background" });
     const mainPush = attention.commit("ctx-terminal-shell-main", {
       ingressType: "push",
-      meta: { author: "terminal", source: "terminal", systemId: "terminal", subjectId: "shell-main" },
+      meta: { author: "terminal", source: "terminal", src: formatTerminalAttentionSrc({ terminalId: "shell-main" }) },
       scores: { hash1: 100 },
       summary: "Terminal shell-main is ready for your input.",
       change: { type: "update", value: "Terminal shell-main is ready for your input." },
@@ -146,8 +149,10 @@ describe("Feature: workspace settings and session notifications", () => {
     });
 
     expect(hiddenSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(hiddenSnapshot.unreadByTerminal["session-1"]?.["shell-main"]).toBe(1);
-    expect(hiddenSnapshot.items[0]?.sourceType).toBe("terminal");
+    expect(hiddenSnapshot.unreadByBucket["session-1"]?.["tty:shell-main"]).toBe(1);
+    expect(hiddenSnapshot.items[0]?.src).toBe(formatTerminalAttentionSrc({ terminalId: "shell-main" }));
+    expect(hiddenSnapshot.items[0]?.sourceNamespace).toBe("tty");
+    expect(hiddenSnapshot.items[0]?.sourceId).toBe("shell-main");
 
     attention.setContextFocusState("ctx-terminal-shell-main", "focused");
     const focusedSnapshot = projectSessionNotificationSnapshot({
@@ -162,7 +167,7 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-terminal-shell-side", owner: "demo", focusState: "background" });
     attention.commit("ctx-terminal-shell-side", {
       ingressType: "push",
-      meta: { author: "terminal", source: "terminal", systemId: "terminal", subjectId: "shell-side" },
+      meta: { author: "terminal", source: "terminal", src: formatTerminalAttentionSrc({ terminalId: "shell-side" }) },
       scores: { hash2: 100 },
       summary: "Terminal shell-side is ready for your input.",
       change: { type: "update", value: "Terminal shell-side is ready for your input." },
@@ -175,7 +180,7 @@ describe("Feature: workspace settings and session notifications", () => {
       attention: attention.snapshot(),
     });
     expect(consumedSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(consumedSnapshot.unreadByTerminal["session-1"]?.["shell-main"]).toBeUndefined();
-    expect(consumedSnapshot.unreadByTerminal["session-1"]?.["shell-side"]).toBe(1);
+    expect(consumedSnapshot.unreadByBucket["session-1"]?.["tty:shell-main"]).toBeUndefined();
+    expect(consumedSnapshot.unreadByBucket["session-1"]?.["tty:shell-side"]).toBe(1);
   });
 });

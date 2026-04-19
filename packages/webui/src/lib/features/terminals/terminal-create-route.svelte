@@ -8,16 +8,25 @@
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
 
 	const controller = getAppControllerContext();
+	const AUTH_REQUIRED_MESSAGE = 'auth token required';
 
 	let terminalId = $state('');
 	let processKind = $state('shell');
 	let cwd = $state('');
 	let createBusy = $state(false);
 	let errorMessage = $state<string | null>(null);
+	const authReady = $derived(!controller.initializing);
+	const isAuthenticated = $derived(Boolean(controller.authSession));
+	const showAuthNotice = $derived(authReady && !isAuthenticated);
+	const routeErrorMessage = $derived(errorMessage ?? (showAuthNotice ? AUTH_REQUIRED_MESSAGE : null));
 
 	const handleSubmit = async (event: SubmitEvent): Promise<void> => {
 		event.preventDefault();
 		if (createBusy) {
+			return;
+		}
+		if (!authReady || !isAuthenticated) {
+			errorMessage = AUTH_REQUIRED_MESSAGE;
 			return;
 		}
 		createBusy = true;
@@ -78,12 +87,12 @@
 			</div>
 		</section>
 
-		{#if errorMessage}
-			<NoticeBanner tone="destructive" message={errorMessage} />
+		{#if routeErrorMessage}
+			<NoticeBanner tone="destructive" message={routeErrorMessage} />
 		{/if}
 
 		<div class="flex justify-end">
-			<Button type="submit" disabled={createBusy}>
+			<Button type="submit" disabled={createBusy || !authReady || !isAuthenticated}>
 				{createBusy ? 'Creating…' : 'Create terminal'}
 			</Button>
 		</div>

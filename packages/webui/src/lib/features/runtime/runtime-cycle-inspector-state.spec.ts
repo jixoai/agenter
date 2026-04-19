@@ -92,7 +92,7 @@ const attention: RuntimeAttentionState = {
       id: "hook-1",
       cycleId: 12,
       hookId: "message.deliver",
-      systemId: "message",
+      bridgeId: "message",
       contextId: "ctx-room",
       commitId: "commit-3",
       status: "delivered",

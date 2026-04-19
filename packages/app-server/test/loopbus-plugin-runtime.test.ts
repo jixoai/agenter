@@ -2,16 +2,25 @@ import { describe, expect, test } from "bun:test";
 
 import { AttentionSystem } from "@agenter/attention-system";
 
+import { formatMessageAttentionSrc, parseMessageAttentionSrc } from "../src/attention-src";
 import { LoopBusPluginRuntime, type LoopBusPlugin, type LoopMessageSourceRef } from "../src/loopbus-plugin-runtime";
 
-const createMessageRef = (channelId: string, subjectId: string): LoopMessageSourceRef => ({
-  systemId: "message",
-  channelId,
-  subjectId,
+const createMessageRef = (chatId: string, messageId: number): LoopMessageSourceRef => ({
+  src: formatMessageAttentionSrc({ chatId, messageId }),
   reason: "message-committed",
 });
 
 describe("Feature: loopbus-attention-output-pipeline", () => {
+  test("Scenario: Given room-scope lifecycle refs When message attention sources are formatted and parsed Then room identity stays protocol-native without pretending to be a row ref", () => {
+    const roomSrc = formatMessageAttentionSrc({ chatId: "chat-alpha" });
+    const rowSrc = formatMessageAttentionSrc({ chatId: "chat-alpha", messageId: 7 });
+
+    expect(roomSrc).toBe("msg:chat-alpha");
+    expect(parseMessageAttentionSrc(roomSrc)).toEqual({ chatId: "chat-alpha" });
+    expect(rowSrc).toBe("msg:chat-alpha/7");
+    expect(parseMessageAttentionSrc(rowSrc)).toEqual({ chatId: "chat-alpha", messageId: 7 });
+  });
+
   test("Scenario: Given two attention committed hooks When runtime notifies a commit Then structured hook results are collected in order", async () => {
     const calls: string[] = [];
     const plugins: LoopBusPlugin[] = [
@@ -21,7 +30,7 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
           calls.push("first");
           return {
             hookId: "first-hook",
-            systemId: "message",
+            bridgeId: "message",
             status: "ignored",
           };
         },
@@ -32,7 +41,7 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
           calls.push("second");
           return {
             hookId: "second-hook",
-            systemId: "message",
+            bridgeId: "message",
             status: "delivered",
             target: { chatId: "chat-kzf" },
           };
@@ -57,12 +66,12 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
     expect(results).toEqual([
       {
         hookId: "first-hook",
-        systemId: "message",
+        bridgeId: "message",
         status: "ignored",
       },
       {
         hookId: "second-hook",
-        systemId: "message",
+        bridgeId: "message",
         status: "delivered",
         target: { chatId: "chat-kzf" },
       },
@@ -102,20 +111,20 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
 
   test("Scenario: Given an attentionShouldLoad denial When drafts are read Then the ref stays invalidated until a later round allows it", async () => {
     let allow = false;
-    const messages = new Map<string, string>([["chat-1:msg-1", "hello"]]);
+    const messages = new Map<string, string>([["chat-1:1", "hello"]]);
     const runtime = new LoopBusPluginRuntime([
       {
         name: "message-source",
         setup: (api) => {
           api.registerSource({
-            systemId: "message",
-            match: (ref) => ref.systemId === "message",
+            namespace: "msg",
+            parse: parseMessageAttentionSrc,
+            format: formatMessageAttentionSrc,
+            key: formatMessageAttentionSrc,
+            bucket: (ref) => `msg:${ref.chatId}`,
             read: async (request) => ({
               kind: "snapshot",
-              content:
-                request.ref.systemId === "message" && "channelId" in request.ref
-                  ? (messages.get(`${request.ref.channelId}:${request.ref.subjectId}`) ?? "")
-                  : "",
+              content: messages.get(`${request.parsed.chatId}:${request.parsed.messageId}`) ?? "",
               bytes: 0,
               fromHash: null,
               toHash: null,
@@ -137,7 +146,7 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
     ]);
 
     await runtime.setup();
-    runtime.invalidate(createMessageRef("chat-1", "msg-1"));
+    runtime.invalidate(createMessageRef("chat-1", 1));
 
     const deferred = await runtime.readInvalidatedAttentionDrafts();
     expect(deferred).toEqual([]);
@@ -152,22 +161,22 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
 
   test("Scenario: Given two rooms reuse the same message id When invalidations are keyed Then message refs do not collide", async () => {
     const messages = new Map<string, string>([
-      ["chat-alpha:msg-1", "from alpha"],
-      ["chat-beta:msg-1", "from beta"],
+      ["chat-alpha:1", "from alpha"],
+      ["chat-beta:1", "from beta"],
     ]);
     const runtime = new LoopBusPluginRuntime([
       {
         name: "message-source",
         setup: (api) => {
           api.registerSource({
-            systemId: "message",
-            match: (ref) => ref.systemId === "message",
+            namespace: "msg",
+            parse: parseMessageAttentionSrc,
+            format: formatMessageAttentionSrc,
+            key: formatMessageAttentionSrc,
+            bucket: (ref) => `msg:${ref.chatId}`,
             read: async (request) => ({
               kind: "snapshot",
-              content:
-                request.ref.systemId === "message" && "channelId" in request.ref
-                  ? (messages.get(`${request.ref.channelId}:${request.ref.subjectId}`) ?? "")
-                  : "",
+              content: messages.get(`${request.parsed.chatId}:${request.parsed.messageId}`) ?? "",
               bytes: 0,
               fromHash: null,
               toHash: null,
@@ -185,19 +194,19 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
     ]);
 
     await runtime.setup();
-    runtime.invalidate(createMessageRef("chat-alpha", "msg-1"));
-    runtime.invalidate(createMessageRef("chat-beta", "msg-1"));
+    runtime.invalidate(createMessageRef("chat-alpha", 1));
+    runtime.invalidate(createMessageRef("chat-beta", 1));
 
     const drafts = await runtime.readInvalidatedAttentionDrafts();
     expect(drafts).toHaveLength(2);
     expect(
       drafts.map((draft) => ({
         content: draft.content,
-        channelId: draft.sourceRef.systemId === "message" && "channelId" in draft.sourceRef ? draft.sourceRef.channelId : null,
+        src: draft.sourceRef.src,
       })),
     ).toEqual([
-      { content: "from alpha", channelId: "chat-alpha" },
-      { content: "from beta", channelId: "chat-beta" },
+      { content: "from alpha", src: "msg:chat-alpha/1" },
+      { content: "from beta", src: "msg:chat-beta/1" },
     ]);
   });
 });

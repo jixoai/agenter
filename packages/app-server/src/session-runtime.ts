@@ -20,6 +20,7 @@ import {
 } from "@agenter/attention-system";
 import {
   MessageControlPlane,
+  resolveMessageControlDbPath,
   type MessageActorId,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
@@ -148,10 +149,13 @@ import {
 import {
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
+  projectRuntimeMessageOverview,
   projectRuntimeMessageSnapshot,
   projectRuntimeTerminal,
   projectRuntimeWorkspaceSurface,
   type RuntimeMessageChannelView,
+  type RuntimeMessageOverviewItem,
+  type RuntimeMessageSendResult,
   type RuntimeMessageSnapshotView,
   type RuntimeReachableParticipantView,
   type RuntimeVisibleMessageRoomView,
@@ -173,6 +177,20 @@ import {
   toAttentionFocusStateFromVisibility,
   type SessionNotificationSnapshot,
 } from "./session-notifications";
+import {
+  appAttentionSourceRegistry,
+  formatMessageAttentionSrc,
+  formatTaskAttentionSrc,
+  formatTerminalAttentionSrc,
+  parseMessageAttentionSrc,
+  parseTaskAttentionSrc,
+  parseTerminalAttentionSrc,
+  MESSAGE_ATTENTION_NAMESPACE,
+  TASK_ATTENTION_NAMESPACE,
+  TERMINAL_ATTENTION_NAMESPACE,
+  type MessageAttentionSrc,
+  type TerminalAttentionSrc,
+} from "./attention-src";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
@@ -198,6 +216,7 @@ import { listWorkspaceHiddenPrivatePaths } from "./workspace-system/private-isol
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
+const RUNTIME_MESSAGE_DISPATCH_SOURCE = "runtime_dispatch";
 
 const clonePromptWindowMessages = (
   messages: unknown[] | null | undefined,
@@ -736,7 +755,7 @@ const truncateAttentionTitle = (value: string): string => {
 };
 
 const serializeAttentionCommitMatch = (match: AttentionCommitMatch): string =>
-  mdFence("yaml+attention_commit", toYaml(projectAttentionCommitMatchForModel(match)));
+  mdFence("yaml+attention-commit-match", toYaml(projectAttentionCommitMatchForModel(match)));
 
 const projectBackgroundAttentionContextForModel = (match: AttentionActiveContextMatch): Record<string, unknown> => ({
   contextId: match.contextId,
@@ -760,9 +779,7 @@ const projectAttentionCommitForPrompt = (commit: AttentionCommit): Record<string
   provenance: {
     author: commit.meta.author,
     source: commit.meta.source,
-    systemId: commit.meta.systemId,
-    subjectId: commit.meta.subjectId,
-    channelId: commit.meta.channelId,
+    src: commit.meta.src,
     tags: commit.meta.tags,
     createdAt: commit.meta.createdAt,
   },
@@ -928,9 +945,105 @@ const DEFAULT_MAX_BATCH_READ_ROOM_MESSAGE_COUNT = 20;
 interface PendingUnreadReadAck {
   chatId: string;
   accessToken: string;
-  targetMessageId: string;
-  selectedMessageIds: string[];
+  targetMessageId: number;
+  selectedMessageIds: number[];
 }
+
+const MESSAGE_SRC_NAMESPACE = MESSAGE_ATTENTION_NAMESPACE;
+const TERMINAL_SRC_NAMESPACE = TERMINAL_ATTENTION_NAMESPACE;
+const TASK_SRC_NAMESPACE = TASK_ATTENTION_NAMESPACE;
+
+type RuntimeSourceKind = "message" | "terminal" | "task" | "unknown";
+type LifecycleBridgeId = "message" | "terminal";
+
+type MessageSourceParts = MessageAttentionSrc & { messageId: number };
+
+type TerminalSourceParts = TerminalAttentionSrc;
+
+const formatMessageSourceSrc = (input: MessageSourceParts): LoopMessageSourceRef["src"] =>
+  `${MESSAGE_SRC_NAMESPACE}:${input.chatId}/${input.messageId}`;
+
+const parseMessageSourceSrc = (src: string): MessageSourceParts | null => {
+  const parsed = parseMessageAttentionSrc(src);
+  return parsed && typeof parsed.messageId === "number"
+    ? {
+        chatId: parsed.chatId,
+        messageId: parsed.messageId,
+      }
+    : null;
+};
+
+const formatTerminalSourceSrc = (input: TerminalSourceParts): LoopTerminalSourceRef["src"] =>
+  formatTerminalAttentionSrc(input);
+
+const parseTerminalSourceSrc = (src: string): TerminalSourceParts | null => parseTerminalAttentionSrc(src);
+
+const formatTaskSourceSrc = (subjectId: string): LoopTaskSourceRef["src"] => formatTaskAttentionSrc(subjectId);
+
+const parseTaskSourceSrc = (src: string): string | null => parseTaskAttentionSrc(src);
+
+const resolveRuntimeSourceKind = (src: string | undefined): RuntimeSourceKind => {
+  if (!src) {
+    return "unknown";
+  }
+  if (parseMessageSourceSrc(src)) {
+    return "message";
+  }
+  if (parseTerminalSourceSrc(src)) {
+    return "terminal";
+  }
+  if (parseTaskSourceSrc(src)) {
+    return "task";
+  }
+  return "unknown";
+};
+
+const resolveLifecycleBridgeId = (src: string): LifecycleBridgeId => {
+  const namespace = appAttentionSourceRegistry.resolve(src)?.namespace;
+  if (namespace === MESSAGE_ATTENTION_NAMESPACE) {
+    return "message";
+  }
+  if (namespace === TERMINAL_ATTENTION_NAMESPACE) {
+    return "terminal";
+  }
+  throw new Error(`unsupported lifecycle attention src: ${src}`);
+};
+
+const buildLifecycleAttentionDetail = (
+  src: string,
+  bridgeId: LifecycleBridgeId,
+  event: string,
+  payload?: Record<string, unknown>,
+): string => {
+  const messageSource = parseMessageAttentionSrc(src);
+  if (messageSource) {
+    return toYaml({
+      event,
+      bridgeId,
+      src,
+      chatId: messageSource.chatId,
+      messageId: messageSource.messageId ?? null,
+      ...payload,
+    });
+  }
+  const terminalSource = parseTerminalAttentionSrc(src);
+  if (terminalSource) {
+    return toYaml({
+      event,
+      bridgeId,
+      src,
+      terminalId: terminalSource.terminalId,
+      eventId: terminalSource.eventId ?? null,
+      ...payload,
+    });
+  }
+  return toYaml({
+    event,
+    bridgeId,
+    src,
+    ...payload,
+  });
+};
 
 const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
   const semanticHint =
@@ -944,11 +1057,11 @@ const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
             provenance: draft.provenance ?? null,
             egress: draft.egress ?? null,
           });
-  return `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}:${semanticHint}`;
+  return `${draft.sourceRef.src}:${semanticHint}`;
 };
 
 const buildAttentionScoreSubjectSeed = (draft: AttentionDraft): string =>
-  `subject:${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}`;
+  `subject:${draft.sourceRef.src}`;
 
 const buildAttentionScoreSemanticSeed = (draft: AttentionDraft): string | null => {
   const semanticHash = typeof draft.semanticHash === "string" ? draft.semanticHash.trim() : "";
@@ -1283,7 +1396,7 @@ export class SessionRuntime {
   private readonly terminalActorId: TerminalActorId;
   private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
-  private readonly pendingUnreadMessageIds = new Set<string>();
+  private readonly pendingUnreadMessageIds = new Set<number>();
   private readonly messageSystemCleanup: Array<() => void> = [];
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
@@ -1398,7 +1511,7 @@ export class SessionRuntime {
       this.ownsMessageSystem = false;
     } else {
       this.messageSystem = new MessageControlPlane({
-        dbPath: join(options.sessionRoot, "message-system", "chat.db"),
+        dbPath: resolveMessageControlDbPath(join(options.sessionRoot, "message-system")),
         initialConfig: {
           defaultOwner: DEFAULT_CHAT_OWNER,
           transport: {
@@ -1458,20 +1571,19 @@ export class SessionRuntime {
       }));
   }
 
-  private createMessageSourceRef(input: { chatId: string; messageId: string }): LoopMessageSourceRef {
+  private createMessageSourceRef(input: { chatId: string; messageId: number }): LoopMessageSourceRef {
     return {
-      systemId: "message",
-      subjectId: input.messageId,
-      channelId: input.chatId,
+      src: formatMessageSourceSrc(input),
       reason: "message-committed",
     };
   }
 
+  private parseMessageSource(ref: LoopSourceRef): MessageSourceParts | null {
+    return parseMessageSourceSrc(ref.src);
+  }
+
   private getMessageSourceChannelId(ref: LoopSourceRef): string {
-    if (ref.systemId === "message" && "channelId" in ref && typeof ref.channelId === "string") {
-      return ref.channelId;
-    }
-    return this.getDefaultChatId();
+    return this.parseMessageSource(ref)?.chatId ?? this.getDefaultChatId();
   }
 
   private getDefaultChatId(): string {
@@ -1561,7 +1673,7 @@ export class SessionRuntime {
     }
   }
 
-  private resolveLifecycleAttentionScore(input: { systemId: "message" | "terminal"; event: string }): number {
+  private resolveLifecycleAttentionScore(input: { bridgeId: LifecycleBridgeId; event: string }): number {
     void input;
     return PASSIVE_LIFECYCLE_ATTENTION_SCORE;
   }
@@ -1594,9 +1706,8 @@ export class SessionRuntime {
       if (beforeSet.has(terminalId)) {
         continue;
       }
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "terminal",
-        subjectId: terminalId,
+      this.enqueueTerminalLifecycleAttentionCommit({
+        terminalId,
         contextId: this.getTerminalAttentionContextId(terminalId),
         event: "terminal_focus",
         summary: `Focused terminal ${terminalId}`,
@@ -1611,9 +1722,8 @@ export class SessionRuntime {
       if (afterSet.has(terminalId)) {
         continue;
       }
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "terminal",
-        subjectId: terminalId,
+      this.enqueueTerminalLifecycleAttentionCommit({
+        terminalId,
         contextId: this.getTerminalAttentionContextId(terminalId),
         event: "terminal_unfocus",
         summary: `Unfocused terminal ${terminalId}`,
@@ -1630,9 +1740,8 @@ export class SessionRuntime {
     patch: TerminalControlPlaneConfigPatch,
   ): Promise<TerminalControlPlaneConfig> {
     const updated = await this.requireTerminalControlPlane().setConfig(patch);
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "terminal",
-      subjectId: "control-plane",
+    this.enqueueTerminalLifecycleAttentionCommit({
+      terminalId: "control-plane",
       contextId: this.getTerminalControlPlaneAttentionContextId(),
       event: "terminal_config_update",
       summary: "Updated terminal control-plane config",
@@ -1880,20 +1989,6 @@ export class SessionRuntime {
     if (senderActorId.startsWith("auth:")) {
       return true;
     }
-
-    const explicitTo = input.message.to?.trim();
-    if (explicitTo) {
-      const normalizedExplicitTo = explicitTo.toLowerCase();
-      const normalizedSelfActorId = input.selfActorId.toLowerCase();
-      const normalizedSelfLabel = input.selfLabel.trim().toLowerCase();
-      if (
-        normalizedExplicitTo === normalizedSelfActorId ||
-        (normalizedSelfLabel.length > 0 && normalizedExplicitTo === normalizedSelfLabel)
-      ) {
-        return true;
-      }
-    }
-
     return /[?？]/u.test(input.message.content);
   }
 
@@ -2076,9 +2171,8 @@ export class SessionRuntime {
     content: string;
     rootId?: string;
     from?: string;
-    to?: string;
     originAckFallback?: string;
-  }): Promise<{ ok: boolean; messageId: string }> {
+  }): Promise<RuntimeMessageSendResult> {
     const channel = this.getActorRoom(input.chatId) ?? this.messageSystem.getChannel(input.chatId);
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
@@ -2089,12 +2183,12 @@ export class SessionRuntime {
     if (
       originChatId &&
       input.chatId !== originChatId &&
-      !this.hasDeliveredMessageSendForCycle(originChatId, replyCycleId)
+      !this.hasDeliveredRuntimeDispatchForCycle(originChatId, replyCycleId)
     ) {
       const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
       const originAckFallback = input.originAckFallback?.trim();
       if (originChannel) {
-        this.deliverMessageSend({
+        this.deliverRuntimeMessageDispatch({
           chatId: originChatId,
           content:
             originAckFallback && originAckFallback.length > 0
@@ -2109,21 +2203,20 @@ export class SessionRuntime {
         });
       }
     }
-    return this.deliverMessageSend({
+    return this.deliverRuntimeMessageDispatch({
       chatId: input.chatId,
       content: input.content,
       rootId: input.rootId,
       from: author,
-      to: input.to,
       cycleId: replyCycleId,
     });
   }
 
   private async editMessageTool(input: {
     chatId: string;
-    messageId: string;
+    messageId: number;
     content: string;
-  }): Promise<{ ok: boolean; messageId: string; updatedAt: number }> {
+  }): Promise<{ ok: boolean; messageId: number; updatedAt: number }> {
     const access = this.requireActorChannelWriteAccess(input.chatId);
     const message = this.messageSystem.editAuthorized({
       chatId: access.chatId,
@@ -2140,8 +2233,8 @@ export class SessionRuntime {
 
   private async recallMessageTool(input: {
     chatId: string;
-    messageId: string;
-  }): Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }> {
+    messageId: number;
+  }): Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }> {
     const access = this.requireActorChannelWriteAccess(input.chatId);
     const message = this.messageSystem.recallAuthorized({
       chatId: access.chatId,
@@ -2178,7 +2271,6 @@ export class SessionRuntime {
     content: string;
     rootId?: string;
     from: string;
-    to?: string;
     metadata?: Record<string, unknown>;
   }): MessageRecord {
     const access = this.requireActorChannelWriteAccess(input.chatId);
@@ -2188,7 +2280,6 @@ export class SessionRuntime {
       senderActorId: this.messageActorId,
       rootId: input.rootId,
       from: input.from,
-      to: input.to,
       content: input.content,
       metadata: input.metadata,
     });
@@ -2201,14 +2292,14 @@ export class SessionRuntime {
   private maybeAutoAcknowledgeOriginRoomForToolWork(command: string): void {
     const cycleId = this.activeCycleId;
     const originChatId = this.getOriginChatIdForCycle(cycleId);
-    if (!originChatId || this.hasDeliveredMessageSendForCycle(originChatId, cycleId)) {
+    if (!originChatId || this.hasDeliveredRuntimeDispatchForCycle(originChatId, cycleId)) {
       return;
     }
     const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
     if (!originChannel) {
       return;
     }
-    this.deliverMessageSend({
+    this.deliverRuntimeMessageDispatch({
       chatId: originChatId,
       content: this.getMessageSendOriginAckFallback(),
       from: this.getAvatarName(),
@@ -2221,43 +2312,41 @@ export class SessionRuntime {
     });
   }
 
-  private deliverMessageSend(input: {
+  private deliverRuntimeMessageDispatch(input: {
     chatId: string;
     content: string;
     rootId?: string;
     from: string;
-    to?: string;
     cycleId: number | null;
     metadata?: Record<string, unknown>;
-  }): { ok: boolean; messageId: string } {
+  }): RuntimeMessageSendResult {
     const redundant = this.findRedundantVisibleReply({
       chatId: input.chatId,
       content: input.content,
       from: input.from,
     });
     if (redundant) {
-      return {
-        ok: true,
-        messageId: redundant.messageId,
-      };
+      return this.buildRuntimeMessageSendResult({
+        chatId: input.chatId,
+        message: redundant,
+      });
     }
     const message = this.appendActorChannelReply({
       chatId: input.chatId,
       rootId: input.rootId ?? (input.cycleId !== null ? String(input.cycleId) : undefined),
       from: input.from,
-      to: input.to,
       content: input.content,
       metadata: {
         channel: "to_user",
-        source: "message_send",
+        source: RUNTIME_MESSAGE_DISPATCH_SOURCE,
         cycleId: input.cycleId,
         ...(input.metadata ?? {}),
       },
     });
-    return {
-      ok: true,
-      messageId: message.messageId,
-    };
+    return this.buildRuntimeMessageSendResult({
+      chatId: input.chatId,
+      message,
+    });
   }
 
   listMessageChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
@@ -2276,29 +2365,62 @@ export class SessionRuntime {
     });
   }
 
+  private listRecentMessageOverview(input: {
+    chatId: string;
+    accessToken?: string;
+    limit?: number;
+  }): RuntimeMessageOverviewItem[] {
+    if (input.accessToken) {
+      return projectRuntimeMessageOverview(
+        this.messageSystem.queryMessagesAuthorized({
+          chatId: input.chatId,
+          accessToken: input.accessToken,
+          limit: input.limit,
+        }).items,
+        input.limit,
+      );
+    }
+    return projectRuntimeMessageOverview(this.readMessageChannel(input).items, input.limit);
+  }
+
+  private buildRuntimeMessageSendResult(input: {
+    chatId: string;
+    message: MessageRecord;
+    accessToken?: string;
+  }): RuntimeMessageSendResult {
+    return {
+      ok: true,
+      messageId: input.message.messageId,
+      recentMessages: this.listRecentMessageOverview({
+        chatId: input.chatId,
+        accessToken: input.accessToken,
+        limit: 5,
+      }),
+    };
+  }
+
   async sendRuntimeMessage(input: {
     chatId: string;
     content: string;
     rootId?: string;
     from?: string;
-    to?: string;
     originAckFallback?: string;
-  }): Promise<{ ok: boolean; messageId: string }> {
+  }): Promise<RuntimeMessageSendResult> {
     return await this.sendMessageTool(input);
   }
 
   async editRuntimeMessage(input: {
     chatId: string;
-    messageId: string;
+    messageId: number;
     content: string;
-  }): Promise<{ ok: boolean; messageId: string; updatedAt: number }> {
+  }): Promise<{ ok: boolean; messageId: number; updatedAt: number }> {
     return await this.editMessageTool(input);
   }
 
   async recallRuntimeMessage(input: {
     chatId: string;
-    messageId: string;
-  }): Promise<{ ok: boolean; messageId: string; updatedAt: number; recalledAt: number }> {
+    messageId: number;
+  }): Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }> {
     return await this.recallMessageTool(input);
   }
 
@@ -2328,9 +2450,8 @@ export class SessionRuntime {
       adminToken: input.adminToken,
       bootstrapActorId: this.messageActorId,
     });
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "message",
-      subjectId: chatId,
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId,
       contextId: context.contextId,
       event: "channel_create",
       summary: `Created room ${chatId}`,
@@ -2343,9 +2464,8 @@ export class SessionRuntime {
     });
     if (input.focus ?? true) {
       this.messageSystem.focusForActor(this.messageActorId, "replace", [chatId]);
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "message",
-        subjectId: chatId,
+      this.enqueueRoomLifecycleAttentionCommit({
+        chatId,
         contextId: context.contextId,
         event: "channel_focus",
         summary: `Focused room ${chatId}`,
@@ -2388,9 +2508,8 @@ export class SessionRuntime {
       if (focused === wasFocused && !input.channels.some((item) => item.chatId === chatId)) {
         continue;
       }
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "message",
-        subjectId: chatId,
+      this.enqueueRoomLifecycleAttentionCommit({
+        chatId,
         contextId: channel.contextId ?? this.getDefaultAttentionContextId(chatId),
         event: "channel_focus",
         summary: `${focused ? "Focused" : "Unfocused"} chat channel ${chatId}`,
@@ -2411,9 +2530,8 @@ export class SessionRuntime {
     patch: MessageChannelPatchInput;
   }): MessageControlPlaneEntry {
     const updated = this.messageSystem.updateChannelAuthorized(input);
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "message",
-      subjectId: updated.chatId,
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: updated.chatId,
       contextId: updated.contextId ?? this.getDefaultAttentionContextId(updated.chatId),
       event: "channel_update",
       summary: `Updated chat channel ${updated.chatId}`,
@@ -2447,9 +2565,8 @@ export class SessionRuntime {
       accessToken: input.accessToken,
       archivedBy: input.archivedBy ?? this.getAvatarName(),
     });
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "message",
-      subjectId: archived.chatId,
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: archived.chatId,
       contextId: archived.contextId ?? this.getDefaultAttentionContextId(archived.chatId),
       event: "channel_archive",
       summary: `Archived chat channel ${archived.chatId}`,
@@ -2478,9 +2595,8 @@ export class SessionRuntime {
       chatId: input.chatId,
       accessToken: input.accessToken,
     });
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "message",
-      subjectId: deleted.chatId,
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: deleted.chatId,
       contextId: deleted.contextId ?? this.getDefaultAttentionContextId(deleted.chatId),
       event: "channel_delete",
       summary: `Deleted chat channel ${deleted.chatId}`,
@@ -2500,9 +2616,8 @@ export class SessionRuntime {
   ): MessageIssuedGrant {
     const issued = this.messageSystem.issueChannelGrantAuthorized(input);
     const channel = this.messageSystem.getChannel(issued.chatId, { includeArchived: true });
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "message",
-      subjectId: issued.chatId,
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: issued.chatId,
       contextId: channel?.contextId ?? this.getDefaultAttentionContextId(issued.chatId),
       event: "channel_issue_grant",
       summary: `Issued ${issued.role} token for ${issued.chatId}`,
@@ -2520,9 +2635,8 @@ export class SessionRuntime {
     const result = this.messageSystem.revokeChannelGrantAuthorized(input);
     if (result.ok) {
       const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "message",
-        subjectId: input.chatId,
+      this.enqueueRoomLifecycleAttentionCommit({
+        chatId: input.chatId,
         contextId: channel?.contextId ?? this.getDefaultAttentionContextId(input.chatId),
         event: "channel_revoke_grant",
         summary: `Revoked token for ${input.chatId}`,
@@ -2655,9 +2769,8 @@ export class SessionRuntime {
         (input.focus ?? true) ? "focused" : "background",
       );
 
-      this.enqueueLifecycleAttentionCommit({
-        systemId: "terminal",
-        subjectId: createdTerminalId,
+      this.enqueueTerminalLifecycleAttentionCommit({
+        terminalId: createdTerminalId,
         contextId: this.getTerminalAttentionContextId(createdTerminalId),
         event: "terminal_create",
         summary: `Created terminal ${createdTerminalId}`,
@@ -2754,9 +2867,8 @@ export class SessionRuntime {
     this.focusedTerminalIds = controlPlane.getFocusedTerminalIds(this.terminalActorId);
     this.emitFocusedTerminal();
     await this.applyAttentionFocusState(this.getTerminalAttentionContextId(terminalId), "background");
-    this.enqueueLifecycleAttentionCommit({
-      systemId: "terminal",
-      subjectId: terminalId,
+    this.enqueueTerminalLifecycleAttentionCommit({
+      terminalId,
       contextId: this.getTerminalAttentionContextId(terminalId),
       event: "terminal_delete",
       summary: `Deleted terminal ${terminalId}`,
@@ -3040,7 +3152,7 @@ export class SessionRuntime {
         url: attachment.url,
       })),
       timestamp: message.createdAt,
-      id: message.messageId,
+      id: String(message.messageId),
     };
   }
 
@@ -3048,7 +3160,7 @@ export class SessionRuntime {
     const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata : {};
     const role = this.resolveMessageRole(message);
     return {
-      id: message.messageId,
+      id: String(message.messageId),
       chatId: message.chatId,
       role,
       content: message.content,
@@ -3121,9 +3233,8 @@ export class SessionRuntime {
         if (!isAdminWork && !isRequesterUpdate) {
           return;
         }
-        this.enqueueLifecycleAttentionCommit({
-          systemId: "terminal",
-          subjectId: terminalId,
+        this.enqueueTerminalLifecycleAttentionCommit({
+          terminalId,
           contextId: this.getTerminalControlPlaneAttentionContextId(),
           event: isAdminWork ? "terminal_write_request" : "terminal_write_request_update",
           summary: isAdminWork
@@ -3149,8 +3260,10 @@ export class SessionRuntime {
     versionHint?: string | number,
   ): LoopTerminalSourceRef {
     return {
-      systemId: "terminal",
-      subjectId: terminalId,
+      src: formatTerminalSourceSrc({
+        terminalId,
+        eventId: typeof versionHint === "number" ? versionHint : undefined,
+      }),
       reason,
       versionHint,
     };
@@ -3171,8 +3284,7 @@ export class SessionRuntime {
 
   private createTaskSourceRef(subjectId: string, reason: string, versionHint?: string | number): LoopTaskSourceRef {
     return {
-      systemId: "task",
-      subjectId,
+      src: formatTaskSourceSrc(subjectId),
       reason,
       versionHint,
     };
@@ -3196,8 +3308,7 @@ export class SessionRuntime {
       provenance: {
         author: input.from,
         source: "task",
-        systemId: "task",
-        subjectId: input.subjectId,
+        src: formatTaskSourceSrc(input.subjectId),
         createdAt: new Date().toISOString(),
       },
       presentation: {
@@ -3209,13 +3320,12 @@ export class SessionRuntime {
       semanticHash: typeof input.semanticHash === "string" ? input.semanticHash : undefined,
       versionHint: input.versionHint !== undefined ? String(input.versionHint) : undefined,
       supersedeActive: {
-        systemId: "task",
-        subjectId: input.subjectId,
+        src: formatTaskSourceSrc(input.subjectId),
       },
     });
   }
 
-  private hasDeliveredMessageSendForCycle(chatId: string, cycleId: number | null): boolean {
+  private hasDeliveredRuntimeDispatchForCycle(chatId: string, cycleId: number | null): boolean {
     if (cycleId === null) {
       return false;
     }
@@ -3225,7 +3335,7 @@ export class SessionRuntime {
         (message) =>
           message.metadata &&
           typeof message.metadata === "object" &&
-          message.metadata.source === "message_send" &&
+          message.metadata.source === RUNTIME_MESSAGE_DISPATCH_SOURCE &&
           message.metadata.cycleId === cycleId,
       );
   }
@@ -3267,18 +3377,23 @@ export class SessionRuntime {
         name: "builtin-message-source",
         setup: (api) => {
           api.registerSource({
-            systemId: "message",
-            match: (ref) => ref.systemId === "message",
+            namespace: MESSAGE_SRC_NAMESPACE,
+            parse: (src) => parseMessageSourceSrc(src),
+            format: (ref) => formatMessageSourceSrc(ref),
+            key: (ref) => formatMessageSourceSrc(ref),
+            bucket: (ref) => `${MESSAGE_SRC_NAMESPACE}:${ref.chatId}`,
+            compare: (left, right) =>
+              left.chatId === right.chatId ? left.messageId - right.messageId : left.chatId.localeCompare(right.chatId),
             read: async (request) => this.readMessageSource(request),
             toAttentionDrafts: async (result, request) => this.toMessageAttentionDrafts(result, request),
           });
         },
         attentionShouldLoad: ({ request }) => {
-          if (request.ref.systemId !== "message") {
+          const parsed = parseMessageSourceSrc(request.ref.src);
+          if (!parsed) {
             return null;
           }
-          const chatId = this.getMessageSourceChannelId(request.ref);
-          const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
+          const message = this.messageSystem.getMessage(parsed.chatId, parsed.messageId);
           return {
             allow: message !== undefined,
             reason: message ? "message.available" : "message.missing",
@@ -3289,7 +3404,7 @@ export class SessionRuntime {
           if (!replyTarget) {
             return {
               hookId: "builtin-message-bridge",
-              systemId: "message",
+              bridgeId: "message",
               status: "ignored",
             };
           }
@@ -3297,7 +3412,7 @@ export class SessionRuntime {
           if (!chatId) {
             return {
               hookId: "builtin-message-bridge",
-              systemId: "message",
+              bridgeId: "message",
               status: "ignored",
               error: "missing chat target",
             };
@@ -3306,7 +3421,7 @@ export class SessionRuntime {
           if (!channel) {
             return {
               hookId: "builtin-message-bridge",
-              systemId: "message",
+              bridgeId: "message",
               status: "failed",
               target: { chatId },
               error: `unknown chat channel: ${chatId}`,
@@ -3314,15 +3429,14 @@ export class SessionRuntime {
           }
           try {
             const replyCycleId = this.activeCycleId;
-            if (this.hasDeliveredMessageSendForCycle(chatId, replyCycleId)) {
+            if (this.hasDeliveredRuntimeDispatchForCycle(chatId, replyCycleId)) {
               return {
                 hookId: "builtin-message-bridge",
-                systemId: "message",
+                bridgeId: "message",
                 status: "ignored",
                 target: {
                   chatId,
                   rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : null),
-                  to: replyTarget.to ?? null,
                 },
                 output: {
                   reason: "duplicate-visible-dispatch",
@@ -3335,12 +3449,11 @@ export class SessionRuntime {
             if (!replyContent) {
               return {
                 hookId: "builtin-message-bridge",
-                systemId: "message",
+                bridgeId: "message",
                 status: "ignored",
                 target: {
                   chatId,
                   rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : null),
-                  to: replyTarget.to ?? null,
                 },
                 output: {
                   reason: "no-visible-reply-body",
@@ -3353,7 +3466,6 @@ export class SessionRuntime {
               chatId,
               rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
               from: replyTarget.from ?? this.getAvatarName(),
-              to: replyTarget.to,
               content: replyContent,
               metadata: {
                 channel: "to_user",
@@ -3365,12 +3477,11 @@ export class SessionRuntime {
             });
             return {
               hookId: "builtin-message-bridge",
-              systemId: "message",
+              bridgeId: "message",
               status: "delivered",
               target: {
                 chatId,
                 rootId: replyTarget.rootId ?? null,
-                to: replyTarget.to ?? null,
               },
               output: {
                 messageId: message.messageId,
@@ -3382,12 +3493,11 @@ export class SessionRuntime {
           } catch (error) {
             return {
               hookId: "builtin-message-bridge",
-              systemId: "message",
+              bridgeId: "message",
               status: "failed",
               target: {
                 chatId,
                 rootId: replyTarget.rootId ?? null,
-                to: replyTarget.to ?? null,
               },
               error: error instanceof Error ? error.message : String(error),
             };
@@ -3398,8 +3508,15 @@ export class SessionRuntime {
         name: "builtin-terminal-source",
         setup: (api) => {
           api.registerSource({
-            systemId: "terminal",
-            match: (ref) => ref.systemId === "terminal",
+            namespace: TERMINAL_SRC_NAMESPACE,
+            parse: (src) => parseTerminalSourceSrc(src),
+            format: (ref) => formatTerminalSourceSrc(ref),
+            key: (ref) => `${TERMINAL_SRC_NAMESPACE}:${ref.terminalId}`,
+            bucket: (ref) => `${TERMINAL_SRC_NAMESPACE}:${ref.terminalId}`,
+            compare: (left, right) =>
+              left.terminalId === right.terminalId
+                ? (left.eventId ?? Number.MAX_SAFE_INTEGER) - (right.eventId ?? Number.MAX_SAFE_INTEGER)
+                : left.terminalId.localeCompare(right.terminalId),
             read: async (request) => this.readTerminalSource(request),
             toAttentionDrafts: async (result, request) => this.toTerminalAttentionDrafts(result, request),
           });
@@ -3657,26 +3774,24 @@ export class SessionRuntime {
     if (this.resolveMessageChatIdForContext(match.contextId)) {
       return true;
     }
-    return match.recentCommits.some((commit) => commit.meta.systemId === "message");
+    return match.recentCommits.some((commit) => parseMessageSourceSrc(commit.meta.src ?? "") !== null);
   }
 
   private isTerminalAttentionContext(match: AttentionActiveContextMatch): boolean {
     return (
       match.contextId.startsWith("ctx-terminal-") ||
-      match.recentCommits.some((commit) => commit.meta.systemId === "terminal")
+      match.recentCommits.some((commit) => parseTerminalSourceSrc(commit.meta.src ?? "") !== null)
     );
   }
 
   private isTaskAttentionContext(match: AttentionActiveContextMatch): boolean {
-    return (
-      match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => commit.meta.systemId === "task")
-    );
+    return match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => parseTaskSourceSrc(commit.meta.src ?? "") !== null);
   }
 
   private isWorkspaceAttentionContext(match: AttentionActiveContextMatch): boolean {
     return (
       match.contextId.startsWith("ctx-workspace-") ||
-      match.recentCommits.some((commit) => commit.meta.systemId === "workspace")
+      match.recentCommits.some((commit) => commit.meta.source === "workspace")
     );
   }
 
@@ -3693,9 +3808,8 @@ export class SessionRuntime {
     if (this.isWorkspaceAttentionContext(match)) {
       return "workspace";
     }
-    const latestSystemId = match.recentCommits.find((commit) => typeof commit.meta.systemId === "string")?.meta
-      .systemId;
-    return latestSystemId ?? "attention";
+    const latestSource = match.recentCommits.find((commit) => typeof commit.meta.source === "string")?.meta.source;
+    return latestSource ?? "attention";
   }
 
   private buildAttentionContextBootstrapInput(
@@ -3798,9 +3912,8 @@ export class SessionRuntime {
     };
   }
 
-  private async readMessageSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
-    const chatId = this.getMessageSourceChannelId(request.ref);
-    const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
+  private async readMessageSource(request: LoopSourceReadRequest<MessageSourceParts>): Promise<LoopSourceReadResult> {
+    const message = this.messageSystem.getMessage(request.parsed.chatId, request.parsed.messageId);
     const content = message?.content ?? "";
     const bytes = Buffer.byteLength(content, "utf8");
     return {
@@ -3817,10 +3930,11 @@ export class SessionRuntime {
 
   private async toMessageAttentionDrafts(
     result: LoopSourceReadResult,
-    request: LoopSourceReadRequest,
+    request: LoopSourceReadRequest<MessageSourceParts>,
   ): Promise<AttentionDraft[]> {
-    const chatId = this.getMessageSourceChannelId(request.ref);
-    const message = this.messageSystem.getMessage(chatId, request.ref.subjectId);
+    const chatId = request.parsed.chatId;
+    const sourceMessageId = request.parsed.messageId;
+    const message = this.messageSystem.getMessage(chatId, sourceMessageId);
     const actorRoom = this.getActorRoom(chatId, {
       includeArchived: true,
       touchPresence: false,
@@ -3857,29 +3971,34 @@ export class SessionRuntime {
       chatKind: channel?.kind ?? "direct",
       chatContextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
       chatFocused: channel?.focused ?? false,
-      messageId: message?.messageId ?? request.ref.subjectId,
+      messageId: message?.messageId ?? sourceMessageId,
       visibleAt: message?.visibleAt ?? message?.createdAt ?? null,
     } satisfies Record<string, unknown>;
+    const resolvedSourceMessageId = message?.messageId ?? sourceMessageId;
     return [
       {
-        sourceRef: this.createMessageSourceRef({
-          chatId,
-          messageId: message?.messageId ?? request.ref.subjectId,
-        }),
+        sourceRef:
+          resolvedSourceMessageId !== null
+            ? this.createMessageSourceRef({
+                chatId,
+                messageId: resolvedSourceMessageId,
+              })
+            : request.ref,
         content,
         from,
         score: 100,
         provenance: {
           author: from,
           source: "message",
-          systemId: "message",
-          channelId: chatId,
-          subjectId: message?.messageId ?? request.ref.subjectId,
+          src: formatMessageSourceSrc({
+            chatId,
+            messageId: message?.messageId ?? sourceMessageId,
+          }),
           createdAt:
-            typeof message?.updatedAt === "string"
-              ? message.updatedAt
-              : typeof message?.createdAt === "string"
-                ? message.createdAt
+            typeof message?.updatedAt === "number"
+              ? new Date(message.updatedAt).toISOString()
+              : typeof message?.createdAt === "number"
+                ? new Date(message.createdAt).toISOString()
                 : undefined,
         },
         presentation: {
@@ -3898,8 +4017,9 @@ export class SessionRuntime {
     ];
   }
 
-  private async readTerminalSource(request: LoopSourceReadRequest): Promise<LoopSourceReadResult> {
-    const payload = await this.readTerminalRepresentation(request.ref.subjectId, {
+  private async readTerminalSource(request: LoopSourceReadRequest<TerminalSourceParts>): Promise<LoopSourceReadResult> {
+    const terminalId = request.parsed.terminalId;
+    const payload = await this.readTerminalRepresentation(terminalId, {
       mode: request.mode ?? "auto",
       remark: true,
     });
@@ -3923,30 +4043,31 @@ export class SessionRuntime {
         typeof payload.toHash === "string" || typeof payload.seq === "number"
           ? String(payload.toHash ?? payload.seq)
           : null,
-      semanticHash: this.terminalSemanticFingerprint[request.ref.subjectId] ?? null,
-      viewHash: this.terminalViewFingerprint[request.ref.subjectId] ?? null,
+      semanticHash: this.terminalSemanticFingerprint[terminalId] ?? null,
+      viewHash: this.terminalViewFingerprint[terminalId] ?? null,
     };
   }
 
   private async toTerminalAttentionDrafts(
     result: LoopSourceReadResult,
-    request: LoopSourceReadRequest,
+    request: LoopSourceReadRequest<TerminalSourceParts>,
   ): Promise<AttentionDraft[]> {
     if (result.content.trim().length === 0 || !hasMeaningfulTerminalAttentionPayload(result.content)) {
       return [];
     }
-    const presentation = buildTerminalAttentionPresentation(result.content, request.ref.subjectId);
+    const src = formatTerminalSourceSrc(request.parsed);
+    const terminalId = request.parsed.terminalId;
+    const presentation = buildTerminalAttentionPresentation(result.content, terminalId);
     return [
       {
         sourceRef: request.ref,
         content: result.content,
-        from: `terminal:${request.ref.subjectId}`,
+        from: `terminal:${terminalId}`,
         score: PASSIVE_TERMINAL_OBSERVATION_SCORE,
         provenance: {
-          author: `terminal:${request.ref.subjectId}`,
+          author: `terminal:${terminalId}`,
           source: "terminal",
-          systemId: request.ref.systemId,
-          subjectId: request.ref.subjectId,
+          src,
           createdAt: new Date().toISOString(),
         },
         presentation: {
@@ -3958,8 +4079,7 @@ export class SessionRuntime {
         semanticHash: typeof result.semanticHash === "string" ? result.semanticHash : undefined,
         versionHint: typeof result.toHash === "string" ? result.toHash : undefined,
         supersedeActive: {
-          systemId: request.ref.systemId,
-          subjectId: request.ref.subjectId,
+          src,
         },
       },
     ];
@@ -4021,15 +4141,28 @@ export class SessionRuntime {
   }
 
   private resolveAttentionContextId(draft: AttentionDraft): string {
-    const explicitChatId = typeof draft.provenance?.channelId === "string" ? draft.provenance.channelId : null;
-    if (explicitChatId) {
-      return this.ensureAttentionContextForChannel(explicitChatId).contextId;
+    const explicitMessageSource = typeof draft.provenance?.src === "string" ? parseMessageSourceSrc(draft.provenance.src) : null;
+    if (explicitMessageSource) {
+      return this.ensureAttentionContextForChannel(explicitMessageSource.chatId).contextId;
     }
-    const systemId = draft.sourceRef.systemId;
-    if (systemId === "message") {
-      return this.ensureAttentionContextForChannel(this.getDefaultChatId()).contextId;
+    const messageSource = parseMessageSourceSrc(draft.sourceRef.src);
+    if (messageSource) {
+      return this.ensureAttentionContextForChannel(messageSource.chatId).contextId;
     }
-    const contextId = `ctx-${systemId}-${draft.sourceRef.subjectId}`;
+    const terminalSource = parseTerminalSourceSrc(draft.sourceRef.src);
+    if (terminalSource) {
+      const contextId = this.getTerminalAttentionContextId(terminalSource.terminalId);
+      const existing = this.attentionSystem.getContext(contextId);
+      if (existing) {
+        return existing.contextId;
+      }
+      return this.attentionSystem.createContext({
+        contextId,
+        owner: this.getAvatarName(),
+      }).contextId;
+    }
+    const taskSubjectId = parseTaskSourceSrc(draft.sourceRef.src);
+    const contextId = taskSubjectId ? `ctx-task-${taskSubjectId}` : `ctx-source-${createId()}`;
     const existing = this.attentionSystem.getContext(contextId);
     if (existing) {
       return existing.contextId;
@@ -4042,12 +4175,11 @@ export class SessionRuntime {
 
   private buildAttentionMeta(draft: AttentionDraft): AttentionCommitMeta {
     const input = draft.provenance ?? {};
+    const sourceKind = resolveRuntimeSourceKind(draft.sourceRef.src);
     return {
       author: typeof input.author === "string" && input.author.length > 0 ? input.author : draft.from,
-      source: typeof input.source === "string" && input.source.length > 0 ? input.source : draft.sourceRef.systemId,
-      systemId: typeof input.systemId === "string" ? input.systemId : draft.sourceRef.systemId,
-      subjectId: typeof input.subjectId === "string" ? input.subjectId : draft.sourceRef.subjectId,
-      channelId: typeof input.channelId === "string" ? input.channelId : undefined,
+      source: typeof input.source === "string" && input.source.length > 0 ? input.source : sourceKind,
+      src: typeof input.src === "string" ? input.src : draft.sourceRef.src,
       tags: Array.isArray(input.tags) ? [...input.tags] : undefined,
       createdAt: typeof input.createdAt === "string" ? input.createdAt : new Date().toISOString(),
     };
@@ -4072,6 +4204,8 @@ export class SessionRuntime {
   private buildAttentionCommitInput(draft: AttentionDraft): AttentionCommitToolInput {
     const contextId = this.resolveAttentionContextId(draft);
     const normalizedContent = draft.content.trim();
+    const terminalSource = parseTerminalSourceSrc(draft.sourceRef.src);
+    const taskSubjectId = parseTaskSourceSrc(draft.sourceRef.src);
     const presentation = draft.presentation
       ? {
           summary: draft.presentation.summary,
@@ -4079,9 +4213,9 @@ export class SessionRuntime {
           format: draft.presentation.bodyFormat,
           changeType: draft.presentation.changeType ?? ("update" as const),
         }
-      : draft.sourceRef.systemId === "terminal"
+      : terminalSource
         ? (() => {
-            const terminalPresentation = buildTerminalAttentionPresentation(draft.content, draft.sourceRef.subjectId);
+            const terminalPresentation = buildTerminalAttentionPresentation(draft.content, terminalSource.terminalId);
             return {
               summary: terminalPresentation.title,
               content: terminalPresentation.detailValue,
@@ -4089,9 +4223,9 @@ export class SessionRuntime {
               changeType: terminalPresentation.detailKind === "patch" ? ("diff" as const) : ("update" as const),
             };
           })()
-        : draft.sourceRef.systemId === "task"
+        : taskSubjectId
           ? (() => {
-              const taskPresentation = buildTaskAttentionPresentation(draft.content, draft.sourceRef.subjectId);
+              const taskPresentation = buildTaskAttentionPresentation(draft.content, taskSubjectId);
               return {
                 summary: taskPresentation.title,
                 content: taskPresentation.detailValue,
@@ -4143,9 +4277,26 @@ export class SessionRuntime {
     });
   }
 
+  private enqueueRoomLifecycleAttentionCommit(
+    input: Omit<Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0], "src"> & { chatId: string },
+  ): void {
+    this.enqueueLifecycleAttentionCommit({
+      ...input,
+      src: formatMessageAttentionSrc({ chatId: input.chatId }),
+    });
+  }
+
+  private enqueueTerminalLifecycleAttentionCommit(
+    input: Omit<Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0], "src"> & { terminalId: string },
+  ): void {
+    this.enqueueLifecycleAttentionCommit({
+      ...input,
+      src: formatTerminalSourceSrc({ terminalId: input.terminalId }),
+    });
+  }
+
   private async commitLifecycleAttentionItem(input: {
-    systemId: "message" | "terminal";
-    subjectId: string;
+    src: string;
     contextId: string;
     event: string;
     summary: string;
@@ -4160,33 +4311,27 @@ export class SessionRuntime {
         owner: this.getAvatarName(),
       });
     }
+    const bridgeId = resolveLifecycleBridgeId(input.src);
     const scoreToken = this.attentionHashAliases.ensureTokenForDigest(
-      buildAttentionScoreDigest(`lifecycle:${input.systemId}:${input.subjectId}:${input.event}`),
+      buildAttentionScoreDigest(`lifecycle:${input.src}:${input.event}`),
     );
     const score = Math.max(
       0,
       Math.trunc(
         input.score ??
           this.resolveLifecycleAttentionScore({
-            systemId: input.systemId,
+            bridgeId,
             event: input.event,
           }),
       ),
     );
-    const detail = toYaml({
-      event: input.event,
-      systemId: input.systemId,
-      subjectId: input.subjectId,
-      ...input.payload,
-    });
+    const detail = buildLifecycleAttentionDetail(input.src, bridgeId, input.event, input.payload);
     const commit = this.attentionSystem.commit(input.contextId, {
       ingressType: input.ingressType ?? "commit",
       meta: {
         author: this.getAvatarName(),
         source: "lifecycle",
-        systemId: input.systemId,
-        subjectId: input.subjectId,
-        channelId: input.systemId === "message" ? input.subjectId : undefined,
+        src: input.src,
         tags: ["lifecycle", input.event],
         createdAt: new Date().toISOString(),
       },
@@ -4225,7 +4370,7 @@ export class SessionRuntime {
     const activeCommits = context
       .queryCommits({ minScore: 1, limit: 200 })
       .map((entry) => entry.commit)
-      .filter((commit) => commit.meta.systemId === supersede.systemId && commit.meta.subjectId === supersede.subjectId);
+      .filter((commit) => commit.meta.src === supersede.src);
     if (activeCommits.length === 0) {
       return;
     }
@@ -4238,8 +4383,7 @@ export class SessionRuntime {
         meta: {
           author: this.getAvatarName(),
           source: "attention",
-          systemId: supersede.systemId,
-          subjectId: supersede.subjectId,
+          src: supersede.src,
           tags: ["supersede", "source-refresh", supersededAt],
         },
         scores: this.buildResolvedAttentionScores(commit.scores),
@@ -4291,7 +4435,7 @@ export class SessionRuntime {
     let changed = false;
     for (const draft of drafts) {
       const digest = stableAttentionDraftDigest(draft);
-      const sourceKey = `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}`;
+      const sourceKey = draft.sourceRef.src;
       if (this.attentionSourceDigests.get(sourceKey) === digest) {
         continue;
       }
@@ -4506,22 +4650,24 @@ export class SessionRuntime {
       commitId?: string;
     },
   ): SessionTraceRef[] {
+    const terminalSource = parseTerminalSourceSrc(draft.sourceRef.src);
+    const provenanceMessageSource =
+      typeof draft.provenance?.src === "string" ? parseMessageSourceSrc(draft.provenance.src) : null;
     const refs: SessionTraceRef[] = [
-      createTraceRef("source.read", `${draft.sourceRef.systemId}:${draft.sourceRef.subjectId}`, {
+      createTraceRef("source.read", draft.sourceRef.src, {
         label: draft.sourceRef.reason,
         attributes: {
-          systemId: draft.sourceRef.systemId,
-          subjectId: draft.sourceRef.subjectId,
+          src: draft.sourceRef.src,
           reason: draft.sourceRef.reason,
         },
       }),
     ];
-    const channelId = typeof draft.provenance?.channelId === "string" ? draft.provenance.channelId : undefined;
+    const channelId = provenanceMessageSource?.chatId;
     if (channelId) {
       refs.push(toMessageChannelTraceRef(channelId));
     }
-    if (draft.sourceRef.systemId === "terminal") {
-      refs.push(toTerminalTraceRef(draft.sourceRef.subjectId));
+    if (terminalSource) {
+      refs.push(toTerminalTraceRef(terminalSource.terminalId));
     }
     if (input?.contextId) {
       refs.push(toAttentionContextTraceRef(input.contextId));
@@ -4533,33 +4679,29 @@ export class SessionRuntime {
   }
 
   private buildAttentionCommitTraceRefs(contextId: string, commit: AttentionCommit): SessionTraceRef[] {
+    const messageSource = typeof commit.meta.src === "string" ? parseMessageSourceSrc(commit.meta.src) : null;
+    const terminalSource = typeof commit.meta.src === "string" ? parseTerminalSourceSrc(commit.meta.src) : null;
     const refs: SessionTraceRef[] = [
       toAttentionContextTraceRef(contextId),
       toAttentionCommitTraceRef(contextId, commit.commitId),
     ];
-    if (typeof commit.meta.channelId === "string" && commit.meta.channelId.length > 0) {
-      refs.push(toMessageChannelTraceRef(commit.meta.channelId));
+    if (messageSource) {
+      refs.push(toMessageChannelTraceRef(messageSource.chatId));
     }
-    if (
-      typeof commit.meta.systemId === "string" &&
-      typeof commit.meta.channelId === "string" &&
-      commit.meta.subjectId === commit.meta.channelId
-    ) {
-      refs.push(toMessageChannelTraceRef(commit.meta.channelId));
-    }
-    if (commit.meta.systemId === "terminal" && typeof commit.meta.subjectId === "string") {
-      refs.push(toTerminalTraceRef(commit.meta.subjectId));
+    if (terminalSource) {
+      refs.push(toTerminalTraceRef(terminalSource.terminalId));
     }
     return mergeTraceRefs(refs);
   }
 
   private recordDraftSourceReadTrace(draft: AttentionDraft, contextId: string, commitId: string): void {
+    const sourceKind = resolveRuntimeSourceKind(draft.sourceRef.src);
     this.queuePendingTraceSpan({
       traceId: createTraceId(),
       spanId: createSpanId(),
       parentSpanId: null,
       kind: "source.read",
-      name: `${draft.sourceRef.systemId}.read`,
+      name: `${sourceKind}.read`,
       status: "done",
       startedAt: Date.now(),
       endedAt: Date.now(),
@@ -4569,14 +4711,13 @@ export class SessionRuntime {
         createTraceEvent("attention.draft.loaded", {
           status: "ok",
           attributes: {
-            source: draft.sourceRef.systemId,
-            subjectId: draft.sourceRef.subjectId,
+            source: sourceKind,
+            src: draft.sourceRef.src,
           },
         }),
       ],
       attributes: {
-        systemId: draft.sourceRef.systemId,
-        subjectId: draft.sourceRef.subjectId,
+        src: draft.sourceRef.src,
         reason: draft.sourceRef.reason,
         contentBytes: draft.content.length,
       },
@@ -4592,7 +4733,7 @@ export class SessionRuntime {
       spanId: createSpanId(),
       parentSpanId: null,
       kind: "attention.commit",
-      name: "attention_commit",
+      name: "attention.commit",
       status: "done" as const,
       startedAt: Date.now(),
       endedAt: Date.now(),
@@ -4818,9 +4959,7 @@ export class SessionRuntime {
             provenance: {
               author: commit.meta.author,
               source: commit.meta.source,
-              systemId: commit.meta.systemId,
-              subjectId: commit.meta.subjectId,
-              channelId: commit.meta.channelId,
+              src: commit.meta.src,
               tags: commit.meta.tags,
               createdAt: commit.meta.createdAt,
             },
@@ -4844,7 +4983,7 @@ export class SessionRuntime {
       id: `hook-${createId()}`,
       cycleId: this.activeCycleId,
       hookId: result.hookId,
-      systemId: result.systemId,
+      bridgeId: result.bridgeId,
       contextId,
       commitId,
       status: result.status,
@@ -4861,7 +5000,7 @@ export class SessionRuntime {
         spanId: createSpanId(),
         parentSpanId: parentTrace?.spanId,
         kind: "attention.hook",
-        name: result.systemId,
+        name: result.bridgeId,
         status: record.status === "failed" ? "error" : "done",
         startedAt: record.createdAt,
         endedAt: record.createdAt,
@@ -4887,14 +5026,14 @@ export class SessionRuntime {
             status: record.status === "failed" ? "error" : "ok",
             attributes: {
               hookId: record.hookId,
-              systemId: record.systemId,
+              bridgeId: record.bridgeId,
               status: record.status,
             },
           }),
         ],
         attributes: {
           hookId: record.hookId,
-          systemId: record.systemId,
+          bridgeId: record.bridgeId,
           status: record.status,
           target: record.target ?? null,
         },
@@ -5160,7 +5299,6 @@ export class SessionRuntime {
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
       skillsList: this.runtimeSkillsList,
-      builtinToolMode: "none",
       toolProviders: this.createAgentToolProviders(),
       attentionGateway: {
         listContexts: () => this.attentionSystem.listContexts(),
@@ -5719,7 +5857,7 @@ export class SessionRuntime {
   async consumeNotifications(input: {
     chatId?: string;
     terminalId?: string;
-    upToMessageId?: string | null;
+    upToSrc?: string | null;
   }): Promise<SessionNotificationSnapshot> {
     const contextIds = input.chatId
       ? [this.ensureAttentionContextForChannel(input.chatId).contextId]
@@ -5732,15 +5870,16 @@ export class SessionRuntime {
     let changed = false;
     for (const contextId of contextIds) {
       const commits = this.attentionSystem.listPushCommits(contextId);
+      const upToSrc = input.upToSrc;
       const selectedCommitIds =
-        input.chatId && input.upToMessageId
+        typeof upToSrc === "string"
           ? commits
               .filter((commit) => {
-                const messageId =
-                  typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0
-                    ? Number(commit.meta.subjectId)
-                    : Number.NaN;
-                return Number.isFinite(messageId) && messageId <= Number(input.upToMessageId);
+                if (typeof commit.meta.src !== "string") {
+                  return false;
+                }
+                const comparison = appAttentionSourceRegistry.compare(commit.meta.src, upToSrc);
+                return comparison === null ? commit.meta.src === upToSrc : comparison <= 0;
               })
               .map((commit) => commit.commitId)
           : commits.map((commit) => commit.commitId);
@@ -6011,18 +6150,16 @@ export class SessionRuntime {
     text: string;
     assetIds?: string[];
     clientMessageId?: string;
-  }): void {
+  }): RuntimeMessageSendResult {
     const channel = this.messageSystem.getChannel(input.chatId);
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
     const attachments = this.resolveChatAttachments(input.assetIds ?? []);
-    this.messageSystem.sendAuthorized({
+    const message = this.messageSystem.sendAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
-      messageId: input.clientMessageId,
       from: "User",
-      to: channel.owner,
       kind: "text",
       content: input.text,
       attachments: attachments.map((attachment) => ({
@@ -6035,11 +6172,16 @@ export class SessionRuntime {
       })),
       metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
     });
+    return this.buildRuntimeMessageSendResult({
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      message,
+    });
   }
 
-  editMessageChannel(input: { chatId: string; accessToken: string; messageId: string; text: string }): {
+  editMessageChannel(input: { chatId: string; accessToken: string; messageId: number; text: string }): {
     ok: boolean;
-    messageId: string;
+    messageId: number;
     updatedAt: number;
   } {
     const message = this.messageSystem.editAuthorized({
@@ -6055,9 +6197,9 @@ export class SessionRuntime {
     };
   }
 
-  recallMessageChannel(input: { chatId: string; accessToken: string; messageId: string }): {
+  recallMessageChannel(input: { chatId: string; accessToken: string; messageId: number }): {
     ok: boolean;
-    messageId: string;
+    messageId: number;
     updatedAt: number;
     recalledAt: number;
   } {
@@ -6090,9 +6232,7 @@ export class SessionRuntime {
     const attachments = this.resolveChatAttachments(input.assetIds ?? []);
     return this.messageSystem.send({
       chatId: input.chatId,
-      messageId: input.clientMessageId,
       from: "User",
-      to: channel.owner,
       kind: "text",
       content: input.text,
       attachments: attachments.map((attachment) => ({
@@ -6121,9 +6261,7 @@ export class SessionRuntime {
     this.messageSystem.sendErrorAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
-      messageId: input.clientMessageId,
       from: this.getAvatarName(),
-      to: channel.owner,
       kind: "error",
       content: input.content,
       payload: {
@@ -6150,9 +6288,7 @@ export class SessionRuntime {
     this.messageSystem.sendInteractiveAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
-      messageId: input.clientMessageId,
       from: this.getAvatarName(),
-      to: channel.owner,
       kind: "interactive",
       content: input.content,
       payload: {
@@ -6480,9 +6616,8 @@ export class SessionRuntime {
         running &&
         !this.focusedTerminalIds.includes(terminalId)
       ) {
-        this.enqueueLifecycleAttentionCommit({
-          systemId: "terminal",
-          subjectId: terminalId,
+        this.enqueueTerminalLifecycleAttentionCommit({
+          terminalId,
           contextId: this.getTerminalAttentionContextId(terminalId),
           event: "terminal_idle_ready",
           summary: `Terminal ${terminalId} is ready for your input.`,
@@ -6798,7 +6933,7 @@ export class SessionRuntime {
 
   private async waitForAnyInput(): Promise<LoopInputKind> {
     if (this.abortWakeRequested) {
-      this.loopKernelLastWakeCause = "attention_commit";
+      this.loopKernelLastWakeCause = "attention_signal";
       return "attention";
     }
     const loopPaused = this.isLoopPaused();
@@ -6844,7 +6979,7 @@ export class SessionRuntime {
       return "task";
     }
     if (hasPendingAttention) {
-      this.loopKernelLastWakeCause = "attention_commit";
+      this.loopKernelLastWakeCause = "attention_signal";
       this.resetAttentionDebtBackoff();
       return "attention";
     }
@@ -6980,7 +7115,7 @@ export class SessionRuntime {
       this.loopKernelLastWakeCause ??= "terminal_activity";
       this.resetAttentionDebtBackoff();
     } else if (winner.kind === "attention" && !this.attentionForceCollect) {
-      this.loopKernelLastWakeCause ??= "attention_commit";
+      this.loopKernelLastWakeCause ??= "attention_signal";
       this.resetAttentionDebtBackoff();
     }
 
@@ -7034,30 +7169,37 @@ export class SessionRuntime {
         outputs.push(...messageInputs);
         const drafts = messageInputs
           .filter((item) => item.text.trim() !== "/compact")
-          .map(
-            (item): AttentionDraft => ({
-              sourceRef: this.createMessageSourceRef({
-                chatId: this.getDefaultChatId(),
-                messageId: item.id ?? createId(),
-              }),
-              content: item.text,
-              from: item.name,
-              score: 100,
-              provenance: {
-                author: item.name,
-                source: "message",
-                systemId: "message",
-                channelId: this.getDefaultChatId(),
-                subjectId: item.id ?? undefined,
+          .flatMap((item): AttentionDraft[] => {
+            const messageId = item.id ? Number(item.id) : Number.NaN;
+            if (!Number.isInteger(messageId) || messageId <= 0) {
+              return [];
+            }
+            return [
+              {
+                sourceRef: this.createMessageSourceRef({
+                  chatId: this.getDefaultChatId(),
+                  messageId,
+                }),
+                content: item.text,
+                from: item.name,
+                score: 100,
+                provenance: {
+                  author: item.name,
+                  source: "message",
+                  src: formatMessageSourceSrc({
+                    chatId: this.getDefaultChatId(),
+                    messageId,
+                  }),
+                },
+                presentation: {
+                  summary: truncateAttentionTitle(item.text.trim()),
+                  body: item.text,
+                  bodyFormat: "text/plain",
+                  changeType: "update",
+                },
               },
-              presentation: {
-                summary: truncateAttentionTitle(item.text.trim()),
-                body: item.text,
-                bodyFormat: "text/plain",
-                changeType: "update",
-              },
-            }),
-          );
+            ];
+          });
         await this.commitAttentionDrafts(drafts);
       } else {
         outputs.push(...messageInputs.filter((item) => item.text.trim() === "/compact"));
@@ -7251,8 +7393,7 @@ export class SessionRuntime {
       provenance: {
         author: "task-system",
         source: "task",
-        systemId: "task",
-        subjectId: "heartbeat",
+        src: formatTaskSourceSrc("heartbeat"),
         createdAt: new Date(now).toISOString(),
       },
       presentation: {
@@ -7272,8 +7413,7 @@ export class SessionRuntime {
       semanticHash: digest,
       from: "task-system",
       supersedeActive: {
-        systemId: "task",
-        subjectId: "heartbeat",
+        src: formatTaskSourceSrc("heartbeat"),
       },
     };
   }

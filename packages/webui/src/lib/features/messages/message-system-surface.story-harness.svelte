@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { CachedResourceState, GlobalRoomEntry, GlobalRoomSnapshotOutput } from '@agenter/client-sdk';
-	import type { WebChatNotice } from '@agenter/web-chat-view';
+	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
 
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
@@ -93,7 +93,7 @@
 		[initialRoomId]: [
 			{
 				rowId: 1,
-				messageId: 'msg-1',
+				messageId: 1,
 				chatId: initialRoomId,
 				senderActorId: 'system:trusted-bootstrap',
 				from: 'Bootstrap admin',
@@ -412,7 +412,6 @@
 			return;
 		}
 		messageCounter += 1;
-		const messageId = `msg-${messageCounter}`;
 		const senderOption = sendAsOptions.find((option) => option.accessToken === selectedToken);
 		const sender = senderOption?.label ?? 'Bootstrap admin';
 		const senderActorId = (senderOption?.participantId ??
@@ -425,7 +424,7 @@
 				})),
 				{
 					rowId: messageCounter,
-					messageId,
+					messageId: messageCounter,
 					chatId: room.chatId,
 					senderActorId,
 					from: sender,
@@ -456,10 +455,10 @@
 	};
 
 	const handleLatestVisibleMessageIdChange = async (
-		visibleMessage: { messageId: string; rowId: number } | null,
+		visibleMessage: WebChatVisibleMessageFact | null,
 	): Promise<void> => {
 		const room = selectedRoom;
-		if (!room || !visibleMessage) {
+		if (!room || !visibleMessage || !visibleMessage.messageId) {
 			return;
 		}
 		const actorId = selectedViewerActorId;
@@ -509,6 +508,7 @@
 		>
 			<MessageSystemSurface
 				{selectedRoom}
+				authenticated={true}
 				{disableManageDialogPortal}
 				{initialManageDialogSection}
 				initialMessages={selectedMessages}

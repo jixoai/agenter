@@ -9,9 +9,7 @@ import type {
 } from "@agenter/terminal-system";
 import type { TextRenderable, TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { toolDefinition } from "@tanstack/ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { z } from "zod";
 
 import {
   AgentRuntime,
@@ -19,11 +17,13 @@ import {
   FilePromptStore,
   ModelClient,
   SessionStore,
+  createInProcessRootWorkspaceToolProvider,
   type AgentToolProvider,
   type AgentRuntimeStats,
   type LoopBusInput,
   type LoopBusPhase,
   type LoopBusWakeSource,
+  type RuntimeLocalApiHandlers,
 } from "@agenter/app-server";
 import { CommandDispatcher } from "../core/command-dispatcher";
 import {
@@ -49,6 +49,45 @@ const STATUS_BAR_HEIGHT = 6;
 const DEBUG_PANEL_HEIGHT = 14;
 const LARGE_DIFF_BYTES = 16_000;
 const DEMO_ATTENTION_CONTEXT_ID = "ctx-demo-main";
+const DEMO_CHAT_ID = "chat-main";
+
+interface DemoRoomMessage {
+  rowId: number;
+  messageId: number;
+  from: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  recalledAt?: number;
+}
+
+const padTimePart = (value: number, width: number): string => value.toString().padStart(width, "0");
+const formatRuntimeMessageTime = (value: number): string => {
+  const date = new Date(value);
+  return [
+    padTimePart(date.getFullYear(), 4),
+    padTimePart(date.getMonth() + 1, 2),
+    padTimePart(date.getDate(), 2),
+    padTimePart(date.getHours(), 2),
+    padTimePart(date.getMinutes(), 2),
+    padTimePart(date.getSeconds(), 2),
+    padTimePart(date.getMilliseconds(), 3),
+  ].join("");
+};
+
+const toRuntimeMessagePreview = (input: Pick<DemoRoomMessage, "content" | "recalledAt">): string => {
+  if (input.recalledAt) {
+    return "[recalled]";
+  }
+  const firstLine = input.content
+    .split(/\r?\n/gu)
+    .map((line) => line.replace(/\s+/gu, " ").trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return "[empty message]";
+  }
+  return firstLine.length <= 120 ? firstLine : `${firstLine.slice(0, 117).trimEnd()}...`;
+};
 
 type DemoWakeSource = Exclude<LoopBusWakeSource, "unknown">;
 
@@ -398,6 +437,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
   });
 
   const terminalSizeRef = useRef<{ cols: number; rows: number }>({ cols: 80, rows: 20 });
+  const nextRoomMessageIdRef = useRef(1);
+  const roomMessagesRef = useRef<DemoRoomMessage[]>([]);
   const focusedTerminalIdRef = useRef(initialVisibleTerminalId);
   const focusedTerminalIdsRef = useRef<string[]>(initialFocusedTerminalIds);
   const terminalSnapshotsRef = useRef<Record<string, TerminalSnapshot>>({});
@@ -417,6 +458,69 @@ export const App = ({ runtimeConfig }: AppProps) => {
   if (!attentionSystemRef.current.getContext(DEMO_ATTENTION_CONTEXT_ID)) {
     attentionSystemRef.current.createContext({ contextId: DEMO_ATTENTION_CONTEXT_ID, owner: "demo" });
   }
+
+  const appendRoomMessage = (input: {
+    role: ChatMessage["role"];
+    from: string;
+    content: string;
+    timestamp?: number;
+    channel?: ChatMessage["channel"];
+    format?: ChatMessage["format"];
+  }): DemoRoomMessage => {
+    const timestamp = input.timestamp ?? Date.now();
+    const messageId = nextRoomMessageIdRef.current++;
+    const roomMessage: DemoRoomMessage = {
+      rowId: messageId,
+      messageId,
+      from: input.from,
+      content: input.content,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    roomMessagesRef.current = [...roomMessagesRef.current, roomMessage];
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `room-${messageId}`,
+        role: input.role,
+        content: input.content,
+        timestamp,
+        channel: input.channel,
+        format: input.format,
+      },
+    ]);
+    return roomMessage;
+  };
+
+  const listRecentRoomMessages = (): DemoRoomMessage[] => roomMessagesRef.current.slice(-5);
+
+  const updateRoomMessage = (
+    messageId: number,
+    updater: (message: DemoRoomMessage) => DemoRoomMessage,
+  ): DemoRoomMessage => {
+    const existing = roomMessagesRef.current.find((message) => message.messageId === messageId);
+    if (!existing) {
+      throw new Error(`unknown room message: ${messageId}`);
+    }
+    const updated = updater(existing);
+    roomMessagesRef.current = roomMessagesRef.current.map((message) =>
+      message.messageId === messageId ? updated : message,
+    );
+    const nextContent = updated.recalledAt ? "[recalled]" : updated.content;
+    const nextTimestamp = updated.updatedAt;
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id !== `room-${messageId}`
+          ? message
+          : {
+              ...message,
+              content: nextContent,
+              timestamp: nextTimestamp,
+            },
+      ),
+    );
+    return updated;
+  };
   const terminalConfigRef = useRef<TerminalControlPlaneConfig>({
     defaults: {
       cols: 80,
@@ -891,287 +995,6 @@ export const App = ({ runtimeConfig }: AppProps) => {
     [runtimeConfig, terminalAdapters],
   );
 
-  const messageGateway = useMemo(
-    () => ({
-      listChannels: async () => [
-        {
-          chatId: "chat-main",
-          kind: "direct" as const,
-          title: "Chat",
-          owner: "demo",
-          contextId: DEMO_ATTENTION_CONTEXT_ID,
-          participants: [
-            { id: "avatar:demo", label: "demo", role: "avatar" as const },
-            { id: "user", label: "User", role: "user" as const },
-          ],
-          metadata: {
-            builtIn: true,
-          },
-          focused: true,
-        },
-      ],
-      getChannel: async ({ chatId }: { chatId: string }) =>
-        chatId === "chat-main"
-          ? {
-              chatId: "chat-main",
-              kind: "direct" as const,
-              title: "Chat",
-              owner: "demo",
-              contextId: DEMO_ATTENTION_CONTEXT_ID,
-              participants: [
-                { id: "avatar:demo", label: "demo", role: "avatar" as const },
-                { id: "user", label: "User", role: "user" as const },
-              ],
-              metadata: {
-                builtIn: true,
-              },
-              focused: true,
-            }
-          : null,
-      send: async ({ chatId, content }: { chatId: string; content: string; rootId?: string; from?: string; to?: string }) => {
-        if (chatId !== "chat-main") {
-          return {
-            ok: false,
-            messageId: null,
-            reason: `unknown chat: ${chatId}`,
-          };
-        }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: createId(),
-            role: "assistant",
-            content,
-            timestamp: Date.now(),
-            channel: "to_user",
-            format: "markdown",
-          },
-        ]);
-        return {
-          ok: true,
-          messageId: createId(),
-        };
-      },
-    }),
-    [],
-  );
-
-  const toolProviders = useMemo<AgentToolProvider[]>(
-    () => {
-      const terminalProcessProfileSchema = z.object({
-        command: z.array(z.string()).optional(),
-        cwd: z.string().optional(),
-        cols: z.number().optional(),
-        rows: z.number().optional(),
-        gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
-        logStyle: z.enum(["rich", "plain"]).optional(),
-        icon: z.string().optional(),
-        title: z.string().optional(),
-        shortcuts: z.record(z.string(), z.string()).optional(),
-      });
-      const terminalConfigPatchSchema = z.object({
-        defaults: terminalProcessProfileSchema.optional(),
-        processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-        terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-        transport: z
-          .object({
-            host: z.string().optional(),
-            port: z.number().nullable().optional(),
-            pathPrefix: z.string().optional(),
-          })
-          .optional(),
-      });
-
-      return [
-        {
-          name: "demo-terminal",
-          createTools: ({ runtimeText, traceTool }) => [
-            toolDefinition({
-              name: "terminal_list",
-              description: runtimeText.t("tool.terminal_list.description"),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async () => await traceTool("terminal_list", {}, async () => ({ terminals: terminalGateway.list() }))),
-            toolDefinition({
-              name: "terminal_create",
-              description: runtimeText.t("tool.terminal_create.description"),
-              inputSchema: z.object({
-                terminalId: z.string().optional(),
-                processKind: z.string().optional(),
-                command: z.array(z.string()).optional(),
-                cwd: z.string().optional(),
-                profile: terminalProcessProfileSchema.optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z
-                .object({
-                  terminalId: z.string().optional(),
-                  processKind: z.string().optional(),
-                  command: z.array(z.string()).optional(),
-                  cwd: z.string().optional(),
-                  profile: terminalProcessProfileSchema.optional(),
-                })
-                .parse(rawInput);
-              return await traceTool("terminal_create", input, async () => await terminalGateway.create(input));
-            }),
-            toolDefinition({
-              name: "terminal_focus",
-              description: runtimeText.t("tool.terminal_focus.description"),
-              inputSchema: z.object({
-                op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-                terminalIds: z.array(z.string()).optional(),
-              }),
-              outputSchema: z.object({
-                ok: z.boolean(),
-                message: z.string(),
-                focusedTerminalIds: z.array(z.string()).optional(),
-              }),
-            }).server(async (rawInput) => {
-              const input = z
-                .object({
-                  op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-                  terminalIds: z.array(z.string()).optional(),
-                })
-                .parse(rawInput);
-              return await traceTool("terminal_focus", input, async () => await terminalGateway.focus(input));
-            }),
-            toolDefinition({
-              name: "terminal_kill",
-              description: runtimeText.t("tool.terminal_kill.description"),
-              inputSchema: z.object({
-                terminalId: z.string(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ terminalId: z.string() }).parse(rawInput);
-              return await traceTool("terminal_kill", input, async () => await terminalGateway.kill(input));
-            }),
-            toolDefinition({
-              name: "terminal_write",
-              description: runtimeText.t("tool.terminal_write.description"),
-              inputSchema: z.object({
-                terminalId: z.string(),
-                text: z.string(),
-                submit: z.boolean().optional(),
-                submitKey: z.enum(["enter", "linefeed"]).optional(),
-                returnRead: z.union([z.boolean(), z.object({ throttleMs: z.number().optional(), debounceMs: z.number().optional() })]).optional(),
-                readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z
-                .object({
-                  terminalId: z.string(),
-                  text: z.string(),
-                  submit: z.boolean().optional(),
-                  submitKey: z.enum(["enter", "linefeed"]).optional(),
-                  returnRead: z.union([z.boolean(), z.object({ throttleMs: z.number().optional(), debounceMs: z.number().optional() })]).optional(),
-                  readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
-                })
-                .parse(rawInput);
-              return await traceTool("terminal_write", input, async () => await terminalGateway.write(input));
-            }),
-            toolDefinition({
-              name: "terminal_read",
-              description: runtimeText.t("tool.terminal_read.description"),
-              inputSchema: z.object({
-                terminalId: z.string(),
-                mode: z.enum(["auto", "diff", "snapshot"]).optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ terminalId: z.string(), mode: z.enum(["auto", "diff", "snapshot"]).optional() }).parse(rawInput);
-              return await traceTool("terminal_read", input, async () => await terminalGateway.read(input));
-            }),
-            toolDefinition({
-              name: "terminal_snapshot",
-              description: runtimeText.t("tool.terminal_snapshot.description"),
-              inputSchema: z.object({
-                terminalId: z.string(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ terminalId: z.string() }).parse(rawInput);
-              return await traceTool("terminal_snapshot", input, async () => await terminalGateway.snapshot(input));
-            }),
-            toolDefinition({
-              name: "terminal_get_config",
-              description: runtimeText.t("tool.terminal_get_config.description"),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async () => await traceTool("terminal_get_config", {}, async () => terminalGateway.getConfig())),
-            toolDefinition({
-              name: "terminal_set_config",
-              description: runtimeText.t("tool.terminal_set_config.description"),
-              inputSchema: z.object({
-                patch: terminalConfigPatchSchema,
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ patch: terminalConfigPatchSchema }).parse(rawInput);
-              return await traceTool("terminal_set_config", input, async () => terminalGateway.setConfig(input));
-            }),
-          ],
-        },
-        {
-          name: "demo-message",
-          createTools: ({ runtimeText, traceTool }) => [
-            toolDefinition({
-              name: "message_channel_list",
-              description: runtimeText.t("tool.message_channel_list.description"),
-              inputSchema: z.object({
-                includeArchived: z.boolean().optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ includeArchived: z.boolean().optional() }).parse(rawInput);
-              return await traceTool("message_channel_list", input, async () => ({
-                channels: await messageGateway.listChannels(),
-              }));
-            }),
-            toolDefinition({
-              name: "message_channel_get",
-              description: runtimeText.t("tool.message_channel_get.description"),
-              inputSchema: z.object({
-                chatId: z.string(),
-                includeArchived: z.boolean().optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z.object({ chatId: z.string(), includeArchived: z.boolean().optional() }).parse(rawInput);
-              return await traceTool("message_channel_get", input, async () => ({
-                channel: await messageGateway.getChannel(input),
-              }));
-            }),
-            toolDefinition({
-              name: "message_send",
-              description: runtimeText.t("tool.message_send.description"),
-              inputSchema: z.object({
-                chatId: z.string(),
-                content: z.string(),
-                rootId: z.string().optional(),
-                from: z.string().optional(),
-                to: z.string().optional(),
-              }),
-              outputSchema: z.record(z.string(), z.unknown()),
-            }).server(async (rawInput) => {
-              const input = z
-                .object({
-                  chatId: z.string(),
-                  content: z.string(),
-                  rootId: z.string().optional(),
-                  from: z.string().optional(),
-                  to: z.string().optional(),
-                })
-                .parse(rawInput);
-              return await traceTool("message_send", input, async () => await messageGateway.send(input));
-            }),
-          ],
-        },
-      ];
-    },
-    [messageGateway, terminalGateway],
-  );
-
   const attentionGateway = useMemo(
     () => ({
       listContexts: () => attentionSystemRef.current.listContexts(),
@@ -1180,6 +1003,200 @@ export const App = ({ runtimeConfig }: AppProps) => {
       commit: async (input: AttentionCommitToolInput) => attentionSystemRef.current.commit(input.contextId, input).commit,
     }),
     [],
+  );
+
+  const runtimeLocalApiHandlers = useMemo<RuntimeLocalApiHandlers>(
+    () => ({
+      attentionList: () => attentionGateway.listContexts(),
+      attentionActive: () =>
+        attentionGateway.listActive().map((match) => ({
+          contextId: match.contextId,
+          context: {
+            owner: match.context.owner,
+            focusState: match.context.focusState,
+            headCommitId: match.context.headCommitId,
+            unresolvedScoreCount: Object.values(match.context.scoreMap).filter((score) => score > 0).length,
+            scoreMap: { ...match.context.scoreMap },
+            contentFormat: match.context.contentFormat,
+            contentPreview: match.context.content,
+            updatedAt: match.context.updatedAt,
+          },
+          recentCommits: match.recentCommits.slice(-3).map((commit) => ({
+            commitId: commit.commitId,
+            summary: commit.summary,
+            createdAt: commit.createdAt,
+            ingressType: commit.ingressType,
+            scores: { ...commit.scores },
+            src: commit.meta.src,
+            egress: commit.egress ? { ...commit.egress } : undefined,
+            changeType: commit.change.type,
+          })),
+        })),
+      attentionQuery: async (input) => await attentionGateway.query(input),
+      attentionCommit: async (input) => await attentionGateway.commit(input),
+      messageList: () => [
+        {
+          chatId: DEMO_CHAT_ID,
+          kind: "room",
+          title: "Chat",
+          contextId: DEMO_ATTENTION_CONTEXT_ID,
+          participants: [
+            { id: "avatar:demo", label: "demo" },
+            { id: "user", label: "User" },
+          ],
+          focused: true,
+        },
+      ],
+      messageRead: ({ chatId, limit }) => {
+        if (chatId !== DEMO_CHAT_ID) {
+          throw new Error(`unknown chat: ${chatId}`);
+        }
+        const items = roomMessagesRef.current.slice(-(limit ?? roomMessagesRef.current.length)).map((message) => ({
+          rowId: message.rowId,
+          messageId: message.messageId,
+          chatId,
+          from: message.from,
+          kind: "text" as const,
+          content: message.recalledAt ? "[recalled]" : message.content,
+          createdAt: message.createdAt,
+          updatedAt: message.updatedAt,
+          recalledAt: message.recalledAt,
+          readActorIds: ["user"],
+          unreadActorIds: [],
+        }));
+        return {
+          channel: {
+            chatId,
+            kind: "room" as const,
+            title: "Chat",
+            contextId: DEMO_ATTENTION_CONTEXT_ID,
+            participants: [
+              { id: "avatar:demo", label: "demo" },
+              { id: "user", label: "User" },
+            ],
+            focused: true,
+          },
+          items,
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: `head-${roomMessagesRef.current.length}`,
+        };
+      },
+      messageSend: async ({ chatId, content, from }) => {
+        if (chatId !== DEMO_CHAT_ID) {
+          throw new Error(`unknown chat: ${chatId}`);
+        }
+        const roomMessage = appendRoomMessage({
+          role: "assistant",
+          from: from ?? "demo",
+          content,
+          channel: "to_user",
+          format: "markdown",
+        });
+        return {
+          ok: true,
+          messageId: roomMessage.messageId,
+          recentMessages: listRecentRoomMessages().map((message) => ({
+            messageId: message.messageId,
+            from: message.from,
+            contentPreview: toRuntimeMessagePreview(message),
+            sendTime: formatRuntimeMessageTime(message.createdAt),
+            editedTime: message.updatedAt !== message.createdAt ? formatRuntimeMessageTime(message.updatedAt) : undefined,
+            recalledTime: message.recalledAt ? formatRuntimeMessageTime(message.recalledAt) : undefined,
+          })),
+        };
+      },
+      messageEdit: async ({ chatId, messageId, content }) => {
+        if (chatId !== DEMO_CHAT_ID) {
+          throw new Error(`unknown chat: ${chatId}`);
+        }
+        const updatedAt = Date.now();
+        updateRoomMessage(messageId, (message) => ({
+          ...message,
+          content,
+          updatedAt,
+          recalledAt: undefined,
+        }));
+        return { ok: true, messageId, updatedAt };
+      },
+      messageRecall: async ({ chatId, messageId }) => {
+        if (chatId !== DEMO_CHAT_ID) {
+          throw new Error(`unknown chat: ${chatId}`);
+        }
+        const recalledAt = Date.now();
+        const updated = updateRoomMessage(messageId, (message) => ({
+          ...message,
+          updatedAt: recalledAt,
+          recalledAt,
+        }));
+        return { ok: true, messageId, updatedAt: updated.updatedAt, recalledAt };
+      },
+      workspaceList: () => [
+        {
+          mount: {
+            workspacePath: runtimeConfig.agentCwd,
+            kind: "avatar-root",
+          },
+          grants: [
+            {
+              pattern: "**",
+              ruleIndex: 0,
+              mode: "rw",
+            },
+          ],
+        },
+      ],
+      terminalList: () =>
+        terminalGateway.list().map((terminal) => ({
+          terminalId: terminal.terminalId,
+          processKind: "shell",
+          command: runtimeConfig.terminals[terminal.terminalId]?.command ?? [],
+          cwd: terminal.cwd,
+          workspace: runtimeConfig.agentCwd,
+          running: terminal.running,
+          status: terminal.running ? "BUSY" : "IDLE",
+          focused: terminal.focused,
+          icon: terminal.icon,
+          title: terminal.title,
+        })),
+      terminalCreate: async (input) => await terminalGateway.create(input),
+      terminalRead: async (input) => await terminalGateway.read(input),
+      terminalWrite: async (input) => {
+        const result = await terminalGateway.write({
+          terminalId: input.terminalId,
+          text: input.text,
+          submit: input.submit,
+          submitKey: input.submitKey,
+        });
+        return { ok: result.ok, message: result.message };
+      },
+      terminalFocus: async (input) =>
+        await terminalGateway.focus({
+          op: input.op,
+          terminalIds: input.terminalIds,
+        }),
+      terminalKill: async (input) => await terminalGateway.kill(input),
+    }),
+    [attentionGateway, runtimeConfig.agentCwd, runtimeConfig.terminals, terminalGateway],
+  );
+
+  const toolProviders = useMemo<AgentToolProvider[]>(
+    () => [
+      createInProcessRootWorkspaceToolProvider({
+        handlers: runtimeLocalApiHandlers,
+        list: () => ({
+          rootWorkspace: {
+            path: runtimeConfig.agentCwd,
+            commandNames: ["attention", "message", "workspace", "terminal"],
+            toolNames: [],
+            skillRoots: [],
+          },
+          attentionApi: null,
+          workspaces: runtimeLocalApiHandlers.workspaceList(),
+        }),
+      }),
+    ],
+    [runtimeConfig.agentCwd, runtimeLocalApiHandlers],
   );
 
   useEffect(() => {
@@ -1543,13 +1560,12 @@ export const App = ({ runtimeConfig }: AppProps) => {
     if (!value) {
       return;
     }
-    const userMessage: ChatMessage = {
-      id: createId(),
+    appendRoomMessage({
       role: "user",
+      from: "User",
       content: value,
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+      format: "markdown",
+    });
     setInput("");
     chatInputRef.current?.clear();
     if (value !== "/compact") {

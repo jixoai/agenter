@@ -11,7 +11,7 @@ export const defineWebChatView = async (): Promise<void> => {
 export type WebChatViewElement = HTMLElement & {
   channel: import("./types").WebChatChannel | null;
   viewerActorId?: string | null;
-  initialMessages: import("./types").WebChatMessage[];
+  initialMessages: import("./types").WebChatMessageInput[];
   initialSnapshotResolved: boolean;
   disabled: boolean;
   showComposerWhenDisabled: boolean;
@@ -33,7 +33,7 @@ export type WebChatViewElement = HTMLElement & {
   ) => import("./types").WebChatMessageReadProgress | null;
   composerCapabilities?: import("./types").WebChatComposerCapabilities;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
-  latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
+  latestVisibleAssistantViewKeyHandler?: (viewKey: string | null) => void;
   latestVisibleMessageIdHandler?: (message: import("./types").WebChatVisibleMessageFact | null) => void;
   socketFactory?: import("./types").WebChatSocketFactory;
 };

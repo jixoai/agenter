@@ -45,7 +45,7 @@
 		onConsumeNotification: (input: {
 			chatId?: string;
 			terminalId?: string;
-			upToMessageId?: string | null;
+			upToSrc?: string | null;
 		}) => void | Promise<void>;
 		onLoadOlderHeartbeat: () => Promise<{ items: number; hasMore: boolean }>;
 		onRequestHeartbeatCompact: () => void | Promise<void>;

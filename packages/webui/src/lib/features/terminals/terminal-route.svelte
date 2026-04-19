@@ -34,6 +34,7 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
+	const AUTH_REQUIRED_MESSAGE = 'auth token required';
 
 	const emptyTerminalGrantState: CachedResourceState<GlobalTerminalGrantEntry[]> = {
 		data: [],
@@ -76,6 +77,9 @@
 
 	let selectedCallerTokenByTerminalId = $state<Record<string, string>>({});
 	let routeNotice = $state<TerminalSystemNotice | null>(null);
+	const authReady = $derived(!controller.initializing);
+	const isAuthenticated = $derived(Boolean(controller.authSession));
+	const authRequired = $derived(authReady && !isAuthenticated);
 
 	const actorDirectory = $derived(
 		buildActorDirectory({
@@ -162,6 +166,9 @@
 	});
 
 	const selectedCallerToken = $derived.by(() => {
+		if (!isAuthenticated) {
+			return null;
+		}
 		const terminal = selectedTerminal;
 		if (!terminal) {
 			return null;
@@ -277,6 +284,12 @@
 		if (routeNotice) {
 			return routeNotice;
 		}
+		if (authRequired) {
+			return {
+				tone: 'destructive',
+				message: AUTH_REQUIRED_MESSAGE,
+			} satisfies TerminalSystemNotice;
+		}
 		const error =
 			selectedTerminalActivityState.error ??
 			selectedTerminalApprovalsState.error ??
@@ -290,6 +303,12 @@
 			message: error,
 		} satisfies TerminalSystemNotice;
 	});
+
+	const ensureAuthenticated = (): void => {
+		if (!isAuthenticated) {
+			throw new Error(AUTH_REQUIRED_MESSAGE);
+		}
+	};
 
 	const navigateToTerminal = async (nextTerminalId: string): Promise<void> => {
 		await goto(`/terminals/${encodeURIComponent(nextTerminalId)}`, {
@@ -318,6 +337,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			await controller.runtimeStore.deleteGlobalTerminal({
 				terminalId: terminal.terminalId,
 			});
@@ -346,6 +366,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			const grant = await controller.runtimeStore.issueGlobalTerminalGrant({
 				terminalId: terminal.terminalId,
 				role: input.role,
@@ -378,6 +399,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			await controller.runtimeStore.focusGlobalTerminals({
 				op: input.focused ? 'remove' : 'add',
 				terminalIds: [terminal.terminalId],
@@ -395,6 +417,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			await controller.runtimeStore.revokeGlobalTerminalGrant({
 				terminalId: terminal.terminalId,
 				grantId: input.grantId,
@@ -411,6 +434,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			await controller.runtimeStore.approveGlobalTerminalRequest({
 				terminalId: terminal.terminalId,
 				requestId: input.requestId,
@@ -428,6 +452,7 @@
 			return;
 		}
 		try {
+			ensureAuthenticated();
 			await controller.runtimeStore.denyGlobalTerminalRequest({
 				terminalId: terminal.terminalId,
 				requestId: input.requestId,
@@ -445,6 +470,7 @@
 	};
 
 	const handleWriteToolCall = async (input: { text: string }): Promise<{ approvalRequested?: boolean; message?: string } | void> => {
+		ensureAuthenticated();
 		const terminal = selectedTerminal;
 		const accessToken = selectedCallerToken;
 		const selectedSeat = callAsOptions.find((option) => option.accessToken === accessToken);
@@ -487,6 +513,7 @@
 	};
 
 	const handleReadToolCall = async (input: { mode: 'auto' | 'diff' | 'snapshot' }): Promise<void> => {
+		ensureAuthenticated();
 		const terminal = selectedTerminal;
 		const accessToken = selectedCallerToken;
 		if (!terminal || !accessToken) {
@@ -516,15 +543,19 @@
 
 	$effect(() => {
 		const currentTerminalId = selectedTerminal?.terminalId;
-		if (!currentTerminalId) {
+		if (!isAuthenticated || !currentTerminalId) {
 			return;
 		}
 		const releaseGrants = controller.runtimeStore.retainGlobalTerminalGrants(currentTerminalId);
 		const releaseApprovals = controller.runtimeStore.retainGlobalTerminalApprovals(currentTerminalId);
 		const releaseActivity = controller.runtimeStore.retainGlobalTerminalActivity(currentTerminalId);
-		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId: currentTerminalId });
-		void controller.runtimeStore.hydrateGlobalTerminalApprovals({ terminalId: currentTerminalId });
-		void controller.runtimeStore.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: 120 });
+		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId: currentTerminalId }).catch(() => undefined);
+		void controller.runtimeStore
+			.hydrateGlobalTerminalApprovals({ terminalId: currentTerminalId })
+			.catch(() => undefined);
+		void controller.runtimeStore
+			.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: 120 })
+			.catch(() => undefined);
 		return () => {
 			releaseActivity();
 			releaseApprovals();

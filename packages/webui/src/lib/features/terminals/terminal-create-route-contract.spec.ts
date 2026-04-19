@@ -13,4 +13,15 @@ describe('Feature: Terminal create route focus handoff', () => {
 		expect(createRouteSource).toContain('await goto(`/terminals/${encodeURIComponent(createdTerminalId)}`, {');
 		expect(createRouteSource).not.toContain("await goto(`/terminals/${encodeURIComponent(created.terminal?.terminalId ?? '')}`);");
 	});
+
+	test('Scenario: Given the browser is not authenticated When reading the create route source Then terminal creation is disabled behind an explicit auth-required notice', () => {
+		expect(createRouteSource).toContain("const AUTH_REQUIRED_MESSAGE = 'auth token required';");
+		expect(createRouteSource).toContain('const authReady = $derived(!controller.initializing);');
+		expect(createRouteSource).toContain('const isAuthenticated = $derived(Boolean(controller.authSession));');
+		expect(createRouteSource).toContain('const showAuthNotice = $derived(authReady && !isAuthenticated);');
+		expect(createRouteSource).toContain('if (!authReady || !isAuthenticated) {');
+		expect(createRouteSource).toContain('errorMessage = AUTH_REQUIRED_MESSAGE;');
+		expect(createRouteSource).toContain('disabled={createBusy || !authReady || !isAuthenticated}');
+		expect(createRouteSource).toContain('<NoticeBanner tone="destructive" message={routeErrorMessage} />');
+	});
 });

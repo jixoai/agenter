@@ -2,7 +2,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getBottomAnchoredStartScrollTop } from "@agenter/svelte-components";
 
-import { type WebChatMessage, type WebChatSocketFactory, type WebChatSocketLike } from "../src";
+import { type WebChatMessage, type WebChatSocketFactory, type WebChatSocketLike, type WebChatVisibleMessageFact } from "../src";
 import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
 import WebChatViewHost from "../src/web-chat-view-host.svelte";
 import WebChatHostHarness from "./web-chat-host-harness.svelte";
@@ -476,7 +476,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 2,
-              messageId: "2",
+              messageId: 2,
               chatId: "chat-main",
               from: "User",
               kind: "text",
@@ -489,7 +489,7 @@ describe("Feature: web-chat-view package", () => {
             },
             {
               rowId: 3,
-              messageId: "3",
+              messageId: 3,
               chatId: "chat-main",
               from: "jane",
               kind: "text",
@@ -526,7 +526,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 1,
-              messageId: "1",
+              messageId: 1,
               chatId: "chat-main",
               from: "User",
               kind: "text",
@@ -549,7 +549,7 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).toContain("earliest message");
     expect(readRenderedText(document.body)).toContain("latest reply");
     expect(
-      (document.body.querySelector("[data-message-id='1']") as HTMLElement | null)?.dataset.insertMotion,
+      (document.body.querySelector("[data-view-key='1']") as HTMLElement | null)?.dataset.insertMotion,
     ).toBe("older");
   });
 
@@ -573,7 +573,7 @@ describe("Feature: web-chat-view package", () => {
       initialSnapshotResolved: true,
       initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
         rowId: index + 1,
-        messageId: `scroll-${index + 1}`,
+        messageId: index + 1,
         chatId: "chat-scroll-latest",
         from: index % 2 === 0 ? "User" : "jane",
         to: index % 2 === 0 ? "jane" : undefined,
@@ -768,7 +768,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "msg-user",
+          viewKey: "msg-user",
+          messageId: 1,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -828,7 +829,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "msg-edited",
+          viewKey: "msg-edited",
+          messageId: 1,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -842,7 +844,8 @@ describe("Feature: web-chat-view package", () => {
         },
         {
           rowId: 2,
-          messageId: "msg-recalled",
+          viewKey: "msg-recalled",
+          messageId: 2,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -889,7 +892,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 3,
-          messageId: "msg-progress",
+          viewKey: "msg-progress",
+          messageId: 3,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -903,7 +907,7 @@ describe("Feature: web-chat-view package", () => {
         },
       ],
       resolveMessageReadProgress: ({ message }: { message: WebChatMessage }) =>
-        message.messageId === "msg-progress"
+        message.viewKey === "msg-progress"
           ? {
               readCount: 1,
               totalCount: 2,
@@ -965,7 +969,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "msg-user",
+          viewKey: "msg-user",
+          messageId: 1,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -1018,7 +1023,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "msg-user",
+          viewKey: "msg-user",
+          messageId: 1,
           chatId: "chat-main",
           senderActorId: "auth:user",
           from: "User",
@@ -1174,7 +1180,8 @@ describe("Feature: web-chat-view package", () => {
       initialSnapshotResolved: true,
       initialMessages: Array.from({ length: 200 }, (_value, index) => ({
         rowId: index + 1,
-        messageId: `virtual-${index + 1}`,
+        viewKey: `virtual-${index + 1}`,
+        messageId: index + 1,
         chatId: "chat-virtualized",
         from: index % 2 === 0 ? "User" : "jane",
         to: index % 2 === 0 ? "jane" : undefined,
@@ -1191,8 +1198,8 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeTruthy();
-    expect(viewport.querySelector("[data-message-id='virtual-120']")).toBeNull();
+    expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeTruthy();
+    expect(viewport.querySelector("[data-view-key='virtual-120']")).toBeNull();
     const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
     expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
     Object.defineProperties(viewport, {
@@ -1212,8 +1219,8 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     await vi.waitFor(() => {
-      expect(viewport.querySelector("[data-message-id='virtual-1']")).toBeTruthy();
-      expect(viewport.querySelector("[data-message-id='virtual-200']")).toBeNull();
+      expect(viewport.querySelector("[data-view-key='virtual-1']")).toBeTruthy();
+      expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeNull();
     });
   });
 
@@ -1237,7 +1244,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "queued-1",
+          viewKey: "queued-1",
+          messageId: 1,
           chatId: "chat-main",
           from: "User",
           to: "jane",
@@ -1250,7 +1258,8 @@ describe("Feature: web-chat-view package", () => {
         },
         {
           rowId: 2,
-          messageId: "reply-1",
+          viewKey: "reply-1",
+          messageId: 2,
           chatId: "chat-main",
           from: "jane",
           kind: "text",
@@ -1265,8 +1274,8 @@ describe("Feature: web-chat-view package", () => {
     });
 
     await settleLitUpdates();
-    const queuedRow = document.body.querySelector("[data-message-id='queued-1']") as HTMLElement | null;
-    const replyRow = document.body.querySelector("[data-message-id='reply-1']") as HTMLElement | null;
+    const queuedRow = document.body.querySelector("[data-view-key='queued-1']") as HTMLElement | null;
+    const replyRow = document.body.querySelector("[data-view-key='reply-1']") as HTMLElement | null;
     expect(queuedRow).toBeTruthy();
     expect(replyRow).toBeTruthy();
     expect(
@@ -1298,7 +1307,8 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "msg-analyst-a",
+          viewKey: "msg-analyst-a",
+          messageId: 1,
           chatId: "chat-duplicate-viewers",
           senderActorId: "auth:analyst-a",
           from: "Analyst",
@@ -1312,7 +1322,8 @@ describe("Feature: web-chat-view package", () => {
         },
         {
           rowId: 2,
-          messageId: "msg-reviewer",
+          viewKey: "msg-reviewer",
+          messageId: 2,
           chatId: "chat-duplicate-viewers",
           senderActorId: "session:reviewer",
           from: "Analyst",
@@ -1360,7 +1371,7 @@ describe("Feature: web-chat-view package", () => {
       initialMessages: [
         {
           rowId: 1,
-          messageId: "101",
+          messageId: 101,
           chatId: "chat-main",
           from: "User",
           to: "jane",
@@ -1374,7 +1385,7 @@ describe("Feature: web-chat-view package", () => {
         },
         {
           rowId: 2,
-          messageId: "102",
+          messageId: 102,
           chatId: "chat-main",
           from: "jane",
           kind: "text",
@@ -1417,7 +1428,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 11,
-              messageId: "msg-main-user",
+              messageId: 11,
               chatId: "chat-main",
               from: "User",
               to: "jane",
@@ -1431,7 +1442,7 @@ describe("Feature: web-chat-view package", () => {
             },
             {
               rowId: 12,
-              messageId: "msg-main-assistant",
+              messageId: 12,
               chatId: "chat-main",
               from: "jane",
               kind: "text",
@@ -1502,7 +1513,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 1,
-              messageId: "1",
+              messageId: 1,
               chatId: "chat-main",
               from: "jane",
               kind: "text",
@@ -1542,9 +1553,7 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const latestVisibleMessageIdHandler = vi.fn<
-      (message: { messageId: string; rowId: number } | null) => void
-    >();
+    const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
     const initialChannel = {
       chatId: "chat-main",
       kind: "room" as const,
@@ -1586,7 +1595,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 1,
-              messageId: "msg-visible",
+              messageId: 1,
               chatId: "chat-main",
               from: "jane",
               kind: "text",
@@ -1609,7 +1618,8 @@ describe("Feature: web-chat-view package", () => {
 
     await vi.waitFor(() => {
       expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
-        messageId: "msg-visible",
+        viewKey: "1",
+        messageId: 1,
         rowId: 1,
       });
     });
@@ -1632,9 +1642,7 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const latestVisibleMessageIdHandler = vi.fn<
-      (message: { messageId: string; rowId: number } | null) => void
-    >();
+    const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
     const initialChannel = {
       chatId: "chat-main",
       kind: "room" as const,
@@ -1677,7 +1685,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 1,
-              messageId: "msg-visible",
+              messageId: 1,
               chatId: "chat-main",
               from: "jane",
               senderActorId: "session:jane",
@@ -1701,7 +1709,8 @@ describe("Feature: web-chat-view package", () => {
 
     await vi.waitFor(() => {
       expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
-        messageId: "msg-visible",
+        viewKey: "1",
+        messageId: 1,
         rowId: 1,
       });
     });
@@ -1716,7 +1725,8 @@ describe("Feature: web-chat-view package", () => {
     });
     expect(latestVisibleMessageIdHandler.mock.calls.at(-1)).toEqual([
       {
-        messageId: "msg-visible",
+        viewKey: "1",
+        messageId: 1,
         rowId: 1,
       },
     ]);
@@ -1736,9 +1746,7 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const latestVisibleMessageIdHandler = vi.fn<
-      (message: { messageId: string; rowId: number } | null) => void
-    >();
+    const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
     const initialChannel = {
       chatId: "chat-main",
       kind: "room" as const,
@@ -1780,7 +1788,7 @@ describe("Feature: web-chat-view package", () => {
           items: [
             {
               rowId: 1,
-              messageId: "msg-earlier",
+              messageId: 1,
               chatId: "chat-main",
               from: "User",
               kind: "text",
@@ -1803,7 +1811,8 @@ describe("Feature: web-chat-view package", () => {
 
     await vi.waitFor(() => {
       expect(latestVisibleMessageIdHandler).toHaveBeenCalledWith({
-        messageId: "msg-earlier",
+        viewKey: "1",
+        messageId: 1,
         rowId: 1,
       });
     });
@@ -1815,7 +1824,7 @@ describe("Feature: web-chat-view package", () => {
         items: [
           {
             rowId: 2,
-            messageId: "msg-latest",
+            messageId: 2,
             chatId: "chat-main",
             from: "jane",
             kind: "text",
@@ -1834,12 +1843,13 @@ describe("Feature: web-chat-view package", () => {
 
     await vi.waitFor(() => {
       expect(latestVisibleMessageIdHandler).toHaveBeenLastCalledWith({
-        messageId: "msg-latest",
+        viewKey: "2",
+        messageId: 2,
         rowId: 2,
       });
     });
     expect(
-      (document.body.querySelector("[data-message-id='msg-latest']") as HTMLElement | null)?.dataset.insertMotion,
+      (document.body.querySelector("[data-view-key='2']") as HTMLElement | null)?.dataset.insertMotion,
     ).toBe("latest");
     unmount(component);
   });
@@ -1974,8 +1984,8 @@ describe("Feature: web-chat-view package", () => {
     };
     element.initialMessages = [
       {
+        viewKey: "msg-progress",
         rowId: 1,
-        messageId: "msg-progress",
         chatId: "chat-main",
         senderActorId: "auth:user",
         from: "User",
@@ -1994,7 +2004,7 @@ describe("Feature: web-chat-view package", () => {
     element.disabled = true;
     element.showComposerWhenDisabled = false;
     element.resolveMessageReadProgress = ({ message }) =>
-      message.messageId === "msg-progress"
+      message.viewKey === "msg-progress"
         ? {
             readCount: 1,
             totalCount: 1,

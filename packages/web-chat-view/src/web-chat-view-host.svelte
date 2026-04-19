@@ -22,7 +22,7 @@
     resolveMessageReadProgress,
     composerCapabilities,
     onSendMessage,
-    onLatestVisibleAssistantMessageIdChange,
+    onLatestVisibleAssistantViewKeyChange,
     onLatestVisibleMessageIdChange,
     socketFactory,
   }: WebChatViewHostProps = $props();
@@ -48,7 +48,7 @@
   {resolveMessageReadProgress}
   {composerCapabilities}
   submitMessage={onSendMessage}
-  latestVisibleAssistantMessageIdHandler={onLatestVisibleAssistantMessageIdChange}
+  latestVisibleAssistantViewKeyHandler={onLatestVisibleAssistantViewKeyChange}
   latestVisibleMessageIdHandler={onLatestVisibleMessageIdChange}
   {socketFactory}
 />

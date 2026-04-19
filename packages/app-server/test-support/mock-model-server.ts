@@ -74,7 +74,7 @@ interface PromptWindowCompactSummary {
 
 interface ToolResult {
   callId: string;
-  name: string;
+  operation: string;
   content: string;
   data: unknown;
   command?: string;
@@ -137,18 +137,18 @@ const parseRootWorkspaceShellCommand = (input: string | undefined): string | nul
   return command.length > 0 ? command : null;
 };
 
-const toLogicalShellToolName = (command: string | null): string | null => {
+const toCliCommandFact = (command: string | null): string | null => {
   if (!command) {
     return null;
   }
   if (command === "message list") {
-    return "message_channel_list";
+    return "message.list";
   }
   if (command.startsWith("message send ")) {
-    return "message_send";
+    return "message.send";
   }
   if (command.startsWith("attention commit ")) {
-    return "attention_commit";
+    return "attention.commit";
   }
   return null;
 };
@@ -428,12 +428,12 @@ const extractToolResults = (messages: readonly ChatMessage[]): ToolResult[] => {
       continue;
     }
     const content = message.content ?? "";
-    const logicalShellName = callMeta.name === "root_workspace_bash" ? toLogicalShellToolName(callMeta.command) : null;
+    const commandFact = callMeta.name === "root_workspace_bash" ? toCliCommandFact(callMeta.command) : null;
     results.push({
       callId: message.tool_call_id,
-      name: logicalShellName ?? callMeta.name,
+      operation: commandFact ?? callMeta.name,
       content,
-      data: logicalShellName ? parseShellToolPayload(content) : safeJsonParse(content),
+      data: commandFact ? parseShellToolPayload(content) : safeJsonParse(content),
       command: callMeta.command ?? undefined,
     });
   }
@@ -451,14 +451,14 @@ const assistantHistoryHasCommitSummary = (history: string, summary: string): boo
   history.includes(`summary: '${summary}'`) ||
   history.includes(`"summary":"${summary}"`);
 
-const hasToolResult = (results: readonly ToolResult[], name: string): boolean =>
-  results.some((result) => result.name === name);
+const hasOperationResult = (results: readonly ToolResult[], operation: string): boolean =>
+  results.some((result) => result.operation === operation);
 
-const findLatestToolResult = (results: readonly ToolResult[], name: string): ToolResult | null =>
-  [...results].reverse().find((result) => result.name === name) ?? null;
+const findLatestOperationResult = (results: readonly ToolResult[], operation: string): ToolResult | null =>
+  [...results].reverse().find((result) => result.operation === operation) ?? null;
 
 const findGaubeeChatId = (results: readonly ToolResult[]): string | null => {
-  const channelList = findLatestToolResult(results, "message_channel_list");
+  const channelList = findLatestOperationResult(results, "message.list");
   if (!channelList || !channelList.data || typeof channelList.data !== "object") {
     return null;
   }
@@ -492,7 +492,7 @@ const findGaubeeChatId = (results: readonly ToolResult[]): string | null => {
 };
 
 const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly AttentionFrame[]): string | null => {
-  const channelList = findLatestToolResult(results, "message_channel_list");
+  const channelList = findLatestOperationResult(results, "message.list");
   if (channelList && channelList.data && typeof channelList.data === "object") {
     const channels = (channelList.data as { channels?: unknown }).channels;
     if (Array.isArray(channels)) {
@@ -520,7 +520,7 @@ const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly 
 
 const extractChannelRows = (results: readonly ToolResult[]): Map<string, number> => {
   const rows = new Map<string, number>();
-  const channelList = findLatestToolResult(results, "message_channel_list");
+  const channelList = findLatestOperationResult(results, "message.list");
   if (!channelList || !channelList.data || typeof channelList.data !== "object") {
     return rows;
   }
@@ -592,50 +592,6 @@ const buildScores = (scores: Record<string, number> | undefined, mode: "wait" | 
     Object.entries(source).map(([key, value]) => [key, mode === "done" ? 0 : Math.max(1, Math.floor(value / 2) || 50)]),
   );
 };
-
-const buildAttentionCommitToolCalls = (
-  frames: readonly AttentionFrame[],
-  input: {
-    summary: string;
-    value: string;
-    stage: "act" | "done";
-    done: boolean;
-    scoreMode: "wait" | "done";
-  },
-): ChatToolCall[] =>
-  frames
-    .map((frame) => {
-      const latestCommit = frame.commits.at(-1);
-      if (!latestCommit?.commitId) {
-        return null;
-      }
-      const toolCall: ChatToolCall = {
-        id: randomUUID(),
-        type: "function",
-        function: {
-          name: "attention_commit",
-          arguments: JSON.stringify({
-            contextId: frame.contextId,
-            parentCommitIds: [latestCommit.commitId],
-            meta: {
-              author: "assistant",
-              source: "mock-model-server",
-            },
-            ...(input.scoreMode === "wait" ? { scores: buildScores(latestCommit.scores, input.scoreMode) } : {}),
-            summary: input.summary,
-            change: {
-              type: "update",
-              value: input.value,
-              format: "text/plain",
-            },
-            done: input.done,
-            stage: input.stage,
-          }),
-        },
-      };
-      return toolCall;
-    })
-    .filter((call): call is ChatToolCall => call !== null);
 
 const buildRootWorkspaceBashToolCall = (command: string): ChatToolCall => ({
   id: randomUUID(),
@@ -760,33 +716,27 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   const assistantHistory = listAssistantTexts(request.messages).join("\n");
   const latestAttentionMetadata = extractLatestAttentionMetadata(users);
   const channelRows = extractChannelRows(toolResults);
-  const latestMessageSend = findLatestToolResult(toolResults, "message_send");
-  const latestMessageSendPayload = parseMessageSendCommandPayload(latestMessageSend?.command);
+  const latestSentRoomReply = findLatestOperationResult(toolResults, "message.send");
+  const latestSentRoomReplyPayload = parseMessageSendCommandPayload(latestSentRoomReply?.command);
   const toolNames = new Set((request.tools ?? []).map((tool) => tool.function.name));
-  const useRootWorkspaceShell = toolNames.has("root_workspace_bash");
+  if (!toolNames.has("root_workspace_bash")) {
+    throw new Error("mock-model-server expects CLI-only runtime tools with root_workspace_bash");
+  }
   if (
     state.relay?.phase === "reporting" &&
-    latestMessageSendPayload?.chatId === state.relay.originChatId &&
-    latestMessageSendPayload.content === MOCK_FINAL_ANSWER
+    latestSentRoomReplyPayload?.chatId === state.relay.originChatId &&
+    latestSentRoomReplyPayload.content === MOCK_FINAL_ANSWER
   ) {
     const seededFrames = buildSeededRelayFrames(state.relay);
-    if (!hasToolResult(toolResults, "attention_commit") && seededFrames.length > 0) {
+    if (!hasOperationResult(toolResults, "attention.commit") && seededFrames.length > 0) {
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? buildAttentionCommitShellCalls(seededFrames, {
-              summary: MOCK_MAIN_RESOLVED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            })
-          : buildAttentionCommitToolCalls(seededFrames, {
-              summary: MOCK_MAIN_RESOLVED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
+        toolCalls: buildAttentionCommitShellCalls(seededFrames, {
+          summary: MOCK_MAIN_RESOLVED_SUMMARY,
+          value: MOCK_FINAL_ANSWER,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
       });
     }
     state.relay.phase = "reported";
@@ -813,43 +763,22 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   const initialQuestion = taskSemanticText.includes("gaubee在吗") || taskSemanticText.includes(MOCK_WAITING_SUMMARY);
   const canReuseReportedAnswer = state.relay?.phase === "reported" && taskSemanticText.includes("中午吃什么");
   if (canReuseReportedAnswer) {
-    if (hasToolResult(toolResults, "message_send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
-      toolCalls: useRootWorkspaceShell
-        ? [
-            buildRootWorkspaceBashToolCall(
-              `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
-            ),
-            ...buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_FOLLOW_UP_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ]
-        : [
-            {
-              id: randomUUID(),
-              type: "function",
-              function: {
-                name: "message_send",
-                arguments: JSON.stringify({
-                  chatId: primaryRoomChatId,
-                  content: MOCK_FINAL_ANSWER,
-                }),
-              },
-            },
-            ...buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_FOLLOW_UP_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ],
+      toolCalls: [
+        buildRootWorkspaceBashToolCall(
+          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+        ),
+        ...buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_FOLLOW_UP_SUMMARY,
+          value: MOCK_FINAL_ANSWER,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
+      ],
     });
   }
   if (state.relay?.phase === "reported") {
@@ -865,159 +794,77 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     ) {
       state.relay.phase = "reporting";
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? [
-              buildRootWorkspaceBashToolCall(
-                `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
-              ),
-              ...buildAttentionCommitShellCalls(commitFrames, {
-                summary: MOCK_REPORTED_SUMMARY,
-                value: MOCK_FINAL_ANSWER,
-                stage: "done",
-                done: true,
-                scoreMode: "done",
-              }),
-            ]
-          : [
-              {
-                id: randomUUID(),
-                type: "function",
-                function: {
-                  name: "message_send",
-                  arguments: JSON.stringify({
-                    chatId: primaryRoomChatId,
-                    content: MOCK_FINAL_ANSWER,
-                  }),
-                },
-              },
-              ...buildAttentionCommitToolCalls(commitFrames, {
-                summary: MOCK_REPORTED_SUMMARY,
-                value: MOCK_FINAL_ANSWER,
-                stage: "done",
-                done: true,
-                scoreMode: "done",
-              }),
-            ],
+        toolCalls: [
+          buildRootWorkspaceBashToolCall(
+            `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+          ),
+          ...buildAttentionCommitShellCalls(commitFrames, {
+            summary: MOCK_REPORTED_SUMMARY,
+            value: MOCK_FINAL_ANSWER,
+            stage: "done",
+            done: true,
+            scoreMode: "done",
+          }),
+        ],
       });
     }
-    if (!hasToolResult(toolResults, "message_channel_list")) {
+    if (!hasOperationResult(toolResults, "message.list")) {
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? [buildRootWorkspaceBashToolCall("message list")]
-          : [
-              {
-                id: randomUUID(),
-                type: "function",
-                function: {
-                  name: "message_channel_list",
-                  arguments: JSON.stringify({ includeArchived: false }),
-                },
-              },
-            ],
+        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
       });
     }
-    if (!hasToolResult(toolResults, "attention_commit") && commitFrames.length > 0) {
+    if (!hasOperationResult(toolResults, "attention.commit") && commitFrames.length > 0) {
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_WAITING_SUMMARY,
-              value: "relay sent to gaubee",
-              stage: "act",
-              done: false,
-              scoreMode: "wait",
-            })
-          : buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_WAITING_SUMMARY,
-              value: "relay sent to gaubee",
-              stage: "act",
-              done: false,
-              scoreMode: "wait",
-            }),
+        toolCalls: buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_WAITING_SUMMARY,
+          value: "relay sent to gaubee",
+          stage: "act",
+          done: false,
+          scoreMode: "wait",
+        }),
       });
     }
     return createResponse(request, { content: "" });
   }
 
   if (followUpQuestion) {
-    if (state.relay?.phase === "reported" && primaryRoomChatId && !hasToolResult(toolResults, "message_send")) {
+    if (state.relay?.phase === "reported" && primaryRoomChatId && !hasOperationResult(toolResults, "message.send")) {
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? [
-              buildRootWorkspaceBashToolCall(
-                `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
-              ),
-              ...buildAttentionCommitShellCalls(commitFrames, {
-                summary: MOCK_FOLLOW_UP_SUMMARY,
-                value: MOCK_FINAL_ANSWER,
-                stage: "done",
-                done: true,
-                scoreMode: "done",
-              }),
-            ]
-          : [
-              {
-                id: randomUUID(),
-                type: "function",
-                function: {
-                  name: "message_send",
-                  arguments: JSON.stringify({
-                    chatId: primaryRoomChatId,
-                    content: MOCK_FINAL_ANSWER,
-                  }),
-                },
-              },
-              ...buildAttentionCommitToolCalls(commitFrames, {
-                summary: MOCK_FOLLOW_UP_SUMMARY,
-                value: MOCK_FINAL_ANSWER,
-                stage: "done",
-                done: true,
-                scoreMode: "done",
-              }),
-            ],
+        toolCalls: [
+          buildRootWorkspaceBashToolCall(
+            `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+          ),
+          ...buildAttentionCommitShellCalls(commitFrames, {
+            summary: MOCK_FOLLOW_UP_SUMMARY,
+            value: MOCK_FINAL_ANSWER,
+            stage: "done",
+            done: true,
+            scoreMode: "done",
+          }),
+        ],
       });
     }
-    if (hasToolResult(toolResults, "message_send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
       return createResponse(request, { content: "" });
     }
     return createResponse(request, {
-      toolCalls: useRootWorkspaceShell
-        ? [
-            buildRootWorkspaceBashToolCall(
-              `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
-            ),
-            ...buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_FOLLOW_UP_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ]
-        : [
-            {
-              id: randomUUID(),
-              type: "function",
-              function: {
-                name: "message_send",
-                arguments: JSON.stringify({
-                  chatId: primaryRoomChatId,
-                  content: MOCK_FINAL_ANSWER,
-                }),
-              },
-            },
-            ...buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_FOLLOW_UP_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ],
+      toolCalls: [
+        buildRootWorkspaceBashToolCall(
+          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+        ),
+        ...buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_FOLLOW_UP_SUMMARY,
+          value: MOCK_FINAL_ANSWER,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
+      ],
     });
   }
 
   if (includesGaubeeReply) {
-    if (hasToolResult(toolResults, "message_send") || !primaryRoomChatId) {
+    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
       return createResponse(request, { content: "" });
     }
     state.relay = primaryRoomChatId
@@ -1029,86 +876,49 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         }
       : state.relay;
     return createResponse(request, {
-      toolCalls: useRootWorkspaceShell
-        ? [
-            buildRootWorkspaceBashToolCall(
-              `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
-            ),
-            ...buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_REPORTED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ]
-        : [
-            {
-              id: randomUUID(),
-              type: "function",
-              function: {
-                name: "message_send",
-                arguments: JSON.stringify({
-                  chatId: primaryRoomChatId,
-                  content: MOCK_FINAL_ANSWER,
-                }),
-              },
-            },
-            ...buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_REPORTED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
-          ],
+      toolCalls: [
+        buildRootWorkspaceBashToolCall(
+          `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
+        ),
+        ...buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_REPORTED_SUMMARY,
+          value: MOCK_FINAL_ANSWER,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
+      ],
     });
   }
 
   if (initialQuestion) {
     if (hasReportedHistory) {
-      if (hasToolResult(toolResults, "attention_commit") || commitFrames.length === 0) {
+      if (hasOperationResult(toolResults, "attention.commit") || commitFrames.length === 0) {
         return createResponse(request, { content: "" });
       }
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_MAIN_RESOLVED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            })
-          : buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_MAIN_RESOLVED_SUMMARY,
-              value: MOCK_FINAL_ANSWER,
-              stage: "done",
-              done: true,
-              scoreMode: "done",
-            }),
+        toolCalls: buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_MAIN_RESOLVED_SUMMARY,
+          value: MOCK_FINAL_ANSWER,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
       });
     }
 
-    if (hasWaitingHistory || hasToolResult(toolResults, "message_send")) {
-      if (hasToolResult(toolResults, "attention_commit") || commitFrames.length === 0) {
+    if (hasWaitingHistory || hasOperationResult(toolResults, "message.send")) {
+      if (hasOperationResult(toolResults, "attention.commit") || commitFrames.length === 0) {
         return createResponse(request, { content: "" });
       }
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? buildAttentionCommitShellCalls(commitFrames, {
-              summary: MOCK_WAITING_SUMMARY,
-              value: "relay sent to gaubee",
-              stage: "act",
-              done: false,
-              scoreMode: "wait",
-            })
-          : buildAttentionCommitToolCalls(commitFrames, {
-              summary: MOCK_WAITING_SUMMARY,
-              value: "relay sent to gaubee",
-              stage: "act",
-              done: false,
-              scoreMode: "wait",
-            }),
+        toolCalls: buildAttentionCommitShellCalls(commitFrames, {
+          summary: MOCK_WAITING_SUMMARY,
+          value: "relay sent to gaubee",
+          stage: "act",
+          done: false,
+          scoreMode: "wait",
+        }),
       });
     }
 
@@ -1125,59 +935,27 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
             originHeadCommitId: originCommit?.commitId ?? latestAttentionMetadata.headCommitId,
             originScores: originCommit?.scores,
             phase: "awaiting_reply",
-          }
-        : state.relay;
+        }
+      : state.relay;
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? [
-              buildRootWorkspaceBashToolCall(
-                `message send ${escapeShellJson({ chatId: gaubeeChatId, content: MOCK_RELAY_PROMPT })}`,
-              ),
-              ...buildAttentionCommitShellCalls(commitFrames, {
-                summary: MOCK_WAITING_SUMMARY,
-                value: "relay sent to gaubee",
-                stage: "act",
-                done: false,
-                scoreMode: "wait",
-              }),
-            ]
-          : [
-              {
-                id: randomUUID(),
-                type: "function",
-                function: {
-                  name: "message_send",
-                  arguments: JSON.stringify({
-                    chatId: gaubeeChatId,
-                    content: MOCK_RELAY_PROMPT,
-                  }),
-                },
-              },
-              ...buildAttentionCommitToolCalls(commitFrames, {
-                summary: MOCK_WAITING_SUMMARY,
-                value: "relay sent to gaubee",
-                stage: "act",
-                done: false,
-                scoreMode: "wait",
-              }),
-            ],
+        toolCalls: [
+          buildRootWorkspaceBashToolCall(
+            `message send ${escapeShellJson({ chatId: gaubeeChatId, content: MOCK_RELAY_PROMPT })}`,
+          ),
+          ...buildAttentionCommitShellCalls(commitFrames, {
+            summary: MOCK_WAITING_SUMMARY,
+            value: "relay sent to gaubee",
+            stage: "act",
+            done: false,
+            scoreMode: "wait",
+          }),
+        ],
       });
     }
 
-    if (!hasToolResult(toolResults, "message_channel_list")) {
+    if (!hasOperationResult(toolResults, "message.list")) {
       return createResponse(request, {
-        toolCalls: useRootWorkspaceShell
-          ? [buildRootWorkspaceBashToolCall("message list")]
-          : [
-              {
-                id: randomUUID(),
-                type: "function",
-                function: {
-                  name: "message_channel_list",
-                  arguments: JSON.stringify({ includeArchived: false }),
-                },
-              },
-            ],
+        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
       });
     }
   }

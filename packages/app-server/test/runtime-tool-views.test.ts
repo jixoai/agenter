@@ -6,6 +6,7 @@ import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
 
 import {
   projectRuntimeAttentionActiveMatch,
+  projectRuntimeMessageOverview,
   projectRuntimeMessageSnapshot,
   projectRuntimeTerminal,
   projectRuntimeWorkspaceSurface,
@@ -35,9 +36,7 @@ describe("Feature: runtime tool public views", () => {
         meta: {
           author: "architect",
           source: "runtime",
-          systemId: "message",
-          subjectId: "room-1",
-          channelId: "room-1",
+          src: "msg:room-1/4",
         },
         summary: `summary-${index}`,
         scores: { delivery: Math.max(0, 100 - index * 10) },
@@ -99,7 +98,7 @@ describe("Feature: runtime tool public views", () => {
       items: [
         {
           rowId: 1,
-          messageId: "msg-1",
+          messageId: 1,
           chatId: "room-1",
           from: "architect",
           kind: "text",
@@ -108,7 +107,7 @@ describe("Feature: runtime tool public views", () => {
           updatedAt: 11,
           readActorIds: ["session:user"],
           unreadActorIds: [],
-          metadata: { source: "message_send" },
+          metadata: { source: "runtime_dispatch" },
         },
       ],
       nextBefore: null,
@@ -221,5 +220,61 @@ describe("Feature: runtime tool public views", () => {
     expect(projectedWorkspace.grants[0]?.ruleIndex).toBe(0);
     expect(Object.prototype.hasOwnProperty.call(projectedWorkspace.mount, "mountId")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedWorkspace.grants[0] ?? {}, "grantId")).toBeFalse();
+  });
+
+  test("Scenario: Given mixed-language room messages When building a compact send acknowledgement Then previews stay on the first non-empty line and clip after roughly 20 segments", () => {
+    const preview = projectRuntimeMessageOverview([
+      {
+        rowId: 1,
+        messageId: 1,
+        chatId: "room-1",
+        from: "architect",
+        kind: "text",
+        content: "\n\n第一行会被忽略\n这也不会出现\n",
+        createdAt: 10,
+        updatedAt: 10,
+        readActorIds: [],
+        unreadActorIds: [],
+      },
+      {
+        rowId: 2,
+        messageId: 2,
+        chatId: "room-1",
+        from: "architect",
+        kind: "text",
+        content:
+          "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega",
+        createdAt: 11,
+        updatedAt: 11,
+        readActorIds: [],
+        unreadActorIds: [],
+      },
+      {
+        rowId: 3,
+        messageId: 3,
+        chatId: "room-1",
+        from: "architect",
+        kind: "interactive",
+        content: "",
+        createdAt: 12,
+        updatedAt: 12,
+        readActorIds: [],
+        unreadActorIds: [],
+        payload: {
+          interactive: {
+            version: "v1",
+            kind: "form",
+            title: "Confirm deploy window",
+            fields: [],
+          },
+        },
+      },
+    ]);
+
+    expect(preview[0]?.contentPreview).toBe("第一行会被忽略");
+    expect(preview[1]?.contentPreview).toBe(
+      "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon...",
+    );
+    expect(preview[2]?.contentPreview).toBe("Confirm deploy window");
   });
 });

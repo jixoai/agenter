@@ -44,7 +44,7 @@
 		onConsumeNotification: (input: {
 			chatId?: string;
 			terminalId?: string;
-			upToMessageId?: string | null;
+			upToSrc?: string | null;
 		}) => void | Promise<void>;
 	} = $props();
 
@@ -171,13 +171,20 @@
 			if (selectedQueue.sourceType === 'chat') {
 				await onConsumeNotification({
 					chatId: selectedQueue.sourceId,
-					upToMessageId: selectedQueue.messageId ?? null,
+					upToSrc: selectedQueue.src,
 				});
 				return;
 			}
-			await onConsumeNotification({
-				terminalId: selectedQueue.sourceId,
-			});
+			await onConsumeNotification(
+				selectedQueue.sourceType === 'terminal'
+					? {
+							terminalId: selectedQueue.sourceId,
+							upToSrc: selectedQueue.src
+						}
+					: {
+							upToSrc: selectedQueue.src
+						}
+			);
 		} finally {
 			quickActionBusy = null;
 		}
@@ -487,7 +494,7 @@
 					{#each selectedHooks as hook (hook.id)}
 						<div class="grid gap-1 rounded-xl border px-3 py-2">
 							<div class="flex flex-wrap items-center gap-2">
-								<div class="text-sm font-medium">{hook.systemId}</div>
+								<div class="text-sm font-medium">{hook.bridgeId}</div>
 								<Badge variant={hook.status === 'failed' ? 'destructive' : hook.status === 'delivered' ? 'secondary' : 'outline'}>
 									{hook.status}
 								</Badge>

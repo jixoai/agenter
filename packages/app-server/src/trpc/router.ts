@@ -496,7 +496,7 @@ export const appRouter = t.router({
           sessionId: z.string().min(1),
           chatId: z.string().min(1),
           accessToken: z.string().min(1),
-          messageId: z.string().min(1),
+          messageId: z.number().int().positive(),
           text: z.string().min(1),
         }),
       )
@@ -515,7 +515,7 @@ export const appRouter = t.router({
           sessionId: z.string().min(1),
           chatId: z.string().min(1),
           accessToken: z.string().min(1),
-          messageId: z.string().min(1),
+          messageId: z.number().int().positive(),
         }),
       )
       .mutation(({ ctx, input }) =>
@@ -654,7 +654,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.revokeMessageChannelGrant(input)),
-    globalList: t.procedure
+    globalList: requireAuth
       .input(
         z.object({
           includeArchived: z.boolean().optional(),
@@ -666,7 +666,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalCreate: t.procedure
+    globalCreate: requireAuth
       .input(
         z.object({
           chatId: z.string().trim().min(1).optional(),
@@ -711,7 +711,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalFocus: t.procedure
+    globalFocus: requireAuth
       .input(
         z.object({
           op: z.enum(["add", "remove", "replace", "clear"]),
@@ -731,7 +731,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalSnapshot: t.procedure
+    globalSnapshot: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -745,12 +745,12 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalMarkRead: t.procedure
+    globalMarkRead: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
-          messageId: z.string().min(1).optional(),
+          messageId: z.number().int().positive().optional(),
         }),
       )
       .mutation(({ ctx, input }) => ({
@@ -759,7 +759,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalPage: t.procedure
+    globalPage: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -774,7 +774,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalSend: t.procedure
+    globalSend: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -791,12 +791,12 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalEdit: t.procedure
+    globalEdit: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
-          messageId: z.string().min(1),
+          messageId: z.number().int().positive(),
           text: z.string().min(1),
         }),
       )
@@ -806,12 +806,12 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalRecall: t.procedure
+    globalRecall: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
-          messageId: z.string().min(1),
+          messageId: z.number().int().positive(),
         }),
       )
       .mutation(({ ctx, input }) =>
@@ -820,7 +820,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalUpdate: t.procedure
+    globalUpdate: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -846,7 +846,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalArchive: t.procedure
+    globalArchive: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -860,7 +860,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalDelete: t.procedure
+    globalDelete: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -873,7 +873,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalListGrants: t.procedure
+    globalListGrants: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -886,7 +886,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalListAssets: t.procedure
+    globalListAssets: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -899,7 +899,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalIssueGrant: t.procedure
+    globalIssueGrant: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -920,7 +920,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalRevokeGrant: t.procedure
+    globalRevokeGrant: requireAuth
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -971,10 +971,10 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.deleteTerminal(input)),
-    globalList: t.procedure.query(({ ctx }) => ({
+    globalList: requireAuth.query(({ ctx }) => ({
       items: ctx.kernel.listGlobalTerminals(resolveTerminalCallerScope(ctx.auth)),
     })),
-    globalCreate: t.procedure
+    globalCreate: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1).optional(),
@@ -991,7 +991,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    globalFocus: t.procedure
+    globalFocus: requireAuth
       .input(
         z.object({
           op: z.enum(["add", "remove", "replace", "clear"]),
@@ -1005,7 +1005,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    globalDelete: t.procedure
+    globalDelete: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1018,7 +1018,7 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
-    activityPage: t.procedure
+    activityPage: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1034,7 +1034,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    read: t.procedure
+    read: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1049,7 +1049,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    write: t.procedure
+    write: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1078,7 +1078,7 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
-    listGrants: t.procedure
+    listGrants: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1090,7 +1090,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    issueGrant: t.procedure
+    issueGrant: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1111,7 +1111,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    revokeGrant: t.procedure
+    revokeGrant: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1124,7 +1124,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    listApprovalRequests: t.procedure
+    listApprovalRequests: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1139,7 +1139,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    approveRequest: t.procedure
+    approveRequest: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1153,7 +1153,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    denyRequest: t.procedure
+    denyRequest: requireAuth
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1348,7 +1348,7 @@ export const appRouter = t.router({
             sessionId: z.string().min(1),
             chatId: z.string().min(1).optional(),
             terminalId: z.string().min(1).optional(),
-            upToMessageId: z.string().min(1).optional(),
+            upToSrc: z.string().min(1).optional(),
           })
           .refine((value) => !(value.chatId && value.terminalId), {
             message: "chatId and terminalId cannot be used together",

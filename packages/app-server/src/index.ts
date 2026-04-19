@@ -69,6 +69,10 @@ export {
 export {
   AppKernel,
   type AppKernelOptions,
+  type PublicRoomEntry,
+  type PublicRoomMessageRecord,
+  type PublicRoomReadProgress,
+  type PublicRoomSnapshot,
   type RuntimeWorkspaceAssetRoots,
   type WorkspaceListItem,
   type WorkspaceSessionCounts,
@@ -156,6 +160,11 @@ export {
 } from "./prompt-docs";
 export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
 export {
+  createInProcessRootWorkspaceToolProvider,
+  type InProcessRootWorkspaceToolProviderInput,
+  type RootWorkspaceToolListPayload,
+} from "./root-workspace-tool-provider";
+export {
   APP_PROTOCOL_VERSION,
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -204,6 +213,7 @@ export {
 } from "./session-runtime";
 export { SessionStore } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
+export type { RuntimeLocalApiHandlers } from "./runtime-tool-descriptors";
 export {
   listScopedSettingsGraph,
   readScopedSettingsLayer,

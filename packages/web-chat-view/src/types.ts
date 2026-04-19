@@ -6,7 +6,11 @@ import type {
 } from "@agenter/message-system/types";
 
 export type WebChatChannel = MessageControlPlaneEntry;
-export type WebChatMessage = MessageRecord;
+export interface WebChatMessage extends Omit<MessageRecord, "messageId"> {
+  viewKey: string;
+  messageId?: number;
+}
+export type WebChatMessageInput = WebChatMessage | MessageRecord;
 export type WebChatTransportMessage = MessageTransportServerMessage;
 export type WebChatCursor = ReverseTimeCursor;
 export type WebChatConnectionState = "idle" | "connecting" | "connected" | "closed" | "error";
@@ -83,7 +87,8 @@ export interface WebChatMessageReadActor {
 }
 
 export interface WebChatVisibleMessageFact {
-  messageId: string;
+  viewKey: string;
+  messageId?: number;
   rowId: number;
 }
 
@@ -131,7 +136,7 @@ export type WebChatSocketFactory = (url: string) => WebChatSocketLike;
 export interface WebChatViewBaseProps {
   channel: WebChatChannel | null;
   viewerActorId?: string | null;
-  initialMessages?: WebChatMessage[];
+  initialMessages?: WebChatMessageInput[];
   initialSnapshotResolved?: boolean;
   disabled?: boolean;
   showComposerWhenDisabled?: boolean;
@@ -152,12 +157,12 @@ export interface WebChatViewBaseProps {
 
 export interface WebChatRootProps extends WebChatViewBaseProps {
   submitMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
-  latestVisibleAssistantMessageIdHandler?: (messageId: string | null) => void;
+  latestVisibleAssistantViewKeyHandler?: (viewKey: string | null) => void;
   latestVisibleMessageIdHandler?: (message: WebChatVisibleMessageFact | null) => void;
 }
 
 export interface WebChatViewHostProps extends WebChatViewBaseProps {
   onSendMessage?: (payload: WebChatComposerSubmitPayload) => Promise<void>;
-  onLatestVisibleAssistantMessageIdChange?: (messageId: string | null) => void;
+  onLatestVisibleAssistantViewKeyChange?: (viewKey: string | null) => void;
   onLatestVisibleMessageIdChange?: (message: WebChatVisibleMessageFact | null) => void;
 }

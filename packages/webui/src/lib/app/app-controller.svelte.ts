@@ -35,8 +35,7 @@ const runtimeClone = (store: RuntimeStore) => {
 		terminalActivityBySession: { ...state.terminalActivityBySession },
 		apiCallRecordingBySession: { ...state.apiCallRecordingBySession },
 		unreadBySession: { ...state.unreadBySession },
-		unreadByChat: { ...state.unreadByChat },
-		unreadByTerminal: { ...state.unreadByTerminal },
+		unreadByBucket: { ...state.unreadByBucket },
 	};
 };
 const toProfileReference = (profile: {

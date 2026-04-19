@@ -47,7 +47,7 @@
 
 	$effect(() => {
 		const release = controller.runtimeStore.retainGlobalRooms();
-		void controller.runtimeStore.hydrateGlobalRooms();
+		void controller.runtimeStore.hydrateGlobalRooms().catch(() => undefined);
 		return () => {
 			release();
 		};

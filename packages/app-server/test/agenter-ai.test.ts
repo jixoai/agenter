@@ -5,9 +5,8 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
-import { toolDefinition } from "@tanstack/ai";
+import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
-import { z } from "zod";
 
 import {
   AgenterAI,
@@ -16,6 +15,7 @@ import {
   type AgentPromptWindowStateRecord,
   type AgentToolProvider,
 } from "../src/agenter-ai";
+import { projectAttentionCommitMatchForModel } from "../src/attention-model-view";
 import { buildAttentionSearchDocument } from "../src/attention-search/documents";
 import { compileAttentionSearch } from "../src/attention-search/query";
 import type { AttentionSearchRequest } from "../src/attention-search/types";
@@ -23,6 +23,12 @@ import { type LoopBusMessage } from "../src/loop-bus";
 import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
+import {
+  createInProcessRootWorkspaceToolProvider,
+  type RootWorkspaceToolListPayload,
+} from "../src/root-workspace-tool-provider";
+import type { RuntimeLocalApiHandlers } from "../src/runtime-tool-descriptors";
+import { projectRuntimeAttentionActiveMatch } from "../src/runtime-tool-views";
 import type { AppServerLogger } from "../src/types";
 
 const createPromptDocs = (input: { legacySystemTemplate?: boolean } = {}): PromptDocRecord => ({
@@ -214,17 +220,8 @@ const createTerminalGateway = () => {
         processKind?: string;
         command?: string[];
         cwd?: string;
-        profile?: {
-          command?: string[];
-          cwd?: string;
-          cols?: number;
-          rows?: number;
-          gitLog?: false | "normal" | "verbose";
-          logStyle?: "rich" | "plain";
-          icon?: string;
-          title?: string;
-          shortcuts?: Record<string, string>;
-        };
+        profile?: TerminalProcessProfile;
+        focus?: boolean;
       }) => ({ ok: true, message: "created" }),
       kill: async (_input: { terminalId: string }) => ({ ok: true, message: "stopped" }),
       focus: async (_input: { op?: "add" | "remove" | "replace" | "clear"; terminalIds?: string[] }) => ({
@@ -257,286 +254,379 @@ const createTerminalGateway = () => {
 };
 
 type TerminalGatewayLike = ReturnType<typeof createTerminalGateway>["gateway"];
+type AttentionGatewayLike = ReturnType<typeof createAttentionGateway>["gateway"];
 type MessageGatewayLike = ReturnType<typeof createMessageGateway>["gateway"];
 
-const createTerminalToolProvider = (terminalGateway?: TerminalGatewayLike): AgentToolProvider | null => {
-  if (!terminalGateway) {
-    return null;
-  }
-  return {
-    name: "terminal-test",
-    createTools: ({ runtimeText, traceTool }) => {
-      const terminalProcessProfileSchema = z.object({
-        command: z.array(z.string()).optional(),
-        cwd: z.string().optional(),
-        cols: z.number().optional(),
-        rows: z.number().optional(),
-        gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
-        logStyle: z.enum(["rich", "plain"]).optional(),
-        icon: z.string().optional(),
-        title: z.string().optional(),
-        shortcuts: z.record(z.string(), z.string()).optional(),
-      });
-      const terminalControlPlaneConfigPatchSchema = z.object({
-        defaults: terminalProcessProfileSchema.optional(),
-        processProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-        terminalProfiles: z.record(z.string(), terminalProcessProfileSchema).optional(),
-        transport: z
-          .object({
-            host: z.string().optional(),
-            port: z.number().nullable().optional(),
-            pathPrefix: z.string().optional(),
-          })
-          .optional(),
-      });
+const ROOT_WORKSPACE_PATH = "/runtime/test-root";
 
-      return [
-        toolDefinition({
-          name: "terminal_list",
-          description: runtimeText.t("tool.terminal_list.description"),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(
-          async () => await traceTool("terminal_list", {}, async () => ({ terminals: terminalGateway.list() })),
-        ),
-        toolDefinition({
-          name: "terminal_create",
-          description: runtimeText.t("tool.terminal_create.description"),
-          inputSchema: z.object({
-            terminalId: z.string().optional(),
-            processKind: z.string().optional(),
-            command: z.array(z.string()).optional(),
-            cwd: z.string().optional(),
-            profile: terminalProcessProfileSchema.optional(),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string().optional(),
-              processKind: z.string().optional(),
-              command: z.array(z.string()).optional(),
-              cwd: z.string().optional(),
-              profile: terminalProcessProfileSchema.optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("terminal_create", input, async () => await terminalGateway.create(input));
-        }),
-        toolDefinition({
-          name: "terminal_focus",
-          description: runtimeText.t("tool.terminal_focus.description"),
-          inputSchema: z.object({
-            op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-            terminalIds: z.array(z.string()).optional(),
-          }),
-          outputSchema: z.object({
-            ok: z.boolean(),
-            message: z.string(),
-            focusedTerminalIds: z.array(z.string()).optional(),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              op: z.enum(["add", "remove", "replace", "clear"]).optional(),
-              terminalIds: z.array(z.string()).optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("terminal_focus", input, async () => await terminalGateway.focus(input));
-        }),
-        toolDefinition({
-          name: "terminal_kill",
-          description: runtimeText.t("tool.terminal_kill.description"),
-          inputSchema: z.object({ terminalId: z.string() }),
-          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
-        }).server(async (rawInput) => {
-          const input = z.object({ terminalId: z.string() }).parse(rawInput);
-          return await traceTool("terminal_kill", input, async () => await terminalGateway.kill(input));
-        }),
-        toolDefinition({
-          name: "terminal_write",
-          description: runtimeText.t("tool.terminal_write.description"),
-          inputSchema: z.object({
-            terminalId: z.string(),
-            text: z.string(),
-            submit: z.boolean().optional(),
-            submitKey: z.enum(["enter", "linefeed"]).optional(),
-          }),
-          outputSchema: z.object({ ok: z.boolean(), message: z.string() }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string(),
-              text: z.string(),
-              submit: z.boolean().optional(),
-              submitKey: z.enum(["enter", "linefeed"]).optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("terminal_write", input, async () => await terminalGateway.write(input));
-        }),
-        toolDefinition({
-          name: "terminal_read",
-          description: runtimeText.t("tool.terminal_read.description"),
-          inputSchema: z.object({
-            terminalId: z.string(),
-            mode: z.enum(["auto", "diff", "snapshot"]).optional(),
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              terminalId: z.string(),
-              mode: z.enum(["auto", "diff", "snapshot"]).optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("terminal_read", input, async () => await terminalGateway.read(input));
-        }),
-        toolDefinition({
-          name: "terminal_snapshot",
-          description: runtimeText.t("tool.terminal_snapshot.description"),
-          inputSchema: z.object({ terminalId: z.string() }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z.object({ terminalId: z.string() }).parse(rawInput);
-          return await traceTool("terminal_snapshot", input, async () => await terminalGateway.snapshot(input));
-        }),
-        toolDefinition({
-          name: "terminal_get_config",
-          description: runtimeText.t("tool.terminal_get_config.description"),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(
-          async () => await traceTool("terminal_get_config", {}, async () => await terminalGateway.getConfig()),
-        ),
-        toolDefinition({
-          name: "terminal_set_config",
-          description: runtimeText.t("tool.terminal_set_config.description"),
-          inputSchema: z.object({
-            patch: terminalControlPlaneConfigPatchSchema,
-          }),
-          outputSchema: z.record(z.string(), z.unknown()),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              patch: terminalControlPlaneConfigPatchSchema,
-            })
-            .parse(rawInput);
-          return await traceTool(
-            "terminal_set_config",
-            input,
-            async () => await terminalGateway.setConfig({ patch: input.patch }),
-          );
-        }),
-      ];
-    },
-  };
+const createToolContext = (toolCallId: string) => ({
+  toolCallId,
+  emitCustomEvent: () => {
+    // no-op
+  },
+});
+
+const findExecutableTool = (
+  tools: readonly { name: string; execute?: ((input: unknown, context: ReturnType<typeof createToolContext>) => unknown) | undefined }[],
+  toolName: string,
+) => {
+  const tool = tools.find((entry) => entry.name === toolName);
+  expect(tool).toBeDefined();
+  if (!tool || typeof tool.execute !== "function") {
+    throw new Error(`tool not executable: ${toolName}`);
+  }
+  return tool;
 };
 
-const createMessageToolProvider = (messageGateway?: MessageGatewayLike): AgentToolProvider | null => {
-  if (!messageGateway) {
-    return null;
-  }
-  return {
-    name: "message-test",
-    createTools: ({ runtimeText, traceTool }) => {
-      const messageChannelSchema = z.object({
-        chatId: z.string(),
-        kind: z.enum(["direct", "room"]),
-        title: z.string(),
-        owner: z.string(),
-        contextId: z.string().optional(),
-        participants: z.array(
-          z.object({
-            id: z.string(),
-            label: z.string().optional(),
-          }),
-        ),
-        metadata: z.record(z.string(), z.unknown()).optional(),
-        focused: z.boolean(),
-        archivedAt: z.number().optional(),
-        archivedBy: z.string().optional(),
-      });
+const findRootWorkspaceListTool = (input: Pick<ModelRespondInput, "tools">) =>
+  findExecutableTool(input.tools, "root_workspace_list");
 
-      return [
-        toolDefinition({
-          name: "message_channel_list",
-          description: runtimeText.t("tool.message_channel_list.description"),
-          inputSchema: z.object({
-            includeArchived: z.boolean().optional(),
-          }),
-          outputSchema: z.object({
-            channels: z.array(messageChannelSchema),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              includeArchived: z.boolean().optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("message_channel_list", input, async () => ({
-            channels: await messageGateway.listChannels(input),
-          }));
-        }),
-        toolDefinition({
-          name: "message_channel_get",
-          description: runtimeText.t("tool.message_channel_get.description"),
-          inputSchema: z.object({
-            chatId: z.string().min(1),
-            includeArchived: z.boolean().optional(),
-          }),
-          outputSchema: z.object({
-            channel: messageChannelSchema.nullable(),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              chatId: z.string().min(1),
-              includeArchived: z.boolean().optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("message_channel_get", input, async () => ({
-            channel: await messageGateway.getChannel(input),
-          }));
-        }),
-        toolDefinition({
-          name: "message_send",
-          description: runtimeText.t("tool.message_send.description"),
-          inputSchema: z.object({
-            chatId: z.string().min(1),
-            content: z.string().min(1),
-            rootId: z.string().optional(),
-            from: z.string().optional(),
-            to: z.string().optional(),
-          }),
-          outputSchema: z.object({
-            ok: z.boolean(),
-            messageId: z.string(),
-          }),
-        }).server(async (rawInput) => {
-          const input = z
-            .object({
-              chatId: z.string().min(1),
-              content: z.string().min(1),
-              rootId: z.string().optional(),
-              from: z.string().optional(),
-              to: z.string().optional(),
-            })
-            .parse(rawInput);
-          return await traceTool("message_send", input, async () => await messageGateway.send(input));
-        }),
-      ];
-    },
+const findRootWorkspaceBashTool = (input: Pick<ModelRespondInput, "tools">) =>
+  findExecutableTool(input.tools, "root_workspace_bash");
+
+const buildRootWorkspaceBashInput = (command: string, payload?: unknown, cwd?: string) =>
+  ({
+    command,
+    ...(cwd ? { cwd } : {}),
+    ...(payload === undefined ? {} : { stdin: JSON.stringify(payload) }),
+  }) satisfies {
+    command: string;
+    cwd?: string;
+    stdin?: string;
   };
+
+const stringifyRootWorkspaceBashArgs = (command: string, payload?: unknown, cwd?: string): string =>
+  JSON.stringify(buildRootWorkspaceBashInput(command, payload, cwd));
+
+const parseRootWorkspaceBashStdout = <T>(output: { stdout: string; stderr: string; exitCode: number }): T => {
+  expect(output.exitCode).toBe(0);
+  expect(output.stderr).toBe("");
+  return JSON.parse(output.stdout) as T;
 };
+
+const buildRootWorkspaceBashSuccessResult = (payload: unknown, cwd = ROOT_WORKSPACE_PATH) => ({
+  stdout: `${JSON.stringify(payload)}\n`,
+  stderr: "",
+  exitCode: 0,
+  cwd,
+});
+
+const callRootWorkspaceList = async (
+  input: Pick<ModelRespondInput, "tools">,
+  toolCallId = "call-root_workspace_list",
+): Promise<RootWorkspaceToolListPayload> =>
+  (await findRootWorkspaceListTool(input).execute!({}, createToolContext(toolCallId))) as RootWorkspaceToolListPayload;
+
+const callRootWorkspaceBashJson = async <T>(
+  input: Pick<ModelRespondInput, "tools">,
+  args: {
+    command: string;
+    payload?: unknown;
+    toolCallId: string;
+    cwd?: string;
+  },
+): Promise<T> => {
+  const output = (await findRootWorkspaceBashTool(input).execute!(
+    buildRootWorkspaceBashInput(args.command, args.payload, args.cwd),
+    createToolContext(args.toolCallId),
+  )) as {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    cwd: string;
+  };
+  expect(output.cwd).toBe(args.cwd ?? ROOT_WORKSPACE_PATH);
+  return parseRootWorkspaceBashStdout<T>(output);
+};
+
+const callAttentionQueryViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { query: string; offset?: number; limit?: number },
+  toolCallId = "call-attention-query",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    items: Array<ReturnType<typeof projectAttentionCommitMatchForModel>>;
+  }>(input, {
+    command: "attention query",
+    payload,
+    toolCallId,
+  });
+
+const callAttentionCommitViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: Record<string, unknown>,
+  toolCallId = "call-attention-commit",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    commit: {
+      commitId: string;
+      contextId: string;
+      meta: {
+        author: string;
+        source: string;
+      };
+      scores: Record<string, number>;
+      summary: string;
+      change: {
+        type: string;
+        value?: string;
+        format?: string;
+      };
+    };
+  }>(input, {
+    command: "attention commit",
+    payload,
+    toolCallId,
+  });
+
+const callMessageListViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload?: { includeArchived?: boolean; limit?: number },
+  toolCallId = "call-message-list",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    channels: Array<{
+      chatId: string;
+      title: string;
+      focused: boolean;
+    }>;
+  }>(input, {
+    command: "message list",
+    payload,
+    toolCallId,
+  });
+
+const callMessageReadViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { chatId: string; limit?: number },
+  toolCallId = "call-message-read",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    snapshot: {
+      channel: {
+        chatId: string;
+        title: string;
+      };
+      items: Array<{
+        messageId: number;
+        content: string;
+      }>;
+    };
+  }>(input, {
+    command: "message read",
+    payload,
+    toolCallId,
+  });
+
+const callMessageSendViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { chatId: string; content: string; rootId?: string; from?: string },
+  toolCallId = "call-message-send",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    result: {
+      ok: true;
+      messageId: number;
+      recentMessages: Array<{
+        messageId: number;
+        from: string;
+        contentPreview: string;
+        sendTime: string;
+        editedTime?: string;
+        recalledTime?: string;
+      }>;
+    };
+  }>(input, {
+    command: "message send",
+    payload,
+    toolCallId,
+  });
+
+const callTerminalListViaCli = async (input: Pick<ModelRespondInput, "tools">, toolCallId = "call-terminal-list") =>
+  await callRootWorkspaceBashJson<{ ok: true; terminals: unknown[] }>(input, {
+    command: "terminal list",
+    toolCallId,
+  });
+
+const callTerminalCreateViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: Record<string, unknown>,
+  toolCallId = "call-terminal-create",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    result: {
+      ok: boolean;
+      message: string;
+    };
+  }>(input, {
+    command: "terminal create",
+    payload,
+    toolCallId,
+  });
+
+const callTerminalReadViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { terminalId: string; mode?: "auto" | "diff" | "snapshot" },
+  toolCallId = "call-terminal-read",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    result: Record<string, unknown>;
+  }>(input, {
+    command: "terminal read",
+    payload,
+    toolCallId,
+  });
+
+const callTerminalWriteViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" },
+  toolCallId = "call-terminal-write",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    result: {
+      ok: boolean;
+      message: string;
+    };
+  }>(input, {
+    command: "terminal write",
+    payload,
+    toolCallId,
+  });
+
+const createRuntimeLocalHandlers = (input: {
+  attentionGateway?: AttentionGatewayLike;
+  terminalGateway?: TerminalGatewayLike;
+  messageGateway?: MessageGatewayLike;
+}): RuntimeLocalApiHandlers => ({
+  attentionList: () => input.attentionGateway?.listContexts() ?? [],
+  attentionActive: () => (input.attentionGateway?.listActive() ?? []).map(projectRuntimeAttentionActiveMatch),
+  attentionQuery: async (request) =>
+    input.attentionGateway ? (await input.attentionGateway.query(request)).map(projectAttentionCommitMatchForModel) : [],
+  attentionCommit: async (request) => {
+    if (!input.attentionGateway) {
+      throw new Error("attention gateway not configured");
+    }
+    const resolvedScores = request.done
+      ? (() => {
+          const activeContext = input.attentionGateway?.listActive().find((item) => item.contextId === request.contextId);
+          if (!activeContext) {
+            return undefined;
+          }
+          const activeScores = Object.entries(activeContext.context.scoreMap).filter(([, value]) => value > 0);
+          return Object.fromEntries(activeScores.map(([hash]) => [hash, 0]));
+        })()
+      : undefined;
+    const effectiveScores =
+      request.scores === undefined
+        ? resolvedScores
+        : resolvedScores
+          ? {
+              ...resolvedScores,
+              ...request.scores,
+            }
+          : request.scores;
+    return await input.attentionGateway.commit({
+      contextId: request.contextId,
+      parentCommitIds: request.parentCommitIds,
+      meta: request.meta,
+      egress: request.egress,
+      scores: effectiveScores,
+      summary: request.summary,
+      change: request.change ?? { type: "clean" },
+    });
+  },
+  messageList: (request) => (input.messageGateway ? input.messageGateway.listChannels(request) : []),
+  messageRead: (request) => {
+    if (!input.messageGateway) {
+      throw new Error("message gateway not configured");
+    }
+    return input.messageGateway.read(request);
+  },
+  messageSend: async (request) => {
+    if (!input.messageGateway) {
+      throw new Error("message gateway not configured");
+    }
+    return await input.messageGateway.send(request);
+  },
+  messageEdit: async (request) => {
+    if (!input.messageGateway) {
+      throw new Error("message gateway not configured");
+    }
+    return await input.messageGateway.edit(request);
+  },
+  messageRecall: async (request) => {
+    if (!input.messageGateway) {
+      throw new Error("message gateway not configured");
+    }
+    return await input.messageGateway.recall(request);
+  },
+  workspaceList: () => [],
+  terminalList: () => input.terminalGateway?.list() ?? [],
+  terminalCreate: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.create(request);
+  },
+  terminalRead: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.read(request);
+  },
+  terminalWrite: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.write(request);
+  },
+  terminalFocus: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.focus(request);
+  },
+  terminalKill: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.kill(request);
+  },
+});
 
 const createToolProviders = (
   input: {
+    attentionGateway?: AttentionGatewayLike;
     terminalGateway?: TerminalGatewayLike;
     messageGateway?: MessageGatewayLike;
   } = {},
 ): AgentToolProvider[] => {
-  const providers = [
-    createTerminalToolProvider(input.terminalGateway),
-    createMessageToolProvider(input.messageGateway),
+  if (!input.attentionGateway && !input.terminalGateway && !input.messageGateway) {
+    return [];
+  }
+  return [
+    createInProcessRootWorkspaceToolProvider({
+      handlers: createRuntimeLocalHandlers(input),
+      list: () => ({
+        rootWorkspace: {
+          path: ROOT_WORKSPACE_PATH,
+          commandNames: ["attention", "message", "workspace", "terminal"],
+          toolNames: [],
+          skillRoots: [],
+        },
+        attentionApi: null,
+        workspaces: [],
+      }),
+    }),
   ];
-  return providers.filter((provider): provider is AgentToolProvider => provider !== null);
 };
 
 const createAttentionGateway = () => {
@@ -627,7 +717,9 @@ const createMessageGateway = () => {
     content: string;
     rootId?: string;
     from?: string;
-    to?: string;
+    createdAt: number;
+    updatedAt: number;
+    recalledAt?: number;
   }> = [];
   const channels = [
     {
@@ -664,13 +756,13 @@ const createMessageGateway = () => {
   return {
     sent,
     gateway: {
-      listChannels: async (input?: { includeArchived?: boolean }) => {
+      listChannels: (input?: { includeArchived?: boolean }) => {
         if (input?.includeArchived) {
           return [...channels];
         }
         return channels.filter((channel) => !("archivedAt" in channel && typeof channel.archivedAt === "number"));
       },
-      getChannel: async (input: { chatId: string; includeArchived?: boolean }) => {
+      getChannel: (input: { chatId: string; includeArchived?: boolean }) => {
         const channel = channels.find((entry) => entry.chatId === input.chatId);
         if (!channel) {
           return null;
@@ -680,11 +772,72 @@ const createMessageGateway = () => {
         }
         return channel;
       },
-      send: async (input: { chatId: string; content: string; rootId?: string; from?: string; to?: string }) => {
-        sent.push(input);
+      read: (input: { chatId: string; limit?: number }) => {
+        const channel = channels.find((entry) => entry.chatId === input.chatId);
+        if (!channel) {
+          throw new Error(`chat not found: ${input.chatId}`);
+        }
+        const items = sent
+          .filter((item) => item.chatId === input.chatId)
+          .slice(-(input.limit ?? Number.POSITIVE_INFINITY))
+          .map((item, index) => ({
+            rowId: index + 1,
+            messageId: index + 1,
+            rootId: item.rootId,
+            from: item.from ?? "default",
+            kind: "text" as const,
+            content: item.content,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            visibleAt: item.createdAt,
+          }));
+        return {
+          channel,
+          items,
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "head-1",
+        };
+      },
+      send: async (input: { chatId: string; content: string; rootId?: string; from?: string }) => {
+        const timestamp = Date.now();
+        sent.push({
+          ...input,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        return {
+          ok: true as const,
+          messageId: sent.length,
+          recentMessages: sent.slice(-5).map((item, index, items) => ({
+            messageId: sent.length - items.length + index + 1,
+            from: item.from ?? "default",
+            contentPreview: item.content,
+            sendTime: `20260418000000${String(sent.length - items.length + index + 1).padStart(3, "0")}`,
+          })),
+        };
+      },
+      edit: async (input: { chatId: string; messageId: number; content: string }) => {
+        const record = sent[input.messageId - 1];
+        if (!record || record.chatId !== input.chatId) {
+          throw new Error(`message not found: ${input.chatId}/${input.messageId}`);
+        }
+        record.content = input.content;
+        record.updatedAt = Date.now();
+        return { ok: true, messageId: input.messageId, updatedAt: record.updatedAt };
+      },
+      recall: async (input: { chatId: string; messageId: number }) => {
+        const record = sent[input.messageId - 1];
+        if (!record || record.chatId !== input.chatId) {
+          throw new Error(`message not found: ${input.chatId}/${input.messageId}`);
+        }
+        record.recalledAt = Date.now();
+        record.updatedAt = record.recalledAt;
         return {
           ok: true,
-          messageId: `msg-${sent.length}`,
+          messageId: input.messageId,
+          updatedAt: record.updatedAt,
+          recalledAt: record.recalledAt,
         };
       },
     },
@@ -799,13 +952,37 @@ const createAttentionBootstrapMessages = (input: {
 ];
 
 describe("Feature: AgenterAI behavior", () => {
-  test("Scenario: Given a model call When terminal tools are exposed Then create config and snapshot tools are available while legacy aliases stay hidden", async () => {
+  test("Scenario: Given runtime root tools When terminal CLI is needed Then AgenterAI only exposes root_workspace tools and terminal subcommands execute through bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     let toolNames: string[] = [];
 
     const modelClient = createModelClient(async (input) => {
       toolNames = input.tools.map((tool) => tool.name);
+      const root = await callRootWorkspaceList(input);
+      expect(root.rootWorkspace.commandNames).toEqual(["attention", "message", "workspace", "terminal"]);
+
+      const createResult = await callTerminalCreateViaCli(
+        input,
+        {
+          terminalId: "iflow",
+          cwd: "/tmp/workspace",
+          focus: true,
+        },
+        "call-terminal-create",
+      );
+      expect(createResult.result.ok).toBeTrue();
+
+      const readResult = await callTerminalReadViaCli(
+        input,
+        {
+          terminalId: "iflow",
+          mode: "snapshot",
+        },
+        "call-terminal-read",
+      );
+      expect(readResult.ok).toBeTrue();
+
       return {
         thinking: "",
         text: "checked",
@@ -817,21 +994,16 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
     await ai.send([createUserMessage("inspect the terminal surface")]);
 
-    expect(toolNames).toContain("terminal_create");
-    expect(toolNames).toContain("terminal_read");
-    expect(toolNames).toContain("terminal_snapshot");
-    expect(toolNames).toContain("terminal_get_config");
-    expect(toolNames).toContain("terminal_set_config");
-    expect(toolNames).not.toContain("terminal_run");
+    expect(toolNames).toEqual(["root_workspace_list", "root_workspace_bash"]);
   });
 
-  test("Scenario: Given a message gateway When tools are exposed Then channel metadata tools and message_send are both available", async () => {
+  test("Scenario: Given a message gateway When tools are exposed Then message list/read/send run through root_workspace_bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -839,67 +1011,41 @@ describe("Feature: AgenterAI behavior", () => {
 
     const modelClient = createModelClient(async (input) => {
       toolNames = input.tools.map((tool) => tool.name);
-      const listTool = input.tools.find((entry) => entry.name === "message_channel_list");
-      const getTool = input.tools.find((entry) => entry.name === "message_channel_get");
-      const tool = input.tools.find((entry) => entry.name === "message_send");
-      expect(listTool).toBeDefined();
-      expect(getTool).toBeDefined();
-      expect(tool).toBeDefined();
-      if (
-        !listTool ||
-        typeof listTool.execute !== "function" ||
-        !getTool ||
-        typeof getTool.execute !== "function" ||
-        !tool ||
-        typeof tool.execute !== "function"
-      ) {
-        throw new Error("message tools missing");
-      }
-
-      const listResult = (await listTool.execute(
+      const listResult = await callMessageListViaCli(
+        input,
         {
           includeArchived: false,
         },
-        {
-          toolCallId: "call-message-channel-list",
-          emitCustomEvent: () => {},
-        },
-      )) as {
-        channels: Array<{ chatId: string; title: string }>;
-      };
+        "call-message-list",
+      );
       expect(listResult.channels.some((channel) => channel.chatId === "chat-main")).toBeTrue();
 
-      const getResult = (await getTool.execute(
+      const readResult = await callMessageReadViaCli(
+        input,
         {
           chatId: "room-qa",
         },
-        {
-          toolCallId: "call-message-channel-get",
-          emitCustomEvent: () => {},
-        },
-      )) as {
-        channel: { chatId: string; title: string; kind: "room" } | null;
-      };
-      if (!getResult.channel) {
-        throw new Error("message_channel_get returned null");
-      }
-      expect(getResult.channel.chatId).toBe("room-qa");
-      expect(getResult.channel.title).toBe("QA Room");
-      expect(getResult.channel.kind).toBe("room");
+        "call-message-read",
+      );
+      expect(readResult.snapshot.channel.chatId).toBe("room-qa");
+      expect(readResult.snapshot.channel.title).toBe("QA Room");
 
-      const result = (await tool.execute(
+      const sendResult = await callMessageSendViaCli(
+        input,
         {
           chatId: "chat-main",
           content: "hello from tool",
         },
-        {
-          toolCallId: "call-message-send",
-          emitCustomEvent: () => {},
-        },
-      )) as { ok: boolean; messageId: string };
+        "call-message-send",
+      );
 
-      expect(result.ok).toBeTrue();
-      expect(result.messageId).toBe("msg-1");
+      expect(sendResult.result.ok).toBeTrue();
+      expect(sendResult.result.messageId).toBe(1);
+      expect(sendResult.result.recentMessages.at(-1)).toMatchObject({
+        messageId: 1,
+        from: "default",
+        contentPreview: "hello from tool",
+      });
       return {
         thinking: "",
         text: "",
@@ -912,6 +1058,7 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({
+        attentionGateway: chat.gateway,
         terminalGateway: terminal.gateway,
         messageGateway: message.gateway,
       }),
@@ -920,15 +1067,41 @@ describe("Feature: AgenterAI behavior", () => {
 
     await ai.send([createUserMessage("dispatch a message")]);
 
-    expect(toolNames).toContain("message_channel_list");
-    expect(toolNames).toContain("message_channel_get");
-    expect(toolNames).toContain("message_send");
-    expect(message.sent).toEqual([
-      {
-        chatId: "chat-main",
-        content: "hello from tool",
-      },
-    ]);
+    expect(toolNames).toEqual(["root_workspace_list", "root_workspace_bash"]);
+    expect(message.sent).toHaveLength(1);
+    expect(message.sent[0]).toMatchObject({
+      chatId: "chat-main",
+      content: "hello from tool",
+    });
+  });
+
+  test("Scenario: Given no external tool providers When a round is assembled Then AgenterAI keeps attention, message, and terminal SDK tools hidden", async () => {
+    const chat = createAttentionGateway();
+    let toolNames: string[] = [];
+
+    const ai = new AgenterAI({
+      modelClient: createModelClient(async (input) => {
+        toolNames = input.tools.map((tool) => tool.name);
+        return {
+          thinking: "",
+          text: "",
+          finishReason: "stop",
+        };
+      }),
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({}),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("hello")]);
+
+    expect(toolNames).not.toContain("attention_context_list");
+    expect(toolNames).not.toContain("attention_query");
+    expect(toolNames).not.toContain("attention_commit");
+    expect(toolNames).not.toContain("message_send");
+    expect(toolNames).not.toContain("terminal_create");
+    expect(toolNames).not.toContain("terminal_read");
   });
 
   test("Scenario: Given tool providers and a SYSTEMS_GUIDE slot When the model call is assembled Then systemPrompt stays provider-agnostic", async () => {
@@ -950,6 +1123,7 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({
+        attentionGateway: chat.gateway,
         terminalGateway: terminal.gateway,
         messageGateway: message.gateway,
       }),
@@ -1017,6 +1191,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1047,7 +1222,7 @@ describe("Feature: AgenterAI behavior", () => {
           legacySystemTemplate: true,
         }),
       }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1077,7 +1252,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1128,7 +1303,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1167,27 +1342,13 @@ describe("Feature: AgenterAI behavior", () => {
     const userItem = chat.engine.add({ content: "请做一个单页网页小游戏", from: "user", score: 100 });
 
     const modelClient = createModelClient(async (input) => {
-      const callTool = async (toolName: string, rawInput: unknown) => {
-        const tool = input.tools.find((item) => item.name === toolName);
-        expect(tool).toBeDefined();
-        if (!tool || typeof tool.execute !== "function") {
-          throw new Error(`tool not executable: ${toolName}`);
-        }
-        return tool.execute(rawInput, {
-          toolCallId: `call-${toolName}`,
-          emitCustomEvent: () => {
-            // no-op
-          },
-        });
-      };
-
-      const list = (await callTool("attention_query", {
+      const list = await callAttentionQueryViaCli(input, {
         query: `context:${chat.defaultContextId} minscore:1`,
         limit: 20,
-      })) as { items: Array<{ commit: { commitId: string } }> };
+      });
       expect(list.items.some((item) => item.commit.commitId === userItem.commitId)).toBeTrue();
 
-      await callTool("attention_commit", {
+      await callAttentionCommitViaCli(input, {
         contextId: chat.defaultContextId,
         parentCommitIds: [userItem.commitId],
         meta: {
@@ -1216,7 +1377,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1230,38 +1391,25 @@ describe("Feature: AgenterAI behavior", () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((item) => item.name === "attention_commit");
-      expect(tool).toBeDefined();
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("attention_commit tool missing");
-      }
-
-      const result = (await tool.execute(
-        {
-          contextId: chat.defaultContextId,
-          meta: {
-            author: "system",
-            source: "test",
-          },
-          scores: {
-            "startup-ping": 0,
-          },
-          summary: "startup ping",
-          change: {
-            type: "update",
-            value: "startup ping",
-            format: "text/plain",
-          },
-          stage: "observe",
+      const result = await callAttentionCommitViaCli(input, {
+        contextId: chat.defaultContextId,
+        meta: {
+          author: "system",
+          source: "test",
         },
-        {
-          toolCallId: "call-attention_commit",
-          emitCustomEvent: () => {},
+        scores: {
+          "startup-ping": 0,
         },
-      )) as { ok: boolean; commitId: string };
-
+        summary: "startup ping",
+        change: {
+          type: "update",
+          value: "startup ping",
+          format: "text/plain",
+        },
+        stage: "observe",
+      });
       expect(result.ok).toBeTrue();
-      expect(result.commitId.length).toBeGreaterThan(0);
+      expect(result.commit.commitId.length).toBeGreaterThan(0);
 
       return {
         thinking: "No active attention items, keep observing.",
@@ -1274,7 +1422,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1285,17 +1433,12 @@ describe("Feature: AgenterAI behavior", () => {
     expect(chat.engine.query({ query: "minscore:0 startup ping" })).toHaveLength(1);
   });
 
-  test("Scenario: Given attention_commit omits author and source When the tool executes Then the stored commit uses context defaults", async () => {
+  test("Scenario: Given attention commit CLI omits author and source When the tool executes Then the stored commit uses context defaults", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((item) => item.name === "attention_commit");
-      expect(tool).toBeDefined();
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("attention_commit tool missing");
-      }
-
-      const result = (await tool.execute(
+      const result = await callAttentionCommitViaCli(
+        input,
         {
           contextId: chat.defaultContextId,
           scores: {
@@ -1310,12 +1453,8 @@ describe("Feature: AgenterAI behavior", () => {
           done: true,
           stage: "done",
         },
-        {
-          toolCallId: "call-attention-commit-default-meta",
-          emitCustomEvent: () => {},
-        },
-      )) as { ok: boolean; commitId: string };
-
+        "call-attention-commit-default-meta",
+      );
       expect(result.ok).toBeTrue();
 
       return {
@@ -1329,7 +1468,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1342,18 +1481,13 @@ describe("Feature: AgenterAI behavior", () => {
     expect(commit?.meta.source).toBe("attention");
   });
 
-  test("Scenario: Given attention_commit only provides done on a resolved context When the tool executes Then runtime cleans the context and clears the active scores", async () => {
+  test("Scenario: Given attention commit CLI only provides done on a resolved context When the tool executes Then runtime cleans the context and clears the active scores", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "需要闭环", from: "user", score: 100 });
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((item) => item.name === "attention_commit");
-      expect(tool).toBeDefined();
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("attention_commit tool missing");
-      }
-
-      const result = (await tool.execute(
+      const result = await callAttentionCommitViaCli(
+        input,
         {
           contextId: chat.defaultContextId,
           parentCommitIds: [tracked.commitId],
@@ -1361,12 +1495,8 @@ describe("Feature: AgenterAI behavior", () => {
           done: true,
           stage: "done",
         },
-        {
-          toolCallId: "call-attention-commit-done-no-scores",
-          emitCustomEvent: () => {},
-        },
-      )) as { ok: boolean; commitId: string };
-
+        "call-attention-commit-done-no-scores",
+      );
       expect(result.ok).toBeTrue();
 
       return {
@@ -1380,7 +1510,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1393,18 +1523,13 @@ describe("Feature: AgenterAI behavior", () => {
     expect(commit?.change).toEqual({ type: "clean" });
   });
 
-  test("Scenario: Given attention_commit provides done with its own score map When the tool executes Then the tool clears existing debt and preserves the caller scores", async () => {
+  test("Scenario: Given attention commit CLI provides done with its own score map When the tool executes Then the tool clears existing debt and preserves the caller scores", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "需要闭环", from: "user", score: 100 });
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((item) => item.name === "attention_commit");
-      expect(tool).toBeDefined();
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("attention_commit tool missing");
-      }
-
-      const result = (await tool.execute(
+      const result = await callAttentionCommitViaCli(
+        input,
         {
           contextId: chat.defaultContextId,
           parentCommitIds: [tracked.commitId],
@@ -1415,12 +1540,8 @@ describe("Feature: AgenterAI behavior", () => {
           },
           stage: "done",
         },
-        {
-          toolCallId: "call-attention-commit-done-with-scores",
-          emitCustomEvent: () => {},
-        },
-      )) as { ok: boolean; commitId: string };
-
+        "call-attention-commit-done-with-scores",
+      );
       expect(result.ok).toBeTrue();
 
       return {
@@ -1434,7 +1555,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1463,7 +1584,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -1487,7 +1608,7 @@ describe("Feature: AgenterAI behavior", () => {
       })),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
@@ -1524,29 +1645,15 @@ describe("Feature: AgenterAI behavior", () => {
     const ai = new AgenterAI({
       modelClient: createModelClient(async (input) => {
         calls += 1;
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        const messageSend = input.tools.find((tool) => tool.name === "message_send");
-        expect(attentionCommit).toBeDefined();
-        expect(messageSend).toBeDefined();
-        if (
-          !attentionCommit ||
-          typeof attentionCommit.execute !== "function" ||
-          !messageSend ||
-          typeof messageSend.execute !== "function"
-        ) {
-          throw new Error("message attention tools missing");
-        }
-
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
             meta: {
               author: "assistant",
               source: "test",
-              systemId: "message",
-              subjectId: "chat-main",
-              channelId: "chat-main",
+              src: "msg:chat-main/1",
             },
             scores: Object.fromEntries(Object.keys(tracked.scores).map((key) => [key, 0])),
             summary: "Reply with exactly PLAYWRIGHT-MOCK-REPLY",
@@ -1558,7 +1665,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          { toolCallId: "call-attention-commit-1", emitCustomEvent: () => {} },
+          "call-attention-commit-1",
         );
         return {
           thinking: "",
@@ -1569,6 +1676,7 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({
+        attentionGateway: chat.gateway,
         terminalGateway: terminal.gateway,
         messageGateway: message.gateway,
       }),
@@ -1613,36 +1721,22 @@ describe("Feature: AgenterAI behavior", () => {
     const ai = new AgenterAI({
       modelClient: createModelClient(async (input) => {
         calls += 1;
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        const messageSend = input.tools.find((tool) => tool.name === "message_send");
-        if (
-          !attentionCommit ||
-          typeof attentionCommit.execute !== "function" ||
-          !messageSend ||
-          typeof messageSend.execute !== "function"
-        ) {
-          throw new Error("message attention tools missing");
-        }
-
-        await messageSend.execute(
+        await callMessageSendViaCli(
+          input,
           {
             chatId: "chat-main",
             content: "gaubee 说中午吃蛋炒饭",
           },
-          {
-            toolCallId: "call-message-send-main",
-            emitCustomEvent: () => {},
-          },
+          "call-message-send-main",
         );
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: "ctx-chat-main",
             meta: {
               author: "assistant",
               source: "test",
-              systemId: "message",
-              subjectId: "chat-main",
-              channelId: "chat-main",
+              src: "msg:chat-main/1",
             },
             scores: { hash_main: 0 },
             summary: "main reply delivered",
@@ -1653,20 +1747,16 @@ describe("Feature: AgenterAI behavior", () => {
             },
             done: true,
           },
-          {
-            toolCallId: "call-attention-commit-main",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-commit-main",
         );
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: "ctx-chat-gaubee",
             meta: {
               author: "assistant",
               source: "test",
-              systemId: "message",
-              subjectId: "chat-gaubee",
-              channelId: "chat-gaubee",
+              src: "msg:chat-gaubee/1",
             },
             scores: { hash_gaubee: 0 },
             summary: "relay reply consumed",
@@ -1677,10 +1767,7 @@ describe("Feature: AgenterAI behavior", () => {
             },
             done: true,
           },
-          {
-            toolCallId: "call-attention-commit-gaubee",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-commit-gaubee",
         );
         return {
           thinking: "",
@@ -1691,6 +1778,7 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({
+        attentionGateway: chat.gateway,
         terminalGateway: terminal.gateway,
         messageGateway: message.gateway,
       }),
@@ -1729,12 +1817,11 @@ describe("Feature: AgenterAI behavior", () => {
 
     expect(response).toBeUndefined();
     expect(calls).toBe(1);
-    expect(message.sent).toEqual([
-      {
-        chatId: "chat-main",
-        content: "gaubee 说中午吃蛋炒饭",
-      },
-    ]);
+    expect(message.sent).toHaveLength(1);
+    expect(message.sent[0]).toMatchObject({
+      chatId: "chat-main",
+      content: "gaubee 说中午吃蛋炒饭",
+    });
     const finalRecords = modelCalls.filter((record) => record.status !== "running");
     expect(finalRecords).toHaveLength(1);
     expect(finalRecords[0]?.status).toBe("done");
@@ -1750,13 +1837,7 @@ describe("Feature: AgenterAI behavior", () => {
     const ai = new AgenterAI({
       modelClient: createModelClient(async (input) => {
         calls += 1;
-        const terminalList = input.tools.find((tool) => tool.name === "terminal_list");
-        expect(terminalList).toBeDefined();
-        if (!terminalList || typeof terminalList.execute !== "function") {
-          throw new Error("terminal_list tool missing");
-        }
-
-        await terminalList.execute({}, { toolCallId: `call-terminal_list-${calls}`, emitCustomEvent: () => {} });
+        await callTerminalListViaCli(input, `call-terminal-list-${calls}`);
         return {
           thinking: "Observed terminal topology.",
           text: "I checked the terminal.",
@@ -1765,7 +1846,7 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: async (record) => {
         modelCalls.push(record);
@@ -1800,31 +1881,23 @@ describe("Feature: AgenterAI behavior", () => {
 
     const ai = new AgenterAI({
       modelClient: createModelClient(async (input) => {
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionCommit).toBeDefined();
-        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-
         await input.onUpdate?.({
           kind: "tool_call",
           toolCallId: "call-attention-commit-stable",
-          toolName: "attention_commit",
+          toolName: "root_workspace_bash",
           argsText: "",
           timestamp: Date.now(),
         });
 
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             summary: "mark handled",
             parentCommitIds: [],
             done: true,
           },
-          {
-            toolCallId: "call-attention-commit-stable",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-commit-stable",
         );
 
         return {
@@ -1835,6 +1908,7 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
       attentionGateway: chat.gateway,
       onAssistantStream: async (update) => {
         streamedUpdates.push({
@@ -1862,12 +1936,19 @@ describe("Feature: AgenterAI behavior", () => {
         typeof update.argsText === "string" &&
         update.argsText.length > 0,
     );
+    expect(hydratedCallUpdate?.toolName).toBe("root_workspace_bash");
     expect(hydratedCallUpdate?.input).toMatchObject({
+      command: "attention commit",
+    });
+    const hydratedInputRecord =
+      hydratedCallUpdate?.input && typeof hydratedCallUpdate.input === "object"
+        ? (hydratedCallUpdate.input as { stdin?: string })
+        : null;
+    expect(hydratedInputRecord?.stdin).toBeString();
+    expect(JSON.parse(hydratedInputRecord?.stdin ?? "{}")).toMatchObject({
       contextId: chat.defaultContextId,
       summary: "mark handled",
-      change: {
-        type: "clean",
-      },
+      done: true,
     });
     const completedCallUpdate = streamedUpdates.find(
       (update) => update.kind === "tool_result" && update.toolCallId === "call-attention-commit-stable",
@@ -1880,11 +1961,13 @@ describe("Feature: AgenterAI behavior", () => {
     expect(finalRecord?.response?.toolTrace).toHaveLength(1);
     expect(finalRecord?.response?.toolTrace?.[0]?.invocationId).toBe("call-attention-commit-stable");
     expect(finalRecord?.response?.toolTrace?.[0]?.input).toMatchObject({
+      command: "attention commit",
+    });
+    const toolTraceInput = finalRecord?.response?.toolTrace?.[0]?.input as { stdin?: string } | undefined;
+    expect(JSON.parse(toolTraceInput?.stdin ?? "{}")).toMatchObject({
       contextId: chat.defaultContextId,
       summary: "mark handled",
-      change: {
-        type: "clean",
-      },
+      done: true,
     });
   });
 
@@ -1905,35 +1988,21 @@ describe("Feature: AgenterAI behavior", () => {
           };
         }
 
-        const attentionQuery = input.tools.find((tool) => tool.name === "attention_query");
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionQuery).toBeDefined();
-        expect(attentionCommit).toBeDefined();
-        if (
-          !attentionQuery ||
-          typeof attentionQuery.execute !== "function" ||
-          !attentionCommit ||
-          typeof attentionCommit.execute !== "function"
-        ) {
-          throw new Error("attention tools missing");
-        }
-
-        const matches = (await attentionQuery.execute(
+        const matches = await callAttentionQueryViaCli(
+          input,
           {
             query: `context:${chat.defaultContextId} minscore:1`,
             limit: 20,
           },
-          {
-            toolCallId: "call-attention_query",
-            emitCustomEvent: () => {},
-          },
-        )) as { items: Array<{ commit: { commitId: string } }> };
+          "call-root-workspace-bash-attention-query",
+        );
 
         expect(matches.items.some((item) => item.commit.commitId === tracked.commitId)).toBeTrue();
         expect(flattenModelMessageContent(input.messages.at(-1))).toContain("yaml+attention_items");
         expect(flattenModelMessageContent(input.messages.at(-1))).not.toContain("attention_round_retry");
 
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -1951,10 +2020,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-attention_commit",
-            emitCustomEvent: () => {},
-          },
+          "call-root-workspace-bash-attention-commit",
         );
 
         return {
@@ -1965,7 +2031,7 @@ describe("Feature: AgenterAI behavior", () => {
       }),
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -2002,28 +2068,16 @@ describe("Feature: AgenterAI behavior", () => {
       round += 1;
 
       if (round === 1) {
-        const sendMessage = input.tools.find((tool) => tool.name === "message_send");
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        if (
-          !sendMessage ||
-          typeof sendMessage.execute !== "function" ||
-          !attentionCommit ||
-          typeof attentionCommit.execute !== "function"
-        ) {
-          throw new Error("message attention tools missing");
-        }
-
-        await sendMessage.execute(
+        await callMessageSendViaCli(
+          input,
           {
             chatId: "chat-gaubee",
             content: "在吗？kzf 问你中午吃什么？",
           },
-          {
-            toolCallId: "call-message-send",
-            emitCustomEvent: () => {},
-          },
+          "call-message-send",
         );
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -2040,10 +2094,7 @@ describe("Feature: AgenterAI behavior", () => {
             },
             stage: "act",
           },
-          {
-            toolCallId: "call-attention-commit",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-commit",
         );
         return {
           thinking: "",
@@ -2064,11 +2115,30 @@ describe("Feature: AgenterAI behavior", () => {
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({
+        attentionGateway: chat.gateway,
         terminalGateway: terminal.gateway,
         messageGateway: {
-          listChannels: async () => [],
-          getChannel: async () => null,
-          send: async () => ({ ok: true, messageId: "msg-test" }),
+          listChannels: () => [],
+          getChannel: () => null,
+          read: () => ({
+            channel: {
+              chatId: "chat-main",
+              kind: "room" as const,
+              title: "Main Room",
+              owner: "agenter",
+              contextId: "ctx-chat-main",
+              participants: [],
+              metadata: { builtIn: true },
+              focused: true,
+            },
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+            headVersion: "head-1",
+          }),
+          send: async () => ({ ok: true as const, messageId: 1, recentMessages: [] }),
+          edit: async () => ({ ok: true, messageId: 1, updatedAt: Date.now() }),
+          recall: async () => ({ ok: true, messageId: 1, updatedAt: Date.now(), recalledAt: Date.now() }),
         },
       }),
       attentionGateway: chat.gateway,
@@ -2081,8 +2151,9 @@ describe("Feature: AgenterAI behavior", () => {
     const userReplay = extractUserReplay(seenInputs[1]);
     const roles = extractReplayRoles(seenInputs[1]);
     expect(replay.some((item) => item.includes("yaml+attention_items"))).toBeTrue();
-    expect(replay.some((item) => item.includes("tool: message_send"))).toBeTrue();
-    expect(replay.some((item) => item.includes("tool: attention_commit"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(replay.some((item) => item.includes('command: "message send"'))).toBeTrue();
+    expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeTrue();
     expect(userReplay.some((item) => item.includes("ctx-gaubee replied"))).toBeTrue();
     expect(roles.at(-1)).toBe("user");
@@ -2116,7 +2187,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -2204,29 +2275,16 @@ describe("Feature: AgenterAI behavior", () => {
       seenInputs.push(input);
       round += 1;
       if (round === 1) {
-        const terminalRead = input.tools.find((tool) => tool.name === "terminal_read");
-        expect(terminalRead).toBeDefined();
-        if (!terminalRead || typeof terminalRead.execute !== "function") {
-          throw new Error("terminal_read tool missing");
-        }
-
-        await terminalRead.execute(
+        await callTerminalReadViaCli(
+          input,
           {
             terminalId: "iflow",
           },
-          {
-            toolCallId: "call-terminal-read",
-            emitCustomEvent: () => {},
-          },
+          "call-terminal-read",
         );
 
-        const attentionUpdate = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionUpdate).toBeDefined();
-        if (!attentionUpdate || typeof attentionUpdate.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-
-        await attentionUpdate.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -2244,10 +2302,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-attention-reply",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-reply",
         );
 
         return {
@@ -2267,7 +2322,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -2276,8 +2331,9 @@ describe("Feature: AgenterAI behavior", () => {
 
     const replay = extractAssistantReplay(seenInputs[1]);
     expect(replay.some((item) => item.includes("Decision: report result"))).toBeFalse();
-    expect(replay.some((item) => item.includes("tool: terminal_read"))).toBeTrue();
-    expect(replay.some((item) => item.includes("tool: attention_commit"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(replay.some((item) => item.includes('command: "terminal read"'))).toBeTrue();
+    expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
   });
 
   test("Scenario: Given a queued compact request When the runtime runs a compact cycle Then summarize includes attention_system and the next attention round can still clear records", async () => {
@@ -2320,13 +2376,8 @@ describe("Feature: AgenterAI behavior", () => {
           return { thinking: "round1", text: "", finishReason: "stop" };
         }
 
-        const attentionUpdate = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionUpdate).toBeDefined();
-        if (!attentionUpdate || typeof attentionUpdate.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-
-        await attentionUpdate.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -2344,12 +2395,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-chat-reply",
-            emitCustomEvent: () => {
-              // no-op
-            },
-          },
+          "call-chat-reply",
         );
         return {
           thinking: "round2",
@@ -2363,7 +2409,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -2417,41 +2463,25 @@ describe("Feature: AgenterAI behavior", () => {
         round += 1;
 
         if (round === 1) {
-          const messageSend = input.tools.find((tool) => tool.name === "message_send");
-          expect(messageSend).toBeDefined();
-          if (!messageSend || typeof messageSend.execute !== "function") {
-            throw new Error("message_send tool missing");
-          }
-
+          const cliPayload = { chatId: "chat-main", content: "正在处理中" };
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-interleaved",
-            toolName: "message_send",
-            argsText: '{"chatId":"chat-main","content":"正在处理中"}',
-            input: {
-              chatId: "chat-main",
-              content: "正在处理中",
-            },
+            toolName: "root_workspace_bash",
+            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
+            input: buildRootWorkspaceBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
-          await messageSend.execute(
-            {
-              chatId: "chat-main",
-              content: "正在处理中",
-            },
-            {
-              toolCallId: "call-message-send-interleaved",
-              emitCustomEvent: () => {
-                // no-op
-              },
-            },
-          );
+          await callMessageSendViaCli(input, cliPayload, "call-message-send-interleaved");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-interleaved",
-            toolName: "message_send",
+            toolName: "root_workspace_bash",
             ok: true,
-            result: { ok: true, messageId: "msg-1" },
+            result: buildRootWorkspaceBashSuccessResult({
+              ok: true,
+              result: { ok: true, messageId: 1, recentMessages: [] },
+            }),
             timestamp: Date.now(),
           });
           expect(input.shouldYieldAfterToolPhase?.()).toBeTrue();
@@ -2507,7 +2537,8 @@ describe("Feature: AgenterAI behavior", () => {
     });
     const assistantReplay = extractAssistantReplay(seenInputs[1]);
     const userReplay = extractUserReplay(seenInputs[1]);
-    expect(assistantReplay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(assistantReplay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(assistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("summary: 新消息补充条件"))).toBeTrue();
   });
 
@@ -2533,42 +2564,26 @@ describe("Feature: AgenterAI behavior", () => {
         seenInputs.push(input);
         round += 1;
 
-        const messageSend = input.tools.find((tool) => tool.name === "message_send");
-        expect(messageSend).toBeDefined();
-        if (!messageSend || typeof messageSend.execute !== "function") {
-          throw new Error("message_send tool missing");
-        }
-
         if (round === 1) {
+          const cliPayload = { chatId: "chat-main", content: "处理中-1" };
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-1",
-            toolName: "message_send",
-            argsText: '{"chatId":"chat-main","content":"处理中-1"}',
-            input: {
-              chatId: "chat-main",
-              content: "处理中-1",
-            },
+            toolName: "root_workspace_bash",
+            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
+            input: buildRootWorkspaceBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
-          await messageSend.execute(
-            {
-              chatId: "chat-main",
-              content: "处理中-1",
-            },
-            {
-              toolCallId: "call-message-send-1",
-              emitCustomEvent: () => {
-                // no-op
-              },
-            },
-          );
+          await callMessageSendViaCli(input, cliPayload, "call-message-send-1");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-1",
-            toolName: "message_send",
+            toolName: "root_workspace_bash",
             ok: true,
-            result: { ok: true, messageId: "msg-1" },
+            result: buildRootWorkspaceBashSuccessResult({
+              ok: true,
+              result: { ok: true, messageId: 1, recentMessages: [] },
+            }),
             timestamp: Date.now(),
           });
           expect(input.shouldYieldAfterToolPhase?.()).toBeTrue();
@@ -2581,35 +2596,25 @@ describe("Feature: AgenterAI behavior", () => {
         }
 
         if (round === 2) {
+          const cliPayload = { chatId: "chat-main", content: "处理中-2" };
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-2",
-            toolName: "message_send",
-            argsText: '{"chatId":"chat-main","content":"处理中-2"}',
-            input: {
-              chatId: "chat-main",
-              content: "处理中-2",
-            },
+            toolName: "root_workspace_bash",
+            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
+            input: buildRootWorkspaceBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
-          await messageSend.execute(
-            {
-              chatId: "chat-main",
-              content: "处理中-2",
-            },
-            {
-              toolCallId: "call-message-send-2",
-              emitCustomEvent: () => {
-                // no-op
-              },
-            },
-          );
+          await callMessageSendViaCli(input, cliPayload, "call-message-send-2");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-2",
-            toolName: "message_send",
+            toolName: "root_workspace_bash",
             ok: true,
-            result: { ok: true, messageId: "msg-2" },
+            result: buildRootWorkspaceBashSuccessResult({
+              ok: true,
+              result: { ok: true, messageId: 2, recentMessages: [] },
+            }),
             timestamp: Date.now(),
           });
           expect(input.shouldYieldAfterToolPhase?.()).toBeFalse();
@@ -2670,7 +2675,8 @@ describe("Feature: AgenterAI behavior", () => {
     const secondRoundUserReplay = extractUserReplay(seenInputs[1]);
     expect(secondRoundUserReplay.some((item) => item.includes("第二阶段补充要求"))).toBeTrue();
     const thirdRoundAssistantReplay = extractAssistantReplay(seenInputs[2]);
-    expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: message_send"))).toBeTrue();
+    expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(thirdRoundAssistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(thirdRoundAssistantReplay.some((item) => item.includes("处理中-2"))).toBeTrue();
   });
 
@@ -2693,13 +2699,8 @@ describe("Feature: AgenterAI behavior", () => {
       },
       async respondWithMeta(input: ModelRespondInput) {
         seenInputs.push(input);
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionCommit).toBeDefined();
-        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -2717,10 +2718,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-attention-settle-without-followup",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-settle-without-followup",
         );
         expect(input.shouldYieldAfterToolPhase?.()).toBeFalse();
         return {
@@ -2736,6 +2734,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
       attentionGateway: chat.gateway,
     });
 
@@ -2769,7 +2768,7 @@ describe("Feature: AgenterAI behavior", () => {
         return {};
       },
       async respondWithMeta(input: ModelRespondInput) {
-        if (input.tools.length === 0) {
+        if (input.messages.length === 1) {
           return {
             thinking: "",
             text: JSON.stringify({
@@ -2825,7 +2824,7 @@ describe("Feature: AgenterAI behavior", () => {
 
     expect(modelRounds).toBe(1);
     expect(seenInputs).toHaveLength(1);
-    const replay = extractAssistantReplay(seenInputs[0]);
+    const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
     expect(replay.some((item) => item.includes("yaml+prompt_window_compact"))).toBeTrue();
     expect(replay.some((item) => item.includes("gaubee说中午吃蛋炒饭。"))).toBeTrue();
     expect(replay.some((item) => item.includes("ctx-main follow-up pending"))).toBeTrue();
@@ -2952,12 +2951,8 @@ describe("Feature: AgenterAI behavior", () => {
         if (round === 1) {
           throw new Error("maximum context length exceeded");
         }
-        const attentionCommit = input.tools.find((tool) => tool.name === "attention_commit");
-        expect(attentionCommit).toBeDefined();
-        if (!attentionCommit || typeof attentionCommit.execute !== "function") {
-          throw new Error("attention_commit tool missing");
-        }
-        await attentionCommit.execute(
+        await callAttentionCommitViaCli(
+          input,
           {
             contextId: chat.defaultContextId,
             parentCommitIds: [tracked.commitId],
@@ -2972,10 +2967,7 @@ describe("Feature: AgenterAI behavior", () => {
             done: true,
             stage: "done",
           },
-          {
-            toolCallId: "call-attention-after-compact",
-            emitCustomEvent: () => {},
-          },
+          "call-attention-after-compact",
         );
         return {
           thinking: "retry-ok",
@@ -2989,7 +2981,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelClient,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: (record) => {
         lifecycle.push(record);
@@ -3049,7 +3041,7 @@ describe("Feature: AgenterAI behavior", () => {
       modelCallTimeoutMs: 10,
       logger: createLogger(),
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
-      toolProviders: createToolProviders({ terminalGateway: terminal.gateway }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
       attentionGateway: chat.gateway,
       onModelCall: (record) => {
         lifecycle.push({
@@ -3148,23 +3140,17 @@ describe("Feature: AgenterAI behavior", () => {
     const externalAbort = new AbortController();
 
     const modelClient = createModelClient(async (input) => {
-      const tool = input.tools.find((entry) => entry.name === "terminal_write");
-      if (!tool || typeof tool.execute !== "function") {
-        throw new Error("terminal_write tool missing");
-      }
       setTimeout(() => {
         externalAbort.abort("session.stop");
       }, 5);
-      await tool.execute(
+      await callTerminalWriteViaCli(
+        input,
         {
           terminalId: "iflow",
           text: "echo still-running",
           submit: true,
         },
-        {
-          toolCallId: "call-terminal-write",
-          emitCustomEvent: () => {},
-        },
+        "call-terminal-write",
       );
       return {
         thinking: "",
@@ -3367,7 +3353,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(compactReplay).toContain("answer directly instead of reopening finished relay or lookup work");
   });
 
-  test("Scenario: Given the settled answer only exists in message_send tool trace When compact runs Then AgenterAI still preserves the delivered origin-room answer", async () => {
+  test("Scenario: Given the settled answer only exists in root_workspace_bash message-send trace When compact runs Then AgenterAI still preserves the delivered origin-room answer", async () => {
     const chat = createAttentionGateway();
     const promptWindowStore = createPromptWindowStoreSpy([
       {
@@ -3381,17 +3367,18 @@ describe("Feature: AgenterAI behavior", () => {
             type: "text",
             content: [
               "```yaml",
-              "invocationId: message_send:relay",
-              "tool: message_send",
+              "invocationId: root_workspace_bash:relay",
+              "tool: root_workspace_bash",
               "status: success",
               "startedAt: 2026-04-12T00:00:00.000Z",
               "finishedAt: 2026-04-12T00:00:01.000Z",
               "input:",
-              '  chatId: "chat-gaubee"',
-              '  content: "gaubee，有人问你中午吃什么？"',
+              '  command: "message send --compact [\\"chat-gaubee\\",\\"gaubee，有人问你中午吃什么？\\"]"',
               "output:",
-              "  ok: true",
-              '  messageId: "msg-relay"',
+              '  stdout: "{\\"ok\\":true,\\"messageId\\":1}"',
+              '  stderr: ""',
+              "  exitCode: 0",
+              '  cwd: "/workspace"',
               "error: null",
               "```",
             ].join("\n"),
@@ -3405,17 +3392,18 @@ describe("Feature: AgenterAI behavior", () => {
             type: "text",
             content: [
               "```yaml",
-              "invocationId: message_send:origin",
-              "tool: message_send",
+              "invocationId: root_workspace_bash:origin",
+              "tool: root_workspace_bash",
               "status: success",
               "startedAt: 2026-04-12T00:00:02.000Z",
               "finishedAt: 2026-04-12T00:00:03.000Z",
               "input:",
-              '  chatId: "chat-main"',
-              '  content: "gaubee说中午吃蛋炒饭。"',
+              '  command: "message send --compact [\\"chat-main\\",\\"gaubee说中午吃蛋炒饭。\\"]"',
               "output:",
-              "  ok: true",
-              '  messageId: "msg-origin"',
+              '  stdout: "{\\"ok\\":true,\\"messageId\\":2}"',
+              '  stderr: ""',
+              "  exitCode: 0",
+              '  cwd: "/workspace"',
               "error: null",
               "```",
             ].join("\n"),

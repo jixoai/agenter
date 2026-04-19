@@ -3,6 +3,12 @@ type RoomViewerSelectionInput = {
   roomParticipantId?: string | null;
   currentAuthActorId?: string | null;
   seatActorIds: readonly string[];
+  seatTruthLoaded?: boolean;
+};
+
+export type RoomViewerResolution = {
+  actorId: string | null;
+  storedViewerState: "selected" | "pending_truth" | "invalid" | "none";
 };
 
 const includesActor = (
@@ -12,20 +18,42 @@ const includesActor = (
   return typeof actorId === "string" && seatActorIds.includes(actorId);
 };
 
-export const resolveRoomViewerActorId = ({
+export const resolveRoomViewerResolution = ({
   storedViewerActorId,
   roomParticipantId,
   currentAuthActorId,
   seatActorIds,
-}: RoomViewerSelectionInput): string | null => {
+  seatTruthLoaded = true,
+}: RoomViewerSelectionInput): RoomViewerResolution => {
   if (includesActor(seatActorIds, storedViewerActorId)) {
-    return storedViewerActorId;
+    return {
+      actorId: storedViewerActorId,
+      storedViewerState: "selected",
+    };
+  }
+  if (storedViewerActorId && !seatTruthLoaded) {
+    return {
+      actorId: storedViewerActorId,
+      storedViewerState: "pending_truth",
+    };
   }
   if (includesActor(seatActorIds, roomParticipantId)) {
-    return roomParticipantId;
+    return {
+      actorId: roomParticipantId,
+      storedViewerState: storedViewerActorId ? "invalid" : "none",
+    };
   }
   if (includesActor(seatActorIds, currentAuthActorId)) {
-    return currentAuthActorId;
+    return {
+      actorId: currentAuthActorId,
+      storedViewerState: storedViewerActorId ? "invalid" : "none",
+    };
   }
-  return seatActorIds[0] ?? null;
+  return {
+    actorId: seatActorIds[0] ?? null,
+    storedViewerState: storedViewerActorId ? "invalid" : "none",
+  };
 };
+
+export const resolveRoomViewerActorId = (input: RoomViewerSelectionInput): string | null =>
+  resolveRoomViewerResolution(input).actorId;

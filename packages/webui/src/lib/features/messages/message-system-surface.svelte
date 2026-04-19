@@ -1,6 +1,8 @@
 <script lang="ts">
 	import {
 		WebChatViewHost,
+		type WebChatActorResolveInput,
+		toWebChatMessage,
 		type WebChatActorPresentation,
 		type WebChatComposerCapabilities,
 		type WebChatMessageAction,
@@ -31,6 +33,7 @@
 
 	let {
 		selectedRoom,
+		authenticated,
 		selectedRoomIconUrl = null,
 		resolveProfileIconUrl,
 		disableManageDialogPortal = false,
@@ -85,8 +88,8 @@
 	const selectedViewerSeat = $derived(
 		roomSeatStates.find((seat) => seat.actorId === selectedViewerActorId) ?? null,
 	);
-	const canSelectViewer = $derived(roomSeatStates.length > 0);
-	const canSendForViewer = $derived(Boolean(selectedCallerToken));
+	const canSelectViewer = $derived(authenticated && roomSeatStates.length > 0);
+	const canSendForViewer = $derived(authenticated && Boolean(selectedCallerToken));
 	const duplicateSeatLabels = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const state of roomSeatStates) {
@@ -143,6 +146,7 @@
 	const messageSearchSignature = $derived(
 		initialMessages.map((message) => `${message.messageId}:${message.updatedAt ?? message.createdAt}`).join('|'),
 	);
+	const initialTranscriptMessages = $derived(initialMessages.map((message) => toWebChatMessage(message)));
 	const roomToolbarProps = $derived.by(
 		() =>
 			({
@@ -153,6 +157,7 @@
 				canSelectViewer,
 				activeMode: bodyMode,
 				canSearch: Boolean(selectedRoom),
+				actionsDisabled: !authenticated,
 				onSelectViewer: onChangeViewerActorId,
 				onSelectMode: (mode: RoomBodyMode) => {
 					bodyMode = mode;
@@ -169,14 +174,7 @@
 			}) satisfies ComponentProps<typeof RoomPageToolbarContent>,
 	);
 
-	const resolveActorPresentation = (input: {
-		channel: NonNullable<MessageSystemSurfaceProps['selectedRoom']>;
-		message?: MessageSystemSurfaceProps['initialMessages'][number];
-		viewerActorId: string | null;
-		role: 'assistant' | 'channel' | 'participant' | 'viewer';
-		actorId?: string | null;
-		fallbackLabel: string;
-	}): WebChatActorPresentation | null => {
+	const resolveActorPresentation = (input: WebChatActorResolveInput): WebChatActorPresentation | null => {
 		const fallbackIconUrl = (() => {
 			const iconReference = input.actorId ?? input.fallbackLabel;
 			return iconReference ? (resolveProfileIconUrl?.(iconReference) ?? null) : null;
@@ -419,13 +417,13 @@
 	};
 
 	const clearSearchMarkers = (): void => {
-		for (const row of surfaceRef?.querySelectorAll<HTMLElement>('[data-message-id][data-room-search-match]') ?? []) {
+		for (const row of surfaceRef?.querySelectorAll<HTMLElement>('[data-view-key][data-room-search-match]') ?? []) {
 			row.removeAttribute('data-room-search-match');
 		}
 	};
 
 	const findMessageRows = (): HTMLElement[] =>
-		Array.from(surfaceRef?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []);
+		Array.from(surfaceRef?.querySelectorAll<HTMLElement>('[data-view-key]') ?? []);
 
 	const revealSearchMatch = async (): Promise<void> => {
 		await tick();
@@ -433,15 +431,15 @@
 		if (bodyMode !== 'chat' || searchMatches.length === 0) {
 			return;
 		}
-		const activeMessageId = searchMatches[searchMatchIndex];
-		if (!activeMessageId) {
+		const activeViewKey = searchMatches[searchMatchIndex];
+		if (!activeViewKey) {
 			return;
 		}
-		const escapedMessageId =
+		const escapedViewKey =
 			typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-				? CSS.escape(activeMessageId)
-				: activeMessageId.replace(/["\\]/gu, '\\$&');
-		const row = surfaceRef?.querySelector<HTMLElement>(`[data-message-id="${escapedMessageId}"]`);
+				? CSS.escape(activeViewKey)
+				: activeViewKey.replace(/["\\]/gu, '\\$&');
+		const row = surfaceRef?.querySelector<HTMLElement>(`[data-view-key="${escapedViewKey}"]`);
 		if (!row) {
 			return;
 		}
@@ -470,7 +468,7 @@
 		}
 		const matches = findMessageRows()
 			.filter((row) => (row.textContent ?? '').toLocaleLowerCase().includes(needle))
-			.map((row) => row.dataset.messageId ?? '')
+			.map((row) => row.dataset.viewKey ?? '')
 			.filter(Boolean);
 		searchMatches = matches;
 		if (matches.length === 0) {
@@ -522,7 +520,7 @@
 			<WebChatViewHost
 				channel={selectedRoom}
 				viewerActorId={selectedViewerActorId}
-				{initialMessages}
+				initialMessages={initialTranscriptMessages}
 				{initialSnapshotResolved}
 				class="h-full"
 				disabled={!selectedRoom || !canSendForViewer}
@@ -559,7 +557,7 @@
 />
 
 <MessageRoomManageDialog
-	open={manageDialogOpen}
+	bind:open={manageDialogOpen}
 	bind:section={manageSection}
 	bind:usersView={manageUsersView}
 	{selectedRoom}
@@ -652,7 +650,7 @@
 		}
 	}
 
-	:global([data-message-id][data-room-search-match='true']) {
+	:global([data-view-key][data-room-search-match='true']) {
 		border-radius: 1.1rem;
 		outline: 2px solid color-mix(in srgb, var(--foreground), transparent 78%);
 		outline-offset: 0.2rem;

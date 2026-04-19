@@ -21,6 +21,7 @@
 	import type { MessageSystemGrantRole } from '$lib/features/messages/message-system-surface.types';
 
 	const controller = getAppControllerContext();
+	const AUTH_REQUIRED_MESSAGE = 'auth token required';
 
 	type InitialUserDraft = {
 		selected: boolean;
@@ -31,6 +32,10 @@
 	let initialUserDrafts = $state<Record<string, InitialUserDraft>>({});
 	let createBusy = $state(false);
 	let errorMessage = $state<string | null>(null);
+	const authReady = $derived(!controller.initializing);
+	const isAuthenticated = $derived(Boolean(controller.authSession));
+	const showAuthNotice = $derived(authReady && !isAuthenticated);
+	const routeErrorMessage = $derived(errorMessage ?? (showAuthNotice ? AUTH_REQUIRED_MESSAGE : null));
 
 	const roleItems = [
 		{ value: 'admin', label: 'Admin' },
@@ -141,6 +146,10 @@
 	const handleSubmit = async (event: SubmitEvent): Promise<void> => {
 		event.preventDefault();
 		if (createBusy) {
+			return;
+		}
+		if (!authReady || !isAuthenticated) {
+			errorMessage = AUTH_REQUIRED_MESSAGE;
 			return;
 		}
 		createBusy = true;
@@ -262,12 +271,12 @@
 			</div>
 		</section>
 
-		{#if errorMessage}
-			<NoticeBanner tone="destructive" message={errorMessage} />
+		{#if routeErrorMessage}
+			<NoticeBanner tone="destructive" message={routeErrorMessage} />
 		{/if}
 
 		<div class="flex justify-end">
-			<Button type="submit" disabled={createBusy}>
+			<Button type="submit" disabled={createBusy || !authReady || !isAuthenticated}>
 				{createBusy ? 'Creating…' : 'Create room'}
 			</Button>
 		</div>

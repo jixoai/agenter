@@ -312,7 +312,7 @@ const buildFallbackHeadline = (
     return cycle.compactTrigger ? `Compact cycle (${cycle.compactTrigger})` : "Compact cycle";
   }
   const delivered = detail.hooks.find((record) => record.status === "delivered");
-  if (delivered?.systemId === "message") {
+  if (delivered?.bridgeId === "message") {
     return "Delivered chat reply";
   }
   if (detail.activeContexts.length > 0) {

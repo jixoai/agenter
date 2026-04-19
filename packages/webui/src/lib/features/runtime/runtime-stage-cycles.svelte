@@ -255,7 +255,7 @@
 											{#each selectedCycleDetail.hooks as hook (hook.id)}
 												<Item.Root size="sm" variant="muted" class="grid gap-2">
 													<div class="flex flex-wrap items-center gap-2">
-														<div class="text-sm font-medium">{hook.systemId}</div>
+														<div class="text-sm font-medium">{hook.bridgeId}</div>
 														<Badge variant={hook.status === 'failed' ? 'destructive' : hook.status === 'delivered' ? 'secondary' : 'outline'}>
 															{hook.status}
 														</Badge>

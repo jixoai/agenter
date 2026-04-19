@@ -128,7 +128,7 @@ export interface MessageReadStateProjection {
 }
 
 export interface MessageReadProgressProjection {
-  latestVisibleMessageId?: string;
+  latestVisibleMessageId?: number;
   latestVisibleMessageRowId?: number;
   latestVisibleAt?: number;
   totalSeatCount: number;
@@ -172,12 +172,11 @@ export interface MessageUnreadRoomSummary extends MessageActorRoomStateRecord {}
 
 export interface MessageRecord {
   rowId: number;
-  messageId: string;
+  messageId: number;
   chatId: string;
   rootId?: string;
   senderActorId?: MessageActorId;
   from: string;
-  to?: string;
   kind: MessageKind;
   content: string;
   createdAt: number;
@@ -247,11 +246,9 @@ export interface MessageCreateInitialUserInput {
 
 export interface MessageAppendInput {
   chatId: string;
-  messageId?: string;
   rootId?: string;
   senderActorId?: MessageActorId;
   from?: string;
-  to?: string;
   kind?: MessageKind;
   content: string;
   createdAt?: number;
@@ -266,14 +263,14 @@ export interface MessageAppendInput {
 
 export interface MessageEditInput {
   chatId: string;
-  messageId: string;
+  messageId: number;
   content: string;
   updatedAt?: number;
 }
 
 export interface MessageRecallInput {
   chatId: string;
-  messageId: string;
+  messageId: number;
   updatedAt?: number;
   recalledAt?: number;
   recalledByActorId?: MessageActorId;
@@ -302,7 +299,7 @@ export interface MessageAuthorizedPageInput extends MessageAuthorizedReadInput {
 }
 
 export interface MessageAuthorizedMarkReadInput extends MessageAuthorizedReadInput {
-  messageId?: string;
+  messageId?: number;
 }
 
 export interface MessageChannelPatchInput {

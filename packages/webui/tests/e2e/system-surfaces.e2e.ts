@@ -449,13 +449,26 @@ const expectTerminalViewText = async (page: Page, text: string): Promise<void> =
 };
 
 const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
-  const stopButton = page.getByRole("button", { name: "Stop", exact: true });
-  const startButton = page.getByRole("button", { name: "Start", exact: true });
-  await expect(stopButton.or(startButton)).toBeVisible({ timeout: 15_000 });
+  const stopButton = page.getByRole("button", { name: /^(Stop|Stop runtime)$/u }).first();
+  const startButton = page.getByRole("button", { name: /^(Start|Start avatar)$/u }).first();
+  const settled = await expect
+    .poll(
+      async () =>
+        (await stopButton.isVisible().catch(() => false)) || (await startButton.isVisible().catch(() => false)),
+      { timeout: 15_000 },
+    )
+    .toBeTruthy()
+    .then(() => true)
+    .catch(() => false);
+  if (!settled) {
+    return;
+  }
   for (let attempt = 0; attempt < 25; attempt += 1) {
     if (await stopButton.isVisible().catch(() => false)) {
       await clickStable(stopButton);
-      await expect(startButton).toBeVisible({ timeout: 15_000 });
+      await expect
+        .poll(async () => await startButton.isVisible().catch(() => false), { timeout: 15_000 })
+        .toBeTruthy();
       return;
     }
     if (attempt === 24) {
@@ -463,7 +476,7 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
     }
     await page.waitForTimeout(200);
   }
-  await expect(startButton).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => await startButton.isVisible().catch(() => false), { timeout: 15_000 }).toBeTruthy();
 };
 
 const readAuthToken = async (page: Page): Promise<string> => {
@@ -636,6 +649,82 @@ const openManageRoomDialog = async (page: Page): Promise<Locator> => {
   return manageRoomDialog;
 };
 
+const openCopyAvatarDialog = async (page: Page): Promise<Locator> => {
+  const dialog = page.getByRole("dialog", { name: "Copy avatar" });
+  const copyButtons = page.getByRole("button", { name: /Copy avatar/i });
+  const runtimeDetailsTrigger = page.getByRole("button", { name: "Runtime details", exact: true }).first();
+  const resolveVisibleCopyButton = async (): Promise<Locator | null> => {
+    const copyButtonCount = await copyButtons.count().catch(() => 0);
+    for (let index = 0; index < copyButtonCount; index += 1) {
+      const candidate = copyButtons.nth(index);
+      if (await candidate.isVisible().catch(() => false)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  const availableEntry = await expect
+    .poll(
+      async () => {
+        if (await resolveVisibleCopyButton()) {
+          return "copy";
+        }
+        if (await runtimeDetailsTrigger.isVisible().catch(() => false)) {
+          return "details";
+        }
+        return null;
+      },
+      { timeout: 15_000 },
+    )
+    .not.toBeNull()
+    .then(async () => {
+      if (await resolveVisibleCopyButton()) {
+        return "copy" as const;
+      }
+      return "details" as const;
+    });
+
+  if (availableEntry === "copy") {
+    const directButton = await resolveVisibleCopyButton();
+    if (directButton) {
+      await clickStable(directButton);
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      return dialog;
+    }
+  }
+
+  await expect(runtimeDetailsTrigger).toBeVisible({ timeout: 15_000 });
+  const expanded = (await runtimeDetailsTrigger.getAttribute("aria-expanded").catch(() => null)) === "true";
+  if (!expanded) {
+    await clickStable(runtimeDetailsTrigger);
+  }
+
+  const mobileCopyButton = page.getByRole("button", { name: /Copy avatar/i }).first();
+  await expect(mobileCopyButton).toBeVisible({ timeout: 15_000 });
+  await clickStable(mobileCopyButton);
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  return dialog;
+};
+
+const expectBodyInteractive = async (page: Page): Promise<void> => {
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          return getComputedStyle(document.body).pointerEvents !== "none";
+        }),
+      { timeout: 15_000 },
+    )
+    .toBeTruthy();
+};
+
+const closeDialogAndExpectInteractive = async (page: Page, dialog: Locator): Promise<void> => {
+  await clickStable(dialog.getByRole("button", { name: "Close", exact: true }));
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+  await expectBodyInteractive(page);
+};
+
 const openManageRoomAddUserDialog = async (page: Page): Promise<Locator> => {
   const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
   const roomToolbar = page.locator("[data-workbench-page-toolbar]");
@@ -707,6 +796,28 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
     .not.toBeNull();
 };
 
+test.describe("Feature: Unauthenticated system surfaces", () => {
+  test("Scenario: Given an unauthenticated browser When opening the New room route Then room creation stays disabled behind an auth-required notice", async ({
+    page,
+  }) => {
+    await page.goto("/messages/new", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByTestId("message-create-route")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("auth token required", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Create room" })).toBeDisabled();
+  });
+
+  test("Scenario: Given an unauthenticated browser When opening the New terminal route Then terminal creation stays disabled behind an auth-required notice", async ({
+    page,
+  }) => {
+    await page.goto("/terminals/new", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByTestId("terminal-create-route")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("auth token required", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Create terminal" })).toBeDisabled();
+  });
+});
+
 test.describe("Feature: Svelte system surfaces", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     testInfo.setTimeout(Math.max(testInfo.timeout, 90_000));
@@ -759,8 +870,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     let viewerRuntimeUrl: string | null = null;
     try {
       await navigateToSystem(page, "Avatars");
-      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
-      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      const copyDialog = await openCopyAvatarDialog(page);
       await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
       await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
         return !(await copyDialog.isVisible().catch(() => false));
@@ -822,7 +932,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     } finally {
       if (viewerRuntimeUrl) {
         await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
-        await stopRuntimeIfRunning(page);
+        await stopRuntimeIfRunning(page).catch(() => undefined);
       }
     }
   });
@@ -838,8 +948,7 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     try {
       await navigateToSystem(page, "Avatars");
-      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
-      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      const copyDialog = await openCopyAvatarDialog(page);
       await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
       await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
         return !(await copyDialog.isVisible().catch(() => false));
@@ -852,7 +961,6 @@ test.describe("Feature: Svelte system surfaces", () => {
       await clickStable(startAvatarButton);
       await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
       viewerRuntimeUrl = page.url();
-      await stopRuntimeIfRunning(page);
 
       await navigateToSystem(page, "Messages");
       const createRoomPage = await openCreateRoomPage(page);
@@ -1173,8 +1281,7 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     try {
       await navigateToSystem(page, "Avatars");
-      await clickStable(page.getByRole("button", { name: "Copy avatar" }));
-      const copyDialog = page.getByRole("dialog", { name: "Copy avatar" });
+      const copyDialog = await openCopyAvatarDialog(page);
       await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
       await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
         return !(await copyDialog.isVisible().catch(() => false));
@@ -1187,7 +1294,6 @@ test.describe("Feature: Svelte system surfaces", () => {
       await clickStable(startAvatarButton);
       await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
       viewerRuntimeUrl = page.url();
-      await stopRuntimeIfRunning(page);
 
       await navigateToSystem(page, "Messages");
       const createRoomPage = await openCreateRoomPage(page);
@@ -1318,7 +1424,6 @@ test.describe("Feature: Svelte system surfaces", () => {
       await clickStable(startAvatarButton);
       await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
       viewerRuntimeUrl = page.url();
-      await stopRuntimeIfRunning(page);
 
       await navigateToSystem(page, "Messages");
       const createRoomPage = await openCreateRoomPage(page);
@@ -1667,6 +1772,102 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
     await expect(getManageRoomUserTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
     await expect(getManageRoomRoleTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given room toolbar dialogs are dismissed by their close button When the operator opens them again Then the route stays interactive and each dialog reopens", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Dialog reopen ${testInfo.project.name} ${Date.now()}`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    const roomToolbar = page.locator("[data-workbench-page-toolbar]");
+    const manageRoomDialog = await openManageRoomDialog(page);
+    await closeDialogAndExpectInteractive(page, manageRoomDialog);
+
+    await activateUntil(roomToolbar.getByRole("button", { name: "Manage room", exact: true }), async () => {
+      return await manageRoomDialog.isVisible().catch(() => false);
+    }, 4);
+    await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
+    await closeDialogAndExpectInteractive(page, manageRoomDialog);
+
+    const searchDialog = page.getByTestId("room-search-dialog");
+    await activateUntil(roomToolbar.getByRole("button", { name: "Search messages", exact: true }), async () => {
+      return await searchDialog.isVisible().catch(() => false);
+    }, 4);
+    await expect(searchDialog).toBeVisible({ timeout: 15_000 });
+    await closeDialogAndExpectInteractive(page, searchDialog);
+
+    await activateUntil(roomToolbar.getByRole("button", { name: "Search messages", exact: true }), async () => {
+      return await searchDialog.isVisible().catch(() => false);
+    }, 4);
+    await expect(searchDialog).toBeVisible({ timeout: 15_000 });
+    await closeDialogAndExpectInteractive(page, searchDialog);
+    await expect(getRoomComposer(page)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given the operator selects a room viewer When the page reloads Then the same View as actor is restored from auth-scoped KV", async ({
+    page,
+  }, testInfo) => {
+    const viewerAvatarName = `playwright-refresh-viewer-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const roomTitle = `Viewer persistence ${testInfo.project.name} ${Date.now()}`;
+    let viewerRuntimeUrl: string | null = null;
+
+    try {
+      await navigateToSystem(page, "Avatars");
+      const copyDialog = await openCopyAvatarDialog(page);
+      await copyDialog.getByLabel("New avatar nickname").fill(viewerAvatarName);
+      await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
+        return !(await copyDialog.isVisible().catch(() => false));
+      });
+
+      await expect(page.getByRole("button", { name: viewerAvatarName })).toBeVisible({ timeout: 15_000 });
+      await clickStable(page.getByRole("button", { name: viewerAvatarName }));
+      const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
+      await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
+      await clickStable(startAvatarButton);
+      await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
+      viewerRuntimeUrl = page.url();
+
+      await navigateToSystem(page, "Messages");
+      const createRoomPage = await openCreateRoomPage(page);
+      await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+      const includeViewerCheckbox = createRoomPage.getByRole("checkbox", {
+        name: new RegExp(`^Include ${escapeRegExp(viewerAvatarName)}$`),
+      });
+      await expect(includeViewerCheckbox).toBeVisible({ timeout: 15_000 });
+      await clickStable(includeViewerCheckbox);
+      await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+        return /\/messages\/room\//.test(page.url());
+      });
+
+      await expectSelectedRoomTitle(page, roomTitle);
+      const chatId = await readSelectedRoomChatId(page, roomTitle);
+
+      const viewerTrigger = page.getByLabel("View room as user");
+      await chooseSelectOptionByText(
+        page,
+        viewerTrigger,
+        new RegExp(`^${escapeRegExp(viewerAvatarName)} · .+$`),
+      );
+      await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expectSelectedRoomTitle(page, roomTitle);
+      expect(await readSelectedRoomChatId(page, roomTitle)).toBe(chatId);
+      await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
+    } finally {
+      if (viewerRuntimeUrl) {
+        await page.goto(viewerRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        await stopRuntimeIfRunning(page).catch(() => undefined);
+      }
+    }
   });
 
   test("Scenario: Given loaded room messages When the toolbar searches the transcript Then the active match cycles through the loaded chat rows", async ({

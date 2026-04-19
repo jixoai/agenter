@@ -23,6 +23,7 @@ import {
 import { defaultAvatarNickname, normalizeAvatarNickname, resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import {
   MessageControlPlane,
+  resolveMessageControlDbPath,
   type MessageActorId,
   type MessageChannelAccessRole,
   type MessageChannelGrantRecord,
@@ -132,6 +133,8 @@ import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { resolveWorkspaceAvatarSessionId } from "./session-identity";
+import { appAttentionSourceRegistry } from "./attention-src";
+import type { RuntimeMessageSendResult } from "./runtime-tool-views";
 import {
   isPersistedChatProjectionMessage,
   projectAiCallToChatCycle,
@@ -324,6 +327,14 @@ type PersistedChatMessage = ChatMessage & {
   messageId: string;
 };
 
+export type PublicRoomReadProgress = NonNullable<MessageControlPlaneEntry["readProgress"]>;
+
+export type PublicRoomEntry = MessageControlPlaneEntry;
+
+export type PublicRoomMessageRecord = MessageRecord;
+
+export type PublicRoomSnapshot = MessageSnapshot;
+
 const emptyReversePage = <T>(): ReversePage<T> => ({
   items: [],
   nextBefore: null,
@@ -334,6 +345,34 @@ const toPersistedChatMessage = (sessionId: string, message: SessionMessageRecord
   ...projectHeartbeatMessageToChatMessage(message),
   sessionId,
   messageId: message.messageId,
+});
+
+const toPublicRoomMessageId = (messageId: number): number => messageId;
+
+const projectPublicRoomEntry = (channel: MessageControlPlaneEntry): PublicRoomEntry => ({
+  ...channel,
+  readProgress: channel.readProgress
+    ? {
+        ...channel.readProgress,
+        latestVisibleMessageId: channel.readProgress.latestVisibleMessageId,
+      }
+    : undefined,
+});
+
+const projectPublicRoomMessage = (message: MessageRecord): PublicRoomMessageRecord => ({
+  ...message,
+  messageId: toPublicRoomMessageId(message.messageId),
+});
+
+const projectPublicRoomPage = (page: ReversePage<MessageRecord>): ReversePage<PublicRoomMessageRecord> => ({
+  ...page,
+  items: page.items.map(projectPublicRoomMessage),
+});
+
+const projectPublicRoomSnapshot = (snapshot: MessageSnapshot): PublicRoomSnapshot => ({
+  ...snapshot,
+  channel: projectPublicRoomEntry(snapshot.channel),
+  items: snapshot.items.map(projectPublicRoomMessage),
 });
 
 const readAllHeartbeatMessages = (db: SessionDb): SessionMessageRecord[] => {
@@ -552,7 +591,7 @@ export interface WorkspaceListItem extends WorkspaceEntry {
 export type WorkspaceWelcomeAccessState = "joined" | "available" | "credential-invalid";
 
 export interface WorkspaceWelcomeRoomItem {
-  channel: MessageControlPlaneEntry;
+  channel: PublicRoomEntry;
   accessState: WorkspaceWelcomeAccessState;
   seatStored: boolean;
   seatState: AvatarSeatState | null;
@@ -658,7 +697,7 @@ export class AppKernel {
         options.workspaceSystemStatePath ?? join(this.sessions.getGlobalRoot(), "..", "workspace-system", "state.json"),
     });
     this.messageControlPlane = new MessageControlPlane({
-      dbPath: join(this.sessions.getGlobalRoot(), "..", ".message", "message.db"),
+      dbPath: resolveMessageControlDbPath(join(this.sessions.getGlobalRoot(), "..", ".message")),
     });
     this.roomAssets = new RoomAssetStore(join(this.sessions.getGlobalRoot(), "..", ".message"));
     this.terminalControlPlane = new TerminalControlPlane({
@@ -2570,20 +2609,22 @@ export class AppKernel {
       superadminActorId?: MessageActorId;
       includeArchived?: boolean;
     } = {},
-  ): MessageControlPlaneEntry[] {
+  ): PublicRoomEntry[] {
     if (input.actorId && !input.superadminActorId) {
       return this.messageControlPlane
         .listChannelsForActor(input.actorId, {
           includeArchived: input.includeArchived,
           touchPresence: false,
         })
-        .filter(isStandaloneMessageRoomEntry);
+        .filter(isStandaloneMessageRoomEntry)
+        .map(projectPublicRoomEntry);
     }
     return this.messageControlPlane
       .listChannels({
         includeArchived: input.includeArchived,
       })
-      .filter(isStandaloneMessageRoomEntry);
+      .filter(isStandaloneMessageRoomEntry)
+      .map(projectPublicRoomEntry);
   }
 
   async createGlobalRoom(input: {
@@ -2604,7 +2645,7 @@ export class AppKernel {
     focus?: boolean;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): Promise<MessageControlPlaneEntry> {
+  }): Promise<PublicRoomEntry> {
     const shouldFocus = input.focus ?? true;
     const creatorActorId = input.actorId ?? input.superadminActorId;
     const initialUsers =
@@ -2639,17 +2680,38 @@ export class AppKernel {
       if (!shouldFocus) {
         this.messageControlPlane.focusForActor(input.actorId, "remove", [room.chatId]);
       }
-      return this.resolveGlobalRoomProjection({
-        chatId: room.chatId,
-        actorId: input.actorId,
-        includeArchived: true,
-      });
+      return projectPublicRoomEntry(
+        this.resolveGlobalRoomProjection({
+          chatId: room.chatId,
+          actorId: input.actorId,
+          includeArchived: true,
+        }),
+      );
     }
-    return this.resolveGlobalRoomProjection({
-      chatId: room.chatId,
-      superadminActorId: input.superadminActorId,
-      includeArchived: true,
-    });
+    return projectPublicRoomEntry(
+      this.resolveGlobalRoomProjection({
+        chatId: room.chatId,
+        superadminActorId: input.superadminActorId,
+        includeArchived: true,
+      }),
+    );
+  }
+
+  markGlobalRoomRead(input: {
+    chatId: string;
+    messageId?: number;
+    accessToken?: string;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): PublicRoomEntry {
+    const access = this.resolveGlobalRoomAccess(input);
+    return projectPublicRoomEntry(
+      this.messageControlPlane.markChannelReadAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        messageId: input.messageId,
+      }),
+    );
   }
 
   focusGlobalRooms(input: {
@@ -2685,21 +2747,6 @@ export class AppKernel {
     };
   }
 
-  markGlobalRoomRead(input: {
-    chatId: string;
-    messageId?: string;
-    accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
-  }): MessageControlPlaneEntry {
-    const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.markChannelReadAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      messageId: input.messageId,
-    });
-  }
-
   pageGlobalRoomMessages(input: {
     chatId: string;
     before?: ReverseTimeCursor | null;
@@ -2707,14 +2754,16 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): ReversePage<MessageRecord> {
+  }): ReversePage<PublicRoomMessageRecord> {
     const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.queryMessagesAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      before: input.before,
-      limit: input.limit,
-    });
+    return projectPublicRoomPage(
+      this.messageControlPlane.queryMessagesAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        before: input.before,
+        limit: input.limit,
+      }),
+    );
   }
 
   snapshotGlobalRoom(input: {
@@ -2723,13 +2772,15 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): MessageSnapshot {
+  }): PublicRoomSnapshot {
     const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.snapshotAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      limit: input.limit,
-    });
+    return projectPublicRoomSnapshot(
+      this.messageControlPlane.snapshotAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        limit: input.limit,
+      }),
+    );
   }
 
   sendGlobalRoomMessage(input: {
@@ -2750,7 +2801,6 @@ export class AppKernel {
         accessToken: access.accessToken,
         kind: "text",
         content: input.text,
-        messageId: input.clientMessageId ?? `msg-${randomUUID()}`,
         senderActorId: this.resolveGlobalRoomSenderActorId(input, access),
         attachments,
         metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
@@ -2766,12 +2816,12 @@ export class AppKernel {
 
   editGlobalRoomMessage(input: {
     chatId: string;
-    messageId: string;
+    messageId: number;
     text: string;
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): { ok: boolean; reason?: string; messageId?: string; updatedAt?: number } {
+  }): { ok: boolean; reason?: string; messageId?: number; updatedAt?: number } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
       const message = this.messageControlPlane.editAuthorized({
@@ -2795,11 +2845,11 @@ export class AppKernel {
 
   recallGlobalRoomMessage(input: {
     chatId: string;
-    messageId: string;
+    messageId: number;
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): { ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number } {
+  }): { ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
       const message = this.messageControlPlane.recallAuthorized({
@@ -2827,17 +2877,19 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): MessageControlPlaneEntry {
+  }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.updateChannelAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
-      patch: {
-        ...input.patch,
-        metadata: sanitizeGlobalRoomMetadata(input.patch.metadata),
-      },
-    });
+    return projectPublicRoomEntry(
+      this.messageControlPlane.updateChannelAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        superadminActorId: input.superadminActorId,
+        patch: {
+          ...input.patch,
+          metadata: sanitizeGlobalRoomMetadata(input.patch.metadata),
+        },
+      }),
+    );
   }
 
   archiveGlobalRoom(input: {
@@ -2846,14 +2898,16 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): MessageControlPlaneEntry {
+  }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.archiveChannelAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
-      archivedBy: input.archivedBy ?? access.room.owner,
-    });
+    return projectPublicRoomEntry(
+      this.messageControlPlane.archiveChannelAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        superadminActorId: input.superadminActorId,
+        archivedBy: input.archivedBy ?? access.room.owner,
+      }),
+    );
   }
 
   deleteGlobalRoom(input: {
@@ -2861,13 +2915,15 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): MessageControlPlaneEntry {
+  }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
-    return this.messageControlPlane.deleteChannelAuthorized({
-      chatId: input.chatId,
-      accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
-    });
+    return projectPublicRoomEntry(
+      this.messageControlPlane.deleteChannelAuthorized({
+        chatId: input.chatId,
+        accessToken: access.accessToken,
+        superadminActorId: input.superadminActorId,
+      }),
+    );
   }
 
   listGlobalRoomGrants(input: {
@@ -3205,20 +3261,19 @@ export class AppKernel {
     text: string;
     assetIds?: string[];
     clientMessageId?: string;
-  }): Promise<{ ok: boolean; reason?: string }> {
+  }): Promise<RuntimeMessageSendResult | { ok: false; reason?: string }> {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       return { ok: false, reason: "session runtime is not active" };
     }
     try {
-      runtime.sendMessageChannel({
+      return runtime.sendMessageChannel({
         chatId: input.chatId,
         accessToken: input.accessToken,
         text: input.text,
         assetIds: input.assetIds,
         clientMessageId: input.clientMessageId,
       });
-      return { ok: true };
     } catch (error) {
       return {
         ok: false,
@@ -3231,9 +3286,9 @@ export class AppKernel {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
+    messageId: number;
     text: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number }> {
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number }> {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       return { ok: false, reason: "session runtime is not active" };
@@ -3257,8 +3312,8 @@ export class AppKernel {
     sessionId: string;
     chatId: string;
     accessToken: string;
-    messageId: string;
-  }): Promise<{ ok: boolean; reason?: string; messageId?: string; updatedAt?: number; recalledAt?: number }> {
+    messageId: number;
+  }): Promise<{ ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number }> {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       return { ok: false, reason: "session runtime is not active" };
@@ -4183,7 +4238,7 @@ export class AppKernel {
     sessionId: string;
     chatId?: string;
     terminalId?: string;
-    upToMessageId?: string | null;
+    upToSrc?: string | null;
   }): Promise<SessionNotificationSnapshot> {
     const snapshot = await this.consumeAttentionNotifications(input);
     this.emit("notification.updated", { snapshot }, input.sessionId);
@@ -4451,7 +4506,7 @@ export class AppKernel {
     sessionId: string;
     chatId?: string;
     terminalId?: string;
-    upToMessageId?: string | null;
+    upToSrc?: string | null;
   }): Promise<SessionNotificationSnapshot> {
     const session = this.sessions.get(input.sessionId);
     if (!session) {
@@ -4473,15 +4528,16 @@ export class AppKernel {
               .map((context) => context.contextId);
       for (const contextId of contextIds) {
         const commits = attentionSystem.listPushCommits(contextId);
+        const upToSrc = input.upToSrc;
         const selectedCommitIds =
-          input.chatId && input.upToMessageId
+          typeof upToSrc === "string"
             ? commits
                 .filter((commit) => {
-                  const messageId =
-                    typeof commit.meta.subjectId === "string" && commit.meta.subjectId.length > 0
-                      ? Number(commit.meta.subjectId)
-                      : Number.NaN;
-                  return Number.isFinite(messageId) && messageId <= Number(input.upToMessageId);
+                  if (typeof commit.meta.src !== "string") {
+                    return false;
+                  }
+                  const comparison = appAttentionSourceRegistry.compare(commit.meta.src, upToSrc);
+                  return comparison === null ? commit.meta.src === upToSrc : comparison <= 0;
                 })
                 .map((commit) => commit.commitId)
             : commits.map((commit) => commit.commitId);

@@ -27,6 +27,7 @@
     isAssistantMessage,
     mergeMessages,
     normalizeMessageRecords,
+    resolveMessageIdentityKey,
     resolveViewerActorId,
     resolveUserSender,
   } from "./message-utils";
@@ -66,7 +67,7 @@
     resolveMessageReadProgress,
     composerCapabilities,
     submitMessage,
-    latestVisibleAssistantMessageIdHandler,
+    latestVisibleAssistantViewKeyHandler,
     latestVisibleMessageIdHandler,
     socketFactory,
   }: WebChatRootProps = $props();
@@ -85,7 +86,7 @@
   let timelineAtLatest = $state(true);
   let visibilityChatId = $state<string | null>(null);
   let activeTimelineChatId = $state<string | null>(null);
-  let insertMotionByMessageId = $state<Record<string, "latest" | "older">>({});
+  let insertMotionByViewKey = $state<Record<string, "latest" | "older">>({});
   let insertMotionClearHandle = 0;
   let pendingOlderRevealPx = $state<number | null>(null);
   let pendingOlderRevealBaseScrollTop = $state<number | null>(null);
@@ -94,19 +95,19 @@
   let nextBefore: ReverseTimeCursor | null = null;
   let socketRef: WebChatSocketLike | null = null;
   let activeTransportKey = "";
-  const visibleMessageIds = new Map<string, boolean>();
-  const visibleAssistantIds = new Map<string, boolean>();
+  const visibleMessageViewKeys = new Map<string, boolean>();
+  const visibleAssistantViewKeys = new Map<string, boolean>();
   let latestVisibleMessage: WebChatVisibleMessageFact | null = null;
-  let latestVisibleAssistantMessageId: string | null = null;
+  let latestVisibleAssistantViewKey: string | null = null;
   let latestVisibleMessageEmission = $state<{
     chatId: string | null;
     viewerActorId: string | null;
-    messageId: string | null;
+    viewKey: string | null;
     rowId: number | null;
   }>({
     chatId: null,
     viewerActorId: null,
-    messageId: null,
+    viewKey: null,
     rowId: null,
   });
 
@@ -114,7 +115,11 @@
     left: WebChatVisibleMessageFact | null,
     right: WebChatVisibleMessageFact | null,
   ): boolean => {
-    return left?.messageId === right?.messageId && left?.rowId === right?.rowId;
+    return (
+      left?.viewKey === right?.viewKey &&
+      (left?.messageId ?? null) === (right?.messageId ?? null) &&
+      left?.rowId === right?.rowId
+    );
   };
   const describeChannelAudience = (currentChannel: WebChatChannel): string => {
     const count = currentChannel.participants.length;
@@ -124,19 +129,19 @@
   };
 
   const defaultSocketFactory: WebChatSocketFactory = (url) => new WebSocket(url);
-  const clearInsertMotion = (messageIds?: string[]): void => {
-    if (!messageIds || messageIds.length === 0) {
-      insertMotionByMessageId = {};
+  const clearInsertMotion = (viewKeys?: string[]): void => {
+    if (!viewKeys || viewKeys.length === 0) {
+      insertMotionByViewKey = {};
       return;
     }
-    const nextState = { ...insertMotionByMessageId };
-    for (const messageId of messageIds) {
-      delete nextState[messageId];
+    const nextState = { ...insertMotionByViewKey };
+    for (const viewKey of viewKeys) {
+      delete nextState[viewKey];
     }
-    insertMotionByMessageId = nextState;
+    insertMotionByViewKey = nextState;
   };
-  const scheduleInsertMotionClear = (messageIds: string[]): void => {
-    if (typeof window === "undefined" || messageIds.length === 0) {
+  const scheduleInsertMotionClear = (viewKeys: string[]): void => {
+    if (typeof window === "undefined" || viewKeys.length === 0) {
       return;
     }
     if (insertMotionClearHandle !== 0) {
@@ -144,27 +149,27 @@
     }
     insertMotionClearHandle = window.setTimeout(() => {
       insertMotionClearHandle = 0;
-      clearInsertMotion(messageIds);
+      clearInsertMotion(viewKeys);
     }, BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS);
   };
-  const markInsertedMessages = (messageIds: string[], motion: "latest" | "older"): void => {
-    if (messageIds.length === 0) {
+  const markInsertedMessages = (viewKeys: string[], motion: "latest" | "older"): void => {
+    if (viewKeys.length === 0) {
       return;
     }
-    insertMotionByMessageId = {
-      ...insertMotionByMessageId,
-      ...Object.fromEntries(messageIds.map((messageId) => [messageId, motion])),
+    insertMotionByViewKey = {
+      ...insertMotionByViewKey,
+      ...Object.fromEntries(viewKeys.map((viewKey) => [viewKey, motion])),
     };
-    scheduleInsertMotionClear(messageIds);
+    scheduleInsertMotionClear(viewKeys);
   };
-  const collectNewMessageIds = (
+  const collectNewMessageViewKeys = (
     currentMessages: readonly WebChatMessage[],
     incomingMessages: readonly WebChatMessage[],
   ): string[] => {
-    const currentIds = new Set(currentMessages.map((message) => message.messageId));
+    const currentIds = new Set(currentMessages.map(resolveMessageIdentityKey));
     return incomingMessages
-      .filter((message) => !currentIds.has(message.messageId))
-      .map((message) => message.messageId);
+      .filter((message) => !currentIds.has(resolveMessageIdentityKey(message)))
+      .map((message) => message.viewKey);
   };
   const waitForTimelineSettle = async (): Promise<void> => {
     await tick();
@@ -245,7 +250,7 @@
     }
     return {
       estimateSize: (_index, message) => estimateMessageRowSize(message),
-      getItemKey: (_index, message) => message.messageId,
+      getItemKey: (_index, message) => message.viewKey,
       measureElement: true,
       overscan: 8,
       useAnimationFrameWithResizeObserver: true,
@@ -286,11 +291,12 @@
 
   const syncLatestVisibleIds = (): void => {
     let nextMessage: WebChatVisibleMessageFact | null = null;
-    let nextAssistantId: string | null = null;
+    let nextAssistantViewKey: string | null = null;
     const stickyBottomMessage = timelineAtLatest ? transcriptMessages[transcriptMessages.length - 1] : null;
     if (stickyBottomMessage) {
       nextMessage = {
-        messageId: stickyBottomMessage.messageId,
+        viewKey: stickyBottomMessage.viewKey,
+        ...(typeof stickyBottomMessage.messageId === "number" ? { messageId: stickyBottomMessage.messageId } : {}),
         rowId: stickyBottomMessage.rowId,
       };
     }
@@ -299,20 +305,21 @@
       if (!message) {
         continue;
       }
-      if (nextMessage === null && visibleMessageIds.get(message.messageId) === true) {
+      if (nextMessage === null && visibleMessageViewKeys.get(message.viewKey) === true) {
         nextMessage = {
-          messageId: message.messageId,
+          viewKey: message.viewKey,
+          ...(typeof message.messageId === "number" ? { messageId: message.messageId } : {}),
           rowId: message.rowId,
         };
       }
       if (
-        nextAssistantId === null &&
+        nextAssistantViewKey === null &&
         isAssistantMessage(channel, message) &&
-        visibleAssistantIds.get(message.messageId) === true
+        visibleAssistantViewKeys.get(message.viewKey) === true
       ) {
-        nextAssistantId = message.messageId;
+        nextAssistantViewKey = message.viewKey;
       }
-      if (nextMessage !== null && nextAssistantId !== null) {
+      if (nextMessage !== null && nextAssistantViewKey !== null) {
         break;
       }
     }
@@ -322,28 +329,28 @@
       latestVisibleMessageEmission = {
         chatId: channel?.chatId ?? null,
         viewerActorId: effectiveViewerActorId ?? null,
-        messageId: nextMessage?.messageId ?? null,
+        viewKey: nextMessage?.viewKey ?? null,
         rowId: nextMessage?.rowId ?? null,
       };
     }
-    if (latestVisibleAssistantMessageId !== nextAssistantId) {
-      latestVisibleAssistantMessageId = nextAssistantId;
-      latestVisibleAssistantMessageIdHandler?.(nextAssistantId);
+    if (latestVisibleAssistantViewKey !== nextAssistantViewKey) {
+      latestVisibleAssistantViewKey = nextAssistantViewKey;
+      latestVisibleAssistantViewKeyHandler?.(nextAssistantViewKey);
     }
   };
 
   const clearVisibility = (): void => {
     const hadVisibleMessage = latestVisibleMessage !== null;
-    const hadVisibleAssistantMessage = latestVisibleAssistantMessageId !== null;
-    visibleMessageIds.clear();
-    visibleAssistantIds.clear();
+    const hadVisibleAssistantMessage = latestVisibleAssistantViewKey !== null;
+    visibleMessageViewKeys.clear();
+    visibleAssistantViewKeys.clear();
     latestVisibleMessage = null;
-    latestVisibleAssistantMessageId = null;
+    latestVisibleAssistantViewKey = null;
     if (hadVisibleMessage) {
       latestVisibleMessageIdHandler?.(null);
     }
     if (hadVisibleAssistantMessage) {
-      latestVisibleAssistantMessageIdHandler?.(null);
+      latestVisibleAssistantViewKeyHandler?.(null);
     }
   };
 
@@ -443,19 +450,19 @@
         }
         if (serverMessage.type === "messages") {
           const nextItems = normalizeMessageRecords(serverMessage.items);
-          const nextMessageIds = collectNewMessageIds(messages, nextItems);
+          const nextMessageViewKeys = collectNewMessageViewKeys(messages, nextItems);
           messages = mergeMessages(messages, nextItems);
-          markInsertedMessages(nextMessageIds, "latest");
+          markInsertedMessages(nextMessageViewKeys, "latest");
           return;
         }
         if (serverMessage.type === "page") {
           const nextItems = normalizeMessageRecords(serverMessage.page.items);
-          const nextMessageIds = collectNewMessageIds(messages, nextItems);
+          const nextMessageViewKeys = collectNewMessageViewKeys(messages, nextItems);
           nextBefore = serverMessage.page.nextBefore;
           hasMoreBefore = serverMessage.page.hasMoreBefore;
           messages = mergeMessages(messages, nextItems);
-          markInsertedMessages(nextMessageIds, "older");
-          if (nextMessageIds.length > 0) {
+          markInsertedMessages(nextMessageViewKeys, "older");
+          if (nextMessageViewKeys.length > 0) {
             pendingOlderRevealPx = getOlderRevealPx();
             return;
           }
@@ -525,7 +532,6 @@
       message: {
         senderActorId: sender.senderActorId,
         from: sender.from,
-        to: sender.to,
         content: normalized,
       },
     };
@@ -702,7 +708,7 @@
   $effect(() => {
     timelineAtLatest;
     const latestMessage = transcriptMessages[transcriptMessages.length - 1] ?? null;
-    latestMessage?.messageId;
+    latestMessage?.viewKey;
     latestMessage?.rowId;
     syncLatestVisibleIds();
   });
@@ -716,7 +722,7 @@
     }
     if (
       latestVisibleMessageEmission.chatId !== chatId ||
-      latestVisibleMessageEmission.messageId !== message.messageId ||
+      latestVisibleMessageEmission.viewKey !== message.viewKey ||
       latestVisibleMessageEmission.rowId !== message.rowId ||
       latestVisibleMessageEmission.viewerActorId === viewerActorId
     ) {
@@ -725,7 +731,7 @@
     latestVisibleMessageEmission = {
       chatId,
       viewerActorId,
-      messageId: message.messageId,
+      viewKey: message.viewKey,
       rowId: message.rowId,
     };
     latestVisibleMessageIdHandler?.(message);
@@ -738,32 +744,32 @@
     const observedRows = new Map<string, HTMLElement>();
     const syncObservedRows = (): void => {
       const nextRows = new Map<string, HTMLElement>();
-      viewportRef?.querySelectorAll<HTMLElement>("[data-message-id]").forEach((row) => {
-        const messageId = row.dataset.messageId;
-        if (!messageId) {
+      viewportRef?.querySelectorAll<HTMLElement>("[data-view-key]").forEach((row) => {
+        const viewKey = row.dataset.viewKey;
+        if (!viewKey) {
           return;
         }
-        nextRows.set(messageId, row);
-        const currentRow = observedRows.get(messageId);
+        nextRows.set(viewKey, row);
+        const currentRow = observedRows.get(viewKey);
         if (!currentRow) {
-          observedRows.set(messageId, row);
+          observedRows.set(viewKey, row);
           observer.observe(row);
           return;
         }
         if (currentRow !== row) {
           observer.unobserve(currentRow);
-          observedRows.set(messageId, row);
+          observedRows.set(viewKey, row);
           observer.observe(row);
         }
       });
-      for (const [messageId, row] of observedRows) {
-        if (nextRows.get(messageId) === row) {
+      for (const [viewKey, row] of observedRows) {
+        if (nextRows.get(viewKey) === row) {
           continue;
         }
         observer.unobserve(row);
-        observedRows.delete(messageId);
-        visibleMessageIds.delete(messageId);
-        visibleAssistantIds.delete(messageId);
+        observedRows.delete(viewKey);
+        visibleMessageViewKeys.delete(viewKey);
+        visibleAssistantViewKeys.delete(viewKey);
       }
       syncLatestVisibleIds();
     };
@@ -771,14 +777,14 @@
       (entries) => {
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
-          const messageId = target.dataset.messageId;
-          if (!messageId) {
+          const viewKey = target.dataset.viewKey;
+          if (!viewKey) {
             continue;
           }
           const visible = entry.isIntersecting && entry.intersectionRatio >= 0.2;
-          visibleMessageIds.set(messageId, visible);
+          visibleMessageViewKeys.set(viewKey, visible);
           if (target.dataset.assistantMessage === "true") {
-            visibleAssistantIds.set(messageId, visible);
+            visibleAssistantViewKeys.set(viewKey, visible);
           }
         }
         syncLatestVisibleIds();
@@ -908,9 +914,9 @@
 
               {#snippet item(message)}
                 <section
-                  data-message-id={message.messageId}
+                  data-view-key={message.viewKey}
                   data-assistant-message={isAssistantMessage(channel, message) ? "true" : "false"}
-                  data-insert-motion={insertMotionByMessageId[message.messageId] ?? "none"}
+                  data-insert-motion={insertMotionByViewKey[message.viewKey] ?? "none"}
                 >
                   <MessageRow
                     {channel}

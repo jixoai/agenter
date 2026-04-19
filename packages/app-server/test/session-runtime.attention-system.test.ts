@@ -12,11 +12,18 @@ import {
   type AttentionCommitChange,
   type AttentionCommitMeta,
 } from "@agenter/attention-system";
-import { MessageControlPlane, type MessageActorId } from "@agenter/message-system";
+import { MessageControlPlane, resolveMessageControlDbPath, type MessageActorId } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
+import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
+import {
+  formatMessageAttentionSrc,
+  formatTerminalAttentionSrc,
+  parseMessageAttentionSrc,
+  parseTerminalAttentionSrc,
+} from "../src/attention-src";
 import { resolveSessionRoomActorId } from "../src/session-chat-projection";
 import { SessionRuntime } from "../src/session-runtime";
 
@@ -50,6 +57,7 @@ interface RuntimeInternal {
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
   collectInterleavedAgentInputs: () => Promise<LoopBusInput[] | undefined>;
   collectAttentionInputs: () => LoopBusInput[] | undefined;
+  collectUnreadRoomIngress: () => void;
   waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
   notifyInput: (kind: "user" | "terminal" | "task" | "attention") => void;
   loopPluginRuntime: LoopBusPluginRuntime | null;
@@ -220,8 +228,7 @@ interface RuntimeMessageEgressInternal extends RuntimeInternal {
     content: string;
     rootId?: string;
     from?: string;
-    to?: string;
-  }) => Promise<{ ok: boolean; messageId: string }>;
+  }) => Promise<RuntimeMessageSendResult>;
 }
 
 const createPrincipalId = (value: number): `0x${string}` => `0x${value.toString(16).padStart(40, "0")}`;
@@ -267,6 +274,22 @@ const getAttentionContextSnapshot = (internal: RuntimeInternal, contextId: strin
 
 const getBootstrapInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undefined =>
   inputs?.find((item) => item.meta?.attentionProtocolKind === "context");
+
+const getAttentionProtocolKinds = (inputs: LoopBusInput[] | undefined): string[] =>
+  (inputs?.map((item) => item.meta?.attentionProtocolKind).filter((value): value is string => typeof value === "string") ??
+    []);
+
+const createMessageSrc = (chatId: string, messageId: number) => formatMessageAttentionSrc({ chatId, messageId });
+
+const createTerminalSrc = (terminalId: string, eventId?: number) => formatTerminalAttentionSrc({ terminalId, eventId });
+
+const isMessageMetaForChat = (meta: AttentionCommitMeta, chatId: string): boolean =>
+  parseMessageAttentionSrc(meta.src ?? "")?.chatId === chatId;
+
+const isTerminalMeta = (meta: AttentionCommitMeta, terminalId?: string): boolean => {
+  const parsed = parseTerminalAttentionSrc(meta.src ?? "");
+  return terminalId ? parsed?.terminalId === terminalId : parsed !== null;
+};
 
 const stringifyAttentionQuery = async (runtime: SessionRuntime, query: string): Promise<string> =>
   JSON.stringify(await runtime.queryAttention({ query }));
@@ -318,7 +341,7 @@ const appendAttentionCommit = (
   contextId: string,
   input: {
     meta: Partial<AttentionCommitMeta>;
-    egress?: { kind: "message_reply"; chatId: string; rootId?: string; from?: string; to?: string };
+    egress?: { kind: "message_reply"; chatId: string; rootId?: string; from?: string };
     scores: Record<string, number>;
     title: string;
     detail?: { kind: "replace" | "patch"; value: string; format?: string };
@@ -426,7 +449,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const firstRound = await internal.collectLoopInputs();
     expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
-    expect(firstRound?.map((item) => item.meta?.attentionProtocolKind)).toEqual(["context"]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(firstRound);
     expect(contextInput).toBeDefined();
     if (!contextInput) {
@@ -458,7 +481,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const interleaved = await internal.collectInterleavedAgentInputs();
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
-    expect(interleaved?.map((item) => item.meta?.attentionProtocolKind)).toEqual(["context"]);
+    expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(interleaved);
     expect(contextInput).toBeDefined();
     if (!contextInput) {
@@ -527,9 +550,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         meta: {
           author: "User",
           source: "message",
-          systemId: "message",
-          subjectId: "room-2-msg-1",
-          channelId: channel.chatId,
+          src: createMessageSrc(channel.chatId, 1),
         },
         scores: { room2hash: 100 },
         summary: "[lunch-relay] ask gaubee lunch",
@@ -582,10 +603,29 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
 
     const roomContext = getAttentionContextSnapshot(internal, `ctx-${room.chatId}`);
+    expect(roomContext).not.toBeNull();
+    if (!roomContext) {
+      return;
+    }
+    const roomLifecycleSrc = formatMessageAttentionSrc({ chatId: room.chatId });
+    const lifecycleCommits = roomContext.commits.filter((commit) =>
+      [
+        `Created room ${room.chatId}`,
+        `Updated chat channel ${room.chatId}`,
+        `Archived chat channel ${room.chatId}`,
+      ].includes(commit.summary),
+    );
+    expect(lifecycleCommits).toHaveLength(3);
+    expect(lifecycleCommits.map((commit) => commit.meta.src)).toEqual([
+      roomLifecycleSrc,
+      roomLifecycleSrc,
+      roomLifecycleSrc,
+    ]);
+    expect(lifecycleCommits.every((commit) => parseMessageAttentionSrc(commit.meta.src ?? "")?.messageId === undefined)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Created room ${room.chatId}`)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Updated chat channel ${room.chatId}`)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Archived chat channel ${room.chatId}`)).toBeTrue();
-    expect(getActiveItems(internal).filter((item) => item.meta.channelId === room.chatId)).toHaveLength(0);
+    expect(getActiveItems(internal).filter((item) => isMessageMetaForChat(item.meta, room.chatId))).toHaveLength(0);
     expect(
       internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`),
     ).toBeFalse();
@@ -594,7 +634,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a shared room bus When the sender authored the room message and another actor is not granted or focused Then only the unread peer runtime can ingest it", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-shared-room-runtime-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
     const janeRuntime = createSharedRoomRuntime({
       root,
@@ -657,7 +697,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a room message exists before the avatar runtime starts When the runtime boots later Then startup hydration loads that unread room message and marks the seat read", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-startup-replay-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     try {
@@ -722,7 +762,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given an avatar runtime is stopped When a room message arrives later Then unread subscription stays dormant until the runtime resumes", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-stopped-subscription-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     try {
@@ -795,7 +835,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given one avatar already loaded a room message When another granted avatar starts later Then unread room membership still lets the later avatar consume that same message", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-multi-seat-replay-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     try {
@@ -881,7 +921,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a runtime avatar replies into a shared room When a peer collects unread work Then read membership only advances on model dispatch", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-runtime-reply-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     const roomId = createPrincipalId(903);
@@ -966,7 +1006,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(jjReply?.text).not.toContain("hello from jane");
       expect(getActiveItems(jjInternal).some((item) => item.detail?.value.includes("hello from jane"))).toBeTrue();
 
-      const afterCollect = messageSystem.getMessage(roomId, sent?.messageId ?? "");
+      const afterCollect = sent ? messageSystem.getMessage(roomId, sent.messageId) : undefined;
       expect(afterCollect?.readActorIds).toEqual(expect.arrayContaining(["session:jane"]));
       expect(afterCollect?.unreadActorIds).toContain("session:jj");
 
@@ -982,7 +1022,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         request: { messages: [{ role: "user", content: jjReply?.text ?? "" }] },
       });
 
-      const afterDispatch = messageSystem.getMessage(roomId, sent?.messageId ?? "");
+      const afterDispatch = sent ? messageSystem.getMessage(roomId, sent.messageId) : undefined;
       expect(afterDispatch?.readActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
       expect(afterDispatch?.unreadActorIds).not.toContain("session:jj");
     } finally {
@@ -993,7 +1033,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a shared-room unread message When collectLoopInputs returns raw chat input Then the loop meta carries participant presence and latest-message perspective", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-social-meta-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     try {
@@ -1126,7 +1166,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a shared-room peer status update When collectLoopInputs returns raw chat input Then the loop meta keeps the message visible without auto-claiming a reply turn", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-peer-meta-"));
     const messageSystem = new MessageControlPlane({
-      dbPath: join(root, "message.db"),
+      dbPath: resolveMessageControlDbPath(root),
     });
 
     try {
@@ -1209,8 +1249,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "terminal:iflow",
         source: "terminal",
-        systemId: "terminal",
-        subjectId: "iflow",
+        src: createTerminalSrc("iflow"),
       },
       scores: { hash_terminal: 100 },
       title: "Terminal iflow is waiting for auth",
@@ -1264,7 +1303,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(firstSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_unfocus"))).toBeTrue();
       expect(secondSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_focus"))).toBeTrue();
 
-      const activeTerminalItems = getActiveItems(internal).filter((item) => item.meta.systemId === "terminal");
+      const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
       expect(activeTerminalItems.some((item) => item.title === "Focused terminal iflow-2")).toBeFalse();
       expect(activeTerminalItems.some((item) => item.title === "Unfocused terminal iflow-1")).toBeFalse();
       expect(activeTerminalItems.some((item) => item.title === "Created terminal iflow-1")).toBeFalse();
@@ -1346,8 +1385,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
       commitLifecycleAttentionItem: (input: {
-        systemId: "message" | "terminal";
-        subjectId: string;
+        src: string;
         contextId: string;
         event: string;
         summary: string;
@@ -1360,15 +1398,14 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.start();
     try {
       await internal.commitLifecycleAttentionItem({
-        systemId: "terminal",
-        subjectId: "bg-ready",
+        src: "tty:bg-ready",
         contextId: "ctx-terminal-bg-ready",
         event: "terminal_idle_ready",
         summary: "Terminal bg-ready is ready for your input.",
         score: 100,
       });
 
-      const activeTerminalItems = getActiveItems(internal).filter((item) => item.meta.systemId === "terminal");
+      const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
       expect(activeTerminalItems.some((item) => item.title === "Terminal bg-ready is ready for your input.")).toBeTrue();
     } finally {
       await runtime.stop();
@@ -1398,9 +1435,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         meta: {
           author: "user:kzf",
           source: "message",
-          systemId: "message",
-          channelId: "room-background",
-          subjectId: "101",
+          src: createMessageSrc("room-background", 101),
         },
         scores: { hash_background: 100 },
         summary: "background room needs attention",
@@ -1442,9 +1477,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         meta: {
           author: "user:kzf",
           source: "message",
-          systemId: "message",
-          channelId: "room-muted",
-          subjectId: "202",
+          src: createMessageSrc("room-muted", 202),
           tags: ["notification"],
         },
         scores: { hash_notification: 100 },
@@ -1473,8 +1506,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "terminal:iflow",
         source: "terminal",
-        systemId: "terminal",
-        subjectId: "iflow",
+        src: createTerminalSrc("iflow"),
       },
       scores: { hash_terminal: 100 },
       title: "Terminal iflow is waiting for auth",
@@ -1484,11 +1516,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
 
     const firstRound = await internal.collectLoopInputs();
-    expect(firstRound?.map((item) => item.meta?.attentionProtocolKind)).toEqual(["context"]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
     expect([...new Set(firstRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([PRIMARY_CONTEXT_ID]);
 
     const secondRound = await internal.collectLoopInputs();
-    expect(secondRound?.map((item) => item.meta?.attentionProtocolKind)).toEqual(["context"]);
+    expect(getAttentionProtocolKinds(secondRound)).toEqual(["context", "items"]);
     expect([...new Set(secondRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([
       "ctx-terminal-iflow",
     ]);
@@ -1503,9 +1535,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "User",
         source: "message",
-        systemId: "message",
-        subjectId: PRIMARY_ROOM_ID,
-        channelId: PRIMARY_ROOM_ID,
+        src: createMessageSrc(PRIMARY_ROOM_ID, 1),
       },
       scores: { hash_chat: 100 },
       title: "Reply with exactly REAL-AI-OK",
@@ -1686,7 +1716,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       protocolMode: "bootstrap",
       inputContextIds: [PRIMARY_CONTEXT_ID],
     });
-    expect(firstFrame?.inputCommitRefs).toEqual([]);
+    expect(firstFrame?.inputCommitRefs).toHaveLength(1);
+    expect(firstFrame?.inputCommitRefs?.[0]?.contextId).toBe(PRIMARY_CONTEXT_ID);
+    expect(typeof firstFrame?.inputCommitRefs?.[0]?.commitId).toBe("string");
     expect(compactFrame).toMatchObject({
       protocolMode: "compact",
     });
@@ -1745,8 +1777,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "terminal:iflow",
         source: "terminal",
-        systemId: "terminal",
-        subjectId: "iflow",
+        src: createTerminalSrc("iflow"),
       },
       scores: { abc123: 100 },
       title: "Terminal iflow diff updated",
@@ -1799,9 +1830,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "User",
         source: "message",
-        systemId: "message",
-        subjectId: "msg-1",
-        channelId: PRIMARY_ROOM_ID,
+        src: createMessageSrc(PRIMARY_ROOM_ID, 1),
       },
       scores: { hash1: 100 },
       title: "你好",
@@ -1990,7 +2019,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       version: number;
       contexts: Array<{ commits: Array<{ summary: string }> }>;
     };
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(migrated.contexts[0]?.commits[0]?.summary).toBe("legacy attention");
   });
 
@@ -2001,6 +2030,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     runtime.pushUserChat("plugin-backed message");
 
+    internal.collectUnreadRoomIngress();
     const changed = await internal.flushPluginAttentionDrafts();
     expect(changed).toBe(true);
     const facts = getActiveItems(internal);
@@ -2048,8 +2078,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.terminalLatestSeq.iflow = 7;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 7),
       reason: "semantic-change",
       versionHint: 7,
     });
@@ -2111,8 +2140,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.terminalLatestSeq.iflow = 8;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 8),
       reason: "semantic-change",
       versionHint: 8,
     });
@@ -2161,8 +2189,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.terminalLatestSeq.iflow = 12;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 12),
       reason: "semantic-change",
       versionHint: 12,
     });
@@ -2223,8 +2250,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 8),
       reason: "semantic-change",
       versionHint: 8,
     });
@@ -2234,8 +2260,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     internal.terminalDirtyState.iflow = true;
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 8),
       reason: "semantic-change",
       versionHint: 8,
     });
@@ -2292,8 +2317,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.terminalSemanticFingerprint.iflow = "semantic-a";
     internal.terminalViewFingerprint.iflow = "view-a";
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 8),
       reason: "semantic-change",
       versionHint: 8,
     });
@@ -2310,8 +2334,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     internal.terminalSemanticFingerprint.iflow = "semantic-b";
     internal.terminalViewFingerprint.iflow = "view-b";
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 9),
       reason: "semantic-change",
       versionHint: 9,
     });
@@ -2333,8 +2356,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "missing-terminal",
+      src: createTerminalSrc("missing-terminal", 1),
       reason: "semantic-change",
       versionHint: 1,
     });
@@ -2433,8 +2455,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     ]);
     await pluginRuntime.setup();
     pluginRuntime.invalidate({
-      systemId: "terminal",
-      subjectId: "iflow",
+      src: createTerminalSrc("iflow", 9),
       reason: "semantic-change",
       versionHint: 9,
     });
@@ -2459,9 +2480,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "User",
         source: "message",
-        systemId: "message",
-        subjectId: PRIMARY_ROOM_ID,
-        channelId: PRIMARY_ROOM_ID,
+        src: createMessageSrc(PRIMARY_ROOM_ID, 1),
       },
       scores: { hash_chat_trace: 100 },
       title: "Please ask gaubee about lunch",
@@ -2518,7 +2537,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: PRIMARY_ROOM_ID,
         from: "tester",
-        to: "User",
       },
       scores: { "relay-hash": 0 },
       title: "relay",
@@ -2561,9 +2579,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         meta: {
           author: "User",
           source: "message",
-          systemId: "message",
-          subjectId: PRIMARY_ROOM_ID,
-          channelId: PRIMARY_ROOM_ID,
+          src: createMessageSrc(PRIMARY_ROOM_ID, 1),
         },
         scores: { hash_lifecycle: 100 },
         title: "Need a lifecycle outcome test",
@@ -2721,9 +2737,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "User",
         source: "message",
-        systemId: "message",
-        subjectId: PRIMARY_ROOM_ID,
-        channelId: PRIMARY_ROOM_ID,
+        src: createMessageSrc(PRIMARY_ROOM_ID, 1),
       },
       scores: { hash_provider_error: 100 },
       title: "Need provider error handling",
@@ -2797,7 +2811,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: PRIMARY_ROOM_ID,
         from: "tester",
-        to: "User",
       },
       scores: { "reply-hash": 0 },
       title: "internal planning note",
@@ -2812,7 +2825,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const snapshot = runtime.snapshot();
     expect(snapshot.attention?.hooks.at(-1)?.status).toBe("delivered");
-    expect(snapshot.attention?.hooks.at(-1)?.systemId).toBe("message");
+    expect(snapshot.attention?.hooks.at(-1)?.bridgeId).toBe("message");
     expect(snapshot.chatMessages.at(-1)?.content).toBe("delivered reply");
     expect(
       (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items.at(-1)
@@ -2837,7 +2850,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: PRIMARY_ROOM_ID,
         from: "tester",
-        to: "User",
       },
       scores: { "reply-clean": 0 },
       summary: "this stays inside attention",
@@ -2863,7 +2875,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a message_send tool dispatch during an active cycle When chat-channel egress persists the assistant reply Then the transport snapshot keeps cycle metadata for Devtools navigation", async () => {
+  test("Scenario: Given a message send dispatch during an active cycle When chat-channel egress persists the assistant reply Then the transport snapshot keeps cycle metadata for Devtools navigation", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -2872,11 +2884,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "User",
         source: "message",
-        systemId: "message",
-        subjectId: PRIMARY_ROOM_ID,
-        channelId: PRIMARY_ROOM_ID,
+        src: createMessageSrc(PRIMARY_ROOM_ID, 1),
       },
-      scores: { hash_message_send: 100 },
+      scores: { hash_room_reply: 100 },
       title: "Send the answer through the default chat channel",
     });
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, chatCommit, { notifyLoop: false });
@@ -2891,22 +2901,22 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     await internal.sendMessageTool({
       chatId: PRIMARY_ROOM_ID,
-      content: "Delivered through message_send",
+      content: "Delivered through message send",
     });
 
     const message = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items.at(-1);
-    expect(message?.content).toBe("Delivered through message_send");
+    expect(message?.content).toBe("Delivered through message send");
     expect(message?.rootId).toBe(String(cycleId));
     expect(message?.metadata).toMatchObject({
       channel: "to_user",
-      source: "message_send",
+      source: "runtime_dispatch",
       cycleId,
     });
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a message_send dispatch already sent a visible reply When a later message-reply egress commit targets the same chat and cycle Then the runtime suppresses the duplicate bridge message", async () => {
+  test("Scenario: Given a runtime dispatch already sent a visible reply When a later message-reply egress commit targets the same chat and cycle Then the runtime suppresses the duplicate bridge message", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -2931,7 +2941,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     await internal.sendMessageTool({
       chatId: PRIMARY_ROOM_ID,
-      content: "Delivered through message_send",
+      content: "Delivered through message send",
     });
 
     const duplicateCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
@@ -2943,7 +2953,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: PRIMARY_ROOM_ID,
         from: "tester",
-        to: "User",
       },
       scores: { "reply-hash": 0 },
       title: "duplicate visible dispatch",
@@ -2959,7 +2968,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const afterMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
 
     expect(afterMessages).toHaveLength(beforeMessages.length);
-    expect(afterMessages.at(-1)?.content).toBe("Delivered through message_send");
+    expect(afterMessages.at(-1)?.content).toBe("Delivered through message send");
     expect(runtime.snapshot().attention?.hooks.at(-1)?.status).toBe("ignored");
     expect(runtime.snapshot().attention?.hooks.at(-1)?.output).toMatchObject({
       reason: "duplicate-visible-dispatch",
@@ -2967,7 +2976,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       attentionCommitId: duplicateCommit.commitId,
     });
     expect(afterMessages.at(-1)?.metadata).toMatchObject({
-      source: "message_send",
+      source: "runtime_dispatch",
       cycleId,
     });
 
@@ -2992,7 +3001,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: PRIMARY_ROOM_ID,
         from: "tester",
-        to: "User",
       },
       scores: { "reply-hash": 0 },
       summary: "internal summary should stay internal",
@@ -3015,7 +3023,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a visible assistant reply already exists with no newer user message When message_send repeats the same chat content Then the runtime reuses the existing message instead of appending a duplicate", async () => {
+  test("Scenario: Given a visible assistant reply already exists with no newer user message When message send repeats the same chat content Then the runtime reuses the existing message instead of appending a duplicate", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -3024,18 +3032,18 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       chatId: PRIMARY_ROOM_ID,
       content: "稍等，我去问一下。",
       from: "tester",
-      to: "User",
     });
     const second = await internal.sendMessageTool({
       chatId: PRIMARY_ROOM_ID,
       content: "稍等，我去问一下。",
       from: "tester",
-      to: "User",
     });
 
     const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     expect(messages.filter((message) => message.content === "稍等，我去问一下。")).toHaveLength(1);
     expect(second.messageId).toBe(first.messageId);
+    expect(second.recentMessages.at(-1)?.messageId).toBe(first.messageId);
+    expect(second.recentMessages.at(-1)?.contentPreview).toBe("稍等，我去问一下。");
 
     await runtime.stop();
   });
@@ -3089,7 +3097,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await restarted.stop();
   });
 
-  test("Scenario: Given a cycle originates from the primary room When message_send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {
+  test("Scenario: Given a cycle originates from the primary room When message send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
     const relayChannel = await runtime.createMessageChannel({
@@ -3128,14 +3136,14 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(mainMessages).toHaveLength(1);
     expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
     expect(mainMessages.at(-1)?.metadata).toMatchObject({
-      source: "message_send",
+      source: "runtime_dispatch",
       cycleId,
       autoOriginAck: true,
       relayTargetChatId: relayChannel.chatId,
     });
     expect(relayMessages.at(-1)?.content).toBe("gaubee，今天中午吃什么？");
     expect(relayMessages.at(-1)?.metadata).toMatchObject({
-      source: "message_send",
+      source: "runtime_dispatch",
       cycleId,
     });
 
@@ -3174,7 +3182,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(mainMessages).toHaveLength(1);
     expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
     expect(mainMessages.at(-1)?.metadata).toMatchObject({
-      source: "message_send",
+      source: "runtime_dispatch",
       cycleId,
       autoOriginAck: true,
       autoOriginAckReason: "tool_work_start",
@@ -3197,7 +3205,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         kind: "message_reply",
         chatId: "chat-missing",
         from: "tester",
-        to: "User",
       },
       scores: { "reply-hash": 0 },
       title: "failed reply",

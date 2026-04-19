@@ -9,13 +9,13 @@ describe("Feature: attention system context scheduling", () => {
     system.createContext({ contextId: "ctx-2", owner: "avatar:jane" });
 
     system.commit("ctx-1", {
-      meta: { author: "user:kzf", source: "message", channelId: "chat-kzf" },
+      meta: { author: "user:kzf", source: "message", src: "msg:chat-kzf/1" },
       scores: { hash1: 100 },
       summary: "kzf asks",
       change: { type: "update", value: "gaubee 在吗？" },
     });
     system.commit("ctx-2", {
-      meta: { author: "user:gaubee", source: "message", channelId: "chat-gaubee" },
+      meta: { author: "user:gaubee", source: "message", src: "msg:chat-gaubee/1" },
       scores: { hash1: 20, hash2: 100 },
       summary: "gaubee replies",
       change: { type: "update", value: "中午吃蛋炒饭" },

@@ -27,7 +27,7 @@
 						items: [
 							{
 								rowId: 1,
-								messageId: 'msg-1',
+								messageId: 1,
 								chatId: roomChannel.chatId,
 								from: 'Bootstrap admin',
 								kind: 'text',
@@ -42,7 +42,7 @@
 							},
 							{
 								rowId: 2,
-								messageId: 'msg-2',
+								messageId: 2,
 								chatId: roomChannel.chatId,
 								from: 'Analyst',
 								kind: 'text',
@@ -84,7 +84,6 @@
 				return;
 			}
 			const rowId = StorySocket.nextRowId++;
-			const messageId = `msg-${rowId}`;
 			this.emitTransport({
 				type: 'messages',
 				chatId: this.roomChannel.chatId,
@@ -92,7 +91,7 @@
 				items: [
 					{
 						rowId,
-						messageId,
+						messageId: rowId,
 						chatId: this.roomChannel.chatId,
 						from: 'Bootstrap admin',
 						kind: 'text',

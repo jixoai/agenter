@@ -12,6 +12,7 @@ export type {
   WebChatConnectionState,
   WebChatCursor,
   WebChatMessage,
+  WebChatMessageInput,
   WebChatMessageAction,
   WebChatMessageReadActor,
   WebChatMessageReadProgress,
@@ -24,4 +25,5 @@ export type {
   WebChatVisibleMessageFact,
   WebChatViewHostProps,
 } from "./types";
+export { resolveMessageIdentityKey, toWebChatMessage, toWebChatMessages } from "./message-utils";
 export { default as WebChatView, default as WebChatViewHost } from "./web-chat-view-host.svelte";

@@ -18,11 +18,11 @@ export interface RuntimeAttentionQueueItem {
   id: string;
   attentionContextId: string;
   label: string;
-  sourceType: SessionNotificationItem["sourceType"];
+  sourceType: "chat" | "terminal" | "source";
   sourceId: string;
+  src: string;
   content: string;
   timestamp: number;
-  messageId?: string;
   jumpTarget: RuntimeContextJumpTarget | null;
 }
 
@@ -43,7 +43,7 @@ const buildContextSearchText = (item: RuntimeAttentionContextItem): string =>
     .toLowerCase();
 
 const buildHookSearchText = (hook: RuntimeAttentionState["hooks"][number]): string =>
-  [hook.systemId, hook.status, hook.contextId, hook.hookId, hook.commitId, hook.error ?? ""].join("\n").toLowerCase();
+  [hook.bridgeId, hook.status, hook.contextId, hook.hookId, hook.commitId, hook.error ?? ""].join("\n").toLowerCase();
 
 const buildQueueSearchText = (item: RuntimeAttentionQueueItem): string =>
   [
@@ -51,11 +51,21 @@ const buildQueueSearchText = (item: RuntimeAttentionQueueItem): string =>
     item.attentionContextId,
     item.sourceType,
     item.sourceId,
+    item.src,
     item.content,
-    item.messageId ?? "",
   ]
     .join("\n")
     .toLowerCase();
+
+const resolveQueueSourceType = (sourceNamespace: string): RuntimeAttentionQueueItem["sourceType"] => {
+  if (sourceNamespace === "msg") {
+    return "chat";
+  }
+  if (sourceNamespace === "tty") {
+    return "terminal";
+  }
+  return "source";
+};
 
 export const buildRuntimeAttentionScoreSummary = (
   scores: ReadonlyArray<RuntimeAttentionScoreEntry>,
@@ -108,12 +118,12 @@ export const buildRuntimeAttentionQueueItems = (
       return {
         id: notification.id,
         attentionContextId: notification.attentionContextId,
-        label: context?.label ?? notification.sourceId,
-        sourceType: notification.sourceType,
+        label: context?.label ?? notification.sourceId ?? notification.bucketKey,
+        sourceType: resolveQueueSourceType(notification.sourceNamespace),
         sourceId: notification.sourceId,
+        src: notification.src,
         content: notification.content,
         timestamp: notification.timestamp,
-        messageId: notification.messageId,
         jumpTarget: context?.jumpTarget ?? null,
       };
     });

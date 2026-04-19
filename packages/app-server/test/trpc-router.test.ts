@@ -27,6 +27,33 @@ afterEach(() => {
 
 const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
 
+const createRootSuperadminCaller = async (kernel: AppKernel) => {
+  const anonymousCaller = appRouter.createCaller(await createTrpcContext(kernel));
+  const descriptor = await anonymousCaller.auth.service();
+  const challenge = await anonymousCaller.auth.challengeStart({
+    authId: descriptor.rootAuthId,
+  });
+  const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
+    message: challenge.challengeText,
+  });
+  const session = await anonymousCaller.auth.challengeVerify({
+    challengeId: challenge.challengeId,
+    signature,
+  });
+  const caller = appRouter.createCaller(
+    await createTrpcContext({
+      kernel,
+      authorizationHeader: `Bearer ${session.token}`,
+    }),
+  );
+  return {
+    anonymousCaller,
+    caller,
+    descriptor,
+    session,
+  };
+};
+
 describe("Feature: app-server trpc procedures", () => {
   test("Scenario: Given caller creates session When listing and deleting Then lifecycle is reflected", async () => {
     const root = makeTempDir();
@@ -534,6 +561,9 @@ describe("Feature: app-server trpc procedures", () => {
       text: "blocked",
     });
     expect(rejectedWrite.ok).toBeFalse();
+    if (rejectedWrite.ok) {
+      throw new Error("expected readonly room send to fail");
+    }
     expect(rejectedWrite.reason).toBe("message channel member access required");
 
     const revoked = await caller.message.revokeChannelGrant({
@@ -551,6 +581,9 @@ describe("Feature: app-server trpc procedures", () => {
       text: "still blocked",
     });
     expect(rejectedAfterRevoke.ok).toBeFalse();
+    if (rejectedAfterRevoke.ok) {
+      throw new Error("expected revoked room send to fail");
+    }
     expect(rejectedAfterRevoke.reason).toBe("message room credential-invalid");
 
     await kernel.stop();
@@ -562,10 +595,12 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
     });
     await kernel.start();
-
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
     const created = await caller.message.globalCreate({
       kind: "room",
       title: "Ops room",
@@ -619,7 +654,7 @@ describe("Feature: app-server trpc procedures", () => {
     const edited = await caller.message.globalEdit({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: sentMessage?.messageId ?? "",
+      messageId: sentMessage?.messageId ?? 0,
       text: "hello ops corrected",
     });
     expect(edited.ok).toBeTrue();
@@ -633,7 +668,7 @@ describe("Feature: app-server trpc procedures", () => {
     const recalled = await caller.message.globalRecall({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      messageId: sentMessage?.messageId ?? "",
+      messageId: sentMessage?.messageId ?? 0,
     });
     expect(recalled.ok).toBeTrue();
     const relay = await caller.message.globalIssueGrant({
@@ -646,7 +681,7 @@ describe("Feature: app-server trpc procedures", () => {
     const relayRejectedEdit = await caller.message.globalEdit({
       chatId: room.chatId,
       accessToken: relay.grant.accessToken,
-      messageId: sentMessage?.messageId ?? "",
+      messageId: sentMessage?.messageId ?? 0,
       text: "tampered",
     });
     expect(relayRejectedEdit.ok).toBeFalse();
@@ -654,7 +689,7 @@ describe("Feature: app-server trpc procedures", () => {
     const relayRejectedRecall = await caller.message.globalRecall({
       chatId: room.chatId,
       accessToken: relay.grant.accessToken,
-      messageId: sentMessage?.messageId ?? "",
+      messageId: sentMessage?.messageId ?? 0,
     });
     expect(relayRejectedRecall.ok).toBeFalse();
     expect(relayRejectedRecall.reason).toBe("message recall requires original sender");
@@ -666,8 +701,8 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(relayRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: sentMessage?.messageId,
-      totalSeatCount: 1,
-      readSeatCount: 1,
+      totalSeatCount: 2,
+      readSeatCount: 2,
       unreadSeatCount: 0,
     });
 
@@ -747,6 +782,49 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given a browser caller without auth When message global routes are invoked Then seat tokens do not bypass the authenticated control plane", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+
+    const { anonymousCaller, caller } = await createRootSuperadminCaller(kernel);
+    const created = await caller.message.globalCreate({
+      kind: "room",
+      title: "Authenticated room",
+    });
+
+    await expect(anonymousCaller.message.globalList({ includeArchived: false })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    await expect(
+      anonymousCaller.message.globalSend({
+        chatId: created.channel.chatId,
+        accessToken: created.channel.accessToken,
+        text: "anonymous browser send",
+      }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    await expect(
+      anonymousCaller.message.globalSnapshot({
+        chatId: created.channel.chatId,
+        accessToken: created.channel.accessToken,
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given seat-backed room reads When seat token and superadmin both mark the same room Then durable read progress only advances for real room seats", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
@@ -759,39 +837,22 @@ describe("Feature: app-server trpc procedures", () => {
     });
     await kernel.start();
 
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
-    const descriptor = await caller.auth.service();
-    const challenge = await caller.auth.challengeStart({
-      authId: descriptor.rootAuthId,
-    });
-    const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
-      message: challenge.challengeText,
-    });
-    const session = await caller.auth.challengeVerify({
-      challengeId: challenge.challengeId,
-      signature,
-    });
-    const superadminCaller = appRouter.createCaller(
-      await createTrpcContext({
-        kernel,
-        authorizationHeader: `Bearer ${session.token}`,
-      }),
-    );
+    const { caller: superadminCaller, descriptor } = await createRootSuperadminCaller(kernel);
 
-    const created = await caller.message.globalCreate({
+    const created = await superadminCaller.message.globalCreate({
       kind: "room",
       title: "Read state room",
       focus: false,
     });
     const room = created.channel;
-    const relay = await caller.message.globalIssueGrant({
+    const relay = await superadminCaller.message.globalIssueGrant({
       chatId: room.chatId,
       accessToken: room.accessToken,
       role: "member",
       participantId: "session:relay",
       label: "Relay",
     });
-    const viewer = await caller.message.globalIssueGrant({
+    const viewer = await superadminCaller.message.globalIssueGrant({
       chatId: room.chatId,
       accessToken: room.accessToken,
       role: "readonly",
@@ -809,7 +870,7 @@ describe("Feature: app-server trpc procedures", () => {
       visibleAt: 1_000,
     });
 
-    const snapshot = await caller.message.globalSnapshot({
+    const snapshot = await superadminCaller.message.globalSnapshot({
       chatId: room.chatId,
       accessToken: room.accessToken,
       limit: 20,
@@ -819,16 +880,16 @@ describe("Feature: app-server trpc procedures", () => {
       throw new Error("expected latest visible room message");
     }
 
-    const relayRead = await caller.message.globalMarkRead({
+    const relayRead = await superadminCaller.message.globalMarkRead({
       chatId: room.chatId,
       accessToken: relay.grant.accessToken,
       messageId: latestMessageId,
     });
     expect(relayRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: latestMessageId,
-      totalSeatCount: 2,
+      totalSeatCount: 3,
       readSeatCount: 1,
-      unreadSeatCount: 1,
+      unreadSeatCount: 2,
     });
     const relayReadState = relayRead.channel.readStates?.find((state) => state.actorId === "session:relay");
     expect(relayReadState).toMatchObject({
@@ -843,19 +904,23 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
     expect(
-      superadminRead.channel.readStates?.some((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
-    ).toBeFalse();
+      superadminRead.channel.readStates?.find((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
+    ).toMatchObject({
+      actorId: `auth:${descriptor.rootAuthId}`,
+      trackedByLatestVisible: true,
+      hasReadLatestVisible: false,
+    });
 
-    const viewerRead = await caller.message.globalMarkRead({
+    const viewerRead = await superadminCaller.message.globalMarkRead({
       chatId: room.chatId,
       accessToken: viewer.grant.accessToken,
       messageId: latestMessageId,
     });
     expect(viewerRead.channel.readProgress).toMatchObject({
       latestVisibleMessageId: latestMessageId,
-      totalSeatCount: 2,
+      totalSeatCount: 3,
       readSeatCount: 2,
-      unreadSeatCount: 0,
+      unreadSeatCount: 1,
     });
     const viewerReadState = viewerRead.channel.readStates?.find((state) => state.actorId === "auth:viewer");
     expect(viewerReadState).toMatchObject({
@@ -879,24 +944,7 @@ describe("Feature: app-server trpc procedures", () => {
     });
     await kernel.start();
 
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
-    const descriptor = await caller.auth.service();
-    const challenge = await caller.auth.challengeStart({
-      authId: descriptor.rootAuthId,
-    });
-    const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
-      message: challenge.challengeText,
-    });
-    const session = await caller.auth.challengeVerify({
-      challengeId: challenge.challengeId,
-      signature,
-    });
-    const superadminCaller = appRouter.createCaller(
-      await createTrpcContext({
-        kernel,
-        authorizationHeader: `Bearer ${session.token}`,
-      }),
-    );
+    const { caller: superadminCaller, descriptor } = await createRootSuperadminCaller(kernel);
 
     const created = await superadminCaller.message.globalCreate({
       kind: "room",
@@ -938,10 +986,12 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
     });
     await kernel.start();
-
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
     const created = await caller.terminal.globalCreate({
       terminalId: "global-ops",
       processKind: "shell",
@@ -1029,6 +1079,54 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(deleted.ok).toBeTrue();
     expect((await caller.terminal.globalList()).items.some((item) => item.terminalId === terminalId)).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a browser caller without auth When terminal global routes are invoked Then terminal access tokens do not bypass the authenticated control plane", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      profileService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+
+    const { anonymousCaller, caller } = await createRootSuperadminCaller(kernel);
+    const created = await caller.terminal.globalCreate({
+      terminalId: "authed-terminal",
+      processKind: "shell",
+      cwd: root,
+      focus: false,
+    });
+    const terminal = created.result.terminal;
+    if (!terminal?.terminalId) {
+      throw new Error("expected authenticated terminal id");
+    }
+
+    await expect(anonymousCaller.terminal.globalList()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    await expect(
+      anonymousCaller.terminal.read({
+        terminalId: terminal.terminalId,
+        accessToken: terminal.access?.accessToken,
+      }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    await expect(
+      anonymousCaller.terminal.write({
+        terminalId: terminal.terminalId,
+        accessToken: terminal.access?.accessToken,
+        text: "anonymous write",
+      }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
 
     await kernel.stop();
   });

@@ -107,7 +107,26 @@ const createCommandContext = (stdin = "") => ({
 describe("Feature: runtime descriptor CLI", () => {
   test("Scenario: Given JSON argv When message send runs Then the CLI posts the validated descriptor payload", async () => {
     const api = await startMockRuntimeApi({
-      "/v1/message/send": { result: { ok: true, messageId: "msg-1" } },
+      "/v1/message/send": {
+        result: {
+          ok: true,
+          messageId: 2,
+          recentMessages: [
+            {
+              messageId: 1,
+              from: "User",
+              contentPreview: "上一条消息",
+              sendTime: "20260412142500040",
+            },
+            {
+              messageId: 2,
+              from: "architect",
+              contentPreview: "APP-ACK: 开始构建",
+              sendTime: "20260412142500042",
+            },
+          ],
+        },
+      },
     });
     const message = createRuntimeCommand(api.baseUrl, "message");
 
@@ -117,6 +136,9 @@ describe("Feature: runtime descriptor CLI", () => {
     );
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"recentMessages"');
+    expect(result.stdout).toContain('"sendTime": "20260412142500042"');
+    expect(result.stdout).toContain("APP-ACK: 开始构建");
     expect(api.getLastRequest()).toEqual({
       url: "/v1/message/send",
       headers: expect.objectContaining({
@@ -131,7 +153,7 @@ describe("Feature: runtime descriptor CLI", () => {
 
   test("Scenario: Given JSON stdin When message edit runs Then the CLI posts the validated edit payload to the runtime API", async () => {
     const api = await startMockRuntimeApi({
-      "/v1/message/edit": { result: { ok: true, messageId: "msg-1", updatedAt: 42 } },
+      "/v1/message/edit": { result: { ok: true, messageId: 1, updatedAt: 42 } },
     });
     const message = createRuntimeCommand(api.baseUrl, "message");
 
@@ -140,7 +162,7 @@ describe("Feature: runtime descriptor CLI", () => {
       createCommandContext(
         JSON.stringify({
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
           content: "Correction: use /preview/42 instead.",
         }),
       ),
@@ -149,14 +171,14 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(api.getLastRequest()?.body).toEqual({
       chatId: "room-1",
-      messageId: "msg-1",
+      messageId: 1,
       content: "Correction: use /preview/42 instead.",
     });
   });
 
   test("Scenario: Given JSON stdin When message recall runs Then the CLI posts the validated recall payload to the runtime API", async () => {
     const api = await startMockRuntimeApi({
-      "/v1/message/recall": { result: { ok: true, messageId: "msg-1", updatedAt: 42, recalledAt: 42 } },
+      "/v1/message/recall": { result: { ok: true, messageId: 1, updatedAt: 42, recalledAt: 42 } },
     });
     const message = createRuntimeCommand(api.baseUrl, "message");
 
@@ -165,7 +187,7 @@ describe("Feature: runtime descriptor CLI", () => {
       createCommandContext(
         JSON.stringify({
           chatId: "room-1",
-          messageId: "msg-1",
+          messageId: 1,
         }),
       ),
     );
@@ -173,7 +195,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(api.getLastRequest()?.body).toEqual({
       chatId: "room-1",
-      messageId: "msg-1",
+      messageId: 1,
     });
   });
 
@@ -193,7 +215,7 @@ describe("Feature: runtime descriptor CLI", () => {
 
   test("Scenario: Given root workspace bash expands a UTF-8 JSON payload When message send forwards the heredoc argv Then the runtime API preserves the original Unicode content", async () => {
     const api = await startMockRuntimeApi({
-      "/v1/message/send": { result: { ok: true, messageId: "msg-utf8" } },
+      "/v1/message/send": { result: { ok: true, messageId: 1, recentMessages: [] } },
     });
     const rootWorkspacePath = createTempRoot();
 
@@ -319,7 +341,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(attentionHelp.stdout).toContain("stdin:");
     expect(attentionHelp.stdout).not.toContain("cat <<'EOF'");
     expect(attentionHelp.stdout).toContain('["update", value, format?] | ["diff", value, format?] | ["clean"]');
-    expect(attentionHelp.stdout).toContain('[3] egress?: ["message_reply", chatId, rootId?, from?, to?]');
+    expect(attentionHelp.stdout).toContain('[3] egress?: ["message_reply", chatId, rootId?, from?]');
   });
 
   test("Scenario: Given explicit compact help markers When message send --compact --help runs Then local help still renders without calling the runtime API", async () => {

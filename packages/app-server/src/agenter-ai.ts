@@ -6,11 +6,10 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import type { SessionTerminalOutcome } from "@agenter/session-system";
-import { toolDefinition, type ContentPart, type Tool } from "@tanstack/ai";
+import type { ContentPart, Tool } from "@tanstack/ai";
 import { z } from "zod";
 
 import type { AttentionSearchRequest } from "./attention-search";
-import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import type { ChatCycleCompactTrigger } from "./chat-cycles";
 import type { LoopBusInput, LoopBusMessage } from "./loop-bus";
 import type { AssistantStreamUpdate, ModelClient, TextOnlyModelMessage } from "./model-client";
@@ -86,7 +85,6 @@ interface AgentDeps {
   locale?: string;
   skillsList?: string;
   attentionGateway: AttentionGateway;
-  builtinToolMode?: "attention" | "none";
   toolProviders?: AgentToolProvider[];
   resolveImageAttachment?: (
     attachment: ChatSessionAsset,
@@ -525,15 +523,67 @@ const pushUniqueCompactText = (target: string[], value: string): void => {
 
 const COMPACT_SETTLED_ANSWER_PREFIX = "Settled user-visible answer:";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const tryParseJsonEnvelope = <T>(value: string, open: "[" | "{", close: "]" | "}"): T | null => {
+  const start = value.indexOf(open);
+  const end = value.lastIndexOf(close);
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  try {
+    return JSON.parse(value.slice(start, end + 1)) as T;
+  } catch {
+    return null;
+  }
+};
+
+const parseMessageSendContentFromCommand = (command: string): string | null => {
+  const normalized = normalizeCompactText(command);
+  if (!normalized.startsWith("message send") || normalized.includes("--help")) {
+    return null;
+  }
+  if (normalized.includes("--compact")) {
+    const compactPayload = tryParseJsonEnvelope<unknown[]>(command, "[", "]");
+    return Array.isArray(compactPayload) && typeof compactPayload[1] === "string" ? compactPayload[1] : null;
+  }
+  const objectPayload = tryParseJsonEnvelope<Record<string, unknown>>(command, "{", "}");
+  return objectPayload && typeof objectPayload.content === "string" ? objectPayload.content : null;
+};
+
+const extractMessageSendContentFromToolTrace = (content: string): string | null => {
+  if (!isPromptWindowToolTraceEntry(content)) {
+    return null;
+  }
+  const toolName = extractYamlTopLevelScalar(content, "tool");
+  if (toolName !== "root_workspace_bash") {
+    return null;
+  }
+  const command = extractYamlNestedScalar(content, "input", "command");
+  if (!command) {
+    return null;
+  }
+  const stdin = extractYamlNestedScalar(content, "input", "stdin");
+  if (stdin) {
+    try {
+      const parsed = JSON.parse(stdin) as Record<string, unknown>;
+      if (typeof parsed.content === "string") {
+        return parsed.content;
+      }
+    } catch {
+      // Fall back to parsing argv/compact payload from the shell command text.
+    }
+  }
+  return parseMessageSendContentFromCommand(command);
+};
+
 const extractSettledAnswerFromToolTrace = (content: string): string | null => {
-  if (!isPromptWindowToolTraceEntry(content) || extractYamlTopLevelScalar(content, "tool") !== "message_send") {
+  const deliveredContent = extractMessageSendContentFromToolTrace(content);
+  if (!deliveredContent) {
     return null;
   }
   if (extractYamlTopLevelScalar(content, "status") !== "success") {
-    return null;
-  }
-  const deliveredContent = extractYamlNestedScalar(content, "input", "content");
-  if (!deliveredContent) {
     return null;
   }
   const normalized = normalizeCompactText(deliveredContent);
@@ -556,6 +606,88 @@ const extractSettledAnswersFromCompactSummary = (summary: AgentPromptWindowCompa
     pushUniqueCompactText(answers, answer);
   }
   return answers;
+};
+
+const parseAttentionCommitInputFromCommand = (command: string): Record<string, unknown> | null => {
+  const normalized = normalizeCompactText(command);
+  if (!normalized.startsWith("attention commit") || normalized.includes("--help")) {
+    return null;
+  }
+  const payload = tryParseJsonEnvelope<unknown>(command, "{", "}");
+  return isRecord(payload) ? payload : null;
+};
+
+const extractAttentionCommitInputFromToolTrace = (trace: AgentToolTraceEntry): Record<string, unknown> | null => {
+  if (trace.tool !== "root_workspace_bash" || !isRecord(trace.input)) {
+    return null;
+  }
+  const stdin = trace.input.stdin;
+  if (typeof stdin === "string" && stdin.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(stdin) as unknown;
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Fall back to argv JSON parsing when stdin is not valid JSON.
+    }
+  }
+  const command = trace.input.command;
+  return typeof command === "string" ? parseAttentionCommitInputFromCommand(command) : null;
+};
+
+const extractAttentionCommitOutput = (trace: AgentToolTraceEntry): Record<string, unknown> | null => {
+  if (trace.tool !== "root_workspace_bash" || !isRecord(trace.output)) {
+    return null;
+  }
+  const stdout = trace.output.stdout;
+  if (typeof stdout !== "string" || stdout.trim().length === 0) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(stdout) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const extractAttentionUpdateFromToolTrace = (trace: AgentToolTraceEntry): AttentionUpdateCall | null => {
+  if (trace.error) {
+    return null;
+  }
+  const input = extractAttentionCommitInputFromToolTrace(trace);
+  const output = extractAttentionCommitOutput(trace);
+  if (!input) {
+    return null;
+  }
+  const contextId = input.contextId;
+  const outputCommit = output && isRecord(output.commit) ? output.commit : null;
+  const commitId =
+    typeof outputCommit?.commitId === "string"
+      ? outputCommit.commitId
+      : typeof output?.commitId === "string"
+        ? output.commitId
+        : null;
+  if (typeof contextId !== "string" || contextId.trim().length === 0) {
+    return null;
+  }
+  if (typeof commitId !== "string" || commitId.trim().length === 0) {
+    return null;
+  }
+  const summary =
+    typeof input.summary === "string" ? input.summary : typeof outputCommit?.summary === "string" ? outputCommit.summary : "";
+  const scores =
+    isRecord(input.scores) ? input.scores : isRecord(outputCommit?.scores) ? outputCommit.scores : undefined;
+  return {
+    contextId,
+    commitId,
+    text: summary,
+    scores: isRecord(scores)
+      ? Object.fromEntries(Object.entries(scores).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
+      : {},
+    done: input.done === true,
+  };
 };
 
 const pushUniqueCompactFile = (target: string[], value: string): void => {
@@ -1048,15 +1180,7 @@ export class AgenterAI {
     const toolTrace: AgentToolTraceEntry[] = [];
     const attentionUpdates: AttentionUpdateCall[] = [];
     const tools = ENABLE_AGENT_TOOLS
-      ? this.buildTools(
-          toolTrace,
-          {
-            onAttentionUpdate: (update) => {
-              attentionUpdates.push(update);
-            },
-          },
-          context?.signal,
-        )
+      ? this.buildTools(toolTrace, context?.signal)
       : [];
     const promptStore = this.promptStore;
     const modelClient = this.modelClient;
@@ -1173,7 +1297,13 @@ export class AgenterAI {
       this.emitStats();
 
       const normalizedResponseText = response.text.trim();
-      const attentionMutation = attentionUpdates.length > 0;
+      const effectiveAttentionUpdates =
+        attentionUpdates.length > 0
+          ? attentionUpdates
+          : toolTrace
+              .map((entry) => extractAttentionUpdateFromToolTrace(entry))
+              .filter((entry): entry is AttentionUpdateCall => entry !== null);
+      const attentionMutation = effectiveAttentionUpdates.length > 0;
       const explicitToolProgress = toolTrace.length > 0;
       const invalidAttentionNoProgress = attentionRound && !attentionMutation && !explicitToolProgress;
       const completedAt = Date.now();
@@ -1221,7 +1351,7 @@ export class AgenterAI {
       const nextPromptWindowStateId = await this.pushAssistantTurnToPromptWindow({
         text: normalizedResponseText.length > 0 && toolTrace.length === 0 && !attentionRound ? normalizedResponseText : "",
         toolTrace,
-        attentionUpdates,
+        attentionUpdates: effectiveAttentionUpdates,
       });
       await this.persistModelCall({
         ...callRecordBase,
@@ -1252,7 +1382,7 @@ export class AgenterAI {
       });
       return {
         continueModelRound: this.shouldContinueAfterToolPhase({
-          attentionUpdates,
+          attentionUpdates: effectiveAttentionUpdates,
           finishReason: response.finishReason ?? null,
           roundMessages,
           interleavedMessages,
@@ -1414,9 +1544,7 @@ export class AgenterAI {
               commitId: commit.commitId,
               author: commit.meta.author,
               source: commit.meta.source,
-              systemId: commit.meta.systemId,
-              subjectId: commit.meta.subjectId,
-              channelId: commit.meta.channelId,
+              src: commit.meta.src,
               tags: commit.meta.tags,
               scores: commit.scores,
               summary: commit.summary,
@@ -1549,9 +1677,7 @@ export class AgenterAI {
                   commitId: commit.commitId,
                   author: commit.meta.author,
                   source: commit.meta.source,
-                  systemId: commit.meta.systemId,
-                  subjectId: commit.meta.subjectId,
-                  channelId: commit.meta.channelId,
+                  src: commit.meta.src,
                   tags: commit.meta.tags,
                   summary: commit.summary,
                   egress: commit.egress ?? null,
@@ -1724,13 +1850,7 @@ export class AgenterAI {
     return messages.slice(messages.length - MAX_HISTORY_MESSAGES);
   }
 
-  private buildTools(
-    trace: AgentToolTraceEntry[],
-    hooks: {
-      onAttentionUpdate: (update: AttentionUpdateCall) => void;
-    },
-    signal?: AbortSignal,
-  ): Tool[] {
+  private buildTools(trace: AgentToolTraceEntry[], signal?: AbortSignal): Tool[] {
     const throwIfAborted = (): void => {
       if (signal?.aborted) {
         throw createAbortError(signal.reason);
@@ -1802,95 +1922,6 @@ export class AgenterAI {
       }
     };
 
-    const attentionCommitMetaSchema = z
-      .object({
-        author: z.string().min(1),
-        source: z.string().min(1),
-        systemId: z.string().optional(),
-        subjectId: z.string().optional(),
-        channelId: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        createdAt: z.string().optional(),
-      });
-
-    const attentionCommitToolMetaSchema = z
-      .object({
-        author: z.string().min(1).optional(),
-        source: z.string().min(1).optional(),
-        systemId: z.string().optional(),
-        subjectId: z.string().optional(),
-        channelId: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        createdAt: z.string().optional(),
-      });
-
-    const attentionCommitEgressSchema = z.discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("message_reply"),
-        chatId: z.string().min(1),
-        rootId: z.string().optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
-      }),
-    ]);
-
-    const attentionCommitChangeSchema = z.discriminatedUnion("type", [
-      z.object({
-        type: z.literal("update"),
-        value: z.string(),
-        format: z.string().optional(),
-      }),
-      z.object({
-        type: z.literal("diff"),
-        value: z.string(),
-        format: z.string().optional(),
-      }),
-      z.object({
-        type: z.literal("clean"),
-      }),
-    ]);
-
-    const attentionCommitToolInputSchema = z
-      .object({
-        contextId: z.string().min(1),
-        parentCommitIds: z.array(z.string()).optional(),
-        meta: attentionCommitToolMetaSchema.optional(),
-        egress: attentionCommitEgressSchema.optional(),
-        scores: z.record(z.string(), z.number()).optional(),
-        summary: z.string().min(1),
-        change: attentionCommitChangeSchema.optional(),
-        done: z.boolean().optional(),
-      })
-      .refine((value) => value.change !== undefined || value.done === true, {
-        message: "change is required unless done is true",
-        path: ["change"],
-      });
-
-    const attentionMatchSchema = z.object({
-      contextId: z.string(),
-      context: z.object({
-        contextId: z.string(),
-        owner: z.string(),
-        content: z.string(),
-        contentFormat: z.string().optional(),
-        scoreMap: z.record(z.string(), z.number()),
-        headCommitId: z.string().nullable(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
-      }),
-        commit: z.object({
-          commitId: z.string(),
-          contextId: z.string(),
-          parentCommitIds: z.array(z.string()),
-          meta: attentionCommitMetaSchema,
-          egress: attentionCommitEgressSchema.optional(),
-          scores: z.record(z.string(), z.number()),
-          summary: z.string(),
-          change: attentionCommitChangeSchema,
-        createdAt: z.string(),
-      }),
-    });
-
     const externalTools = (this.deps.toolProviders ?? []).flatMap((provider) =>
       provider.createTools({
         runtimeText: this.runtimeText,
@@ -1899,124 +1930,7 @@ export class AgenterAI {
       }),
     );
 
-    if (this.deps.builtinToolMode === "none") {
-      return externalTools;
-    }
-
-    const attentionContextListTool = toolDefinition({
-      name: "attention_context_list",
-      description: this.runtimeText.t("tool.attention_context_list.description"),
-      outputSchema: z.object({
-        contexts: z.array(
-          z.object({
-            contextId: z.string(),
-            owner: z.string(),
-            headCommitId: z.string().nullable(),
-            unresolvedScoreCount: z.number(),
-            updatedAt: z.string(),
-          }),
-        ),
-      }),
-    }).server(async (_rawInput, context) =>
-      traceTool(
-        "attention_context_list",
-        {},
-        async () => ({
-          contexts: this.deps.attentionGateway.listContexts(),
-        }),
-        { invocationId: context?.toolCallId },
-      ),
-    );
-
-    const attentionQueryTool = toolDefinition({
-      name: "attention_query",
-      description: this.runtimeText.t("tool.attention_query.description"),
-      inputSchema: z.object({
-        query: z.string(),
-        offset: z.number().int().min(0).optional(),
-        limit: z.number().int().min(1).max(200).optional(),
-      }),
-      outputSchema: z.object({
-        items: z.array(attentionMatchSchema),
-      }),
-    }).server(async (rawInput, context) => {
-      const input = z
-        .object({
-          query: z.string(),
-          offset: z.number().int().min(0).optional(),
-          limit: z.number().int().min(1).max(200).optional(),
-        })
-        .parse(rawInput);
-      return traceTool(
-        "attention_query",
-        input,
-        async () => ({
-          items: (await this.deps.attentionGateway.query(input)).map(projectAttentionCommitMatchForModel),
-        }),
-        { invocationId: context?.toolCallId },
-      );
-    });
-
-    const attentionCommitTool = toolDefinition({
-      name: "attention_commit",
-      description: this.runtimeText.t("tool.attention_commit.description"),
-      inputSchema: attentionCommitToolInputSchema,
-      outputSchema: z.object({
-        ok: z.boolean(),
-        commitId: z.string(),
-      }),
-    }).server(async (rawInput, context) => {
-      const input = attentionCommitToolInputSchema.parse(rawInput);
-      const resolvedScores = input.done
-        ? (() => {
-            const activeContext = this.deps.attentionGateway.listActive().find((item) => item.contextId === input.contextId);
-            if (!activeContext) {
-              return undefined;
-            }
-            const activeScores = Object.entries(activeContext.context.scoreMap).filter(([, value]) => value > 0);
-            if (activeScores.length === 0) {
-              return {};
-            }
-            return Object.fromEntries(activeScores.map(([hash]) => [hash, 0]));
-          })()
-        : undefined;
-      const effectiveScores =
-        input.scores === undefined
-          ? resolvedScores
-          : resolvedScores
-            ? {
-                ...resolvedScores,
-                ...input.scores,
-              }
-            : input.scores;
-      const effectiveInput = {
-        contextId: input.contextId,
-        parentCommitIds: input.parentCommitIds,
-        meta: input.meta,
-        egress: input.egress,
-        scores: effectiveScores,
-        summary: input.summary,
-        change: input.change ?? { type: "clean" },
-      } satisfies AttentionCommitToolInput;
-      return traceTool(
-        "attention_commit",
-        effectiveInput,
-        async () => {
-          const commit = await this.deps.attentionGateway.commit(effectiveInput);
-          hooks.onAttentionUpdate({
-            contextId: input.contextId,
-            commitId: commit.commitId,
-            text: commit.summary,
-            scores: commit.scores,
-            done: input.done ?? false,
-          });
-          return { ok: true, commitId: commit.commitId };
-        },
-        { invocationId: context?.toolCallId },
-      );
-    });
-
-    const tools: Tool[] = [attentionContextListTool, attentionQueryTool, attentionCommitTool, ...externalTools];
+    const tools: Tool[] = externalTools;
 
     this.deps.logger.log({
       channel: "agent",

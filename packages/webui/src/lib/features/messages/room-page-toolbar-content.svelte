@@ -24,6 +24,7 @@
     canSelectViewer,
     activeMode,
     canSearch = true,
+    actionsDisabled = false,
     onSelectViewer,
     onSelectMode,
     onSearchClick,
@@ -37,6 +38,7 @@
     canSelectViewer: boolean;
     activeMode: RoomBodyMode;
     canSearch?: boolean;
+    actionsDisabled?: boolean;
     onSelectViewer: (actorId: string) => void;
     onSelectMode: (mode: RoomBodyMode) => void;
     onSearchClick: () => void;
@@ -109,6 +111,7 @@
         class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
         aria-label="Add user"
         title="Add user"
+        disabled={actionsDisabled}
         onclick={onAddUserClick}
       >
         <UserPlusIcon class="size-4" />
@@ -118,6 +121,7 @@
         class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
         aria-label="Manage room"
         title="Manage room"
+        disabled={actionsDisabled}
         onclick={onManageClick}
       >
         <Settings2Icon class="size-4" />

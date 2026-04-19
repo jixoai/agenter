@@ -65,6 +65,7 @@ export interface MessageSystemSeatRevokeInput {
 
 export interface MessageSystemSurfaceProps {
   selectedRoom: GlobalRoomEntry | MessageChannelEntry | null;
+  authenticated: boolean;
   selectedRoomIconUrl?: string | null;
   resolveProfileIconUrl?: (reference: string) => string | null;
   resolveSessionIconUrl?: (sessionId: string) => string | null;

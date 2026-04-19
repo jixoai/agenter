@@ -18,7 +18,7 @@ const getMessageControlPlane = (harness: RealKernelHarness): MessageControlPlane
   Reflect.get(harness.kernel, "messageControlPlane") as MessageControlPlane;
 
 const toChatMessage = (harness: RealKernelHarness, message: MessageRecord): ChatMessage => ({
-  id: message.messageId,
+  id: String(message.messageId),
   chatId: message.chatId,
   role: message.from === harness.session.avatar ? "assistant" : "user",
   content: message.content,

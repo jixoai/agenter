@@ -21,7 +21,7 @@ export type ObservedMessageRevisionPattern =
 
 export interface RoomMessageEvidence {
   rowId: number;
-  messageId: string;
+  messageId: number;
   chatId: string;
   from: string;
   senderActorId?: string;
@@ -85,7 +85,7 @@ const compareRoomMessages = (left: RoomMessageEvidence, right: RoomMessageEviden
   if (left.rowId !== right.rowId) {
     return left.rowId - right.rowId;
   }
-  return left.messageId.localeCompare(right.messageId);
+  return left.messageId - right.messageId;
 };
 
 const listPrimaryRoomMessages = (

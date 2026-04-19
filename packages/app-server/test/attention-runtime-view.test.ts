@@ -86,7 +86,7 @@ describe("Feature: runtime attention preview projection", () => {
           id: "hook-1",
           cycleId: 7,
           hookId: "message.reply",
-          systemId: "message",
+          bridgeId: "message",
           contextId: "ctx-terminal-main",
           commitId: commits.at(-1)?.commitId ?? "commit-240",
           status: "delivered",

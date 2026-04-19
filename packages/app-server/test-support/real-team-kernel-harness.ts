@@ -3,9 +3,16 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
-import type { MessageActorId, MessageControlPlaneEntry, MessageRecord } from "@agenter/message-system";
+import type { MessageActorId, MessageControlPlaneEntry } from "@agenter/message-system";
 
-import { AppKernel, type AppKernelOptions, type RoomMediaAsset, type SessionMeta } from "../src";
+import {
+  AppKernel,
+  type AppKernelOptions,
+  type PublicRoomEntry,
+  type PublicRoomMessageRecord,
+  type RoomMediaAsset,
+  type SessionMeta,
+} from "../src";
 import {
   canProxyRealModelConfig,
   resolveRealModelConfig,
@@ -19,10 +26,10 @@ export type RealTeamParticipant = "backend" | "frontend";
 const FULL_WORKSPACE_GRANT = [{ pattern: "/", mode: "rw" }] as const;
 
 export interface RealTeamProjectRoom {
-  room: MessageControlPlaneEntry;
-  userProjection: MessageControlPlaneEntry;
-  backendProjection: MessageControlPlaneEntry;
-  frontendProjection: MessageControlPlaneEntry;
+  room: PublicRoomEntry;
+  userProjection: PublicRoomEntry;
+  backendProjection: PublicRoomEntry;
+  frontendProjection: PublicRoomEntry;
 }
 
 export interface RealTeamAttachmentBridgeResult {
@@ -65,7 +72,7 @@ export interface RealTeamKernelHarness {
   focusProjectRoom: (room: RealTeamProjectRoom, participants?: RealTeamParticipant[]) => Promise<void>;
   blurProjectRoom: (room: RealTeamProjectRoom, participants?: RealTeamParticipant[]) => Promise<void>;
   sendPrivatePrimer: (participant: RealTeamParticipant, text: string) => Promise<{ ok: boolean; reason?: string }>;
-  listProjectRoomMessages: (room: Pick<RealTeamProjectRoom, "room">, limit?: number) => MessageRecord[];
+  listProjectRoomMessages: (room: Pick<RealTeamProjectRoom, "room">, limit?: number) => PublicRoomMessageRecord[];
   listProjectRoomAssets: (room: Pick<RealTeamProjectRoom, "room">) => RoomMediaAsset[];
   bridgeWorkspaceFileToProjectRoomAttachment: (input: {
     room: Pick<RealTeamProjectRoom, "room">;
@@ -223,7 +230,7 @@ export const createRealTeamKernelHarness = async (
         });
       }
     };
-    const requireProjection = (chatId: string, actorId: MessageActorId): MessageControlPlaneEntry => {
+    const requireProjection = (chatId: string, actorId: MessageActorId): PublicRoomEntry => {
       const projection = kernel
         .listGlobalRooms({ actorId, includeArchived: true })
         .find((item) => item.chatId === chatId);

@@ -79,7 +79,7 @@ export interface AttentionHookRecord {
   id: string;
   cycleId: number | null;
   hookId: string;
-  systemId: string;
+  bridgeId: string;
   contextId: string;
   commitId: string;
   status: "delivered" | "failed" | "ignored";
@@ -91,7 +91,7 @@ export interface AttentionHookRecord {
 
 export interface AttentionCommitHookResult {
   hookId: string;
-  systemId: string;
+  bridgeId: string;
   status: "delivered" | "failed" | "ignored";
   target?: Record<string, unknown>;
   output?: Record<string, unknown>;

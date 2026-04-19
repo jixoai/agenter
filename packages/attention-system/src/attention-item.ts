@@ -6,9 +6,7 @@ export type AttentionIngressType = "commit" | "push";
 export interface AttentionCommitMeta {
   author: string;
   source: string;
-  systemId?: string;
-  subjectId?: string;
-  channelId?: string;
+  src?: string;
   tags?: string[];
   createdAt?: string;
 }
@@ -18,7 +16,6 @@ export interface AttentionMessageReplyEgress {
   chatId: string;
   rootId?: string;
   from?: string;
-  to?: string;
 }
 
 export type AttentionCommitEgress = AttentionMessageReplyEgress;

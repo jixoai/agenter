@@ -22,7 +22,8 @@
 		type ActorDirectoryEntry,
 	} from '$lib/features/collaboration/actor-directory';
 	import MessageSystemSurface from './message-system-surface.svelte';
-	import { resolveRoomViewerActorId } from './message-room-viewer';
+	import { resolveRoomViewerResolution } from './message-room-viewer';
+	import { MessageRoomViewerPreferenceSource } from './message-room-viewer-preference-source';
 	import {
 		maybeStartRoomReadAck,
 		resolveRoomReadAckKey,
@@ -54,6 +55,7 @@
 	} = $props();
 
 	const controller = getAppControllerContext();
+	const AUTH_REQUIRED_MESSAGE = 'auth token required';
 
 	const emptyRoomSnapshotState: CachedResourceState<GlobalRoomSnapshotOutput | null> = {
 		data: null,
@@ -94,7 +96,10 @@
 		grantId?: string;
 	};
 
+	const roomViewerPreferenceSource = new MessageRoomViewerPreferenceSource();
+
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
+	let viewerPreferenceHydrated = $state(false);
 	let latestMarkedReadBySeat = $state<Record<string, RoomReadAckState>>({});
 	let latestVisibleMessageByRoomId = $state<Record<string, WebChatVisibleMessageFact | null>>({});
 	let latestVisibleReplayKeyByRoomId = $state<Record<string, string>>({});
@@ -147,6 +152,9 @@
 		roomId ? (controller.runtimeState.globalRoomAssetsById[roomId] ?? emptyRoomAssetState) : emptyRoomAssetState,
 	);
 	const roomGrants = $derived(selectedRoomGrantsState.data);
+	const authReady = $derived(!controller.initializing);
+	const isAuthenticated = $derived(Boolean(controller.authSession));
+	const authRequired = $derived(authReady && !isAuthenticated);
 	const currentAuthActorId = $derived.by(() => {
 		const authId = controller.authSession?.claims.authId;
 		return authId ? (`auth:${authId}` as const) : null;
@@ -326,20 +334,28 @@
 		});
 	});
 
-	const selectedViewerActorId = $derived.by(() => {
+	const roomViewerResolution = $derived.by(() => {
 		const room = selectedRoomProjection;
 		if (!room) {
-			return null;
+			return {
+				actorId: null,
+				storedViewerState: 'none',
+			} as const;
 		}
-		return resolveRoomViewerActorId({
+		return resolveRoomViewerResolution({
 			storedViewerActorId: selectedViewerActorIdByRoomId[room.chatId] ?? null,
 			roomParticipantId: isUserFacingRoomActorId(room.participantId) ? room.participantId : null,
 			currentAuthActorId,
 			seatActorIds: roomSeatStates.map((state) => state.actorId),
+			seatTruthLoaded: selectedRoomGrantsState.loaded,
 		});
 	});
+	const selectedViewerActorId = $derived(roomViewerResolution.actorId);
 
 	const selectedCallerToken = $derived.by(() => {
+		if (!isAuthenticated) {
+			return null;
+		}
 		const room = selectedRoomProjection;
 		const viewerActorId = selectedViewerActorId;
 		if (!room || !viewerActorId) {
@@ -351,6 +367,9 @@
 		return sendAsOptions.find((option) => option.participantId === viewerActorId)?.accessToken ?? null;
 	});
 	const selectedViewerAccessToken = $derived.by(() => {
+		if (!isAuthenticated) {
+			return null;
+		}
 		const room = selectedRoomProjection;
 		const viewerActorId = selectedViewerActorId;
 		if (!room || !viewerActorId) {
@@ -401,6 +420,12 @@
 		if (routeNotice) {
 			return routeNotice;
 		}
+		if (authRequired) {
+			return {
+				tone: 'destructive',
+				message: AUTH_REQUIRED_MESSAGE,
+			} satisfies WebChatNotice;
+		}
 		const roomAccessError = routeSessionId
 			? (routeSessionRoomState?.error ?? null)
 			: controller.runtimeState.globalRooms.error;
@@ -413,6 +438,12 @@
 			message: error,
 		} satisfies WebChatNotice;
 	});
+
+	const ensureAuthenticated = (): void => {
+		if (!isAuthenticated) {
+			throw new Error(AUTH_REQUIRED_MESSAGE);
+		}
+	};
 
 	const navigateToRoom = async (href: string): Promise<void> => {
 		await goto(href, {
@@ -439,11 +470,15 @@
 		left: WebChatVisibleMessageFact | null | undefined,
 		right: WebChatVisibleMessageFact | null | undefined,
 	): boolean => {
-		return (left?.messageId ?? null) === (right?.messageId ?? null) && (left?.rowId ?? null) === (right?.rowId ?? null);
+		return (
+			(left?.viewKey ?? null) === (right?.viewKey ?? null) &&
+			(left?.messageId ?? null) === (right?.messageId ?? null) &&
+			(left?.rowId ?? null) === (right?.rowId ?? null)
+		);
 	};
 
 	const buildVisibleReplayKey = (viewerActorId: string, visibleMessage: WebChatVisibleMessageFact): string =>
-		`${viewerActorId}:${visibleMessage.messageId}:${visibleMessage.rowId}`;
+		`${viewerActorId}:${visibleMessage.viewKey}:${visibleMessage.rowId}`;
 
 	const resolveLatestReplayVisibleMessage = (
 		room: NonNullable<typeof selectedRoomProjection>,
@@ -458,6 +493,7 @@
 			return null;
 		}
 		return {
+			viewKey: String(messageId),
 			messageId,
 			rowId,
 		};
@@ -468,13 +504,30 @@
 		if (!room) {
 			return;
 		}
-		selectedViewerActorIdByRoomId = {
-			...selectedViewerActorIdByRoomId,
-			[room.chatId]: actorId,
-		};
+		if (!isAuthenticated) {
+			routeNotice = {
+				tone: 'destructive',
+				message: AUTH_REQUIRED_MESSAGE,
+			};
+			return;
+		}
+		void persistRoomViewerActorId(room.chatId, actorId).catch((error) => {
+			routeNotice = {
+				tone: 'destructive',
+				message: error instanceof Error ? error.message : String(error),
+			};
+		});
+	};
+
+	const persistRoomViewerActorId = async (chatId: string, actorId: string): Promise<void> => {
+		const persistPromise = roomViewerPreferenceSource.setRoomViewerActorId(controller.runtimeStore, chatId, actorId);
+		selectedViewerActorIdByRoomId = roomViewerPreferenceSource.snapshot.byRoomId;
+		const snapshot = await persistPromise;
+		selectedViewerActorIdByRoomId = snapshot.byRoomId;
 	};
 
 	const handleSaveRoomTitle = async (title: string): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		if (!room) {
 			return;
@@ -488,6 +541,7 @@
 	};
 
 	const handleArchiveRoom = async (): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		if (!room) {
 			return;
@@ -502,6 +556,7 @@
 	};
 
 	const handleDeleteRoom = async (): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		if (!room) {
 			return;
@@ -518,6 +573,7 @@
 		participantId: string;
 		role: MessageSystemGrantRole;
 	}): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		const participantId = asRoomActorId(input.participantId);
 		if (!room || !participantId) {
@@ -537,6 +593,7 @@
 		accessToken: string;
 		focused: boolean;
 	}): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		if (!room) {
 			return;
@@ -549,6 +606,7 @@
 	};
 
 	const handleRevokeSeat = async (input: { grantId: string }): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		if (!room) {
 			return;
@@ -579,7 +637,7 @@
 			? resolvedRoomSeatStates.find((state) => state.actorId === viewerActorId)
 			: null;
 		const accessToken = selectedViewerAccessToken;
-		if (!room || !accessToken || !viewerActorId) {
+		if (!isAuthenticated || !room || !accessToken || !viewerActorId) {
 			return;
 		}
 		if (!visibleMessage) {
@@ -589,6 +647,9 @@
 			return;
 		}
 		const { messageId, rowId: targetRowId } = visibleMessage;
+		if (!messageId || messageId <= 0) {
+			return;
+		}
 		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
 		const serverFloor = Math.max(
 			resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId),
@@ -638,6 +699,7 @@
 	};
 
 	const handleSendMessage = async (payload: { text: string; assets: File[] }): Promise<void> => {
+		ensureAuthenticated();
 		const room = selectedRoomProjection;
 		const accessToken = selectedCallerToken;
 		if (!room || !accessToken) {
@@ -675,27 +737,66 @@
 	});
 
 	$effect(() => {
+		const authId = controller.authSession?.claims.authId ?? null;
+		viewerPreferenceHydrated = false;
+		selectedViewerActorIdByRoomId = {};
+		if (!authId) {
+			return;
+		}
+		let disposed = false;
+		let unsubscribe = () => {};
+		void (async () => {
+			const snapshot = await roomViewerPreferenceSource.hydrate(controller.runtimeStore, authId);
+			if (disposed) {
+				return;
+			}
+			selectedViewerActorIdByRoomId = snapshot.byRoomId;
+			viewerPreferenceHydrated = true;
+			void roomViewerPreferenceSource.flushPending(controller.runtimeStore).then((nextSnapshot) => {
+				if (disposed) {
+					return;
+				}
+				selectedViewerActorIdByRoomId = nextSnapshot.byRoomId;
+			}).catch(() => undefined);
+			unsubscribe = roomViewerPreferenceSource.subscribe(controller.runtimeStore, (nextSnapshot) => {
+				selectedViewerActorIdByRoomId = nextSnapshot.byRoomId;
+			});
+		})();
+		return () => {
+			disposed = true;
+			viewerPreferenceHydrated = false;
+			unsubscribe();
+		};
+	});
+
+	$effect(() => {
 		const chatId = selectedRoomChatId;
 		const accessToken = selectedRoomAccessToken;
-		if (!chatId || !accessToken) {
+		if (!isAuthenticated || !chatId || !accessToken) {
 			return;
 		}
 		const releaseSnapshot = controller.runtimeStore.retainGlobalRoomSnapshot(chatId);
 		const releaseGrants = controller.runtimeStore.retainGlobalRoomGrants(chatId);
 		const releaseAssets = controller.runtimeStore.retainGlobalRoomAssets(chatId);
-		void controller.runtimeStore.hydrateGlobalRoomSnapshot({
-			chatId,
-			accessToken,
-			limit: 120,
-		});
-		void controller.runtimeStore.hydrateGlobalRoomGrants({
-			chatId,
-			accessToken,
-		});
-		void controller.runtimeStore.hydrateGlobalRoomAssets({
-			chatId,
-			accessToken,
-		});
+		void controller.runtimeStore
+			.hydrateGlobalRoomSnapshot({
+				chatId,
+				accessToken,
+				limit: 120,
+			})
+			.catch(() => undefined);
+		void controller.runtimeStore
+			.hydrateGlobalRoomGrants({
+				chatId,
+				accessToken,
+			})
+			.catch(() => undefined);
+		void controller.runtimeStore
+			.hydrateGlobalRoomAssets({
+				chatId,
+				accessToken,
+			})
+			.catch(() => undefined);
 		return () => {
 			releaseSnapshot();
 			releaseGrants();
@@ -705,17 +806,23 @@
 
 	$effect(() => {
 		const chatId = selectedRoomChatId;
-		const viewerActorId = selectedViewerActorId;
-		if (!chatId || !viewerActorId) {
+		const persistedViewerActorId = chatId ? (selectedViewerActorIdByRoomId[chatId] ?? null) : null;
+		if (
+			!viewerPreferenceHydrated ||
+			!chatId ||
+			!persistedViewerActorId ||
+			roomViewerResolution.storedViewerState !== 'invalid'
+		) {
 			return;
 		}
-		if (selectedViewerActorIdByRoomId[chatId] === viewerActorId) {
-			return;
-		}
-		selectedViewerActorIdByRoomId = {
-			...selectedViewerActorIdByRoomId,
-			[chatId]: viewerActorId,
-		};
+		void roomViewerPreferenceSource.setRoomViewerActorId(controller.runtimeStore, chatId, null).then((snapshot) => {
+			selectedViewerActorIdByRoomId = snapshot.byRoomId;
+		}).catch((error) => {
+			routeNotice = {
+				tone: 'destructive',
+				message: error instanceof Error ? error.message : String(error),
+			};
+		});
 	});
 
 	$effect(() => {
@@ -743,6 +850,7 @@
 
 <MessageSystemSurface
 	selectedRoom={selectedRoomProjection}
+	authenticated={isAuthenticated}
 	{selectedRoomIconUrl}
 	resolveProfileIconUrl={(reference) => controller.runtimeStore.profileIconUrl(reference)}
 	resolveSessionIconUrl={(sessionId) => controller.runtimeStore.sessionIconUrl(sessionId)}

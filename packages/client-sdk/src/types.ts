@@ -68,6 +68,8 @@ export type ChatCyclesOutput = RouterOutputs["chat"]["cycles"];
 export type ChatCycleItem = ChatCyclesOutput["items"][number];
 export type MessageChannelListOutput = RouterOutputs["message"]["listChannels"];
 export type MessageChannelEntry = MessageChannelListOutput["items"][number];
+export type MessageSendOutput = RouterOutputs["message"]["send"];
+export type MessageSendSuccessOutput = Extract<MessageSendOutput, { ok: true }>;
 export type MessageChannelGrantsOutput = RouterOutputs["message"]["listChannelGrants"];
 export type MessageChannelGrantEntry = MessageChannelGrantsOutput["items"][number];
 export type MessageChannelGrantIssueOutput = RouterOutputs["message"]["issueChannelGrant"];
@@ -224,6 +226,5 @@ export interface RuntimeClientState {
   apiCallRecordingBySession: Record<string, { enabled: boolean; refCount: number }>;
   notifications: SessionNotificationItem[];
   unreadBySession: Record<string, number>;
-  unreadByChat: Record<string, Record<string, number>>;
-  unreadByTerminal: Record<string, Record<string, number>>;
+  unreadByBucket: Record<string, Record<string, number>>;
 }

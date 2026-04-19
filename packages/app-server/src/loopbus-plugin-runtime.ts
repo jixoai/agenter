@@ -1,8 +1,12 @@
+import {
+  AttentionSourceRegistry,
+} from "@agenter/attention-system";
 import type {
   AttentionCommit,
   AttentionCommitEgress,
   AttentionCommitHookResult,
   AttentionCommitMeta,
+  AttentionSourceNamespaceRegistration,
   AttentionContextState,
 } from "@agenter/attention-system";
 
@@ -13,27 +17,27 @@ export type LoopBusHookOrder = "pre" | "default" | "post";
 export type LoopBusHookKind = "first" | "parallel" | "sequential" | "sequential-waterfall";
 
 export interface LoopSourceRef {
-  systemId: string;
-  subjectId: string;
+  src: string;
   reason: string;
   versionHint?: string | number;
 }
 
 export interface LoopMessageSourceRef extends LoopSourceRef {
-  systemId: "message";
-  channelId: string;
+  src: `msg:${string}/${number}`;
 }
 
 export interface LoopTerminalSourceRef extends LoopSourceRef {
-  systemId: "terminal";
+  src: `tty:${string}` | `tty:${string}/${number}`;
 }
 
 export interface LoopTaskSourceRef extends LoopSourceRef {
-  systemId: "task";
+  src: `task:${string}`;
 }
 
-export interface LoopSourceReadRequest {
+export interface LoopSourceReadRequest<TRef = unknown> {
   ref: LoopSourceRef;
+  src: string;
+  parsed: TRef;
   mode?: "auto" | "diff" | "snapshot";
 }
 
@@ -63,18 +67,15 @@ export interface AttentionDraft {
   versionHint?: string | null;
   egress?: AttentionCommitEgress;
   supersedeActive?: {
-    systemId: string;
-    subjectId: string;
+    src: string;
   };
 }
 
-export interface LoopSourceAdapter {
-  systemId: string;
-  match: (ref: LoopSourceRef) => boolean;
-  read: (request: LoopSourceReadRequest) => Promise<LoopSourceReadResult>;
+export interface LoopSourceAdapter<TRef = unknown> extends AttentionSourceNamespaceRegistration<TRef> {
+  read: (request: LoopSourceReadRequest<TRef>) => Promise<LoopSourceReadResult>;
   toAttentionDrafts?: (
     result: LoopSourceReadResult,
-    request: LoopSourceReadRequest,
+    request: LoopSourceReadRequest<TRef>,
   ) => Promise<AttentionDraft[]> | AttentionDraft[];
 }
 
@@ -87,8 +88,9 @@ export interface AttentionCommittedInput {
 export interface LoopBusPluginApi {
   expose: <T>(id: string, value: T) => void;
   useExposed: <T>(id: string) => T | undefined;
-  registerSource: (adapter: LoopSourceAdapter) => void;
+  registerSource: <TRef>(adapter: LoopSourceAdapter<TRef>) => void;
   invalidate: (ref: LoopSourceRef) => void;
+  sourceRegistry: AttentionSourceRegistry;
 }
 
 export interface LoopBusHookContext {
@@ -234,7 +236,8 @@ const orderHooks = <THandler>(hooks: RegisteredHook<THandler>[]): RegisteredHook
   [...hooks].sort((left, right) => HOOK_ORDER_WEIGHT[left.order] - HOOK_ORDER_WEIGHT[right.order]);
 
 export class LoopBusPluginRuntime {
-  private readonly sources: LoopSourceAdapter[] = [];
+  private readonly sources = new Map<string, LoopSourceAdapter<unknown>>();
+  private readonly sourceRegistry = new AttentionSourceRegistry();
   private readonly exposed = new Map<string, unknown>();
   private readonly invalidated = new Map<string, LoopSourceRef>();
   private readonly attentionWillLoadHooks: RegisteredHook<AttentionWillLoadHook>[] = [];
@@ -278,18 +281,19 @@ export class LoopBusPluginRuntime {
     const drafts: AttentionDraft[] = [];
 
     for (const ref of refs) {
-      const source = this.sources.find((candidate) => candidate.match(ref));
-      if (!source) {
+      const resolved = this.sourceRegistry.resolve(ref.src);
+      const source = resolved ? this.sources.get(resolved.namespace) : undefined;
+      if (!resolved || !source) {
         this.logger.log({
           channel: "agent",
           level: "warn",
           message: "loopbus.plugin.source_missing",
-          meta: { systemId: ref.systemId, subjectId: ref.subjectId, reason: ref.reason },
+          meta: { src: ref.src, reason: ref.reason },
         });
         continue;
       }
       const context: LoopBusHookContext = { ref };
-      let request: LoopSourceReadRequest = { ref, mode: "auto" };
+      let request: LoopSourceReadRequest = { ref, src: ref.src, parsed: resolved.ref, mode: "auto" };
       request = await this.runSequentialWaterfall(this.attentionWillLoadHooks, request, context);
       const loadDecision = await this.shouldLoadAttention(request, context);
       if (!loadDecision.allow) {
@@ -375,19 +379,18 @@ export class LoopBusPluginRuntime {
       },
       useExposed: (id) => this.exposed.get(id) as never,
       registerSource: (adapter) => {
-        this.sources.push(adapter);
+        this.sourceRegistry.register(adapter);
+        this.sources.set(adapter.namespace, adapter as LoopSourceAdapter<unknown>);
       },
       invalidate: (ref) => {
         this.invalidate(ref);
       },
+      sourceRegistry: this.sourceRegistry,
     };
   }
 
   private refKey(ref: LoopSourceRef): string {
-    if (ref.systemId === "message" && "channelId" in ref && typeof ref.channelId === "string") {
-      return `${ref.systemId}:${ref.channelId}:${ref.subjectId}`;
-    }
-    return `${ref.systemId}:${ref.subjectId}`;
+    return this.sourceRegistry.key(ref.src);
   }
 
   private shouldRun<THandler>(hook: RegisteredHook<THandler>, context: LoopBusHookContext): boolean {

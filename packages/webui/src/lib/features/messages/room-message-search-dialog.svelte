@@ -27,7 +27,7 @@
 </script>
 
 <Dialog.Root bind:open>
-  <Dialog.Content class="gap-4 sm:max-w-md" data-testid="room-search-dialog">
+  <Dialog.Content preventScroll={false} class="gap-4 sm:max-w-md" data-testid="room-search-dialog">
     <Dialog.Header>
       <Dialog.Title class="flex items-center gap-2 text-base">
         <SearchIcon class="size-4" />

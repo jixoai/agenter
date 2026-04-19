@@ -156,12 +156,22 @@
         },
       });
     }
+    if (typeof message.messageId === "number") {
+      actions.push({
+        id: "copy-message-id",
+        label: "Copy message id",
+        detail: "durable",
+        onSelect: async () => {
+          await writeClipboardText(String(message.messageId));
+        },
+      });
+    }
     actions.push({
-      id: "copy-id",
-      label: "Copy message id",
-      detail: "meta",
+      id: "copy-view-key",
+      label: "Copy view key",
+      detail: "ui",
       onSelect: async () => {
-        await writeClipboardText(message.messageId);
+        await writeClipboardText(message.viewKey);
       },
     });
     return actions;

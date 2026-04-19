@@ -1,5 +1,11 @@
 export { AttentionStore } from "./attention-store";
 export {
+  AttentionSourceRegistry,
+  parseAttentionSourceNamespace,
+  type AttentionSourceNamespaceRegistration,
+  type AttentionSourceResolution,
+} from "./attention-source-registry";
+export {
   AttentionContext,
   applyAttentionChange,
   buildAttentionContextStateFromCommits,

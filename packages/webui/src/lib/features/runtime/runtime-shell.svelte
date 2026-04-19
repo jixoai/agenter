@@ -326,7 +326,7 @@
 					sessionId: session.id,
 					chatId: input.chatId,
 					terminalId: input.terminalId,
-					upToMessageId: input.upToMessageId ?? null,
+					upToSrc: input.upToSrc ?? null,
 				});
 			}}
 			onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id)}

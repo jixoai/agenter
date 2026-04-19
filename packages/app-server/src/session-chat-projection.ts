@@ -13,13 +13,7 @@ const normalizeChatId = (value: string | null | undefined): string | null => {
 };
 
 const readCollectedInputChatId = (input: SessionCollectedInput): string | null => {
-  return normalizeChatId(
-    typeof input.meta?.chatId === "string"
-      ? input.meta.chatId
-      : typeof input.meta?.channelId === "string"
-        ? input.meta.channelId
-        : null,
-  );
+  return normalizeChatId(typeof input.meta?.chatId === "string" ? input.meta.chatId : null);
 };
 
 const readCollectedInputCreatedAt = (input: SessionCollectedInput): number => {

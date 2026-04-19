@@ -105,7 +105,7 @@ const toRoomDiagnosticMessage = (
   assistantNickname: string,
 ): {
   rowId: number;
-  messageId: string;
+  messageId: number;
   chatId: string;
   role: "assistant" | "user";
   from: string;
@@ -147,7 +147,7 @@ export interface RealKernelHarnessDiagnostics {
   };
   roomTruth: Array<{
     rowId: number;
-    messageId: string;
+    messageId: number;
     chatId: string;
     role: "assistant" | "user";
     from: string;

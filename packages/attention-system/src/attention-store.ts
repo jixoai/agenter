@@ -68,12 +68,18 @@ interface PersistedV6 {
   contexts: AttentionContextSnapshot[];
 }
 
+interface PersistedV7 {
+  version: 7;
+  contexts: AttentionContextSnapshot[];
+}
+
 type PersistedAny =
   | PersistedV2
   | PersistedV3
   | PersistedV4
   | PersistedV5
   | PersistedV6
+  | PersistedV7
   | LegacyAttentionSnapshot
   | Record<string, unknown>;
 
@@ -94,40 +100,13 @@ const asUnknownRecord = (value: unknown): Record<string, unknown> => (value ?? {
 const sanitizeCommitMeta = (meta: Record<string, unknown>): AttentionCommit["meta"] => ({
   author: typeof meta.author === "string" ? meta.author : "unknown",
   source: typeof meta.source === "string" ? meta.source : "unknown",
-  systemId: typeof meta.systemId === "string" ? meta.systemId : undefined,
-  subjectId: typeof meta.subjectId === "string" ? meta.subjectId : undefined,
-  channelId: typeof meta.channelId === "string" ? meta.channelId : undefined,
+  src: typeof meta.src === "string" ? meta.src : undefined,
   tags: Array.isArray(meta.tags) ? meta.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
   createdAt: typeof meta.createdAt === "string" ? meta.createdAt : undefined,
 });
 
 const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommitEgress | undefined =>
   egress ? { ...egress } : undefined;
-
-const readLegacyReplyTarget = (value: unknown): AttentionCommitEgress | undefined => {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const input = value as Record<string, unknown>;
-  const chatId =
-    typeof input.chatId === "string"
-      ? input.chatId
-      : typeof input.channelId === "string"
-        ? input.channelId
-        : typeof input.subjectId === "string"
-          ? input.subjectId
-          : undefined;
-  if (!chatId) {
-    return undefined;
-  }
-  return {
-    kind: "message_reply",
-    chatId,
-    rootId: typeof input.rootId === "string" ? input.rootId : undefined,
-    from: typeof input.from === "string" ? input.from : undefined,
-    to: typeof input.to === "string" ? input.to : undefined,
-  };
-};
 
 const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
@@ -140,7 +119,7 @@ const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapsh
         ingressType: commit.ingressType,
         parentCommitIds: [...commit.parentCommitIds],
         meta: sanitizeCommitMeta(metaRecord),
-        egress: cloneEgress(commit.egress ?? readLegacyReplyTarget(metaRecord.replyTarget)),
+        egress: cloneEgress(commit.egress),
         scores: { ...commit.scores },
         change: cloneChange(commit.change),
       };
@@ -195,9 +174,7 @@ const migrateV2ToV4 = (snapshot: PersistedV2): AttentionSystemSnapshot => ({
       meta: {
         author: item.meta.from,
         source: typeof item.meta.source === "string" ? item.meta.source : "legacy-v2",
-        systemId: typeof item.meta.systemId === "string" ? item.meta.systemId : undefined,
-        subjectId: typeof item.meta.subjectId === "string" ? item.meta.subjectId : undefined,
-        channelId: typeof item.meta.channelId === "string" ? item.meta.channelId : undefined,
+        src: sanitizeCommitMeta(item.meta).src,
         createdAt: normalizeTimestamp(item.createdAt),
       },
       scores: { ...item.scores },
@@ -221,12 +198,9 @@ const migrateV3ToV4 = (snapshot: PersistedV3): AttentionSystemSnapshot => ({
       meta: {
         author: typeof item.meta.author === "string" ? item.meta.author : "legacy-v3",
         source: typeof item.meta.source === "string" ? item.meta.source : "legacy-v3",
-        systemId: typeof item.meta.systemId === "string" ? item.meta.systemId : undefined,
-        subjectId: typeof item.meta.subjectId === "string" ? item.meta.subjectId : undefined,
-        channelId: typeof item.meta.channelId === "string" ? item.meta.channelId : undefined,
+        src: sanitizeCommitMeta(item.meta).src,
         createdAt: normalizeTimestamp(item.createdAt),
       },
-      egress: readLegacyReplyTarget(item.meta.replyTarget),
       scores: { ...item.scores },
       summary: item.title,
       change: item.detail
@@ -258,6 +232,9 @@ const isV5 = (parsed: PersistedAny): parsed is PersistedV5 =>
 const isV6 = (parsed: PersistedAny): parsed is PersistedV6 =>
   typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 6 && "contexts" in parsed;
 
+const isV7 = (parsed: PersistedAny): parsed is PersistedV7 =>
+  typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 7 && "contexts" in parsed;
+
 const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
     ...context,
@@ -268,10 +245,7 @@ const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
       ingressType: commit.ingressType ?? "commit",
       parentCommitIds: [...commit.parentCommitIds],
       meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
-      egress: cloneEgress(
-        commit.egress ??
-          readLegacyReplyTarget(asUnknownRecord(commit.meta).replyTarget),
-      ),
+      egress: cloneEgress(commit.egress),
       scores: { ...commit.scores },
       change: cloneChange(commit.change),
     })),
@@ -290,6 +264,9 @@ export class AttentionStore {
   async load(): Promise<AttentionSystemSnapshot> {
     try {
       const parsed = JSON.parse(await readFile(this.getStatePath(), "utf8")) as PersistedAny;
+      if (isV7(parsed)) {
+        return cloneSnapshot({ contexts: parsed.contexts });
+      }
       if (isV6(parsed)) {
         return cloneSnapshot({ contexts: parsed.contexts });
       }
@@ -315,7 +292,7 @@ export class AttentionStore {
   }
 
   async save(snapshot: AttentionSystemSnapshot): Promise<void> {
-    const payload = JSON.stringify({ version: 6, contexts: snapshot.contexts } satisfies PersistedV6, null, 2);
+    const payload = JSON.stringify({ version: 7, contexts: snapshot.contexts } satisfies PersistedV7, null, 2);
     this.writeQueue = this.writeQueue.then(async () => {
       await mkdir(this.rootDir, { recursive: true });
       const statePath = this.getStatePath();

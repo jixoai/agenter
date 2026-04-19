@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
 import { MessageDb } from "./message-db";
+import { resolveDefaultMessageControlDbPath } from "./message-paths";
 import type {
   CommitWaitHandle,
   MessageActorId,
@@ -243,7 +242,7 @@ export class MessageControlPlane {
       defaultOwner: options.initialConfig?.defaultOwner ?? "agenter",
       transport: cloneTransport(options.initialConfig?.transport),
     };
-    this.db = new MessageDb(options.dbPath ?? join(homedir(), ".agenter", ".message", "message.db"));
+    this.db = new MessageDb(options.dbPath ?? resolveDefaultMessageControlDbPath());
   }
 
   close(): void {
@@ -382,7 +381,7 @@ export class MessageControlPlane {
       : undefined;
   }
 
-  getMessage(chatId: string, messageId: string): MessageRecord | undefined {
+  getMessage(chatId: string, messageId: number): MessageRecord | undefined {
     return this.db.getMessage(chatId, messageId);
   }
 
@@ -637,11 +636,9 @@ export class MessageControlPlane {
     const visibleAt = input.visibleAt ?? createdAt;
     return this.send({
       chatId: input.chatId,
-      messageId: input.messageId,
       rootId: input.rootId,
       senderActorId: sender.senderActorId,
       from: sender.from,
-      to: input.to,
       kind: input.kind,
       content: input.content,
       createdAt,
@@ -698,11 +695,9 @@ export class MessageControlPlane {
     const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
-      messageId: input.messageId,
       rootId: input.rootId,
       senderActorId: sender.senderActorId,
       from: sender.from,
-      to: input.to,
       kind: "error",
       content: input.content,
       createdAt: input.createdAt,
@@ -730,11 +725,9 @@ export class MessageControlPlane {
     const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
-      messageId: input.messageId,
       rootId: input.rootId,
       senderActorId: sender.senderActorId,
       from: sender.from,
-      to: input.to,
       kind: "interactive",
       content: input.content,
       createdAt: input.createdAt,

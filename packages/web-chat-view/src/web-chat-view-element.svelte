@@ -24,7 +24,7 @@
     resolveMessageReadProgress,
     composerCapabilities,
     submitMessage,
-    latestVisibleAssistantMessageIdHandler,
+    latestVisibleAssistantViewKeyHandler,
     latestVisibleMessageIdHandler,
     socketFactory,
   }: WebChatRootProps = $props();
@@ -50,7 +50,7 @@
   {resolveMessageReadProgress}
   {composerCapabilities}
   {submitMessage}
-  {latestVisibleAssistantMessageIdHandler}
+  {latestVisibleAssistantViewKeyHandler}
   {latestVisibleMessageIdHandler}
   {socketFactory}
 />

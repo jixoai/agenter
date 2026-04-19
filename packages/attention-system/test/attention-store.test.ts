@@ -51,7 +51,7 @@ describe("Feature: attention store persistence", () => {
               {
                 id: "item-1",
                 contextId: "ctx-1",
-                meta: { from: "kzf", time: 1, source: "message", channelId: "chat-kzf" },
+                meta: { from: "kzf", time: 1, source: "message", src: "msg:chat-kzf/1" },
                 scores: { hash1: 80 },
                 title: "hello",
                 context: "legacy detail",

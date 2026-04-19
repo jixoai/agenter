@@ -187,7 +187,8 @@
 	});
 
 	$effect(() => {
-		if (!draftReady || draftMissing || draftVersion === null) {
+		const baseVersion = draftVersion;
+		if (!draftReady || draftMissing || baseVersion === null) {
 			return;
 		}
 		if (typeof window === 'undefined') {
@@ -207,7 +208,7 @@
 					const result = await saveAvatarCreateDraft(controller.runtimeStore, {
 						draftId,
 						state: nextState,
-						baseVersion: draftVersion,
+						baseVersion,
 					});
 					if (!result.ok) {
 						if (result.resource) {

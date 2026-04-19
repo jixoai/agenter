@@ -35,7 +35,7 @@
 
 	$effect(() => {
 		const release = controller.runtimeStore.retainGlobalTerminals();
-		void controller.runtimeStore.hydrateGlobalTerminals();
+		void controller.runtimeStore.hydrateGlobalTerminals().catch(() => undefined);
 		return () => {
 			release();
 		};

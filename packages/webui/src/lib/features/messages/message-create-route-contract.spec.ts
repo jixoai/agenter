@@ -18,4 +18,15 @@ describe('Feature: New room route navigation contract', () => {
 		expect(messageCreateRouteSource).toContain('Optional. Leave blank to use "Room".');
 		expect(messageCreateRouteSource).not.toContain('placeholder="Incident bridge"');
 	});
+
+	test('Scenario: Given the browser is not authenticated When reading the create route source Then room creation is disabled behind an explicit auth-required notice', () => {
+		expect(messageCreateRouteSource).toContain("const AUTH_REQUIRED_MESSAGE = 'auth token required';");
+		expect(messageCreateRouteSource).toContain('const authReady = $derived(!controller.initializing);');
+		expect(messageCreateRouteSource).toContain('const isAuthenticated = $derived(Boolean(controller.authSession));');
+		expect(messageCreateRouteSource).toContain('const showAuthNotice = $derived(authReady && !isAuthenticated);');
+		expect(messageCreateRouteSource).toContain('if (!authReady || !isAuthenticated) {');
+		expect(messageCreateRouteSource).toContain('errorMessage = AUTH_REQUIRED_MESSAGE;');
+		expect(messageCreateRouteSource).toContain('disabled={createBusy || !authReady || !isAuthenticated}');
+		expect(messageCreateRouteSource).toContain('<NoticeBanner tone="destructive" message={routeErrorMessage} />');
+	});
 });

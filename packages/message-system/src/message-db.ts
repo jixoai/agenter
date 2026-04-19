@@ -1,8 +1,13 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
 import { isPrincipalId } from "@agenter/principal-crypto";
+import {
+  pruneLegacyMessageControlDbFiles,
+  ROOM_MESSAGE_DB_DIRNAME,
+  ROOM_MESSAGE_DB_PREFIX,
+} from "./message-paths";
 
 import type {
   MessageAppendInput,
@@ -40,8 +45,10 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
-const MESSAGE_DB_BREAKING_RESET_VERSION = 4;
-const MESSAGE_DB_SCHEMA_VERSION = 5;
+const MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION = 6;
+const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 6;
+const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 1;
+const ROOM_MESSAGE_DB_SCHEMA_VERSION = 1;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
@@ -95,7 +102,48 @@ const buildNextCursor = <T extends { createdAt: number; rowId: number }>(
     : null;
 };
 
-const createId = (): string => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const ROOM_MESSAGE_SELECT_SQL = `
+  select
+    id,
+    ref_id,
+    sender_actor_id,
+    from_id,
+    kind,
+    content,
+    created_at,
+    updated_at,
+    visible_at,
+    recalled_at,
+    recalled_by_actor_id,
+    read_actor_ids_json,
+    unread_actor_ids_json,
+    metadata_json,
+    attachments_json,
+    payload_json
+  from chat_message
+`;
+
+type StoredRoomMessageRow = {
+  id: number;
+  ref_id: string | null;
+  sender_actor_id: string | null;
+  from_id: string;
+  kind: string | null;
+  content: string;
+  created_at: number;
+  updated_at: number;
+  visible_at: number | null;
+  recalled_at: number | null;
+  recalled_by_actor_id: string | null;
+  read_actor_ids_json: string | null;
+  unread_actor_ids_json: string | null;
+  metadata_json: string | null;
+  attachments_json: string | null;
+  payload_json: string | null;
+};
+
+const normalizeRoomMessageId = (value: number): number | null =>
+  Number.isSafeInteger(value) && value > 0 ? value : null;
 
 const mapChannel = (
   row: {
@@ -147,35 +195,14 @@ const mapGrant = (row: {
   revokedAt: row.revoked_at ?? undefined,
 });
 
-const mapMessage = (row: {
-  row_id: number;
-  message_id: string;
-  chat_id: string;
-  root_id: string | null;
-  sender_actor_id: string | null;
-  from_id: string;
-  to_id: string | null;
-  kind: string | null;
-  content: string;
-  created_at: number;
-  updated_at: number;
-  visible_at: number | null;
-  recalled_at: number | null;
-  recalled_by_actor_id: string | null;
-  read_actor_ids_json: string | null;
-  unread_actor_ids_json: string | null;
-  metadata_json: string | null;
-  attachments_json: string | null;
-  payload_json: string | null;
-}): MessageRecord => ({
+const mapMessage = (chatId: string, row: StoredRoomMessageRow): MessageRecord => ({
   kind: normalizeMessageKind(row.kind),
-  rowId: row.row_id,
-  messageId: row.message_id,
-  chatId: row.chat_id,
-  rootId: row.root_id ?? undefined,
+  rowId: row.id,
+  messageId: row.id,
+  chatId,
+  rootId: row.ref_id ?? undefined,
   senderActorId: (row.sender_actor_id ?? undefined) as MessageActorId | undefined,
   from: row.from_id,
-  to: row.to_id ?? undefined,
   content: row.content,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -227,16 +254,27 @@ const mapActorRoomState = (row: {
 
 export class MessageDb {
   private readonly db: Database;
+  private readonly roomDbRoot: string;
+  private readonly roomDbs = new Map<string, Database>();
 
   constructor(filePath: string) {
     const fullPath = resolve(filePath);
-    mkdirSync(dirname(fullPath), { recursive: true });
+    const messageRoot = dirname(fullPath);
+    mkdirSync(messageRoot, { recursive: true });
+    pruneLegacyMessageControlDbFiles(messageRoot, basename(fullPath));
     this.db = new Database(fullPath, { create: true, strict: true });
     this.db.exec(`pragma foreign_keys = on;`);
+    this.db.exec(`pragma journal_mode = WAL;`);
+    this.roomDbRoot = join(messageRoot, ROOM_MESSAGE_DB_DIRNAME);
+    mkdirSync(this.roomDbRoot, { recursive: true });
     this.migrate();
   }
 
   close(): void {
+    for (const roomDb of this.roomDbs.values()) {
+      roomDb.close();
+    }
+    this.roomDbs.clear();
     this.db.close();
   }
 
@@ -259,6 +297,13 @@ export class MessageDb {
         now,
         now,
       );
+    try {
+      this.getRoomDb(input.chatId, true);
+    } catch (error) {
+      this.db.query(`delete from chat_channel where chat_id = ?`).run(input.chatId);
+      this.deleteRoomDb(input.chatId);
+      throw error;
+    }
     return this.getChannel(input.chatId, focused)!;
   }
 
@@ -313,24 +358,21 @@ export class MessageDb {
     if (actorIdMap.size === 0) {
       return { changed: false };
     }
-    const rows = this.db
-      .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-         order by id asc`,
-      )
-      .all(chatId) as Array<Parameters<typeof mapMessage>[0]>;
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return { changed: false };
+    }
+    const rows = roomDb.query(`${ROOM_MESSAGE_SELECT_SQL} order by id asc`).all() as StoredRoomMessageRow[];
 
     let changed = false;
-    const updateMessageActors = this.db.query(
+    const updateMessageActors = roomDb.query(
       `update chat_message
        set sender_actor_id = ?, recalled_by_actor_id = ?, read_actor_ids_json = ?, unread_actor_ids_json = ?
        where id = ?`,
     );
 
     for (const row of rows) {
-      const message = mapMessage(row);
+      const message = mapMessage(chatId, row);
       const nextSenderActorId = remapActorId(message.senderActorId, actorIdMap);
       const nextRecalledByActorId = remapActorId(message.recalledByActorId, actorIdMap);
       const nextReadActorIds = remapActorIds(message.readActorIds, actorIdMap);
@@ -370,16 +412,7 @@ export class MessageDb {
     if (aliases.length === 0) {
       return { changed: false };
     }
-    const visibleMessages = this.db
-      .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-           and visible_at is not null
-         order by id asc`,
-      )
-      .all(chatId) as Array<Parameters<typeof mapMessage>[0]>;
-    const messages = visibleMessages.map(mapMessage);
+    const messages = this.listVisibleMessages(chatId);
 
     const repair = this.db.transaction(() => {
       let changed = false;
@@ -481,6 +514,7 @@ export class MessageDb {
       this.db.query(`delete from chat_channel where chat_id = ?`).run(chatId);
     });
     removeChannel();
+    this.deleteRoomDb(chatId);
     return current;
   }
 
@@ -789,6 +823,9 @@ export class MessageDb {
   }
 
   appendMessage(input: MessageAppendInput): MessageRecord {
+    if (!this.getChannel(input.chatId)) {
+      throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
     const createdAt = input.createdAt ?? Date.now();
     const updatedAt = input.updatedAt ?? createdAt;
     const kind = input.kind ?? "text";
@@ -796,20 +833,22 @@ export class MessageDb {
     const from = input.from ?? (input.senderActorId ? input.senderActorId.split(":").at(-1) ?? "User" : "User");
     const readActorIds = normalizeActorIds(input.readActorIds ?? []);
     const unreadActorIds = normalizeActorIds(input.unreadActorIds ?? []);
-    const insertMessage = this.db.transaction(() => {
-      const result = this.db
+    const roomDb = this.getRoomDb(input.chatId, true);
+    if (!roomDb) {
+      throw new Error(`failed to open room message database: ${input.chatId}`);
+    }
+    let rowId = 0;
+    try {
+      const result = roomDb
         .query(
           `insert into chat_message (
-            message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ref_id, sender_actor_id, from_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
-          input.messageId ?? createId(),
-          input.chatId,
           input.rootId ?? null,
           input.senderActorId ?? null,
           from,
-          input.to ?? null,
           kind,
           input.content,
           createdAt,
@@ -821,21 +860,26 @@ export class MessageDb {
           toJson(input.attachments ?? []),
           toJson(input.payload ?? {}),
         );
-      this.touchChannel(input.chatId, createdAt);
-      const rowId = Number(result.lastInsertRowid);
-      const visibleMessages = this.listVisibleMessages(input.chatId);
-      const trackedActorIds = normalizeActorIds([...readActorIds, ...unreadActorIds]);
-      for (const actorId of trackedActorIds) {
-        this.reconcileActorRoomStateFromMessages(input.chatId, actorId, visibleMessages);
+      rowId = Number(result.lastInsertRowid);
+      this.db.transaction(() => {
+        this.touchChannel(input.chatId, createdAt);
+        const visibleMessages = this.listVisibleMessages(input.chatId);
+        const trackedActorIds = normalizeActorIds([...readActorIds, ...unreadActorIds]);
+        for (const actorId of trackedActorIds) {
+          this.reconcileActorRoomStateFromMessages(input.chatId, actorId, visibleMessages);
+        }
+      })();
+    } catch (error) {
+      if (rowId > 0) {
+        this.deleteRoomMessageByRowId(input.chatId, rowId);
       }
-      return rowId;
-    });
-    const rowId = insertMessage();
-    const row = this.getMessageRowByDbId(rowId);
+      throw error;
+    }
+    const row = this.getMessageRowByDbId(input.chatId, rowId);
     if (!row) {
       throw new Error("failed to load inserted message");
     }
-    return mapMessage(row);
+    return mapMessage(input.chatId, row);
   }
 
   editMessage(input: MessageEditInput): MessageRecord {
@@ -847,17 +891,22 @@ export class MessageDb {
       throw new Error("cannot edit recalled message");
     }
     const updatedAt = input.updatedAt ?? Date.now();
-    const updateMessage = this.db.transaction(() => {
-      this.db
-        .query(
-          `update chat_message
-           set content = ?, updated_at = ?
-           where chat_id = ? and message_id = ?`,
-        )
-        .run(input.content, updatedAt, input.chatId, input.messageId);
-      this.touchChannel(input.chatId, updatedAt);
-    });
-    updateMessage();
+    const rowId = normalizeRoomMessageId(input.messageId);
+    if (rowId === null) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    const roomDb = this.getRoomDb(input.chatId, true);
+    if (!roomDb) {
+      throw new Error(`failed to open room message database: ${input.chatId}`);
+    }
+    roomDb
+      .query(
+        `update chat_message
+         set content = ?, updated_at = ?
+         where id = ?`,
+      )
+      .run(input.content, updatedAt, rowId);
+    this.touchChannel(input.chatId, updatedAt);
     const refreshed = this.getMessage(input.chatId, input.messageId);
     if (!refreshed) {
       throw new Error("failed to load updated message");
@@ -875,22 +924,27 @@ export class MessageDb {
     }
     const recalledAt = input.recalledAt ?? Date.now();
     const updatedAt = input.updatedAt ?? recalledAt;
-    const recallMessage = this.db.transaction(() => {
-      this.db
-        .query(
-          `update chat_message
-           set content = '',
-               updated_at = ?,
-               recalled_at = ?,
-               recalled_by_actor_id = ?,
-               attachments_json = '[]',
-               payload_json = null
-           where chat_id = ? and message_id = ?`,
-        )
-        .run(updatedAt, recalledAt, input.recalledByActorId ?? null, input.chatId, input.messageId);
-      this.touchChannel(input.chatId, updatedAt);
-    });
-    recallMessage();
+    const rowId = normalizeRoomMessageId(input.messageId);
+    if (rowId === null) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    const roomDb = this.getRoomDb(input.chatId, true);
+    if (!roomDb) {
+      throw new Error(`failed to open room message database: ${input.chatId}`);
+    }
+    roomDb
+      .query(
+        `update chat_message
+         set content = '',
+             updated_at = ?,
+             recalled_at = ?,
+             recalled_by_actor_id = ?,
+             attachments_json = '[]',
+             payload_json = null
+         where id = ?`,
+      )
+      .run(updatedAt, recalledAt, input.recalledByActorId ?? null, rowId);
+    this.touchChannel(input.chatId, updatedAt);
     const refreshed = this.getMessage(input.chatId, input.messageId);
     if (!refreshed) {
       throw new Error("failed to load recalled message");
@@ -898,26 +952,30 @@ export class MessageDb {
     return refreshed;
   }
 
-  getMessage(chatId: string, messageId: string): MessageRecord | undefined {
-    const row = this.db
-      .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ? and message_id = ?`,
-      )
-      .get(chatId, messageId) as Parameters<typeof mapMessage>[0] | null;
-    return row ? mapMessage(row) : undefined;
+  getMessage(chatId: string, messageId: number): MessageRecord | undefined {
+    const rowId = normalizeRoomMessageId(messageId);
+    if (rowId === null) {
+      return undefined;
+    }
+    const row = this.getMessageRowByDbId(chatId, rowId);
+    return row ? mapMessage(chatId, row) : undefined;
   }
 
   pageMessages(chatId: string, input: { before?: ReverseTimeCursor | null; limit?: number }): ReversePage<MessageRecord> {
     const safeLimit = resolvePageLimit(input.limit);
     const before = input.before ?? undefined;
-    const rows = this.db
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return {
+        items: [],
+        nextBefore: null,
+        hasMoreBefore: false,
+      };
+    }
+    const rows = roomDb
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-           and (
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where (
              ? is null
              or created_at < ?
              or (created_at = ? and id < ?)
@@ -926,16 +984,15 @@ export class MessageDb {
          limit ?`,
       )
       .all(
-        chatId,
         before?.beforeTimeMs ?? null,
         before?.beforeTimeMs ?? null,
         before?.beforeTimeMs ?? null,
         before?.beforeId ?? null,
         safeLimit + 1,
-      ) as Array<Parameters<typeof mapMessage>[0]>;
+      ) as StoredRoomMessageRow[];
 
     const hasMoreBefore = rows.length > safeLimit;
-    const itemsDescending = rows.slice(0, safeLimit).map(mapMessage);
+    const itemsDescending = rows.slice(0, safeLimit).map((row) => mapMessage(chatId, row));
     return {
       items: [...itemsDescending].reverse(),
       nextBefore: buildNextCursor(itemsDescending, hasMoreBefore),
@@ -953,17 +1010,19 @@ export class MessageDb {
   }
 
   resolveLatestVisibleMessage(chatId: string): MessageRecord | undefined {
-    const row = this.db
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return undefined;
+    }
+    const row = roomDb
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-           and visible_at is not null
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where visible_at is not null
          order by created_at desc, id desc
          limit 1`,
       )
-      .get(chatId) as Parameters<typeof mapMessage>[0] | null;
-    return row ? mapMessage(row) : undefined;
+      .get() as StoredRoomMessageRow | null;
+    return row ? mapMessage(chatId, row) : undefined;
   }
 
   markMessagesReadUpTo(input: {
@@ -971,31 +1030,33 @@ export class MessageDb {
     actorId: MessageActorId;
     targetRowId: number;
   }): { changed: boolean } {
-    const rows = this.db
+    const roomDb = this.getRoomDb(input.chatId, false);
+    if (!roomDb) {
+      return { changed: false };
+    }
+    const rows = roomDb
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-           and visible_at is not null
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where visible_at is not null
            and id <= ?
          order by id asc`,
       )
-      .all(input.chatId, input.targetRowId) as Array<Parameters<typeof mapMessage>[0]>;
+      .all(input.targetRowId) as StoredRoomMessageRow[];
     if (rows.length === 0) {
       return { changed: false };
     }
 
-    const markRead = this.db.transaction(() => {
+    const markRead = roomDb.transaction(() => {
       let changed = false;
       let removedUnreadCount = 0;
-      const updateReadState = this.db.query(
+      const updateReadState = roomDb.query(
         `update chat_message
          set read_actor_ids_json = ?, unread_actor_ids_json = ?
          where id = ?`,
       );
 
       for (const row of rows) {
-        const message = mapMessage(row);
+        const message = mapMessage(input.chatId, row);
         const hasReadActor = message.readActorIds.includes(input.actorId);
         const hasUnreadActor = message.unreadActorIds.includes(input.actorId);
         const nextReadActorIds = hasReadActor
@@ -1016,13 +1077,14 @@ export class MessageDb {
         }
         changed = true;
       }
-
-      const visibleMessages = this.listVisibleMessages(input.chatId);
-      this.reconcileActorRoomStateFromMessages(input.chatId, input.actorId, visibleMessages);
       return changed || removedUnreadCount > 0;
     });
-
-    return { changed: markRead() };
+    const changed = markRead();
+    if (changed) {
+      const visibleMessages = this.listVisibleMessages(input.chatId);
+      this.reconcileActorRoomStateFromMessages(input.chatId, input.actorId, visibleMessages);
+    }
+    return { changed };
   }
 
   private listActorRoomStatesByChat(chatId: string): MessageActorRoomStateRecord[] {
@@ -1136,16 +1198,18 @@ export class MessageDb {
   }
 
   private listVisibleMessages(chatId: string): MessageRecord[] {
-    const rows = this.db
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return [];
+    }
+    const rows = roomDb
       .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message
-         where chat_id = ?
-           and visible_at is not null
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where visible_at is not null
          order by id asc`,
       )
-      .all(chatId) as Array<Parameters<typeof mapMessage>[0]>;
-    return rows.map(mapMessage);
+      .all() as StoredRoomMessageRow[];
+    return rows.map((row) => mapMessage(chatId, row));
   }
 
   private hasSameActorRoomState(
@@ -1279,13 +1343,116 @@ export class MessageDb {
     this.db.query(`update chat_channel set updated_at = ? where chat_id = ?`).run(updatedAt, chatId);
   }
 
-  private getMessageRowByDbId(id: number): Parameters<typeof mapMessage>[0] | null {
-    return this.db
-      .query(
-        `select id as row_id, message_id, chat_id, root_id, sender_actor_id, from_id, to_id, kind, content, created_at, updated_at, visible_at, recalled_at, recalled_by_actor_id, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-         from chat_message where id = ?`,
-      )
-      .get(id) as Parameters<typeof mapMessage>[0] | null;
+  private getRoomDbPath(chatId: string): string {
+    return join(this.roomDbRoot, `${ROOM_MESSAGE_DB_PREFIX}${chatId}.db`);
+  }
+
+  private getRoomDb(chatId: string, createIfMissing: boolean): Database | null {
+    const existing = this.roomDbs.get(chatId);
+    if (existing) {
+      return existing;
+    }
+    const filePath = this.getRoomDbPath(chatId);
+    if (!createIfMissing && !existsSync(filePath)) {
+      return null;
+    }
+    mkdirSync(dirname(filePath), { recursive: true });
+    const roomDb = new Database(filePath, { create: true, strict: true });
+    roomDb.exec(`pragma foreign_keys = on;`);
+    roomDb.exec(`pragma journal_mode = WAL;`);
+    this.migrateRoomDb(roomDb);
+    this.roomDbs.set(chatId, roomDb);
+    return roomDb;
+  }
+
+  private closeRoomDb(chatId: string): void {
+    const roomDb = this.roomDbs.get(chatId);
+    if (!roomDb) {
+      return;
+    }
+    roomDb.close();
+    this.roomDbs.delete(chatId);
+  }
+
+  private deleteRoomDb(chatId: string): void {
+    const roomDbPath = this.getRoomDbPath(chatId);
+    this.closeRoomDb(chatId);
+    rmSync(roomDbPath, { force: true });
+    rmSync(`${roomDbPath}-wal`, { force: true });
+    rmSync(`${roomDbPath}-shm`, { force: true });
+  }
+
+  private deleteRoomMessageByRowId(chatId: string, rowId: number): void {
+    this.getRoomDb(chatId, false)?.query(`delete from chat_message where id = ?`).run(rowId);
+  }
+
+  private clearRoomDbRoot(): void {
+    for (const chatId of [...this.roomDbs.keys()]) {
+      this.closeRoomDb(chatId);
+    }
+    rmSync(this.roomDbRoot, { recursive: true, force: true });
+    mkdirSync(this.roomDbRoot, { recursive: true });
+  }
+
+  private pruneOrphanRoomDbFiles(): void {
+    const keepFiles = new Set(
+      (
+        this.db.query(`select chat_id from chat_channel order by chat_id asc`).all() as Array<{ chat_id: string }>
+      ).flatMap((row) => {
+        const roomDbPath = this.getRoomDbPath(row.chat_id);
+        return [basename(roomDbPath), basename(`${roomDbPath}-wal`), basename(`${roomDbPath}-shm`)];
+      }),
+    );
+    for (const entry of readdirSync(this.roomDbRoot)) {
+      if (!entry.startsWith(ROOM_MESSAGE_DB_PREFIX) || keepFiles.has(entry)) {
+        continue;
+      }
+      rmSync(join(this.roomDbRoot, entry), { force: true });
+    }
+  }
+
+  private getMessageRowByDbId(chatId: string, id: number): StoredRoomMessageRow | null {
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return null;
+    }
+    return roomDb.query(`${ROOM_MESSAGE_SELECT_SQL} where id = ?`).get(id) as StoredRoomMessageRow | null;
+  }
+
+  private migrateRoomDb(roomDb: Database): void {
+    const userVersionRow = roomDb.query(`pragma user_version`).get() as { user_version?: number } | null;
+    const currentSchemaVersion = userVersionRow?.user_version ?? 0;
+    const hasLegacyMessageTable = this.hasTableIn(roomDb, "chat_message");
+    if (currentSchemaVersion < ROOM_MESSAGE_DB_BREAKING_RESET_VERSION && hasLegacyMessageTable) {
+      roomDb.exec(`drop table if exists chat_message;`);
+    }
+    roomDb.exec(`
+      create table if not exists chat_message (
+        id integer primary key autoincrement,
+        ref_id text,
+        sender_actor_id text,
+        from_id text not null,
+        kind text not null default 'text',
+        content text not null,
+        created_at integer not null,
+        updated_at integer not null,
+        visible_at integer,
+        recalled_at integer,
+        recalled_by_actor_id text,
+        read_actor_ids_json text not null default '[]',
+        unread_actor_ids_json text not null default '[]',
+        metadata_json text,
+        attachments_json text,
+        payload_json text
+      );
+
+      create index if not exists idx_room_chat_message_created on chat_message(created_at desc, id desc);
+      create index if not exists idx_room_chat_message_visible on chat_message(visible_at, id asc);
+    `);
+    roomDb.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
+    roomDb.exec(`update chat_message set read_actor_ids_json = coalesce(read_actor_ids_json, '[]');`);
+    roomDb.exec(`update chat_message set unread_actor_ids_json = coalesce(unread_actor_ids_json, '[]');`);
+    roomDb.exec(`pragma user_version = ${ROOM_MESSAGE_DB_SCHEMA_VERSION};`);
   }
 
   private migrate(): void {
@@ -1299,11 +1466,10 @@ export class MessageDb {
       this.hasTable("actor_room_state");
     const hasLegacyReadStateTable = this.hasTable("chat_read_state");
     const needsBreakingReset =
-      currentSchemaVersion < MESSAGE_DB_BREAKING_RESET_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
+      currentSchemaVersion < MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
 
     if (needsBreakingReset) {
-      // The read model moved from mutable per-seat cursors to frozen per-message arrays.
-      // Old room durability cannot be upgraded losslessly, so reset message-system truth.
+      this.clearRoomDbRoot();
       this.db.exec(`
         drop table if exists chat_message;
         drop table if exists chat_channel_grant;
@@ -1342,29 +1508,6 @@ export class MessageDb {
         foreign key(chat_id) references chat_channel(chat_id) on delete cascade
       );
 
-      create table if not exists chat_message (
-        id integer primary key autoincrement,
-        message_id text not null unique,
-        chat_id text not null,
-        root_id text,
-        sender_actor_id text,
-        from_id text not null,
-        to_id text,
-        kind text not null default 'text',
-        content text not null,
-        created_at integer not null,
-        updated_at integer not null,
-        visible_at integer,
-        recalled_at integer,
-        recalled_by_actor_id text,
-        read_actor_ids_json text not null default '[]',
-        unread_actor_ids_json text not null default '[]',
-        metadata_json text,
-        attachments_json text,
-        payload_json text,
-        foreign key(chat_id) references chat_channel(chat_id) on delete cascade
-      );
-
       create table if not exists actor_state (
         actor_id text primary key,
         unread_total integer not null default 0,
@@ -1391,55 +1534,11 @@ export class MessageDb {
       create index if not exists idx_chat_channel_updated on chat_channel(updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_archived on chat_channel(archived_at, updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
-      create index if not exists idx_chat_message_chat_created on chat_message(chat_id, created_at desc, id desc);
       create index if not exists idx_actor_state_unread_total on actor_state(unread_total desc, actor_id asc);
       create index if not exists idx_actor_room_state_unread on actor_room_state(actor_id, unread_count desc, latest_unread_at desc, chat_id asc);
     `);
-
-    const messageColumns = this.db
-      .query(`pragma table_info(chat_message)`)
-      .all() as Array<{ name: string }>;
-    const hasKindColumn = messageColumns.some((column) => column.name === "kind");
-    if (!hasKindColumn) {
-      this.db.exec(`alter table chat_message add column kind text not null default 'text';`);
-    }
-    const hasPayloadColumn = messageColumns.some((column) => column.name === "payload_json");
-    if (!hasPayloadColumn) {
-      this.db.exec(`alter table chat_message add column payload_json text;`);
-    }
-    const hasUpdatedAtColumn = messageColumns.some((column) => column.name === "updated_at");
-    if (!hasUpdatedAtColumn) {
-      this.db.exec(`alter table chat_message add column updated_at integer;`);
-      this.db.exec(`update chat_message set updated_at = created_at where updated_at is null;`);
-    }
-    const hasVisibleAtColumn = messageColumns.some((column) => column.name === "visible_at");
-    if (!hasVisibleAtColumn) {
-      this.db.exec(`alter table chat_message add column visible_at integer;`);
-      this.db.exec(`update chat_message set visible_at = created_at where visible_at is null;`);
-    }
-    const hasSenderActorIdColumn = messageColumns.some((column) => column.name === "sender_actor_id");
-    if (!hasSenderActorIdColumn) {
-      this.db.exec(`alter table chat_message add column sender_actor_id text;`);
-    }
-    const hasReadActorIdsColumn = messageColumns.some((column) => column.name === "read_actor_ids_json");
-    if (!hasReadActorIdsColumn) {
-      this.db.exec(`alter table chat_message add column read_actor_ids_json text not null default '[]';`);
-    }
-    const hasUnreadActorIdsColumn = messageColumns.some((column) => column.name === "unread_actor_ids_json");
-    if (!hasUnreadActorIdsColumn) {
-      this.db.exec(`alter table chat_message add column unread_actor_ids_json text not null default '[]';`);
-    }
-    const hasRecalledAtColumn = messageColumns.some((column) => column.name === "recalled_at");
-    if (!hasRecalledAtColumn) {
-      this.db.exec(`alter table chat_message add column recalled_at integer;`);
-    }
-    const hasRecalledByActorIdColumn = messageColumns.some((column) => column.name === "recalled_by_actor_id");
-    if (!hasRecalledByActorIdColumn) {
-      this.db.exec(`alter table chat_message add column recalled_by_actor_id text;`);
-    }
-    this.db.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
-    this.db.exec(`update chat_message set read_actor_ids_json = coalesce(read_actor_ids_json, '[]');`);
-    this.db.exec(`update chat_message set unread_actor_ids_json = coalesce(unread_actor_ids_json, '[]');`);
+    this.db.exec(`drop table if exists chat_message;`);
+    this.db.exec(`drop index if exists idx_chat_message_chat_created;`);
 
     const channelColumns = this.db
       .query(`pragma table_info(chat_channel)`)
@@ -1463,13 +1562,18 @@ export class MessageDb {
 
     this.db.exec(`drop table if exists chat_read_state;`);
     this.repairMaterializedActorUnreadState();
-    this.db.exec(`pragma user_version = ${MESSAGE_DB_SCHEMA_VERSION};`);
+    this.pruneOrphanRoomDbFiles();
+    this.db.exec(`pragma user_version = ${MESSAGE_CONTROL_DB_SCHEMA_VERSION};`);
   }
 
-  private hasTable(name: string): boolean {
-    const row = this.db
+  private hasTableIn(database: Database, name: string): boolean {
+    const row = database
       .query(`select 1 from sqlite_master where type = 'table' and name = ? limit 1`)
       .get(name) as { 1?: number } | null;
     return row !== null;
+  }
+
+  private hasTable(name: string): boolean {
+    return this.hasTableIn(this.db, name);
   }
 }

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
+import { formatMessageAttentionSrc } from "../src/attention-src";
 import { AppKernel, appRouter, createTrpcContext, type AnyRuntimeEvent } from "../src";
 
 const sleep = async (ms: number): Promise<void> => {
@@ -139,9 +140,7 @@ const main = async (): Promise<void> => {
       meta: {
         author: "assistant",
         source: "message",
-        systemId: "message",
-        channelId: sessionMeta.primaryRoomId,
-        subjectId: "persisted-1",
+        src: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
       },
       scores: { persisted_ping: 100 },
       summary: "Persisted background ping",
@@ -157,13 +156,13 @@ const main = async (): Promise<void> => {
     const unreadBeforeConsume = unreadSnapshot.unreadBySession[first.session.id] ?? 0;
     assertCondition(unreadBeforeConsume > 0, "expected persisted background push to project unread notifications");
     assertCondition(
-      (unreadSnapshot.unreadByChat[first.session.id]?.[sessionMeta.primaryRoomId] ?? 0) > 0,
+      (unreadSnapshot.unreadByBucket[first.session.id]?.[`msg:${sessionMeta.primaryRoomId}`] ?? 0) > 0,
       "expected unread to stay scoped to the persisted chat context",
     );
 
     const consumedSnapshot = await caller.notification.consume({
       sessionId: first.session.id,
-      chatId: sessionMeta.primaryRoomId,
+      upToSrc: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
     });
     const unreadAfterConsume = consumedSnapshot.unreadBySession[first.session.id] ?? 0;
     assertCondition(unreadAfterConsume === 0, "expected consume to clear background push notifications");

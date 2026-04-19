@@ -27,13 +27,14 @@ const buildRoomMessage = (rowId: number): WebChatMessage => {
     createdAt: baseTime + rowId * 1_000,
     from: rowId % 2 === 0 ? "Bootstrap admin" : "Analyst",
     kind: "text",
-    messageId: `room-message-${rowId}`,
+    messageId: rowId,
     metadata: {},
     readActorIds: [],
     rowId,
     senderActorId: rowId % 2 === 0 ? "system:trusted-bootstrap" : "auth:analyst",
     unreadActorIds: [],
     updatedAt: baseTime + rowId * 1_000,
+    viewKey: String(rowId),
     visibleAt: baseTime + rowId * 1_000,
   };
 };

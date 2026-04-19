@@ -38,9 +38,7 @@ const dumpFailure = async (harness: NonNullable<Awaited<ReturnType<typeof create
       recentCommits: match.recentCommits.map((commit) => ({
         commitId: commit.commitId,
         summary: commit.summary,
-        systemId: commit.meta.systemId,
-        subjectId: commit.meta.subjectId,
-        channelId: commit.meta.channelId,
+        src: commit.meta.src,
         scores: commit.scores,
         egress: commit.egress,
         createdAt: commit.createdAt,
