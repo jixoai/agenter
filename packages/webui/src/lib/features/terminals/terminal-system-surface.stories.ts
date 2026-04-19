@@ -209,6 +209,12 @@ export const WindowChromeTogglesProjectionMode = {
       expect(
         terminalView?.shadowRoot?.querySelector('[data-terminal-view-root="true"]')?.getAttribute("data-viewport-mode"),
       ).toBe("cover");
+      expect(
+        terminalView?.shadowRoot?.querySelector('[data-terminal-stage]')?.getAttribute("style"),
+      ).toContain("align-items:flex-start");
+      expect(
+        terminalView?.shadowRoot?.querySelector('[data-terminal-stage]')?.getAttribute("style"),
+      ).toContain("justify-content:flex-start");
       expect(getComputedStyle(scrollViewport).overflowX).not.toBe("hidden");
       expect(scrollViewport.scrollWidth).toBeGreaterThan(scrollViewport.clientWidth);
     });

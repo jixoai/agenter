@@ -388,6 +388,8 @@ export class TerminalViewElement extends LitElement {
       screenHeight,
       mode: this.viewportMode,
     });
+    const stageStyle =
+      this.viewportMode === "cover" ? "align-items:flex-start;justify-content:flex-start;" : undefined;
 
     return html`
       <style>
@@ -399,6 +401,7 @@ export class TerminalViewElement extends LitElement {
         data-terminal-scroll-contract="terminal-stage"
         data-terminal-scroll-owner="terminal-stage"
         data-viewport-mode=${this.viewportMode}
+        style=${stageStyle ?? ""}
       >
         <div class="terminal-frame-shell" style=${`width:${metrics.scaledWidth}px;height:${metrics.scaledHeight}px;`}>
           <section

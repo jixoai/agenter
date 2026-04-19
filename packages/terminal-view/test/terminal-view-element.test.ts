@@ -348,6 +348,37 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(shadowRoot.querySelector('[data-terminal-stage]')?.hasAttribute("data-terminal-overflow")).toBe(false);
   });
 
+  test("Scenario: Given cover mode on a wide remote terminal When stage metrics settle Then the projection anchors to the terminal origin instead of center-cropping the middle of the screen", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "cover-origin-anchor";
+    element.viewportMode = "cover";
+    element.snapshot = {
+      seq: 10,
+      cols: 132,
+      rows: 40,
+      lines: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`),
+      cursor: { x: 0, y: 39 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const terminalStage = shadowRoot.querySelector<HTMLDivElement>("[data-terminal-stage]");
+    expect(terminalStage).not.toBeNull();
+    expect(terminalStage?.getAttribute("data-viewport-mode")).toBe("cover");
+    expect(terminalStage?.getAttribute("style")).toContain("align-items:flex-start");
+    expect(terminalStage?.getAttribute("style")).toContain("justify-content:flex-start");
+  });
+
   test("Scenario: Given fit mode on a small remote terminal When stage metrics settle Then the viewport can scale up the projection without mutating remote rows or cols", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
