@@ -64,3 +64,25 @@ The client runtime store SHALL derive `Welcome` room and terminal access state f
 - **WHEN** a previously stored room or terminal token fails validation during hydration
 - **THEN** the runtime store does not treat that room or terminal as joined
 - **THEN** the corresponding room or terminal remains visible with a `credential-invalid` state while the stale credential record is preserved until a fresh credential replaces it
+
+### Requirement: Client runtime store SHALL collapse unauthenticated global control-plane errors into explicit resource state
+When browser-facing global room or terminal hydration hits an authenticated control-plane boundary, the client runtime store SHALL settle those resources into explicit `auth token required` cached state instead of leaving routes to crash on unhandled promise rejection.
+
+#### Scenario: Unauthenticated global room hydration
+- **WHEN** global room catalog or room slices are hydrated without an authenticated browser session
+- **THEN** the corresponding cached resource resolves as loaded with empty/null data plus an `auth token required` error
+- **THEN** route code can render a stable notice without depending on rejected background promises
+
+#### Scenario: Unauthenticated global terminal hydration
+- **WHEN** global terminal catalog hydration runs without an authenticated browser session
+- **THEN** the cached terminal catalog resolves as loaded with an empty list plus an `auth token required` error
+- **THEN** terminal routes can redirect or disable actions without stale authenticated state leaking through
+
+### Requirement: Client runtime store SHALL keep notification projection protocol-native
+The client runtime store SHALL preserve shared notification projection as protocol-native `src` plus bucket-based unread aggregates. It SHALL NOT normalize the shared notification contract into kernel-owned `unreadByChat` or `unreadByTerminal` maps.
+
+#### Scenario: Store ingests mixed room and terminal notifications without shared source switches
+- **WHEN** the client receives a notification snapshot containing unread items from `msg:` and `tty:` namespaces
+- **THEN** it preserves each item's protocol-native `src` and bucket identity
+- **THEN** the shared store contract keeps unread aggregates in a source-agnostic shape
+- **THEN** feature selectors may derive room or terminal unread views without changing the shared store law

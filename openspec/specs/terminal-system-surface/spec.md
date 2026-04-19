@@ -37,6 +37,19 @@ Terminal read/write or other tool-call actions initiated from the UI SHALL let t
 - **WHEN** the chosen actor lacks valid terminal authority
 - **THEN** the UI surfaces the failure as a credential/access problem and does not silently fall back
 
+### Requirement: Browser-facing global terminal control SHALL require an authenticated operator
+The browser-side terminal-system workbench SHALL require an authenticated operator before it can create terminals, hydrate the global terminal catalog, or use terminal seat tokens for terminal read/write or administration. A terminal `accessToken` is a capability within the authenticated control plane, not an anonymous browser identity.
+
+#### Scenario: Unauthenticated browser cannot create terminals
+- **WHEN** the browser opens the `New terminal` route without an authenticated operator session
+- **THEN** the route shows an explicit `auth token required` notice
+- **THEN** the `Create terminal` action stays disabled instead of issuing anonymous terminal mutations
+
+#### Scenario: Terminal token alone does not authorize browser control
+- **WHEN** the browser is not authenticated but still holds a stale terminal id or terminal seat token
+- **THEN** terminal read/write or administration actions do not stay active from that stale token alone
+- **THEN** the route surfaces `auth token required` until the operator authenticates again
+
 ### Requirement: Terminal users SHALL own focus state per seat
 Terminal focus behavior in the UI SHALL be modeled per user seat rather than as one terminal-global toggle.
 

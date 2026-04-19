@@ -47,7 +47,7 @@
 - runtime Heartbeat inspection 固定读取一条 merged message-parts stream：`scope=heartbeat_part` 持久化 AI-visible request/response 与 compact boundary，`scope=request_aux` 持久化去重后的 `systemPrompt / tools / config`；app-server 必须通过统一 page API 与 realtime event 发布这条流，不能要求客户端再拼 chat / request-aux / model-call 三套时间线。
 - fresh session 的空 prompt window 也必须在 ledger 中拥有可解析的 durable fact；不能只在 `session_head.current_prompt_window_id` 中留下一个没有对应 `message_part` 实体的悬空 id。
 - LoopBus transport metadata 只允许表达调度、协议、refs、compact/wake/debug 之类 orchestration facts，不得成为 AI-visible payload 的隐藏通道。
-- built-in LoopBus source ref/read result contract 必须保持 typed：message 用 `channelId + messageId`，terminal/task 只保留最小寻址字段；不得重新引入 `LoopSourceRef.meta` 或 `LoopSourceReadResult.meta` 这类开放逃逸口。
+- built-in LoopBus source ref/read result contract 必须保持 protocol-native `src` typed：message namespace 同时支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中真正可读的 room message source ref 仍使用 row-scope；terminal 用 `tty:<terminalId>/<eventId?>`，task 用 `task:<subjectId>`；不得重新引入 `LoopSourceRef.meta` 或 `LoopSourceReadResult.meta` 这类开放逃逸口。
 - source adapter 如果需要给模型更多上下文，必须在 `AttentionDraft.presentation` 或最终 `summary + change` 中补足，而不是把信息塞进 source ref/read result metadata。
 - message attention body 必须直接携带 room social envelope、latest-message perspective、以及附件 facts；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
 - focused terminal source observations 默认只保留为 queryable attention history；只有显式 scored 的 terminal event（例如 background `terminal_idle_ready`）才继续形成 unresolved debt。
@@ -84,6 +84,7 @@
 - `drafts.delete({ draftId, baseVersion? })` 只删除 durable draft resource，不表达 device-local tab close；删除缺失 draft 必须幂等成功且不产生 event。
 - `drafts.events({ afterEventId?, kind?, draftIds? })` 是 actor-private draft replay/subscription 面；draft lifecycle 的 live sync 与 resume 一律通过该 plane，而不是通过 runtime snapshot。
 - authenticated websocket subscription 必须接受 bearer token 的两条等价入口：标准 `Authorization` header，或 websocket `connectionParams.authorization`。
+- 浏览器侧的 global message / terminal control plane 必须先通过 authenticated operator 边界，再进入 room/terminal capability 解析；`accessToken` 只表达 room/terminal seat capability，不能充当匿名浏览器身份。
 - `runtime.attention` 是运行态 attention 投影事件，不保证 stopped session 仍然持续发事件。
 - `notification.updated` 是 shell unread/projection 事件；它可以由 runtime attention 更新触发，也可以由 stopped-session persisted mutation 触发。
 - `session.updated` 进入 `stopped` 后，消费者必须接受：
