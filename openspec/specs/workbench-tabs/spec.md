@@ -79,7 +79,7 @@ The shared workbench chrome SHALL include a reusable toolbar companion that keep
 - **THEN** the page itself decides how to arrange its local toolbar content inside the fixed chrome slot
 
 ### Requirement: Workbench window SHALL expose explicit `tabs`, `page_toolbar`, and `page_content` bands
-The shared chrome window SHALL read as one application window with three explicit vertical bands: `tabs`, `page_toolbar`, and `page_content`. `page_toolbar` SHALL remain fixed-height chrome, while `page_content` SHALL be the adaptive content viewport that receives the page-owned layout.
+The shared chrome window SHALL read as one application window with three explicit vertical bands: `tabs`, `page_toolbar`, and `page_content`. `page_toolbar` SHALL remain fixed-height chrome, while `page_content` SHALL be the adaptive content viewport that receives the page-owned layout. The shared window body inside `page_content` SHALL own the page-level scroll viewport, and route-local root wrappers MAY stretch to fill that body but SHALL NOT replace it with fixed-height or raw-clipping shells.
 
 #### Scenario: Fixed chrome stays outside the adaptive content viewport
 - **WHEN** a workbench route renders scrollable or multi-pane content
@@ -96,6 +96,16 @@ The shared chrome window SHALL read as one application window with three explici
 - **THEN** `page_content` behaves like one independent embedded window body for that route
 - **THEN** the route avoids wrapping its entire body in another large rounded or bordered page card
 - **THEN** borders, padding, and separators are used only for route-local subregions that genuinely need them
+
+#### Scenario: Overflowing page content scrolls in the shared window body
+- **WHEN** a workbench route renders content taller than the available `page_content` height
+- **THEN** the shared window body owns the vertical page scroll viewport
+- **THEN** `tabs` and `page_toolbar` remain fixed outside that scroll region
+
+#### Scenario: Route-root wrappers stretch without freezing the shared body
+- **WHEN** a workbench route needs its root content to fill the window body before overflow occurs
+- **THEN** the route uses stretch semantics compatible with the shared body such as `min-h-full`
+- **THEN** it does not rely on `h-full`, raw `overflow-hidden`, or a second page-level scroll shell to make the route appear full-height
 
 ### Requirement: Workbench open-tab projections SHALL remain device-local even when resources are durable
 Workbench open-tab sets SHALL represent the current device's projection of what is open, not a globally unified tab strip. Durable resources such as chats, terminals, runtime sessions, or draft resources MAY sync independently, but each device SHALL choose its own open-tab projection.

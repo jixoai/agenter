@@ -2,7 +2,6 @@
 
 ## Purpose
 Define how app-server runtime publications expose attached global terminal state to clients without duplicating terminal-owned truth.
-
 ## Requirements
 ### Requirement: Runtime publications SHALL prefer focused terminal sets
 Runtime snapshots and realtime terminal events SHALL publish the focused set of globally attached terminals for the current session actor, with any single-focus field treated only as a derived compatibility projection.
@@ -23,17 +22,22 @@ Runtime snapshots and realtime terminal events SHALL publish the focused set of 
 - **THEN** it does not replace `focusedTerminalIds` as the primary contract
 
 ### Requirement: Runtime terminal reads SHALL carry explicit representation metadata
-Whenever runtime events or snapshots include terminal read results, the payload SHALL declare whether the representation is a diff or a snapshot and SHALL preserve the global terminal id, title, and status context needed by terminal-facing UI.
+Whenever runtime events or snapshots include terminal read results, the payload SHALL declare whether the representation is a diff or a snapshot, SHALL preserve the global terminal id, title, and status context needed by terminal-facing UI, and SHALL expose whether the read was recorded into durable activity history.
 
 #### Scenario: Runtime publishes a compact diff representation
 - **WHEN** the terminal read path chooses a diff as the compact representation
 - **THEN** the payload declares `representation = diff`
 - **THEN** client consumers can render or label that result without payload-shape inference
 
-#### Scenario: Runtime snapshot carries title and status context
-- **WHEN** a session publishes attached global terminal state
-- **THEN** the runtime payload includes the terminal's stable id plus its current title and status context
-- **THEN** terminal-facing UI does not need a second side channel to label the attached terminal
+#### Scenario: Runtime snapshot carries full terminal hydration data
+- **WHEN** a session publishes terminal snapshot truth for a terminal surface
+- **THEN** the runtime payload includes the full renderable snapshot needed for viewport hydration
+- **THEN** terminal-facing UI does not need a second side channel to restore the viewport
+
+#### Scenario: Runtime distinguishes pure reads from recorded observations
+- **WHEN** a terminal read is executed without activity recording
+- **THEN** the runtime payload identifies the representation without appending or implying a durable activity event
+- **THEN** client consumers can inspect terminal state without fabricating activity history
 
 ### Requirement: Runtime boot SHALL not auto-create default terminals
 Runtime boot SHALL attach terminals only through explicit durable terminal attachments or explicit runtime orchestration. It MUST NOT auto-create or auto-focus terminals solely because session config contains terminal presets.
@@ -60,3 +64,17 @@ When the AI uses runtime terminal tooling to create a terminal, the runtime SHAL
 - **WHEN** the AI creates a terminal without `cwd` and the runtime has zero or multiple eligible workspace roots
 - **THEN** the runtime rejects the request with a clear error explaining that explicit `cwd` or workspace mount context is required
 - **AND** it does not create a terminal in the user home directory
+
+### Requirement: Runtime terminal surface invalidation SHALL refresh one resource family at a time
+Runtime terminal realtime publications SHALL invalidate terminal surface resource families explicitly so client stores can refresh catalog, grants, approvals, and activity without rebuilding terminal truth in route-local code.
+
+#### Scenario: Terminal activity invalidates only activity consumers
+- **WHEN** terminal activity changes for one terminal
+- **THEN** runtime publications identify that terminal in the activity invalidation set
+- **THEN** client consumers can refresh terminal activity without recomputing unrelated surface resources
+
+#### Scenario: Grant change invalidates seat projection consumers
+- **WHEN** a terminal grant is issued or revoked
+- **THEN** runtime publications identify that terminal in the grant invalidation set
+- **THEN** client consumers can refresh call-as and seat projection data from one authoritative path
+

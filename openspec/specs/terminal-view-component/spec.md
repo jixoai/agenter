@@ -1,15 +1,13 @@
 ## Purpose
 
 Define the standalone terminal-view WebComponent contract and its shared controller semantics.
-
 ## Requirements
-
 ### Requirement: The system SHALL provide a standalone terminal-view WebComponent
-The system SHALL provide a standalone `terminal-view` WebComponent implemented with a shared terminal controller contract, and renderer hosts SHALL be able to embed it without depending on WebUI-local terminal internals.
+The system SHALL provide a standalone `terminal-view` WebComponent implemented with a shared terminal controller contract, and renderer hosts SHALL be able to embed it as a pure terminal viewport without depending on WebUI-local terminal internals.
 
 #### Scenario: Embed terminal-view in a host surface
 - **WHEN** a host page instantiates `terminal-view` with a valid terminal transport target
-- **THEN** the component renders the terminal surface and manages its own renderer lifecycle
+- **THEN** the component renders the terminal viewport and manages its own renderer lifecycle
 - **THEN** the host does not need direct access to WebUI-specific terminal internals
 
 ### Requirement: Terminal-view SHALL consume websocket PTY transport
@@ -33,23 +31,19 @@ The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driv
 - **THEN** the renderer does not reset backwards or visibly jitter
 - **THEN** fallback hydration only applies when live transport is unavailable or behind
 
-### Requirement: Terminal-view SHALL support renderer-engine selection and terminal titles
-The integrated terminal surface SHALL expose a formal renderer-engine choice and SHALL surface terminal title/status data through the same shared controller model instead of keeping those concerns as host-local ad hoc state.
-
-#### Scenario: Renderer engine changes without changing terminal identity
-- **WHEN** the host switches between supported renderer engines for the same terminal session
-- **THEN** the terminal view reuses the same terminal identity and controller state
-- **THEN** the renderer change does not fabricate a second terminal session
-
-#### Scenario: Shared controller publishes display title
-- **WHEN** the terminal title changes because the foreground process changes
-- **THEN** the terminal view reflects the updated display title from the shared controller state
-- **THEN** host surfaces can label tabs without inventing a second title source
-
 ### Requirement: Terminal-view SHALL support terminal-local presentation controls
-The integrated terminal surface SHALL expose terminal-local presentation controls including `fit` and `cover`.
+The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal product chrome to the host.
 
 #### Scenario: Switch between fit and cover modes
-- **WHEN** the user toggles between `fit` and `cover`
-- **THEN** the terminal surface updates its presentation mode
+- **WHEN** the host toggles between `fit` and `cover`
+- **THEN** the terminal viewport updates its presentation mode
 - **THEN** live transport remains connected and terminal content stays readable
+
+### Requirement: Terminal-view SHALL behave as a viewport primitive
+The standalone `terminal-view` component SHALL own terminal renderer lifecycle, snapshot hydration, live transport updates, and viewport sizing only. Product-level chrome such as titlebars, metadata footers, and decorative backgrounds MUST remain in the host surface.
+
+#### Scenario: Host owns product chrome
+- **WHEN** a host embeds `terminal-view`
+- **THEN** the component renders the terminal viewport without product-level title or footer chrome
+- **THEN** the host remains responsible for surrounding shell visuals and metadata placement
+

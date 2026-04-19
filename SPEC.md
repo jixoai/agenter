@@ -41,6 +41,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - WebUI actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
 - WebUI 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
+- 共享 workbench chrome 的 `page_content` body 必须是页面级唯一 scroll owner：`tabs` 与 `page_toolbar` 永远固定在外层 chrome，route-root wrapper 只能用 `min-h-full` 等 stretch 语义填满 body，不能再用 `h-full`、raw clipping 或隐式 overflow 把 shared window body 锁死成不可滚动。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
@@ -79,6 +80,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 一级导航固定为 `Avatars`、`Workspaces`、`Messages`、`Terminals`。
 - 三个一级 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
 - 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责 split-view 次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
+- 共享 workbench window body 负责页面级滚动；如果 route 内还需要独立 stage/pane 滚动，必须显式声明次级 `ScrollView`，而不是靠 route 根容器的固定高度或隐藏裁剪去“碰巧可用”。
 - 当 route 需要 `main + right detail` 关系时，必须复用共享 split-detail law：desktop 以 ratio-driven resize handle 持久化，compact 以 container-width collapse 进入 right-sheet；禁止再用 route-local `detailMode + matchMedia + fixed drawer width` 自行拼装。
 - compact right detail 打开时，`page-toolbar` 只允许接管为 close-only view affordance；detail-local 的 save / reload / apply / create 等功能动作继续留在 page content，通常留在 left-side `bottom-area`。
 - WebUI 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。

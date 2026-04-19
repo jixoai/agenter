@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the canonical control plane for global terminal lifecycle, focus, inspection, and operating-system execution guidance.
-
 ## Requirements
-
 ### Requirement: Terminal focus SHALL be managed as a declarative focus set
 The global terminal control plane SHALL manage focused terminals through a declarative `terminal_focus` operation that supports `add`, `remove`, `replace`, and `clear` semantics over globally durable terminal ids, and it SHALL preserve actor-scoped focus or presence state without requiring terminal ownership to match a single session runtime.
 
@@ -28,12 +26,27 @@ The global terminal control plane SHALL manage focused terminals through a decla
 - **AND** it does not automatically become unresolved debt unless the terminal event is explicitly modeled as actionable
 
 ### Requirement: Terminal inspection SHALL prefer read and snapshot primitives
-The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` as the primary inspection primitives, and `terminal_read` SHALL return the most compact available representation for the requested terminal state.
+The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` as the primary inspection primitives, and `terminal_read` SHALL return the most compact available representation for the requested terminal state without mutating grants or lifecycle state.
 
 #### Scenario: Read explicitly forces snapshot
 - **WHEN** a caller invokes `terminal_read` with `mode = snapshot`
 - **THEN** the runtime returns the same full representation contract as `terminal_snapshot`
 - **THEN** the payload still declares that the returned representation is a snapshot
+
+#### Scenario: Snapshot returns full renderable terminal state
+- **WHEN** a caller invokes `terminal_snapshot` for a running terminal with scrollback beyond the viewport
+- **THEN** the payload includes the full renderable snapshot contract needed to hydrate a terminal viewport
+- **THEN** the payload is not reduced to a tail-only excerpt
+
+#### Scenario: Inspection does not auto-start a stopped terminal
+- **WHEN** a caller invokes `terminal_read` or `terminal_snapshot` for a stopped terminal
+- **THEN** the control plane returns a terminal-not-running style failure
+- **THEN** the inspection path does not implicitly start the terminal process
+
+#### Scenario: Inspection does not create hidden bootstrap access
+- **WHEN** a caller performs a read-only inspection path
+- **THEN** the control plane does not create or refresh a trusted bootstrap grant as a side effect
+- **THEN** catalog access state changes only through explicit grant or lifecycle operations
 
 ### Requirement: Terminal control plane SHALL own terminal lifecycle operations
 The terminal control plane SHALL expose lifecycle operations for listing, creating, attaching, and killing globally durable terminal instances through one canonical API family independent of session startup order.
@@ -60,3 +73,30 @@ The terminal control plane SHALL express terminal-side obligations through durab
 - **WHEN** the available shell commands are insufficient for the task
 - **THEN** the terminal skill allows the assistant to combine commands or author temporary scripts through terminal tools
 - **AND** terminal failure can be escalated through other systems instead of fabricated answers
+
+### Requirement: Terminal approval history SHALL expose durable state transitions
+The terminal control plane SHALL retain approval requests across `pending`, `approved`, `denied`, and `expired` states, and approval queries MUST filter over durable approval history rather than a pending-only view.
+
+#### Scenario: Query approved requests
+- **WHEN** a pending approval request is approved for a terminal
+- **THEN** `listApprovalRequests(statuses=["approved"])` returns that request
+- **THEN** `listApprovalRequests(statuses=["pending"])` no longer returns it
+
+#### Scenario: Query denied requests
+- **WHEN** a pending approval request is denied for a terminal
+- **THEN** `listApprovalRequests(statuses=["denied"])` returns that request
+- **THEN** operators can inspect the historical denial without reconstructing it from leases or events
+
+### Requirement: Terminal observation activity SHALL be explicit
+Terminal inspection MUST NOT append activity history by default. Activity records for reads SHALL only be written when the caller explicitly opts into observation recording.
+
+#### Scenario: Pure inspection does not record activity
+- **WHEN** a caller reads a terminal snapshot without enabling activity recording
+- **THEN** no `terminal_read` activity event is appended
+- **THEN** the terminal's activity history remains unchanged
+
+#### Scenario: Explicit observation records activity
+- **WHEN** a caller reads a terminal with activity recording enabled
+- **THEN** a `terminal_read` activity event is appended
+- **THEN** the appended event preserves the chosen representation metadata
+

@@ -28,7 +28,7 @@ Terminal inspection MUST NOT append activity history by default. Activity record
 
 ## MODIFIED Requirements
 
-### Requirement: Terminal inspection SHALL prefer pure read and snapshot primitives
+### Requirement: Terminal inspection SHALL prefer read and snapshot primitives
 The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` as the primary inspection primitives, and `terminal_read` SHALL return the most compact available representation for the requested terminal state without mutating grants or lifecycle state.
 
 #### Scenario: Read explicitly forces snapshot

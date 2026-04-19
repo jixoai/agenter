@@ -276,6 +276,7 @@ git-log 约束：
 - `requester` 写入失败时必须创建 approval request，而不是直接透传到 PTY。
 - approval timeout 默认 `90s`，并且属于 terminal authority 的状态机，不属于 attention item。
 - attention 只允许投影 approval work，不能成为 approval durable owner。
+- approval history 必须保留 `pending | approved | denied | expired` 的 durable 状态转移；审批查询读取的是历史事实，而不是只看当前 pending 队列。
 - approved request 必须 mint timeboxed write lease。
 - lease 过期后，所有输入路径立即恢复拒绝。
 
@@ -283,6 +284,8 @@ git-log 约束：
 
 - session runtime 只允许保存 terminal refs、focus bindings、activity refs、approval subscription 等 projection facts。
 - session stop / delete 不得删除 global terminal truth、grant 或 activity history。
+- `terminal_read` / `terminal_snapshot` 默认是纯 inspection 原语：读取 terminal 状态不会自动追加 `terminal_read` activity，只有显式 observation recording 才允许把 read 落成 durable history。
+- actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
 - terminal listing / transport contract 必须显式携带：
   - global terminal id
   - title

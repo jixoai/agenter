@@ -41,6 +41,7 @@
 - `chrome-window` 是一个完整的应用窗口，而不是普通内容容器。
 - `page-toolbar` 固定高度，承担页面级身份、局部动作与响应式编排基础。
 - `page-content` 是真正的工作区，负责承载内容、滚动与细节面板。
+- `page-content` 的 page-level scroll owner 固定属于 shared window body；tabs 与 toolbar 永远在这个 scroll viewport 之外。
 
 ## 3) Left Sidebar 契约
 
@@ -91,6 +92,7 @@ Workspaces
 - `page-content` 应被当作一个嵌入在 chrome-window 里的独立窗口内容区来设计。
 - 可以假想这里嵌套了一个 iframe。
 - `page-content` 自身必须显式建模横向装配关系，而不是依赖隐式定位。
+- `page-content` 默认先拥有一个 shared body scroll viewport；route-local root 只负责内容装配与 stretch，不负责重新发明页面级滚动。
 
 因此：
 
@@ -102,10 +104,12 @@ Workspaces
 - **优先保留内容密度预算（density budget）**：route-local padding 只有在确实承担新的分组语义时才成立；如果只是把主体内容再向内缩一圈，应视为浪费垂直与水平预算。
 - **主 inspection surface 默认 edge-to-edge**：像 transcript、heartbeat、timeline、inspector 这类页面主表面，应尽量贴合共享内容区展开；除非需要表达新的层级，否则不要再人为制造“页面里的页面”。
 - 当存在 `main-area + bottom-area + right-drawer` 时，`page-content` 应显式拥有这一横向装配权。
+- route-local 根容器允许使用 `min-h-full` 等 stretch 语义让内容贴合 shared body，但不得用 `h-full`、隐藏裁剪或第二层整页 scroll 把外层 body 锁死。
 - `content-stack` 负责吃掉剩余宽度，`right-drawer` 和 `drawer-handle` 负责固定宽度。
 - 禁止用固定总宽度、隐式绝对定位或“刚好拼满”的方式把内容区撑出来；否则窗口一旦变化就会出现裁切。
 - 当 `right-drawer` 需要在 desktop 与 compact 间切换时，这个切换必须由共享 split-detail primitive 根据容器宽度推导，而不是由 page-local viewport breakpoint 猜测。
 - desktop split 的 resize state 必须以 ratio 持久化，而不是记像素宽度；这样窗口变化时 left/right intent 才能保持稳定。
+- 如果 route 内还需要第二个滚动区，例如 terminal stage、长列表 pane 或 detail inspection surface，必须显式声明那个次级 scroll owner；不要让 shared body scroll 和 route-local stage scroll 互相抢所有权。
 
 ## 6) 系统页装配法则
 
