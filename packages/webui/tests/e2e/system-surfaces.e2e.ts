@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 
 const terminalCwd = process.cwd();
+const AUTH_SESSION_STORAGE_KEY = "agenter:webui:auth-session";
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const principalRoomIdPattern = /^0x[0-9a-f]+$/i;
 
@@ -725,6 +726,22 @@ const closeDialogAndExpectInteractive = async (page: Page, dialog: Locator): Pro
   await expectBodyInteractive(page);
 };
 
+const expectLocatorMissingOrDisabled = async (locator: Locator): Promise<void> => {
+  await expect
+    .poll(async () => {
+      const count = await locator.count().catch(() => 0);
+      if (count === 0) {
+        return true;
+      }
+      const target = locator.first();
+      if (!(await target.isVisible().catch(() => false))) {
+        return true;
+      }
+      return await target.isDisabled().catch(() => false);
+    }, { timeout: 15_000 })
+    .toBeTruthy();
+};
+
 const openManageRoomAddUserDialog = async (page: Page): Promise<Locator> => {
   const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
   const roomToolbar = page.locator("[data-workbench-page-toolbar]");
@@ -771,7 +788,7 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   await expect(page).toHaveURL(/\/admin(?:$|\/.*|\?.*)/, { timeout: 15_000 });
   await expect(page.getByTestId("admin-route")).toBeVisible({ timeout: 60_000 });
 
-  const storedToken = await page.evaluate(() => window.localStorage.getItem("agenter:webui:auth-session"));
+  const storedToken = await page.evaluate((key) => window.localStorage.getItem(key), AUTH_SESSION_STORAGE_KEY);
   if (storedToken !== null) {
     return;
   }
@@ -789,11 +806,20 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   const signChallengeButton = page.getByRole("button", { name: "Sign challenge" });
   await expect(signChallengeButton).toBeEnabled({ timeout: 15_000 });
   await activateUntil(signChallengeButton, async () => {
-    return (await page.evaluate(() => window.localStorage.getItem("agenter:webui:auth-session"))) !== null;
+    return (await page.evaluate((key) => window.localStorage.getItem(key), AUTH_SESSION_STORAGE_KEY)) !== null;
   });
   await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem("agenter:webui:auth-session")), { timeout: 30_000 })
+    .poll(() => page.evaluate((key) => window.localStorage.getItem(key), AUTH_SESSION_STORAGE_KEY), { timeout: 30_000 })
     .not.toBeNull();
+};
+
+const clearBrowserAuthSession = async (page: Page): Promise<void> => {
+  await page.evaluate((key) => {
+    window.localStorage.removeItem(key);
+  }, AUTH_SESSION_STORAGE_KEY);
+  await expect
+    .poll(() => page.evaluate((key) => window.localStorage.getItem(key), AUTH_SESSION_STORAGE_KEY), { timeout: 15_000 })
+    .toBeNull();
 };
 
 test.describe("Feature: Unauthenticated system surfaces", () => {
@@ -860,6 +886,31 @@ test.describe("Feature: Svelte system surfaces", () => {
     expect(await readSelectedRoomChatId(page, roomTitle)).toBe(chatId);
     await expect(page).not.toHaveURL(/\/messages\/room\/room-/);
     await expect(page.locator('[href*="/messages/room/room-"]')).toHaveCount(0);
+  });
+
+  test("Scenario: Given an existing room route When browser auth is cleared and the route reloads Then stale room state cannot keep the transcript interactive", async ({
+    page,
+  }, testInfo) => {
+    const roomTitle = `Unauth room ${testInfo.project.name} ${Date.now()}`;
+
+    await navigateToSystem(page, "Messages");
+    const createRoomPage = await openCreateRoomPage(page);
+    await typeStable(createRoomPage.getByLabel("Room title"), roomTitle);
+    await activateUntil(createRoomPage.getByRole("button", { name: "Create room" }), async () => {
+      return /\/messages\/room\//.test(page.url());
+    });
+
+    await expectSelectedRoomTitle(page, roomTitle);
+    const chatId = await readSelectedRoomChatId(page, roomTitle);
+
+    await clearBrowserAuthSession(page);
+    await page.goto(`/messages/room/${encodeURIComponent(chatId)}`, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("auth token required", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("group", { name: "Message composer" })).toHaveCount(0);
+    await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Manage room", exact: true }));
+    await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Add user", exact: true }));
+    await expect(page.getByLabel("View room as user")).toHaveCount(0);
   });
 
   test("Scenario: Given New room selects one additional user When creation completes Then the route focuses the new room and room controls only include joined users", async ({
@@ -1095,6 +1146,26 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expectTerminalViewText(page, terminalWrite);
     await expectTerminalViewText(page, terminalCwd);
+  });
+
+  test("Scenario: Given an existing terminal route When browser auth is cleared and the route reloads Then stale terminal state cannot keep tool actions interactive", async ({
+    page,
+  }, testInfo) => {
+    const terminalId = `playwright-unauth-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+
+    await navigateToSystem(page, "Terminals");
+    await createTerminalAndOpenDetail(page, {
+      terminalId,
+      cwd: terminalCwd,
+    });
+
+    await clearBrowserAuthSession(page);
+    await page.goto(`/terminals/${encodeURIComponent(terminalId)}`, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("auth token required", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Call tool", exact: true }));
+    await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Call read", exact: true }));
+    await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Delete terminal", exact: true }));
   });
 
   test("Scenario: Given an authenticated superadmin When granting requester access and approving a pending terminal write Then the users rail and actions rail stay synchronized after refresh", async ({
