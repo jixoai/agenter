@@ -84,41 +84,51 @@ The system SHALL treat global avatar creation as AuthSystem-managed avatar princ
 - **THEN** the operation materializes workspace asset state only
 - **AND** it does not masquerade as creating a new global avatar identity
 
-### Requirement: Global avatar management SHALL keep one fixed catalog surface and addable draft flows
-The global `Avatars` destination SHALL keep one fixed `Catalog` surface for inspecting global avatar identities. Runtime sessions and creation flows SHALL open as addable tabs layered on top of that catalog rather than replacing it.
+### Requirement: Global avatar management SHALL keep one default operational surface while adding discover and source management
+The global `Avatars` destination SHALL evolve from a fixed local-only catalog into a unified avatar directory. `My Avatars` SHALL remain the default operational landing surface, while `Discover` and `Sources` SHALL exist as peer surfaces for acquisition and source management. Runtime sessions and creation flows SHALL continue to open as addable tabs layered on top of that directory rather than replacing it.
 
-#### Scenario: Catalog remains the stable Avatars landing surface
+#### Scenario: Avatars lands on My Avatars by default
 - **WHEN** the user opens the global `Avatars` destination
-- **THEN** the UI lands on the fixed `Catalog` surface
-- **AND** that catalog remains reachable while runtime or creation tabs are open
+- **THEN** the UI lands on `My Avatars` as the default operational surface
+- **AND** the user does not land on `Discover` or `Sources` first unless they explicitly navigate there
+
+#### Scenario: Discover and Sources remain reachable as peer surfaces
+- **WHEN** the user is working inside the `Avatars` destination
+- **THEN** the UI exposes `My Avatars`, `Discover`, and `Sources` as peer directory surfaces
+- **AND** navigating among them does not destroy the operator's understanding that `My Avatars` is the runtime-first operational home
+
+#### Scenario: Runtime and creation tabs do not replace the directory shell
+- **WHEN** the user opens an avatar runtime or starts a new-avatar creation flow
+- **THEN** the flow opens as its own addable tab layered on top of the `Avatars` directory
+- **AND** the directory surfaces remain reachable instead of being replaced by the runtime or draft flow
 
 #### Scenario: Multiple new-avatar drafts can coexist
 - **WHEN** the user starts more than one avatar creation flow
 - **THEN** each flow opens as its own closable draft tab
 - **AND** closing one draft does not delete or collapse the others
 
-#### Scenario: Compact avatar catalog keeps identity and runtime facts readable
-- **WHEN** the operator reads `Avatars / Catalog` on an iPhone 14-sized viewport
-- **THEN** the catalog keeps multiple avatar identities visible before secondary runtime details dominate the screen
+#### Scenario: Compact My Avatars surface keeps identity and runtime facts readable
+- **WHEN** the operator reads `Avatars / My Avatars` on an iPhone 14-sized viewport
+- **THEN** `My Avatars` keeps multiple avatar identities visible before secondary runtime details dominate the screen
 - **THEN** the selected-avatar runtime facts remain readable without expanding into a second oversized card surface
 
-#### Scenario: Desktop avatar catalog stays list-first while lens actions remain adjacent
-- **WHEN** the operator reads `Avatars / Catalog` on a desktop-sized viewport
-- **THEN** the left catalog remains a scan-first list surface
+#### Scenario: Desktop My Avatars stays list-first while lens actions remain adjacent
+- **WHEN** the operator reads `Avatars / My Avatars` on a desktop-sized viewport
+- **THEN** the left `My Avatars` list remains a scan-first list surface
 - **THEN** the selected-avatar runtime lens stays within a deliberate reading width instead of stretching across decorative empty space
 - **THEN** contextual actions such as runtime launch, draft creation, and workspace entry stay visually attached to the selected identity lane
 
-#### Scenario: Avatar catalog keeps the shared workbench language while tightening compact hierarchy
-- **WHEN** the avatar catalog renders inside the shared workbench shell
+#### Scenario: My Avatars keeps the shared workbench language while tightening compact hierarchy
+- **WHEN** the `My Avatars` surface renders inside the shared workbench shell
 - **THEN** it reuses the repository's existing toolbar, list, and content-language patterns instead of inventing a detached page-local design language
 - **THEN** compact runtime hierarchy still fits within that shared language without reintroducing redundant title bands or badge-heavy metadata chrome
 
-#### Scenario: Avatar catalog makes runtime launch the dominant story
-- **WHEN** the operator opens `Avatars / Catalog` to act on one selected identity
+#### Scenario: My Avatars makes runtime launch the dominant story
+- **WHEN** the operator opens `Avatars / My Avatars` to act on one selected identity
 - **THEN** the right lens makes runtime launch the primary next step
 - **THEN** provenance, branching, and cross-page actions remain reachable as secondary paths instead of competing as first-line peers
 
-#### Scenario: Avatar catalog uses aligned seams instead of generic border cuts
+#### Scenario: My Avatars uses aligned seams instead of generic border cuts
 - **WHEN** the route separates catalog rows, left/right regions, and runtime fact groups
 - **THEN** those separations follow distinct aligned seam roles
 - **THEN** the page no longer depends on one repeated raw `border-*` treatment to explain every structural relationship
@@ -138,11 +148,37 @@ The global `Avatars` destination SHALL keep one fixed `Catalog` surface for insp
 - **THEN** the first runtime fact sits with the selected identity lane instead of reading like the first row of the lower audit grid
 - **THEN** the `Runtime details` disclosure still owns the structured debug field grid underneath
 
+### Requirement: My Avatars SHALL project installed-avatar provenance as a secondary fact
+Installed avatars that originate from remote packages SHALL keep provenance visible inside `My Avatars`, but that provenance SHALL remain secondary to the runtime-first operational story.
+
+#### Scenario: Installed avatar shows source as a secondary fact
+- **WHEN** the operator inspects an installed avatar that originated from a subscribed source
+- **THEN** `My Avatars` shows the avatar name as the primary identity
+- **AND** it shows source provenance as a secondary fact rather than as a new dominant mode label
+
+#### Scenario: Pure-local avatars remain first-class peers
+- **WHEN** the operator scans `My Avatars` and some avatars were never installed from any remote source
+- **THEN** those pure-local avatars remain first-class entries in the same operational catalog
+- **AND** the workbench does not split the list into incompatible local-vs-remote runtime classes
+
+### Requirement: The current avatar page SHALL become directory-ready before remote surfaces land
+Before `Discover` and `Sources` are implemented, the current avatar page SHALL already use `My Avatars`-compatible structure and language. It SHALL avoid hard-coding a local-only catalog story that would require a conceptual rewrite later.
+
+#### Scenario: Current page stops over-committing to local-only catalog language
+- **WHEN** the operator opens the current avatar page before remote-source features are implemented
+- **THEN** the dominant page language can already evolve toward `My Avatars` or an equivalent installed-avatar operational framing
+- **AND** the page does not require a future rename from a strongly local-only concept just to make the directory IA coherent
+
+#### Scenario: Current page reserves a stable slot for provenance without inventing fake remote UI
+- **WHEN** the operator uses the current local-only avatar page
+- **THEN** the selected-avatar lens keeps a stable secondary place where source or origin provenance can later appear
+- **AND** the page does not introduce fake disabled `Discover` or `Sources` controls before those surfaces actually exist
+
 ### Requirement: Avatar creation SHALL use durable draft resources instead of browser-local scratch truth
 The global avatar creation flow SHALL treat the route draft id as a durable server-backed draft resource rather than as a browser-local scratch identifier. Draft form fields such as nickname and template source SHALL load from and save to that draft resource.
 
 #### Scenario: Starting avatar creation creates a durable draft resource
-- **WHEN** the operator starts a new avatar creation flow from the catalog
+- **WHEN** the operator starts a new avatar creation flow from `My Avatars`
 - **THEN** the backend creates an auth-scoped avatar-create draft resource and returns its draft id
 - **AND** the workbench navigates to the avatar-create route using that durable draft id
 
