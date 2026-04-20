@@ -5,6 +5,10 @@ import { resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar"
 import {
   loadSettings,
   type AiApiStandard,
+  resolveLoopCompactPolicy,
+  resolveLoopRetryPolicy,
+  type ResolvedLoopCompactPolicy,
+  type ResolvedLoopRetryPolicy,
   type TerminalBootEntry,
   type TerminalPresetSettings,
 } from "@agenter/settings";
@@ -50,14 +54,17 @@ export interface ResolvedSessionConfig {
     headers?: Record<string, string>;
     temperature: number;
     topK?: number;
-    maxRetries: number;
+    transportMaxRetries: number;
     maxToken?: number;
     maxContextTokens?: number;
-    compactThreshold?: number;
     thinking?: {
       enabled?: boolean;
       budgetTokens?: number;
     };
+  };
+  loop: {
+    retryPolicy: ResolvedLoopRetryPolicy;
+    compactPolicy: ResolvedLoopCompactPolicy;
   };
   terminals: Record<string, SessionTerminalConfig>;
   primaryTerminalId: string;
@@ -234,9 +241,12 @@ export const resolveSessionConfig = async (
     apiKeyEnv: "DEEPSEEK_API_KEY",
     baseUrl: "https://api.deepseek.com/v1",
     maxRetries: 2,
-    compactThreshold: 0.75,
   };
   const resolvedApiKey = provider.apiKey ?? (provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined);
+  const retryPolicy = resolveLoopRetryPolicy(settings.loop?.retryPolicy);
+  const compactPolicy = resolveLoopCompactPolicy(settings.loop?.compactPolicy, {
+    compactThreshold: provider.compactThreshold ?? null,
+  });
 
   return {
     avatar,
@@ -263,11 +273,14 @@ export const resolveSessionConfig = async (
       headers: provider.headers,
       temperature: ai.temperature ?? 0.2,
       topK: ai.topK,
-      maxRetries: provider.maxRetries ?? 2,
+      transportMaxRetries: provider.maxRetries ?? 2,
       maxToken: ai.maxToken,
       maxContextTokens: provider.maxContextTokens,
-      compactThreshold: provider.compactThreshold,
       thinking: ai.thinking,
+    },
+    loop: {
+      retryPolicy,
+      compactPolicy,
     },
     terminals,
     primaryTerminalId,

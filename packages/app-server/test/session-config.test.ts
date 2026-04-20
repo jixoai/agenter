@@ -130,9 +130,79 @@ describe("Feature: session config provider resolution", () => {
     expect(config.ai.temperature).toBe(0.6);
     expect(config.ai.topK).toBe(32);
     expect(config.ai.maxToken).toBe(16384);
+    expect(config.ai.transportMaxRetries).toBe(2);
     expect(config.ai.thinking).toEqual({
       enabled: true,
       budgetTokens: 2048,
+    });
+    expect(config.loop.retryPolicy).toMatchObject({
+      mode: "exponential",
+      maxAttempts: null,
+      initialBackoffMs: 600,
+      multiplier: 2,
+      maxBackoffMs: 5000,
+      resetOnExternalInput: true,
+      resetOnProgress: true,
+    });
+    expect(config.loop.compactPolicy).toMatchObject({
+      threshold: {
+        enabled: true,
+        promptFraction: 0.75,
+      },
+      recovery: {
+        attentionRetry: true,
+        contextOverflow: true,
+        externalContinuationLimit: true,
+        timeout: false,
+      },
+    });
+  });
+
+  test("Scenario: Given provider transport retries and legacy compact threshold When resolving session config Then transport and runtime compact policy become separate contracts", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter-session-config-"));
+    const homeDir = join(baseDir, "home");
+    const projectRoot = join(baseDir, "project");
+
+    await writeJson(join(projectRoot, ".agenter", "settings.json"), {
+      ai: {
+        activeProvider: "default",
+        providers: {
+          default: {
+            kind: "deepseek",
+            apiKeyEnv: "DEEPSEEK_API_KEY",
+            model: "deepseek-chat",
+            baseUrl: "https://api.deepseek.com/v1",
+            maxRetries: 4,
+            compactThreshold: 0.9,
+          },
+        },
+      },
+      loop: {
+        retryPolicy: {
+          maxAttempts: 3,
+          initialBackoffMs: 900,
+          multiplier: 1.5,
+          maxBackoffMs: 7000,
+          resetOnExternalInput: false,
+          resetOnProgress: true,
+        },
+      },
+    });
+
+    const config = await resolveSessionConfig(projectRoot, { homeDir });
+
+    expect(config.ai.transportMaxRetries).toBe(4);
+    expect(config.loop.retryPolicy).toMatchObject({
+      maxAttempts: 3,
+      initialBackoffMs: 900,
+      multiplier: 1.5,
+      maxBackoffMs: 7000,
+      resetOnExternalInput: false,
+      resetOnProgress: true,
+    });
+    expect(config.loop.compactPolicy.threshold).toEqual({
+      enabled: true,
+      promptFraction: 0.9,
     });
   });
 });

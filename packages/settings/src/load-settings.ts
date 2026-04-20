@@ -13,6 +13,7 @@ import {
 } from "./cascade-graph";
 import { deepMerge } from "./merge";
 import { ResourceLoader } from "./resource-loader";
+import { DEFAULT_LOOP_RETRY_POLICY } from "./runtime-policy";
 import { settingsSchema } from "./schema";
 import { settingsSource } from "./source";
 import type {
@@ -36,6 +37,7 @@ const defaultSettings = (): AgenterSettings => ({
       timeoutMs: 30_000,
       pollMs: 250,
     },
+    retryPolicy: { ...DEFAULT_LOOP_RETRY_POLICY },
   },
   ai: {
     activeProvider: "default",
@@ -49,7 +51,6 @@ const defaultSettings = (): AgenterSettings => ({
         apiKeyEnv: "DEEPSEEK_API_KEY",
         baseUrl: "https://api.deepseek.com/v1",
         maxRetries: 2,
-        compactThreshold: 0.75,
       },
     },
   },

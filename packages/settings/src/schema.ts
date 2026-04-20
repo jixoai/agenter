@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { aiProviderSchema } from "./provider";
+import { loopCompactPolicySchema, loopRetryPolicySchema } from "./runtime-policy";
 
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const aiThinkingSchema = z
@@ -148,6 +149,8 @@ export const settingsSchema = z.object({
         })
         .describe("Loop dirty-slice wait policy.")
         .optional(),
+      retryPolicy: loopRetryPolicySchema.optional(),
+      compactPolicy: loopCompactPolicySchema.optional(),
     })
     .describe("Loop scheduling policies.")
     .optional(),

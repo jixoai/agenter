@@ -18,7 +18,7 @@ export interface ModelProviderConfig {
   topK?: number;
   maxRetries: number;
   maxToken?: number;
-  compactThreshold?: number;
+  maxContextTokens?: number;
   thinking?: {
     enabled?: boolean;
     budgetTokens?: number;

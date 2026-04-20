@@ -296,4 +296,33 @@ describe("Feature: Runtime attention helper contract", () => {
       }).map((signal) => signal.id),
     ).toEqual(["phase", "waiting", "unresolved", "retries", "backoff"]);
   });
+
+  test("Scenario: Given scheduler containment is blocked When building compact chips Then the blocked reason is surfaced as an explicit destructive signal", () => {
+    expect(
+      buildRuntimeSchedulerSignals({
+        schedulerPhase: "waiting_commits",
+        schedulerState: createSchedulerState({
+          runtimeStatus: "blocked",
+          waitingReason: "attention_blocked",
+          blockedReason: "retry policy max attempts reached (2/2)",
+        }),
+      }),
+    ).toEqual([
+      {
+        id: "phase",
+        label: "Phase: waiting_commits",
+        variant: "destructive",
+      },
+      {
+        id: "waiting",
+        label: "Waiting: attention_blocked",
+        variant: "outline",
+      },
+      {
+        id: "blocked",
+        label: "Blocked: retry policy max attempts reached (2/2)",
+        variant: "destructive",
+      },
+    ]);
+  });
 });

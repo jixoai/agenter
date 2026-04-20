@@ -4,7 +4,14 @@ import type { ChatMessage } from "./types";
 
 export type ChatCycleKind = "model" | "compact";
 export type ChatCycleStatus = "pending" | "collecting" | "streaming" | "applying" | "done" | "error";
-export type ChatCycleCompactTrigger = "manual" | "threshold" | "error" | "attention_retry";
+export type ChatCycleCompactTrigger =
+  | "manual"
+  | "threshold"
+  | "attention_retry"
+  | "context_overflow"
+  | "external_continuation_limit"
+  | "timeout"
+  | "error";
 
 export interface ChatCycle {
   id: string;

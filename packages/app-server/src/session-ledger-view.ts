@@ -55,7 +55,15 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
 };
 
 const normalizeCompactTrigger = (value: unknown): ChatCycleCompactTrigger | null => {
-  return value === "manual" || value === "threshold" || value === "error" || value === "attention_retry" ? value : null;
+  return value === "manual" ||
+    value === "threshold" ||
+    value === "attention_retry" ||
+    value === "context_overflow" ||
+    value === "external_continuation_limit" ||
+    value === "timeout" ||
+    value === "error"
+    ? value
+    : null;
 };
 
 const readPayloadText = (payload: unknown): string | null => {
@@ -218,7 +226,15 @@ const readCompactTrigger = (call: SessionAiCallRecord): ChatCycleCompactTrigger 
   const responseRecord = asRecord(response);
   const decision = asRecord(responseRecord?.decision);
   const trigger = decision?.trigger;
-  if (trigger === "manual" || trigger === "threshold" || trigger === "error" || trigger === "attention_retry") {
+  if (
+    trigger === "manual" ||
+    trigger === "threshold" ||
+    trigger === "attention_retry" ||
+    trigger === "context_overflow" ||
+    trigger === "external_continuation_limit" ||
+    trigger === "timeout" ||
+    trigger === "error"
+  ) {
     return trigger;
   }
   const request = asRecord(call.requestBody);

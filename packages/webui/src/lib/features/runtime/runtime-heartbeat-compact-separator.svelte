@@ -17,8 +17,14 @@
 				return 'Manual';
 			case 'threshold':
 				return 'Threshold';
+			case 'context_overflow':
+				return 'Context overflow';
+			case 'external_continuation_limit':
+				return 'Continuation limit';
+			case 'timeout':
+				return 'Timeout';
 			case 'error':
-				return 'Recovery';
+				return 'Legacy error';
 			case 'attention_retry':
 				return 'Attention retry';
 			default:

@@ -13,6 +13,16 @@ export {
   type LegacyAiProviderKind,
 } from "./provider";
 export {
+  DEFAULT_LOOP_COMPACT_POLICY,
+  DEFAULT_LOOP_RETRY_POLICY,
+  loopCompactPolicySchema,
+  loopRetryPolicySchema,
+  resolveLoopCompactPolicy,
+  resolveLoopRetryPolicy,
+  type ResolvedLoopCompactPolicy,
+  type ResolvedLoopRetryPolicy,
+} from "./runtime-policy";
+export {
   ResourceLoader,
   type ResolvedResource,
   type ResourceAliasResolver,
@@ -31,7 +41,11 @@ export type {
   FeatureSettings,
   LoadSettingsOptions,
   LoadedSettings,
+  LoopCompactPolicySettings,
+  LoopCompactRecoverySettings,
+  LoopCompactThresholdSettings,
   LoopSettings,
+  LoopRetryPolicySettings,
   MessageChannelParticipantSettings,
   MessageChatMainDefaultsSettings,
   MessageFeatureSettings,

@@ -1943,6 +1943,136 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.waitForAnyInput();
   });
 
+  test("Scenario: Given retry policy caps equivalent failures When the cap is reached Then the runtime publishes blocked recovery instead of rearming backoff", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-policy-"));
+    await mkdir(join(root, ".agenter"), { recursive: true });
+    await writeFile(
+      join(root, ".agenter", "settings.json"),
+      `${JSON.stringify(
+        {
+          ai: {
+            activeProvider: "default",
+            providers: {
+              default: {
+                kind: "deepseek",
+                apiKeyEnv: "DEEPSEEK_API_KEY",
+                model: "deepseek-chat",
+                baseUrl: "https://api.deepseek.com/v1",
+                maxRetries: 2,
+              },
+            },
+          },
+          loop: {
+            retryPolicy: {
+              maxAttempts: 2,
+              initialBackoffMs: 900,
+              multiplier: 3,
+              maxBackoffMs: 4000,
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const runtime = new SessionRuntime({
+      sessionId: `s-policy-${Date.now()}`,
+      cwd: root,
+      sessionRoot: join(root, "session"),
+      sessionName: "policy-test",
+      storeTarget: "workspace",
+      primaryRoomId: PRIMARY_ROOM_ID,
+      allocateRoomId: createRuntimeRoomAllocator(),
+      terminalSystem: createTerminalSystem(root),
+      avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
+      avatarPrivateKey: TEST_AVATAR_PRIVATE_KEY,
+      homeDir: root,
+      rootWorkspacePath: root,
+      resolveRuntimeTerminalCwd: async (input) => ({
+        ok: true,
+        cwd: input.cwd ?? root,
+      }),
+    });
+    attachPrimaryRoom(runtime);
+
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    runtime.pushUserChat("keep retrying");
+    const firstBatch = await internal.collectLoopInputs();
+    const attentionInput = getBootstrapInput(firstBatch);
+    expect(attentionInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
+    if (!firstBatch || !attentionInput || typeof attentionInput.meta?.attentionContextId !== "string") {
+      return;
+    }
+
+    try {
+      await runtime.start();
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs: firstBatch });
+
+      const firstFailureAt = Date.now();
+      await internal.handleModelCall({
+        id: "call-policy-error-1",
+        timestamp: 100,
+        completedAt: 101,
+        status: "error",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+        error: { name: "ProviderError", message: "upstream unavailable" },
+        outcome: {
+          code: "error",
+          reason: "provider.unavailable",
+          message: "upstream unavailable",
+          retryable: true,
+        },
+      });
+
+      const firstContainment = internal.attentionContainment.get(PRIMARY_CONTEXT_ID);
+      expect(firstContainment?.retryCount).toBe(1);
+      const firstBackoffMs = (firstContainment?.nextWakeAt ?? firstFailureAt) - firstFailureAt;
+      expect(firstBackoffMs).toBeGreaterThanOrEqual(700);
+      expect(firstBackoffMs).toBeLessThanOrEqual(1400);
+      if (firstContainment) {
+        firstContainment.nextWakeAt = Date.now() - 1;
+      }
+
+      await internal.waitForAnyInput();
+      await internal.persistCycle({ wakeSource: "attention", inputs: [attentionInput] });
+
+      await internal.handleModelCall({
+        id: "call-policy-error-2",
+        timestamp: 200,
+        completedAt: 201,
+        status: "error",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+        error: { name: "ProviderError", message: "upstream unavailable" },
+        outcome: {
+          code: "error",
+          reason: "provider.unavailable",
+          message: "upstream unavailable",
+          retryable: true,
+        },
+      });
+
+      expect(internal.attentionContainment.get(PRIMARY_CONTEXT_ID)).toMatchObject({
+        retryCount: 2,
+      });
+      expect(runtime.snapshot().schedulerState).toMatchObject({
+        runtimeStatus: "blocked",
+        waitingReason: "attention_blocked",
+      });
+      expect(runtime.snapshot().schedulerState?.blockedReason).toContain("2/2");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given all attention scores are zero When no external input arrives Then the runtime does not self-wake again", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

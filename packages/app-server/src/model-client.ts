@@ -170,11 +170,14 @@ export class ModelClient {
     };
   }
 
-  getCompactConfig(): { maxToken?: number; compactThreshold?: number } {
-    return {
-      maxToken: this.config.maxToken,
-      compactThreshold: this.config.compactThreshold,
-    };
+  getContextBudgetTokens(): number | null {
+    if (typeof this.config.maxContextTokens === "number" && Number.isFinite(this.config.maxContextTokens)) {
+      return this.config.maxContextTokens;
+    }
+    if (typeof this.config.maxToken === "number" && Number.isFinite(this.config.maxToken)) {
+      return this.config.maxToken;
+    }
+    return null;
   }
 
   async respondWithMeta(input: RespondInput): Promise<AssistantTurn> {

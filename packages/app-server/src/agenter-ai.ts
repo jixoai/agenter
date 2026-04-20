@@ -5,6 +5,7 @@ import type {
   AttentionCommitToolInput,
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
+import { DEFAULT_LOOP_COMPACT_POLICY, type ResolvedLoopCompactPolicy } from "@agenter/settings";
 import type { SessionTerminalOutcome } from "@agenter/session-system";
 import type { ContentPart, Tool } from "@tanstack/ai";
 import { z } from "zod";
@@ -79,6 +80,7 @@ interface AgentDeps {
   modelCallTimeoutMs?: number;
   logger: AppServerLogger;
   promptStore: PromptStore;
+  compactPolicy?: ResolvedLoopCompactPolicy;
   promptWindowStore?: AgentPromptWindowStore;
   initialPromptWindowState?: AgentPromptWindowStateRecord;
   avatarName?: string;
@@ -809,6 +811,29 @@ export class AgenterAI {
     this.promptStore = promptStore;
   }
 
+  private getCompactPolicy(): ResolvedLoopCompactPolicy {
+    return this.deps.compactPolicy ?? DEFAULT_LOOP_COMPACT_POLICY;
+  }
+
+  private shouldQueueRecoveryCompact(
+    trigger: Extract<
+      ChatCycleCompactTrigger,
+      "attention_retry" | "context_overflow" | "external_continuation_limit" | "timeout"
+    >,
+  ): boolean {
+    const policy = this.getCompactPolicy();
+    switch (trigger) {
+      case "attention_retry":
+        return policy.recovery.attentionRetry;
+      case "context_overflow":
+        return policy.recovery.contextOverflow;
+      case "external_continuation_limit":
+        return policy.recovery.externalContinuationLimit;
+      case "timeout":
+        return policy.recovery.timeout;
+    }
+  }
+
   private queueCompactRequest(trigger: ChatCycleCompactTrigger): void {
     this.pendingCompactTrigger = trigger;
   }
@@ -1115,7 +1140,9 @@ export class AgenterAI {
           level: "error",
           message: `agenter-ai exceeded ${MAX_EXTERNAL_MODEL_ROUNDS} external continuation rounds`,
         });
-        this.queueCompactRequest("error");
+        if (this.shouldQueueRecoveryCompact("external_continuation_limit")) {
+          this.queueCompactRequest("external_continuation_limit");
+        }
         return;
       }
       roundMessages = result.interleavedMessages;
@@ -1285,11 +1312,13 @@ export class AgenterAI {
       if (response.usage?.promptTokens !== undefined) {
         this.stats.lastPromptTokens = response.usage.promptTokens;
         this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
-        const compactConfig = modelClient.getCompactConfig();
+        const compactPolicy = this.getCompactPolicy();
+        const compactBudgetTokens = modelClient.getContextBudgetTokens();
         if (
-          compactConfig.maxToken &&
-          compactConfig.compactThreshold &&
-          response.usage.promptTokens >= Math.floor(compactConfig.maxToken * compactConfig.compactThreshold)
+          compactPolicy.threshold.enabled &&
+          compactPolicy.threshold.promptFraction &&
+          compactBudgetTokens &&
+          response.usage.promptTokens >= Math.floor(compactBudgetTokens * compactPolicy.threshold.promptFraction)
         ) {
           this.queueCompactRequest("threshold");
         }
@@ -1344,7 +1373,9 @@ export class AgenterAI {
             },
           },
         });
-        this.queueCompactRequest("attention_retry");
+        if (this.shouldQueueRecoveryCompact("attention_retry")) {
+          this.queueCompactRequest("attention_retry");
+        }
         return { continueModelRound: false, interleavedMessages: [] };
       }
 
@@ -1434,8 +1465,12 @@ export class AgenterAI {
         },
         error: { message, name, stack, details },
       });
-      if (!aborted && (contextOverflow || timeout)) {
-        this.queueCompactRequest("error");
+      if (!aborted && contextOverflow && this.shouldQueueRecoveryCompact("context_overflow")) {
+        this.queueCompactRequest("context_overflow");
+        return { continueModelRound: false, interleavedMessages: [] };
+      }
+      if (!aborted && timeout && this.shouldQueueRecoveryCompact("timeout")) {
+        this.queueCompactRequest("timeout");
         return { continueModelRound: false, interleavedMessages: [] };
       }
       if (aborted) {

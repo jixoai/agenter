@@ -371,6 +371,25 @@ describe("Feature: Runtime Heartbeat statusbar selectors", () => {
     });
   });
 
+  test("Scenario: Given scheduler containment is blocked When building footer status Then the blocked reason stays visible in the primary Heartbeat summary", () => {
+    expect(
+      buildHeartbeatStatusState({
+        sessionStatus: "running",
+        schedulerState: createSchedulerState({
+          runtimeStatus: "blocked",
+          waitingReason: "attention_blocked",
+          blockedReason: "retry policy max attempts reached (2/2)",
+        }),
+        heartbeatGroups: createHeartbeatGroupsState(),
+      }),
+    ).toEqual({
+      label: "Blocked",
+      detail: "retry policy max attempts reached (2/2)",
+      animated: false,
+      tone: "destructive",
+    });
+  });
+
   test("Scenario: Given attention contexts When building shimmer summary Then focused background and muted counts stay objective", () => {
     expect(buildHeartbeatAttentionFocusSummary(attentionState)).toEqual({
       focused: 1,

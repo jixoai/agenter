@@ -29,6 +29,7 @@ interface AiProviderSharedFields {
   apiKeyEnv?: string;
   baseUrl?: string;
   maxRetries?: number;
+  // Legacy migration alias. New writes should use loop.compactPolicy.threshold instead.
   compactThreshold?: number;
   maxContextTokens?: number;
   pricing?: AiProviderPricingSettings;

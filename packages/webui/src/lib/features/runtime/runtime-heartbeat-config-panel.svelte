@@ -101,7 +101,7 @@
 		<Dialog.Header>
 			<Dialog.Title>Next call config</Dialog.Title>
 			<Dialog.Description class="flex items-center gap-2">
-				<span>Save to the persistent Settings layer. The current streaming call keeps its original config.</span>
+				<span>Save next-call execution knobs to the persistent Settings layer. Recovery and compact policy live in Runtime Settings.</span>
 				<HelpHint textContext="Config edits are durable Settings facts. They immediately form a trailing before-call config fact, but only the next model call will consume them.">
 					<p>Saving here updates the durable Settings layer, leaves the current streaming call untouched, and makes the next call pick up the new knobs.</p>
 				</HelpHint>

@@ -69,7 +69,15 @@ export interface ChatMessage {
   channel?: "to_user" | "self_talk" | "tool";
   format?: "plain" | "markdown";
   heartbeatKind?: ChatMessageHeartbeatKind;
-  compactTrigger?: "manual" | "threshold" | "error" | "attention_retry" | null;
+  compactTrigger?:
+    | "manual"
+    | "threshold"
+    | "attention_retry"
+    | "context_overflow"
+    | "external_continuation_limit"
+    | "timeout"
+    | "error"
+    | null;
   tool?: ChatToolInvocation;
   attachments?: ChatSessionAsset[];
 }

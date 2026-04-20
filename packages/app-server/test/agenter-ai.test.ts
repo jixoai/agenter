@@ -5,6 +5,7 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
+import { DEFAULT_LOOP_COMPACT_POLICY } from "@agenter/settings";
 import type { MessageActorId } from "@agenter/message-system";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
@@ -196,8 +197,8 @@ const createModelClient = (
         baseUrl: "https://api.deepseek.com/v1",
       };
     },
-    getCompactConfig() {
-      return {};
+    getContextBudgetTokens() {
+      return null;
     },
     async summarizeText() {
       return { summary: "", skipped: "disabled in unit test" };
@@ -2545,8 +2546,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         if (input.tools.length === 0) {
@@ -2648,8 +2649,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         seenInputs.push(input);
@@ -2750,8 +2751,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         seenInputs.push(input);
@@ -2887,8 +2888,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         seenInputs.push(input);
@@ -2957,8 +2958,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         if (input.messages.length === 1) {
@@ -3036,8 +3037,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         if (input.tools.length === 0) {
@@ -3120,8 +3121,8 @@ describe("Feature: AgenterAI behavior", () => {
           baseUrl: "https://api.deepseek.com/v1",
         };
       },
-      getCompactConfig() {
-        return {};
+      getContextBudgetTokens() {
+        return null;
       },
       async respondWithMeta(input: ModelRespondInput) {
         if (input.tools.length === 0) {
@@ -3194,7 +3195,7 @@ describe("Feature: AgenterAI behavior", () => {
     ).toBeTrue();
 
     const compactTrigger = ai.consumePendingCompactRequest();
-    expect(compactTrigger).toBe("error");
+    expect(compactTrigger).toBe("context_overflow");
     if (!compactTrigger) {
       return;
     }
@@ -3211,6 +3212,38 @@ describe("Feature: AgenterAI behavior", () => {
     expect(compactInputs.length).toBeGreaterThan(0);
     expect(compactInputs.join("\n")).toContain("attention_system");
     expect(chat.engine.list()).toHaveLength(0);
+  });
+
+  test("Scenario: Given compact policy disables context-overflow recovery When the model overflows Then AgenterAI records the failure without enqueuing compact", async () => {
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "overflow but no compact", from: "user", score: 100 });
+
+    const ai = new AgenterAI({
+      modelClient: createModelClient(async () => {
+        throw new Error("maximum context length exceeded");
+      }),
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
+      attentionGateway: chat.gateway,
+      compactPolicy: {
+        threshold: { ...DEFAULT_LOOP_COMPACT_POLICY.threshold },
+        recovery: {
+          ...DEFAULT_LOOP_COMPACT_POLICY.recovery,
+          contextOverflow: false,
+        },
+      },
+    });
+
+    const response = await ai.send([
+      createAttentionItemsMessage("ctx-main unresolved score", {
+        headCommitId: tracked.commitId,
+        commitIds: [tracked.commitId],
+      }),
+    ]);
+
+    expect(response).toBeUndefined();
+    expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
   test("Scenario: Given a stalled model call When timeout elapses Then AgenterAI persists running then error lifecycle records", async () => {
@@ -3254,7 +3287,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(lifecycle[1]?.completedAt).toBeNumber();
     expect(lifecycle[1]?.error?.message).toContain("timed out after 10ms");
     expect(lifecycle[1]?.error?.details).toEqual({ timeout: true });
-    expect(ai.consumePendingCompactRequest()).toBe("error");
+    expect(ai.consumePendingCompactRequest()).toBeNull();
     expect(response).toBeUndefined();
   });
 

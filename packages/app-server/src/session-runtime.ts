@@ -49,7 +49,7 @@ import {
   type SessionTerminalOutcome,
   type SessionTraceRef,
 } from "@agenter/session-system";
-import { ResourceLoader } from "@agenter/settings";
+import { DEFAULT_LOOP_RETRY_POLICY, ResourceLoader } from "@agenter/settings";
 import {
   TaskEngine,
   resolveTaskSources,
@@ -268,12 +268,20 @@ interface AttentionContainmentEntry {
 }
 
 interface AttentionContainmentSummary {
-  state: "none" | "ready" | "backoff";
+  state: "none" | "ready" | "backoff" | "blocked";
   nextWakeAt: number | null;
   retryCount: number;
+  blockedReason: string | null;
 }
 
-type CompactCycleTrigger = "manual" | "threshold" | "error" | "attention_retry";
+type CompactCycleTrigger =
+  | "manual"
+  | "threshold"
+  | "attention_retry"
+  | "context_overflow"
+  | "external_continuation_limit"
+  | "timeout"
+  | "error";
 type AttentionInputProtocolKind = "context" | "items";
 interface AttentionCommitRefEnvelope {
   contextId: string;
@@ -285,7 +293,15 @@ interface PendingCompactRequest {
   requestedAt: number;
 }
 
-const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>(["manual", "threshold", "error", "attention_retry"]);
+const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>([
+  "manual",
+  "threshold",
+  "attention_retry",
+  "context_overflow",
+  "external_continuation_limit",
+  "timeout",
+  "error",
+]);
 const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
 const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
 const MAX_ATTENTION_PROTOCOL_COMMITS = 24;
@@ -1333,14 +1349,15 @@ export interface SessionRuntimeModelDebug {
     headers?: Record<string, string>;
     temperature: number;
     topK?: number;
-    maxRetries: number;
+    transportMaxRetries: number;
     maxToken?: number;
     maxContextTokens?: number;
-    compactThreshold?: number;
     thinking?: {
       enabled?: boolean;
       budgetTokens?: number;
     };
+    retryPolicy: ResolvedSessionConfig["loop"]["retryPolicy"];
+    compactPolicy: ResolvedSessionConfig["loop"]["compactPolicy"];
     capabilities: ModelCapabilities;
   } | null;
   promptWindow: ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"];
@@ -5202,6 +5219,7 @@ export class SessionRuntime {
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
       skillsList: this.runtimeSkillsList,
+      compactPolicy: this.config.loop.compactPolicy,
       toolProviders: this.createAgentToolProviders(),
       attentionGateway: {
         listContexts: () => this.attentionSystem.listContexts(),
@@ -5620,11 +5638,12 @@ export class SessionRuntime {
             headers: this.config.ai.headers,
             temperature: this.config.ai.temperature,
             topK: this.config.ai.topK,
-            maxRetries: this.config.ai.maxRetries,
+            transportMaxRetries: this.config.ai.transportMaxRetries,
             maxToken: this.config.ai.maxToken,
             maxContextTokens: this.config.ai.maxContextTokens,
-            compactThreshold: this.config.ai.compactThreshold,
             thinking: this.config.ai.thinking,
+            retryPolicy: this.config.loop.retryPolicy,
+            compactPolicy: this.config.loop.compactPolicy,
             capabilities: resolveModelCapabilities(this.config.ai),
           }
         : null,
@@ -6542,6 +6561,9 @@ export class SessionRuntime {
     if (kind !== "attention") {
       this.resetAttentionDebtBackoff();
     }
+    if ((kind === "user" || kind === "terminal") && this.getAttentionRetryPolicy().resetOnExternalInput) {
+      this.clearAllAttentionContainment();
+    }
     this.emit("schedulerSignal", { kind, version, timestamp });
   }
 
@@ -6567,11 +6589,16 @@ export class SessionRuntime {
     };
   }
 
+  private getAttentionRetryPolicy() {
+    return this.config?.loop.retryPolicy ?? DEFAULT_LOOP_RETRY_POLICY;
+  }
+
   private getAttentionContainmentBackoffMs(retryCount: number): number {
+    const policy = this.getAttentionRetryPolicy();
     const steps = Math.max(0, retryCount - 1);
     return Math.min(
-      ATTENTION_DEBT_MAX_BACKOFF_MS,
-      Math.round(ATTENTION_DEBT_INITIAL_BACKOFF_MS * ATTENTION_DEBT_BACKOFF_MULTIPLIER ** steps),
+      policy.maxBackoffMs,
+      Math.round(policy.initialBackoffMs * policy.multiplier ** steps),
     );
   }
 
@@ -6588,6 +6615,10 @@ export class SessionRuntime {
     this.attentionContainment.delete(contextId);
   }
 
+  private clearAllAttentionContainment(): void {
+    this.attentionContainment.clear();
+  }
+
   private clearAttentionContainmentMany(contextIds: Iterable<string>): void {
     for (const contextId of contextIds) {
       this.clearAttentionContainment(contextId);
@@ -6595,7 +6626,9 @@ export class SessionRuntime {
   }
 
   private markAttentionProgress(contextIds: Iterable<string>): void {
-    this.clearAttentionContainmentMany(contextIds);
+    if (this.getAttentionRetryPolicy().resetOnProgress) {
+      this.clearAttentionContainmentMany(contextIds);
+    }
     this.lastAttentionProgressAt = Date.now();
     this.resetAttentionDebtBackoff();
   }
@@ -6659,10 +6692,13 @@ export class SessionRuntime {
     active: AttentionActiveContextMatch[],
     now = Date.now(),
   ): AttentionContainmentSummary {
+    const policy = this.getAttentionRetryPolicy();
     this.pruneAttentionContainment(active);
     let hasReady = false;
     let nextWakeAt: number | null = null;
     let retryCount = 0;
+    let hasBlocked = false;
+    let blockedReason: string | null = null;
 
     for (const match of active) {
       const entry = this.attentionContainment.get(match.contextId);
@@ -6671,6 +6707,11 @@ export class SessionRuntime {
         continue;
       }
       retryCount = Math.max(retryCount, entry.retryCount);
+      if (policy.maxAttempts !== null && entry.retryCount >= policy.maxAttempts) {
+        hasBlocked = true;
+        blockedReason ??= `retry policy max attempts reached (${entry.retryCount}/${policy.maxAttempts})`;
+        continue;
+      }
       if (entry.nextWakeAt <= now) {
         hasReady = true;
         continue;
@@ -6683,6 +6724,7 @@ export class SessionRuntime {
         state: "ready",
         nextWakeAt: null,
         retryCount,
+        blockedReason,
       };
     }
     if (nextWakeAt !== null) {
@@ -6690,12 +6732,22 @@ export class SessionRuntime {
         state: "backoff",
         nextWakeAt,
         retryCount,
+        blockedReason,
+      };
+    }
+    if (hasBlocked) {
+      return {
+        state: "blocked",
+        nextWakeAt: null,
+        retryCount,
+        blockedReason,
       };
     }
     return {
       state: "none",
       nextWakeAt: null,
       retryCount: 0,
+      blockedReason: null,
     };
   }
 
@@ -6792,6 +6844,16 @@ export class SessionRuntime {
     if (!this.started) {
       return "stopped";
     }
+    const activeAttention = this.attentionSystem.listActiveContexts();
+    if (activeAttention.length > 0) {
+      const containment = this.summarizeAttentionContainment(activeAttention);
+      if (containment.state === "backoff") {
+        return "attention_backoff";
+      }
+      if (containment.state === "blocked") {
+        return "attention_blocked";
+      }
+    }
     if (paused) {
       return "paused";
     }
@@ -6813,12 +6875,7 @@ export class SessionRuntime {
     if (this.hasPendingAttentionInputs()) {
       return "ready_now";
     }
-    const activeAttention = this.attentionSystem.listActiveContexts();
     if (activeAttention.length > 0) {
-      const containment = this.summarizeAttentionContainment(activeAttention);
-      if (containment.state === "backoff") {
-        return "attention_backoff";
-      }
       return "attention_debt";
     }
     if (this.hasTimeBasedTask()) {
@@ -6835,9 +6892,16 @@ export class SessionRuntime {
     const loopPaused = this.isLoopPaused();
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
+    const retryPolicy = this.getAttentionRetryPolicy();
     const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
       const entry = this.attentionContainment.get(match.contextId);
-      return entry ? entry.nextWakeAt <= now : false;
+      if (!entry) {
+        return false;
+      }
+      if (retryPolicy.maxAttempts !== null && entry.retryCount >= retryPolicy.maxAttempts) {
+        return false;
+      }
+      return entry.nextWakeAt <= now;
     });
     if (this.hasPendingCompactCycle()) {
       this.loopKernelLastWakeCause = "compact_cycle";
@@ -8031,12 +8095,14 @@ export class SessionRuntime {
           : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
-      : paused
-        ? "paused"
-        : input.phase !== "waiting_commits"
-          ? "running"
-          : waitingReason === "attention_backoff"
-            ? "backoff"
+      : waitingReason === "attention_blocked"
+        ? "blocked"
+      : waitingReason === "attention_backoff"
+        ? "backoff"
+        : paused
+          ? "paused"
+          : input.phase !== "waiting_commits"
+            ? "running"
             : waitingReason === "attention_debt"
               ? "waiting"
               : waitingReason === "ready_now"
@@ -8069,7 +8135,7 @@ export class SessionRuntime {
             ? Math.max(0, nextAutoWakeAt - Date.now())
             : null,
       retryCount: attentionContainment.retryCount,
-      blockedReason: null,
+      blockedReason: attentionContainment.blockedReason,
       lastProgressAt: this.lastAttentionProgressAt,
       lastError: input.lastError === undefined ? previous.lastError : input.lastError,
       lastResponseAt: previous.lastResponseAt,
@@ -8147,10 +8213,9 @@ export class SessionRuntime {
       headers: config.ai.headers ?? {},
       temperature: config.ai.temperature,
       topK: config.ai.topK ?? null,
-      maxRetries: config.ai.maxRetries,
+      transportMaxRetries: config.ai.transportMaxRetries,
       maxToken: config.ai.maxToken ?? null,
       maxContextTokens: config.ai.maxContextTokens ?? null,
-      compactThreshold: config.ai.compactThreshold ?? null,
       providerSnapshot: buildProviderSnapshot(config),
       thinking:
         config.ai.thinking === undefined
@@ -8159,6 +8224,8 @@ export class SessionRuntime {
               enabled: config.ai.thinking.enabled ?? false,
               budgetTokens: config.ai.thinking.budgetTokens ?? null,
             },
+      retryPolicy: config.loop.retryPolicy,
+      compactPolicy: config.loop.compactPolicy,
       lang: config.lang,
     };
   }
@@ -8269,9 +8336,9 @@ export class SessionRuntime {
       headers: config.ai.headers,
       temperature: config.ai.temperature,
       topK: config.ai.topK,
-      maxRetries: config.ai.maxRetries,
+      maxRetries: config.ai.transportMaxRetries,
       maxToken: config.ai.maxToken,
-      compactThreshold: config.ai.compactThreshold,
+      maxContextTokens: config.ai.maxContextTokens,
       thinking: config.ai.thinking,
     });
   }
@@ -9190,6 +9257,7 @@ export class SessionRuntime {
         ]);
         if (frame.producedCommitRefs.length > 0) {
           this.markAttentionProgress(progressedContextIds);
+          this.refreshLoopKernelSnapshot();
         } else if (
           record.status === "error" &&
           record.outcome?.code !== "stopped" &&
@@ -9215,6 +9283,7 @@ export class SessionRuntime {
             outcome: record.outcome,
             error: errorMessage || errorName ? { message: errorMessage, name: errorName } : undefined,
           });
+          this.refreshLoopKernelSnapshot();
         }
       }
     }
@@ -9308,6 +9377,20 @@ export class SessionRuntime {
       lastError,
       cycle: this.loopKernelSnapshot?.state.cycle,
       paused: this.loopKernelSnapshot?.state.paused,
+    });
+  }
+
+  private refreshLoopKernelSnapshot(): void {
+    if (!this.loopKernelSnapshot) {
+      return;
+    }
+    this.updateLoopKernelSnapshot({
+      phase: this.loopPhase,
+      currentCycleId: this.activeCycleId,
+      lastWakeSource: null,
+      lastError: this.loopKernelSnapshot.state.lastError,
+      cycle: this.loopKernelSnapshot.state.cycle,
+      paused: this.loopKernelSnapshot.state.paused,
     });
   }
 

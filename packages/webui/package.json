@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@agenter/client-sdk": "workspace:*",
+    "@agenter/settings": "workspace:*",
     "@agenter/svelte-components": "workspace:*",
     "@agenter/terminal-view": "workspace:*",
     "@agenter/web-chat-view": "workspace:*",

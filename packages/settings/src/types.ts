@@ -148,12 +148,41 @@ export interface AiSettings {
   providers?: Record<string, AiProviderSettings>;
 }
 
+export interface LoopRetryPolicySettings {
+  mode?: "exponential";
+  maxAttempts?: number | null;
+  initialBackoffMs?: number;
+  multiplier?: number;
+  maxBackoffMs?: number;
+  resetOnExternalInput?: boolean;
+  resetOnProgress?: boolean;
+}
+
+export interface LoopCompactThresholdSettings {
+  enabled?: boolean;
+  promptFraction?: number;
+}
+
+export interface LoopCompactRecoverySettings {
+  attentionRetry?: boolean;
+  contextOverflow?: boolean;
+  externalContinuationLimit?: boolean;
+  timeout?: boolean;
+}
+
+export interface LoopCompactPolicySettings {
+  threshold?: LoopCompactThresholdSettings;
+  recovery?: LoopCompactRecoverySettings;
+}
+
 export interface LoopSettings {
   sliceDirty?: {
     wait?: boolean;
     timeoutMs?: number;
     pollMs?: number;
   };
+  retryPolicy?: LoopRetryPolicySettings;
+  compactPolicy?: LoopCompactPolicySettings;
 }
 
 export interface AgenterSettings {
