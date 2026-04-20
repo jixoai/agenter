@@ -387,9 +387,7 @@ export const estimateHeartbeatGroupSize = (group: HeartbeatGroupItem): number =>
   return shellHeight + itemGap + itemHeights;
 };
 
-export const buildHeartbeatDisplayGroups = (
-  groups: ReadonlyArray<HeartbeatGroupItem>,
-): HeartbeatGroupItem[] => {
+export const buildHeartbeatDisplayGroups = (groups: ReadonlyArray<HeartbeatGroupItem>): HeartbeatGroupItem[] => {
   const displayGroups: HeartbeatGroupItem[] = [];
   for (let index = 0; index < groups.length; index += 1) {
     const current = groups[index];
@@ -773,7 +771,7 @@ const buildHeartbeatCompactSection = (group: HeartbeatGroupItem): HeartbeatSubje
   };
 };
 
-export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): HeartbeatSubjectSection[] => {
+const materializeHeartbeatSubjectSections = (group: HeartbeatGroupItem): HeartbeatSubjectSection[] => {
   if (group.kind === "compact") {
     const compactSection = buildHeartbeatCompactSection(group);
     return compactSection ? [compactSection] : [];
@@ -823,6 +821,9 @@ export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): Heartb
 
   return sections;
 };
+
+export const buildHeartbeatSubjectSections = (group: HeartbeatGroupItem): HeartbeatSubjectSection[] =>
+  materializeHeartbeatSubjectSections(group);
 
 export const getHeartbeatSectionTimeMeta = (
   section: HeartbeatSubjectSection,

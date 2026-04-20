@@ -1,5 +1,3 @@
-import type { Meta, StoryObj } from "@storybook/sveltekit";
-import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import {
   BOTTOM_ANCHORED_INSERT_MOTION_CLEAR_DELAY_MS,
   BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS,
@@ -7,6 +5,8 @@ import {
   getBottomAnchoredDistanceToStart,
   getBottomAnchoredStartScrollTop,
 } from "@agenter/svelte-components";
+import type { Meta, StoryObj } from "@storybook/sveltekit";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import type {
   HeartbeatGroupItem,
@@ -404,8 +404,7 @@ const cloneHeartbeatEntry = (entry: HeartbeatPartItem, cloneIndex: number): Hear
   };
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 const createPlaygroundSequenceLabel = (sequence: number): string => `[Playground #${sequence}]`;
 
@@ -421,7 +420,10 @@ const annotateHeartbeatPartPayloadForPlayground = (
   switch (part.partType) {
     case "text":
     case "thinking": {
-      if (!isRecord(part.payload) || typeof part.payload.content !== "string" && typeof part.payload.text !== "string") {
+      if (
+        !isRecord(part.payload) ||
+        (typeof part.payload.content !== "string" && typeof part.payload.text !== "string")
+      ) {
         return part.payload;
       }
       if (typeof part.payload.content === "string") {
@@ -474,24 +476,21 @@ const annotateHeartbeatPartPayloadForPlayground = (
   }
 };
 
-const annotateHeartbeatGroupForPlayground = (
-  group: HeartbeatGroupItem,
-  sequence: number,
-): HeartbeatGroupItem => {
+const annotateHeartbeatGroupForPlayground = (group: HeartbeatGroupItem, sequence: number): HeartbeatGroupItem => {
   const aiCallId = group.aiCallId === null ? null : createPlaygroundAiCallId(sequence);
   return {
-  ...group,
-  aiCallId,
-  items: group.items.map((item) => ({
-    ...item,
+    ...group,
     aiCallId,
-    text: prefixPlaygroundLabel(item.text, sequence),
-    parts: item.parts.map((part) => ({
-      ...part,
+    items: group.items.map((item) => ({
+      ...item,
       aiCallId,
-      payload: annotateHeartbeatPartPayloadForPlayground(part, sequence),
+      text: prefixPlaygroundLabel(item.text, sequence),
+      parts: item.parts.map((part) => ({
+        ...part,
+        aiCallId,
+        payload: annotateHeartbeatPartPayloadForPlayground(part, sequence),
+      })),
     })),
-  })),
   };
 };
 
@@ -649,27 +648,30 @@ const cloneHeartbeatGroupAtTime = (
 ): HeartbeatGroupItem => {
   const timeDelta = targetCreatedAt - template.createdAt;
   const groupClone = structuredClone(template);
-  return annotateHeartbeatGroupForPlayground({
-    ...groupClone,
-    id: groupClone.id + sequence * 10_000,
-    groupId: `${groupClone.groupId}:playground:${sequence}`,
-    createdAt: groupClone.createdAt + timeDelta,
-    updatedAt: groupClone.updatedAt + timeDelta,
-    items: groupClone.items.map((item, itemIndex) => ({
-      ...item,
-      id: item.id + sequence * 10_000 + itemIndex,
-      messageId: `${item.messageId}:playground:${sequence}:${itemIndex}`,
-      createdAt: item.createdAt + timeDelta,
-      updatedAt: item.updatedAt + timeDelta,
-      parts: item.parts.map((part, partIndex) => ({
-        ...part,
-        partId: part.partId + sequence * 100_000 + partIndex,
-        messageId: `${part.messageId}:playground:${sequence}:${itemIndex}:${partIndex}`,
-        createdAt: part.createdAt + timeDelta,
-        updatedAt: part.updatedAt + timeDelta,
+  return annotateHeartbeatGroupForPlayground(
+    {
+      ...groupClone,
+      id: groupClone.id + sequence * 10_000,
+      groupId: `${groupClone.groupId}:playground:${sequence}`,
+      createdAt: groupClone.createdAt + timeDelta,
+      updatedAt: groupClone.updatedAt + timeDelta,
+      items: groupClone.items.map((item, itemIndex) => ({
+        ...item,
+        id: item.id + sequence * 10_000 + itemIndex,
+        messageId: `${item.messageId}:playground:${sequence}:${itemIndex}`,
+        createdAt: item.createdAt + timeDelta,
+        updatedAt: item.updatedAt + timeDelta,
+        parts: item.parts.map((part, partIndex) => ({
+          ...part,
+          partId: part.partId + sequence * 100_000 + partIndex,
+          messageId: `${part.messageId}:playground:${sequence}:${itemIndex}:${partIndex}`,
+          createdAt: part.createdAt + timeDelta,
+          updatedAt: part.updatedAt + timeDelta,
+        })),
       })),
-    })),
-  }, sequence);
+    },
+    sequence,
+  );
 };
 
 const createInteractiveLatestGroup = ({
@@ -710,19 +712,20 @@ const createInteractiveLatestGrowthGroup = ({
 }): HeartbeatGroupItem => {
   const latestGroup = groups[groups.length - 1] ?? growingBottomAnchorBaseGroup;
   const latestTimestamp = latestGroup.updatedAt;
-  return annotateHeartbeatGroupForPlayground({
-    ...structuredClone(growingBottomAnchorExpandedGroup),
-    id: latestGroup.id,
-    groupId: latestGroup.groupId,
-    createdAt: latestGroup.createdAt,
-    updatedAt: latestTimestamp + count * 1_000,
-  }, sequence);
+  return annotateHeartbeatGroupForPlayground(
+    {
+      ...structuredClone(growingBottomAnchorExpandedGroup),
+      id: latestGroup.id,
+      groupId: latestGroup.groupId,
+      createdAt: latestGroup.createdAt,
+      updatedAt: latestTimestamp + count * 1_000,
+    },
+    sequence,
+  );
 };
 
-const getViewportDistanceToLatest = (viewport: HTMLElement): number =>
-  getBottomAnchoredDistanceToLatest(viewport);
-const getViewportDistanceToStart = (viewport: HTMLElement): number =>
-  getBottomAnchoredDistanceToStart(viewport);
+const getViewportDistanceToLatest = (viewport: HTMLElement): number => getBottomAnchoredDistanceToLatest(viewport);
+const getViewportDistanceToStart = (viewport: HTMLElement): number => getBottomAnchoredDistanceToStart(viewport);
 const describeViewportMetrics = (viewport: HTMLElement, root: HTMLElement): string =>
   JSON.stringify({
     scrollTop: viewport.scrollTop,
@@ -773,12 +776,10 @@ const waitForInsertMotionCleanup = async (): Promise<void> =>
 const playgroundCallPattern = /Call #(\d+)/g;
 const getVisibleHeartbeatGroups = (root: HTMLElement, viewport: HTMLElement): HTMLElement[] => {
   const viewportRect = viewport.getBoundingClientRect();
-  return Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="runtime-heartbeat-group-"]')).filter(
-    (node) => {
-      const rect = node.getBoundingClientRect();
-      return rect.bottom > viewportRect.top + 8 && rect.top < viewportRect.bottom - 8;
-    },
-  );
+  return Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="runtime-heartbeat-group-"]')).filter((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.bottom > viewportRect.top + 8 && rect.top < viewportRect.bottom - 8;
+  });
 };
 const parsePlaygroundCallNumbers = (text: string): number[] =>
   Array.from(text.matchAll(playgroundCallPattern), (match) => Number(match[1])).filter(Number.isFinite);
@@ -825,6 +826,14 @@ const readHeartbeatGroupTop = (root: HTMLElement, testId: string): number | null
   const element = root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
   return element ? element.getBoundingClientRect().top : null;
 };
+const readHeartbeatGroupNode = (root: HTMLElement, testId: string): HTMLElement | null =>
+  root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+const readHeartbeatEntryNode = (root: HTMLElement, testId: string): HTMLElement | null =>
+  readHeartbeatGroupNode(root, testId)?.querySelector<HTMLElement>('[data-testid^="runtime-heartbeat-entry-"]') ?? null;
+const readHeartbeatNodeByTestId = (root: HTMLElement, testId: string): HTMLElement | null =>
+  root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+const readHeartbeatNodesByTestId = (root: HTMLElement, testId: string): HTMLElement[] =>
+  Array.from(root.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`));
 const readHeartbeatGroupRowTop = (root: HTMLElement, testId: string): number | null => {
   const element = root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
   const row = element?.closest<HTMLElement>("[data-anchored-row-key]");
@@ -1288,10 +1297,14 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     await waitFor(() => {
       const absoluteStart = getBottomAnchoredStartScrollTop(viewport);
       if (viewport.scrollTop === absoluteStart) {
-        throw new Error(`Older reveal collapsed back to absolute start: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Older reveal collapsed back to absolute start: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       if (viewport.scrollTop >= preLoadScrollTop) {
-        throw new Error(`Older reveal did not move toward history start: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Older reveal did not move toward history start: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       expect(findInsertMotion(earliestGroup)).toBe("older");
     });
@@ -1299,7 +1312,9 @@ export const LoadingOlderKeepsHeartbeatRowsStable = {
     const animationHost = await waitFor(() => {
       const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="older"]');
       if (!host) {
-        throw new Error(`Older reveal host did not retain insert-motion: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Older reveal host did not retain insert-motion: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       return host;
     });
@@ -1497,7 +1512,9 @@ export const BottomAnchorSurvivesLatestAppend = {
     const animationHost = await waitFor(() => {
       const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
       if (!host) {
-        throw new Error(`Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       return host;
     });
@@ -1564,18 +1581,24 @@ export const LatestAppendPlaysInsertMotion = {
         throw new Error(`Latest append entry not mounted: ${describeViewportMetrics(viewport, canvasElement)}`);
       }
       if (findInsertMotion(entry) !== "latest") {
-        throw new Error(`Latest append entry lost insert-motion marker: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Latest append entry lost insert-motion marker: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
     });
 
     const animationHost = await waitFor(() => {
       const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
       if (!host) {
-        throw new Error(`Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Latest append entry is missing the current insert-motion host: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       const hostedEntry = host.querySelector<HTMLElement>('[data-testid="runtime-heartbeat-entry-920"]');
       if (!hostedEntry) {
-        throw new Error(`Latest append host lost the appended entry before animation sampling: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Latest append host lost the appended entry before animation sampling: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       return host;
     });
@@ -1604,10 +1627,13 @@ export const LatestAppendPlaysInsertMotion = {
     const distanceSamples = await captureDistanceToLatestSamples(viewport);
     expect(Math.max(...distanceSamples)).toBeLessThanOrEqual(48);
 
-    await waitFor(async () => {
-      await waitForTwoAnimationFrames();
-      expect(animation.playState).toBe("finished");
-    }, { timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 4 });
+    await waitFor(
+      async () => {
+        await waitForTwoAnimationFrames();
+        expect(animation.playState).toBe("finished");
+      },
+      { timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS * 4 },
+    );
 
     await waitFor(
       () => {
@@ -1709,7 +1735,9 @@ export const AppendLatestWhilePinnedKeepsViewportStable = {
     const animationHost = await waitFor(() => {
       const host = canvasElement.querySelector<HTMLElement>('[data-insert-motion="latest"]');
       if (!host) {
-        throw new Error(`Interactive latest append host is missing: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Interactive latest append host is missing: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       return host;
     });
@@ -1729,6 +1757,227 @@ export const AppendLatestWhilePinnedKeepsViewportStable = {
         timeout: BOTTOM_ANCHORED_INSERT_MOTION_DURATION_MS + 1_200,
       },
     );
+  },
+} satisfies Story;
+
+export const AppendLatestWhilePinnedPreservesExistingGroupDomIdentity = {
+  name: "Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then an existing visible heartbeat card keeps the same DOM identity",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    const anchoredGroupTestId = await waitFor(() => {
+      const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
+      if (!current) {
+        throw new Error(
+          `Unable to resolve an existing visible Heartbeat card before append: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
+      }
+      return current;
+    });
+    const anchoredGroupBefore = readHeartbeatGroupNode(canvasElement, anchoredGroupTestId);
+    const anchoredEntryBefore = readHeartbeatEntryNode(canvasElement, anchoredGroupTestId);
+    if (!anchoredGroupBefore || !anchoredEntryBefore) {
+      throw new Error(
+        `Unable to capture the existing Heartbeat card DOM identity before append: ${anchoredGroupTestId}`,
+      );
+    }
+    const anchoredEntryTestId = anchoredEntryBefore.dataset.testid;
+    if (!anchoredEntryTestId) {
+      throw new Error(`Unable to resolve the entry test id for ${anchoredGroupTestId} before append.`);
+    }
+
+    await userEvent.click(appendButton);
+    await waitForPlaygroundAppendSettle({
+      canvas,
+      viewport,
+      appendButton,
+      expectedCall: 1001,
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+
+    const anchoredGroupAfter = readHeartbeatGroupNode(canvasElement, anchoredGroupTestId);
+    const anchoredEntryAfter = readHeartbeatNodeByTestId(canvasElement, anchoredEntryTestId);
+    expect(anchoredGroupAfter).not.toBeNull();
+    expect(anchoredEntryAfter).not.toBeNull();
+    expect(anchoredGroupAfter?.isSameNode(anchoredGroupBefore) ?? false).toBe(true);
+    expect(anchoredEntryAfter?.isSameNode(anchoredEntryBefore) ?? false).toBe(true);
+  },
+} satisfies Story;
+
+export const AppendLatestWhilePinnedKeepsAnchoredEntryLocatorUnique = {
+  name: "Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the anchored heartbeat entry test id remains unique in the live DOM",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    const anchoredGroupTestId = await waitFor(() => {
+      const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
+      if (!current) {
+        throw new Error(
+          `Unable to resolve an existing visible Heartbeat card before append: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
+      }
+      return current;
+    });
+    const anchoredEntryBefore = readHeartbeatEntryNode(canvasElement, anchoredGroupTestId);
+    if (!anchoredEntryBefore?.dataset.testid) {
+      throw new Error(`Unable to resolve the entry test id for ${anchoredGroupTestId} before append.`);
+    }
+    const anchoredEntryTestId = anchoredEntryBefore.dataset.testid;
+
+    expect(readHeartbeatNodesByTestId(canvasElement, anchoredEntryTestId)).toHaveLength(1);
+
+    await userEvent.click(appendButton);
+    await waitForPlaygroundAppendSettle({
+      canvas,
+      viewport,
+      appendButton,
+      expectedCall: 1001,
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+
+    expect(readHeartbeatNodesByTestId(canvasElement, anchoredEntryTestId)).toHaveLength(1);
+  },
+} satisfies Story;
+
+export const AppendLatestWhilePinnedPreservesAnchoredEntryWithinGroupScope = {
+  name: "Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the existing heartbeat entry stays attached to the preserved group subtree",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    const anchoredGroupTestId = await waitFor(() => {
+      const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
+      if (!current) {
+        throw new Error(
+          `Unable to resolve an existing visible Heartbeat card before append: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
+      }
+      return current;
+    });
+    const anchoredGroupBefore = readHeartbeatGroupNode(canvasElement, anchoredGroupTestId);
+    const anchoredEntryBefore = readHeartbeatEntryNode(canvasElement, anchoredGroupTestId);
+    if (!anchoredGroupBefore || !anchoredEntryBefore) {
+      throw new Error(
+        `Unable to capture the existing Heartbeat card DOM identity before append: ${anchoredGroupTestId}`,
+      );
+    }
+    const anchoredEntryTestId = anchoredEntryBefore.dataset.testid;
+    if (!anchoredEntryTestId) {
+      throw new Error(`Unable to resolve the entry test id for ${anchoredGroupTestId} before append.`);
+    }
+
+    await userEvent.click(appendButton);
+    await waitForPlaygroundAppendSettle({
+      canvas,
+      viewport,
+      appendButton,
+      expectedCall: 1001,
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+
+    const anchoredGroupAfter = readHeartbeatGroupNode(canvasElement, anchoredGroupTestId);
+    const anchoredEntryAfter = anchoredGroupAfter?.querySelector<HTMLElement>(`[data-testid="${anchoredEntryTestId}"]`);
+    expect(anchoredGroupAfter).not.toBeNull();
+    expect(anchoredEntryAfter).not.toBeNull();
+    expect(anchoredGroupAfter?.isSameNode(anchoredGroupBefore) ?? false).toBe(true);
+    expect(anchoredEntryAfter?.isSameNode(anchoredEntryBefore) ?? false).toBe(true);
+  },
+} satisfies Story;
+
+export const AppendLatestWhilePinnedPreservesAnchoredSectionWrapperIdentity = {
+  name: "Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the preserved heartbeat section wrapper keeps the same DOM identity",
+  args: InsertMotionPlayground.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+    const appendButton = canvas.getByTestId("runtime-heartbeat-playground-append-latest");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    const anchoredGroupTestId = await waitFor(() => {
+      const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
+      if (!current) {
+        throw new Error(
+          `Unable to resolve an existing visible Heartbeat card before append: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
+      }
+      return current;
+    });
+    const anchoredEntryBefore = readHeartbeatEntryNode(canvasElement, anchoredGroupTestId);
+    const anchoredSectionBefore = anchoredEntryBefore?.closest<HTMLElement>(
+      '[data-testid^="runtime-heartbeat-section-"]',
+    );
+    if (!anchoredEntryBefore || !anchoredSectionBefore?.dataset.testid) {
+      throw new Error(`Unable to resolve the section wrapper for ${anchoredGroupTestId} before append.`);
+    }
+    const anchoredSectionTestId = anchoredSectionBefore.dataset.testid;
+
+    await userEvent.click(appendButton);
+    await waitForPlaygroundAppendSettle({
+      canvas,
+      viewport,
+      appendButton,
+      expectedCall: 1001,
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+
+    const anchoredSectionAfter = readHeartbeatNodeByTestId(canvasElement, anchoredSectionTestId);
+    expect(anchoredSectionAfter).not.toBeNull();
+    expect(anchoredSectionAfter?.isSameNode(anchoredSectionBefore) ?? false).toBe(true);
   },
 } satisfies Story;
 
@@ -1761,14 +2010,18 @@ export const AppendLatestWhileAwayKeepsViewportAnchored = {
     const anchoredGroupTestId = await waitFor(() => {
       const current = readCenteredVisibleHeartbeatGroupTestId(canvasElement, viewport);
       if (!current) {
-        throw new Error(`Unable to resolve the centered reading anchor: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Unable to resolve the centered reading anchor: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       return current;
     });
     const anchoredGroupTopBeforeAppend = readHeartbeatGroupTop(canvasElement, anchoredGroupTestId);
     const anchoredGroupRowTopBeforeAppend = readHeartbeatGroupRowTop(canvasElement, anchoredGroupTestId);
     if (anchoredGroupTopBeforeAppend === null) {
-      throw new Error(`Unable to resolve the reading anchor rect before append: ${describeViewportMetrics(viewport, canvasElement)}`);
+      throw new Error(
+        `Unable to resolve the reading anchor rect before append: ${describeViewportMetrics(viewport, canvasElement)}`,
+      );
     }
 
     await userEvent.click(appendButton);
@@ -1866,7 +2119,9 @@ export const ScrollToLatestInterruptedByWheelKeepsViewportAway = {
       () => {
         const distanceToLatest = getViewportDistanceToLatest(viewport);
         if (distanceToLatest <= 48) {
-          throw new Error(`Wheel interrupt still let Scroll to latest win: ${describeViewportMetrics(viewport, canvasElement)}`);
+          throw new Error(
+            `Wheel interrupt still let Scroll to latest win: ${describeViewportMetrics(viewport, canvasElement)}`,
+          );
         }
         expect(scrollButtonShell.dataset.visible).toBe("true");
       },
@@ -1965,6 +2220,40 @@ export const BottomAnchorSurvivesLatestGrowth = {
       expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
       expect(canvas.getByTestId("runtime-heartbeat-entry-930")).toBeInTheDocument();
     });
+  },
+} satisfies Story;
+
+export const LatestGrowthPreservesExistingGroupDomIdentity = {
+  name: "Scenario: Given the Heartbeat viewport is pinned to bottom When the latest group grows without changing item count Then that card keeps the same DOM identity",
+  args: BottomAnchorSurvivesLatestGrowth.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByTestId("runtime-heartbeat-viewport");
+
+    await waitFor(() => {
+      expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    });
+
+    viewport.scrollTop = 0;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
+    });
+
+    const latestGroupBefore = canvas.getByTestId("runtime-heartbeat-group-930");
+    const latestEntryBefore = canvas.getByTestId("runtime-heartbeat-entry-930");
+    expect(latestEntryBefore.textContent).toContain("compact preview before growth");
+
+    await waitFor(() => {
+      expect(canvas.getByTestId("runtime-heartbeat-entry-930").textContent ?? "").toContain("after-growth marker");
+    });
+    await waitForViewportSettle(viewport);
+
+    const latestGroupAfter = canvas.getByTestId("runtime-heartbeat-group-930");
+    const latestEntryAfter = canvas.getByTestId("runtime-heartbeat-entry-930");
+    expect(latestGroupAfter.isSameNode(latestGroupBefore)).toBe(true);
+    expect(latestEntryAfter.isSameNode(latestEntryBefore)).toBe(true);
   },
 } satisfies Story;
 
@@ -2074,7 +2363,9 @@ export const AsyncInitialLoadPinsLatest = {
 
     await waitFor(() => {
       if (viewport.scrollTop !== 0) {
-        throw new Error(`Async initial load did not land at latest: ${describeViewportMetrics(viewport, canvasElement)}`);
+        throw new Error(
+          `Async initial load did not land at latest: ${describeViewportMetrics(viewport, canvasElement)}`,
+        );
       }
       expect(getViewportDistanceToLatest(viewport)).toBeLessThanOrEqual(48);
       expect(canvas.queryByRole("button", { name: "Scroll to latest" })).toBeNull();

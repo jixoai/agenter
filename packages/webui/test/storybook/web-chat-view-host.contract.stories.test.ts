@@ -1,52 +1,60 @@
-import { describe, test } from 'vitest';
+import { describe, test } from "vitest";
 
-import * as stories from '../../src/lib/features/messages/web-chat-view-host.contract.stories';
-import { getPortableStory } from './portable-stories';
+import * as stories from "../../src/lib/features/messages/web-chat-view-host.contract.stories";
+import { getPortableStory } from "./portable-stories";
 
 const TransportAppendWhilePinnedKeepsLatestVisible = getPortableStory(
-	stories,
-	'TransportAppendWhilePinnedKeepsLatestVisible',
+  stories,
+  "TransportAppendWhilePinnedKeepsLatestVisible",
+);
+const TransportAppendWhilePinnedPreservesExistingRowDomIdentity = getPortableStory(
+  stories,
+  "TransportAppendWhilePinnedPreservesExistingRowDomIdentity",
 );
 const EmptyTranscriptKeepsLatestAffordanceHidden = getPortableStory(
-	stories,
-	'EmptyTranscriptKeepsLatestAffordanceHidden',
+  stories,
+  "EmptyTranscriptKeepsLatestAffordanceHidden",
 );
 const ContainedTranscriptKeepsLatestAffordanceHidden = getPortableStory(
-	stories,
-	'ContainedTranscriptKeepsLatestAffordanceHidden',
+  stories,
+  "ContainedTranscriptKeepsLatestAffordanceHidden",
 );
 const TransportAppendWhileAwayKeepsAffordanceVisible = getPortableStory(
-	stories,
-	'TransportAppendWhileAwayKeepsAffordanceVisible',
+  stories,
+  "TransportAppendWhileAwayKeepsAffordanceVisible",
 );
-const ReachingHistoryStartLoadsOlderPage = getPortableStory(stories, 'ReachingHistoryStartLoadsOlderPage');
+const ReachingHistoryStartLoadsOlderPage = getPortableStory(stories, "ReachingHistoryStartLoadsOlderPage");
 const ScrollToLatestInterruptedByWheelKeepsTranscriptAway = getPortableStory(
-	stories,
-	'ScrollToLatestInterruptedByWheelKeepsTranscriptAway',
+  stories,
+  "ScrollToLatestInterruptedByWheelKeepsTranscriptAway",
 );
 
-describe('Feature: Storybook DOM contract for web chat view host scroll ownership', () => {
-	test('Scenario: Given the room transcript is pinned to latest When transport appends a newer message Then the host keeps latest visible and the latest affordance stays hidden', async () => {
-		await TransportAppendWhilePinnedKeepsLatestVisible.run();
-	});
+describe("Feature: Storybook DOM contract for web chat view host scroll ownership", () => {
+  test("Scenario: Given the room transcript is pinned to latest When transport appends a newer message Then the host keeps latest visible and the latest affordance stays hidden", async () => {
+    await TransportAppendWhilePinnedKeepsLatestVisible.run();
+  });
 
-	test('Scenario: Given the room transcript is empty When the host surface settles Then Scroll to latest stays hidden because no latest target exists', async () => {
-		await EmptyTranscriptKeepsLatestAffordanceHidden.run();
-	});
+  test("Scenario: Given the room transcript is pinned to latest When transport appends a newer message Then the previously visible row keeps the same DOM identity", async () => {
+    await TransportAppendWhilePinnedPreservesExistingRowDomIdentity.run();
+  });
 
-	test('Scenario: Given the room transcript fits inside the viewport When the host surface settles Then Scroll to latest stays hidden because the viewport is already contained', async () => {
-		await ContainedTranscriptKeepsLatestAffordanceHidden.run();
-	});
+  test("Scenario: Given the room transcript is empty When the host surface settles Then Scroll to latest stays hidden because no latest target exists", async () => {
+    await EmptyTranscriptKeepsLatestAffordanceHidden.run();
+  });
 
-	test('Scenario: Given the room transcript is away from latest When transport appends a newer message Then the host preserves the away viewport until the operator explicitly returns to latest', async () => {
-		await TransportAppendWhileAwayKeepsAffordanceVisible.run();
-	});
+  test("Scenario: Given the room transcript fits inside the viewport When the host surface settles Then Scroll to latest stays hidden because the viewport is already contained", async () => {
+    await ContainedTranscriptKeepsLatestAffordanceHidden.run();
+  });
 
-	test('Scenario: Given the room transcript reaches the history start When an older page exists Then the host requests and renders older history with older insert motion', async () => {
-		await ReachingHistoryStartLoadsOlderPage.run();
-	});
+  test("Scenario: Given the room transcript is away from latest When transport appends a newer message Then the host preserves the away viewport until the operator explicitly returns to latest", async () => {
+    await TransportAppendWhileAwayKeepsAffordanceVisible.run();
+  });
 
-	test('Scenario: Given the room transcript is away from latest When return-to-latest is interrupted by wheel input Then the host keeps the transcript away and leaves the affordance visible', async () => {
-		await ScrollToLatestInterruptedByWheelKeepsTranscriptAway.run();
-	});
+  test("Scenario: Given the room transcript reaches the history start When an older page exists Then the host requests and renders older history with older insert motion", async () => {
+    await ReachingHistoryStartLoadsOlderPage.run();
+  });
+
+  test("Scenario: Given the room transcript is away from latest When return-to-latest is interrupted by wheel input Then the host keeps the transcript away and leaves the affordance visible", async () => {
+    await ScrollToLatestInterruptedByWheelKeepsTranscriptAway.run();
+  });
 });

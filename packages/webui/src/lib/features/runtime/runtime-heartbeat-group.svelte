@@ -8,6 +8,7 @@
 	import {
 		buildHeartbeatSubjectSections,
 		getHeartbeatGroupLabel,
+		type HeartbeatSubjectSection,
 	} from './runtime-heartbeat-parts';
 
 	let {
@@ -32,7 +33,7 @@
 	data-layout-mode={layoutMode}
 	data-testid={`runtime-heartbeat-group-${group.id}`}
 >
-	{#each sections as section (section.key)}
+	{#snippet sectionRow(section: HeartbeatSubjectSection)}
 		<div
 			class={cn(
 				'grid min-w-0 gap-2',
@@ -67,5 +68,13 @@
 				<MessageAvatar class="size-8 ring-border/55" name={avatarLabel} src={sessionIconUrl} />
 			{/if}
 		</div>
-	{/each}
+	{/snippet}
+
+	{#if sections.length === 1}
+		{@render sectionRow(sections[0]!)}
+	{:else}
+		{#each sections as section (section.key)}
+			{@render sectionRow(section)}
+		{/each}
+	{/if}
 </div>

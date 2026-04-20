@@ -13,6 +13,22 @@ const AppendLatestWhilePinnedKeepsViewportStable = getPortableStory(
   stories,
   "AppendLatestWhilePinnedKeepsViewportStable",
 );
+const AppendLatestWhilePinnedPreservesExistingGroupDomIdentity = getPortableStory(
+  stories,
+  "AppendLatestWhilePinnedPreservesExistingGroupDomIdentity",
+);
+const AppendLatestWhilePinnedKeepsAnchoredEntryLocatorUnique = getPortableStory(
+  stories,
+  "AppendLatestWhilePinnedKeepsAnchoredEntryLocatorUnique",
+);
+const AppendLatestWhilePinnedPreservesAnchoredEntryWithinGroupScope = getPortableStory(
+  stories,
+  "AppendLatestWhilePinnedPreservesAnchoredEntryWithinGroupScope",
+);
+const AppendLatestWhilePinnedPreservesAnchoredSectionWrapperIdentity = getPortableStory(
+  stories,
+  "AppendLatestWhilePinnedPreservesAnchoredSectionWrapperIdentity",
+);
 const AppendLatestWhileAwayKeepsViewportAnchored = getPortableStory(
   stories,
   "AppendLatestWhileAwayKeepsViewportAnchored",
@@ -26,6 +42,10 @@ const RepeatedLatestAppendKeepsTrailingSequenceMonotonic = getPortableStory(
   "RepeatedLatestAppendKeepsTrailingSequenceMonotonic",
 );
 const BottomAnchorSurvivesLatestGrowth = getPortableStory(stories, "BottomAnchorSurvivesLatestGrowth");
+const LatestGrowthPreservesExistingGroupDomIdentity = getPortableStory(
+  stories,
+  "LatestGrowthPreservesExistingGroupDomIdentity",
+);
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
 const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
 const ColdLoadingShowsExplicitState = getPortableStory(stories, "ColdLoadingShowsExplicitState");
@@ -61,6 +81,22 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
     await AppendLatestWhilePinnedKeepsViewportStable.run();
   });
 
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then an existing visible heartbeat card keeps the same DOM identity", async () => {
+    await AppendLatestWhilePinnedPreservesExistingGroupDomIdentity.run();
+  });
+
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the anchored heartbeat entry test id remains unique in the live DOM", async () => {
+    await AppendLatestWhilePinnedKeepsAnchoredEntryLocatorUnique.run();
+  });
+
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the existing heartbeat entry stays attached to the preserved group subtree", async () => {
+    await AppendLatestWhilePinnedPreservesAnchoredEntryWithinGroupScope.run();
+  });
+
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the preserved heartbeat section wrapper keeps the same DOM identity", async () => {
+    await AppendLatestWhilePinnedPreservesAnchoredSectionWrapperIdentity.run();
+  });
+
   test("Scenario: Given the Heartbeat viewport is reading older rows When a new latest group arrives Then the viewport preserves the current reading position instead of snapping to latest", async () => {
     await AppendLatestWhileAwayKeepsViewportAnchored.run();
   });
@@ -75,6 +111,10 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given the Heartbeat viewport is pinned to bottom When the last group grows without changing item count Then the viewport keeps the latest rows anchored", async () => {
     await BottomAnchorSurvivesLatestGrowth.run();
+  });
+
+  test("Scenario: Given the Heartbeat viewport is pinned to bottom When the latest group grows without changing item count Then that card keeps the same DOM identity", async () => {
+    await LatestGrowthPreservesExistingGroupDomIdentity.run();
   });
 
   test("Scenario: Given one heartbeat group card When the operator switches layout Then compact summary and detailed ledger views stay attached to the same group", async () => {
