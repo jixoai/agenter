@@ -4,10 +4,10 @@
 
 ## What Changes
 
-- **BREAKING** Split provider transport retry from runtime retry policy, so provider metadata no longer doubles as the runtime scheduler's recovery law.
-- Add a durable structured runtime retry policy contract for backoff schedule, attempt progression, and reset semantics.
-- Update resolved session config, runtime kernel, runtime interfaces, and WebUI to consume the explicit retry policy instead of the legacy mixed meaning.
-- Keep Heartbeat quick config execution-scoped, and move durable recovery policy editing into the runtime Settings surface together with other durable runtime settings.
+- **BREAKING** Split provider transport retry from runtime recovery law, so provider metadata no longer doubles as the scheduler's retry or compact policy.
+- Add durable structured runtime retry-policy and compact-policy contracts for backoff schedule, attempt progression, reset semantics, and objective compact triggers.
+- Update resolved session config, runtime kernel, runtime interfaces, and WebUI to consume the explicit runtime policies instead of legacy provider-coupled heuristics.
+- Keep Heartbeat quick config execution-scoped, and move durable retry/compact policy editing into the runtime Settings surface together with other durable runtime settings.
 
 ## Capabilities
 
@@ -17,6 +17,7 @@
 ### Modified Capabilities
 - `model-provider-standards`: Provider retry configuration becomes transport-only metadata rather than runtime recovery policy.
 - `attention-runtime-error-containment`: Containment and next-wake behavior resolve from the explicit runtime retry policy instead of hard-coded retry math.
+- `attention-prompt-window-compaction`: Compact triggers resolve from an explicit compact policy instead of a generic any-error fallback.
 - `workspace-runtime-shell`: The runtime Settings surface owns durable recovery policy editing while Heartbeat quick config remains execution-scoped.
 
 ## Impact
